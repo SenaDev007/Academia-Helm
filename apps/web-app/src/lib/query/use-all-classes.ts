@@ -34,10 +34,17 @@ async function fetchAllClasses(): Promise<ClassItem[]> {
     clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.data)) return data.data;
-    if (Array.isArray(data?.classes)) return data.classes;
-    return [];
+    let classes: ClassItem[] = [];
+    if (Array.isArray(data)) classes = data;
+    else if (Array.isArray(data?.data)) classes = data.data;
+    else if (Array.isArray(data?.classes)) classes = data.classes;
+    // ⭐ Defense-in-depth : filtrer les classes dont l'officialClass est inactive.
+    //    Le backend le fait déjà, mais on ajoute une 2e couche de sécurité.
+    return classes.filter((c) => {
+      if (!c.officialClassId) return true;
+      if (c.officialClass && c.officialClass.isActive === false) return false;
+      return true;
+    });
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') return [];

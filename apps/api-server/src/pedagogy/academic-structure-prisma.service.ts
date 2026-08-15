@@ -375,7 +375,12 @@ export class AcademicStructurePrismaService {
               if (!code) continue;
 
               const className = eg.name.trim();
-              const isActive = el.isEnabled && academicCycle.isActive;
+              // ⭐ Propager isEnabled du EducationGrade vers AcademicClass.isActive.
+              //    Un grade désactivé dans Paramètres > Structure (ex: 2nde A si la série A
+              //    n'est pas ouverte) doit rendre l'AcademicClass inactive, pour qu'elle
+              //    soit exclue de tous les sélecteurs (findAllClasses, /api/all-classes, etc.).
+              const gradeEnabled = eg.isEnabled !== false;
+              const isActive = el.isEnabled && gradeEnabled && academicCycle.isActive;
 
               const physicalClassrooms = await tx.classroom.findMany({
                 where: {
@@ -1234,7 +1239,7 @@ export class AcademicStructurePrismaService {
   async findAllClasses(
     tenantId: string,
     academicYearId: string,
-    filters?: { levelId?: string; cycleId?: string; isActive?: boolean }
+    filters?: { levelId?: string; cycleId?: string; isActive?: boolean; includeInactive?: boolean }
   ) {
     await this.syncAcademicClassesFromEducationSettings(tenantId, academicYearId);
     await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, academicYearId);
@@ -1249,7 +1254,16 @@ export class AcademicStructurePrismaService {
     const where: Record<string, unknown> = { tenantId, academicYearId };
     if (filters?.levelId) where.levelId = filters.levelId;
     if (filters?.cycleId) where.cycleId = filters.cycleId;
-    if (filters?.isActive !== undefined) where.isActive = filters.isActive;
+    // ⭐ Par défaut, ne retourner QUE les classes actives (isActive=true).
+    //    Une classe est désactivée quand son EducationGrade.isEnabled=false
+    //    (propagé par syncAcademicClassesFromEducationSettings).
+    //    Si l'appelant veut TOUT (vue admin Paramètres), il passe includeInactive=true.
+    //    Si l'appelant veut uniquement les inactives, il passe isActive=false.
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive;
+    } else if (!filters?.includeInactive) {
+      where.isActive = true;
+    }
     return this.prisma.academicClass.findMany({
       where,
       include: {

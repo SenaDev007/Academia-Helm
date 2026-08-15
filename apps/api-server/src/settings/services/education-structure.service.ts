@@ -494,6 +494,11 @@ export class EducationStructureService {
    *    au niveau Secondaire (ex: activer 6e+5e mais pas 2nde si pas de 2nd cycle).
    *
    *    Vérifie que le grade appartient bien au tenant (via cycle → level → tenantId).
+   *
+   *    Après la mise à jour, on déclenche une re-sync des AcademicClass pour
+   *    propager immédiatement isEnabled vers AcademicClass.isActive (afin que
+   *    les sélecteurs de classe dans tous les modules excluent la classe
+   *    désactivée sans attendre le prochain findAllClasses).
    */
   async setGradeEnabled(tenantId: string, gradeId: string, isEnabled: boolean) {
     const grade = await this.prisma.educationGrade.findFirst({
@@ -516,6 +521,33 @@ export class EducationStructureService {
     this.logger.log(
       `Grade ${grade.code} (${grade.name}) ${isEnabled ? 'activé' : 'désactivé'} pour tenant ${tenantId}`,
     );
+
+    // ⭐ Re-sync immédiate : propager isEnabled vers AcademicClass.isActive
+    //    pour TOUTES les années scolaires actives du tenant. Sans ça, les
+    //    sélecteurs continueraient à afficher la classe désactivée jusqu'au
+    //    prochain appel findAllClasses (qui sync), ce qui peut prêter à
+    //    confusion pour l'utilisateur qui vient juste de toggler.
+    try {
+      const codeNormalized = grade.code?.trim();
+      if (codeNormalized) {
+        // La sync complète (syncAcademicClassesFromEducationSettings) est
+        // déclenchée automatiquement au prochain findAllClasses. Ici on fait
+        // une invalidation ciblée : on met à jour directement les AcademicClass
+        // dont le code correspond au grade toggle, pour effet immédiat.
+        const result = await this.prisma.academicClass.updateMany({
+          where: { tenantId, code: codeNormalized },
+          data: { ...prismaUpdateDefaults(), isActive: isEnabled },
+        });
+        this.logger.log(
+          `AcademicClass (code=${codeNormalized}) → isActive=${isEnabled} synchronisé (${result.count} classe(s) mise(s) à jour).`,
+        );
+      }
+    } catch (syncErr) {
+      // Non-bloquant : la sync auto au prochain findAllClasses corrigera de toute façon
+      this.logger.warn(
+        `setGradeEnabled: sync AcademicClass échouée (non-bloquant) — ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`,
+      );
+    }
 
     return updated;
   }

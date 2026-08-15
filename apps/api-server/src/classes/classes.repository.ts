@@ -24,22 +24,33 @@ export class ClassesRepository {
   ): Promise<any[]> {
     const where: any = {
       tenantId,
-      // ⭐ Exclure les classes dont le grade (education_grade) est désactivé (isEnabled=false)
-      //    Au niveau Secondaire, le promoteur peut activer/désactiver des classes
-      //    individuelles dans Paramètres > Structure.
-      //    On utilise une relation filtrée : si la classe a un officialClassId
-      //    qui pointe vers une pedagogy_academic_classes liée à un grade désactivé,
-      //    on l'exclut.
-      officialClass: {
-        is: {
-          level: {
-            isEnabled: true,
-          },
-        },
-      },
+      // ⭐ Exclure les classes physiques dont la classe officielle
+      //    (AcademicClass) est désactivée. Une AcademicClass est désactivée
+      //    quand son EducationGrade.isEnabled=false (propagé par
+      //    syncAcademicClassesFromEducationSettings et setGradeEnabled).
+      //    Cela permet de masquer dans tous les sélecteurs les classes
+      //    désactivées par le promoteur dans Paramètres > Structure.
+      //
+      //    ⚠️ Cas particulier : les classes physiques legacy sans officialClassId
+      //    (créées avant la migration 20260628) ne sont pas filtrées, car on
+      //    ne peut pas déterminer leur état d'activation. On les conserve
+      //    pour ne pas casser les données existantes.
+      OR: [
+        { officialClass: { is: { isActive: true } } },
+        { officialClassId: null },
+      ],
     };
     const include: any = {
       schoolLevel: true,
+      officialClass: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          isActive: true,
+          level: { select: { id: true, name: true, code: true } },
+        },
+      },
     };
 
     // 'ALL' ou absent → ne pas filtrer par niveau (retourner toutes les classes)
@@ -51,15 +62,6 @@ export class ClassesRepository {
       where.academicYearId = academicYearId;
       include.academicYear = true;
     }
-
-    // ⭐ Inclure le officialClass avec son grade pour vérifier isEnabled
-    include.officialClass = {
-      include: {
-        level: {
-          select: { id: true, name: true, code: true, isEnabled: true },
-        },
-      },
-    };
 
     return this.prisma.class.findMany({
       where,
@@ -75,7 +77,16 @@ export class ClassesRepository {
     schoolLevelId: string,
     academicYearId?: string,
   ): Promise<number> {
-    const where: any = { tenantId };
+    const where: any = {
+      tenantId,
+      // ⭐ Même filtre que findAll : exclure les classes dont l'officialClass
+      //    est inactive (grade désactivé), sauf les classes legacy sans
+      //    officialClassId.
+      OR: [
+        { officialClass: { is: { isActive: true } } },
+        { officialClassId: null },
+      ],
+    };
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }

@@ -82,8 +82,22 @@ export async function GET(request: NextRequest) {
 
     const classes = Array.isArray(data) ? data : (data?.data || data?.items || []);
 
+    // ⭐ Defense-in-depth : filtrer côté BFF les classes dont l'officialClass
+    //    est inactive (grade désactivé dans Paramètres > Structure).
+    //    Le backend fait déjà ce filtre (classes.repository.ts findAll),
+    //    mais on l'ajoute ici pour être 100% sûr qu'aucune classe désactivée
+    //    ne remonte dans les sélecteurs, même si une route alternative
+    //    ou un cache stale contourne le filtre backend.
+    const filteredClasses = classes.filter((c: any) => {
+      // Classes legacy sans officialClassId → conservées
+      if (!c.officialClassId) return true;
+      // Classes avec officialClass → ne garder que si active
+      if (c.officialClass && c.officialClass.isActive === false) return false;
+      return true;
+    });
+
     // Cache 60s (les classes changent rarement) + stale-while-revalidate 5min
-    return NextResponse.json(classes, {
+    return NextResponse.json(filteredClasses, {
       headers: {
         'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
       },

@@ -3989,3 +3989,231 @@ Stage Summary:
   * scripts/fix_dako_doreen_inscription.js (nouveau)
   * scripts/fix_dako_doreen_orphan.js (nouveau)
 - ⚠️ Pas encore commit (à pusher sur origin/main)
+
+---
+Task ID: AUDIT-CLASSES-1
+Agent: explore (subagent)
+Task: Audit exhaustif de tous les sélecteurs de classe dans le frontend web — vérifier l'application du filtre `isEnabled` (education_grades) pour masquer les classes désactivées par le promoteur.
+
+Work Log:
+
+=== CONTEXTE / RAPPEL SCHÉMA ===
+- `education_levels` (MATERNELLE/PRIMAIRE/SECONDAIRE) → `isEnabled` (depuis le init)
+- `education_grades` (6e, CE1, Terminale C…) → `isEnabled` ajouté par migration
+  `20260814160000_add_is_enabled_to_education_grades/migration.sql`
+- `classrooms` (déclaration annuelle par grade) → `gradeId` → `education_grades`
+- `pedagogy_academic_classes` (AcademicClass, abstraction sync depuis Classroom)
+  → `levelId` → `pedagogy_academic_levels` (AcademicLevel, qui a `isActive`, **PAS** `isEnabled`)
+- `classes` (Class, sections physiques CI/A, 6e B…)
+  → `officialClassId` → `pedagogy_academic_classes` (AcademicClass)
+  → `schoolLevelId` → `school_levels` (SchoolLevel, a `isActive`, **PAS** `isEnabled`)
+
+⚠️ Il n'existe **AUCUN** lien direct entre `Class` (physique) et `EducationGrade`.
+La navigation est : `Class` → `AcademicClass` (via officialClassId) → (sync depuis) `Classroom` → `EducationGrade`.
+
+=== BFF ROUTES IMPLIQUÉES ===
+1. `apps/web-app/src/app/api/all-classes/route.ts`
+   - Proxy vers backend `/classes?limit=100` avec header `x-school-level-id=ALL`
+   - Résout academicYearId (query > header > active year)
+   - ❌ NE filtre PAS `isEnabled` côté BFF
+2. `apps/web-app/src/app/api/academic-classes/route.ts`
+   - Proxy vers `/pedagogy/academic-structure/classes`
+   - Transmet `isActive` query param
+   - ❌ NE filtre PAS `isEnabled` côté BFF
+3. `apps/web-app/src/app/api/classes/route.ts`
+   - Proxy basique vers `/classes` (paramètres transitent)
+   - ❌ NE filtre PAS `isEnabled` côté BFF
+4. `apps/web-app/src/app/api/school-levels/route.ts`
+   - Filtre `EducationLevel.isEnabled !== false` ✅ (mais c'est pour les NIVEAUX, pas les GRADES)
+   - Utilise `/api/all-classes` en interne pour résoudre schoolLevelId — donc récupère TOUTES
+     les classes y compris celles dont le grade est désactivé.
+
+=== BACKEND — DIAGNOSTIC CRITIQUE ===
+
+1. `apps/api-server/src/classes/classes.repository.ts` (findAll, lignes 19-71)
+   - Contient un filtre :
+     ```ts
+     officialClass: { is: { level: { isEnabled: true } } }
+     ```
+   - ❌ **BUG** : `officialClass.level` est `AcademicLevel` (table `pedagogy_academic_levels`)
+     qui a `isActive`, **PAS** `isEnabled`. Ce filtre devrait either throw une
+     `PrismaClientValidationError` ou être silencieusement ignoré selon la version Prisma.
+   - ❌ **BUG LOGIQUE** : le commentaire dit "Exclure les classes dont le grade
+     (education_grade) est désactivé" mais le code ne touche pas à `EducationGrade`.
+     Même si `AcademicLevel.isEnabled` existait, ce serait un filtre par niveau
+     (Maternelle/Primaire/Secondaire), pas par grade (6e/CE1/Terminale).
+   - ❌ **IMPOSSIBLE STRUCTURELLEMENT** : `AcademicClass` n'a pas de `gradeId`.
+     Le seul chemin est `AcademicClass.code` ↔ `EducationGrade.code` (par normalisation)
+     ou via `Classroom.gradeId`.
+
+2. `apps/api-server/src/pedagogy/academic-structure-prisma.service.ts`
+   - `findAllClasses` (lignes 1234-1278) : filtre par `tenantId`, `academicYearId`,
+     `levelId`, `cycleId`, `isActive` — ❌ NE filtre PAS `EducationGrade.isEnabled`
+   - `syncAcademicClassesFromEducationSettings` (lignes 318-448) :
+     ```ts
+     const isActive = el.isEnabled && academicCycle.isActive;
+     ```
+     ⚠️ `el` est `EducationLevel`, **PAS** `EducationGrade` !
+     → Si "Secondaire" est enabled MAIS "Terminale" est disabled,
+       l'AcademicClass "Terminale" est quand même créée avec `isActive=true`.
+     → Il faudrait : `const isActive = el.isEnabled && eg.isEnabled && academicCycle.isActive;`
+
+3. `apps/api-server/src/settings/services/education-structure.service.ts`
+   - `getStructure` (lignes 193-211) retourne bien `EducationGrade.isEnabled` dans
+     l'arbre levels→cycles→grades. Donc l'info est dispo côté backend.
+   - `setGradeEnabled` (lignes 498-521) met à jour `EducationGrade.isEnabled` ✅
+   - ❌ MAIS aucune cascade ne recalcule `AcademicClass.isActive` après ce changement.
+     Il faut appeler `syncAcademicClassesFromEducationSettings` après.
+
+=== HOOK / SERVICE FRONTEND PARTAGÉ ===
+- `apps/web-app/src/lib/query/use-all-classes.ts` : hook React Query partagé
+  (cache 2 min). ❌ NE filtre PAS `isEnabled`. Fixer ici → corrige tous les
+  consommateurs qui l'utilisent (RecoveryContent, AdmissionsContent).
+- `apps/web-app/src/services/classes.service.ts` : wrapper offline-first autour de
+  `/classes`. ❌ NE filtre PAS `isEnabled`.
+- `apps/web-app/src/lib/finance/class-sort.ts` : `filterAndSortClasses` trie/seulement
+  filtre par `schoolLevelId`. ❌ Pas de filtre `isEnabled`.
+
+=== TABLEAU EXHAUSTIF DES SÉLECTEURS ===
+(Légende : ✅ = filtre appliqué / ❌ = pas de filtre / ⚠️ = partiel)
+
+| # | Fichier | Ligne fetch | Ligne <select> | Endpoint source | Filtre isEnabled | Action requise |
+|---|---------|-------------|----------------|-----------------|------------------|----------------|
+| 1 | apps/web-app/src/components/finance/FeeStructuresContent.tsx | 178 | 511 | /api/academic-classes | ❌ | Fix backend findAllClasses + sync |
+| 2 | apps/web-app/src/components/finance/FeeStructureModal.tsx | (props) | 280 | /api/academic-classes (via parent) | ❌ | Fix backend findAllClasses + sync |
+| 3 | apps/web-app/src/components/finance/FeeOverridesContent.tsx | 121 | 324 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 4 | apps/web-app/src/components/finance/FeeOverrideModal.tsx | 79 | 324 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 5 | apps/web-app/src/components/finance/NewPaymentModal.tsx | 144 | 681 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 6 | apps/web-app/src/components/finance/CollectionSummaryContent.tsx | 228 | 551 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 7 | apps/web-app/src/components/finance/StudentAccountsContent.tsx | 212 | 585 | /api/all-classes (via filterAndSortClasses) | ❌ | Fix backend classes.repository + BFF |
+| 8 | apps/web-app/src/components/finance/recovery/RecoveryContent.tsx | 1490, 1971, 2211, 3194 | 1572, 2064, 2304, 2666, 3010, 3391 | /api/all-classes + useAllClasses | ❌ | Fix backend + useAllClasses hook |
+| 9 | apps/web-app/src/components/students/StudentMovementsContent.tsx ⭐ | 249 | 594 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 10 | apps/web-app/src/components/students/AffectationVersClassePhysique.tsx ⭐ | 104, 107 | 352, 405, 414, 425 | /api/all-classes + /api/academic-classes | ❌ | Fix backend (les deux) + BFF |
+| 11 | apps/web-app/src/components/students/AdmissionForm.tsx | 85 | 327 | /api/all-classes (dédup par officialClass) | ❌ | Fix backend classes.repository + BFF |
+| 12 | apps/web-app/src/components/students/StudentEnrollmentForm.tsx | 165 | 592 | /api/academic-classes?isActive=true | ❌ | Fix backend findAllClasses + sync |
+| 13 | apps/web-app/src/components/students/EnrollmentsContent.tsx | 278 | 1772 | /api/academic-classes?isActive=true | ❌ | Fix backend findAllClasses + sync |
+| 14 | apps/web-app/src/components/students/StudentAssignmentsContent.tsx | 113 | 299, 338 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 15 | apps/web-app/src/components/students/StudentHistoryContent.tsx | 99 | 283 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 16 | apps/web-app/src/components/students/AbsencesContent.tsx | 81 | 282 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 17 | apps/web-app/src/components/students/TransferWizard.tsx | 83 | 316 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 18 | apps/web-app/src/components/students/StudentIdentityContent.tsx | 220 | 347 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 19 | apps/web-app/src/components/students/StudentClassListsContent.tsx | 180 | (tree 486) | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 20 | apps/web-app/src/components/students/StudentIdCardsSection.tsx | 230 | 937 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 21 | apps/web-app/src/components/students/ChangementDeSerie.tsx | 100, 127 | 296, 430 | /api/all-classes + /api/academic-classes | ❌ | Fix backend (les deux) + BFF |
+| 22 | apps/web-app/src/components/students/AdmissionsContent.tsx | (useAllClasses 89) | 927 | /api/all-classes (via hook) | ❌ | Fix backend + useAllClasses hook |
+| 23 | apps/web-app/src/components/students/StudentDossierSection.tsx | 165 | 1089 | /api/classes | ❌ | Fix backend classes.repository |
+| 24 | apps/web-app/src/app/app/students/classes/page.tsx | 58 | — | /api/classes (classesService.getAll) | ❌ | Fix backend classes.repository |
+| 25 | apps/web-app/src/app/app/students/transfers/page.tsx | 124 | 349, 363 | /api/classes (classesService.getAll) | ❌ | Fix backend classes.repository |
+| 26 | apps/web-app/src/components/discipline/DisciplineWorkspace.tsx | 67 | (grouped 170) | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 27 | apps/web-app/src/app/app/exams/page.tsx | 96 | (stats 328) | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 28 | apps/web-app/src/app/app/exams/councils/page.tsx ⭐ | 118 | 671 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 29 | apps/web-app/src/app/app/exams/bulletins/page.tsx ⭐ | 203 | 755, 2334 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 30 | apps/web-app/src/app/app/exams/registre/page.tsx | 116 | 245 | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 31 | apps/web-app/src/app/app/exams/evaluations/page.tsx | 585 | 1276 (checkbox) | /api/all-classes | ❌ | Fix backend classes.repository + BFF |
+| 32 | apps/web-app/src/components/pilotage/modules/StudentsModulePage.tsx | 199 | 559 | /api/classes | ❌ | Fix backend classes.repository |
+| 33 | apps/web-app/src/components/pedagogy/subjects/SubjectsWorkspace.tsx | 507 | 1865, 2355 | /api/pedagogy/academic-structure/classes | ❌ | Fix backend findAllClasses + sync |
+| 34 | apps/web-app/src/components/pedagogy/assignments/AssignmentsWorkspace.tsx | 131 | (grouped) | /api/pedagogy/academic-structure/classes | ❌ | Fix backend findAllClasses + sync |
+| 35 | apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx | 716, 1142 | 875, 1279, 1367 | /api/pedagogy/academic-structure/classes | ❌ | Fix backend findAllClasses + sync |
+| 36 | apps/web-app/src/components/pedagogy/timetables/ManualTimetablesEditor.tsx | 515 | 842, 986 | /api/pedagogy/academic-structure/classes | ❌ | Fix backend findAllClasses + sync |
+| 37 | apps/web-app/src/components/pedagogy/teachers/TeachersAcademicWorkspace.tsx | 327 | (lookup only) | /api/pedagogy/academic-structure/classes | ❌ | Fix backend findAllClasses + sync |
+| 38 | apps/web-app/src/lib/offline/offline-bootstrap.service.ts | 150 | — | /api/classes?limit=200 | ❌ | Fix backend classes.repository (cache offline) |
+| 39 | apps/web-app/src/lib/query/use-all-classes.ts | 33, 73 | — | /api/all-classes (hook shared) | ❌ | Fix backend + ajouter filtre client defense-in-depth |
+| 40 | apps/web-app/src/services/classes.service.ts | 29 | — | /classes (apiFetch) | ❌ | Fix backend classes.repository |
+
+⭐ = selectors cités dans le rapport utilisateur (Finance frais modaux / Élèves Affectation et mouvement / Censeur conseils de classe et bulletins).
+
+Note : Les composants pedagogy/production/* (CahierJournalTab, ClassLogTab, HomeworkTab,
+AttendanceTab, PedagogicalSheetsTab, CahierDeTexteTab, CahierDeTestTab, MyClassesTab,
+ProductionWorkspace) utilisent `/api/pedagogy-space/my-classes?teacherId=...` qui est
+SCOPE PAR ENSEIGNANT (pas un catalogue global) — non inclus dans le tableau car le
+filtrage se fait par affectation enseignant. Cependant, ces listes héritent du même
+problème : si l'enseignant a été affecté à une classe désormais désactivée, il la verra
+toujours. Correction secondaire à envisager.
+
+=== FICHIERS BACKEND/BFF À CORRIGER (priorité décroissante) ===
+
+**Priorité 1 — Fix racine (backend, corrige 100% des sélecteurs d'un coup) :**
+
+1. `apps/api-server/src/pedagogy/academic-structure-prisma.service.ts`
+   - `syncAcademicClassesFromEducationSettings` (ligne 378) :
+     remplacer `const isActive = el.isEnabled && academicCycle.isActive;`
+     par `const isActive = el.isEnabled && eg.isEnabled !== false && academicCycle.isActive;`
+   - `findAllClasses` (lignes 1234-1278) : ajouter un filtre post-fetch qui exclut
+     les AcademicClass dont le `EducationGrade` correspondant (via code normalisé)
+     a `isEnabled = false`. Ou mieux : propager `EducationGrade.isEnabled` dans un
+     champ dédié sur AcademicClass (ex: `gradeEnabled`) lors de la sync, puis filtrer
+     dessus dans `findAllClasses`.
+
+2. `apps/api-server/src/classes/classes.repository.ts`
+   - `findAll` (lignes 19-71) : remplacer le filtre cassé
+     `officialClass: { is: { level: { isEnabled: true } } }` par un filtrage correct.
+     Comme `AcademicClass` n'a pas de FK directe vers `EducationGrade`, deux options :
+     (a) Filtrage post-fetch : charger les `EducationGrade` du tenant, construire un Set
+         des codes normalisés actifs, et filtrer les `Class` dont `officialClass.code`
+         (ou nom) est dans ce Set.
+     (b) Ajouter une colonne `gradeId` (FK vers education_grades) sur `AcademicClass`
+         pour pouvoir filtrer via Prisma relation. Plus propre mais nécessite migration.
+   - Option recommandée court-terme : (a) filtrage post-fetch dans le repository.
+
+3. `apps/api-server/src/settings/services/education-structure.service.ts`
+   - `setGradeEnabled` (lignes 498-521) : après avoir updaté `EducationGrade.isEnabled`,
+     déclencher `syncAcademicClassesFromEducationSettings` pour propager la nouvelle
+     valeur aux `AcademicClass.isActive` (sinon le changement ne sera visible qu'au
+     prochain appel de `findAllClasses` qui déclenche la sync — pas instantané pour
+     `/api/all-classes` qui ne sync pas).
+
+**Priorité 2 — BFF (defense-in-depth, évite erreur 500 si backend Prisma casse) :**
+
+4. `apps/web-app/src/app/api/all-classes/route.ts`
+   - Ajouter un filtrage post-fetch : charger `/settings/education/structure`,
+     construire Set des codes de grades actifs, filtrer les classes retournées
+     par `officialClass.code` (ou nom normalisé) ∈ Set.
+   - OU simplement ajouter query param `?onlyEnabledGrades=true` au backend et
+     laisser le backend faire le filtrage.
+
+5. `apps/web-app/src/app/api/academic-classes/route.ts`
+   - Idem : filtrage post-fetch par `EducationGrade.isEnabled` (via structure).
+
+6. `apps/web-app/src/app/api/classes/route.ts`
+   - Ajouter le même filtrage (utilisé par classesService.getAll → transfers, classes page).
+
+**Priorité 3 — Frontend (defense-in-depth ultime, utile si backend non déployé) :**
+
+7. `apps/web-app/src/lib/query/use-all-classes.ts`
+   - Ajouter un filtre client dans `fetchAllClasses` et dans la `queryFn` :
+     charger `/api/settings/education/structure` une fois, construire Set des codes
+     de grades actifs, filtrer `data.filter(c => enabledGradeCodes.has(c.code))`.
+   - Impact : corrige RecoveryContent + AdmissionsContent automatiquement.
+
+8. `apps/web-app/src/services/classes.service.ts`
+   - Ajouter le même filtrage dans `getAll` après réception des données.
+
+9. `apps/web-app/src/lib/finance/class-sort.ts`
+   - Étendre `filterAndSortClasses` pour accepter une liste de `enabledGradeCodes`
+     et filtrer. Mettre à jour StudentAccountsContent (seul consommateur).
+
+10. (Optionnel) Ajouter un helper partagé `lib/education/filter-enabled-grades.ts`
+    exposant `useEnabledGradeCodes()` (React Query hook) et `filterClassesByEnabledGrades()`
+    pour éviter la duplication du filtrage dans chaque composant.
+
+=== RÉSUMÉ EXÉCUTIF ===
+- 40 sélecteurs de classe audités dans `apps/web-app/src`.
+- AUCUN n'applique le filtre `EducationGrade.isEnabled` (0/40, soit 0%).
+- 3 causes racines côté backend :
+  1. Filtre cassé dans `classes.repository.findAll` (cherche `AcademicLevel.isEnabled`
+     qui n'existe pas — devrait chercher `EducationGrade.isEnabled`).
+  2. `syncAcademicClassesFromEducationSettings` ignore `eg.isEnabled` — l'AcademicClass
+     reste `isActive=true` même si le grade est désactivé.
+  3. `setGradeEnabled` ne déclenche pas de re-sync → effet non visible immédiatement.
+- Recommandation : fixer le backend (priorité 1) corrige 100% des sélecteurs d'un coup.
+  Les fixes BFF/frontend (priorités 2-3) sont optionnels (defense-in-depth) mais
+  recommandés pour résilience.
+
+Stage Summary:
+- Audit exhaustif terminé : 40 sélecteurs identifiés, tous sans filtre isEnabled.
+- 3 fichiers backend à corriger en priorité (cause racine).
+- 3 fichiers BFF à corriger (defense-in-depth).
+- 3 fichiers frontend shared (hook + service + helper) à corriger (defense-in-depth ultime).
+- Files modified by this audit task: 0 (audit only, no code changes).
+- Prochaine étape recommandée : Task "FIX-CLASSES-1" pour appliquer les corrections
+  backend + BFF selon le plan ci-dessus.

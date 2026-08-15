@@ -75,7 +75,15 @@ export async function GET(request: NextRequest) {
 
     // La réponse est un tableau d'AcademicClass
     const classes = Array.isArray(data) ? data : (data?.data || data?.classes || []);
-    return NextResponse.json(classes);
+
+    // ⭐ Defense-in-depth : filtrer côté BFF les AcademicClass inactives.
+    //    Une AcademicClass est inactive quand son EducationGrade.isEnabled=false
+    //    (propagé par syncAcademicClassesFromEducationSettings).
+    //    Le backend fait déjà ce filtre par défaut (isActive=true), mais on
+    //    l'ajoute ici pour être 100% sûr.
+    const filteredClasses = classes.filter((c: any) => c.isActive !== false);
+
+    return NextResponse.json(filteredClasses);
   } catch (error) {
     console.error('Error fetching academic classes:', error);
     return NextResponse.json([], { status: 200 }); // fallback vide

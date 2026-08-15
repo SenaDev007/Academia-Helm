@@ -126,12 +126,20 @@ export class AcademicStructurePrismaController {
     @Query('levelId') levelId?: string,
     @Query('cycleId') cycleId?: string,
     @Query('isActive') isActive?: string,
+    @Query('includeInactive') includeInactive?: string,
   ) {
     if (!academicYearId) return [];
     const filters: any = {};
     if (levelId) filters.levelId = levelId;
     if (cycleId) filters.cycleId = cycleId;
-    if (isActive !== undefined) filters.isActive = isActive === 'true';
+    if (isActive !== undefined) {
+      // Explicit isActive overrides everything
+      filters.isActive = isActive === 'true';
+    } else if (includeInactive === 'true') {
+      // Admin view: include inactive classes (no isActive filter)
+      filters.includeInactive = true;
+    }
+    // Default: filters.isActive stays undefined → service applies isActive=true
     return this.service.findAllClasses(tenantId, academicYearId, filters);
   }
 

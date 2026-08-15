@@ -26,8 +26,9 @@ import { getPageSlideMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
-import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
-import { SyncToast } from '@/components/offline/SyncToast';
+// ⛔ OFFLINE-FIRST DÉSACTIVÉ — imports offline supprimés
+// import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
+// import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { useSyncWorker } from '@/hooks/useSyncWorker';

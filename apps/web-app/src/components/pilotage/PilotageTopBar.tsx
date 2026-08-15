@@ -25,11 +25,13 @@ import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 import AcademicTrackSelector from './AcademicTrackSelector';
-import { useOffline, useSyncStatus } from '@/hooks/useOffline';
+// ⛔ OFFLINE-FIRST DÉSACTIVÉ — useOffline/useSyncStatus supprimés
+// import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import { DesktopUpdateBadge } from '@/components/header/DesktopUpdateBadge';
-import { SyncButton } from '@/components/header/SyncButton';
+// ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé
+// import { SyncButton } from '@/components/header/SyncButton';
 import type { User, Tenant } from '@/types';
 
 interface SchoolIdentity {
@@ -115,9 +117,13 @@ function formatRoleLabel(role?: string) {
 
 export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen }: PilotageTopBarProps) {
   const router = useRouter();
-  const isOnline = useOffline();
+  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — toujours online
+  const isOnline = true; // useOffline();
   const isPlatformAdmin = tenant?.subdomain === 'admin' || user?.role === 'PLATFORM_SUPER_ADMIN' || user?.role === 'PLATFORM_OWNER';
-  const { isSyncing, pendingCount } = useSyncStatus();
+  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — pas de sync status
+  // const { isSyncing, pendingCount } = useSyncStatus();
+  const isSyncing = false;
+  const pendingCount = 0;
   const [orionAlertsCount, setOrionAlertsCount] = useState(0);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -372,8 +378,8 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {/* ── Bouton "Télécharger l'app desktop" — visible UNIQUEMENT par le PROMOTER ── */}
             <DesktopUpdateBadge userRole={user.role} />
 
-            {/* ── Bouton "Synchroniser" — visible uniquement dans l'app desktop ── */}
-            <SyncButton />
+            {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé */}
+            {/* <SyncButton /> */}
 
             {/* Alertes ORION — ⭐ ouvre le dropdown de notifications au lieu de rediriger */}
             {orionAlertsCount > 0 && (

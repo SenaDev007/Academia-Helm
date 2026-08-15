@@ -32,8 +32,41 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
     const url = new URL(`${API_URL}/classes`);
     url.searchParams.append('limit', '100');
+
+    // ⭐ CRITIQUE : Filtrer par academicYearId pour éviter de mélanger
+    //    les classes de 2025-2026 avec celles de 2026-2027.
+    //    Ordre de résolution :
+    //    1. Query param explicite (?academicYearId=xxx)
+    //    2. Header x-academic-year-id (injecté par l'intercepteur Axios)
+    //    3. Année active du tenant (GET /settings/academic-years/active)
+    let academicYearId = searchParams.get('academicYearId')
+      || request.headers.get('x-academic-year-id')
+      || '';
+
+    // Si pas d'academicYearId, résoudre l'année active
+    if (!academicYearId) {
+      try {
+        const headers = await getProxyAuthHeaders(request);
+        const yearRes = await fetch(normalizeApiUrl(`${API_URL}/settings/academic-years/active`), {
+          headers,
+          cache: 'no-store',
+        });
+        if (yearRes.ok) {
+          const yearData = await yearRes.json();
+          const yearObj = yearData?.data || yearData;
+          academicYearId = yearObj?.id || yearObj?.academicYearId || '';
+        }
+      } catch (e) {
+        console.warn('[BFF all-classes] Failed to resolve active academic year:', e);
+      }
+    }
+
+    if (academicYearId) {
+      url.searchParams.set('academicYearId', academicYearId);
+    }
 
     const headers = await getProxyAuthHeaders(request);
     headers['x-school-level-id'] = 'ALL';

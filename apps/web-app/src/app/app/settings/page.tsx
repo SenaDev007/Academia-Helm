@@ -28,14 +28,11 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, Building2, Wallet, Plus, X, Trash2
+  Pencil, CopyPlus, Layers, Wallet, Plus, X, Trash2
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import StampDesigner from '@/components/settings/StampDesigner';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
-import { AdminStructureSection } from '@/components/settings/AdminStructureSection';
-import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
-import PositionsManagement from '@/components/settings/PositionsManagement';
 import { PaymentsSettingsSection } from '@/components/settings/fedapay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
@@ -2437,9 +2434,10 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    // ⭐ L'administration du personnel a été déplacée vers le module RH → onglet "Administration"
-    //    Ici on garde uniquement les Cachets et Tampons officiels
-    { id: 'departments' as TabId, label: 'Cachets et Tampons', icon: Building2 },
+    // ⭐ L'administration du personnel (départements, postes, structure administrative)
+    //    a été entièrement déplacée vers le module RH → onglet "Administration".
+    //    Ici on ne garde que les Cachets et Tampons officiels.
+    { id: 'departments' as TabId, label: 'Cachets et Tampons', icon: Stamp },
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
@@ -3374,19 +3372,17 @@ export default function SettingsPage() {
         return null;
 
       case 'admin-structure':
-        // ⭐ Fusionné dans 'departments' — rediriger
+        // ⭐ Supprimé : la structure administrative est désormais gérée
+        //    dans le module RH → onglet "Administration". Rediriger vers null
+        //    pour les anciens signets (l'utilisateur doit utiliser le module RH).
         return null;
 
       case 'departments':
         return (
           <div className="space-y-6">
-            {/* Section Administration (anciennement onglet séparé) */}
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-              <AdminStructureSection tenantId={effectiveTenantId ?? undefined} />
-            </div>
-            {/* Section Départements + Postes */}
-            <DepartmentsAndPositionsTab tenantId={effectiveTenantId} showToast={showToast} />
-            {/* ⭐ Section Cachets & Tampons (fusionnée depuis l'ancien onglet "Cachets") */}
+            {/* ⭐ Cachets & Tampons officiels
+                (l'administration du personnel — départements, postes, structure administrative —
+                 est désormais gérée dans le module RH → onglet "Administration") */}
             <div>
               <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
                 <Stamp className="w-5 h-5 text-red-600" />
@@ -6010,40 +6006,5 @@ export default function SettingsPage() {
       </div>
     </div>
     </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  Composant: Départements + Postes (toggle entre les deux)
-// ═══════════════════════════════════════════════════════════════════════
-
-function DepartmentsAndPositionsTab({ tenantId, showToast }: { tenantId?: string; showToast: (type: 'success' | 'error', message: string) => void }) {
-  const [subTab, setSubTab] = useState<'departments' | 'positions'>('departments');
-
-  return (
-    <div className="space-y-4">
-      {/* Toggle entre Départements et Postes */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setSubTab('departments')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === 'departments' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-        >
-          Départements
-        </button>
-        <button
-          onClick={() => setSubTab('positions')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${subTab === 'positions' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-        >
-          Postes occupés
-        </button>
-      </div>
-
-      {/* Content */}
-      {subTab === 'departments' ? (
-        <DepartmentsManagement tenantId={tenantId} showToast={showToast} />
-      ) : (
-        <PositionsManagement tenantId={tenantId} showToast={showToast} />
-      )}
-    </div>
   );
 }

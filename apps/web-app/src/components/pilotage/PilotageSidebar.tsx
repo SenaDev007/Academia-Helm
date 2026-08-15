@@ -275,8 +275,12 @@ interface PilotageSidebarProps {
 const MAIN_MODULES = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
+  // ⭐ Espace Censeur — juste après Organisation Pédagogique
+  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'] },
   // ⭐ Ajout des DIRECTEUR_* (MATERNELLE/PRIMAIRE/SECONDAIRE/MAT_PRI) pour qu'ils voient le module Élèves
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
+  // ⭐ Vie Scolaire — juste après Élèves & Scolarité
+  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'] },
   // ⭐ Finance : directeurs niveau-spécifiques voient le module (consultation filtrée), mais l'accès aux sous-onglets financiers sensibles (payroll, audit, settings) sera restreint au niveau sub-tab
   { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
   // ⭐ Examens : tous les directeurs voient ce module (filtrage par niveau + piste via SchoolLevelSelector + AcademicTrackSelector)
@@ -284,10 +288,6 @@ const MAIN_MODULES = [
   // ⭐ RH : directeurs niveau-spécifiques voient le module (overview, staff, contracts…) mais pas payroll/cnss/settings (restreint au niveau sub-tab)
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
-  // ⭐ Module Discipline & Vie Scolaire — pour le surveillant général (pas de featureCode = toujours visible si role ok)
-  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'] },
-  // ⭐ Module Censeur — adjoint pédagogique (pas de featureCode = toujours visible si role ok)
-  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'] },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
 ];
 

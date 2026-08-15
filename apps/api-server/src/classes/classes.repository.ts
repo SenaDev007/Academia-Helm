@@ -22,9 +22,24 @@ export class ClassesRepository {
     pagination: { skip: number; take: number },
     academicYearId?: string,
   ): Promise<any[]> {
-    const where: any = { tenantId };
+    const where: any = {
+      tenantId,
+      // ⭐ Exclure les classes dont le grade (education_grade) est désactivé (isEnabled=false)
+      //    Au niveau Secondaire, le promoteur peut activer/désactiver des classes
+      //    individuelles dans Paramètres > Structure.
+      //    On utilise une relation filtrée : si la classe a un officialClassId
+      //    qui pointe vers une pedagogy_academic_classes liée à un grade désactivé,
+      //    on l'exclut.
+      officialClass: {
+        is: {
+          level: {
+            isEnabled: true,
+          },
+        },
+      },
+    };
     const include: any = {
-      schoolLevel: true,  // ← toujours inclure le niveau scolaire
+      schoolLevel: true,
     };
 
     // 'ALL' ou absent → ne pas filtrer par niveau (retourner toutes les classes)
@@ -36,6 +51,15 @@ export class ClassesRepository {
       where.academicYearId = academicYearId;
       include.academicYear = true;
     }
+
+    // ⭐ Inclure le officialClass avec son grade pour vérifier isEnabled
+    include.officialClass = {
+      include: {
+        level: {
+          select: { id: true, name: true, code: true, isEnabled: true },
+        },
+      },
+    };
 
     return this.prisma.class.findMany({
       where,

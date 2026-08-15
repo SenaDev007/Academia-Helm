@@ -243,7 +243,7 @@ export default function PortalPage() {
     const effectiveSlug = selectedSchool.slug || (selectedSchool as any).subdomain || '';
     if (!effectiveSlug) {
       console.error('[Portal] Aucun slug/subdomain trouvé pour:', selectedSchool);
-      alert('Erreur: cette école n\\'a pas de slug configuré. Veuillez contacter le support.');
+      alert("Erreur: cette école n'a pas de slug configuré. Veuillez contacter le support.");
       return;
     }
 

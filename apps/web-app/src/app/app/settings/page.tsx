@@ -2437,8 +2437,9 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    // ⭐ Fusion : Administration + Départements + Cachets → un seul onglet "Administration et Cachets"
-    { id: 'departments' as TabId, label: 'Administration et Cachets', icon: Building2 },
+    // ⭐ L'administration du personnel a été déplacée vers le module RH → onglet "Administration"
+    //    Ici on garde uniquement les Cachets et Tampons officiels
+    { id: 'departments' as TabId, label: 'Cachets et Tampons', icon: Building2 },
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),

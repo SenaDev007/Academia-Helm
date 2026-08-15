@@ -41,9 +41,9 @@ export const HR_SUBMODULE_TABS = [
     icon: UserCog,
   },
   {
-    id: 'directors',
-    label: 'Directeurs',
-    path: '/app/hr/directors',
+    id: 'administration',
+    label: 'Administration',
+    path: '/app/hr/administration',
     icon: UserCog,
   },
   {

@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { v4 as uuidv4 } from 'uuid';
+import { ADMIN_ROLES, isValidAdminRole } from '../common/constants/admin-roles';
 
 /**
  * ============================================================================
@@ -12,7 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
  *   - Directeur Maternelle / Primaire / Secondaire / MAT_PRI
  *   - Secrétaire Maternelle / Primaire / Secondaire / MAT_PRI
  *   - Secrétaire Comptable Maternelle / Primaire / Secondaire / MAT_PRI
- *   - Et tout autre adminRole (CENSEUR, ECONOME, etc.)
+ *   - Censeur, Surveillant Général, Intendant, Proviseur, etc.
+ *   - Et tout autre adminRole défini dans common/constants/admin-roles.ts
  *
  * Le schoolLevelCode doit être cohérent avec le mode d'administration du tenant :
  *   - Mode SEPARATE : MAT, PRI, SEC (pas de MAT_PRI)
@@ -22,11 +24,6 @@ import { v4 as uuidv4 } from 'uuid';
  */
 
 const VALID_LEVEL_CODES = ['MAT', 'PRI', 'SEC', 'MAT_PRI', 'ALL'];
-const VALID_ADMIN_ROLES = [
-  'DIRECTEUR', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE',
-  'CENSEUR', 'ECONOME', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ADJOINT',
-  'RESP_SCOLARITE', 'SURVEILLANT_GENERAL',
-];
 
 export interface StaffAdminAssignment {
   id: string;
@@ -142,8 +139,8 @@ export class StaffAdminAssignmentService {
     if (!VALID_LEVEL_CODES.includes(data.schoolLevelCode)) {
       throw new BadRequestException(`schoolLevelCode invalide : ${data.schoolLevelCode}. Valeurs acceptées : ${VALID_LEVEL_CODES.join(', ')}`);
     }
-    if (!VALID_ADMIN_ROLES.includes(data.adminRole)) {
-      throw new BadRequestException(`adminRole invalide : ${data.adminRole}. Valeurs acceptées : ${VALID_ADMIN_ROLES.join(', ')}`);
+    if (!isValidAdminRole(data.adminRole)) {
+      throw new BadRequestException(`adminRole invalide : ${data.adminRole}. Valeurs acceptées : ${ADMIN_ROLES.join(', ')}`);
     }
 
     // Vérifier que le staff existe et appartient au tenant
@@ -212,7 +209,7 @@ export class StaffAdminAssignmentService {
       updateData.schoolLevelCode = data.schoolLevelCode;
     }
     if (data.adminRole !== undefined) {
-      if (!VALID_ADMIN_ROLES.includes(data.adminRole)) {
+      if (!isValidAdminRole(data.adminRole)) {
         throw new BadRequestException(`adminRole invalide : ${data.adminRole}`);
       }
       updateData.adminRole = data.adminRole;

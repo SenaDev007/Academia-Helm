@@ -96,10 +96,12 @@ export function getClientAuthorizationHeader(): Record<string, string> {
   //    appelée très fréquemment par les hooks React).
   //    Le flag est reset à chaque logout (clearClientSessionSync) et à
   //    chaque refresh (persistClientAccessToken).
-  if (t && !tokenMirrorDone) {
-    tokenMirrorDone = true;
-    mirrorTokenToCacheApi(t);
-  }
+  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — miroir JWT vers Cache API suspendu
+  //    (utilisé uniquement par le Service Worker pour le Background Sync)
+  // if (t && !tokenMirrorDone) {
+  //   tokenMirrorDone = true;
+  //   mirrorTokenToCacheApi(t);
+  // }
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -117,8 +119,9 @@ export function persistClientAccessToken(data: {
   //    tokenMirrorDone pour éviter que getClientAuthorizationHeader ne
   //    réécrive inutilement le même token.
   if (at) {
-    tokenMirrorDone = true;
-    mirrorTokenToCacheApi(at);
+    // ⛔ OFFLINE-FIRST DÉSACTIVÉ — pas de miroir Cache API
+    // tokenMirrorDone = true;
+    // mirrorTokenToCacheApi(at);
   }
 }
 
@@ -188,8 +191,9 @@ export function clearClientSessionSync(): void {
   //    Service Worker ne puisse plus pousser l'outbox après logout.
   //    Reset du flag tokenMirrorDone pour qu'un nouveau login déclenche à
   //    nouveau le miroir.
-  tokenMirrorDone = false;
-  clearTokenFromCacheApi();
+  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — clearTokenFromCacheApi suspendu
+  // tokenMirrorDone = false;
+  // clearTokenFromCacheApi();
 }
 
 /**

@@ -563,7 +563,9 @@
                         }
                     }
 
-                    await window.__TAURI__.core.invoke('trigger_sync', { lastSyncAt });
+                    // ⛔ OFFLINE-FIRST DÉSACTIVÉ — trigger_sync suspendu
+                    // await window.__TAURI__.core.invoke('trigger_sync', { lastSyncAt });
+                    console.log('[Sync] Offline mode disabled — skipping sync');
                 } else {
                     // Demo mode
                     setTimeout(() => {

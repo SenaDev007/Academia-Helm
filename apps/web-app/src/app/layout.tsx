@@ -11,8 +11,9 @@ import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
-import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
-import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
+// ⛔ OFFLINE-FIRST DÉSACTIVÉ — SW désactivé temporairement
+// import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
+// import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
 // OrionWidget — désactivé temporairement, sera réimplémenté selon les specs
 // import OrionWidget from '@/components/OrionWidget';
 import { BRAND } from '@/lib/brand';
@@ -206,7 +207,8 @@ export default function RootLayout({
         <I18nWrapper>
           {children}
         </I18nWrapper>
-        <ServiceWorkerCleanup />
+        {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ */}
+        {/* <ServiceWorkerCleanup /> */}
         <ToastContainer />
 
         {/* ────────────────────────────────────────────────────────────────
@@ -240,7 +242,8 @@ export default function RootLayout({
         </Script>
         {/* ⭐ Offline-first : enregistrer le Service Worker sur TOUTES les pages
             (site public, login, portails, app authentifiée) */}
-        <UniversalSWRegister />
+        {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — UniversalSWRegister suspendu */}
+        {/* <UniversalSWRegister /> */}
 
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}
         {/* ORION Widget — désactivé temporairement, sera réimplémenté selon les specs */}

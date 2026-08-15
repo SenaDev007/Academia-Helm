@@ -29,7 +29,8 @@ import PilotageSidebar from './PilotageSidebar';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { useSyncWorker } from '@/hooks/useSyncWorker';
+// ⛔ OFFLINE-FIRST DÉSACTIVÉ
+// import { useSyncWorker } from '@/hooks/useSyncWorker';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -50,9 +51,8 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { shouldReduceMotion } = useMotionBudget();
   const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
-  // ⭐ Démarrer le worker de synchronisation (desktop only — no-op sur web)
-  // Sync descendante Neon → SQLite local toutes les 60s + au retour de connexion
-  useSyncWorker();
+  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — useSyncWorker suspendu
+  // useSyncWorker();
 
   // ⭐ Les routes /app/teacher et /app/parent ont leur PROPRE layout
   // (TeacherLayout / ParentLayout). On ne doit PAS rendre la PilotageSidebar

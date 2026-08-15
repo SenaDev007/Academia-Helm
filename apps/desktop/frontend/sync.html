@@ -337,7 +337,11 @@
                     }
 
                     addLog('info', 'Connexion OK. Démarrage de la sync...');
-                    await window.__TAURI__.core.invoke('trigger_initial_sync');
+                    // ⛔ OFFLINE-FIRST DÉSACTIVÉ — trigger_initial_sync suspendu
+                    // await window.__TAURI__.core.invoke('trigger_initial_sync');
+                    addLog('info', 'Mode offline désactivé — sync ignorée.');
+                    updateStatus('success', 'Prêt');
+                    document.getElementById('continueBtn').style.display = 'inline-flex';
                 } catch (e) {
                     addLog('error', 'Erreur: ' + e);
                     updateStatus('error', 'Erreur de synchronisation');

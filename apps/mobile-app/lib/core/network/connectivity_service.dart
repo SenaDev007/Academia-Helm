@@ -53,22 +53,28 @@ class ConnectivityService {
   ///
   /// Utilise un Future pour vérifier la connectivité en temps réel,
   /// mais retourne le dernier statut connu si la vérification échoue.
+  ///
+  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — retourne toujours true pour forcer le mode
+  ///    online. Le mode offline sera réactivé ultérieurement.
   Future<bool> get isConnected async {
-    try {
-      final results = await _connectivity.checkConnectivity();
-      _isConnected = results.any((r) => r != ConnectivityResult.none);
-      return _isConnected;
-    } catch (e) {
-      // En cas d'erreur, retourner le dernier statut connu
-      return _isConnected;
-    }
+    return true; // ⛔ OFFLINE désactivé — toujours online
+    // try {
+    //   final results = await _connectivity.checkConnectivity();
+    //   _isConnected = results.any((r) => r != ConnectivityResult.none);
+    //   return _isConnected;
+    // } catch (e) {
+    //   // En cas d'erreur, retourner le dernier statut connu
+    //   return _isConnected;
+    // }
   }
 
   /// Retourne le dernier statut de connectivité connu (sans vérification).
-  bool get isConnectedSync => _isConnected;
+  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — toujours true
+  bool get isConnectedSync => true; // _isConnected;
 
   /// Alias for [isConnectedSync] — `true` when the device is online.
-  bool get isOnline => _isConnected;
+  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — toujours true
+  bool get isOnline => true; // _isConnected;
 
   /// Stream des changements de connectivité.
   Stream<bool> get onConnectivityChanged => _connectivityController.stream;

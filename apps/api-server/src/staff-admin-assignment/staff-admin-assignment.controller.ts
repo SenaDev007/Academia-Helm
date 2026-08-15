@@ -11,6 +11,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import * as crypto from 'crypto';
 
 /**
  * ============================================================================
@@ -160,11 +161,19 @@ export class StaffAdminAssignmentController {
 
     this.logger.log(`my-context: user=${user.email}, staff=${staff.id}, role=${adminRole}, levels=${schoolLevelCodes.join(',')}`);
 
+    // ⭐ Récupérer les accréditations supplémentaires (modules accordés par le promoteur)
+    const accreditations = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT module FROM staff_accreditations WHERE "tenantId" = $1 AND "staffId" = $2 AND "isActive" = true`,
+      [tenantId, staff.id],
+    );
+    const extraModules = accreditations.map(a => a.module);
+
     return {
       adminRole,
       schoolLevelCodes,
       schoolLevelIds: schoolLevelIds.map(s => s.id),
       staffId: staff.id,
+      extraModules, // Modules supplémentaires accordés par le promoteur
       assignments: assignments.map(a => ({
         id: a.id,
         adminRole: a.adminRole,
@@ -248,6 +257,77 @@ export class StaffAdminAssignmentController {
   ) {
     const tid = resolveTid(tenant, tenantIdFallback);
     await this.service.delete(tid, id);
+    return { success: true };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  ACCRÉDITATIONS — Le promoteur donne des modules supplémentaires à un staff
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /staff-admin-assignments/:staffId/accreditations
+   * Liste les accréditations (modules supplémentaires) d'un staff.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get(':staffId/accreditations')
+  async listAccreditations(
+    @TenantId() tenantId: string,
+    @Param('staffId') staffId: string,
+  ) {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM staff_accreditations WHERE "tenantId" = $1 AND "staffId" = $2 AND "isActive" = true`,
+      [tenantId, staffId],
+    );
+    return rows;
+  }
+
+  /**
+   * POST /staff-admin-assignments/:staffId/accreditations
+   * Accorde un module supplémentaire à un staff (promoteur only).
+   * Body: { module: 'finance' | 'hr' | 'communication' | 'settings' }
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post(':staffId/accreditations')
+  async grantAccreditation(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('staffId') staffId: string,
+    @Body() body: { module: string },
+  ) {
+    const VALID_MODULES = ['finance', 'hr', 'communication', 'settings', 'discipline', 'censeur'];
+    if (!body.module || !VALID_MODULES.includes(body.module)) {
+      throw new BadRequestException(`Module invalide. Valeurs acceptées: ${VALID_MODULES.join(', ')}`);
+    }
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO staff_accreditations (id, "tenantId", "staffId", module, granted_by, "isActive")
+       VALUES ($1, $2, $3, $4, $5, true)
+       ON CONFLICT ("tenantId", "staffId", module) DO UPDATE SET "isActive" = true, "updatedAt" = now()`,
+      [id, tenantId, staffId, body.module, user?.id || '00000000-0000-0000-0000-000000000000'],
+    );
+
+    this.logger.log(`Accreditation granted: staff=${staffId}, module=${body.module}, by=${user?.id}`);
+    return { id, success: true };
+  }
+
+  /**
+   * DELETE /staff-admin-assignments/:staffId/accreditations/:module
+   * Retire un module supplémentaire d'un staff (promoteur only).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Delete(':staffId/accreditations/:module')
+  async revokeAccreditation(
+    @TenantId() tenantId: string,
+    @Param('staffId') staffId: string,
+    @Param('module') module: string,
+  ) {
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE staff_accreditations SET "isActive" = false, "updatedAt" = now()
+       WHERE "tenantId" = $1 AND "staffId" = $2 AND module = $3`,
+      [tenantId, staffId, module],
+    );
+    this.logger.log(`Accreditation revoked: staff=${staffId}, module=${module}`);
     return { success: true };
   }
 }

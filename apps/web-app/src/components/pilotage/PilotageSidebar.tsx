@@ -71,6 +71,7 @@ import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { useAdminSubdomain, getAdminBackOfficeUrl } from '@/hooks/useAdminSubdomain';
 import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-portal-map';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAdminContext, hasModuleAccess } from '@/hooks/useAdminContext';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 
 interface SidebarSchoolIdentity {
@@ -372,6 +373,8 @@ export default function PilotageSidebar({
   const tenantParam = searchParams.get('tenant');
   const { currentLevel } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
+  // ⭐ Contexte admin : rôle + niveau scolaire strict
+  const { context: adminContext } = useAdminContext();
 
   // ── School identity (logo + acronym) ──
   const [schoolIdentity, setSchoolIdentity] = useState<SidebarSchoolIdentity | null>(null);
@@ -437,14 +440,32 @@ export default function PilotageSidebar({
     return isFeatureEnabled && isRoleAuthorized;
   };
 
+  // ⭐ Mapping path → module key pour le filtrage par adminContext
+  const pathToModuleKey = (path: string): string => {
+    if (path === '/app') return 'dashboard';
+    if (path.startsWith('/app/students')) return 'students';
+    if (path.startsWith('/app/pedagogy')) return 'pedagogy';
+    if (path.startsWith('/app/exams')) return 'exams';
+    if (path.startsWith('/app/finance')) return 'finance';
+    if (path.startsWith('/app/hr')) return 'hr';
+    if (path.startsWith('/app/communication')) return 'communication';
+    if (path.startsWith('/app/discipline')) return 'discipline';
+    if (path.startsWith('/app/censeur')) return 'censeur';
+    if (path.startsWith('/app/cms')) return 'cms';
+    if (path.startsWith('/app/settings')) return 'settings';
+    return 'dashboard';
+  };
+
   const mainModules = useMemo(
     () => MAIN_MODULES.filter((m) => {
       const featureOk = !m.featureCode || loading || enabledSet.has(m.featureCode);
       const roleOk = !m.roles || !user?.role || (m.roles as string[]).includes(user.role);
       const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
-      return featureOk && roleOk && accredOk;
+      // ⭐ Filtrage par contexte admin (rôle + niveau scolaire strict)
+      const adminOk = hasModuleAccess(adminContext, pathToModuleKey(m.path));
+      return featureOk && roleOk && accredOk && adminOk;
     }),
-    [enabledSet, loading, user?.role, moduleVisibility],
+    [enabledSet, loading, user?.role, moduleVisibility, adminContext],
   );
 
   const supplementaryModules = useMemo(

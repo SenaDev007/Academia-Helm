@@ -22,9 +22,10 @@ import { useState, useEffect, useCallback } from 'react';
 
 export interface AdminContext {
   adminRole: string | null;
-  schoolLevelCodes: string[];  // ex: ['SECONDAIRE']
-  schoolLevelIds: string[];    // UUIDs pour filtrer les requêtes
+  schoolLevelCodes: string[];
+  schoolLevelIds: string[];
   staffId: string | null;
+  extraModules: string[]; // Modules supplémentaires accordés par le promoteur
   assignments: Array<{
     id: string;
     adminRole: string;
@@ -80,6 +81,7 @@ export function useAdminContext() {
         schoolLevelCodes: data.schoolLevelCodes || [],
         schoolLevelIds: data.schoolLevelIds || [],
         staffId: data.staffId || null,
+        extraModules: data.extraModules || [],
         assignments: data.assignments || [],
       };
       writeCachedContext(ctx);
@@ -121,8 +123,12 @@ export function hasModuleAccess(
     return true; // Pas d'affectation admin = probablement promoteur
   }
 
-  // Importer dynamiquement les permissions (évite le cycle de dépendances)
-  // Pour l'instant, on fait une vérification simple basée sur le rôle
+  // ⭐ Vérifier les accréditations supplémentaires (modules accordés par le promoteur)
+  if (context.extraModules && context.extraModules.includes(module)) {
+    return true;
+  }
+
+  // Mapping rôle → modules de base
   const ROLE_MODULES: Record<string, string[]> = {
     DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],
     PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],

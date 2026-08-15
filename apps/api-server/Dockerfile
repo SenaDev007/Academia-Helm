@@ -3,6 +3,7 @@ ARG NODE_VERSION=22.21.1
 FROM node:${NODE_VERSION}-slim AS base
 
 LABEL runtime="NestJS/Prisma"
+LABEL build-date="2026-08-15-v2"
 WORKDIR /app
 ENV NODE_ENV="production"
 
@@ -30,10 +31,10 @@ RUN npx prisma generate
 
 COPY . .
 
-# ⭐ Cache-buster : force Docker à toujours recompiler les fichiers TypeScript
-#    même si le layer cache pense que rien n'a changé.
-ARG CACHE_BUSTER=2026-08-15
-RUN echo "Build cache busted: $CACHE_BUSTER"
+# ⭐ Forcer la recompilation — le COPY . . devrait détecter les changements
+#    de fichiers, mais au cas où le cache Docker est trop agressif,
+#    on touch un fichier pour invalider le layer suivant.
+RUN touch /app/.build-timestamp-$(date +%s)
 
 RUN npm run build
 

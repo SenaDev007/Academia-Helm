@@ -18,9 +18,9 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query, Logger, BadRequestException,
 } from '@nestjs/common';
-import { TenantId } from '../common/decorators/tenant-id.decorator';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { PrismaService } from '../database/prisma.service';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { PrismaService } from '../../database/prisma.service';
 import * as crypto from 'crypto';
 
 @Controller('discipline/conduct')

@@ -284,10 +284,10 @@ const MAIN_MODULES = [
   // ⭐ RH : directeurs niveau-spécifiques voient le module (overview, staff, contracts…) mais pas payroll/cnss/settings (restreint au niveau sub-tab)
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
-  // ⭐ Module Discipline & Vie Scolaire — pour le surveillant général
-  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, featureCode: 'DISCIPLINE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'] },
-  // ⭐ Module Censeur — adjoint pédagogique du chef d'établissement (secondaire)
-  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, featureCode: 'CENSEUR', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'] },
+  // ⭐ Module Discipline & Vie Scolaire — pour le surveillant général (pas de featureCode = toujours visible si role ok)
+  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'] },
+  // ⭐ Module Censeur — adjoint pédagogique (pas de featureCode = toujours visible si role ok)
+  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'] },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
 ];
 

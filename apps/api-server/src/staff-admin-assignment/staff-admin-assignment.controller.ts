@@ -3,12 +3,14 @@ import {
   Body, Param, Query, UseGuards, BadRequestException, Logger,
 } from '@nestjs/common';
 import { StaffAdminAssignmentService } from './staff-admin-assignment.service';
+import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 /**
  * ============================================================================
@@ -34,11 +36,13 @@ function resolveTid(tenant: any, tenantIdFallback?: string): string {
 }
 
 @Controller('staff-admin-assignments')
-@Roles('SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'SCHOOL_ADMIN', 'SCHOOL_OWNER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'admin')
 export class StaffAdminAssignmentController {
   private readonly logger = new Logger(StaffAdminAssignmentController.name);
 
-  constructor(private readonly service: StaffAdminAssignmentService) {}
+  constructor(
+    private readonly service: StaffAdminAssignmentService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
   @Get()
@@ -80,6 +84,94 @@ export class StaffAdminAssignmentController {
     const tid = resolveTid(tenant, tenantIdFallback);
     const levels = await this.service.resolveAdminLevelsForStaff(tid, staffId);
     return { staffId, levelCodes: levels };
+  }
+
+  /**
+   * ⭐ GET /staff-admin-assignments/my-context
+   * Retourne le contexte administratif de l'utilisateur connecté :
+   *   - adminRole (ex: 'DIRECTEUR', 'SURVEILLANT_GENERAL', 'SECRETAIRE')
+   *   - schoolLevelCodes (ex: ['SECONDAIRE'] — niveau scolaire strict)
+   *   - schoolLevelIds (UUIDs pour filtrer les requêtes)
+   *   - modules accessibles (selon BASE_ROLE_PERMISSIONS)
+   *
+   * Utilisé par le frontend pour :
+   *   1. Filtrer la sidebar (modules visibles)
+   *   2. Filtrer TOUTES les données par niveau scolaire (élèves, classes, finances, etc.)
+   *   3. Adapter le dashboard selon le rôle
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('my-context')
+  async getMyContext(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    if (!tenantId || !user?.id) {
+      return { adminRole: null, schoolLevelCodes: [], schoolLevelIds: [], modules: ['dashboard'] };
+    }
+
+    // Trouver le Staff lié à cet User (par email)
+    const staff = await this.prisma.staff.findFirst({
+      where: {
+        tenantId,
+        email: user.email,
+      },
+      select: { id: true, firstName: true, lastName: true },
+    });
+
+    if (!staff) {
+      // L'utilisateur n'a pas de fiche Staff → il est probablement PROMOTER
+      return {
+        adminRole: 'PROMOTER',
+        schoolLevelCodes: ['MATERNELLE', 'PRIMARY', 'SECONDAIRE'],
+        schoolLevelIds: [],
+        modules: ['*'],
+        staffId: null,
+      };
+    }
+
+    // Récupérer les affectations admin actives de ce staff
+    const assignments = await this.service.list(tenantId, { staffId: staff.id, isActive: true });
+
+    if (assignments.length === 0) {
+      return {
+        adminRole: null,
+        schoolLevelCodes: [],
+        schoolLevelIds: [],
+        modules: ['dashboard'],
+        staffId: staff.id,
+      };
+    }
+
+    // Prendre le premier rôle actif (un staff peut avoir plusieurs affectations
+    // mais généralement un seul rôle principal par niveau)
+    const adminRole = assignments[0].adminRole;
+
+    // Résoudre les niveaux scolaires
+    const schoolLevelCodes = await this.service.resolveAdminLevelsForStaff(tenantId, staff.id);
+
+    // Récupérer les UUIDs des school_levels pour le filtrage des requêtes
+    const schoolLevelIds = await this.prisma.schoolLevel.findMany({
+      where: {
+        tenantId,
+        code: { in: schoolLevelCodes.map(c => c === 'PRIMARY' ? 'PRIMAIRE' : c) },
+      },
+      select: { id: true, code: true },
+    });
+
+    this.logger.log(`my-context: user=${user.email}, staff=${staff.id}, role=${adminRole}, levels=${schoolLevelCodes.join(',')}`);
+
+    return {
+      adminRole,
+      schoolLevelCodes,
+      schoolLevelIds: schoolLevelIds.map(s => s.id),
+      staffId: staff.id,
+      assignments: assignments.map(a => ({
+        id: a.id,
+        adminRole: a.adminRole,
+        schoolLevelCode: a.schoolLevelCode,
+        functionLabel: a.functionLabel,
+      })),
+    };
   }
 
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)

@@ -30,6 +30,11 @@ RUN npx prisma generate
 
 COPY . .
 
+# ⭐ Cache-buster : force Docker à toujours recompiler les fichiers TypeScript
+#    même si le layer cache pense que rien n'a changé.
+ARG CACHE_BUSTER=2026-08-15
+RUN echo "Build cache busted: $CACHE_BUSTER"
+
 RUN npm run build
 
 FROM base

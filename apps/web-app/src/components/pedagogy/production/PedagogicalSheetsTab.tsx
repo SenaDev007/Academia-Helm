@@ -32,7 +32,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
-  FlaskConical, Users, Palette, Download,
+  FlaskConical, Users, Palette, Download, History, Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -155,6 +155,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [filterType, setFilterType] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
+  // ⭐ État pour la réutilisation cross-année des fiches
+  //    Permet à un enseignant de retrouver les fiches validées des années
+  //    précédentes (même classe + matière) et de les dupliquer vers l'année courante.
+  const [showPreviousYearsModal, setShowPreviousYearsModal] = useState(false);
+  const [previousYearFiches, setPreviousYearFiches] = useState<any[]>([]);
+  const [loadingPreviousYears, setLoadingPreviousYears] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+
   // ⭐ États pour les noms résolus (titulaire + directeur)
   const [teacherName, setTeacherName] = useState<string>("");
   const [directorInfo, setDirectorInfo] = useState<{
@@ -225,6 +233,76 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     } catch { setFiches([]); }
     finally { setLoading(false); }
   }, [teacherId, academicYearId, filterType, selectedClassId]);
+
+  // ⭐ CROSS-YEAR REUSE : charger les fiches des années précédentes
+  //    pour la même classe (et matière si filtrée).
+  //    Permet à l'enseignant de retrouver les fiches validées de l'année N-1
+  //    et de les dupliquer vers l'année courante.
+  const loadPreviousYearFiches = useCallback(async () => {
+    if (!selectedClassId) {
+      toast.error("Sélectionnez d'abord une classe");
+      return;
+    }
+    setLoadingPreviousYears(true);
+    try {
+      const params = new URLSearchParams({
+        currentAcademicYearId: academicYearId,
+        classId: selectedClassId,
+      });
+      const res = await fetch(
+        `/api/pedagogy-space/fiches/previous-years?${params.toString()}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setPreviousYearFiches(Array.isArray(data) ? data : []);
+      setShowPreviousYearsModal(true);
+      if (Array.isArray(data) && data.length === 0) {
+        toast.info("Aucune fiche trouvée", {
+          description: "Aucune fiche validée des années précédentes pour cette classe.",
+        });
+      }
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setLoadingPreviousYears(false);
+    }
+  }, [academicYearId, selectedClassId]);
+
+  // ⭐ CROSS-YEAR REUSE : dupliquer une fiche d'une année précédente vers l'année courante
+  //    Crée une nouvelle fiche DRAFT avec le contenu pédagogique copié.
+  //    L'enseignant peut ensuite l'éditer (adapter effectifs, dates, observations).
+  const handleDuplicateFiche = async (sourceFicheId: string) => {
+    setDuplicatingId(sourceFicheId);
+    try {
+      const res = await fetch(
+        `/api/pedagogy-space/fiches/${sourceFicheId}/duplicate-to-year`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            targetAcademicYearId: academicYearId,
+            targetTeacherId: teacherId,
+            targetClassId: selectedClassId,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+      toast.success("✅ Fiche dupliquée", {
+        description: "La fiche a été copiée vers l'année courante (statut: Brouillon). Vous pouvez l'éditer.",
+      });
+      setShowPreviousYearsModal(false);
+      loadFiches(); // Recharger la liste pour voir la nouvelle fiche
+    } catch (e: any) {
+      toast.error("Erreur lors de la duplication", { description: e.message });
+    } finally {
+      setDuplicatingId(null);
+    }
+  };
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
@@ -700,6 +778,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         </div>
         <div className="flex-1" />
         <button onClick={() => loadFiches()} disabled={!selectedClassId} className="p-2 hover:bg-slate-200 rounded-lg disabled:opacity-30"><RefreshCw className="h-4 w-4" /></button>
+        {/* ⭐ Bouton "Réutiliser fiche année précédente" (cross-year reuse) */}
+        <button
+          onClick={loadPreviousYearFiches}
+          disabled={!selectedClassId || loadingPreviousYears}
+          title="Retrouver les fiches validées des années précédentes pour cette classe et les dupliquer vers l'année courante"
+          className="flex items-center gap-2 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-semibold hover:bg-emerald-200 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {loadingPreviousYears ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+          Réutiliser fiche année précédente
+        </button>
         {/* ⭐ Bouton "Nouvelle fiche" désactivé tant qu'aucune classe n'est sélectionnée */}
         <button
           onClick={() => {
@@ -789,6 +877,118 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ⭐ MODAL : Réutiliser une fiche d'une année précédente (cross-year reuse) */}
+      {showPreviousYearsModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setShowPreviousYearsModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                  <History className="w-5 h-5 text-emerald-600" />
+                  Fiches des années précédentes
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Sélectionnez une fiche à dupliquer vers l'année courante. Elle sera créée en statut « Brouillon » et vous pourrez l'éditer.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPreviousYearsModal(false)}
+                className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Liste */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {previousYearFiches.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                  <p className="font-medium text-slate-600">Aucune fiche trouvée</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Aucune fiche validée des années précédentes pour cette classe.
+                    Créez une nouvelle fiche ou changez de classe.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {previousYearFiches.map((fiche: any) => (
+                    <div
+                      key={fiche.id}
+                      className="border border-slate-200 rounded-lg p-3 hover:border-emerald-300 hover:bg-emerald-50/30 transition"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded">
+                              {fiche.academicYearName || 'Année précédente'}
+                            </span>
+                            {fiche.subjectName && (
+                              <span className="text-xs font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
+                                {fiche.subjectName}
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-400">
+                              {formatDateFR(fiche.createdAt)}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-slate-900 mt-1.5 truncate">
+                            {fiche.title || fiche.competence || 'Fiche sans titre'}
+                          </p>
+                          {fiche.contenu && (
+                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                              {fiche.contenu.replace(/<[^>]+>/g, '').substring(0, 150)}
+                              {fiche.contenu.length > 150 ? '…' : ''}
+                            </p>
+                          )}
+                          {fiche.teacherName && (
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Créée par : {fiche.teacherName}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleDuplicateFiche(fiche.id)}
+                          disabled={duplicatingId === fiche.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                          {duplicatingId === fiche.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          Dupliquer
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 p-3 flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                {previousYearFiches.length} fiche(s) trouvée(s) des années précédentes
+              </p>
+              <button
+                onClick={() => setShowPreviousYearsModal(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

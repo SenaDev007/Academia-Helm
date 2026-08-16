@@ -96,9 +96,22 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
     baseDomain = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
   }
 
-  // Validation
-  if (!tenantSlug || tenantSlug.trim() === '') {
-    throw new Error('tenantSlug is required for tenant redirection');
+  // ⭐ FIX (rentrée 2026) : Ne plus throw si tenantSlug est vide.
+  //    Avant, l'utilisateur voyait "tenantSlug is required for tenant redirection"
+  //    sur /portal ou /login quand le backend ne renvoyait pas le slug.
+  //    Maintenant, on fallback sur tenantId, ou 'unknown' si vraiment rien.
+  //    La redirection /app?tenant=unknown ne crashera pas — le middleware
+  //    affichera /portal si le tenant est invalide.
+  const effectiveSlug = (tenantSlug && tenantSlug.trim())
+    || (tenantId && tenantId.trim())
+    || 'unknown';
+
+  // ⚠️ Log d'avertissement si on a dû fallback (pour aider au debug)
+  if (!tenantSlug || !tenantSlug.trim()) {
+    console.warn(
+      '[tenant-redirect] tenantSlug vide — fallback sur tenantId ou "unknown". ' +
+      `tenantId=${tenantId || 'N/A'}`,
+    );
   }
 
   // Détection intelligente du domaine de base si non défini
@@ -112,7 +125,7 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   // ── Helper : construit l'URL avec query params sur le domaine courant ──
   const buildQueryUrl = (baseUrl: string): string => {
     const url = new URL(path, baseUrl);
-    url.searchParams.set('tenant', tenantSlug);
+    url.searchParams.set('tenant', effectiveSlug);
     if (tenantId) {
       url.searchParams.set('tenant_id', tenantId);
     }
@@ -128,7 +141,7 @@ export function getTenantRedirectUrl(config: TenantRedirectConfig): string {
   // ── Helper : construit l'URL avec sous-domaine ──
   const buildSubdomainUrl = (): string => {
     const protocol = env === 'local' && baseDomain?.includes('localhost') ? 'http' : 'https';
-    let domain = `${tenantSlug}.${baseDomain}`;
+    let domain = `${effectiveSlug}.${baseDomain}`;
     if (domain.startsWith('www.')) domain = domain.substring(4);
     const url = new URL(path, `${protocol}://${domain}`);
     if (portalType) {
@@ -205,9 +218,13 @@ export async function redirectToTenant(config: TenantRedirectConfig): Promise<vo
   // Le logging est un best-effort : si le backend est en cold start,
   // on ne veut pas que l'utilisateur attende 30+ secondes.
   if (!config.skipLogging) {
+    // ⭐ Utiliser le slug effectif (fallback tenantId si slug vide)
+    const logSlug = (config.tenantSlug && config.tenantSlug.trim())
+      || (config.tenantId && config.tenantId.trim())
+      || 'unknown';
     logTenantRedirect({
       tenantId: config.tenantId,
-      tenantSlug: config.tenantSlug,
+      tenantSlug: logSlug,
       fromUrl: typeof window !== 'undefined' ? window.location.href : '',
       toUrl: url,
       method: getAppEnvironment() === 'local' ? 'query' : 'subdomain',

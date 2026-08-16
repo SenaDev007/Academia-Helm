@@ -271,16 +271,48 @@ interface PilotageSidebarProps {
 
 /** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché.
  *  L'ordre ici est l'ordre canonique — ne pas réordonner sans demande explicite.
- *  Le filtrage par module activé/désactivé se fait dans Paramètres > Onglet Modules. */
-const MAIN_MODULES = [
+ *  Le filtrage par module activé/désactivé se fait dans Paramètres > Onglet Modules.
+ *
+ *  ⭐ requiresSecondary : si true, le module n'est affiché QUE si le niveau
+ *     scolaire SECONDAIRE est activé dans Paramètres > Structure.
+ *     Concerne : Vie Scolaire (surveillant), Espace Censeur, Espace Directeur.
+ *     Ces modules sont spécifiques au Secondaire (conduite, conseils de classe,
+ *     fraudes examens, score de risque croisé) — non pertinents pour Maternelle/Primaire.
+ */
+interface MainModule {
+  path: string;
+  label: string;
+  icon: any;
+  featureCode?: string;
+  roles?: string[];
+  requiresSecondary?: boolean;
+}
+
+const MAIN_MODULES: MainModule[] = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
-  // ⭐ Espace Censeur — juste après Organisation Pédagogique
-  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'] },
+  // ⭐ Espace Censeur — juste après Organisation Pédagogique (Secondaire uniquement)
+  {
+    path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck,
+    requiresSecondary: true,
+    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'],
+  },
   // ⭐ Ajout des DIRECTEUR_* (MATERNELLE/PRIMAIRE/SECONDAIRE/MAT_PRI) pour qu'ils voient le module Élèves
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
-  // ⭐ Vie Scolaire — juste après Élèves & Scolarité
-  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'] },
+  // ⭐ Vie Scolaire — juste après Élèves & Scolarité (Secondaire uniquement)
+  {
+    path: '/app/discipline', label: 'Vie Scolaire', icon: Shield,
+    requiresSecondary: true,
+    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'CENSEUR', 'admin'],
+  },
+  // ⭐ Espace Directeur — Score de risque croisé + Décrochage (Secondaire uniquement)
+  //    Le directeur a une vue globale (conduite SG + pédagogie censeur + assiduité)
+  //    Le score de risque est le différenciateur marché principal.
+  {
+    path: '/app/director', label: 'Espace Directeur', icon: Brain,
+    requiresSecondary: true,
+    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'admin'],
+  },
   // ⭐ Finance : directeurs niveau-spécifiques voient le module (consultation filtrée), mais l'accès aux sous-onglets financiers sensibles (payroll, audit, settings) sera restreint au niveau sub-tab
   { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
   // ⭐ Examens : tous les directeurs voient ce module (filtrage par niveau + piste via SchoolLevelSelector + AcademicTrackSelector)
@@ -371,10 +403,19 @@ export default function PilotageSidebar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tenantParam = searchParams.get('tenant');
-  const { currentLevel } = useSchoolLevel();
+  const { currentLevel, availableLevels } = useSchoolLevel();
   const { enabledSet, loading } = useEnabledFeatureCodes();
   // ⭐ Contexte admin : rôle + niveau scolaire strict
   const { context: adminContext } = useAdminContext();
+
+  // ⭐ Détection de l'activation du niveau Secondaire
+  //    Les modules Vie Scolaire, Espace Censeur, Espace Directeur ne sont
+  //    affichés QUE si le niveau SECONDAIRE est activé dans Paramètres > Structure.
+  //    availableLevels contient une entrée virtuelle { code: 'ALL' } qu'on exclut.
+  const secondaryEnabled = useMemo(
+    () => availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive),
+    [availableLevels],
+  );
 
   // ── School identity (logo + acronym) ──
   const [schoolIdentity, setSchoolIdentity] = useState<SidebarSchoolIdentity | null>(null);
@@ -451,6 +492,7 @@ export default function PilotageSidebar({
     if (path.startsWith('/app/communication')) return 'communication';
     if (path.startsWith('/app/discipline')) return 'discipline';
     if (path.startsWith('/app/censeur')) return 'censeur';
+    if (path.startsWith('/app/director')) return 'director';
     if (path.startsWith('/app/cms')) return 'cms';
     if (path.startsWith('/app/settings')) return 'settings';
     return 'dashboard';
@@ -463,9 +505,11 @@ export default function PilotageSidebar({
       const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
       // ⭐ Filtrage par contexte admin (rôle + niveau scolaire strict)
       const adminOk = hasModuleAccess(adminContext, pathToModuleKey(m.path));
-      return featureOk && roleOk && accredOk && adminOk;
+      // ⭐ Filtrage par niveau Secondaire activé (Vie Scolaire, Censeur, Directeur)
+      const secondaryOk = !m.requiresSecondary || secondaryEnabled;
+      return featureOk && roleOk && accredOk && adminOk && secondaryOk;
     }),
-    [enabledSet, loading, user?.role, moduleVisibility, adminContext],
+    [enabledSet, loading, user?.role, moduleVisibility, adminContext, secondaryEnabled],
   );
 
   const supplementaryModules = useMemo(

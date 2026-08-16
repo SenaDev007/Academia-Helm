@@ -5354,3 +5354,320 @@ Stage Summary:
 - **Architecture recommandée** : double dispositif — (1) `ConflictException` 409 backend avec payload structuré (entries conflictuelles), (2) endpoint dédié `POST /timetables/check-conflict` pour dry-run UX dans le modal frontend. Mutualiser la détection dans `detectConflicts()` privé. Ne PAS dupliquer la logique côté frontend.
 - **13 fichiers** à toucher : 4 backend à modifier (service, controller, DTO, schema.prisma), 4 backend à créer (migration SQL, check-conflict.dto, types, spec), 1 frontend à modifier (TimetablesWorkspace.tsx), 1 BFF à créer (check-conflict/route.ts), 1 lib frontend à créer (timetable-conflicts.ts), 1 cleanup (ManualTimetablesEditor.tsx), 1 doc (optionnel). v1 (fix+harden) en 0,5 jour, v2 (UX preventive) en 0,5 jour, v3 (hardening) en 0,5 jour — total 1,5 jour.
 - Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-TIMETABLE-CONFLICT-1" pour implémenter v1 (fix bug + extraction `detectConflicts()` + indexes DB + tests).
+
+---
+Task ID: AUDIT-WIRING-1
+Agent: Explore (sub-agent, audit only, read-only)
+Task: AUDIT EXHAUSTIF du branchement frontend des modules Vie Scolaire, Espace Censeur, Espace Directeur — comprendre pourquoi les nouvelles fonctionnalités (WhatsApp badges, score de risque, dropout, exam-fraud) ne sont PAS visibles.
+
+Work Log:
+- Lu /home/z/my-project/worklog.md (focus sections AUDIT-NOTIF-1, AUDIT-RISK-1, AUDIT-CLASSES-1, AUDIT-TIMETABLE-1).
+- Lu apps/web-app/src/components/pilotage/PilotageSidebar.tsx (1 030 lignes) — MAIN_MODULES, SUPPLEMENTARY_MODULES, logique de filtrage par featureCode/roles/accreditation/adminContext.
+- Lu apps/web-app/src/app/app/discipline/page.tsx (19 lignes) — page Vie Scolaire.
+- Lu apps/web-app/src/app/app/censeur/page.tsx (19 lignes) — page Espace Censeur.
+- Vérifié qu'aucune page /app/director/page.tsx ou /app/direction/page.tsx n'existe (seul /app/hr/directors/page.tsx existe, c'est un sous-module RH de gestion des directeurs, pas un dashboard directeur).
+- Lu apps/web-app/src/components/discipline/DisciplineWorkspace.tsx (665 lignes) — composant rendu par /app/discipline.
+- Lu apps/web-app/src/components/censeur/CensorWorkspace.tsx (553 lignes) — composant rendu par /app/censeur.
+- Lu apps/web-app/src/components/censeur/ExamFraudWorkspace.tsx (604 lignes) — composant ORPHELIN.
+- Lu apps/web-app/src/components/director/DirectorRiskDashboard.tsx (455 lignes) — composant ORPHELIN.
+- Lu apps/web-app/src/components/director/DropoutDashboard.tsx (263 lignes) — composant ORPHELIN.
+- Lu apps/web-app/src/hooks/useAdminContext.ts (170 lignes) — logique de filtrage par rôle (hasModuleAccess).
+- Lu apps/web-app/src/hooks/useSchoolLevel.ts + apps/web-app/src/contexts/SchoolLevelContext.tsx (256 lignes) — exposition de `availableLevels` avec `code` + `isActive`.
+- Lu apps/web-app/src/lib/query/use-school-levels.ts (56 lignes) — hook React Query partagé pour /api/school-levels.
+- Lu apps/web-app/src/hooks/useRiskScore.ts (353 lignes) — hooks useRiskScoreStudents, useRiskScoreDashboard, useDropoutStudents, useDropoutStats, useDropoutTrends déjà prêts.
+- Vérifié via rg que les 3 composants orphelins ne sont JAMAIS importés dans aucun fichier du repo.
+- Files modified: 0 (audit only, no code changes).
+
+=== A. État actuel du frontend ===
+
+A.1. Module "Vie Scolaire" (/app/discipline)
+
+| Critère | État | Détail |
+|---|---|---|
+| Page route | ✅ | `apps/web-app/src/app/app/discipline/page.tsx` (l. 1-18, 19 lignes) — page Next.js client renderant `<DisciplineWorkspace>` avec props `tenant`, `academicYear`, `schoolLevelId` issues de `useModuleContext()`. |
+| Composant rendu | ✅ | `apps/web-app/src/components/discipline/DisciplineWorkspace.tsx` (665 lignes) — 3 onglets : Sanctions / Compteur de conduite / Barème des fautes. |
+| WhatsApp badges | ✅ BRANCHÉ | Composant `NotificationBadge` (l. 633-664) rendu dans la table des sanctions (l. 217 : `<NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />`). L'interface `Sanction` (l. 22-29) déclare `notificationStatus?: 'PENDING'|'SENT'|'FAILED'|'SKIPPED'` + `notificationChannels?: { whatsapp?, sms?, event? }`. Le badge affiche un tooltip par canal (WhatsApp / SMS / event création/annulation). |
+| Score de risque | ❌ HORS SCOPE | Conçu pour le module Directeur, pas pour Vie Scolaire. |
+| Dropout | ❌ HORS SCOPE | Conçu pour le module Directeur. |
+| Exam-fraud | ❌ HORS SCOPE | Conçu pour le module Censeur. |
+
+A.2. Module "Espace Censeur" (/app/censeur)
+
+| Critère | État | Détail |
+|---|---|---|
+| Page route | ✅ | `apps/web-app/src/app/app/censeur/page.tsx` (l. 1-18, 19 lignes) — page Next.js client renderant `<CensorWorkspace>` avec props `tenant`, `academicYear`, `schoolLevelId`. |
+| Composant rendu | ✅ | `apps/web-app/src/components/censeur/CensorWorkspace.tsx` (553 lignes) — 5 onglets : Vue d'ensemble / Visites de classes / Calendrier des évaluations / Conseils de classe / Discipline pédagogique. |
+| WhatsApp badges | ❌ PAS BRANCHÉ | Aucune colonne "Notif. parent" dans les tables de CensorWorkspace. Le SanctionsTab interne (l. 225) ne réutilise pas le `NotificationBadge` de DisciplineWorkspace. |
+| Score de risque | ❌ HORS SCOPE | Conçu pour le module Directeur. |
+| Dropout | ❌ HORS SCOPE | Conçu pour le module Directeur. |
+| Exam-fraud | ❌ **ORPHELIN** | `ExamFraudWorkspace.tsx` (604 lignes) existe dans `components/censeur/` mais n'est JAMAIS importé par `CensorWorkspace.tsx` ni par la page `/app/censeur/page.tsx`. Le 5e onglet "Discipline pédagogique" (l. 66, `SanctionsTab`) affiche des sanctions génériques au lieu du workflow de fraude. |
+
+A.3. Module "Espace Directeur"
+
+| Critère | État | Détail |
+|---|---|---|
+| Page route | ❌ **AUCUNE PAGE** | Pas de `/app/director/page.tsx`, pas de `/app/direction/page.tsx`. Le seul dossier apparenté est `/app/hr/directors/page.tsx` qui est un sous-module RH de GESTION des directeurs (CRUD `DirectorsWorkspace`), pas un dashboard directeur. |
+| Composant rendu | ❌ N/A | Aucun — la route n'existe pas. |
+| WhatsApp badges | N/A | — |
+| Score de risque | ❌ **ORPHELIN** | `DirectorRiskDashboard.tsx` (455 lignes) existe dans `components/director/` mais n'est JAMAIS importé. |
+| Dropout | ❌ **ORPHELIN** | `DropoutDashboard.tsx` (263 lignes) existe dans `components/director/` mais n'est JAMAIS importé. |
+| Exam-fraud | N/A | Conçu pour le module Censeur. |
+
+A.4. Sidebar — PilotageSidebar.tsx
+
+- `MAIN_MODULES` (l. 275-292) contient 9 entrées dont :
+  - `{ path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: [...] }` (l. 279)
+  - `{ path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: [...] }` (l. 283)
+- **AUCUNE page "Espace Directeur"** dans MAIN_MODULES — pas d'entrée `/app/director` ou `/app/direction`.
+- Rôles autorisés pour /app/censeur et /app/discipline : SUPER_DIRECTOR, PLATFORM_OWNER, PLATFORM_SUPER_ADMIN, PROMOTER, SCHOOL_OWNER, SCHOOL_ADMIN, DIRECTEUR_GENERAL, DIRECTEUR_ETABLISSEMENT, DIRECTEUR, DIRECTEUR_SECONDAIRE, DIRECTEUR_MAT_PRI, + CENSEUR (censeur only) / SURVEILLANT, SURVEILLANT_GENERAL (discipline only), admin.
+- **AUCUNE condition sur niveau Secondaire activé** — les 2 modules s'affichent quel que soit le niveau actif de l'école (Maternelle, Primaire, Secondaire, ou combinaison).
+- `hasModuleAccess()` (useAdminContext.ts l. 115-152) :
+  - L. 119 : `if (!context) return true;` — ne bloque pas tant que le contexte admin n'est pas chargé (donc pendant le chargement initial, tout est visible).
+  - L. 122-124 : `if (context.adminRole === 'PROMOTER' || context.schoolLevelCodes.length === 0) return true;` — le promoteur OU un utilisateur sans affectation de niveau voit TOUS les modules.
+  - L. 127-129 : `if (context.extraModules?.includes(module)) return true;` — accréditations supplémentaires accordées par le promoteur débloquent les modules hors périmètre du rôle.
+  - L. 132-148 : mapping rôle → modules de base (`ROLE_MODULES`). `CENSEUR` voit `['dashboard', 'pedagogy', 'exams', 'discipline', 'censeur']`. Pas de `'director'` dans ce mapping car la page n'existe pas.
+  - L. 150 : `return allowedModules.includes(module) || allowedModules.includes('*');` — sinon refusé.
+- Le filtrage dans PilotageSidebar.tsx (l. 459-469) combine 4 conditions ET :
+  - `featureOk` : featureCode absent OU activé dans `enabledSet` (hook `useEnabledFeatureCodes`).
+  - `roleOk` : `roles` absent OU `user.role` dans la liste.
+  - `accredOk` : `filterModuleByVisibility()` (l. 240-262) basé sur `getVisibleModulesForRole()`.
+  - `adminOk` : `hasModuleAccess(adminContext, pathToModuleKey(m.path))` — filtrage par affectation admin réelle.
+- Aucune des 4 conditions ne vérifie `currentLevel === 'SECONDAIRE'` ou `availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive)`.
+
+=== B. Pourquoi les nouvelles fonctionnalités ne sont pas visibles ===
+
+B.1. Composants créés mais JAMAIS importés (orphelins)
+
+| Fichier | Lignes | Importé par | Statut |
+|---|---|---|---|
+| `apps/web-app/src/components/director/DirectorRiskDashboard.tsx` | 455 | ❌ AUCUN | Score de risque invisible — aucun endpoint de navigation n'y mène. |
+| `apps/web-app/src/components/director/DropoutDashboard.tsx` | 263 | ❌ AUCUN | Dropout invisible — aucun endpoint de navigation n'y mène. |
+| `apps/web-app/src/components/censeur/ExamFraudWorkspace.tsx` | 604 | ❌ AUCUN | Workflow fraude invisible — `CensorWorkspace` ne l'intègre pas dans ses onglets. |
+
+B.2. Pages manquantes
+
+| Route attendue | Fichier attendu | Existant ? |
+|---|---|---|
+| `/app/director` ou `/app/direction` | `apps/web-app/src/app/app/director/page.tsx` | ❌ NON |
+
+B.3. Entrée sidebar manquante
+
+- `MAIN_MODULES` dans `PilotageSidebar.tsx` (l. 275-292) ne contient PAS d'entrée pour "Espace Directeur" / "Score de Risque" / "Décrochage". Même si on créait `/app/director/page.tsx`, personne ne pourrait y naviguer depuis la sidebar.
+
+B.4. Causes racines
+
+1. **Implémentation en deux temps non terminée** : les composants frontend (DirectorRiskDashboard, DropoutDashboard, ExamFraudWorkspace) ont été créés (probablement pendant les tâches AUDIT-RISK-1 et implémentation backend risk-score), mais le branchement final n'a jamais été fait.
+2. **Pas de route Next.js pour le module Directeur** : oubli de créer `/app/director/page.tsx`.
+3. **Pas d'onglet dans CensorWorkspace** : `ExamFraudWorkspace` aurait dû être ajouté comme 6e onglet (`frauds`) dans le tableau `TABS` (l. 61-67 de CensorWorkspace.tsx), mais le dev s'est arrêté avant.
+4. **Pas de mise à jour de la sidebar** : MAIN_MODULES n'a pas été étendu pour inclure "Espace Directeur".
+5. **WhatsApp badges dans CensorWorkspace** : le composant `NotificationBadge` est défini dans `DisciplineWorkspace.tsx` (l. 633-664) mais non exporté ni réutilisé dans `CensorWorkspace.tsx`. Il faudrait soit l'extraire dans un fichier shared (`components/discipline/NotificationBadge.tsx`), soit le dupliquer.
+
+=== C. Plan de branchement (précis — fichier + ligne + action) ===
+
+C.1. Brancher `DirectorRiskDashboard` et `DropoutDashboard` → créer la page Espace Directeur
+
+**Action 1 — Créer la route** :
+- Fichier à CRÉER : `apps/web-app/src/app/app/director/page.tsx`
+- Contenu (modèle inspiré de `/app/discipline/page.tsx`) :
+  ```tsx
+  'use client';
+  import { useState } from 'react';
+  import { useModuleContext } from '@/hooks/useModuleContext';
+  import DirectorRiskDashboard from '@/components/director/DirectorRiskDashboard';
+  import DropoutDashboard from '@/components/director/DropoutDashboard';
+
+  export default function DirectorPage() {
+    const { academicYear, tenant, schoolLevel } = useModuleContext();
+    const [tab, setTab] = useState<'risk' | 'dropout'>('risk');
+    // ⭐ Récupérer quarterId actif (sinon passer undefined, le composant le déduit d'academicYear.activeQuarterId)
+    return (
+      <div className="p-4 sm:p-6 space-y-4">
+        <div className="flex gap-1 border-b border-gray-200">
+          <button onClick={() => setTab('risk')} className={...}>Score de Risque</button>
+          <button onClick={() => setTab('dropout')} className={...}>Décrochage</button>
+        </div>
+        {tab === 'risk'
+          ? <DirectorRiskDashboard tenant={tenant} academicYear={academicYear} />
+          : <DropoutDashboard tenant={tenant} academicYear={academicYear} />}
+      </div>
+    );
+  }
+  ```
+- Props attendues par DirectorRiskDashboard (l. 33-38) : `tenant?: any; academicYear?: any; quarterId?: string;` — quarterId est optionnel (déduit depuis `academicYear?.activeQuarterId` l. 46).
+- Props attendues par DropoutDashboard (l. 33-38) : mêmes signatures.
+
+**Action 2 — Ajouter l'entrée sidebar** :
+- Fichier à MODIFIER : `apps/web-app/src/components/pilotage/PilotageSidebar.tsx`
+- Ligne à insérer après l. 283 (juste après l'entrée "Vie Scolaire") :
+  ```ts
+  { path: '/app/director', label: 'Espace Directeur', icon: Brain, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'SURVEILLANT_GENERAL', 'admin'] },
+  ```
+- Icône suggérée : `Brain` (déjà importé l. 43) ou `Activity` (à ajouter aux imports lucide-react).
+- Condition d'affichage : rôle + niveau Secondaire activé (cf. section D ci-dessous).
+
+**Action 3 — Étendre `hasModuleAccess()`** :
+- Fichier à MODIFIER : `apps/web-app/src/hooks/useAdminContext.ts`
+- Ligne 132-148 : ajouter `'director'` dans les tableaux `ROLE_MODULES` pour `DIRECTEUR`, `PROVISEUR`, `DIRECTEUR_ADJOINT`, `CENSEUR`, `SURVEILLANT_GENERAL`, `DIRECTEUR_DES_ETUDES`.
+- Exemple : `DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],`
+
+**Action 4 — Étendre `pathToModuleKey()`** :
+- Fichier à MODIFIER : `apps/web-app/src/components/pilotage/PilotageSidebar.tsx`
+- Ligne 444-457 : ajouter `if (path.startsWith('/app/director')) return 'director';` avant le fallback `return 'dashboard';`.
+
+C.2. Brancher `ExamFraudWorkspace` → ajouter un onglet dans CensorWorkspace
+
+**Action 1 — Ajouter l'onglet dans le tableau TABS** :
+- Fichier à MODIFIER : `apps/web-app/src/components/censeur/CensorWorkspace.tsx`
+- Lignes 61-67 : ajouter `{ id: 'frauds', label: 'Fraudes d\'examens', icon: AlertTriangle }` dans le tableau `TABS`.
+- Importer `AlertTriangle` depuis lucide-react (déjà importé l. 7 ? Non — vérifier ; ajouter si manquant).
+- Importer le composant : ajouter en haut de fichier `import ExamFraudWorkspace from './ExamFraudWorkspace';` (l. 17, après les imports UI).
+
+**Action 2 — Rendre l'onglet** :
+- Fichier à MODIFIER : `apps/web-app/src/components/censeur/CensorWorkspace.tsx`
+- Ligne 226 (avant la fermeture `)}` du ternaire des tabs) : remplacer le `else` final qui rend `SanctionsTab` par une branche explicite qui rend soit `SanctionsTab` (si `activeTab === 'sanctions'`) soit `<ExamFraudWorkspace tenant={tenant} academicYear={academicYear} />` (si `activeTab === 'frauds'`).
+- Props attendues par ExamFraudWorkspace (l. 76-80) : `tenant?: any; academicYear?: any; authHeaders?: any;` — `authHeaders` est optionnel, peut être obtenu via `getClientAuthorizationHeader()` localement dans le composant.
+
+**Action 3 — (Optionnel) Ajouter une carte stats dans l'overview** :
+- Lignes 189-196 : ajouter une 7e `StatCard` "Fraudes d'examens" qui navigue vers `setActiveTab('frauds')` (couleur `red`, icône `AlertTriangle`).
+- Charger le count via un fetch `GET /api/censeur/exam-frauds?...` (à créer côté backend si absent).
+
+C.3. Brancher `NotificationBadge` dans CensorWorkspace
+
+**Action 1 — Extraire le composant** :
+- Fichier à CRÉER : `apps/web-app/src/components/discipline/NotificationBadge.tsx` (copier-coller le code l. 633-664 de DisciplineWorkspace.tsx, ajouter `export`).
+- Fichier à MODIFIER : `apps/web-app/src/components/discipline/DisciplineWorkspace.tsx` — remplacer la définition locale par `import NotificationBadge from './NotificationBadge';` (supprimer l. 633-664).
+
+**Action 2 — Réutiliser dans CensorWorkspace** :
+- Fichier à MODIFIER : `apps/web-app/src/components/censeur/CensorWorkspace.tsx`
+- Importer : `import NotificationBadge from '@/components/discipline/NotificationBadge';`
+- Dans `SanctionsTab`, ajouter une colonne "Notif. parent" qui rend `<NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />` (si l'API étend le type `AcademicSanction` avec ces champs — à vérifier côté backend `/api/discipline/sanctions?type=ACADEMIC`).
+
+C.4. Conditions d'affichage (rôle + niveau Secondaire)
+
+Pour les 3 modules Vie Scolaire + Censeur + Directeur :
+- **Rôle** : voir listes `roles:` dans MAIN_MODULES (PilotageSidebar.tsx l. 279, 283, et nouvelle entrée directeur).
+- **Niveau Secondaire activé** : condition à AJOUTER (cf. section D ci-dessous).
+- **Feature flag** : pas de `featureCode` pour /app/discipline et /app/censeur actuellement — on pourrait en ajouter un (ex: `featureCode: 'DISCIPLINE'`, `featureCode: 'CENSEUR'`) pour gérer via Paramètres > Modules. Pour /app/director, envisager `featureCode: 'DIRECTOR_RISK'`.
+
+=== D. Comment conditionner Vie Scolaire + Censeur (et Directeur) au niveau Secondaire activé ===
+
+D.1. Quel hook/service utiliser ?
+
+- Hook recommandé : **`useSchoolLevel()`** depuis `apps/web-app/src/hooks/useSchoolLevel.ts` (1-ligne wrapper autour de `SchoolLevelContext`).
+- Expose : `{ currentLevel: SchoolLevel | null, setCurrentLevel, availableLevels: SchoolLevel[], isLoading: boolean }`.
+- Chaque `SchoolLevel` (cf. `apps/web-app/src/contexts/SchoolLevelContext.tsx` l. 30-42) a : `id`, `code` (ex: 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'), `label`, `isActive: boolean`, `schoolLevelId?`.
+- Alternative bas niveau : `useSchoolLevelsQuery()` depuis `apps/web-app/src/lib/query/use-school-levels.ts` (raw React Query, même données, sans l'état courant).
+- Détection du niveau Secondaire activé :
+  ```ts
+  const { availableLevels } = useSchoolLevel();
+  const secondaryEnabled = availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive);
+  ```
+- ⚠️ `availableLevels` inclut une entrée virtuelle `{ id: 'ALL', code: 'ALL', label: 'Tous les niveaux', isActive: true }` (cf. SchoolLevelContext.tsx l. 124-129) — ne pas confondre avec un vrai niveau.
+- Cache React Query 5 min partagé entre tous les consommateurs (`staleTime: 5 * 60 * 1000`) — pas de coût réseau supplémentaire si la sidebar l'utilise (déjà chargé par `SchoolLevelProvider` au montage de l'app).
+
+D.2. Où modifier la sidebar ?
+
+**Fichier** : `apps/web-app/src/components/pilotage/PilotageSidebar.tsx`
+
+**Modification 1 — Marquer les modules sensibles au niveau Secondaire** :
+
+Dans `MAIN_MODULES` (l. 275-292), ajouter un flag `requiresSecondary?: boolean` aux entrées ciblées. Le type est inféré depuis le literal array — il faut soit déclarer une interface explicite, soit caster.
+
+Actuellement les entrées n'ont pas de type explicite — il faut d'abord typer `MAIN_MODULES` :
+```ts
+interface MainModule {
+  path: string;
+  label: string;
+  icon: any;
+  featureCode?: string;
+  roles?: string[];
+  requiresSecondary?: boolean; // ⭐ NOUVEAU
+}
+const MAIN_MODULES: MainModule[] = [
+  { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
+  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
+  // ⭐ Espace Censeur — conditionné au niveau Secondaire
+  { path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck, roles: [...], requiresSecondary: true },
+  ...
+  // ⭐ Vie Scolaire — conditionné au niveau Secondaire
+  { path: '/app/discipline', label: 'Vie Scolaire', icon: Shield, roles: [...], requiresSecondary: true },
+  // ⭐ Espace Directeur — NOUVEAU + conditionné au niveau Secondaire
+  { path: '/app/director', label: 'Espace Directeur', icon: Brain, roles: [...], requiresSecondary: true },
+  ...
+];
+```
+
+**Modification 2 — Récupérer `secondaryEnabled` dans le composant** :
+
+PilotageSidebar.tsx utilise déjà `useSchoolLevel()` (l. 374 : `const { currentLevel } = useSchoolLevel();`). Il suffit de récupérer aussi `availableLevels` :
+```ts
+const { currentLevel, availableLevels } = useSchoolLevel();
+const secondaryEnabled = useMemo(
+  () => availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive),
+  [availableLevels],
+);
+```
+
+**Modification 3 — Étendre le filtre `mainModules`** (l. 459-469) :
+
+```ts
+const mainModules = useMemo(
+  () => MAIN_MODULES.filter((m) => {
+    const featureOk = !m.featureCode || loading || enabledSet.has(m.featureCode);
+    const roleOk = !m.roles || !user?.role || (m.roles as string[]).includes(user.role);
+    const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
+    const adminOk = hasModuleAccess(adminContext, pathToModuleKey(m.path));
+    // ⭐ NOUVEAU : conditionner au niveau Secondaire activé
+    const secondaryOk = !m.requiresSecondary || secondaryEnabled;
+    return featureOk && roleOk && accredOk && adminOk && secondaryOk;
+  }),
+  [enabledSet, loading, user?.role, moduleVisibility, adminContext, secondaryEnabled],
+);
+```
+
+D.3. Comportement attendu
+
+- École 100% Maternelle + Primaire (SECONDAIRE absent ou `isActive: false`) → les 3 entrées sidebar (Vie Scolaire, Espace Censeur, Espace Directeur) disparaissent. L'utilisateur ne peut plus y accéder même en tapant l'URL directement (Next.js rendra la page mais le composant enfant peut afficher un message "Module réservé au niveau Secondaire").
+- École avec SECONDAIRE activé (même si Maternelle/Primaire aussi) → les 3 entrées sont visibles (selon rôle + featureCode + accredOk + adminOk).
+- Le promoteur (sans affectation de niveau spécifique) voit les 3 modules quel que soit le contexte — `hasModuleAccess()` retourne `true` (l. 122-124 de useAdminContext.ts), MAIS la nouvelle condition `secondaryOk` s'applique quand même. C'est volontaire : même le promoteur ne devrait pas voir "Espace Censeur" pour une école 100% Maternelle.
+
+D.4. Garde-fou côté page (optionnel mais recommandé)
+
+Pour éviter qu'un utilisateur malveillant tape `/app/censeur` directement dans l'URL :
+- Ajouter en haut de `apps/web-app/src/app/app/censeur/page.tsx` :
+  ```tsx
+  const { availableLevels } = useSchoolLevel();
+  const secondaryEnabled = availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive);
+  if (!secondaryEnabled) {
+    return <div className="p-8 text-center text-gray-500">Ce module est réservé aux écoles ayant le niveau Secondaire activé.</div>;
+  }
+  ```
+- Faire de même pour `/app/discipline/page.tsx` et `/app/director/page.tsx`.
+
+=== E. Synthèse — checklist des actions ===
+
+| # | Fichier | Action | Effet |
+|---|---|---|---|
+| 1 | `apps/web-app/src/app/app/director/page.tsx` | CRÉER | Route Espace Directeur (tabs Score de Risque + Décrochage) |
+| 2 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 283 (après) | AJOUTER entrée `{ path: '/app/director', ... }` dans MAIN_MODULES | Entrée sidebar Espace Directeur |
+| 3 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 275 | TYPER `MainModule` + ajouter `requiresSecondary?: boolean` | Permet le flag |
+| 4 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 279, 283, (directeur) | AJOUTER `requiresSecondary: true` aux 3 entrées | Conditionne au niveau Secondaire |
+| 5 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 374 | Récupérer `availableLevels` depuis `useSchoolLevel()` + calculer `secondaryEnabled` | Source de vérité |
+| 6 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 459-469 | AJOUTER `secondaryOk` dans le filtre `mainModules` | Applique la condition |
+| 7 | `apps/web-app/src/components/pilotage/PilotageSidebar.tsx` l. 452 (pathToModuleKey) | AJOUTER `if (path.startsWith('/app/director')) return 'director';` | Mapping adminContext |
+| 8 | `apps/web-app/src/hooks/useAdminContext.ts` l. 132-148 | AJOUTER `'director'` dans `ROLE_MODULES` pour DIRECTEUR/PROVISEUR/CENSEUR/SURVEILLANT_GENERAL/etc. | Autorisation adminContext |
+| 9 | `apps/web-app/src/components/censeur/CensorWorkspace.tsx` l. 17, 61-67, 226 | IMPORTER `ExamFraudWorkspace` + AJOUTER onglet `frauds` + RENDRE le composant | Branche ExamFraudWorkspace |
+| 10 | `apps/web-app/src/components/discipline/NotificationBadge.tsx` | CRÉER (extraction depuis DisciplineWorkspace l. 633-664) | Composant shared |
+| 11 | `apps/web-app/src/components/discipline/DisciplineWorkspace.tsx` l. 633-664 | REMPLACER par import depuis `./NotificationBadge` | DRY |
+| 12 | `apps/web-app/src/components/censeur/CensorWorkspace.tsx` (SanctionsTab) | IMPORTER `NotificationBadge` + AJOUTER colonne "Notif. parent" | WhatsApp badges visibles Censeur |
+| 13 | `apps/web-app/src/app/app/censeur/page.tsx`, `/discipline/page.tsx`, `/director/page.tsx` | AJOUTER garde-fou `secondaryEnabled` | Empêche accès direct par URL |
+
+Stage Summary:
+- **3 composants orphelins confirmés** : `DirectorRiskDashboard.tsx` (455 lignes), `DropoutDashboard.tsx` (263 lignes), `ExamFraudWorkspace.tsx` (604 lignes) — aucun n'est importé dans aucun fichier du repo. Ils ont été créés pendant les tâches d'implémentation risk-score/exam-fraud (cf. worklog AUDIT-RISK-1) mais le branchement final a été oublié.
+- **1 page route manquante** : `/app/director/page.tsx` n'existe pas. Pas d'entrée correspondante dans `MAIN_MODULES` (PilotageSidebar.tsx l. 275-292).
+- **2 pages existantes fonctionnelles** : `/app/discipline` et `/app/censeur` rendent correctement `DisciplineWorkspace` et `CensorWorkspace`. `DisciplineWorkspace` INTÈGRE déjà le `NotificationBadge` WhatsApp (l. 633-664, utilisé l. 217) — cette feature est donc VISIBLE côté Vie Scolaire. `CensorWorkspace` ne l'intègre pas (le `NotificationBadge` est local à DisciplineWorkspace, non exporté/réutilisé).
+- **Aucune condition sur niveau Secondaire** dans la sidebar actuelle. Les 4 conditions de filtrage existantes (featureOk, roleOk, accredOk, adminOk) ne regardent jamais `availableLevels` ni `currentLevel`. Le hook `useSchoolLevel()` est déjà appelé l. 374 mais seul `currentLevel` est déstructuré.
+- **Hook disponible pour la condition Secondaire** : `useSchoolLevel().availableLevels` (depuis `SchoolLevelContext`) — `availableLevels.some(l => l.code === 'SECONDAIRE' && l.isActive)` suffit. Cache React Query 5 min partagé, pas de surcoût réseau.
+- **`hasModuleAccess()`** (useAdminContext.ts l. 115-152) : le promoteur OU un utilisateur sans affectation de niveau voit tous les modules (l. 122-124). Les autres sont filtrés par `ROLE_MODULES` (l. 132-148) qui ne contient pas encore `'director'` ni `'censeur'` pour tous les rôles nécessaires — à étendre.
+- **13 actions** listées (table E) : 2 fichiers à créer (page director + NotificationBadge shared), 4 fichiers à modifier (PilotageSidebar, useAdminContext, CensorWorkspace, DisciplineWorkspace), 3 pages à protéger par garde-fou secondary. Aucun impact backend — toutes les APIs et hooks nécessaires (`useRiskScore`, `useDropoutStudents`, `/api/discipline/sanctions`, `/api/risk-score/*`) existent déjà.
+- Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-WIRING-1" pour exécuter les 13 actions listées en section E (estimation : 0,5 jour).

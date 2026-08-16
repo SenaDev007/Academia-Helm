@@ -130,9 +130,9 @@ export function hasModuleAccess(
 
   // Mapping rôle → modules de base
   const ROLE_MODULES: Record<string, string[]> = {
-    DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],
-    PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],
-    DIRECTEUR_ADJOINT: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],
+    DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
+    PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
+    DIRECTEUR_ADJOINT: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
     CENSEUR: ['dashboard', 'pedagogy', 'exams', 'discipline', 'censeur'],
     SURVEILLANT_GENERAL: ['dashboard', 'students', 'discipline'],
     SURVEILLANT: ['dashboard', 'students', 'discipline'],
@@ -143,7 +143,7 @@ export function hasModuleAccess(
     INTENDANT: ['dashboard', 'finance'],
     RESP_SCOLARITE: ['dashboard', 'students'],
     CONSEILLER_PEDAGOGIQUE: ['dashboard', 'pedagogy', 'exams'],
-    DIRECTEUR_DES_ETUDES: ['dashboard', 'pedagogy', 'exams', 'students'],
+    DIRECTEUR_DES_ETUDES: ['dashboard', 'pedagogy', 'exams', 'students', 'director'],
     RESPONSABLE_ORIENTATIONS: ['dashboard', 'students'],
   };
 

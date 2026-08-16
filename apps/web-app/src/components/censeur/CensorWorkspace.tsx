@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  ClipboardCheck, Calendar, FileText, Users, Gavel,
-  Plus, Loader2, Search, X, AlertTriangle, CheckCircle2,
+  ClipboardCheck, Calendar, FileText, Users, Gavel, AlertTriangle,
+  Plus, Loader2, Search, X, CheckCircle2,
   Eye, BookOpen, Award, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import ExamFraudWorkspace from './ExamFraudWorkspace';
 
 interface ClassVisit {
   id: string;
@@ -64,6 +65,9 @@ const TABS = [
   { id: 'exams', label: 'Calendrier des évaluations', icon: Calendar },
   { id: 'councils', label: 'Conseils de classe', icon: Users },
   { id: 'sanctions', label: 'Discipline pédagogique', icon: Gavel },
+  // ⭐ Fraudes aux examens — workflow séparé des sanctions comportementales (SG)
+  //    Sanctions pédagogiques : GRADE_NULLIFIED, RETAKE_EXAM, ZERO, WARNING, PARENT_SUMMONS
+  { id: 'frauds', label: 'Fraudes aux examens', icon: AlertTriangle },
 ] as const;
 
 export default function CensorWorkspace({
@@ -83,12 +87,13 @@ export default function CensorWorkspace({
   const [sanctions, setSanctions] = useState<AcademicSanction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
+  // ⭐ authHeaders au niveau du composant — réutilisable par les onglets (ExamFraudWorkspace)
+  const authHeaders = getClientAuthorizationHeader();
 
   const loadData = useCallback(async () => {
     if (!academicYear?.id) { setLoading(false); return; }
     setLoading(true);
     try {
-      const authHeaders = getClientAuthorizationHeader();
       const params = new URLSearchParams({ academicYearId: academicYear.id });
       if (schoolLevelId) params.set('schoolLevelId', schoolLevelId);
 
@@ -220,10 +225,17 @@ export default function CensorWorkspace({
       ) : activeTab === 'councils' ? (
         /* ── Conseils de classe ── */
         <CouncilsTab councils={councils} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      ) : (
+      ) : activeTab === 'sanctions' ? (
         /* ── Discipline pédagogique ── */
         <SanctionsTab sanctions={sanctions} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      )}
+      ) : activeTab === 'frauds' ? (
+        /* ── Fraudes aux examens — workflow séparé ── */
+        <ExamFraudWorkspace
+          tenant={tenant}
+          academicYear={academicYear}
+          authHeaders={authHeaders}
+        />
+      ) : null}
     </div>
   );
 }

@@ -227,10 +227,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     if (!selectedClassId) return;
     setLoading(true);
     try {
+      // ⭐ cache: 'no-store' pour éviter le stale read après une sauvegarde d'appel.
+      //    Le backend syncAttendanceToRegister met à jour studentsData dans la table
+      //    attendance_registers, mais si le BFF cache la réponse pendant 60s, le
+      //    frontend ne verrait pas les changements immédiatement.
       const res = await fetch("/api/pedagogy-space/attendance-registers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify({
           academicYearId, teacherId, classId: selectedClassId,
           month: selectedMonth, year: selectedYear,
@@ -316,6 +321,24 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   useEffect(() => {
     if (selectedClassId) loadRegister();
   }, [loadRegister, selectedClassId]);
+
+  // ⭐ Écouter l'event 'attendance:saved' émis par AttendanceTab (onglet Appels)
+  //    et par AppelModal (modal d'appel dans Registre) pour recharger automatiquement
+  //    le tableau du registre. Sans ça, l'enseignant doit manuellement changer de
+  //    mois ou recharger la page pour voir les absences apparaître.
+  useEffect(() => {
+    const handleAttendanceSaved = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      // Recharger si l'appel concerne la même classe + année
+      if (detail?.classId === selectedClassId && detail?.academicYearId === academicYearId) {
+        // ⭐ Petit délai (300ms) pour laisser le backend syncAttendanceToRegister
+        //    terminer la mise à jour de studentsData avant qu'on recharge.
+        setTimeout(() => loadRegister(), 300);
+      }
+    };
+    window.addEventListener('attendance:saved', handleAttendanceSaved);
+    return () => window.removeEventListener('attendance:saved', handleAttendanceSaved);
+  }, [loadRegister, selectedClassId, academicYearId]);
 
   // ⭐ Charger le nom du directeur depuis les settings/identity de l'école
   useEffect(() => {
@@ -1460,10 +1483,25 @@ function AppelModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify({ academicYearId, classId: selectedClassId, date: appelDate, records }),
       });
       if (!res.ok) throw new Error("Erreur d'enregistrement");
       toast.success("✅ Appel enregistré — le registre est mis à jour");
+
+      // ⭐ Émettre l'event 'attendance:saved' pour que le tableau du registre
+      //    se recharge automatiquement. Le listener dans AttendanceRegisterTab
+      //    (composant parent) appellera loadRegister() avec un délai de 300ms.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('attendance:saved', {
+          detail: {
+            classId: selectedClassId,
+            date: appelDate,
+            academicYearId,
+          },
+        }));
+      }
+
       onSaved();
       onClose();
     } catch (e: any) {

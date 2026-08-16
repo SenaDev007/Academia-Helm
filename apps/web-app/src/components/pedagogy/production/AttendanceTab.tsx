@@ -163,6 +163,20 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
       setLastSavedAt(new Date());
       setSaveStatus("saved");
       if (!silent) toast.success("✅ Appel enregistré");
+
+      // ⭐ Notifier les autres onglets (ex: Registre d'appels) qu'un appel a été sauvegardé.
+      //    Le Registre écoute cet event et recharge son tableau automatiquement.
+      //    Sans ça, l'enseignant doit manuellement changer de mois ou recharger la page
+      //    pour voir les absences apparaître dans le registre mensuel.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('attendance:saved', {
+          detail: {
+            classId: selectedClassId,
+            date,
+            academicYearId,
+          },
+        }));
+      }
     } catch (e: any) {
       setSaveStatus("error");
       if (!silent) toast.error("Erreur d'enregistrement", { description: e.message });

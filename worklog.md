@@ -5671,3 +5671,306 @@ Stage Summary:
 - **`hasModuleAccess()`** (useAdminContext.ts l. 115-152) : le promoteur OU un utilisateur sans affectation de niveau voit tous les modules (l. 122-124). Les autres sont filtrés par `ROLE_MODULES` (l. 132-148) qui ne contient pas encore `'director'` ni `'censeur'` pour tous les rôles nécessaires — à étendre.
 - **13 actions** listées (table E) : 2 fichiers à créer (page director + NotificationBadge shared), 4 fichiers à modifier (PilotageSidebar, useAdminContext, CensorWorkspace, DisciplineWorkspace), 3 pages à protéger par garde-fou secondary. Aucun impact backend — toutes les APIs et hooks nécessaires (`useRiskScore`, `useDropoutStudents`, `/api/discipline/sanctions`, `/api/risk-score/*`) existent déjà.
 - Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-WIRING-1" pour exécuter les 13 actions listées en section E (estimation : 0,5 jour).
+
+---
+Task ID: AUDIT-TEACHER-UI-1
+Agent: Explore (audit read-only)
+Task: État des lieux exhaustif de l'UI enseignant pour 5 aspects pédagogiques (appels, registres, cahier journal, fiches pédagogiques, cahier de semaine)
+
+Work Log:
+- Lu 5673 lignes du worklog existant pour contexte
+- Inventorié apps/web-app/src/components/pedagogy/production/ (17 fichiers)
+- Lu PedagogicalSpaceWorkspace.tsx (233 lignes, entry point principal)
+- Lu pedagogy.service.ts (501 lignes, client BFF offline-first)
+- Lu pedagogy-space.service.ts frontend (205 lignes)
+- Lu pedagogical-space.controller.ts backend (1268 lignes)
+- Lu pedagogical-space.service.ts backend (7658 lignes, partiel)
+- Lu pedagogical-teacher.controller.ts (369 lignes, contrôleur legacy)
+- Vérifié 5 modèles Prisma pertinents (AttendanceRecord, AttendanceRegister, CahierJournal, PrimaryPedagogicalFiche, WeeklySemainier, WeeklyLogDailyReport, WeeklyLogSummary, MonthlyEvaluation, MonthlySummary, CahierDeTest, WeeklyDutyAssignment)
+- Vérifié migration SQL 20260722100000_add_weekly_seminar_tables (171 lignes, tables weekly_seminar_config + daily_report + weekly_report — absentes du schema.prisma ⚠️)
+- Diff entre CahierDeTexteTab.tsx et CahierDeTestTab.tsx → composants quasi-identiques, mais backend n'expose que cahier-textes, PAS cahier-tests
+- Comparé les endpoints /api/pedagogy/teacher/* (legacy, pedagogyService) vs /api/pedagogy-space/* (nouveau, pedagogySpaceService)
+
+=== A. TABLEAU RÉCAPITULATIF PAR ASPECT ===
+
+| Aspect | Composant principal | Endpoints BFF | Endpoints backend | Modèle Prisma | État | Bugs |
+|---|---|---|---|---|---|---|
+| **Appels** | `AttendanceTab.tsx` (333 lignes, l. 1-333) | `/api/pedagogy-space/attendance` (POST), `/api/pedagogy-space/attendance/:classId?date=` (GET), `/api/pedagogy-space/my-classes` (GET) | `pedagogical-space.controller.ts` l. 65-104 (getAttendance, saveAttendance) + l. 48-61 (getMyClasses) | `AttendanceRecord` (schema.prisma l. 4829-4853, table `attendance_records`) | **OK** | Auto-save 5s fonctionnel ; saveBeacon avant unload ; résolution schoolLevelId via classe ; pas de géoloc contrairement au module RH ; pas d'export PDF pour l'appel journalier (le PDF vient du registre mensuel) |
+| **Registres** | `AttendanceRegisterTab.tsx` (1556 lignes, l. 1-1556) | `/api/pedagogy-space/attendance-registers` (POST/PUT), `/api/pedagogy-space/monthly-evaluations` (POST/PUT), `/api/pedagogy-space/monthly-summaries` (GET/refresh), `/api/pedagogy-space/submit-unified` (POST), `/api/pedagogy-space/notify-director` (POST), `/api/pedagogy-space/attendance-registers/:id/export` (GET) | `pedagogical-space.controller.ts` l. 627-1077 (8 endpoints) + l. 854-867 (director-update) | `AttendanceRegister` (schema.prisma l. 16304-16357, table `attendance_registers`) + `MonthlyEvaluation` (l. 16362-16424) + `MonthlySummary` (l. 16429-16447) | **OK** | Tout est branché ; signatures enseignant + directeur (base64) + jours fériés + export PDF (jsPDF + autotable + en-tête officiel) ; soumission UNIFIÉE registre+évaluation en une transaction ; notifications email/WhatsApp/SMS ; bouton "Notifier" manuel relance possible après soumission |
+| **Cahier journal** | `CahierJournalTab.tsx` (1019 lignes) + `CahierJournalFichesContainer.tsx` (505 lignes) | `/api/pedagogy-space/cahier-journal` (POST get-or-create), `/:id` (PUT), `/:id/submit-with-fiches` (POST), `/:id/fiches` (GET), `/:id/export?format=` (GET), `/api/hr/school-directors/by-level?schoolLevelId=&language=` (GET) | `pedagogical-space.controller.ts` l. 372-498 (8 endpoints) + l. 493-506 (director-update) | `CahierJournal` (schema.prisma l. 16162-16205, table `cahier_journal_entries`) — relation 1-N vers `PrimaryPedagogicalFiche` via `cahierJournalId` | **OK** | Matières dynamiques depuis DB (table `class_subjects`) ; regroupement intelligent (Français = Dictée+Grammaire+Conjugaison+etc., Éduc. sociale = Morale+Histoire+Géo, Éduc. artistique = Chant+Poésie+Dessin) ; grille 5 jours × matières en format paysage recto/verso ; signatures ; soumission cahier + fiches en une fois avec sélection des jours (modal) ; export Excel (CSV) + PDF (Puppeteer) |
+| **Fiche pédagogique** | `PedagogicalSheetsTab.tsx` (797 lignes) | `/api/pedagogy-space/fiches` (POST/GET), `/fiches/:id` (PUT/DELETE), `/fiches/:id/submit` (POST), `/fiches/:id/export-pdf` (GET), `/cahier-journal/:id/fiches/export-pdf` (GET combiné) | `pedagogical-space.controller.ts` l. 565-621 (CRUD + submit) + l. 460-489 (export PDF) + l. 801-816 (director-update) | `PrimaryPedagogicalFiche` (schema.prisma l. 16218-16294, table `primary_pedagogical_fiches`) — 5 types MATH/FRANCAIS/EST/ES/EA (primaire/maternelle uniquement) ; relation N-1 vers `CahierJournal` via `cahierJournalId` | **OK** | 5 types de fiches (template officiel primaire avec ruban pédagogique structuré) ; section I.bis différente par type (Phases préparatoires pour MATH, Exercice structural pour FRANCAIS, Activités préliminaires pour EST/ES, Proposition de nouvelles acquisitions pour EA) ; signatures ; rich text editor (gras/italique/puces) ; PDF professionnel ; ⚠️ PAS de fiche pédagogique pour le SECONDAIRE (PedagogicalSheet modèle existe l. 6447 mais n'est pas utilisé par cette UI) |
+| **Cahier de semaine** | `CahierSemaineTab.tsx` (1214 lignes) | `/api/pedagogy-space/seminar-config` (GET), `/seminar-config/auto-generate` (POST), `/seminar-config/manual` (POST), `/seminar-config/eligible-teachers` (GET), `/seminar-config/:id` (PUT/DELETE), `/seminar-daily-report` (GET/PUT), `/seminar-weekly-report` (GET/PUT), `/seminar-daily-report/:id/sync-from-rh` (POST), `/sync-from-students` (POST), `/sync-from-edt` (POST), `/seminar-config/:id/export` (GET) | `pedagogical-space.controller.ts` l. 1108-1267 (15+ endpoints) | ⚠️ **ABSENT DU SCHEMA PRISMA** : tables `weekly_seminar_config`, `weekly_seminar_daily_report`, `weekly_seminar_weekly_report` créées en SQL pur dans migration `20260722100000_add_weekly_seminar_tables/migration.sql` (l. 19-156). Service utilise `$queryRawUnsafe` partout (pas de type Prisma). | **WARN** | Backend fonctionne (raw SQL) mais AUCUNE type-safety Prisma ; 3 sous-onglets (Paramétrage / Liste / Cahier du Semainier) ; génération auto 36 semaines par rotation enseignants FR ; config manuelle ; signatures enseignant ; 8 sections officielles par rapport quotidien (présence enseignants, présence élèves, pédagogie, discipline, hygiène, visites, communication, résumé) ; sync cross-module (RH, élèves, EDT) ; export PDF. ⚠️ Conflit de nom avec `WeeklySemainier` (modèle Prisma, table `weekly_semainiers`, lié à `WeeklyDutyAssignment`) qui est utilisé par l'ANCIEN `ProductionWorkspace.tsx` (l. 282-373) mais cet ancien workspace est ORPHELIN (non importé). |
+
+=== B. DÉTAIL PAR ASPECT ===
+
+### B.1 — Appels (prise de présence journalière)
+**FONCTIONNE :**
+- Component `AttendanceTab.tsx` (333 lignes) — entry via `PedagogicalSpaceWorkspace` tab `attendance` (l. 172-179)
+- Système 4 boutons par élève : PM (Présent Matin), AM (Absent Matin), PS (Présent Soir), AS (Absent Soir) — l. 287-316
+- Bouton "Retard" pour notification parents — l. 318-323
+- Auto-save 5 secondes (l. 163-173) via `setInterval`
+- Sauvegarde avant déchargement page (`navigator.sendBeacon` l. 176-193)
+- Stats rapides temps réel (présents/absents matin/soir, retards)
+- Référence immédiate `studentsRef` pour éviter la perte de saisie (fix critique commenté l. 47-57)
+- Résolution élégante du `schoolLevelId` (fallback vers `class.schoolLevelId` pour éviter P2003 Prisma — l. 127-140)
+
+**CASSÉ / INCOMPLET :**
+- Aucun bug identifié côté frontend
+- Backend `saveDailyAttendance` ne renvoie PAS explicitement de `tenantId` vérifié côté controller (vérification via `@TenantId()` décorateur uniquement)
+- Pas de feedback visuel sur le bouton "Retard" une fois notifié (juste un état `late=true` en mémoire)
+
+**MANQUE :**
+- Pas de géolocalisation de l'appel (contrairement au module RH `MyAttendanceCard` qui utilise `useGeolocation`)
+- Pas d'export PDF par jour (seul le registre mensuel a un export)
+- Pas de filtrage par matière (l'appel se fait pour toute la classe, pas par cours spécifique)
+
+---
+
+### B.2 — Registres d'appels (historique agrégé mensuel)
+**FONCTIONNE :**
+- Component `AttendanceRegisterTab.tsx` (1556 lignes) — entry via `PedagogicalSpaceWorkspace` tab `registre` (l. 194-200)
+- Sous-onglets : Registre / Évaluation mensuelle / Tableau de relevés annuel / Paramètres — l. 205, l. 779-810
+- 12 mois disponibles (y compris Juillet/Août pour rattrapage) — l. 60-67
+- Calcul automatique des demi-jours (Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2 = 9/semaine) — l. 93-108
+- Jours fériés paramétrables (JSON stocké dans le registre) — l. 211, l. 246-254
+- Marqueurs d'absence : "" (Présent), "A" (Absent), "R" (Retard), "E" (Excusé) — l. 164-169
+- Système demi-jours : "-" = absent matin (1), "|" = absent après-midi (1), "+" = absent jour complet (2) — l. 378-393
+- Signatures enseignant + directeur (base64 canvas) — l. 196-197
+- Export PDF avec en-tête officiel (drapeau Bénin + République + Ministère + école + logo) via `exportAttendanceRegisterToPdf` — l. 612-682
+- Soumission UNIFIÉE registre + évaluation mensuelle via `/api/pedagogy-space/submit-unified` — l. 464-508
+- Notifications multi-canal au directeur (email + WhatsApp + SMS) — l. 510-552
+- Bouton "Notifier" relance manuelle même après soumission — l. 762-767
+- Validation côté directeur : `DirectorPedagogyControl.tsx` tab `registres` (l. 132) avec `usePendingRegisters` hook
+- Lecture seule quand status = SUBMITTED/VALIDATED — l. 588
+
+**CASSÉ / INCOMPLET :**
+- `submitUnified` (backend l. 3107-3206) utilise `$queryRawUnsafe` au lieu de Prisma typé — risque de typo colonne non détectée
+- L'évaluation mensuelle est now récupérée dynamiquement depuis le Module Examen (`MonthlyEvaluationTab.tsx` l. 197 : `/institutional-exams/evaluations`) — il y a donc DEUX modèles en parallèle : (1) `MonthlyEvaluation` (table `monthly_evaluations`) legacy et (2) `Evaluation` du Module Examen. Le backend `submitUnified` tente les deux (l. 3148-3194) avec fallback, ce qui est source de confusion
+- TODO explicite l. 162 : "TODO: passer isSecondaire en prop si on veut gérer le secondaire ici aussi" — l'évaluation mensuelle est codée en dur `isSecondaire = false` (l. 164)
+
+**MANQUE :**
+- Pas d'export Excel (bouton commenté, l. 768 "Excel supprimé") — seulement PDF
+- Pas de filtrage par trimestre dans le tableau de relevés annuel
+- Le tableau de relevés annuel n'affiche que Sept→Juin sans notion de trimestres
+
+---
+
+### B.3 — Cahier journal (saisie quotidienne du contenu pédagogique)
+**FONCTIONNE :**
+- Components : `CahierJournalFichesContainer.tsx` (505 lignes, container unifié) + `CahierJournalTab.tsx` (1019 lignes, grille hebdomadaire)
+- Entry via `PedagogicalSpaceWorkspace` tab `cahier-journal` (l. 180-186)
+- Container à 2 sous-onglets : Cahier Journal ↔ Fiches Pédagogiques (l. 111-168)
+- ⭐ Bascule automatique vers sous-onglet Fiches après Enregistrer/Soumettre le cahier journal (l. 72-99)
+- ⭐ Badge nombre de fiches manquantes sur le sous-onglet Fiches (l. 138-143, 242-294)
+- Liste "Fiches à préparer" par jour avec bouton "Préparer" par matière (l. 320-504)
+- Grille hebdomadaire 5 jours × matières dynamiques (récupérées depuis DB `class_subjects`)
+- Regroupement intelligent : Français = Dictée+Grammaire+Conjugaison+Lecture+Vocabulaire+Orthographe+Expression écrite+Graphisme+Écriture+Combinatoire+Communication orale+Exercices structuraux — l. 184-211
+- Format paysage 2 pages (recto + verso) — l. 246-247
+- Observations générales (RichTextEditor)
+- Signatures enseignant + directeur (base64 canvas + récup auto signature directeur depuis `/api/hr/school-directors/by-level?schoolLevelId=&language=FR` — l. 311-367)
+- Export Excel (CSV avec BOM) + PDF (Puppeteer) — l. 374-401
+- Soumission cahier journal + fiches pédagogiques associées en une transaction via `/cahier-journal/:id/submit-with-fiches` avec sélection des jours (l. 444-497)
+- Modal de confirmation professionnel (remplace window.confirm) — l. 131, l. 452-463
+- Validation côté directeur : `DirectorPedagogyControl.tsx` tab `cahier-journal` (l. 129)
+- Format de date LOCAL (YYYY-MM-DD) pour éviter le bug de timezone UTC (l. 91-99)
+- Lien structurel `cahierJournalId` sur `PrimaryPedagogicalFiche` (schema.prisma l. 16282-16283)
+
+**CASSÉ / INCOMPLET :**
+- Le bouton "Voir" sur une fiche préparée (l. 473-485) ne fait que scroller vers le formulaire — il ne charge pas les données de la fiche existante pour édition. Commenté : "pour simplifier, on ouvre le formulaire avec les mêmes params (l'API fera le lien)"
+- ⚠️ `LessonJournal` modèle Prisma (l. 7404) existe dans le schéma mais n'est PAS utilisé par cette UI — c'est un modèle legacy lié à l'ancien `ProductionWorkspace.tsx` (orphan, voir section C)
+
+**MANQUE :**
+- Pas de duplication d'une semaine à l'autre
+- Pas de template/pré-remplissage depuis semaine précédente
+- Pas de notification email/WhatsApp au directeur après soumission (contrairement au registre d'appel) — seulement `notifySubmission` générique via `pedagogical-notification.service.ts`
+
+---
+
+### B.4 — Fiche pédagogique (préparation de cours)
+**FONCTIONNE :**
+- Component `PedagogicalSheetsTab.tsx` (797 lignes) — utilisé par `CahierJournalFichesContainer` (l. 220-230)
+- 5 types conformes aux PDFs officiels primaire : MATH (Sigma, blue), FRANCAIS (BookOpen, emerald), EST (FlaskConical, purple), ES (Users, amber), EA (Palette, pink) — l. 58-64
+- Structure complète conforme PDFs officiels : En-tête (SAN°, Séquence N°, Date, Cours, Titre, Durée) + Éléments de planification (7 sections) + Section I.bis spécifique par type + Déroulement (tableau) + Retour et projection + Signatures — l. 91-145
+- Section I.bis différenciée :
+  - MATH : "Phases préparatoires" (5 champs : Calcule à brûle pourpoint, Comptage/Décomptage, Cadran opératoire, Calcul mental, 2 problèmes)
+  - FRANCAIS : "Exercice structural" (5 champs courts + tableau 3 colonnes application)
+  - EST : "Activités préliminaires" (Rappel leçon précédente)
+  - ES : "Activités préliminaires" (Rappel leçon précédente)
+  - EA : "Proposition de nouvelles acquisitions" (Annoncer objet, Pré-conception)
+- Toutes les zones utilisent RichTextEditor (gras, italique, souligné, puces)
+- Signatures Maître/Maîtresse + Directeur/Directrice (base64 canvas)
+- Export PDF individuel via `/fiches/:id/export-pdf` + export combiné via `/cahier-journal/:id/fiches/export-pdf`
+- Lien automatique cahier journal ↔ fiches (propriétés `cahierJournalId`, `initialClassId`, `initialLessonDay`, `initialSheetType`, `initialMatiere` — l. 42-56)
+- Pré-remplissage automatique quand cliqué depuis "Préparer" dans `CahierJournalFichesContainer`
+- Validation côté directeur : `DirectorPedagogyControl.tsx` (l. 130 — `usePendingFiches`)
+- Mise à jour directeur avec observations par section (rouge) + observation générale + signature + validation/rejet — endpoint `PUT /director/fiches/:id/director-update` (controller l. 802-816)
+
+**CASSÉ / INCOMPLET :**
+- ⚠️ **MANQUE CRITIQUE POUR SECONDAIRE** : il n'y a PAS de fiche pédagogique pour le secondaire. Le modèle `PedagogicalSheet` (schema.prisma l. 6447) existe mais n'est JAMAIS utilisé par cette UI. Les enseignants du secondaire n'ont que `CahierDeTexteTab` et `CahierDeTestTab` qui sont des cahiers de notes/évaluations, pas des fiches de préparation de cours.
+
+**MANQUE :**
+- Pas de duplication de fiche d'une semaine à l'autre
+- Pas de modèle/template de fiche réutilisable
+- Pas de versioning (alors que le modèle `PedagogicalSheetVersion` existe dans le schéma — l. 6479)
+- Pas de bibliothèque de fiches partagées entre enseignants
+
+---
+
+### B.5 — Cahier de semaine (vue agrégée hebdomadaire)
+**FONCTIONNE :**
+- Component `CahierSemaineTab.tsx` (1214 lignes) — entry via `PedagogicalSpaceWorkspace` tab `weekly` (l. 187-193)
+- 3 sous-onglets : Paramétrage (PROMOTER+DIRECTOR uniquement) / Liste des semainiers / Cahier du Semainier — l. 191-209
+- Paramétrage : 2 modes
+  - "Générer automatiquement" → 36 semaines par rotation des enseignants FR (maternelle+primaire uniquement, exclut bilingues FR+EN) via `/seminar-config/auto-generate`
+  - "Configuration manuelle" → 1 semaine à la fois avec choix enseignant + classes
+- Liste des semainiers : tableau avec semaine, trimestre, dates, enseignant désigné, classes, signature, statut (PENDING/SIGNED)
+- Signature enseignant (canvas base64) avec passage auto à SIGNED
+- Cahier du Semainier : 5 jours (Lun-Ven) + 6e "jour" virtuel (Rapport de fin de semaine)
+- 8 sections officielles par rapport quotidien :
+  1. Présence du personnel enseignant
+  2. Présence des élèves (taux, classes à >10% absence, retards)
+  3. Déroulement pédagogique (respect programme, cours modifiés, climat classe)
+  4. Discipline & vie scolaire
+  5. Hygiène, sécurité & logistique (propreté locaux, toilettes, eau, électricité)
+  6. Visites reçues (admin, pédago, parent)
+  7. Communication & circulaires
+  8. Synthèse globale du jour
+- ⭐ Synchronisation cross-module (3 endpoints POST dédiés) :
+  - `/sync-from-rh` : pré-remplit section 1 depuis RH (présences enseignants)
+  - `/sync-from-students` : pré-remplit section 2 depuis Module Élèves (appels)
+  - `/sync-from-edt` : pré-remplit section 3 depuis EDT (cours modifiés)
+- Export PDF via `/seminar-config/:id/export?format=pdf`
+- Auto-calcul des dates (semaine 1 = 1er septembre, ajusté au lundi) — l. 419-436
+- Auto-calcul du trimestre depuis le numéro de semaine — l. 410-415
+
+**CASSÉ / INCOMPLET :**
+- ⚠️ **BUG MAJEUR** : tables `weekly_seminar_config`, `weekly_seminar_daily_report`, `weekly_seminar_weekly_report` sont créées en SQL PUR dans la migration `20260722100000_add_weekly_seminar_tables/migration.sql` (l. 19-156) mais NE SONT PAS DÉCLARÉES dans `schema.prisma` (16 567 lignes, aucune occurrence). Conséquences :
+  - Pas de type Prisma généré → service backend utilise `$queryRawUnsafe` PARTOUT (cf. `pedagogical-space.service.ts` l. 6266-6302, l. 6304+)
+  - Pas de validation des types à la compilation
+  - Risque de typo sur nom de colonne non détecté
+  - Pas de relations déclaratives (les FK sont en SQL mais pas en Prisma)
+  - Pas d'autocomplétion IDE
+- ⚠️ Conflit de nom potentiel avec `WeeklySemainier` (modèle Prisma l. 7032, table `weekly_semainiers`) lié à `WeeklyDutyAssignment` — c'est un système parallèle utilisé par l'ancien `ProductionWorkspace.tsx` (orphan, voir section C)
+- ⚠️ Conflit avec `WeeklyLogDailyReport` + `WeeklyLogSummary` (modèles Prisma l. 16034 + 16102) qui servent à l'ANCIEN endpoint `/weekly-logs` (controller l. 153-170) — encore utilisé par `WeeklyLogTab.tsx` (95 lignes) mais ce composant est ORPHELIN (aucun import trouvé dans tout le repo)
+
+**MANQUE :**
+- Pas d'export Excel (seulement PDF)
+- Pas de recherche/filtrage dans la liste des semainiers (affiche tout par ordre de semaine)
+- Pas de duplication d'une semaine à l'autre
+- Le rapport de fin de semaine (6e "jour") n'est pas clairement visible dans l'UI — la fonctionnalité est dans le backend (`getOrCreateWeeklySummary`, `updateWeeklySummary`, `submitWeeklySummary`) mais le frontend semble incomplet sur ce point précis (à vérifier plus en détail dans les lignes 600+ de CahierSemaineTab.tsx)
+- Pas de notifications au directeur pour validation des rapports hebdomadaires (alors que le backend a `getPendingWeeklySummaries` + `validateWeeklySummary`)
+
+=== C. SYNCHRONISATION ENSEIGNANT ↔ ORGANISATION PÉDAGOGIQUE ===
+
+### C.1 — Comment ça marche aujourd'hui
+
+**Architecture en 2 modules distincts :**
+1. **Module Pédagogie (vue direction/censeur)** : `/app/pedagogy/*` — accessible via sidebar `PilotageSidebar` entrée "Organisation Pédagogique" (`featureCode: 'PEDAGOGY'`). Onglets : Dashboard / Structure académique / Matières / Enseignants / EDT / Espace Pédagogie / Validation Direction / ORION / Travaux / Sarah Compose / Cahiers de textes (cf. `pedagogy-tabs.tsx` l. 156-309).
+2. **Espace Enseignant** : `/app/teacher/*` — entrée sidebar "Espace Enseignant". Page principale `/app/teacher/pedagogy` qui embarque `PedagogicalSpaceWorkspace` (le même composant que `/app/pedagogy/production`).
+
+**Synchronisation enseignant → directeur :**
+
+L'enseignant saisit dans `PedagogicalSpaceWorkspace` (10 onglets). Chaque saisie passe par :
+- BFF Next.js `/api/pedagogy-space/*` (proxy catch-all dans `app/api/pedagogy-space/[...path]/route.ts`, 68 lignes)
+- Backend NestJS `/pedagogy-space/*` (controller `pedagogical-space.controller.ts`, 1268 lignes, 60+ endpoints)
+- Service `pedagogical-space.service.ts` (7658 lignes — énorme)
+- Prisma写入 dans tables respectives
+
+Le directeur voit les soumissions via :
+- Page `/app/pedagogy/control` → `ControlWorkspace` → `DirectorPedagogyControl.tsx` (2365 lignes)
+- 5 onglets : Tableau de bord / Cahiers Journal & Fiches / Registres d'Appel / Évaluations Mensuelles / Cahiers de Test
+- Hooks React Query dédiés : `useDirectorPedagogyDashboard`, `usePendingCahierJournals`, `usePendingFiches`, `usePendingRegisters`, `usePendingEvaluations`, `usePendingCahierTextes` (cf. `lib/query/pedagogy-hooks.ts` 338 lignes)
+- Cache 2 min partagé, dégradation gracieuse (erreurs catchées et retournent `[]` ou `null`)
+- Validation/rejet via `pedagogySpaceService.validateCahierJournal/Fiche/Register/Evaluation/CahierTexte`
+
+**Le `pedagogySpaceService` (frontend, 205 lignes) expose :**
+- `getDirectorPedagogyDashboard(academicYearId)` — KPIs agrégés
+- `getPendingCahierJournals/Fiches/Registers/Evaluations/CahierTextes` — listes
+- `validateCahierJournal/Fiche/Register/Evaluation/CahierTexte` — mutations
+- `getCahierJournalDetail/FicheDetail/RegisterDetail/EvaluationDetail/CahierTexteDetail` — vues détaillées
+- `getMyClasses(teacherId, academicYearId)` — ⭐ MARCHE — endpoint commun enseignant+direction
+
+### C.2 — Les gaps
+
+1. **Gap "cahier-tests"** : `CahierDeTestTab.tsx` (secondaire) appelle `/api/pedagogy-space/cahier-tests/*` mais le backend n'expose que `/cahier-textes/*` (vérifié : grep sur `pedagogical-space.controller.ts` → 0 hit pour `cahier-tests`, 11 hits pour `cahier-textes`). ⚠️ **BLOCKING POUR SECONDAIRE** : l'onglet "Cahier de Test" dans PedagogicalSpaceWorkspace (`secondaryOnly: true`, l. 72) et dans DirectorPedagogyControl (tab `cahier-textes`, l. 138-140 qui rend `PendingCahierTestsTab`) cassera à chaque fetch. Le composant est un diff trivial du CahierDeTexteTab (mêmes 818 lignes, juste l'URL qui change) — probablement un copier-coller oubliieux.
+
+2. **Gap "fiche pédagogique secondaire"** : il n'existe PAS de fiche pédagogique pour le secondaire dans cette UI. Le modèle Prisma `PedagogicalSheet` (l. 6447) + `PedagogicalSheetVersion` (l. 6479) + `PedagogicalSheetValidation` (l. 6500) existent mais ne sont pas consommés. Les enseignants du secondaire n'ont que le cahier de texte (notes) et le cahier de test (évaluations), pas de préparation de cours structurée.
+
+3. **Gap "évaluation mensuelle secondaire"** : `MonthlyEvaluationTab.tsx` l. 162 : `// TODO: passer isSecondaire en prop si on veut gérer le secondaire ici aussi. const isPrimaire = !isMaternelle; const isSecondaire = false;` — hardcoded à false. Le secondaire utilise les évaluations du Module Examen (institutional-exams) directement, sans passer par cette UI.
+
+4. **Gap "WeeklyLogTab" orphelin** : `WeeklyLogTab.tsx` (95 lignes) utilise `/api/pedagogy-space/weekly-logs/*` (ancien endpoint basé sur `WeeklyLogDailyReport` + `WeeklyLogSummary`). Ce composant n'est JAMAIS importé. Le système actif est `CahierSemaineTab.tsx` qui utilise `/api/pedagogy-space/seminar-config/*` (tables SQL brutes). Il y a donc TROIS systèmes parallèles pour "cahier de semaine" :
+   - (a) `WeeklySemainier` + `WeeklyDutyAssignment` (Prisma, l. 7002-7402) — utilisé par ProductionWorkspace.tsx ORPHELIN
+   - (b) `weekly_seminar_config` + `daily_report` + `weekly_report` (SQL pur, migration 20260722100000) — utilisé par CahierSemaineTab ACTIF
+   - (c) `WeeklyLogDailyReport` + `WeeklyLogSummary` (Prisma, l. 16034-16152) — utilisé par WeeklyLogTab ORPHELIN et partiellement par pedagogical-space.service (l. 1497-1530, 1844-2064)
+
+5. **Gap "ProductionWorkspace.tsx" orphelin** : 1439 lignes de code mort qui continuent à appeler l'ancien service `pedagogyService` (legacy `/api/pedagogy/teacher/documents`, `/api/pedagogy/teacher/semainier/*`). À supprimer pour éviter confusion.
+
+6. **Gap "ClassLogTab.tsx" orphelin** : 261 lignes (vérifié : aucune occurrence d'import dans tout le repo). Probablement l'ancêtre de `CahierJournalTab.tsx`. À supprimer.
+
+7. **Gap notifications cahier journal** : `submitCahierJournalWithFiches` appelle `notifyDirectorsOfSubmission` (cf. backend l. 3200-3206 dans `submitUnified`) mais le cahier journal est soumis SÉPARÉMENT du registre (commentaire l. 3201 : "Note : le cahier journal n'est PAS inclus ici — il est soumis séparément"). Il faudrait vérifier que `submitCahierJournalWithFiches` (service l. 2791+) déclenche bien les notifications email/WhatsApp/SMS au directeur — à confirmer en lisant le code.
+
+8. **Gap "visites de classe du censeur"** : aucune trace d'un module "visites de classe" dans le code audité. Le censeur a `CensorWorkspace.tsx` mais les visites de classe ne sont PAS implémentées. Le `WeeklyLogDailyReport` a un champ `adminVisit/pedagoVisit/parentVisit` (l. 16074-16077) mais c'est seulement une case à cocher dans le cahier du semainier, pas un workflow dédié. Le censeur ne peut PAS aujourd'hui utiliser les données du cahier journal pour planifier/déclencher une visite de classe.
+
+9. **Gap "Orion pédagogique"** : `OrionPedagogyVigilance.tsx` existe mais n'est pas audité ici. Les alertes Orion semblent découplées du workflow enseignant → directeur (pas de mention dans `pedagogySpaceService`).
+
+10. **Gap "tables SQL non typées"** : les 3 tables `weekly_seminar_*` ne sont pas dans le schema.prisma → pas de type généré, pas de relations, pas d'IDE. C'est une dette technique significative pour la maintenabilité.
+
+=== D. PRIORITÉS POUR LA RENTRÉE ===
+
+#### P0 — BLOQUANT POUR LA RENTRÉE
+
+1. **[P0-Ajouter endpoints `cahier-tests` OU supprimer `CahierDeTestTab.tsx`]** — Fichier `pedagogical-space.controller.ts` l. 944-1052 (section Cahier de Test Secondaire) : aucun endpoint `cahier-tests` n'existe. Soit ajouter les 7 endpoints manquants (GET list, GET :id, POST create, PUT update, DELETE, POST submit, POST init-students) qui dupliquent `cahier-textes` mais écrivent dans la table `cahier_de_tests` (modèle Prisma `CahierDeTest` l. 16458-16533), soit supprimer `CahierDeTestTab.tsx` et l'entrée dans `ALL_TABS` (PedagogicalSpaceWorkspace.tsx l. 72). Impact : écoles secondaires — l'onglet "Cahier de Test" casse à chaque clic.
+
+2. **[P0-Vérifier fonctionnement réel de `getMyClasses`]** — Service `pedagogical-space.service.ts` l. 160-179 : un bloc "TEMPORAIRE (TEST PROMOTEUR/DIRECTION)" renvoie TOUTES les classes du tenant si l'utilisateur n'a pas de profil Teacher mais a un rôle direction. Commenté "À remettre en mode restreint une fois les tests terminés". ⚠️ Si laissé en l'état à la rentrée, un directeur peut saisir des données pédagogiques pour N'IMPORTE QUELLE classe — pas grave pour un directeur, MAIS le test doit confirmer que les enseignants authentiques sont bien filtrés par `teacherId`.
+
+3. **[P0-Vérifier migration `weekly_seminar_tables` appliquée en production]** — Migration `20260722100000_add_weekly_seminar_tables/migration.sql` crée les 3 tables SQL brutes. Si cette migration n'est pas appliquée sur la DB de prod, le `CahierSemaineTab` cassera complètement (toutes les requêtes `$queryRawUnsafe` échoueront). Action : vérifier `prisma migrate status` en prod.
+
+#### P1 — IMPORTANT POUR LA RENTRÉE
+
+4. **[P1-Déclarer les 3 tables `weekly_seminar_*` dans `schema.prisma`]** — Ajouter 3 modèles Prisma (`WeeklySeminarConfig`, `WeeklySeminarDailyReport`, `WeeklySeminarWeeklyReport`) avec relations, puis remplacer les `$queryRawUnsafe` du service par des appels Prisma typés. Effort : ~1 jour. Bénéfice : type-safety, autocomplétion, refactor sécurisé.
+
+5. **[P1-Supprimer le code mort]** — 3 fichiers à supprimer pour réduire la confusion :
+   - `ProductionWorkspace.tsx` (1439 lignes, orphan, utilise ancien `pedagogyService` legacy)
+   - `WeeklyLogTab.tsx` (95 lignes, orphan, utilise ancien endpoint `weekly-logs`)
+   - `ClassLogTab.tsx` (261 lignes, orphan, ancêtre de `CahierJournalTab.tsx`)
+   Effort : 30 min. Bénéfice : -1795 lignes de code mort, clarification de l'architecture.
+
+6. **[P1-Vérifier notifications cahier journal]** — Lire `submitCahierJournalWithFiches` (service l. 2791+) pour confirmer que les notifications email/WhatsApp/SMS au directeur sont bien déclenchées après soumission. Si non, ajouter un appel à `notifyDirectorsOfSubmission` (comme dans `submitUnified` l. 3200-3206).
+
+7. **[P1-Implémenter fiche pédagogique secondaire]** — Le modèle `PedagogicalSheet` (l. 6447) + `PedagogicalSheetVersion` (l. 6479) + `PedagogicalSheetValidation` (l. 6500) existent dans le schéma mais ne sont pas utilisés par l'UI. Pour la rentrée secondaire, soit :
+   - (a) Réutiliser `PedagogicalSheetsTab.tsx` (primaire) en ajoutant un 6e type "SECONDAIRE" avec template différent
+   - (b) Créer un nouveau composant `PedagogicalSheetsSecondaryTab.tsx` qui consomme le modèle `PedagogicalSheet` (qui est plus simple : titre + description + contenu JSON, sans structure officielle primaire)
+   Effort : 2-3 jours. Bénéfice : les enseignants du secondaire ont une préparation de cours structurée.
+
+8. **[P1-Implémenter visites de classe du censeur]** — Aujourd'hui ABSENT du codebase. Le censeur ne peut pas planifier/exécuter des visites de classe basées sur les données du cahier journal. Action : créer un module `ClassVisitWorkspace` dans `/app/censeur/` qui :
+   - Liste les classes avec faible taux de remplissage cahier journal (data : `cahier_journal_entries` status DRAFT/REJECTED)
+   - Permet au censeur de créer une visite (date, classe, observations, recommandations)
+   - Lien avec les sanctions académiques si visite négative
+   Effort : 3-5 jours. Bénéfice : workflow complet censeur pour la rentrée.
+
+9. **[P1-Compléter le rapport de fin de semaine (6e jour)]** — Lire `CahierSemaineTab.tsx` l. 600+ pour vérifier que le rapport de fin de semaine est bien rendu (8 sections hebdomadaires). Le backend a `getOrCreateWeeklySummary` + `updateWeeklySummary` + `submitWeeklySummary` mais le frontend semble partiel. Si incomplet, ajouter les 7 sections hebdomadaires officielles (fonctionnement général, synthèse pédagogique, discipline, infrastructures, bilans visites, statistiques semaine, recommandations stratégiques).
+
+#### P2 — NICE-TO-HAVE
+
+10. **[P2-Ajouter géoloc à l'appel journalier]** — Comme `MyAttendanceCard` (RH), géolocaliser la prise d'appel pour l'enseignant (preuve de présence en classe). Effort : 0,5 jour.
+
+11. **[P2-Ajouter export Excel au registre d'appel]** — Bouton "Excel supprimé" commenté l. 768. Réactiver via `xlsx-loader.ts` + service backend qui génère un XLSX (pas CSV). Effort : 0,5 jour.
+
+12. **[P2-Versioning des fiches pédagogiques]** — Le modèle `PedagogicalSheetVersion` existe (l. 6479). L'utiliser pour tracer l'historique des modifications de chaque fiche (qui a modifié quoi et quand). Effort : 1 jour.
+
+13. **[P2-Duplication semaine→semaine pour cahier journal]** — Bouton "Copier depuis la semaine précédente" qui pré-remplit la grille avec les entrées de la semaine N-1. Effort : 0,5 jour.
+
+14. **[P2-Notifications cahier de semaine]** — Le backend a `getPendingWeeklySummaries` + `validateWeeklySummary` mais aucun hook frontend ne les consomme dans `DirectorPedagogyControl`. Ajouter un 6e onglet "Rapports Hebdo" au `DirectorPedagogyControl` qui liste les rapports hebdomadaires en attente de validation. Effort : 1 jour.
+
+15. **[P2-Refactor `submitUnified` en Prisma typé]** — Service l. 3107-3206 utilise `$queryRawUnsafe` pour `attendance_registers` + `monthly_evaluations` alors que ces deux modèles SONT dans le schema Prisma. Remplacer par `prisma.attendanceRegister.update()` + `prisma.monthlyEvaluation.update()`. Effort : 0,5 jour.
+
+Stage Summary:
+- **5 aspects pédagogiques audités** : Appels / Registres / Cahier journal / Fiches pédagogiques / Cahier de semaine
+- **État global** : 4 aspects OK ou presque (appels, registres, cahier journal, fiches primaire), 1 aspect WARN (cahier de semaine — tables SQL non typées Prisma)
+- **Architecture** : 2 routes frontend (`/app/teacher/pedagogy` et `/app/pedagogy/production`) partagent le MÊME composant `PedagogicalSpaceWorkspace` (233 lignes, 10 onglets). Synchronisation enseignant→directeur via BFF Next.js `/api/pedagogy-space/*` (catch-all proxy 68 lignes) → backend NestJS `pedagogical-space.controller.ts` (1268 lignes, 60+ endpoints) → service `pedagogical-space.service.ts` (7658 lignes — énorme)
+- **3 bugs BLOCKING identifiés** : (1) `CahierDeTestTab.tsx` appelle endpoints inexistants `/cahier-tests/*` (secondaire), (2) `getMyClasses` a un mode "test direction" qui renvoie toutes les classes si l'utilisateur n'a pas de profil Teacher — à vérifier/désactiver pour la rentrée, (3) migration `weekly_seminar_tables` à vérifier en prod
+- **3 composants ORPHELINS à supprimer** : `ProductionWorkspace.tsx` (1439 lignes), `WeeklyLogTab.tsx` (95 lignes), `ClassLogTab.tsx` (261 lignes) — total 1795 lignes de code mort
+- **3 tables SQL non typées Prisma** : `weekly_seminar_config`, `weekly_seminar_daily_report`, `weekly_seminar_weekly_report` — migration `20260722100000` existe mais PAS dans `schema.prisma` → service utilise `$queryRawUnsafe` partout (risque typo colonne non détecté à la compilation)
+- **3 gaps fonctionnels majeurs** : (a) Pas de fiche pédagogique pour le secondaire (modèle `PedagogicalSheet` existe mais inutilisé), (b) Pas de visites de classe du censeur basées sur cahier journal, (c) Évaluation mensuelle secondaire hardcodée `isSecondaire = false` (TODO l. 162)
+- **15 actions priorisées** : 3 P0 (bloquants), 6 P1 (importants), 6 P2 (nice-to-have)
+- Files modified: 0 (audit read-only). Prochaine étape recommandée : Task "IMPL-TEACHER-UI-RENTREE-1" pour exécuter les 3 actions P0 (estimation : 1 jour), puis Task "IMPL-TEACHER-UI-P1-1" pour les 6 actions P1 (estimation : 5-7 jours).

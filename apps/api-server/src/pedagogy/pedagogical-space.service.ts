@@ -2588,7 +2588,7 @@ export class PedagogicalSpaceService {
       directorObservations?: Record<string, string>;
       directorGeneralObservation?: string;
       directorSignature?: string;
-      action: 'VALIDATED' | 'REJECTED';
+      action?: 'VALIDATED' | 'REJECTED';
       rejectionReason?: string;
     },
   ) {
@@ -2600,7 +2600,9 @@ export class PedagogicalSpaceService {
       throw new NotFoundException('Cahier journal non trouvé');
     }
     const journal = existing[0];
-    if (journal.status !== 'SUBMITTED') {
+    // ⭐ Si pas d'action → c'est une sauvegarde simple (observations only), pas de validation
+    //    On permet la sauvegarde même si le statut n'est pas SUBMITTED
+    if (body.action && journal.status !== 'SUBMITTED') {
       throw new BadRequestException(`Le cahier journal doit être en statut SUBMITTED pour être validé (actuel: ${journal.status})`);
     }
 
@@ -2610,7 +2612,8 @@ export class PedagogicalSpaceService {
     }
 
     // ⭐ Mettre à jour les observations + signature + statut
-    const status = body.action; // VALIDATED ou REJECTED
+    //    Si pas d'action → on ne change pas le statut (sauvegarde simple)
+    const status = body.action || journal.status; // VALIDATED, REJECTED, ou statut actuel
     const directorSignature = body.directorSignature || null;
     const directorGeneralObservation = body.directorGeneralObservation || null;
     const rejectionReason = body.rejectionReason || null;
@@ -2884,6 +2887,33 @@ export class PedagogicalSpaceService {
       fichesNonLieees = [];
     }
 
+    // ─── 3.bis Fallback élargi : si aucune fiche trouvée (ni par cahierJournalId,
+    //       ni par date range), chercher TOUTES les fiches SUBMITTED/VALIDATED
+    //       du même enseignant + classe + année. Les fiches créées depuis le
+    //       cahier journal mais sans lessonDate/adminDate seront trouvées ici. ───
+    const allFichesSoFar = [...(fichesLiees || []), ...(fichesNonLieees || [])];
+    if (allFichesSoFar.length === 0 && journal.teacherId && journal.classId) {
+      try {
+        const fichesElargies = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "tenantId" = $1
+             AND "academicYearId" = $2
+             AND "teacherId" = $3
+             AND "classId" = $4
+             AND "status" IN ('SUBMITTED', 'VALIDATED')
+           ORDER BY "createdAt" DESC
+           LIMIT 20`,
+          tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+        );
+        if (Array.isArray(fichesElargies) && fichesElargies.length > 0) {
+          fichesNonLieees = fichesElargies as any[];
+          this.logger.log(`getFichesForCahierJournal: broader fallback found ${fichesElargies.length} fiches`);
+        }
+      } catch (err) {
+        this.logger.warn(`getFichesForCahierJournal: broader fallback failed: ${err.message}`);
+      }
+    }
+
     // ─── 4. Grouper par jour ───
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
     const parJour: Record<string, any[]> = {
@@ -2892,7 +2922,11 @@ export class PedagogicalSpaceService {
     const allFiches = [...(fichesLiees || []), ...(fichesNonLieees || [])];
     for (const fiche of allFiches) {
       const dateStr = fiche.lessonDate || fiche.adminDate;
-      if (!dateStr) continue;
+      if (!dateStr) {
+        // ⭐ Fiche sans date → mettre dans "lundi" par défaut (pour qu'elle apparaisse)
+        parJour['lundi'].push(fiche);
+        continue;
+      }
       const d = new Date(dateStr);
       const dayName = dayNames[d.getDay()];
       if (parJour[dayName]) {
@@ -6577,12 +6611,15 @@ td.name{text-align:left;font-weight:bold;}
     journalId: string,
     format: string,
   ): Promise<Buffer> {
-    // ⭐ Requête enrichie : journal + identité école + titulaire + année scolaire
+    // ⭐ Requête enrichie : journal + identité école + titulaire + année scolaire + effectif
     const journal: any = await this.prisma.$queryRawUnsafe(
       `SELECT cje.*, c."name" as "classNameResolved",
         tca_t."firstName" as "titularFirstName", tca_t."lastName" as "titularLastName", tca_t."gender" as "titularGender",
         tip."schoolName", tip."schoolAcronym", tip."logoUrl",
-        ay."name" as "academicYearName"
+        ay."name" as "academicYearName",
+        (SELECT COUNT(*) FROM "student_enrollments" se
+         WHERE se."classId" = cje."classId" AND se."academicYearId" = cje."academicYearId"
+           AND se."status" = 'ACTIVE') as "totalStudents"
        FROM "cahier_journal_entries" cje
        LEFT JOIN classes c ON c."id" = cje."classId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cje."classId" AND tca."tenantId" = cje."tenantId"

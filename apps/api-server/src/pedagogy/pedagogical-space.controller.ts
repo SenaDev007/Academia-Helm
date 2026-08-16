@@ -500,7 +500,7 @@ export class PedagogicalSpaceController {
       directorObservations?: Record<string, string>;
       directorGeneralObservation?: string;
       directorSignature?: string;
-      action: 'VALIDATED' | 'REJECTED';
+      action?: 'VALIDATED' | 'REJECTED';
       rejectionReason?: string;
     },
   ) {

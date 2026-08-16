@@ -386,6 +386,9 @@ async function bootstrap() {
       `ALTER TABLE "primary_pedagogical_fiches" ADD COLUMN IF NOT EXISTS "originalSheetId" TEXT`,
       `CREATE INDEX IF NOT EXISTS "primary_pedagogical_fiches_originalSheetId_idx" ON "primary_pedagogical_fiches"("originalSheetId") WHERE "originalSheetId" IS NOT NULL`,
       `CREATE INDEX IF NOT EXISTS "primary_pedagogical_fiches_tenant_class_subject_idx" ON "primary_pedagogical_fiches"("tenantId", "classId", "subjectId")`,
+      // ⭐ cahierJournalId : lien structurel fiche → cahier journal (crucial pour le director validation)
+      `ALTER TABLE "primary_pedagogical_fiches" ADD COLUMN IF NOT EXISTS "cahierJournalId" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "primary_pedagogical_fiches_cahierJournalId_idx" ON "primary_pedagogical_fiches"("cahierJournalId") WHERE "cahierJournalId" IS NOT NULL`,
     ];
 
     for (const stmt of pedagogyTableStatements) {

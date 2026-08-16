@@ -29,7 +29,7 @@ import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award, Calendar,
-  Download,
+  Download, Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1535,6 +1535,37 @@ function CahierJournalDirectorDetail({
 
   const formatDate = (d: string | Date) => new Date(d).toLocaleDateString('fr-FR');
 
+  // ⭐ Sauvegarder les observations SANS valider/rejeter
+  //    Le directeur peut enregistrer ses observations et sa signature
+  //    pour revenir plus tard valider.
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/director-update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          directorObservations,
+          directorGeneralObservation,
+          directorSignature,
+          // Pas d'action → sauvegarde simple sans changer le statut
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success('✅ Observations enregistrées', {
+        description: 'Vos observations et signature sont sauvegardées. Vous pouvez valider plus tard.',
+      });
+    } catch (err: any) {
+      toast.error('Erreur lors de la sauvegarde', { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleValidate = async (action: 'VALIDATED' | 'REJECTED') => {
     if (action === 'VALIDATED' && !directorSignature) {
       toast.error("Signature obligatoire", {
@@ -1684,6 +1715,16 @@ function CahierJournalDirectorDetail({
           )}
           {!isAlreadyValidated && !isAlreadyRejected && (
             <>
+              {/* ⭐ Bouton Enregistrer (sans valider) — pour sauvegarder observations + signature */}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                title="Enregistrer les observations sans valider"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Enregistrer
+              </button>
               <button
                 onClick={() => handleValidate('REJECTED')}
                 disabled={saving}

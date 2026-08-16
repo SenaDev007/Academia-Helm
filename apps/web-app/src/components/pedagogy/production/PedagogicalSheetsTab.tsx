@@ -900,7 +900,19 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `fiche_${fiche.sheetType}_${(fiche.titre || 'sans_titre').replace(/\s+/g, '_').substring(0, 30)}.pdf`;
+                        // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
+                        const SHEET_LABELS: Record<string, string> = {
+                          MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique',
+                        };
+                        const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
+                        const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+                        const lessonDate = fiche.lessonDate ? new Date(fiche.lessonDate) : null;
+                        const jour = lessonDate ? days[lessonDate.getDay()] : '';
+                        const dateStr = lessonDate ? `${lessonDate.getDate()}-${lessonDate.getMonth() + 1}-${lessonDate.getFullYear()}` : '';
+                        // Période : semaine du cahier journal si dispo, sinon juste la date
+                        const periode = cahierJournalId ? '' : '';
+                        const fileName = `Fiche pedagogique ${matiere}${jour ? ' ' + jour : ''}${dateStr ? ' ' + dateStr : ''}${periode}.pdf`;
+                        a.download = fileName;
                         a.click();
                         window.URL.revokeObjectURL(url);
                       } catch (e: any) {

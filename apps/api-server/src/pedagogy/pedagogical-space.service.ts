@@ -852,11 +852,15 @@ export class PedagogicalSpaceService {
     const ficheRows: any = await this.prisma.$queryRawUnsafe(
       `SELECT pf.*, c."name" as "classNameResolved",
         t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender",
-        tip."schoolName", tip."logoUrl"
+        u."firstName" as "userFirstName", u."lastName" as "userLastName",
+        tip."schoolName", tip."schoolAcronym", tip."logoUrl",
+        ay."name" as "academicYearName"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN classes c ON c."id" = pf."classId"
        LEFT JOIN teachers t ON t."id" = pf."teacherId"
+       LEFT JOIN users u ON u."id" = pf."teacherId"
        LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = pf."tenantId" AND tip."isActive" = true
+       LEFT JOIN "academic_years" ay ON ay."id" = pf."academicYearId"
        WHERE pf."id" = $1 AND pf."tenantId" = $2
        ORDER BY tip."version" DESC
        LIMIT 1`,
@@ -867,9 +871,13 @@ export class PedagogicalSpaceService {
     }
     const fiche = ficheRows[0];
 
-    // Résoudre le nom du titulaire
-    const teacherName = fiche.teacherFirstName || fiche.teacherLastName
-      ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(fiche.teacherLastName || '').toUpperCase()} ${fiche.teacherFirstName || ''}`.trim()
+    // ⭐ Résoudre le nom du titulaire : teacher (table teachers) OU user (table users)
+    //    Le teacherId stocké peut être l'ID du Teacher OU l'ID du User (selon comment
+    //    la fiche a été créée). On essaie les deux.
+    const firstName = fiche.teacherFirstName || fiche.userFirstName || '';
+    const lastName = fiche.teacherLastName || fiche.userLastName || '';
+    const teacherName = firstName || lastName
+      ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(lastName || '').toUpperCase()} ${firstName}`.trim()
       : '—';
 
     const html = this.buildFichePdfHtml(fiche, teacherName);
@@ -881,6 +889,8 @@ export class PedagogicalSpaceService {
         format: 'A4',
         printBackground: true,
         margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+        headerTemplate: '<div></div>',
+        footerTemplate: '<div></div>',
       });
       return Buffer.from(pdfBuffer);
     } finally {
@@ -935,8 +945,8 @@ export class PedagogicalSpaceService {
    * ⭐ Construit le HTML d'une fiche pédagogique pour export PDF.
    *    `embedded` = true si la fiche est dans un document combiné (pas de <html> wrapper).
    *
-   *    Design professionnel : en-tête école + logo, sections colorées par type,
-   *    tableau structuré, signatures, footer. Identique à l'interface UI.
+   *    Design professionnel : en-tête école + logo, filigrane acronyme, sections
+   *    colorées par type, tableau structuré, signatures, footer. Identique à l'UI.
    */
   private buildFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -958,7 +968,13 @@ export class PedagogicalSpaceService {
     // Récupérer les champs (strip HTML basique)
     const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() || '—';
 
-    // Déroulement (JSON)
+    // ⭐ Filigrane : acronyme de l'école en grand, transparent, centré sur la page
+    const schoolAcronym = fiche.schoolAcronym || (fiche.schoolName || '').substring(0, 3).toUpperCase() || '';
+    const watermark = schoolAcronym
+      ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:bold;color:#e2e8f0;opacity:0.15;z-index:0;pointer-events:none;white-space:nowrap;letter-spacing:8px;">${schoolAcronym}</div>`
+      : '';
+
+    // Déroulement (JSON) — 3 colonnes seulement : # + Consignes + Résultats attendus
     let deroulementRows = '';
     if (fiche.deroulement) {
       try {
@@ -966,10 +982,9 @@ export class PedagogicalSpaceService {
         if (Array.isArray(der)) {
           deroulementRows = der.map((d: any, i: number) => `
             <tr>
-              <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;font-weight:bold;background:#f8fafc;">${i + 1}</td>
-              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;font-weight:600;">${strip(d.etape || d.phase)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;font-weight:bold;background:#f8fafc;width:8%;">${i + 1}</td>
               <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${strip(d.consignes)}</td>
-              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${strip(d.resultats)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;width:35%;">${strip(d.resultats)}</td>
             </tr>`).join('');
         }
       } catch {}
@@ -978,16 +993,23 @@ export class PedagogicalSpaceService {
     const content = `
       ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; }
+        body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
+        .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-45deg); font-size:120px; font-weight:bold; color:#e2e8f0; opacity:0.12; z-index:0; pointer-events:none; white-space:nowrap; letter-spacing:8px; }
+        .content { position:relative; z-index:1; }
+        @page { margin: 10mm; }
       </style></head><body>` : ''}
+
+      ${watermark}
+
+      <div class="content">
 
       <!-- ═══ EN-TÊTE ÉCOLE ═══ -->
       <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${typeConfig.color};padding-bottom:8px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;">
-          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:50px;max-width:50px;object-fit:contain;" />` : ''}
+          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:60px;max-width:60px;object-fit:contain;" crossorigin="anonymous" />` : ''}
           <div>
             <div style="font-size:13px;font-weight:bold;color:#0A2A5E;">${fiche.schoolName || 'Academia Helm'}</div>
-            <div style="font-size:9px;color:#64748b;">${fiche.classNameResolved || fiche.className || '—'} · ${fiche.academicYearLabel || 'Année scolaire'}</div>
+            <div style="font-size:9px;color:#64748b;">${fiche.classNameResolved || fiche.className || '—'} · ${fiche.academicYearName || 'Année scolaire'}</div>
           </div>
         </div>
         <div style="text-align:right;">
@@ -999,11 +1021,11 @@ export class PedagogicalSpaceService {
       <!-- ═══ INFO GÉNÉRALES ═══ -->
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">
         <tr>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">SAN°</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;width:18%;">${fiche.san || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Date</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;width:18%;">${lessonDateStr}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Durée</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">SAN°</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;width:20%;">${fiche.san || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">Date</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;width:20%;">${lessonDateStr}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">Durée</td>
           <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.duree || fiche.adminDuree || '—'} min</td>
         </tr>
         <tr>
@@ -1039,10 +1061,9 @@ export class PedagogicalSpaceService {
         <table style="width:100%;border-collapse:collapse;border:1px solid ${typeConfig.border};border-top:none;">
           <thead>
             <tr style="background:${typeConfig.bg};">
-              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:5%;">#</th>
-              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:20%;">Étape / Phase</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:8%;">#</th>
               <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">Consignes</th>
-              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:30%;">Résultats attendus</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:35%;">Résultats attendus</th>
             </tr>
           </thead>
           <tbody>${deroulementRows}</tbody>
@@ -1077,6 +1098,8 @@ export class PedagogicalSpaceService {
       <div style="margin-top:15px;border-top:1px solid #e2e8f0;padding-top:5px;text-align:center;font-size:8px;color:#94a3b8;">
         Fiche pédagogique générée par Academia Helm · ${new Date().toLocaleDateString('fr-FR')} · ${fiche.classNameResolved || fiche.className || ''}
       </div>
+
+      </div><!-- /.content -->
 
       ${!embedded ? `</body></html>` : ''}
     `;

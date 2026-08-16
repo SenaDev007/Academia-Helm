@@ -46,6 +46,15 @@ interface CahierJournalTabProps {
     status?: string;
     classId?: string;
   }) => void;
+  /** ⭐ Callback appelé après chaque loadJournal réussi (y compris quand on switch de semaine).
+   *    Permet au parent (CahierJournalFichesContainer) de connaître le journalId courant
+   *    pour afficher les fiches liées en dessous de la grille hebdo. */
+  onJournalLoaded?: (journalId: string | null, meta?: {
+    weekStartDate?: string;
+    weekEndDate?: string;
+    className?: string;
+    classId?: string;
+  }) => void;
 }
 
 // === CONSTANTES DU TEMPLATE OFFICIEL ===
@@ -110,7 +119,7 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJournalSaved, onJournalSubmitted }: CahierJournalTabProps) {
+export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJournalSaved, onJournalSubmitted, onJournalLoaded }: CahierJournalTabProps) {
   const { academicYear } = useModuleContext();
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
@@ -284,13 +293,21 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJourna
       // ⭐ Charger les signatures existantes
       setTeacherSignature(data.teacherSignature || null);
       setDirectorSignature(data.directorSignature || null);
+      // ⭐ Notifier le parent du journalId courant (pour afficher les fiches liées)
+      onJournalLoaded?.(data.id, {
+        weekStartDate: data.weekStartDate,
+        weekEndDate: data.weekEndDate,
+        className: data.classNameResolved || data.className,
+        classId: selectedClassId,
+      });
     } catch (e: any) {
       toast.error("Erreur lors du chargement", { description: e.message });
       setJournal(null);
+      onJournalLoaded?.(null);
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, teacherId, selectedClassId, weekStart, classes]);
+  }, [academicYearId, teacherId, selectedClassId, weekStart, classes, onJournalLoaded]);
 
   useEffect(() => {
     if (selectedClassId) loadJournal();

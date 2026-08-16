@@ -32,6 +32,7 @@ import {
   AlertCircle,
   Plus,
   CalendarDays,
+  Eye,
 } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { CahierJournalTab } from "./CahierJournalTab";
@@ -96,6 +97,22 @@ export function CahierJournalFichesContainer({
         if (meta.classId) setCurrentClassId(meta.classId);
       }
       setSubTab("fiches");
+    },
+    [],
+  );
+
+  // ⭐ Callback appelé après chaque loadJournal réussi (y compris quand on switch de semaine).
+  //    Permet de connaître le journalId courant pour afficher les fiches liées
+  //    en dessous de la grille hebdo dans le sous-onglet "cahier".
+  const handleJournalLoaded = useCallback(
+    (journalId: string | null, meta?: any) => {
+      if (journalId) {
+        setCurrentJournalId(journalId);
+        if (meta) {
+          setCurrentJournalMeta(prev => ({ ...prev, ...meta }));
+          if (meta.classId) setCurrentClassId(meta.classId);
+        }
+      }
     },
     [],
   );
@@ -183,13 +200,27 @@ export function CahierJournalFichesContainer({
       {/* Contenu du sous-onglet */}
       <div>
         {subTab === "cahier" && (
-          <CahierJournalTab
-            tenantId={tenantId}
-            academicYearId={academicYearId}
-            teacherId={teacherId}
-            onJournalSaved={handleJournalSaved}
-            onJournalSubmitted={handleJournalSubmitted}
-          />
+          <div className="space-y-4">
+            <CahierJournalTab
+              tenantId={tenantId}
+              academicYearId={academicYearId}
+              teacherId={teacherId}
+              onJournalSaved={handleJournalSaved}
+              onJournalSubmitted={handleJournalSubmitted}
+              onJournalLoaded={handleJournalLoaded}
+            />
+            {/* ⭐ Fiches pédagogiques liées au cahier journal courant.
+                Affichées en dessous de la grille hebdo pour que l'enseignant
+                voie directement quelles fiches sont déjà préparées pour cette
+                semaine. Cliquer sur une fiche bascule vers le sous-onglet
+                Fiches en mode édition. */}
+            {currentJournalId && (
+              <FichesLieesJournal
+                journalId={currentJournalId}
+                onViewFiche={handleViewFiche}
+              />
+            )}
+          </div>
         )}
         {subTab === "fiches" && (
           <>
@@ -543,6 +574,116 @@ function FichesAPreparer({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Fiches pédagogiques liées au cahier journal (affichées dans l'onglet Cahier) ──
+
+/**
+ * Affiche la liste des fiches pédagogiques déjà créées pour le cahier journal
+ * courant. Chaque fiche a un bouton "Voir / Éditer" qui bascule vers le
+ * sous-onglet Fiches en mode édition.
+ *
+ * Ce composant est affiché en dessous de la grille hebdo dans le sous-onglet
+ * "Cahier Journal" pour que l'enseignant voie directement quelles fiches sont
+ * déjà préparées pour la semaine courante — même quand il switch de semaine.
+ */
+function FichesLieesJournal({
+  journalId,
+  onViewFiche,
+}: {
+  journalId: string;
+  onViewFiche: (ficheId: string) => void;
+}) {
+  const [fiches, setFiches] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get(
+        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
+      );
+      // Les fiches liées sont dans res.data.fichesLiees ou res.data.fiches
+      const data = res.data;
+      const fichesLiees = data?.fichesLiees || data?.fiches || [];
+      setFiches(Array.isArray(fichesLiees) ? fichesLiees : []);
+    } catch {
+      setFiches([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [journalId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // ⭐ Écouter l'event 'fiche:saved' pour recharger quand une fiche est créée/mise à jour
+  useEffect(() => {
+    const handleFicheSaved = () => {
+      setTimeout(() => load(), 300);
+    };
+    window.addEventListener('fiche:saved', handleFicheSaved);
+    return () => window.removeEventListener('fiche:saved', handleFicheSaved);
+  }, [load]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Chargement des fiches liées…
+        </div>
+      </div>
+    );
+  }
+
+  if (fiches.length === 0) {
+    return null; // Ne pas afficher la section s'il n'y a pas de fiches liées
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <FileText className="h-4 w-4 text-emerald-600" />
+        <h4 className="text-sm font-bold text-slate-800">
+          Fiches pédagogiques préparées pour cette semaine
+        </h4>
+        <span className="ml-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-700">
+          {fiches.length}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {fiches.map((fiche: any) => (
+          <div
+            key={fiche.id}
+            className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2 text-xs"
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-medium text-slate-700 truncate">
+                  {fiche.sheetType || fiche.competence || 'Fiche'}
+                </div>
+                {fiche.lessonDate && (
+                  <div className="text-[10px] text-slate-400">
+                    {new Date(fiche.lessonDate).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => onViewFiche(fiche.id)}
+              className="flex items-center gap-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded ml-2 shrink-0"
+            >
+              <Eye className="h-3 w-3" />
+              Voir
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

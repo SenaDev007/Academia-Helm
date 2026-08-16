@@ -33,6 +33,7 @@ import {
   Plus,
   CalendarDays,
   Eye,
+  Download,
 } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { CahierJournalTab } from "./CahierJournalTab";
@@ -205,6 +206,7 @@ export function CahierJournalFichesContainer({
               tenantId={tenantId}
               academicYearId={academicYearId}
               teacherId={teacherId}
+              initialClassId={currentClassId || undefined}
               onJournalSaved={handleJournalSaved}
               onJournalSubmitted={handleJournalSubmitted}
               onJournalLoaded={handleJournalLoaded}
@@ -675,13 +677,38 @@ function FichesLieesJournal({
                 )}
               </div>
             </div>
-            <button
-              onClick={() => onViewFiche(fiche.id)}
-              className="flex items-center gap-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded ml-2 shrink-0"
-            >
-              <Eye className="h-3 w-3" />
-              Voir
-            </button>
+            <div className="flex items-center gap-1 ml-2 shrink-0">
+              <button
+                onClick={() => onViewFiche(fiche.id)}
+                className="flex items-center gap-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2 py-1 rounded"
+              >
+                <Eye className="h-3 w-3" />
+                Voir
+              </button>
+              {/* ⭐ Bouton PDF — génère un PDF professionnel depuis le backend */}
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/pedagogy-space/fiches/${fiche.id}/export-pdf`, { credentials: 'include' });
+                    if (!res.ok) throw new Error('Erreur');
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `fiche_${fiche.sheetType || 'pedagogique'}_${(fiche.titre || 'sans_titre').replace(/\s+/g, '_').substring(0, 30)}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                  } catch (e: any) {
+                    toast.error('Erreur export PDF', { description: e.message });
+                  }
+                }}
+                className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 px-2 py-1 rounded"
+                title="Télécharger la fiche en PDF"
+              >
+                <Download className="h-3 w-3" />
+                PDF
+              </button>
+            </div>
           </div>
         ))}
       </div>

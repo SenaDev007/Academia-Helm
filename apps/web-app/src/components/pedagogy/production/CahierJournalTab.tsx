@@ -30,6 +30,8 @@ interface CahierJournalTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
+  /** ⭐ Classe à pré-sélectionner (pour éviter de perdre la sélection quand on switch d'onglet) */
+  initialClassId?: string;
   /** ⭐ Callback appelé après un "Enregistrer" réussi — déclenche la bascule vers le sous-onglet Fiches */
   onJournalSaved?: (journalId: string, meta?: {
     weekStartDate?: string;
@@ -119,11 +121,11 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJournalSaved, onJournalSubmitted, onJournalLoaded }: CahierJournalTabProps) {
+export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialClassId, onJournalSaved, onJournalSubmitted, onJournalLoaded }: CahierJournalTabProps) {
   const { academicYear } = useModuleContext();
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || "");
   const [weekStart, setWeekStart] = useState<Date>(getMondayOfWeek(new Date()));
   const [journal, setJournal] = useState<any>(null);
   const [entries, setEntries] = useState<Record<string, Record<string, string>>>({});

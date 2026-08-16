@@ -851,11 +851,15 @@ export class PedagogicalSpaceService {
   async exportFichePdf(tenantId: string, ficheId: string): Promise<Buffer> {
     const ficheRows: any = await this.prisma.$queryRawUnsafe(
       `SELECT pf.*, c."name" as "classNameResolved",
-        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender",
+        tip."schoolName", tip."logoUrl"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN classes c ON c."id" = pf."classId"
        LEFT JOIN teachers t ON t."id" = pf."teacherId"
-       WHERE pf."id" = $1 AND pf."tenantId" = $2`,
+       LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = pf."tenantId" AND tip."isActive" = true
+       WHERE pf."id" = $1 AND pf."tenantId" = $2
+       ORDER BY tip."version" DESC
+       LIMIT 1`,
       ficheId, tenantId,
     ).catch(() => []);
     if (!ficheRows || ficheRows.length === 0) {
@@ -930,6 +934,9 @@ export class PedagogicalSpaceService {
   /**
    * ⭐ Construit le HTML d'une fiche pédagogique pour export PDF.
    *    `embedded` = true si la fiche est dans un document combiné (pas de <html> wrapper).
+   *
+   *    Design professionnel : en-tête école + logo, sections colorées par type,
+   *    tableau structuré, signatures, footer. Identique à l'interface UI.
    */
   private buildFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -938,14 +945,18 @@ export class PedagogicalSpaceService {
       ? `${dayNames[lessonDate.getDay()]} ${lessonDate.getDate()}/${lessonDate.getMonth() + 1}/${lessonDate.getFullYear()}`
       : '—';
 
-    const SHEET_TYPE_LABELS: Record<string, string> = {
-      MATH: 'Mathématiques', FRANCAIS: 'Français', EST: 'Éducation Scientifique et Technologique',
-      ES: 'Éducation Sociale', EA: 'Éducation Artistique',
+    const SHEET_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
+      MATH: { label: 'Mathématiques', color: '#1e40af', bg: '#dbeafe', border: '#3b82f6' },
+      FRANCAIS: { label: 'Français', color: '#047857', bg: '#d1fae5', border: '#10b981' },
+      EST: { label: 'Éducation Scientifique et Technologique', color: '#6d28d9', bg: '#ede9fe', border: '#8b5cf6' },
+      ES: { label: 'Éducation Sociale', color: '#b45309', bg: '#fef3c7', border: '#f59e0b' },
+      EA: { label: 'Éducation Artistique', color: '#be185d', bg: '#fce7f3', border: '#ec4899' },
     };
-    const typeLabel = SHEET_TYPE_LABELS[fiche.sheetType] || fiche.sheetType || '—';
+    const typeConfig = SHEET_TYPE_CONFIG[fiche.sheetType] || { label: fiche.sheetType || '—', color: '#0A2A5E', bg: '#f1f5f9', border: '#cbd5e1' };
+    const typeLabel = typeConfig.label;
 
     // Récupérer les champs (strip HTML basique)
-    const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim() || '—';
+    const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() || '—';
 
     // Déroulement (JSON)
     let deroulementRows = '';
@@ -955,10 +966,10 @@ export class PedagogicalSpaceService {
         if (Array.isArray(der)) {
           deroulementRows = der.map((d: any, i: number) => `
             <tr>
-              <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${i + 1}</td>
-              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.etape)}</td>
-              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.consignes)}</td>
-              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.resultats)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;font-weight:bold;background:#f8fafc;">${i + 1}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;font-weight:600;">${strip(d.etape || d.phase)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${strip(d.consignes)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${strip(d.resultats)}</td>
             </tr>`).join('');
         }
       } catch {}
@@ -967,77 +978,104 @@ export class PedagogicalSpaceService {
     const content = `
       ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; padding: 10mm; }
+        body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; }
       </style></head><body>` : ''}
 
-      <div style="text-align:center;margin-bottom:8px;">
-        <div style="font-size:14px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">FICHE PÉDAGOGIQUE</div>
-        <div style="font-size:10px;color:#64748b;margin-top:2px;">${typeLabel} — ${fiche.classNameResolved || fiche.className || '—'}</div>
+      <!-- ═══ EN-TÊTE ÉCOLE ═══ -->
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${typeConfig.color};padding-bottom:8px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:50px;max-width:50px;object-fit:contain;" />` : ''}
+          <div>
+            <div style="font-size:13px;font-weight:bold;color:#0A2A5E;">${fiche.schoolName || 'Academia Helm'}</div>
+            <div style="font-size:9px;color:#64748b;">${fiche.classNameResolved || fiche.className || '—'} · ${fiche.academicYearLabel || 'Année scolaire'}</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;font-weight:bold;color:${typeConfig.color};background:${typeConfig.bg};padding:4px 10px;border-radius:4px;border:1px solid ${typeConfig.border};">FICHE PÉDAGOGIQUE</div>
+          <div style="font-size:9px;color:#64748b;margin-top:3px;">${typeLabel}</div>
+        </div>
       </div>
 
-      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;font-size:9px;">
+      <!-- ═══ INFO GÉNÉRALES ═══ -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">
         <tr>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>SAN°:</strong> ${fiche.san || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Date:</strong> ${lessonDateStr}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Classe:</strong> ${fiche.classNameResolved || fiche.className || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">SAN°</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;width:18%;">${fiche.san || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Date</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;width:18%;">${lessonDateStr}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Durée</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.duree || fiche.adminDuree || '—'} min</td>
         </tr>
         <tr>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Titre:</strong> ${strip(fiche.titre)}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Cours:</strong> ${strip(fiche.cours)}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Durée:</strong> ${fiche.duree || fiche.adminDuree || '—'} min</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Classe</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.classNameResolved || fiche.className || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Effectif</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.totalStudents || '—'} élèves</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Enseignant</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;">${teacherName}</td>
         </tr>
         <tr>
-          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Effectif:</strong> ${fiche.totalStudents || '—'} élèves</td>
-          <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;"><strong>Enseignant:</strong> ${teacherName}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Titre</td>
+          <td colspan="5" style="border:1px solid #cbd5e1;padding:5px;font-weight:600;">${strip(fiche.titre)}</td>
         </tr>
       </table>
 
-      <div style="margin-bottom:6px;">
-        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">I — ÉLÉMENTS DE PLANIFICATION</div>
-        <table style="width:100%;border-collapse:collapse;font-size:9px;">
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;width:30%;font-weight:bold;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.competence)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.habilete)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.contenu)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.methodes)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.moyensDidactiques)}</td></tr>
+      <!-- ═══ I — ÉLÉMENTS DE PLANIFICATION ═══ -->
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">I — ÉLÉMENTS DE PLANIFICATION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.competence)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.habilete)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.contenu)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.methodes)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.moyensDidactiques)}</td></tr>
         </table>
       </div>
 
       ${deroulementRows ? `
-      <div style="margin-bottom:6px;">
-        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">II — DÉROULEMENT</div>
-        <table style="width:100%;border-collapse:collapse;">
+      <!-- ═══ II — DÉROULEMENT ═══ -->
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">II — DÉROULEMENT</div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${typeConfig.border};border-top:none;">
           <thead>
-            <tr style="background:#0A2A5E;color:white;">
-              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;width:5%;">#</th>
-              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Étape</th>
-              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Consignes</th>
-              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Résultats attendus</th>
+            <tr style="background:${typeConfig.bg};">
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:5%;">#</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:20%;">Étape / Phase</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">Consignes</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:30%;">Résultats attendus</th>
             </tr>
           </thead>
           <tbody>${deroulementRows}</tbody>
         </table>
       </div>` : ''}
 
-      <div style="margin-bottom:6px;">
-        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">III — RETOUR ET PROJECTION</div>
-        <table style="width:100%;border-collapse:collapse;font-size:9px;">
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;width:30%;font-weight:bold;">Objectivation</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.objectivation)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Évaluation</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.evalRetour)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Projection</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.projection)}</td></tr>
+      <!-- ═══ III — RETOUR ET PROJECTION ═══ -->
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">III — RETOUR ET PROJECTION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Objectivation</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivation)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Évaluation</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetour)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Projection</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projection)}</td></tr>
         </table>
       </div>
 
-      <div style="margin-top:10px;display:flex;justify-content:space-between;">
+      <!-- ═══ SIGNATURES ═══ -->
+      <div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
         <div style="text-align:center;width:45%;">
-          ${fiche.teacherSignature ? `<img src="${fiche.teacherSignature}" style="max-height:50px;max-width:120px;object-fit:contain;" />` : ''}
-          <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;font-weight:bold;">Le Maître / La Maîtresse</div>
-          <div style="font-size:8px;color:#64748b;">${teacherName}</div>
+          ${fiche.teacherSignature ? `<img src="${fiche.teacherSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
+          <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Maître / La Maîtresse</div>
+          <div style="font-size:8px;color:#64748b;margin-top:1px;">${teacherName}</div>
         </div>
         <div style="text-align:center;width:45%;">
-          ${fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:50px;max-width:120px;object-fit:contain;" />` : ''}
-          <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;font-weight:bold;">Le Directeur / La Directrice</div>
+          ${fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
+          <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
+          <div style="font-size:8px;color:#64748b;margin-top:1px;">&nbsp;</div>
         </div>
+      </div>
+
+      <!-- ═══ FOOTER ═══ -->
+      <div style="margin-top:15px;border-top:1px solid #e2e8f0;padding-top:5px;text-align:center;font-size:8px;color:#94a3b8;">
+        Fiche pédagogique générée par Academia Helm · ${new Date().toLocaleDateString('fr-FR')} · ${fiche.classNameResolved || fiche.className || ''}
       </div>
 
       ${!embedded ? `</body></html>` : ''}

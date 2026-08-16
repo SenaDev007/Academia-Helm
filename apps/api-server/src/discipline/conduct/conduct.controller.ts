@@ -21,13 +21,17 @@ import {
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
+import { DisciplineNotificationService } from '../services/discipline-notification.service';
 import * as crypto from 'crypto';
 
 @Controller('discipline/conduct')
 export class ConductController {
   private readonly logger = new Logger(ConductController.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly disciplineNotificationService: DisciplineNotificationService,
+  ) {}
 
   // ── RULES ──────────────────────────────────────────────────────────────
 
@@ -144,6 +148,26 @@ export class ConductController {
     await this.updateConductLedger(tenantId, body.academicYearId, body.studentId, body.quarterId, body.pointsDeducted || 0);
 
     this.logger.log(`Sanction created: ${body.faultName} (-${body.pointsDeducted}pts) for student ${body.studentId} by ${user?.id}`);
+
+    // ⭐ Notifier le parent (WhatsApp Business + fallback SMS) — fire-and-forget
+    //    Ne bloque jamais l'API. Si ça échoue, c'est juste loggé.
+    //    Met à jour les colonnes notificationStatus / parentNotifiedAt / notificationChannels.
+    this.disciplineNotificationService
+      .notifyParentSanctionCreated({
+        tenantId,
+        sanctionId: id,
+        studentId: body.studentId,
+        academicYearId: body.academicYearId,
+        faultName: body.faultName,
+        hoursAttributed: body.hoursAttributed || 0,
+        pointsDeducted: body.pointsDeducted || 0,
+        triggeredByUserId: user?.id,
+      })
+      .then((result) => this.persistNotificationStatus(id, result, 'created'))
+      .catch((err) =>
+        this.logger.error(`Notification sanction_created échouée (non-bloquant): ${err.message}`),
+      );
+
     return { id, success: true };
   }
 
@@ -178,6 +202,24 @@ export class ConductController {
     }
 
     this.logger.log(`Sanction cancelled: ${sanctionId} by ${user?.id}, reason: ${body.reason}`);
+
+    // ⭐ Notifier le parent de l'annulation (WhatsApp + SMS) — fire-and-forget
+    this.disciplineNotificationService
+      .notifyParentSanctionCancelled({
+        tenantId,
+        sanctionId,
+        studentId: s.studentId,
+        academicYearId: s.academicYearId,
+        faultName: s.fault_name || '—',
+        pointsRefunded: s.points_deducted || 0,
+        cancellationReason: body.reason,
+        triggeredByUserId: user?.id,
+      })
+      .then((result) => this.persistNotificationStatus(sanctionId, result, 'cancelled'))
+      .catch((err) =>
+        this.logger.error(`Notification sanction_cancelled échouée (non-bloquant): ${err.message}`),
+      );
+
     return { success: true };
   }
 
@@ -283,5 +325,54 @@ export class ConductController {
          calculated_at = now(), "updatedAt" = now()`,
       id, tenantId, academicYearId, studentId, quarterId, pointsDelta,
     );
+  }
+
+  // ── HELPER : Persister le statut de notification sur la sanction ───────
+
+  private async persistNotificationStatus(
+    sanctionId: string,
+    result: import('../services/discipline-notification.service').NotificationResult,
+    event: 'created' | 'cancelled',
+  ) {
+    try {
+      // Déterminer le statut global
+      let status: 'SENT' | 'FAILED' | 'SKIPPED' = 'FAILED';
+      const waStatus = result.channels.whatsapp?.status;
+      const smsStatus = result.channels.sms?.status;
+
+      if (waStatus === 'sent' || smsStatus === 'sent') {
+        status = 'SENT';
+      } else if (waStatus === 'skipped' && smsStatus === 'skipped') {
+        status = 'SKIPPED';
+      } else {
+        status = 'FAILED';
+      }
+
+      const channels = {
+        whatsapp: waStatus || 'skipped',
+        sms: smsStatus || 'skipped',
+        event, // 'created' ou 'cancelled'
+      };
+
+      const notifiedAt = status === 'SENT' ? new Date() : null;
+
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE sanctions
+         SET "notificationStatus" = $2,
+             "notificationChannels" = $3::jsonb,
+             "parentNotifiedAt" = $4,
+             "updatedAt" = now()
+         WHERE id = $1`,
+        sanctionId, status, JSON.stringify(channels), notifiedAt,
+      );
+
+      this.logger.log(
+        `📊 Sanction ${sanctionId} notification status: ${status} (whatsapp=${waStatus}, sms=${smsStatus})`,
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `persistNotificationStatus failed for ${sanctionId}: ${err.message}`,
+      );
+    }
   }
 }

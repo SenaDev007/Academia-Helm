@@ -40,6 +40,8 @@ import { AutomationPrismaService } from './automation-prisma.service';
 import { TemplatesPrismaController } from './templates-prisma.controller';
 import { TemplatesPrismaService } from './templates-prisma.service';
 import { EmailLogController } from './email-log.controller';
+import { WhatsAppLogController } from './whatsapp-log.controller';
+import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { ScheduledEmailController } from './scheduled-email.controller';
 import { DatabaseModule } from '../database/database.module';
 
@@ -53,6 +55,8 @@ import { DatabaseModule } from '../database/database.module';
     AutomationPrismaController,
     TemplatesPrismaController,
     EmailLogController,
+    WhatsAppLogController,
+    WhatsAppWebhookController,
     ScheduledEmailController,
   ],
   providers: [

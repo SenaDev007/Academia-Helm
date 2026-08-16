@@ -22,6 +22,10 @@ interface Sanction {
   id: string; studentId: string; studentName: string; className: string;
   fault_name: string; hours_attributed: number; points_deducted: number;
   sanction_date: string; status: string; comment?: string;
+  // ⭐ Champs notification (remplis par DisciplineNotificationService)
+  notificationStatus?: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+  parentNotifiedAt?: string;
+  notificationChannels?: { whatsapp?: string; sms?: string; event?: string };
 }
 interface ClassInfo { id: string; name: string; code: string; schoolLevelId?: string; }
 interface LevelGroup { levelName: string; levelCode: string; classes: ClassInfo[]; }
@@ -195,6 +199,7 @@ export default function DisciplineWorkspace({
                                 <TableHead className="text-xs text-right whitespace-nowrap">Points</TableHead>
                                 <TableHead className="text-xs whitespace-nowrap">Date</TableHead>
                                 <TableHead className="text-xs text-center whitespace-nowrap">Statut</TableHead>
+                                <TableHead className="text-xs text-center whitespace-nowrap">Notif. parent</TableHead>
                               </TableRow></TableHeader>
                               <TableBody>
                                 {clsSanctions.map(s => (
@@ -207,6 +212,9 @@ export default function DisciplineWorkspace({
                                     <TableCell className="text-xs text-center whitespace-nowrap">
                                       {s.status === 'ACTIVE' ? <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Active</span>
                                       : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">Annulée</span>}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-center whitespace-nowrap">
+                                      <NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -617,5 +625,40 @@ function SearchBar({ searchQuery, setSearchQuery, placeholder }: {
       <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
         placeholder={placeholder} className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
     </div>
+  );
+}
+
+// ─── Notification Badge (WhatsApp/SMS status) ────────────────────────────
+
+function NotificationBadge({ status, channels }: {
+  status?: 'PENDING' | 'SENT' | 'FAILED' | 'SKIPPED';
+  channels?: { whatsapp?: string; sms?: string; event?: string };
+}) {
+  if (!status) {
+    return <span className="text-[10px] text-gray-400">—</span>;
+  }
+
+  const config: Record<string, { label: string; cls: string; icon: string }> = {
+    PENDING: { label: 'En cours', cls: 'bg-yellow-100 text-yellow-700 border-yellow-300', icon: '⏳' },
+    SENT: { label: 'Envoyé', cls: 'bg-green-100 text-green-700 border-green-300', icon: '✓' },
+    FAILED: { label: 'Échec', cls: 'bg-red-100 text-red-700 border-red-300', icon: '✕' },
+    SKIPPED: { label: 'Ignoré', cls: 'bg-gray-100 text-gray-500 border-gray-300', icon: '—' },
+  };
+
+  const c = config[status] || config.PENDING;
+
+  // Tooltip : détail par canal
+  const tooltip = channels
+    ? `WhatsApp: ${channels.whatsapp || '—'} | SMS: ${channels.sms || '—'}${channels.event ? ` | ${channels.event === 'created' ? 'Création' : 'Annulation'}` : ''}`
+    : '';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${c.cls}`}
+      title={tooltip}
+    >
+      <span>{c.icon}</span>
+      <span>{c.label}</span>
+    </span>
   );
 }

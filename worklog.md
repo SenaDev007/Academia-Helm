@@ -4217,3 +4217,321 @@ Stage Summary:
 - Files modified by this audit task: 0 (audit only, no code changes).
 - Prochaine étape recommandée : Task "FIX-CLASSES-1" pour appliquer les corrections
   backend + BFF selon le plan ci-dessus.
+
+---
+Task ID: AUDIT-NOTIF-1
+Agent: explore (sub-agent)
+Task: Audit exhaustif de l'infrastructure de notifications existante (SMS, email, in-app, WhatsApp) pour préparer l'ajout de WhatsApp Business API sans duplication.
+
+Work Log:
+- Lu worklog.md (contexte : 3 agents AI Sarah/Orion/Atlas, multi-tenant Academia Helm, modules RH/Students/Pedagogy/Finance/Communication déjà partiellement équipés).
+- Audité apps/api-server/src/communication/ — 22 services + 9 controllers.
+- Audité apps/api-server/src/notifications/ — InAppNotification + PushService.
+- Audité apps/api-server/src/discipline/ — ConductController + sanctions (raw SQL).
+- Audité apps/api-server/prisma/schema.prisma (16 566 lignes) — 13 modèles notif identifiés.
+- Audité apps/api-server/.env.example + add-env-variables.sh — vars Twilio/Gupshup/WhatsApp.
+- Audité apps/api-server/src/finance/receipt-notification-finance.service.ts + recovery-notification-finance.service.ts + recovery-reminder.service.ts.
+- Audité apps/api-server/src/students/services/admission-notification.service.ts.
+- Audité apps/web-app/src/services/notification.service.ts + hooks/useNotifications.ts + components/notifications/NotificationDropdown.tsx.
+- Audité apps/api-server/prisma/migrations/{20260630190000_in_app_notifications,20260702160000_extend_whatsapp_log,20260703110000_add_whatsapp_to_identity_profile.sql,20260815130000_create_discipline_module}.
+- Audité /scripts/gupshup/ — 5 scripts Python de gestion des templates Gupshup.
+- Files modified by this audit task: 0 (audit only, no code changes).
+
+=== A. Infrastructure existante (Synthèse) ===
+
+A.1. Services/providers déjà intégrés :
+- WhatsAppService (src/communication/services/whatsapp.service.ts, 1 203 lignes) :
+  6 providers implémentés : gupshup (RECOMMANDÉ), whatsapp-business (Graph API v18.0),
+  twilio-whatsapp, infobip-whatsapp, gateway générique, mock.
+  3 méthodes publiques : sendWhatsApp(), sendCategorized() (avec tracing),
+  sendForTenant() (avec branding auto école).
+  Support PDF attaché (sendDocumentViaGupshup).
+- WhatsAppLogService (whatsapp-log.service.ts, 363 lignes) : PENDING/SENT/DELIVERED/
+  READ/FAILED + updateStatusFromWebhook() (jamais appelé par un controller).
+- WhatsAppTemplateRegistry (whatsapp-template.registry.ts, 930 lignes) :
+  21 templates Meta v3 pré-définis (variables nommées + 3 boutons URL dynamiques) :
+  - Students : admission_recue, inscription_confirmee
+  - HR : candidature_recue, entretien_programme, test_programme, resultat_entretien,
+    resultat_test, embauche_confirmee, contrat_signe, candidature_rejetee,
+    demande_documents, identifiants_connexion, decision_conge, decision_heures_sup,
+    resume_recrutement_quotidien, test_a_passer, carte_professionnelle
+  - Pedagogy : soumission_document_pedago, validation_document_pedago,
+    recapitulatif_pedagogique
+  - Finance : recu_paiement
+- SmsService (sms.service.ts, 178 lignes) : twilio, infobip, gateway, mock.
+- EmailService (email.service.ts, 568 lignes) : resend, nodemailer, sendgrid, aws-ses, mock.
+- EmailLogService + InboundEmailService + EmailTrackingService (pixel + click tracking).
+- ScheduledEmailService + ScheduledEmailDispatcherService (cron @Cron EVERY_MINUTE).
+- VoiceService (voice.service.ts, 91 lignes) : Twilio voice OTP.
+- AnnouncementsServiceV2 + InternalMessagingService + TemplateService +
+  CommunicationDashboardService + CommunicationOrionService + CommunicationSaraService.
+
+A.2. Modèles Prisma liés aux notifications (schema.prisma) :
+- Message, MessageRecipient, MessageTarget, MessageLog, MessageTemplate (lignes 3 021-8 492)
+- Announcement (3 062), CommunicationChannel (8 374), ScheduledMessage (8 407),
+  AutomatedTrigger (8 423)
+- SmsLog (8 494), EmailLog (8 515), InboundEmail (8 587), WhatsappLog (8 629)
+- PushNotification (8 688), InAppNotification (8 713), PushSubscription (8 740),
+  CommunicationStat (8 759)
+- MeetingNotification (4 067), PedagogicalDocumentNotification (6 640)
+- SettingsCommunication (3 811) — config tenant-level (smsProvider, whatsappProvider,
+  dailySmsLimit, dailyEmailLimit, etc.)
+- Guardian (4 117) — firstName, lastName, phone (NULLABLE), email (NULLABLE),
+  relationship, address
+- StudentGuardian (4 135) — studentId, guardianId, isPrimary (un seul primary par élève)
+- Discipline (2 721) — modèle base, PAS de hook de notification.
+- ⚠️ `sanctions`, `discipline_rules`, `conduct_settings`, `conduct_ledger` sont en
+  SQL raw (migration 20260815130000_create_discipline_module) — ABSENTES du schema.prisma
+  (schema drift). Aucune colonne `parent_notified_at` ou `notification_status`.
+
+A.3. Endpoints API existants :
+- /notifications (cloche header) — list, unread-count, markAsRead, markAllAsRead, delete
+- /notifications/vapid-public-key, /notifications/subscribe, /notifications/unsubscribe (Web Push)
+- /communication/announcements (legacy), /communication/messages (legacy)
+- /communication/v2/{dashboard,announcements,conversations}
+- /communication/channels (CRUD), /communication/messages (CRUD Prisma),
+  /communication/scheduling, /communication/automation, /communication/templates
+- /communication/email-logs, /communication/email-logs/:id,
+  /communication/email-logs/thread/:threadId, /communication/email-logs-stats
+- /communication/inbound-emails, /communication/inbound-emails/:id
+- /communication/email-webhook (Resend tracking), /communication/inbound-webhook (Resend inbound)
+- /communication/track/open/:logId.gif, /communication/track/click (pixel + redirect)
+- /communication/scheduled-emails (CRUD)
+- /finance/receipt-notification (POST, channels=[email,whatsapp,sms])
+- /finance/recovery-notification (POST, channels=[email,whatsapp,sms])
+- /discipline/conduct/{rules,sanctions,ledger,settings} (4 endpoints CRUD)
+
+A.4. Cron jobs liés aux notifications :
+- ScheduledEmailDispatcherService (@Cron EVERY_MINUTE) — dispatch emails programmés
+- RecoveryReminderService.runNightlyDetection (@Cron '0 2 * * *') — détection retards
+- RecruitmentDailySummaryService (@Cron) — récap recrutement quotidien
+- BillingReminderService (@Cron) — relances abonnements
+
+A.5. Variables d'environnement (.env.example + add-env-variables.sh) :
+- WHATSAPP_PROVIDER (default: mock)
+- GUPSHUP_API_KEY, GUPSHUP_APP_NAME, GUPSHUP_SOURCE_PHONE, GUPSHUP_API_URL,
+  GUPSHUP_TEMPLATE_LANG
+- WHATSAPP_BUSINESS_API_URL, WHATSAPP_BUSINESS_ACCESS_TOKEN,
+  WHATSAPP_BUSINESS_PHONE_NUMBER_ID
+- WHATSAPP_GATEWAY_URL, WHATSAPP_GATEWAY_API_KEY
+- SMS_PROVIDER (default: mock)
+- TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+- INFOBIP_API_URL, INFOBIP_API_KEY, INFOBIP_SENDER_ID
+- EMAIL_PROVIDER, RESEND_API_KEY, EMAIL_FROM_NOREPLY, SMTP_*, SENDGRID_*
+- VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+- AUCUNE variable VONAGE / AFRICASTALKING / BREVO n'existe.
+
+A.6. Services backend utilisant déjà WhatsAppService :
+- src/finance/receipt-notification-finance.service.ts — sendCategorized + template
+  'recu_paiement' (template Meta officiel, PDF attaché)
+- src/finance/recovery-notification-finance.service.ts — sendCategorized (texte libre)
+- src/pedagogy/pedagogical-space.service.ts — 5 appels sendCategorized (texte libre)
+- src/billing/services/subscription-lifecycle.service.ts — sendWhatsApp (3 appels)
+- src/billing/services/billing-reminder.service.ts — sendWhatsApp
+- src/billing/services/student-count-verifier.service.ts — sendWhatsApp
+- src/onboarding/services/otp.service.ts — sendWhatsApp (OTP WhatsApp)
+- src/students/student-transfer.service.ts — sendWhatsApp (notification transfert)
+
+A.7. Frontend (apps/web-app/src) :
+- services/notification.service.ts — client HTTP /notifications
+- hooks/useNotifications.ts — polling 30s + son + toast + dropdown state
+- components/notifications/NotificationDropdown.tsx — cloche + panneau
+- hooks/usePushSubscription.ts — Web Push VAPID subscription
+- hooks/useInboundEmails.ts, useEmailLogs.ts, useCommunicationDashboard.ts
+- app/api/communication/{email-logs, email-logs-stats, inbound-emails, channels,
+  messages, scheduling, automation, templates, debug-email-log}/route.ts (BFF)
+- components/portals/parent/ParentNotificationCenter.tsx — ⚠️ UTILISE DES MOCKS
+  (MOCK_NOTIFICATIONS hardcoded, pas connecté au backend)
+
+=== B. Ce qui manque pour WhatsApp Business API ===
+
+B.1. Y a-t-il déjà une intégration WhatsApp ?
+OUI — TRÈS COMPLÈTE. WhatsAppService est totalement opérationnel (6 providers,
+21 templates, tracing, multi-tenant branding). Ce qui manque n'est pas l'envoi,
+mais :
+- (1) AUCUN endpoint API pour LISTER/FILTRER whatsapp_logs (seuls email-logs sont
+  exposés). Le WhatsAppLogService existe mais pas de controller.
+- (2) AUCUN endpoint WEBHOOK pour recevoir les events de delivery/read/failed de
+  Gupshup/Meta. La méthode WhatsAppLogService.updateStatusFromWebhook() est
+  définie mais JAMAIS appelée. Conséquence : tous les logs restent bloqués en
+  SENT même si delivered/read sur le device du destinataire.
+- (3) AUCUN endpoint pour RECEVOIR les messages ENTRANTS WhatsApp (réponses
+  parents). Pas d'équivalent de /communication/inbound-webhook pour WhatsApp.
+- (4) AUCUNE page frontend pour consulter l'historique WhatsApp (page jumelle de
+  /platform/communication qui n'affiche que les emails).
+- (5) AUCUN endpoint API pour gérer les templates WhatsApp (le registry est
+  hardcodé côté code, pas d'admin UI).
+- (6) ParentNotificationCenter.tsx utilise des MOCK_NOTIFICATIONS hardcoded
+  (à brancher au backend /notifications existant).
+
+B.2. Infrastructure réutilisable pour WhatsApp Business :
+- WhatsAppTemplateRegistry : 21 templates déjà prêts (formats Meta v3 avec
+  variables nommées + boutons URL). 1 template existant par besoin métier
+  couvert (admission, inscription, recu_paiement, candidature, entretien, etc.).
+- WhatsappLog table + WhatsAppLogService.createLog/markAsSent/markAsFailed/
+  updateStatusFromWebhook : traçabilité complète (PENDING/SENT/DELIVERED/READ/
+  FAILED).
+- WhatsAppService.sendForTenant() : charge automatiquement le branding école
+  (TenantIdentityProfile.schoolName + schoolAcronym + whatsapp + phone) et
+  l'injecte comme {{1}} du template.
+- CommunicationModule.exporté : WhatsAppService est déjà exporté, peut être
+  injecté dans n'importe quel module (Discipline, etc.).
+- phone.ts utilitaires : normalizePhoneE164, toGupshupDestination, isValidPhoneE164.
+- ReceiptFinanceService.getParentContacts(studentId) — récupère email + phone
+  + name du guardian principal (réutilisable pour WhatsApp).
+- CommunicationStat : modèle de stats agrégées par jour × canal (déjà prêt
+  pour SMS + WhatsApp + Email + Push, mais pas encore alimenté par les
+  services).
+
+B.3. Quels parents ont un numéro de téléphone enregistré ?
+- Guardian.phone (String?) — champ nullable. Tous les guardians créés via
+  /api/students ou /api/admissions peuvent l'avoir, mais ce n'est pas garanti.
+- Admission.mainGuardianPhone existe (champ dans Admission, utilisé par le
+  flow onboarding).
+- TenantIdentityProfile.whatsapp (depuis migration 20260703110000) — numéro
+  WhatsApp Business de l'école (pour les boutons URL des templates).
+- AUCUNE vue d'ensemble sur le taux de remplissage de Guardian.phone (pas
+  d'endpoint de stats sur ce champ). À ajouter pour piloter l'adoption
+  WhatsApp.
+
+=== C. Recommandations d'architecture ===
+
+C.1. Faut-il créer un service unifié NotificationService (SMS + WhatsApp + Email + In-app) ?
+- NON — pas en l'état. Il existe DÉJÀ 4 services distincts (EmailService,
+  WhatsAppService, SmsService, NotificationService) avec chacun leur logProvider
+  dédié (EmailLog, WhatsappLog, SmsLog, InAppNotification). Le pattern
+  sendCategorized() est déjà aligné entre Email et WhatsApp (mêmes catégories,
+  mêmes recipientType, mêmes champs de tracing).
+- Un NotificationDispatcherService unifié serait utile UNIQUEMENT pour :
+  (a) Orchestrer le fallback multi-canal (WhatsApp → SMS → email) en un seul
+      appel métier. Cela éviterait aux 8 services backend actuels (receipt,
+      recovery, billing, etc.) de gérer chacun leur ordre de fallback.
+  (b) Normaliser les helper business (notifyParentsSanctionCreated,
+      notifyParentsAdmissionReceived, etc.) qui aujourd'hui sont dispatchés
+      entre AdmissionNotificationService, RecruitmentNotificationService,
+      RecoveryReminderEmailService, ReceiptNotificationFinanceService, etc.
+  → Recommandation : créer NotificationDispatcherService dans
+    src/communication/services/ qui orchestre les 4 services existants (pas
+    de réécriture). Pattern fire-and-forget + retour rapport par canal.
+
+C.2. Faut-il ajouter WhatsApp comme canal séparé ?
+- NON — c'est déjà le cas. WhatsAppService est un canal séparé depuis le
+  début, avec son propre log, ses propres templates, son propre provider
+  dispatch. Il suffit d'ÉTENDRE l'usage aux modules qui ne l'utilisent pas
+  encore (Discipline, QHSE, Cantine, Transport, Infirmerie, Boutique).
+
+C.3. Où placer la logique de fallback (WhatsApp échoue → SMS) ?
+- Au niveau du futur NotificationDispatcherService (recommandé). Signature
+  proposée :
+    dispatcher.notify({
+      tenantId, recipientType, recipientId, toPhone, toEmail,
+      channels: ['whatsapp', 'sms', 'email'], // ordre = priorité
+      fallbackOnFailure: true,
+      template: 'sanction_created',
+      templateVariables: {...},
+      category: 'PEDAGOGIE',
+      relatedEntityType: 'Sanction',
+      relatedEntityId: sanction.id,
+    })
+  Le dispatcher essaie WhatsApp ; si `success=false` ou `FAILED` après 30s,
+  il bascule sur SMS ; si SMS aussi échoue, email.
+- Avant d'avoir ce dispatcher : chaque service métier peut gérer son propre
+  fallback inline (pattern déjà utilisé par ReceiptNotificationFinanceService
+  qui prend `channels: ('email'|'whatsapp'|'sms')[]` en paramètre et essaie
+  chacun indépendamment).
+
+=== D. Fichiers clés à modifier/créer (pour WhatsApp Business + Discipline) ===
+
+D.1. À CRÉER (nouveaux fichiers) :
+- apps/api-server/src/communication/whatsapp-log.controller.ts
+  → Endpoints GET /communication/whatsapp-logs, /:id, /stats (mirror EmailLogController)
+- apps/api-server/src/communication/whatsapp-webhook.controller.ts
+  → POST /communication/whatsapp-webhook (events Gupshup delivered/read/failed)
+  → POST /communication/whatsapp-inbound (messages entrants des parents)
+  → @Public() + vérification signature Gupshup (header apikey)
+- apps/api-server/src/communication/services/notification-dispatcher.service.ts
+  → Orchestrateur multi-canal avec fallback WhatsApp → SMS → email
+- apps/api-server/src/discipline/services/discipline-notification.service.ts
+  → notifyParentSanctionCreated(tenantId, sanctionId, studentId)
+  → Utilise WhatsAppService.sendForTenant (template 'sanction_created')
+  → Fire-and-forget, ne bloque pas la création de sanction
+- apps/api-server/prisma/migrations/2026XXXX_extend_sanctions_with_notification.sql
+  → ALTER TABLE sanctions ADD COLUMN "parentNotifiedAt" TIMESTAMP,
+    "notificationStatus" TEXT DEFAULT 'PENDING',
+    "notificationLogId" TEXT (FK vers whatsapp_logs.id)
+- apps/api-server/prisma/migrations/2026XXXX_add_sanction_created_whatsapp_template.sql
+  → (optionnel) Si on persiste le template en DB plutôt que dans le registry
+- apps/web-app/src/app/platform/communication/whatsapp-logs/page.tsx
+  → Page jumelle de /platform/communication pour consulter l'historique WhatsApp
+- apps/web-app/src/hooks/useWhatsAppLogs.ts (mirror useEmailLogs)
+
+D.2. À MODIFIER (fichiers existants) :
+- apps/api-server/src/communication/services/whatsapp-template.registry.ts
+  → Ajouter template 'sanction_created' (variables : parent_name, student_name,
+  school_name, fault_name, hours_attributed, points_deducted, conduct_remaining,
+  sanction_date)
+- apps/api-server/src/communication/communication.module.ts
+  → Ajouter WhatsAppLogController + WhatsAppWebhookController dans controllers[]
+  → Ajouter NotificationDispatcherService dans providers[] + exports[]
+- apps/api-server/src/discipline/discipline.module.ts
+  → Importer CommunicationModule (actuellement imports:[])
+  → Ajouter DisciplineNotificationService dans providers[]
+- apps/api-server/src/discipline/conduct/conduct.controller.ts
+  → Dans createSanction() : appeler disciplineNotificationService
+    .notifyParentSanctionCreated(tenantId, sanctionId, studentId) en
+    fire-and-forget après l'INSERT.
+- apps/api-server/prisma/schema.prisma
+  → Ajouter les 4 modèles discipline_rules, conduct_settings, sanctions,
+    conduct_ledger (qui existent en SQL mais pas en Prisma — schema drift).
+    Cela permettra à DisciplineService de les utiliser via Prisma au lieu de
+    $queryRawUnsafe / $executeRawUnsafe.
+- apps/api-server/.env.example + add-env-variables.sh
+  → Documenter GUPSHUP_WEBHOOK_SECRET (vérif signature webhook)
+  → Documenter WHATSAPP_BUSINESS_APP_SECRET (vérif signature Meta X-Hub-Signature-256)
+- apps/web-app/src/components/portals/parent/ParentNotificationCenter.tsx
+  → Brancher aux vraies API /notifications au lieu de MOCK_NOTIFICATIONS
+
+=== E. Constats transverses ===
+
+E.1. Cohérence du pattern sendCategorized :
+Le pattern `sendCategorized({ tenantId, category, module, to, recipientType,
+templateName, templateVariables, triggeredBy, relatedEntityType,
+relatedEntityId, document })` est déjà aligné entre EmailService et
+WhatsAppService. Tout nouveau canal (push, in-app) devrait suivre le même
+schéma pour faciliter l'agrégation dans CommunicationStat.
+
+E.2. Schema drift discipline :
+Les 4 tables discipline (rules, settings, sanctions, ledger) sont créées en
+SQL raw mais absentes du schema.prisma. Le ConductController utilise
+$queryRawUnsafe partout, ce qui :
+- Contourne la safety Prisma (typage, RLS, validation)
+- Empêche l'utilisation des relations Prisma (ex: sanction.student)
+- Rend l'audit de sécurité difficile
+→ Recommandation : ajouter les 4 modèles au schema.prisma + régénérer le
+  client Prisma avant d'ajouter la notification (sinon le
+  DisciplineNotificationService devra aussi utiliser $queryRawUnsafe).
+
+E.3. Webhooks non sécurisés :
+Le controller email-log.controller.ts a déjà un commentaire "TODO: implémenter
+la vérification cryptographique via Svix" — le webhook Resend accepte
+actuellement toutes les requêtes. Il faudra corriger cela pour le webhook
+WhatsApp (signature Gupshup apikey OU Meta X-Hub-Signature-256).
+
+E.4. ParentNotificationCenter mocké :
+Le composant apps/web-app/src/components/portals/parent/ParentNotificationCenter.tsx
+utilise encore des MOCK_NOTIFICATIONS hardcoded (devoirs/leçons/observations).
+Ce n'est pas branché au backend /notifications. À corriger dans une task
+séparée (ce n'est pas bloquant pour WhatsApp Business).
+
+Stage Summary:
+- Infrastructure notification TRÈS mature : 4 canaux (email/SMS/WhatsApp/in-app)
+  + push Web + voice OTP, 21 templates WhatsApp Meta v3 pré-approuvés, 6
+  providers WhatsApp implémentés, tracing complet via 4 tables de log dédiées.
+- AUCUNE réécriture nécessaire pour ajouter WhatsApp Business — il suffit
+  d'ajouter un webhook controller + un log controller + 1 nouveau template
+  pour les sanctions.
+- Discipline module est le parent pauvre : 0 notification envoyée actuellement.
+  À connecter au CommunicationModule existant.
+- Schema drift à corriger (sanctions en SQL raw au lieu de Prisma).
+- Files modified: 0 (audit only). Prochaine étape recommandée : Task
+  "IMPL-WHATSAPP-DISCIPLINE" pour appliquer les modifications ci-dessus.

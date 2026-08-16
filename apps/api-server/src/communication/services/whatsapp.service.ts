@@ -393,7 +393,7 @@ export class WhatsAppService {
     to: string;
     callerParams: string[];
     category: 'RECRUTEMENT' | 'PEDAGOGIE' | 'FINANCE' | 'ADMINISTRATIF' | 'COMMUNICATION' | 'SYSTEM';
-    module?: 'hr' | 'students' | 'pedagogy' | 'finance' | 'communication';
+    module?: 'hr' | 'students' | 'pedagogy' | 'finance' | 'communication' | 'discipline';
     subCategory?: string;
     recipientName?: string;
     recipientType?: 'CANDIDAT' | 'PARENT' | 'STAFF' | 'ENSEIGNANT' | 'EXTERNE';

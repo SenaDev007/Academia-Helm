@@ -47,7 +47,7 @@ export interface MetaTemplate {
   /** Cas d'usage court (2-3 mots) pour labellisation Meta. */
   useCase: string;
   /** Module d'origine (hr, students, pedagogy). */
-  module: 'hr' | 'students' | 'pedagogy' | 'finance';
+  module: 'hr' | 'students' | 'pedagogy' | 'finance' | 'discipline';
   /** Header TEXT court (≤ 60 caractères). */
   header: string;
   /** Corps du message avec placeholders nommés {{var_name}}. */
@@ -761,6 +761,66 @@ La Direction`,
     sampleBody: '[M. ADANDE],[Aicha ADANDE],[CSPEB],[CSPEBE-R-26-00002],[10000],[05/07/2026],[Solde restant a payer : 21000 FCFA]',
     // Pas de boutons pour le moment (seront ajoutés ultérieurement)
   },
+
+  // ─── 22. Sanction disciplinaire (Vie Scolaire — Surveillant Général) ─────
+  // Notifie le parent quand une sanction comportementale est saisie par le SG.
+  // Différenciateur marché : aucun concurrent béninois ne notifie WhatsApp sur sanction.
+  {
+    elementName: 'sanction_created',
+    category: 'UTILITY',
+    templateType: 'TEXT',
+    useCase: 'Discipline sanction parent notification',
+    module: 'discipline',
+    header: 'Notification de sanction',
+    body: `Bonjour {{1}},
+
+Nous vous informons qu'une sanction a ete notifiee a {{2}} au sein de {{3}}.
+
+Faute : {{4}}
+Heures de retenue : {{5}}
+Points deduits : {{6}}
+Conduite restante : {{7}}/20
+Date : {{8}}
+
+Pour toute information complementaire, veuillez contacter l'etablissement.
+
+Cordialement,
+La Direction`,
+    footer: FOOTER,
+    language: 'fr',
+    bodyVariables: ["parent_name", "student_name", "school_name", "fault_name", "hours_attributed", "points_deducted", "conduct_remaining", "sanction_date"],
+    bodyPlaceholderCount: 8,
+    callerParamCount: 8,
+    sampleBody: '[M. ADANDE],[Aicha ADANDE],[CSPEB],[Retard repeté],[3],[2],[18],[05/08/2026]',
+  },
+
+  // ─── 23. Annulation de sanction (Vie Scolaire) ───────────────────────────
+  // Notifie le parent quand le SG annule une sanction (avec justification).
+  {
+    elementName: 'sanction_cancelled',
+    category: 'UTILITY',
+    templateType: 'TEXT',
+    useCase: 'Discipline sanction cancellation parent notification',
+    module: 'discipline',
+    header: 'Sanction annulee',
+    body: `Bonjour {{1}},
+
+Nous vous informons que la sanction notifiee a {{2}} au sein de {{3}} a ete annulee.
+
+Faute initiale : {{4}}
+Points restitues : {{5}}
+Nouvelle conduite : {{6}}/20
+Motif d'annulation : {{7}}
+
+Cordialement,
+La Direction`,
+    footer: FOOTER,
+    language: 'fr',
+    bodyVariables: ["parent_name", "student_name", "school_name", "fault_name", "points_refunded", "new_conduct", "cancellation_reason"],
+    bodyPlaceholderCount: 7,
+    callerParamCount: 7,
+    sampleBody: '[M. ADANDE],[Aicha ADANDE],[CSPEB],[Retard repeté],[2],[20],[Erreur de saisie]',
+  },
 ];
 
 // ============================================================================
@@ -822,7 +882,7 @@ export class WhatsAppTemplateRegistry {
   /**
    * Liste les templates par module.
    */
-  listByModule(module: 'hr' | 'students' | 'pedagogy'): TemplateSummary[] {
+  listByModule(module: 'hr' | 'students' | 'pedagogy' | 'finance' | 'discipline'): TemplateSummary[] {
     return this.list().filter((t) => t.module === module);
   }
 

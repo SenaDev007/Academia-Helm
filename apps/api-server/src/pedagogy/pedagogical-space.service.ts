@@ -4636,10 +4636,12 @@ export class PedagogicalSpaceService {
   /// Récupère tous les cahiers journal soumis (en attente de validation direction).
   async getPendingCahierJournals(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
-      `SELECT cj.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+      `SELECT cj.*, c."name" as "classNameResolved",
+              tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
-       LEFT JOIN "teachers" t ON t."id" = cj."teacherId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
+       LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."status" = 'SUBMITTED'
        ORDER BY cj."submittedAt" DESC`,
       tenantId, academicYearId,

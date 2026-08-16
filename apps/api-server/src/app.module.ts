@@ -27,6 +27,7 @@ import { DepartmentsModule } from './departments/departments.module';
 import { AbsencesModule } from './absences/absences.module';
 import { DisciplineModule } from './discipline/discipline.module';
 import { RiskScoreModule } from './risk-score/risk-score.module';
+import { ExamFraudModule } from './exam-fraud/exam-fraud.module';
 // ExamsModule removed — replaced by ExamsPrismaController (ExamsGradesModule)
 // GradesModule removed — replaced by GradesController (InstitutionalExamsModule)
 // GradingPoliciesModule removed — module isolé sans alternative Prisma (supprimé en Phase 6)
@@ -174,6 +175,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     AbsencesModule,
     DisciplineModule,
     RiskScoreModule,
+    ExamFraudModule,
     
     // Evaluation modules
     // ExamsModule, GradesModule, GradingPoliciesModule removed — remplacés par ExamsGradesModule + InstitutionalExamsModule (Phase 6)

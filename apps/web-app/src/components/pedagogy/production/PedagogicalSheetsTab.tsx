@@ -775,19 +775,38 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   <div>
                     {/* ⭐ Label dynamique : "Le Directeur" ou "La Directrice" selon le genre */}
                     <div className="text-sm font-bold text-slate-800">{directorLabel} / La Directrice</div>
-                    <div className="text-xs text-slate-500">{directorDisplayName} — Signature et cachet</div>
+                    <div className="text-xs text-slate-500">
+                      {form.status === 'VALIDATED'
+                        ? `${directorDisplayName} — Signature et cachet`
+                        : `${directorDisplayName} — Signature disponible après validation`}
+                    </div>
                   </div>
-                  {(form.directorSignature || directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
+                  {form.status === 'VALIDATED' && (form.directorSignature || directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
+                  {form.status !== 'VALIDATED' && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">En attente</span>}
                 </div>
-                {/* ⭐ Afficher la signature du directeur depuis RH si dispo, sinon le canvas */}
-                {form.directorSignature ? (
-                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={form.directorSignature} alt="" className="max-h-24 mx-auto" /></div>
-                ) : (directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) ? (
-                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={directorInfo.signatureDataUrl || directorInfo.signatureUploadedUrl || ''} alt="" className="max-h-24 mx-auto" /></div>
+                {/* ⭐ Signature du directeur : affichée SEULEMENT si la fiche est VALIDATED.
+                    Avant validation (DRAFT/SUBMITTED/REJECTED), l'enseignant ne voit pas
+                    la signature du directeur — seulement un placeholder "En attente de validation".
+                    Une fois le directeur valide, l'enseignant voit la version avec les 2 signatures. */}
+                {form.status === 'VALIDATED' ? (
+                  <>
+                    {form.directorSignature ? (
+                      <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={form.directorSignature} alt="" className="max-h-24 mx-auto" /></div>
+                    ) : (directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) ? (
+                      <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={directorInfo.signatureDataUrl || directorInfo.signatureUploadedUrl || ''} alt="" className="max-h-24 mx-auto" /></div>
+                    ) : (
+                      <div className="border-2 border-dashed border-slate-300 rounded-xl p-2 h-[120px] flex items-center justify-center text-slate-400 text-xs">Signature du directeur non disponible</div>
+                    )}
+                  </>
                 ) : (
-                  <SignatureCanvas width={400} height={120} disabled={isReadOnly} placeholder="Signature" onSignatureChange={d => setForm({ ...form, directorSignature: d })} />
+                  <div className="border-2 border-dashed border-amber-300 bg-amber-50/30 rounded-xl p-2 h-[120px] flex items-center justify-center text-amber-600 text-xs font-medium">
+                    {form.status === 'SUBMITTED'
+                      ? 'Fiche soumise — en attente de validation du directeur'
+                      : form.status === 'REJECTED'
+                      ? 'Fiche rejetée — à corriger et resoumettre'
+                      : 'La signature du directeur apparaîtra après validation'}
+                  </div>
                 )}
-                {form.directorSignature && !isReadOnly && <button type="button" onClick={() => setForm({ ...form, directorSignature: null })} className="text-xs text-red-500 hover:underline">Effacer</button>}
               </div>
             </div>
           </section>

@@ -1273,9 +1273,9 @@ export class PedagogicalSpaceService {
           <div style="font-size:8px;color:#64748b;margin-top:1px;">${teacherName}</div>
         </div>
         <div style="text-align:center;width:45%;">
-          ${fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
+          ${fiche.status === 'VALIDATED' && fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>'}
           <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
-          <div style="font-size:8px;color:#64748b;margin-top:1px;">&nbsp;</div>
+          <div style="font-size:8px;color:#64748b;margin-top:1px;">${fiche.status === 'VALIDATED' ? 'Validé' : '—'}</div>
         </div>
       </div>
 

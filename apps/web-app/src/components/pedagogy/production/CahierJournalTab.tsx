@@ -831,31 +831,45 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-slate-800">Visa du {directorLabel}</div>
-                  <div className="text-xs text-slate-500">{directorDisplayName} — Signature et cachet</div>
+                  <div className="text-xs text-slate-500">
+                    {journal?.status === 'VALIDATED'
+                      ? `${directorDisplayName} — Signature et cachet`
+                      : `${directorDisplayName} — Signature disponible après validation`}
+                  </div>
                 </div>
-                {(directorSignature || directorSig) && (
+                {journal?.status === 'VALIDATED' && (directorSignature || directorSig) && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
                     <CheckCircle2 className="h-3 w-3" /> Signé
                   </span>
                 )}
+                {journal?.status !== 'VALIDATED' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+                    En attente
+                  </span>
+                )}
               </div>
-              {(directorSignature || directorSig) ? (
-                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                  <img src={directorSignature || directorSig || ''} alt={`Signature ${directorLabel}`} className="max-h-24 mx-auto" />
-                </div>
+              {/* ⭐ Signature du directeur : affichée SEULEMENT si le cahier journal est VALIDATED.
+                  Avant validation, l'enseignant ne voit pas la signature du directeur. */}
+              {journal?.status === 'VALIDATED' ? (
+                <>
+                  {(directorSignature || directorSig) ? (
+                    <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                      <img src={directorSignature || directorSig || ''} alt={`Signature ${directorLabel}`} className="max-h-24 mx-auto" />
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-slate-300 rounded-xl p-2 h-[120px] flex items-center justify-center text-slate-400 text-xs">
+                      Signature du directeur non disponible
+                    </div>
+                  )}
+                </>
               ) : (
-                <SignatureCanvas
-                  width={400}
-                  height={120}
-                  disabled={isReadOnly}
-                  placeholder="Signature du Directeur"
-                  onSignatureChange={(data) => setDirectorSignature(data)}
-                />
-              )}
-              {directorSignature && !isReadOnly && (
-                <button type="button" onClick={() => setDirectorSignature(null)} className="text-xs text-red-500 hover:underline">
-                  Effacer la signature
-                </button>
+                <div className="border-2 border-dashed border-amber-300 bg-amber-50/30 rounded-xl p-2 h-[120px] flex items-center justify-center text-amber-600 text-xs font-medium">
+                  {journal?.status === 'SUBMITTED'
+                    ? 'Cahier journal soumis — en attente de validation du directeur'
+                    : journal?.status === 'REJECTED'
+                    ? 'Cahier journal rejeté — à corriger et resoumettre'
+                    : 'La signature du directeur apparaîtra après validation'}
+                </div>
               )}
             </div>
 

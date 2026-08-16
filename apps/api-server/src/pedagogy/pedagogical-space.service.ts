@@ -849,16 +849,17 @@ export class PedagogicalSpaceService {
    *    Génère un PDF structuré avec le nom de l'enseignant titulaire.
    */
   async exportFichePdf(tenantId: string, ficheId: string): Promise<Buffer> {
+    // ⭐ Récupérer la fiche + le VRAI titulaire de la classe (via TeacherClassAssignment)
+    //    + l'identité de l'école (nom, acronyme, logo) + l'année scolaire
     const ficheRows: any = await this.prisma.$queryRawUnsafe(
       `SELECT pf.*, c."name" as "classNameResolved",
-        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender",
-        u."firstName" as "userFirstName", u."lastName" as "userLastName",
+        tca_t."firstName" as "titularFirstName", tca_t."lastName" as "titularLastName", tca_t."gender" as "titularGender",
         tip."schoolName", tip."schoolAcronym", tip."logoUrl",
         ay."name" as "academicYearName"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN classes c ON c."id" = pf."classId"
-       LEFT JOIN teachers t ON t."id" = pf."teacherId"
-       LEFT JOIN users u ON u."id" = pf."teacherId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
+       LEFT JOIN teachers tca_t ON tca_t."id" = tca."teacherId"
        LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = pf."tenantId" AND tip."isActive" = true
        LEFT JOIN "academic_years" ay ON ay."id" = pf."academicYearId"
        WHERE pf."id" = $1 AND pf."tenantId" = $2
@@ -871,20 +872,38 @@ export class PedagogicalSpaceService {
     }
     const fiche = ficheRows[0];
 
-    // ⭐ Résoudre le nom du titulaire : teacher (table teachers) OU user (table users)
-    //    Le teacherId stocké peut être l'ID du Teacher OU l'ID du User (selon comment
-    //    la fiche a été créée). On essaie les deux.
-    const firstName = fiche.teacherFirstName || fiche.userFirstName || '';
-    const lastName = fiche.teacherLastName || fiche.userLastName || '';
+    // ⭐ Résoudre le nom du VRAI titulaire de la classe (pas le user connecté)
+    const firstName = fiche.titularFirstName || '';
+    const lastName = fiche.titularLastName || '';
     const teacherName = firstName || lastName
-      ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(lastName || '').toUpperCase()} ${firstName}`.trim()
+      ? `${fiche.titularGender === 'F' ? 'Mme' : 'M.'} ${(lastName || '').toUpperCase()} ${firstName}`.trim()
       : '—';
+
+    // ⭐ Résoudre le logo en base64 (pour que Puppeteer puisse l'afficher)
+    //    logoUrl peut être : data:image/... (déjà base64), /api/... (chemin relatif),
+    //    ou https://... (URL absolue). On convertit tout en data URL.
+    let logoDataUrl = '';
+    if (fiche.logoUrl) {
+      if (fiche.logoUrl.startsWith('data:')) {
+        logoDataUrl = fiche.logoUrl;
+      } else if (fiche.logoUrl.startsWith('http')) {
+        // URL absolue — la passer telle quelle (Puppeteer peut la charger)
+        logoDataUrl = fiche.logoUrl;
+      } else {
+        // Chemin relatif — construire l'URL absolue avec APP_PUBLIC_URL
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
+          || this.configService.get<string>('API_URL')
+          || 'https://api.academiahelm.com';
+        logoDataUrl = `${apiBaseUrl}${fiche.logoUrl.startsWith('/') ? '' : '/'}${fiche.logoUrl}`;
+      }
+      fiche.logoUrl = logoDataUrl;
+    }
 
     const html = this.buildFichePdfHtml(fiche, teacherName);
     const { page } = await this.puppeteerPool.acquirePage();
     try {
-      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await new Promise(r => setTimeout(r, 300));
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 500));
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -947,6 +966,7 @@ export class PedagogicalSpaceService {
    *
    *    Design professionnel : en-tête école + logo, filigrane acronyme, sections
    *    colorées par type, tableau structuré, signatures, footer. Identique à l'UI.
+   *    ⭐ Récupère RIGOUREUSEMENT tous les champs remplis par l'enseignant.
    */
   private buildFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -955,26 +975,158 @@ export class PedagogicalSpaceService {
       ? `${dayNames[lessonDate.getDay()]} ${lessonDate.getDate()}/${lessonDate.getMonth() + 1}/${lessonDate.getFullYear()}`
       : '—';
 
-    const SHEET_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-      MATH: { label: 'Mathématiques', color: '#1e40af', bg: '#dbeafe', border: '#3b82f6' },
-      FRANCAIS: { label: 'Français', color: '#047857', bg: '#d1fae5', border: '#10b981' },
-      EST: { label: 'Éducation Scientifique et Technologique', color: '#6d28d9', bg: '#ede9fe', border: '#8b5cf6' },
-      ES: { label: 'Éducation Sociale', color: '#b45309', bg: '#fef3c7', border: '#f59e0b' },
-      EA: { label: 'Éducation Artistique', color: '#be185d', bg: '#fce7f3', border: '#ec4899' },
+    const SHEET_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; ibisTitle: string; ibisFields: { label: string; key: string; short?: boolean }[]; phases?: { label: string; key: string }[]; applicationTable?: { columns: string[]; keys: string[] } }> = {
+      MATH: {
+        label: 'Mathématiques', color: '#1e40af', bg: '#dbeafe', border: '#3b82f6',
+        ibisTitle: 'Phases préparatoires',
+        ibisFields: [
+          { label: 'Calcule à brûle pourpoint', key: 'ibis_1' },
+          { label: 'Comptage/Décomptage ou table de multiplication', key: 'ibis_2' },
+          { label: 'Cadran opératoire', key: 'ibis_3' },
+          { label: 'Calcul mental', key: 'ibis_4' },
+          { label: 'Deux problèmes à résoudre mentalement', key: 'ibis_5' },
+        ],
+      },
+      FRANCAIS: {
+        label: 'Français', color: '#047857', bg: '#d1fae5', border: '#10b981',
+        ibisTitle: 'Exercice structural',
+        ibisFields: [
+          { label: 'Unité N°', key: 'ibis_1', short: true },
+          { label: 'Structure', key: 'ibis_2', short: true },
+          { label: 'Objectif', key: 'ibis_3', short: true },
+          { label: 'Fiche N°', key: 'ibis_4', short: true },
+          { label: 'Durée (10 minutes)', key: 'ibis_5', short: true },
+        ],
+        phases: [
+          { label: 'Phase introductive', key: 'phase_introductive' },
+          { label: 'Phase de systématisation', key: 'phase_systematisation' },
+        ],
+        applicationTable: {
+          columns: ['Entrées Enseignant(e) ou élève', 'Structure Élève 1', 'Réduction Élève 2'],
+          keys: ['app_col1', 'app_col2', 'app_col3'],
+        },
+      },
+      EST: {
+        label: 'Éducation Scientifique et Technologique', color: '#6d28d9', bg: '#ede9fe', border: '#8b5cf6',
+        ibisTitle: 'Activités préliminaires',
+        ibisFields: [
+          { label: 'Rappel de la leçon précédente', key: 'ibis_1' },
+        ],
+      },
+      ES: {
+        label: 'Éducation Sociale', color: '#b45309', bg: '#fef3c7', border: '#f59e0b',
+        ibisTitle: 'Activités préliminaires',
+        ibisFields: [
+          { label: 'Rappel de la leçon précédente', key: 'ibis_1' },
+        ],
+      },
+      EA: {
+        label: 'Éducation Artistique', color: '#be185d', bg: '#fce7f3', border: '#ec4899',
+        ibisTitle: 'Proposition de nouvelles acquisitions',
+        ibisFields: [
+          { label: "Annoncer l'objet d'apprentissage", key: 'ibis_1' },
+          { label: 'Pré-conception', key: 'ibis_2' },
+        ],
+      },
     };
-    const typeConfig = SHEET_TYPE_CONFIG[fiche.sheetType] || { label: fiche.sheetType || '—', color: '#0A2A5E', bg: '#f1f5f9', border: '#cbd5e1' };
+    const typeConfig = SHEET_TYPE_CONFIG[fiche.sheetType] || { label: fiche.sheetType || '—', color: '#0A2A5E', bg: '#f1f5f9', border: '#cbd5e1', ibisTitle: 'Section spécifique', ibisFields: [] };
     const typeLabel = typeConfig.label;
 
     // Récupérer les champs (strip HTML basique)
     const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() || '—';
 
-    // ⭐ Filigrane : acronyme de l'école en grand, transparent, centré sur la page
+    // ⭐ Filigrane : acronyme de l'école
     const schoolAcronym = fiche.schoolAcronym || (fiche.schoolName || '').substring(0, 3).toUpperCase() || '';
     const watermark = schoolAcronym
-      ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:bold;color:#e2e8f0;opacity:0.15;z-index:0;pointer-events:none;white-space:nowrap;letter-spacing:8px;">${schoolAcronym}</div>`
+      ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:bold;color:#e2e8f0;opacity:0.12;z-index:0;pointer-events:none;white-space:nowrap;letter-spacing:8px;">${schoolAcronym}</div>`
       : '';
 
-    // Déroulement (JSON) — 3 colonnes seulement : # + Consignes + Résultats attendus
+    // ⭐ Section I.bis (spécifique au type de fiche)
+    let ibisHtml = '';
+    if (typeConfig.ibisFields && typeConfig.ibisFields.length > 0) {
+      const ibisRows = typeConfig.ibisFields.map(f => {
+        const val = fiche[f.key];
+        if (!val || strip(val) === '—') return ''; // Ne pas afficher les champs vides
+        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:35%;font-weight:bold;background:#f8fafc;font-size:9px;">${f.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+      }).join('');
+      if (ibisRows) {
+        ibisHtml = `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">I.bis — ${typeConfig.ibisTitle}</div>
+          <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
+            ${ibisRows}
+          </table>
+        </div>`;
+      }
+    }
+
+    // ⭐ Phases spécifiques (FRANCAIS : phase introductive + systématisation)
+    let phasesHtml = '';
+    if (typeConfig.phases && typeConfig.phases.length > 0) {
+      const phaseRows = typeConfig.phases.map(p => {
+        const val = fiche[p.key];
+        if (!val || strip(val) === '—') return '';
+        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${p.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+      }).join('');
+      if (phaseRows) {
+        phasesHtml = `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">Phases spécifiques</div>
+          <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
+            ${phaseRows}
+          </table>
+        </div>`;
+      }
+    }
+
+    // ⭐ Tableau d'application (FRANCAIS : 3 colonnes)
+    let applicationHtml = '';
+    if (typeConfig.applicationTable) {
+      const cols = typeConfig.applicationTable.columns;
+      const keys = typeConfig.applicationTable.keys;
+      // Le tableau d'application peut être un JSON array ou des champs séparés
+      let appRows = '';
+      try {
+        const appData = typeof fiche[keys[0]] === 'string' && fiche[keys[0]].startsWith('[')
+          ? JSON.parse(fiche[keys[0]])
+          : null;
+        if (Array.isArray(appData) && appData.length > 0) {
+          appRows = appData.map((row: any) => `
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col1 || row[keys[0]] || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col2 || row[keys[1]] || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col3 || row[keys[2]] || '')}</td>
+            </tr>`).join('');
+        }
+      } catch {}
+      if (!appRows) {
+        // Fallback : champs séparés (app_col1, app_col2, app_col3)
+        const hasAny = keys.some(k => fiche[k] && strip(fiche[k]) !== '—');
+        if (hasAny) {
+          appRows = `<tr>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[0]])}</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[1]])}</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[2]])}</td>
+          </tr>`;
+        }
+      }
+      if (appRows) {
+        applicationHtml = `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">Phase d'application</div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid ${typeConfig.border};border-top:none;">
+            <thead>
+              <tr style="background:${typeConfig.bg};">
+                ${cols.map(c => `<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${c}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>${appRows}</tbody>
+          </table>
+        </div>`;
+      }
+    }
+
+    // Déroulement (JSON) — 3 colonnes : # + Consignes + Résultats attendus
     let deroulementRows = '';
     if (fiche.deroulement) {
       try {
@@ -990,11 +1142,32 @@ export class PedagogicalSpaceService {
       } catch {}
     }
 
+    // ⭐ Effectifs
+    const effectifsHtml = (fiche.totalStudents || fiche.boysCount || fiche.girlsCount) ? `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">Effectifs</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
+          <tr style="background:${typeConfig.bg};font-weight:bold;">
+            <th style="border:1px solid #cbd5e1;padding:4px;">Garçons</th>
+            <th style="border:1px solid #cbd5e1;padding:4px;">Filles</th>
+            <th style="border:1px solid #cbd5e1;padding:4px;">Total</th>
+            <th style="border:1px solid #cbd5e1;padding:4px;">Présents</th>
+            <th style="border:1px solid #cbd5e1;padding:4px;">Absents</th>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.boysCount || 0}</td>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.girlsCount || 0}</td>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-weight:bold;">${fiche.totalStudents || 0}</td>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.totalPresent || 0}</td>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.totalAbsent || 0}</td>
+          </tr>
+        </table>
+      </div>` : '';
+
     const content = `
       ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
-        .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-45deg); font-size:120px; font-weight:bold; color:#e2e8f0; opacity:0.12; z-index:0; pointer-events:none; white-space:nowrap; letter-spacing:8px; }
         .content { position:relative; z-index:1; }
         @page { margin: 10mm; }
       </style></head><body>` : ''}
@@ -1006,9 +1179,9 @@ export class PedagogicalSpaceService {
       <!-- ═══ EN-TÊTE ÉCOLE ═══ -->
       <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${typeConfig.color};padding-bottom:8px;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:10px;">
-          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:60px;max-width:60px;object-fit:contain;" crossorigin="anonymous" />` : ''}
+          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:60px;max-width:60px;object-fit:contain;" />` : ''}
           <div>
-            <div style="font-size:13px;font-weight:bold;color:#0A2A5E;">${fiche.schoolName || 'Academia Helm'}</div>
+            <div style="font-size:14px;font-weight:bold;color:#0A2A5E;">${fiche.schoolAcronym || fiche.schoolName || 'Academia Helm'}</div>
             <div style="font-size:9px;color:#64748b;">${fiche.classNameResolved || fiche.className || '—'} · ${fiche.academicYearName || 'Année scolaire'}</div>
           </div>
         </div>
@@ -1048,11 +1221,21 @@ export class PedagogicalSpaceService {
         <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
           <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.competence)}</td></tr>
           <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.habilete)}</td></tr>
+          ${fiche.prealable && strip(fiche.prealable) !== '—' ? `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Préalable</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.prealable)}</td></tr>` : ''}
           <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.contenu)}</td></tr>
           <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.methodes)}</td></tr>
           <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.moyensDidactiques)}</td></tr>
         </table>
       </div>
+
+      <!-- ═══ I.bis — SECTION SPÉCIFIQUE AU TYPE ═══ -->
+      ${ibisHtml}
+
+      <!-- ═══ PHASES SPÉCIFIQUES (FRANCAIS) ═══ -->
+      ${phasesHtml}
+
+      <!-- ═══ PHASE D'APPLICATION (FRANCAIS) ═══ -->
+      ${applicationHtml}
 
       ${deroulementRows ? `
       <!-- ═══ II — DÉROULEMENT ═══ -->
@@ -1079,6 +1262,8 @@ export class PedagogicalSpaceService {
           <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Projection</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projection)}</td></tr>
         </table>
       </div>
+
+      ${effectifsHtml}
 
       <!-- ═══ SIGNATURES ═══ -->
       <div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">

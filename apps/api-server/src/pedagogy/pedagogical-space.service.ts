@@ -2889,25 +2889,24 @@ export class PedagogicalSpaceService {
 
     // ─── 3.bis Fallback élargi : si aucune fiche trouvée (ni par cahierJournalId,
     //       ni par date range), chercher TOUTES les fiches SUBMITTED/VALIDATED
-    //       du même enseignant + classe + année. Les fiches créées depuis le
-    //       cahier journal mais sans lessonDate/adminDate seront trouvées ici. ───
+    //       de la même classe + année (sans filtrer par teacherId, car teacherId
+    //       peut être l'ID du User connecté et non l'ID du Teacher). ───
     const allFichesSoFar = [...(fichesLiees || []), ...(fichesNonLieees || [])];
-    if (allFichesSoFar.length === 0 && journal.teacherId && journal.classId) {
+    if (allFichesSoFar.length === 0 && journal.classId) {
       try {
         const fichesElargies = await this.prisma.$queryRawUnsafe(
           `SELECT * FROM "primary_pedagogical_fiches"
            WHERE "tenantId" = $1
              AND "academicYearId" = $2
-             AND "teacherId" = $3
-             AND "classId" = $4
-             AND "status" IN ('SUBMITTED', 'VALIDATED')
+             AND "classId" = $3
+             AND "status" IN ('SUBMITTED', 'VALIDATED', 'DRAFT')
            ORDER BY "createdAt" DESC
            LIMIT 20`,
-          tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+          tenantId, journal.academicYearId, journal.classId,
         );
         if (Array.isArray(fichesElargies) && fichesElargies.length > 0) {
           fichesNonLieees = fichesElargies as any[];
-          this.logger.log(`getFichesForCahierJournal: broader fallback found ${fichesElargies.length} fiches`);
+          this.logger.log(`getFichesForCahierJournal: broader fallback found ${fichesElargies.length} fiches by classId`);
         }
       } catch (err) {
         this.logger.warn(`getFichesForCahierJournal: broader fallback failed: ${err.message}`);
@@ -4687,10 +4686,12 @@ export class PedagogicalSpaceService {
   /// Récupère toutes les fiches pédagogiques soumises (en attente de validation).
   async getPendingPedagogicalFiches(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
-      `SELECT pf.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+      `SELECT pf.*, c."name" as "classNameResolved",
+              tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
-       LEFT JOIN "teachers" t ON t."id" = pf."teacherId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
+       LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE pf."tenantId" = $1 AND pf."academicYearId" = $2 AND pf."status" = 'SUBMITTED'
        ORDER BY pf."submittedAt" DESC`,
       tenantId, academicYearId,
@@ -5842,10 +5843,11 @@ export class PedagogicalSpaceService {
   async getCahierJournalDetail(tenantId: string, journalId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT cj.*, c."name" as "classNameResolved",
-              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+              tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
-       LEFT JOIN "teachers" t ON t."id" = cj."teacherId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
+       LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE cj."id" = $1 AND cj."tenantId" = $2`,
       journalId, tenantId,
     );
@@ -5859,10 +5861,11 @@ export class PedagogicalSpaceService {
   async getPedagogicalFicheDetail(tenantId: string, ficheId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT pf.*, c."name" as "classNameResolved",
-              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+              tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
-       LEFT JOIN "teachers" t ON t."id" = pf."teacherId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
+       LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE pf."id" = $1 AND pf."tenantId" = $2`,
       ficheId, tenantId,
     );

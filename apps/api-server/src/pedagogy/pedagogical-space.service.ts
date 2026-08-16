@@ -1142,27 +1142,7 @@ export class PedagogicalSpaceService {
       } catch {}
     }
 
-    // ⭐ Effectifs
-    const effectifsHtml = (fiche.totalStudents || fiche.boysCount || fiche.girlsCount) ? `
-      <div style="margin-bottom:8px;">
-        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">Effectifs</div>
-        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
-          <tr style="background:${typeConfig.bg};font-weight:bold;">
-            <th style="border:1px solid #cbd5e1;padding:4px;">Garçons</th>
-            <th style="border:1px solid #cbd5e1;padding:4px;">Filles</th>
-            <th style="border:1px solid #cbd5e1;padding:4px;">Total</th>
-            <th style="border:1px solid #cbd5e1;padding:4px;">Présents</th>
-            <th style="border:1px solid #cbd5e1;padding:4px;">Absents</th>
-          </tr>
-          <tr>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.boysCount || 0}</td>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.girlsCount || 0}</td>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-weight:bold;">${fiche.totalStudents || 0}</td>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.totalPresent || 0}</td>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${fiche.totalAbsent || 0}</td>
-          </tr>
-        </table>
-      </div>` : '';
+    // (Section Effectifs supprimée du PDF — les effectifs sont déjà dans les infos générales)
 
     const content = `
       ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
@@ -1263,7 +1243,7 @@ export class PedagogicalSpaceService {
         </table>
       </div>
 
-      ${effectifsHtml}
+      </div>
 
       <!-- ═══ SIGNATURES ═══ -->
       <div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
@@ -6597,8 +6577,21 @@ td.name{text-align:left;font-weight:bold;}
     journalId: string,
     format: string,
   ): Promise<Buffer> {
+    // ⭐ Requête enrichie : journal + identité école + titulaire + année scolaire
     const journal: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT cje.*, c."name" as "classNameResolved",
+        tca_t."firstName" as "titularFirstName", tca_t."lastName" as "titularLastName", tca_t."gender" as "titularGender",
+        tip."schoolName", tip."schoolAcronym", tip."logoUrl",
+        ay."name" as "academicYearName"
+       FROM "cahier_journal_entries" cje
+       LEFT JOIN classes c ON c."id" = cje."classId"
+       LEFT JOIN teacher_class_assignments tca ON tca."classId" = cje."classId" AND tca."tenantId" = cje."tenantId"
+       LEFT JOIN teachers tca_t ON tca_t."id" = tca."teacherId"
+       LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = cje."tenantId" AND tip."isActive" = true
+       LEFT JOIN "academic_years" ay ON ay."id" = cje."academicYearId"
+       WHERE cje."id" = $1 AND cje."tenantId" = $2
+       ORDER BY tip."version" DESC
+       LIMIT 1`,
       journalId, tenantId,
     );
     if (!journal || journal.length === 0) {
@@ -6624,71 +6617,150 @@ td.name{text-align:left;font-weight:bold;}
     }
     const subjects = Array.from(subjectKeys);
 
-    if (format === 'excel') {
-      // CSV
-      const rows: string[][] = [];
-      rows.push([`CAHIER JOURNAL — ${j.className || ''}`]);
-      rows.push([`Semaine du ${new Date(j.weekStartDate).toLocaleDateString('fr-FR')} au ${new Date(j.weekEndDate || j.weekStartDate).toLocaleDateString('fr-FR')}`]);
-      rows.push([]);
-      const header = ['JOURS', ...subjects, 'OBSERVATIONS'];
-      rows.push(header);
-      for (const day of DAYS) {
-        const dayEntries = entries[day.key] || {};
-        const row = [day.label];
-        for (const subj of subjects) {
-          row.push(dayEntries[subj] || '');
-        }
-        row.push(dayEntries['observations'] || '');
-        rows.push(row);
-      }
-      rows.push([]);
-      rows.push(['Observations générales:', j.observations || '']);
-      rows.push([]);
-      rows.push(['SIGNATURES']);
-      rows.push(['Visa du Directeur / de la Directrice', 'Visa du Titulaire']);
-      const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-      return Buffer.from('\ufeff' + csv, 'utf-8');
-    } else {
-      // HTML → PDF via Puppeteer (comme le module finance)
-      let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Cahier Journal</title>
-<style>body{font-family:Arial,sans-serif;font-size:10px;margin:15px;}
-h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #333;padding:3px;}th{background:#e0e0e0;font-weight:bold;}
-.signature{margin-top:30px;display:flex;justify-content:space-between;}
-.signature div{text-align:center;}</style></head><body>`;
-      html += `<h2>CAHIER JOURNAL — ${j.className || ''}</h2>`;
-      html += `<p style="text-align:center">Semaine du ${new Date(j.weekStartDate).toLocaleDateString('fr-FR')} au ${new Date(j.weekEndDate || j.weekStartDate).toLocaleDateString('fr-FR')}</p>`;
-      html += '<table><thead><tr><th>JOURS</th>';
-      for (const subj of subjects) { html += `<th>${subj}</th>`; }
-      html += '<th>OBSERVATIONS</th></tr></thead><tbody>';
-      for (const day of DAYS) {
-        const dayEntries = entries[day.key] || {};
-        html += `<tr><td><strong>${day.label}</strong></td>`;
-        for (const subj of subjects) {
-          const val = dayEntries[subj] || '';
-          html += `<td>${val.replace(/<[^>]*>/g, '')}</td>`;
-        }
-        html += `<td>${(dayEntries['observations'] || '').replace(/<[^>]*>/g, '')}</td></tr>`;
-      }
-      html += '</tbody></table>';
-      html += `<p><strong>Observations générales:</strong> ${(j.observations || '').replace(/<[^>]*>/g, '')}</p>`;
-      html += `<div class="signature"><div><p>Visa du Directeur / de la Directrice</p><br><br><p>Signature et cachet</p></div><div><p>Visa du Titulaire</p><br><br><p>Signature</p></div></div>`;
-      html += '</body></html>';
+    // ⭐ Résoudre le nom du VRAI titulaire de la classe
+    const firstName = j.titularFirstName || '';
+    const lastName = j.titularLastName || '';
+    const teacherName = firstName || lastName
+      ? `${j.titularGender === 'F' ? 'Mme' : 'M.'} ${(lastName || '').toUpperCase()} ${firstName}`.trim()
+      : '—';
 
-      // ⭐ Puppeteer → real PDF
-      const { page } = await this.puppeteerPool.acquirePage();
-      try {
-        await page.setContent(html, { waitUntil: 'networkidle0' });
-        const pdfBuffer: Buffer = await page.pdf({
-          format: 'A4',
-          landscape: true,
-          printBackground: true,
-          margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
-        });
-        const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
-        return buf;
-      } finally {
-        await this.puppeteerPool.releasePage(page);
+    // ⭐ Résoudre le logo
+    let logoUrl = '';
+    if (j.logoUrl) {
+      if (j.logoUrl.startsWith('data:') || j.logoUrl.startsWith('http')) {
+        logoUrl = j.logoUrl;
+      } else {
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
+          || this.configService.get<string>('API_URL')
+          || 'https://api.academiahelm.com';
+        logoUrl = `${apiBaseUrl}${j.logoUrl.startsWith('/') ? '' : '/'}${j.logoUrl}`;
       }
+    }
+
+    // ⭐ Filigrane
+    const schoolAcronym = j.schoolAcronym || (j.schoolName || '').substring(0, 3).toUpperCase() || '';
+    const watermark = schoolAcronym
+      ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:bold;color:#e2e8f0;opacity:0.10;z-index:0;pointer-events:none;white-space:nowrap;letter-spacing:8px;">${schoolAcronym}</div>`
+      : '';
+
+    // ⭐ Strip HTML
+    const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim() || '—';
+
+    // ⭐ Génération du HTML professionnel (identique à l'UI)
+    const wsStr = j.weekStartDate ? new Date(j.weekStartDate).toLocaleDateString('fr-FR') : '—';
+    const weStr = j.weekEndDate ? new Date(j.weekEndDate).toLocaleDateString('fr-FR') : '—';
+
+    let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
+      .content { position:relative; z-index:1; }
+      @page { margin: 10mm; }
+    </style></head><body>`;
+
+    html += watermark;
+    html += '<div class="content">';
+
+    // ═══ EN-TÊTE ÉCOLE ═══
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #0A2A5E;padding-bottom:8px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${logoUrl ? `<img src="${logoUrl}" style="max-height:60px;max-width:60px;object-fit:contain;" />` : ''}
+        <div>
+          <div style="font-size:14px;font-weight:bold;color:#0A2A5E;">${j.schoolAcronym || j.schoolName || 'Academia Helm'}</div>
+          <div style="font-size:9px;color:#64748b;">${j.classNameResolved || j.className || '—'} · ${j.academicYearName || 'Année scolaire'}</div>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;font-weight:bold;color:#0A2A5E;background:#dbeafe;padding:4px 10px;border-radius:4px;border:1px solid #3b82f6;">CAHIER JOURNAL</div>
+        <div style="font-size:9px;color:#64748b;margin-top:3px;">Semaine du ${wsStr} au ${weStr}</div>
+      </div>
+    </div>`;
+
+    // ═══ INFOS GÉNÉRALES ═══
+    html += `<table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Classe</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${j.classNameResolved || j.className || '—'}</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Enseignant</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${teacherName}</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Effectif</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${j.totalStudents || '—'} élèves</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Semaine du</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${wsStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Au</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${weStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Statut</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;">${j.status || 'DRAFT'}</td>
+      </tr>
+    </table>`;
+
+    // ═══ GRILLE HEBDOMADAIRE ═══
+    html += '<div style="margin-bottom:8px;">';
+    html += '<div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">GRILLE HEBDOMADAIRE</div>';
+    html += '<table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-top:none;">';
+    html += '<thead><tr style="background:#dbeafe;">';
+    html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:10%;">JOURS</th>';
+    for (const subj of subjects) {
+      html += `<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${subj.replace(/_/g, ' ')}</th>`;
+    }
+    html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">OBSERVATIONS</th>';
+    html += '</tr></thead><tbody>';
+    for (const day of DAYS) {
+      const dayEntries = entries[day.key] || {};
+      html += `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;font-size:9px;">${day.label}</td>`;
+      for (const subj of subjects) {
+        const val = dayEntries[subj] || '';
+        html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td>`;
+      }
+      html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+
+    // ═══ OBSERVATIONS GÉNÉRALES ═══
+    if (j.observations) {
+      html += `<div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS GÉNÉRALES</div>
+        <div style="border:1px solid #0A2A5E;border-top:none;padding:8px;font-size:9px;">${strip(j.observations)}</div>
+      </div>`;
+    }
+
+    // ═══ SIGNATURES ═══
+    html += `<div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
+      <div style="text-align:center;width:45%;">
+        ${j.teacherSignature ? `<img src="${j.teacherSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
+        <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Maître / La Maîtresse</div>
+        <div style="font-size:8px;color:#64748b;margin-top:1px;">${teacherName}</div>
+      </div>
+      <div style="text-align:center;width:45%;">
+        ${j.status === 'VALIDATED' && j.directorSignature ? `<img src="${j.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>'}
+        <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
+        <div style="font-size:8px;color:#64748b;margin-top:1px;">${j.status === 'VALIDATED' ? 'Validé' : '—'}</div>
+      </div>
+    </div>`;
+
+    // ═══ FOOTER ═══
+    html += `<div style="margin-top:15px;border-top:1px solid #e2e8f0;padding-top:5px;text-align:center;font-size:8px;color:#94a3b8;">
+      Cahier journal généré par Academia Helm · ${new Date().toLocaleDateString('fr-FR')} · ${j.classNameResolved || j.className || ''}
+    </div>`;
+
+    html += '</div></body></html>';
+
+    // ⭐ Puppeteer → real PDF
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 500));
+      const pdfBuffer: Buffer = await page.pdf({
+        format: 'A4',
+        landscape: true,
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      });
+      const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+      return buf;
+    } finally {
+      await this.puppeteerPool.releasePage(page);
     }
   }
 

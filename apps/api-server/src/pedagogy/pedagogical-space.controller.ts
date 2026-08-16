@@ -1133,18 +1133,15 @@ export class PedagogicalSpaceController {
     @Query('format') format: string,
     @Res() res: any,
   ) {
-    if (!format || (format !== 'excel' && format !== 'pdf')) {
-      throw new BadRequestException('format doit être "excel" ou "pdf"');
+    // ⭐ Excel supprimé — seul le PDF est supporté (format professionnel via Puppeteer)
+    const fmt = format || 'pdf';
+    if (fmt !== 'pdf') {
+      throw new BadRequestException('Seul le format PDF est supporté pour le cahier journal');
     }
-    const buffer = await this.service.exportCahierJournal(tenantId, id, format);
-    // ⭐ Excel = CSV (avec BOM), PDF = vrai PDF via Puppeteer
-    const ext = format === 'excel' ? 'csv' : 'pdf';
-    const mimeType = format === 'excel'
-      ? 'text/csv; charset=utf-8'
-      : 'application/pdf';
+    const buffer = await this.service.exportCahierJournal(tenantId, id, 'pdf');
     res.set({
-      'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="Cahier_Journal.${ext}"`,
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="Cahier_Journal.pdf"`,
     });
     res.send(buffer);
   }

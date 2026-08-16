@@ -390,13 +390,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const directorDisplayName = directorInfo?.fullName || directorNameState || 'Nom du directeur';
   const directorSig = directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl || null;
 
-  // ⭐ Export Excel / PDF
-  const handleExport = async (format: "excel" | "pdf") => {
+  // ⭐ Export PDF (Excel supprimé — pas pertinent pour le cahier journal)
+  const handleExport = async (format: "pdf") => {
     if (!journal || exporting) return;
     setExporting(format);
     try {
       const res = await fetch(
-        `/api/pedagogy-space/cahier-journal/${journal.id}/export?format=${format}`,
+        `/api/pedagogy-space/cahier-journal/${journal.id}/export?format=pdf`,
         { credentials: "include" }
       );
       if (!res.ok) {
@@ -407,13 +407,12 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const ext = format === "excel" ? "csv" : "pdf";
-      a.download = `Cahier_Journal_${formatDate(weekStart)}.${ext}`;
+      a.download = `Cahier_Journal_${formatDate(weekStart)}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success(`✅ ${format === "excel" ? "Excel" : "PDF"} exporté`);
+      toast.success("✅ PDF exporté");
     } catch (e: any) {
-      toast.error("Erreur d'export", { description: e.message });
+      toast.error("Erreur d'export PDF", { description: e.message });
     } finally {
       setExporting(null);
     }
@@ -629,20 +628,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               {journal.status === 'SUBMITTED' ? '✓ Soumis au directeur' : journal.status === 'VALIDATED' ? '✓ Validé' : journal.status}
             </span>
           )}
-          {/* ⭐ Boutons Export */}
+          {/* ⭐ Bouton Export PDF (Excel supprimé — pas pertinent pour le cahier journal) */}
           {journal && (
-            <>
-              <button onClick={() => handleExport("excel")} disabled={!!exporting}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
-                {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                Export Excel
-              </button>
-              <button onClick={() => handleExport("pdf")} disabled={!!exporting}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
-                {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Export PDF
-              </button>
-            </>
+            <button onClick={() => handleExport("pdf")} disabled={!!exporting}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              Export PDF
+            </button>
           )}
         </div>
       </div>

@@ -1409,12 +1409,16 @@ function CahierJournalDirectorDetail({
   }
 
   // ⭐ Charger les matières dynamiques depuis l'API (comme CahierJournalTab)
+  //    ⚠️ Ne PAS passer teacherId — le directeur doit voir TOUTES les matières
+  //    de la classe (pas seulement celles de l'enseignant connecté).
+  //    Si on passe teacherId, l'API filtre par piste linguistique et enseignant,
+  //    ce qui masque les matières non assignées à cet enseignant spécifique.
   useEffect(() => {
     if (!journal.classId || !journal.academicYearId) return;
     (async () => {
       try {
         const res = await fetch(
-          `/api/pedagogy-space/subjects/available?academicYearId=${journal.academicYearId}&classId=${journal.classId}&teacherId=${journal.teacherId}`,
+          `/api/pedagogy-space/subjects/available?academicYearId=${journal.academicYearId}&classId=${journal.classId}`,
           { credentials: "include" }
         );
         const data = await res.json();
@@ -1423,7 +1427,7 @@ function CahierJournalDirectorDetail({
         setDynamicSubjects([]);
       }
     })();
-  }, [journal.id, journal.classId, journal.academicYearId, journal.teacherId]);
+  }, [journal.id, journal.classId, journal.academicYearId]);
 
   // ⭐ Initialiser les observations du directeur depuis les entries existantes
   useEffect(() => {

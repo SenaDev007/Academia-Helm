@@ -209,4 +209,144 @@ export function useRecalculateRiskScores() {
   };
 }
 
+// ─── DROPOUT INDICATOR ──────────────────────────────────────────────────
+
+export interface DropoutStudent {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentMatricule: string;
+  className: string;
+  classId?: string;
+  totalScore: number;
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  scoreDelta?: number;
+  previousQuarterScore?: number;
+  sourceData?: any;
+  dropoutReasons: string[];
+  calculatedAt: string;
+}
+
+export interface DropoutStats {
+  totalStudents: number;
+  dropoutCount: number;
+  dropoutRate: number;
+  bySeverity: { HIGH: number; CRITICAL: number };
+  avgScoreDelta: number;
+  worstScoreDelta: number;
+}
+
+export interface DropoutTrend {
+  quarterId: string;
+  quarterName: string;
+  quarterNumber: number;
+  totalStudents: number;
+  dropoutCount: number;
+  dropoutRate: number;
+  averages: { total: number; conduct: number; pedagogy: number; attendance: number };
+}
+
+export function useDropoutStudents(options: {
+  tenantId?: string;
+  academicYearId?: string;
+  quarterId?: string;
+  classId?: string;
+  enabled?: boolean;
+}) {
+  const { tenantId, academicYearId, quarterId, classId, enabled = true } = options;
+
+  const query = useQuery<DropoutStudent[]>({
+    queryKey: ['dropout-students', tenantId, academicYearId, quarterId, classId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      if (quarterId) params.set('quarterId', quarterId);
+      if (classId) params.set('classId', classId);
+
+      const res = await fetch(`/api/risk-score/dropout/students?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.data || []);
+    },
+    enabled: !!tenantId && !!academicYearId && !!quarterId && enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  return {
+    students: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+  };
+}
+
+export function useDropoutStats(options: {
+  tenantId?: string;
+  academicYearId?: string;
+  quarterId?: string;
+  enabled?: boolean;
+}) {
+  const { tenantId, academicYearId, quarterId, enabled = true } = options;
+
+  const query = useQuery<DropoutStats>({
+    queryKey: ['dropout-stats', tenantId, academicYearId, quarterId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      if (quarterId) params.set('quarterId', quarterId);
+
+      const res = await fetch(`/api/risk-score/dropout/stats?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    enabled: !!tenantId && !!academicYearId && !!quarterId && enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  return {
+    stats: query.data,
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+  };
+}
+
+export function useDropoutTrends(options: { tenantId?: string; academicYearId?: string; enabled?: boolean }) {
+  const { tenantId, academicYearId, enabled = true } = options;
+
+  const query = useQuery<DropoutTrend[]>({
+    queryKey: ['dropout-trends', tenantId, academicYearId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+
+      const res = await fetch(`/api/risk-score/dropout/trends?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!tenantId && !!academicYearId && enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  return {
+    trends: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+  };
+}
+
 export default useRiskScoreStudents;

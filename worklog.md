@@ -5013,3 +5013,344 @@ Stage Summary:
 - 19 fichiers à créer (9 backend + 10 frontend), 6 fichiers à modifier. v1 MVP en 2 jours, v2 complète en 3 jours.
 - Schema drift discipline (4 tables SQL raw) reste un blocker recommandé à résoudre en parallèle (task "FIX-CLASSES-1" mentionnée dans AUDIT-CLASSES-1 peut être étendue pour inclure ces 4 modèles).
 - Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-RISK-SCORE-1" pour implémenter la v1 MVP selon le plan ci-dessus.
+
+---
+Task ID: AUDIT-TIMETABLE-1
+Agent: Explore (audit only, read-only)
+Task: AUDIT du module emploi du temps existant pour préparer l'ajout de la détection de conflits (enseignant OU salle double-réservé → blocage)
+
+Work Log:
+- Lu `apps/api-server/prisma/schema.prisma` (16 567 lignes) pour identifier les modèles liés aux emplois du temps.
+- Inspecté `apps/api-server/src/pedagogy/timetables-prisma.controller.ts` (105 lignes) et `apps/api-server/src/pedagogy/timetables-prisma.service.ts` (312 lignes).
+- Inspecté `apps/api-server/src/timetable-engine/timetable-engine.controller.ts` (143 lignes) et `timetable-engine.service.ts` (1 350 lignes) pour le moteur de génération auto (STE V2+).
+- Inspecté `apps/api-server/src/pedagogy/dto/create-timetable.dto.ts`, `create-timetable-entry.dto.ts`, `supplementary-dtos.ts`.
+- Inspecté `apps/api-server/src/pedagogy/pedagogy.module.ts` et `app.module.ts` pour vérifier le câblage.
+- Côté frontend : inspecté `apps/web-app/src/app/app/pedagogy/timetables/page.tsx`, `apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx` (1 489 lignes — composant ACTIF) et `ManualTimetablesEditor.tsx` (1 137 lignes — composant ORPHELIN, non importé).
+- Inspecté les routes BFF Next.js : `apps/web-app/src/app/api/timetables/route.ts`, `[id]/route.ts`, `[id]/entries/route.ts`, `entries/[entryId]/route.ts`, `time-slots/route.ts`.
+- Recherché tous les endpoints `/timetables`, `check-conflict`, `ConflictException` dans `apps/api-server/src`.
+
+=== A. Tables et schéma existant ===
+
+A.1. Modèles Prisma liés aux emplois du temps (schema.prisma)
+
+| Modèle | Table physique | Ligne | Rôle |
+|---|---|---|---|
+| `Timetable` | `timetables` | 6391 | Emploi du temps (conteneur) — `tenantId + academicYearId + schoolLevelId + name + isActive + startDate + endDate` |
+| `TimetableEntry` | `timetable_entries` | 6414 | **Créneau (slot)** — voir A.2 |
+| `TimeSlot` | `time_slots` | 7668 | Catalogue de créneaux réutilisables (référence optionnelle) — `@@unique([tenantId, dayOfWeek, startTime, endTime])` |
+| `TimetableVersion` | `timetable_versions` | 8188 | Versioning d'EDT (`versionNumber` unique par `timetableId`) |
+| `TimetableConfig` | `timetable_configs` | 8218 | Config STE par tenant+niveau+année (`schoolDays` JSON, `timeBlocks` JSON, pauses) |
+| `TimetableTeacherAvailability` | `teacher_availability` | 8259 | Disponibilités enseignants (`AVAILABLE/UNAVAILABLE/PREFERRED/FORBIDDEN`) |
+| `TimetableSolution` | `timetable_solutions` | 8287 | Solutions générées par STE (entries + conflicts en JSON, score, status DRAFT/PROPOSED/ACCEPTED) |
+| `TimetableConstraint` | `timetable_constraints` | 8326 | Contraintes hard/soft (TEACHER_CONFLICT, ROOM_CONFLICT, SUBJECT_QUOTA, etc.) |
+
+Modèles référents :
+- `Teacher` (l. 2622, table `teachers`) — relation `timetableEntries TimetableEntry[]`.
+- `Room` (l. 2946, table `rooms`) — relation `timetableEntries TimetableEntry[]`, `@@unique([tenantId, academicYearId, roomCode])`.
+- `Subject` (l. 2456) — relation `timetableEntries TimetableEntry[]`.
+- `Class` / `AcademicClass` — `TimetableEntry.classId` pointe vers `Class?` (relation Prisma).
+- `TeachingAssignment` (l. 1168, `pedagogy_teaching_assignments`) — `@@unique([tenantId, academicYearId, profileId, classId, subjectId])` — c'est l'affectation prof↔classe↔matière (profil académique enseignant), utilisée par le moteur STE pour savoir quel prof enseigne quoi à quelle classe.
+
+A.2. Structure d'un créneau (`TimetableEntry`)
+
+```prisma
+model TimetableEntry {
+  id             String   @id @default(uuid())
+  tenantId       String
+  academicYearId String
+  schoolLevelId  String
+  timetableId    String
+  classId        String?
+  subjectId      String?
+  teacherId      String?
+  roomId         String?
+  timeSlotId     String?
+  dayOfWeek      Int                       // 1=Lundi ... 7=Dimanche (cf. frontend TimetablesWorkspace.tsx l. 33-40)
+  startTime      String                    // Format "HH:mm" (lexicographique = chronologique car zero-padded)
+  endTime        String                    // Format "HH:mm"
+  duration       Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  // ...relations...
+  @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([timetableId])
+  @@index([dayOfWeek])
+  @@map("timetable_entries")
+}
+```
+
+A.3. Index existants sur `TimetableEntry`
+
+- `@@index([tenantId, academicYearId, schoolLevelId])` — filtrage par contexte
+- `@@index([timetableId])` — récupération des entrées d'un EDT
+- `@@index([dayOfWeek])` — filtrage par jour
+
+**AUCUN `@@unique`** sur `TimetableEntry`. Aucune contrainte DB empêchant un même prof ou une même salle d'être réservé deux fois au même créneau. La détection de conflit est donc **purement applicative** (cf. section B).
+
+A.4. Index pertinents pour la détection de conflit (à ajouter)
+
+Aucun index ne cible actuellement les colonnes utilisées par la requête de conflit (`teacherId + dayOfWeek + startTime` ou `roomId + dayOfWeek + startTime`). Pour optimiser la détection, recommander :
+- `@@index([tenantId, academicYearId, teacherId, dayOfWeek])`
+- `@@index([tenantId, academicYearId, roomId, dayOfWeek])`
+- `@@index([tenantId, academicYearId, classId, dayOfWeek])`
+
+A.5. Incohérence de schéma `dayOfWeek` (à noter, pas bloquant pour le sujet)
+
+- `TimeSlot.dayOfWeek` : DTO `@Min(0) @Max(6)` (0-6, commentaire service "0=Lundi, 6=Dimanche").
+- `TimetableEntry.dayOfWeek` : `@IsNumber()` sans bornes, mais frontend `TimetablesWorkspace` envoie `1-7` (1=Lundi, 7=Dimanche).
+- Le moteur STE utilise aussi 1-7 (`schoolDays` JSON `[1,2,3,4,5]`).
+
+La détection de conflit actuelle ne souffre pas de ce mismatch car elle compare `dayOfWeek` à l'intérieur de `TimetableEntry` uniquement (pas de jointure avec `TimeSlot`). Mais si on veut unifier plus tard, il faudra trancher.
+
+=== B. Logique de conflit existante ===
+
+B.1. Où ?
+
+Dans `apps/api-server/src/pedagogy/timetables-prisma.service.ts`, méthode `createTimetableEntry` (lignes 84-182). Plus précisément les lignes 108-138.
+
+B.2. Détection déjà en place ? OUI — et elle BLOQUE (pas un simple warning)
+
+```ts
+// Vérifier les conflits (même classe, même jour, même heure)
+const conflictWhere: any = {
+  timetableId: data.timetableId,
+  dayOfWeek: data.dayOfWeek,
+  OR: [
+    { startTime: { lte: data.startTime }, endTime: { gt: data.startTime } },
+    { startTime: { lt: data.endTime }, endTime: { gte: data.endTime } },
+    { startTime: { gte: data.startTime }, endTime: { lte: data.endTime } },
+  ],
+};
+
+if (data.classId) {
+  const classConflict = await this.prisma.timetableEntry.findFirst({
+    where: { ...conflictWhere, classId: data.classId },
+  });
+  if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
+}
+
+if (data.teacherId) {
+  const teacherConflict = await this.prisma.timetableEntry.findFirst({
+    where: { ...conflictWhere, teacherId: data.teacherId },
+  });
+  if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
+}
+
+if (data.roomId) {
+  const roomConflict = await this.prisma.timetableEntry.findFirst({
+    where: { ...conflictWhere, roomId: data.roomId },
+  });
+  if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
+}
+```
+
+- **Type** : `BadRequestException` (HTTP 400) → bloque la création.
+- **3 conflits détectés** : classe, enseignant, salle (tous optionnels selon la présence de l'ID).
+- **Formule de chevauchement** : intervalle standard `start < otherEnd AND end > otherStart`, encodée via 3 clauses `OR` Prisma.
+- **Vérification capacité salle** : aussi présente (l. 140-150) — `room.capacity >= academicClass.capacity` sinon `BadRequestException`.
+
+B.3. Le moteur STE (timetable-engine.service.ts) a sa propre gestion de conflits
+
+- Interface `TimetableConflict` (l. 48) avec `type + message + entries[]`.
+- Backtracking (l. 885-934) qui pousse dans `conflicts[]` quand un placement échoue (`PLACEMENT_FAILED`).
+- Contraintes `HARD`/`SOFT` (table `timetable_constraints`, modèle `TimetableConstraint`) avec types `TEACHER_CONFLICT`, `ROOM_CONFLICT`, `SUBJECT_QUOTA`, `AVAILABILITY`, etc.
+- Solutions sauvegardées avec `conflictCount + conflicts JSONB` dans `timetable_solutions`.
+- **MAIS** : `acceptSolution` (l. 1294-1299) ne fait que `UPDATE ... SET status='ACCEPTED'` sur la solution — il ne matérialise PAS les entries en lignes `TimetableEntry`. Les entries restent en JSON dans `timetable_solutions.entries`.
+- Donc les conflits du STE sont internes à la génération auto, et **n'interagissent pas avec la table `timetable_entries`** qui alimente l'éditeur manuel.
+
+B.4. Frontend : pas de warning préventif, juste catch de l'erreur backend
+
+Dans `TimetablesWorkspace.tsx` (composant actif, `TimetableTab` l. 987+) :
+- `handleAddEntry` (l. 1187-1204) POST `/api/timetables/:id/entries` → catch générique → toast `e.message || 'Erreur lors de l\'ajout. Vérifiez les conflits.'` (variant `destructive`).
+- **Aucune pré-vérification** (pas de GET `/check-conflict` avant d'ouvrir le modal).
+- **Aucun indicateur visuel** dans la grille des conflits potentiels (l'utilisateur voit l'erreur backend seulement après soumission).
+- **Aucune information sur l'entrée conflictuelle** (le message backend dit "L'enseignant est déjà occupé" mais ne dit pas par QUI/QUOI — l'utilisateur doit deviner).
+
+`ManualTimetablesEditor.tsx` (orphelin, non importé) contient une logique d'auto-génération avec évitement de conflits côté client (`teacherBusy`, `classBusy`, `hoursPerDayPerClass`) — c'est du code mort mais qui documente l'intention.
+
+B.5. Bugs et limitations identifiés (cœur du sujet)
+
+1. **BUG CRITIQUE — Méthode inexistante** :
+   `timetables-prisma.controller.ts` l. 102 appelle `this.timetablesService.deleteTimetableEntry(id, tenantId)`, mais le service ne définit que `deleteTimetableSlot(id, tenantId)` (l. 282). → **La suppression d'entrée déclenche une TypeError runtime**. À reproduire et à corriger (renommer la méthode en `deleteTimetableEntry` ou ajuster l'appel).
+
+2. **Limitation — Portée limitée à un seul `timetableId`** :
+   `conflictWhere` filtre par `timetableId`. Si un tenant a 2 EDT actifs pour la même année/niveau (ou un EDT principal + un EDT « exams »), un même prof peut être réservé simultanément dans les deux sans détection. **Recommandation** : élargir la détection à `(tenantId, academicYearId)` au lieu de `timetableId` pour le filtre prof/salle (garder le filtre `timetableId` pour le conflit de classe — une classe n'a qu'un EDT).
+
+3. **Limitation — Aucun `tenantId` dans `conflictWhere`** :
+   La requête de conflit ne filtre pas par `tenantId`. Bien que `timetableId` isole logiquement le tenant (FK cascade), c'est un trou de défense en profondeur. Ajouter `tenantId: data.tenantId` dans `conflictWhere`.
+
+4. **Limitation — `findFirst` ne retourne qu'un conflit** :
+   L'utilisateur voit "L'enseignant est déjà occupé" mais ne sait pas quel cours existant bloque. Recommandation : utiliser `findMany` et retourner dans l'erreur (ou via un endpoint dédié) les entries conflictuelles (subject, class, start/end) pour affichage dans le modal.
+
+5. **Limitation — Pas de pré-vérification frontend (dry-run)** :
+   L'utilisateur remplit le modal, soumet, et découvre l'erreur seulement après. UX sous-optimale. Recommandation : endpoint `POST /timetables/check-conflict` qui valide sans créer, appelé au changement de champ dans le modal (debounce 300ms) pour afficher un warning inline **avant** soumission.
+
+6. **Limitation — Pas d'endpoint de mise à jour (PUT/PATCH entry)** :
+   Aucun endpoint pour modifier un créneau existant (uniquement create + delete). Donc pas de détection de conflit à la modification — mais aussi pas de risque car la modification n'existe pas. Si on ajoute PUT plus tard, il faudra réutiliser la même détection (en excluant l'entry en cours d'édition de la requête).
+
+7. **Limitation — Pas de contrainte DB unique (race condition)** :
+   Deux POST simultanés pour le même prof/créneau peuvent tous deux passer la détection (TOCTOU) et créer deux entries conflictuelles. Mitigation : transaction Prisma + verrou pessimiste, OU ajouter un index unique partiel PostgreSQL `EXCLUDE USING gist (teacherId WITH =, dayOfWeek WITH =, time_range WITH &&)` (nécessite `tsrange` au lieu de deux colonnes String — donc refactor de schéma). En pratique, le risque est faible car l'UI est mono-utilisateur par EDT, mais à mentionner.
+
+8. **Limitation — Format horaire String non validé** :
+   `startTime`/`endTime` sont `@IsString()` sans pattern `^([01]\d|2[0-3]):[0-5]\d$`. Une valeur mal formée ("8:0", "08h00") casserait la comparaison lexicographique. Ajouter `@Matches(/^([01]\d|2[0-3]):[0-5]\d$/)`. Vérifier aussi `startTime < endTime`.
+
+9. **Limitation — Auto-génération parallèle** :
+   `ManualTimetablesEditor.handleAutoGenerate` (orphelin) et le `GenerateTab` du STE font des `Promise.all` de POST `/entries`. Chaque POST est indépendant — la détection de conflit ne voit pas les entries créées dans le même batch (lecture isolée par transaction). Recommandation : soit générer en une seule transaction (endpoint bulk), soit séquentialiser les POST côté frontend.
+
+10. **Code mort — `ManualTimetablesEditor.tsx` (1 137 lignes)** :
+    Non importé, n'apparaît dans aucun `page.tsx` ou autre composant. Soit supprimer, soit rebrancher s'il offre une UX supérieure à `TimetableTab`. À décider.
+
+=== C. Architecture recommandée ===
+
+C.1. Approche recommandée : double dispositif (blocage backend + warning préventif frontend)
+
+L'audit montre que **la détection de conflit existe déjà et bloque** (BadRequestException). Le travail demandé n'est donc pas de créer la détection, mais de la **renforcer, fiabiliser et enrichir l'UX**. Recommandation en 2 temps :
+
+**Dispositif 1 — Blocage backend (durcir l'existant)** :
+- Conserver le throw `ConflictException` (HTTP 409 plus sémantique que 400) dans `createTimetableEntry`.
+- Étendre la portée à `(tenantId, academicYearId)` au lieu de `timetableId` pour prof/salle.
+- Ajouter `tenantId` dans `conflictWhere`.
+- Retourner dans l'erreur les entries conflictuelles (pas juste un message string).
+
+**Dispositif 2 — Warning préventif frontend (nouveau)** :
+- Endpoint `POST /timetables/check-conflict` (dry-run, ne crée rien) qui retourne `{ conflicts: ConflictInfo[] }` (tableau typé).
+- Le frontend l'appelle au changement de `teacherId/roomId/classId/dayOfWeek/startTime/endTime` (debounce 300ms) et affiche un bandeau rouge dans le modal avec la liste des conflits.
+- Le bouton "Enregistrer" reste activé (selon le cahier des charges "blocage, pas simple warning") — mais au clic, le backend renverra 409 Conflict, et le modal reste ouvert avec l'erreur mise en avant.
+
+C.2. Endpoint dédié OU intégration dans la création ?
+
+**Réponse : les deux, complémentaires.**
+- Endpoint dédié `POST /timetables/check-conflict` → pour le dry-run UX (l'utilisateur voit les conflits avant de soumettre).
+- `throw ConflictException` dans `createTimetableEntry` → pour la sécurité finale (anti race condition, anti bypass frontend).
+- Le code de détection doit être **mutualisé** dans une méthode privée `private async detectConflicts(payload, excludeEntryId?)` qui retourne `{ teacherConflicts[], roomConflicts[], classConflicts[] }`. Les deux endpoints l'appellent.
+
+C.3. Ne PAS dupliquer la logique de conflit
+
+Ne pas réimplémenter la détection dans le frontend (le code mort de `ManualTimetablesEditor.tsx` le fait déjà et c'est fragile — la vérité doit rester côté backend). Le frontend ne fait qu'afficher ce que le backend retourne via `/check-conflict`.
+
+C.4. Type d'erreur : `ConflictException` (HTTP 409) plutôt que `BadRequestException` (HTTP 400)
+
+Plus sémantique pour un conflit de ressources. Permet au frontend de distinguer "conflit de planning" (409) d'une erreur de validation de schéma (400). Importer depuis `@nestjs/common`.
+
+C.5. Schéma de réponse d'erreur structuré
+
+```ts
+interface ConflictErrorPayload {
+  errorCode: 'TIMETABLE_CONFLICT';
+  conflicts: {
+    type: 'TEACHER' | 'ROOM' | 'CLASS';
+    conflictingEntryId: string;
+    conflictingEntry: {
+      subject?: { id: string; name: string };
+      class?: { id: string; name: string };
+      teacher?: { id: string; firstName: string; lastName: string };
+      room?: { id: string; name: string; code: string };
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+    };
+  }[];
+}
+```
+
+C.6. Ne PAS toucher au STE (timetable-engine)
+
+Le moteur de génération a sa propre gestion des conflits (interface `TimetableConflict`, contraintes hard/soft, backtracking). C'est un système séparé qui ne crée pas de `TimetableEntry` mais des `TimetableSolution` (JSON). L'audit ne recommande pas de fusionner les deux — sauf si plus tard on veut matérialiser une solution acceptée en entries réelles (endpoint `materialize-solution`), auquel cas la détection existante s'appliquera automatiquement.
+
+=== D. Fichiers à créer / modifier ===
+
+D.1. À MODIFIER (backend existant)
+
+- `apps/api-server/src/pedagogy/timetables-prisma.service.ts`
+  - **CORRIGER LE BUG** : renommer `deleteTimetableSlot` en `deleteTimetableEntry` (ou ajouter un alias).
+  - **Extraire** la logique de conflit (l. 108-150) dans une méthode privée `detectConflicts(payload, excludeEntryId?)` qui retourne `{ teacherConflicts, roomConflicts, classConflicts }` au lieu de throw directement.
+  - **Élargir** la portée de `conflictWhere` : remplacer `timetableId` par `tenantId + academicYearId` pour les conflits prof/salle (conserver `timetableId` pour le conflit classe OU élargir aussi selon le besoin métier).
+  - **Ajouter** `tenantId: data.tenantId` dans `conflictWhere`.
+  - **Remplacer** `BadRequestException` par `ConflictException` (HTTP 409) avec payload structuré `{ errorCode, conflicts }`.
+  - **Utiliser** `findMany` au lieu de `findFirst` pour retourner tous les conflits.
+  - Ajouter une nouvelle méthode `checkConflicts(payload)` publique (pas de création, juste détection).
+  - Conserver la vérification de capacité salle.
+
+- `apps/api-server/src/pedagogy/timetables-prisma.controller.ts`
+  - **CORRIGER LE BUG** : aligner l'appel `deleteTimetableEntry` avec le nom de méthode service (cf. D.1 ci-dessus).
+  - **Ajouter** endpoint `POST /timetables/check-conflict` qui appelle `timetablesService.checkConflicts(payload)` et retourne `{ conflicts }` (jamais d'erreur 409 — juste un 200 avec la liste, vide si OK).
+  - (Optionnel) Ajouter `PUT /timetables/entries/:id` pour modification — appelle `detectConflicts(payload, excludeEntryId=currentId)` puis update.
+
+- `apps/api-server/src/pedagogy/dto/create-timetable-entry.dto.ts`
+  - Ajouter `@Matches(/^([01]\d|2[0-3]):[0-5]\d$/)` sur `startTime` et `endTime`.
+  - Ajouter un `@ValidatorConstraint` custom `IsStartBeforeEnd` (ou validation dans le service si on veut rester simple).
+  - Borner `dayOfWeek` : `@Min(1) @Max(7)` pour aligner avec le frontend (1-7, 1=Lundi).
+  - Ajouter `tenantId?` (optionnel, ignoré — résolu server-side depuis `@TenantId()`).
+
+- `apps/api-server/prisma/schema.prisma`
+  - Ajouter 3 indexes sur `TimetableEntry` :
+    ```prisma
+    @@index([tenantId, academicYearId, teacherId, dayOfWeek])
+    @@index([tenantId, academicYearId, roomId, dayOfWeek])
+    @@index([tenantId, academicYearId, classId, dayOfWeek])
+    ```
+  - (Optionnel, à discuter) Documenter `dayOfWeek` : `/// 1=Lundi, 7=Dimanche` en commentaire au-dessus du champ.
+  - (Avancé, pas pour v1) Si on veut une contrainte DB anti-race, il faudrait migrer `startTime/endTime` vers `tsrange` PostgreSQL avec contrainte `EXCLUDE USING gist`. Refactor lourd — hors scope.
+
+D.2. À CRÉER (backend nouveau)
+
+- `apps/api-server/prisma/migrations/{TIMESTAMP}_add_timetable_entry_conflict_indexes/migration.sql`
+  → `CREATE INDEX IF NOT EXISTS timetable_entries_teacher_day_idx ON timetable_entries ("tenantId", "academicYearId", "teacherId", "dayOfWeek");` (×3 pour teacher/room/class).
+
+- `apps/api-server/src/pedagogy/dto/check-conflict.dto.ts` (nouveau)
+  → Re-export de `CreateTimetableEntryDto` ou DTO dédié avec champs optionnels + `excludeEntryId?: string`.
+
+- `apps/api-server/src/pedagogy/types/timetable-conflict.types.ts` (nouveau)
+  → Interfaces `ConflictInfo`, `ConflictErrorPayload`, `ConflictType` ('TEACHER'|'ROOM'|'CLASS').
+
+- `apps/api-server/src/pedagogy/timetables-prisma.service.spec.ts` (nouveau)
+  → Tests unitaires : overlap detection, exclusion de l'entry courante, conflit prof/salle/classe, pas de faux positif sur créneaux adjacents (08:00-09:00 vs 09:00-10:00 = OK).
+
+D.3. À MODIFIER (frontend existant)
+
+- `apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx`
+  - Dans `TimetableTab` (l. 987+), ajouter un `useEffect` qui appelle `POST /api/timetables/check-conflict` quand `entryForm` change (debounce 300ms) et stocke les conflits dans un state `conflictPreview`.
+  - Afficher un bandeau rouge dans le modal `showAddModal` (l. 1354+) listant les conflits : "⚠️ Conflit enseignant : M. Dupont est déjà en cours avec la 6èmeA (08:00-09:00)".
+  - Adapter le catch d'erreur de `handleAddEntry` (l. 1201-1203) pour parser le payload structuré 409 et afficher les conflits dans le même bandeau (au lieu d'un toast générique).
+  - Désactiver visuellement le bouton "Enregistrer" si `conflictPreview.length > 0` (selon la spec "blocage, pas warning") — OU le laisser activé et laisser le backend bloquer (à confirmer avec le métier).
+
+- `apps/web-app/src/app/api/timetables/check-conflict/route.ts` (nouveau BFF proxy)
+  → Proxy Next.js vers `POST /timetables/check-conflict` du backend NestJS, avec `getProxyAuthHeaders`.
+
+- `apps/web-app/src/lib/pedagogy/timetable-conflicts.ts` (nouveau)
+  → Helpers typés : `formatConflict(c)`, `hasBlockingConflict(conflicts)`, etc.
+
+D.4. À NETTOYER (optionnel)
+
+- `apps/web-app/src/components/pedagogy/timetables/ManualTimetablesEditor.tsx`
+  → 1 137 lignes de code mort. Décision à prendre : (a) supprimer, (b) rebrancher pour remplacer `TimetableTab` si l'UX est meilleure, (c) extraire la logique d'auto-génération et la merger dans `TimetableTab`. Recommandation : (a) supprimer après vérification qu'aucune feature n'est manquante dans `TimetableTab`.
+
+D.5. Ordre d'implémentation recommandé
+
+**v1 — Fix & Harden (0,5 jour)** :
+1. Corriger le bug `deleteTimetableEntry` (D.1 — renommage méthode service).
+2. Extraire `detectConflicts()` + étendre portée `(tenantId, academicYearId)` + `findMany` + `ConflictException` 409 avec payload structuré.
+3. Migration SQL : 3 indexes.
+4. Tests unitaires basiques (overlap, adjacence, exclusion).
+
+**v2 — UX Preventive (0,5 jour)** :
+5. Endpoint `POST /timetables/check-conflict` (backend).
+6. BFF proxy Next.js `/api/timetables/check-conflict`.
+7. `useEffect` debounce dans `TimetableTab` + bandeau rouge dans le modal.
+8. Parse du payload 409 dans `handleAddEntry` catch.
+
+**v3 — Hardening optionnel (0,5 jour)** :
+9. Validation DTO `@Matches` sur `startTime/endTime` + `dayOfWeek 1-7`.
+10. Endpoint `PUT /timetables/entries/:id` (modification) avec `excludeEntryId`.
+11. Cleanup `ManualTimetablesEditor.tsx`.
+
+Stage Summary:
+- **7 modèles Prisma** identifiés pour les emplois du temps : `Timetable`, `TimetableEntry` (le slot), `TimeSlot`, `TimetableVersion`, `TimetableConfig`, `TimetableTeacherAvailability`, `TimetableSolution`, `TimetableConstraint`. Le slot opérationnel est `TimetableEntry` (table `timetable_entries`) avec `teacherId/roomId/classId/subjectId/dayOfWeek/startTime/endTime` (tous optionnels sauf dayOfWeek + horaires).
+- **La détection de conflit existe DÉJÀ et BLOQUE** (`BadRequestException` 400) dans `timetables-prisma.service.ts:108-138` — couvre enseignant, salle et classe. Le cahier des charges "blocage pas warning" est donc déjà partiellement satisfait côté backend.
+- **Le moteur STE** (`timetable-engine.service.ts`, 1 350 lignes) a sa propre gestion de conflits (hard/soft, backtracking, `TimetableConflict` interface) mais **ne matérialise pas** ses solutions acceptées en `TimetableEntry` — les entries restent en JSON dans `timetable_solutions.entries`. Donc la détection de conflit côté `TimetableEntry` ne s'applique qu'aux créneaux créés manuellement via `POST /timetables/:id/entries`.
+- **BUG CRITIQUE** : le controller appelle `deleteTimetableEntry` mais le service ne définit que `deleteTimetableSlot` → TypeError runtime à la suppression d'un créneau.
+- **6 limitations** identifiées : portée limitée à un `timetableId` (pas de détection cross-EDT), pas de `tenantId` dans la requête, `findFirst` retourne un seul conflit, pas de dry-run préventif frontend, pas d'endpoint PUT pour modifier, pas de contrainte DB unique (race condition possible), format horaire non validé.
+- **Code mort** : `ManualTimetablesEditor.tsx` (1 137 lignes) n'est importé nulle part — contient une logique d'auto-génération avec évitement de conflits côté client (à supprimer ou rebrancher).
+- **Architecture recommandée** : double dispositif — (1) `ConflictException` 409 backend avec payload structuré (entries conflictuelles), (2) endpoint dédié `POST /timetables/check-conflict` pour dry-run UX dans le modal frontend. Mutualiser la détection dans `detectConflicts()` privé. Ne PAS dupliquer la logique côté frontend.
+- **13 fichiers** à toucher : 4 backend à modifier (service, controller, DTO, schema.prisma), 4 backend à créer (migration SQL, check-conflict.dto, types, spec), 1 frontend à modifier (TimetablesWorkspace.tsx), 1 BFF à créer (check-conflict/route.ts), 1 lib frontend à créer (timetable-conflicts.ts), 1 cleanup (ManualTimetablesEditor.tsx), 1 doc (optionnel). v1 (fix+harden) en 0,5 jour, v2 (UX preventive) en 0,5 jour, v3 (hardening) en 0,5 jour — total 1,5 jour.
+- Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-TIMETABLE-CONFLICT-1" pour implémenter v1 (fix bug + extraction `detectConflicts()` + indexes DB + tests).

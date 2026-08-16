@@ -94,6 +94,58 @@ export class TimetablesPrismaController {
     });
   }
 
+  /**
+   * ⭐ POST /timetables/check-conflict
+   *    Dry-run : vérifie les conflits SANS créer l'entry.
+   *    Utilisé par le frontend pour afficher les conflits en temps réel
+   *    pendant que l'utilisateur remplit le formulaire (UX préventive).
+   *
+   *    Body : { classId?, teacherId?, roomId?, dayOfWeek, startTime, endTime, excludeEntryId? }
+   *    Response : { hasConflict: boolean, conflicts: TimetableConflict[] }
+   */
+  @Post('check-conflict')
+  async checkConflict(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      timetableId?: string;
+      classId?: string;
+      teacherId?: string;
+      roomId?: string;
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      excludeEntryId?: string;
+    },
+  ) {
+    if (body.startTime >= body.endTime) {
+      return {
+        hasConflict: true,
+        conflicts: [{
+          type: 'CLASS' as const,
+          message: 'L\'heure de fin doit être après l\'heure de début',
+          conflictingEntry: {
+            id: '',
+            dayOfWeek: body.dayOfWeek,
+            startTime: body.startTime,
+            endTime: body.endTime,
+          },
+        }],
+      };
+    }
+
+    return this.timetablesService.detectConflicts({
+      tenantId,
+      timetableId: body.timetableId,
+      classId: body.classId,
+      teacherId: body.teacherId,
+      roomId: body.roomId,
+      dayOfWeek: body.dayOfWeek,
+      startTime: body.startTime,
+      endTime: body.endTime,
+      excludeEntryId: body.excludeEntryId,
+    });
+  }
+
   @Delete('entries/:id')
   async deleteEntry(
     @Param('id') id: string,

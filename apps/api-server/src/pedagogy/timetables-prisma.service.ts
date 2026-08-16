@@ -8,10 +8,31 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PedagogicalAuditService } from './services/pedagogical-audit.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+
+
+export interface TimetableConflict {
+  type: 'CLASS' | 'TEACHER' | 'ROOM';
+  message: string;
+  conflictingEntry: {
+    id: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    className?: string;
+    teacherName?: string;
+    roomName?: string;
+    subjectName?: string;
+  };
+}
+
+export interface TimetableConflictCheckResult {
+  hasConflict: boolean;
+  conflicts: TimetableConflict[];
+}
 
 
 @Injectable()
@@ -79,6 +100,154 @@ export class TimetablesPrismaService {
   }
 
   /**
+   * ⭐ Détecte les conflits pour un créneau proposé (sans le créer).
+   *    Utilisé par :
+   *    - createTimetableEntry() → throw ConflictException si conflit
+   *    - POST /timetables/check-conflict → dry-run pour UX préventive
+   *
+   *    Conflits détectés :
+   *    - CLASS : la classe a déjà un cours sur ce créneau
+   *    - TEACHER : l'enseignant est déjà occupé sur ce créneau
+   *    - ROOM : la salle est déjà occupée sur ce créneau
+   *
+   *    Chevauchement d'horaires : startTime < other.endTime AND endTime > other.startTime
+   *
+   *    ⚠️ La détection est cross-timetable (tous les EDT actifs du tenant),
+   *    pas seulement au sein d'un même timetableId — un enseignant ne peut
+   *    pas être à deux endroits même dans deux EDT différents.
+   */
+  async detectConflicts(params: {
+    tenantId: string;
+    timetableId?: string;
+    classId?: string;
+    teacherId?: string;
+    roomId?: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    excludeEntryId?: string; // pour ignorer l'entry en cours d'édition
+  }): Promise<TimetableConflictCheckResult> {
+    const conflicts: TimetableConflict[] = [];
+
+    // Clause de chevauchement d'horaires
+    // Un créneau [start1, end1) chevauche [start2, end2) si :
+    //   start1 < end2 AND end1 > start2
+    const timeOverlap = [
+      { startTime: { lt: params.endTime }, endTime: { gt: params.startTime } },
+    ];
+
+    // Base where : même tenant + même jour + chevauchement horaire
+    const baseWhere: any = {
+      tenantId: params.tenantId,
+      dayOfWeek: params.dayOfWeek,
+      OR: timeOverlap,
+    };
+
+    // Optionnel : restreindre à un timetableId spécifique
+    // (par défaut, on cherche cross-timetable pour les enseignants/salles)
+    if (params.timetableId) {
+      baseWhere.timetableId = params.timetableId;
+    }
+
+    // Exclure l'entry en cours d'édition
+    if (params.excludeEntryId) {
+      baseWhere.id = { not: params.excludeEntryId };
+    }
+
+    // Inclure les relations pour construire un message utile
+    const include = {
+      class: { select: { id: true, name: true } },
+      subject: { select: { id: true, name: true } },
+      teacher: { select: { id: true, firstName: true, lastName: true } },
+      room: { select: { id: true, name: true } },
+    };
+
+    // Check CLASS conflict
+    if (params.classId) {
+      const classConflicts = await this.prisma.timetableEntry.findMany({
+        where: { ...baseWhere, classId: params.classId },
+        include,
+        take: 5,
+      });
+      for (const c of classConflicts) {
+        conflicts.push({
+          type: 'CLASS',
+          message: `La classe ${c.class?.name || '?'} a déjà un cours de ${c.subject?.name || '?'} (${c.startTime}-${c.endTime})`,
+          conflictingEntry: {
+            id: c.id,
+            dayOfWeek: c.dayOfWeek,
+            startTime: c.startTime,
+            endTime: c.endTime,
+            className: c.class?.name,
+            teacherName: c.teacher ? `${c.teacher.firstName} ${c.teacher.lastName}` : undefined,
+            roomName: c.room?.name,
+            subjectName: c.subject?.name,
+          },
+        });
+      }
+    }
+
+    // Check TEACHER conflict (cross-timetable — un prof ne peut pas être à deux endroits)
+    if (params.teacherId) {
+      const teacherWhere = { ...baseWhere };
+      delete teacherWhere.timetableId; // cross-timetable pour les enseignants
+      const teacherConflicts = await this.prisma.timetableEntry.findMany({
+        where: { ...teacherWhere, teacherId: params.teacherId },
+        include,
+        take: 5,
+      });
+      for (const c of teacherConflicts) {
+        conflicts.push({
+          type: 'TEACHER',
+          message: `L'enseignant ${c.teacher?.firstName || ''} ${c.teacher?.lastName || ''} est déjà assigné à ${c.class?.name || '?'} (${c.subject?.name || '?'}) de ${c.startTime} à ${c.endTime}`,
+          conflictingEntry: {
+            id: c.id,
+            dayOfWeek: c.dayOfWeek,
+            startTime: c.startTime,
+            endTime: c.endTime,
+            className: c.class?.name,
+            teacherName: c.teacher ? `${c.teacher.firstName} ${c.teacher.lastName}` : undefined,
+            roomName: c.room?.name,
+            subjectName: c.subject?.name,
+          },
+        });
+      }
+    }
+
+    // Check ROOM conflict (cross-timetable — une salle ne peut pas accueillir 2 cours)
+    if (params.roomId) {
+      const roomWhere = { ...baseWhere };
+      delete roomWhere.timetableId; // cross-timetable pour les salles
+      const roomConflicts = await this.prisma.timetableEntry.findMany({
+        where: { ...roomWhere, roomId: params.roomId },
+        include,
+        take: 5,
+      });
+      for (const c of roomConflicts) {
+        conflicts.push({
+          type: 'ROOM',
+          message: `La salle ${c.room?.name || '?'} est déjà occupée par ${c.class?.name || '?'} (${c.subject?.name || '?'}) de ${c.startTime} à ${c.endTime}`,
+          conflictingEntry: {
+            id: c.id,
+            dayOfWeek: c.dayOfWeek,
+            startTime: c.startTime,
+            endTime: c.endTime,
+            className: c.class?.name,
+            teacherName: c.teacher ? `${c.teacher.firstName} ${c.teacher.lastName}` : undefined,
+            roomName: c.room?.name,
+            subjectName: c.subject?.name,
+          },
+        });
+      }
+    }
+
+    return {
+      hasConflict: conflicts.length > 0,
+      conflicts,
+    };
+  }
+
+  /**
    * Ajoute une entrée à l'emploi du temps
    */
   async createTimetableEntry(data: {
@@ -105,36 +274,25 @@ export class TimetablesPrismaService {
       throw new NotFoundException(`Timetable with ID ${data.timetableId} not found`);
     }
 
-    // Vérifier les conflits (même classe, même jour, même heure)
-    const conflictWhere: any = {
+    // ⭐ Détection de conflits (bloquante — throw ConflictException 409)
+    const conflictCheck = await this.detectConflicts({
+      tenantId: data.tenantId,
       timetableId: data.timetableId,
+      classId: data.classId,
+      teacherId: data.teacherId,
+      roomId: data.roomId,
       dayOfWeek: data.dayOfWeek,
-      OR: [
-        { startTime: { lte: data.startTime }, endTime: { gt: data.startTime } },
-        { startTime: { lt: data.endTime }, endTime: { gte: data.endTime } },
-        { startTime: { gte: data.startTime }, endTime: { lte: data.endTime } },
-      ],
-    };
+      startTime: data.startTime,
+      endTime: data.endTime,
+    });
 
-    if (data.classId) {
-      const classConflict = await this.prisma.timetableEntry.findFirst({
-        where: { ...conflictWhere, classId: data.classId },
+    if (conflictCheck.hasConflict) {
+      // Throw 409 Conflict avec payload structuré (pour que le frontend puisse
+      // afficher précisément quel cours bloque)
+      throw new ConflictException({
+        message: 'Conflit détecté — création impossible',
+        conflicts: conflictCheck.conflicts,
       });
-      if (classConflict) throw new BadRequestException('Conflit : La classe a déjà un cours sur ce créneau.');
-    }
-
-    if (data.teacherId) {
-      const teacherConflict = await this.prisma.timetableEntry.findFirst({
-        where: { ...conflictWhere, teacherId: data.teacherId },
-      });
-      if (teacherConflict) throw new BadRequestException('Conflit : L\'enseignant est déjà occupé sur ce créneau.');
-    }
-
-    if (data.roomId) {
-      const roomConflict = await this.prisma.timetableEntry.findFirst({
-        where: { ...conflictWhere, roomId: data.roomId },
-      });
-      if (roomConflict) throw new BadRequestException('Conflit : La salle est déjà occupée sur ce créneau.');
     }
 
     // Vérifier la capacité de la salle
@@ -274,6 +432,14 @@ export class TimetablesPrismaService {
         schoolLevel: true,
       },
     });
+  }
+
+  /**
+   * Supprime une entrée d'emploi du temps
+   * (alias deleteTimetableEntry pour compatibilité avec le controller)
+   */
+  async deleteTimetableEntry(id: string, tenantId: string) {
+    return this.deleteTimetableSlot(id, tenantId);
   }
 
   /**

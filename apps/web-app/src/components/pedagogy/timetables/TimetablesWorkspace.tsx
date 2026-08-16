@@ -1131,6 +1131,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const [entryForm, setEntryForm] = useState<any>({
     classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00',
   });
+  // ⭐ État pour la détection de conflits en temps réel (UX préventive)
+  const [conflictCheck, setConflictCheck] = useState<{ hasConflict: boolean; conflicts: any[] } | null>(null);
+  const [checkingConflict, setCheckingConflict] = useState(false);
 
   // ─── Loaders ───
   const loadData = useCallback(async () => {
@@ -1172,6 +1175,67 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
+
+  // ⭐ Détection de conflits en temps réel (debounce 500ms)
+  //    Vérifie les conflits côté backend pendant que l'utilisateur remplit le formulaire.
+  //    Affiche une bande rouge avec les conflits détectés avant même qu'il clique sur Enregistrer.
+  useEffect(() => {
+    if (!showAddModal) {
+      setConflictCheck(null);
+      return;
+    }
+    // Ne pas checker si les champs obligatoires ne sont pas remplis
+    if (!entryForm.dayOfWeek || !entryForm.startTime || !entryForm.endTime) {
+      setConflictCheck(null);
+      return;
+    }
+    if (entryForm.startTime >= entryForm.endTime) {
+      setConflictCheck({
+        hasConflict: true,
+        conflicts: [{
+          type: 'CLASS',
+          message: "L'heure de fin doit être après l'heure de début",
+          conflictingEntry: { id: '', dayOfWeek: entryForm.dayOfWeek, startTime: entryForm.startTime, endTime: entryForm.endTime },
+        }],
+      });
+      return;
+    }
+
+    setCheckingConflict(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/timetables/check-conflict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            timetableId: activeTimetableId,
+            classId: entryForm.classId || undefined,
+            teacherId: entryForm.teacherId || undefined,
+            roomId: entryForm.roomId || undefined,
+            dayOfWeek: entryForm.dayOfWeek,
+            startTime: entryForm.startTime,
+            endTime: entryForm.endTime,
+          }),
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setConflictCheck({
+            hasConflict: !!data.hasConflict,
+            conflicts: Array.isArray(data.conflicts) ? data.conflicts : [],
+          });
+        } else {
+          setConflictCheck(null);
+        }
+      } catch (err) {
+        setConflictCheck(null);
+      } finally {
+        setCheckingConflict(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [showAddModal, entryForm, activeTimetableId]);
 
   const filteredEntries = useMemo(() => {
     if (!selectedId) return entries;
@@ -1397,9 +1461,56 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                 </div>
               </div>
             </div>
+
+            {/* ⭐ Bandeau de détection de conflits en temps réel */}
+            {checkingConflict && (
+              <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center gap-2 text-xs text-blue-700">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Vérification des conflits…
+              </div>
+            )}
+            {!checkingConflict && conflictCheck?.hasConflict && (
+              <div className="px-4 py-3 bg-red-50 border-t border-red-200">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-red-700 mb-1">
+                      ⚠️ {conflictCheck.conflicts.length} conflit(s) détecté(s) — création impossible
+                    </p>
+                    <ul className="space-y-1">
+                      {conflictCheck.conflicts.slice(0, 5).map((c, i) => (
+                        <li key={i} className="text-[11px] text-red-700 flex items-start gap-1.5">
+                          <span className="font-bold uppercase">{
+                            c.type === 'CLASS' ? 'Classe' : c.type === 'TEACHER' ? 'Enseignant' : c.type === 'ROOM' ? 'Salle' : '?'
+                          }</span>
+                          <span className="flex-1">{c.message}</span>
+                        </li>
+                      ))}
+                      {conflictCheck.conflicts.length > 5 && (
+                        <li className="text-[11px] text-red-600 italic">
+                          +{conflictCheck.conflicts.length - 5} autre(s) conflit(s)
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!checkingConflict && conflictCheck && !conflictCheck.hasConflict && (
+              <div className="px-4 py-2 bg-green-50 border-t border-green-100 flex items-center gap-2 text-xs text-green-700">
+                <span>✓ Aucun conflit — créneau disponible</span>
+              </div>
+            )}
+
             <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
               <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold">Annuler</button>
-              <button onClick={handleAddEntry} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Enregistrer</button>
+              <button
+                onClick={handleAddEntry}
+                disabled={conflictCheck?.hasConflict}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold"
+              >
+                Enregistrer
+              </button>
             </div>
           </div>
         </div>

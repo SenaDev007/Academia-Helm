@@ -3119,13 +3119,15 @@ export class PedagogicalSpaceService {
     weekEnd.setHours(23, 59, 59, 999);
 
     // ─── 4. Récupérer les fiches pédagogiques de la semaine (DRAFT uniquement) ───
-    //    ⭐ On récupère par 2 méthodes : (a) cahierJournalId si la colonne existe,
-    //    (b) par plage de dates (teacherId + classId + date dans la semaine).
-    //    On fusionne les deux listes (en dédoublonnant par id).
+    //    ⭐ 3 méthodes de récupération, fusionnées + dédoublonnées par id :
+    //    (a) cahierJournalId (lien structurel)
+    //    (b) par classId + academicYearId (sans teacherId, car teacherId peut
+    //        être l'ID du User connecté et non l'ID du Teacher)
+    //    (c) ALL DRAFT fiches for this class+year (broadest fallback)
     let submittedFiches: any[] = [];
     let skippedFiches: any[] = [];
     try {
-      // (a) Fiches rattachées structurellement
+      // (a) Fiches rattachées structurellement par cahierJournalId
       let fichesLiees: any[] = [];
       try {
         fichesLiees = await this.prisma.$queryRawUnsafe(
@@ -3137,39 +3139,37 @@ export class PedagogicalSpaceService {
       } catch {
         fichesLiees = [];
       }
+      this.logger.log(`submitCahierJournalWithFiches: (a) cahierJournalId=${journalId} → ${fichesLiees.length} fiche(s)`);
 
-      // (b) Fiches par plage de dates
-      const fichesByDate: any = await this.prisma.$queryRawUnsafe(
-        `SELECT * FROM "primary_pedagogical_fiches"
-         WHERE "tenantId" = $1
-         AND "academicYearId" = $2
-         AND "teacherId" = $3
-         AND "classId" = $4
-         AND "status" = 'DRAFT'
-         AND ("adminDate" IS NOT NULL OR "lessonDate" IS NOT NULL)`,
-        tenantId, journal.academicYearId, journal.teacherId, journal.classId,
-      );
+      // (b) Fiches par classId + academicYearId (sans teacherId)
+      let fichesByClass: any[] = [];
+      try {
+        fichesByClass = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "tenantId" = $1
+           AND "academicYearId" = $2
+           AND "classId" = $3
+           AND "status" = 'DRAFT'`,
+          tenantId, journal.academicYearId, journal.classId,
+        );
+      } catch {
+        fichesByClass = [];
+      }
+      this.logger.log(`submitCahierJournalWithFiches: (b) classId=${journal.classId} → ${fichesByClass.length} fiche(s)`);
 
       // Fusionner + dédoublonner par id
       const fichesMap = new Map<string, any>();
       for (const f of (fichesLiees || [])) fichesMap.set(f.id, f);
-      for (const f of (fichesByDate || [])) {
+      for (const f of (fichesByClass || [])) {
         if (!fichesMap.has(f.id)) fichesMap.set(f.id, f);
       }
       const allFiches = Array.from(fichesMap.values());
+      this.logger.log(`submitCahierJournalWithFiches: total unique fiches = ${allFiches.length}`);
 
-      // Filtrer par plage de dates + jour de la semaine
-      const fichesToSubmit = allFiches.filter((f: any) => {
-        const dateStr = f.adminDate || f.lessonDate;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        d.setHours(12, 0, 0, 0); // midi pour éviter les soucis de timezone
-        // Vérifier que la date est dans la semaine
-        if (d < weekStart || d > weekEnd) return false;
-        // Vérifier que le jour de la semaine correspond à dayRange
-        const dayNum = d.getDay(); // 0=dim, 1=lun, ..., 5=ven, 6=sam
-        return dayNums.includes(dayNum);
-      });
+      // ⭐ Soumettre TOUTES les fiches DRAFT trouvées (pas de filtre par date,
+      //    car les fiches créées depuis le cahier journal peuvent ne pas avoir
+      //    de lessonDate/adminDate rempli).
+      const fichesToSubmit = allFiches;
 
       // ─── 5. Soumettre chaque fiche (DRAFT → SUBMITTED) + rattacher au cahier journal ───
       //    ⭐ On essaie d'abord avec la colonne cahierJournalId (migration effectuée).
@@ -3188,6 +3188,7 @@ export class PedagogicalSpaceService {
               fiche.id,
               journalId,
             );
+            this.logger.log(`submitCahierJournalWithFiches: fiche ${fiche.id} → SUBMITTED (cahierJournalId=${journalId})`);
           } catch (colErr: any) {
             // Colonne cahierJournalId inexistante (P2010 / 42703) — fallback sans cahierJournalId
             if (colErr.code === 'P2010' || (colErr.message && colErr.message.includes('42703'))) {

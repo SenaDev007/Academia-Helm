@@ -4535,3 +4535,481 @@ Stage Summary:
 - Schema drift à corriger (sanctions en SQL raw au lieu de Prisma).
 - Files modified: 0 (audit only). Prochaine étape recommandée : Task
   "IMPL-WHATSAPP-DISCIPLINE" pour appliquer les modifications ci-dessus.
+
+---
+Task ID: AUDIT-RISK-1
+Agent: explore (sub-agent)
+Task: AUDIT des sources de données disponibles pour calculer un SCORE DE RISQUE par élève (croisant Conduite + Pédagogie + Assiduité) destiné au Directeur. Identifier tables/colonnes exploitables, proposer une formule, une architecture et la liste des fichiers à créer/modifier.
+
+Work Log:
+- Lu worklog.md (contexte : AUDIT-NOTIF-1 a confirmé que sanctions/conduct_ledger/discipline_rules/conduct_settings existent en SQL raw mais PAS dans schema.prisma — schema drift connu).
+- Lu apps/api-server/prisma/migrations/20260815130000_create_discipline_module/migration.sql (4 tables, 77 lignes).
+- Lu apps/api-server/prisma/migrations/20260816120000_add_notification_columns_to_sanctions/migration.sql (3 colonnes notification ajoutées à sanctions).
+- Audité apps/api-server/prisma/schema.prisma (16 566 lignes) via rg sur 60+ modèles.
+- Identifié 3 modèles "discipline" parallèles : `Discipline` (legacy L2721), `DisciplineRecord` (L4855), et les 4 tables SQL-raw du module conduct. Aucun n'a de `quarterId` ou `conduct_final` sauf `conduct_ledger` (SQL).
+- Audité les tables pédagogiques : `Grade` (L2545), `ExamScore` (L7844), `Evaluation` (L15047), `Exam` (L2506), `GradeCalculation` (L7880), `StudentPeriodAverage` (L15196), `StudentSubjectAverage` (L15221), `ReportCard` (L7934), `Ranking` (L8050), `HonorRoll` (L8079), `ClassCouncil` (L8108), `CouncilDecision` (L8137), `EvaluationType` (L15091), `AcademicPeriod` (L822).
+- Audité les tables assiduité : `Absence` (L2696), `AttendanceRecord` (L4829 — ✅ statut normalisé PRESENT/ABSENT/LATE/EXCUSED), `AttendanceRegister` (L16304 — registre mensuel JSON), `MonthlyEvaluation` (L16362), `MonthlySummary` (L16429), `CahierDeTest` (L16458).
+- Audité les tables "risk/analytics" existantes : `OrionRiskFlag` (L1388 — generic, entityType non-STUDENT), `OrionForecast` (L1408), `OrionDisciplinePrediction` (L1483 — par classe, pas par élève), `ClimateScoreSnapshot` (L1445), `ClimateAcademicCorrelation` (L1465), `SchoolStrategicSnapshot` (L1501).
+- Audité les tables "inspection/visite" : `Inspection` (L8782 — QHSE-generic), `InspectionChecklist` (L8907), `Incident` (L8808), `ExamSupervisor` (L9940). Aucune spécifique aux visites de classe du censeur.
+- Audité apps/api-server/src/discipline/conduct/conduct.controller.ts (379 lignes) — confirme usage $queryRawUnsafe + helper `updateConductLedger`.
+- Audité apps/api-server/src/students/attendance-prisma.service.ts — statut AttendanceRecord = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'.
+- Audité apps/api-server/src/orion/services/kpi-calculation.service.ts — pattern existant pour TAUX_ABSENCE et TAUX_ECHEC (basé sur `Grade.score < 10`).
+- Audité apps/api-server/src/pedagogy/services/pedagogy-orion-engine.service.ts — utilise déjà `OrionRiskFlag` mais uniquement pour risques pédagogiques globaux (DELAY, QUALITY), pas par élève.
+- Vérifié l'absence de toute table `visites_classe` / `fraudes_examens` / `class_visits` / `exam_frauds` / `student_risk_scores` dans le schema et dans les migrations.
+- Files modified by this audit task: 0 (audit only, no code changes).
+
+=== A. Tables disponibles (avec colonnes clés) ===
+
+A.1. CONDUITE — module Discipline/Vie Scolaire (SQL raw, hors schema.prisma)
+
+| Table SQL | Champs clés exploitables | studentId | academicYear / quarter | Statut |
+|---|---|---|---|---|
+| `conduct_ledger` | `id`, `tenantId`, `academicYearId`, `studentId`, `quarterId`, `conduct_reference` (default 20), `total_points_deducted` (NUMERIC 5,2), `conduct_final` (NUMERIC 5,2 = reference − deducted, clampé à 0), `calculated_at` | ✅ NOT NULL | ✅ both NOT NULL — UNIQUE(tenantId, studentId, quarterId) | ⭐ SOURCE PRINCIPALE CONDUITE |
+| `sanctions` | `id`, `tenantId`, `academicYearId`, `studentId`, `ruleId`, `schoolLevelId`, `quarterId`, `fault_name`, `hours_attributed` (INT), `points_deducted` (NUMERIC 5,2), `sanction_date` (DATE), `supervisorId`, `comment`, `status` ('ACTIVE' \| 'CANCELLED'), `cancelled_*`, `notificationStatus` ('PENDING'\|'SENT'\|'FAILED'\|'SKIPPED'), `notificationChannels` (JSONB), `parentNotifiedAt` | ✅ NOT NULL | ✅ both (quarter nullable, fallback trimestre courant) | Détail des fautes — filtrer `status='ACTIVE'` |
+| `discipline_rules` | `id`, `tenantId`, `schoolLevelId`, `name`, `description`, `hours_penalty` (INT), `points_deducted` (NUMERIC), `severity` ('MINOR' \| 'MAJOR' \| 'CRITICAL' — à confirmer car TEXT libre), `isActive` | (indirect via sanctions.ruleId) | ❌ pas de lien direct | ⭐ `severity` EXISTE sur rules (pas sur sanctions) |
+| `conduct_settings` | `id`, `tenantId`, `academicYearId`, `schoolLevelId`, `conduct_reference` (default 20), `critical_threshold` (default 5), UNIQUE(tenantId, academicYearId, schoolLevelId) | ❌ | ✅ academicYearId | Config par école+niveau : seuil critique conduite |
+
+⚠️ **Schema drift confirmé** (déjà documenté dans AUDIT-NOTIF-1) : ces 4 tables ne sont pas dans `schema.prisma`. Toute requête doit passer par `$queryRawUnsafe` (pattern déjà utilisé dans `conduct.controller.ts`). Pour le risk-score, il faudra soit (a) étendre le schema.prisma avec 4 modèles Prisma (recommandé — permet `prisma.conductLedger.findMany`), soit (b) continuer en SQL raw.
+
+A.2. PÉDAGOGIE — module Censeur/Examens (dans schema.prisma)
+
+| Table (model Prisma) | Champs clés exploitables | studentId | academicYear / quarter | Usage pour risk-score |
+|---|---|---|---|---|
+| `StudentPeriodAverage` | `generalAverage` (Float /20), `classRank` (Int), `totalWeighted`, `totalCoefficient`, `studentId`, `periodId` (= quarterId), `classId`, `isPublished`, `calculatedAt` | ✅ NOT NULL | ✅ UNIQUE(tenantId, academicYearId, periodId, studentId) | ⭐ SOURCE PRINCIPALE PÉDAGOGIE — `generalAverage < 10` = élève en difficulté |
+| `StudentSubjectAverage` | `average`, `weightedAverage`, `coefficient`, `appreciation`, `studentId`, `subjectId`, `periodId`, `classId` | ✅ | ✅ | Permet de détecter matière(s) faible(s) spécifiques |
+| `Grade` | `score` (Float? /20), `maxScore`, `coefficient`, `qualitativeCode`, `isAbsent`, `status` ('DRAFT'), `studentId`, `subjectId`, `examId`, `evaluationId`, `periodId` (FK Quarter), `classId` | ✅ | ✅ | Notes brutes — calculer moyenne si `StudentPeriodAverage` vide |
+| `ExamScore` | `score` (Float), `maxScore`, `coefficient`, `isValidated`, `validatedBy/At`, `studentId`, `subjectId`, `examId`, UNIQUE(examId, studentId, subjectId) | ✅ | indirect via exam.academicYearId | Notes d'examen validées |
+| `Evaluation` | `maxScore`, `coefficient`, `evaluationDate`, `status` ('PLANNED'\|'PUBLISHED'\|...), `classId`, `subjectId`, `periodId` (FK AcademicPeriod), `evaluationTypeId`, `teacherId` | indirect via Grade | ✅ | Contexte d'une évaluation |
+| `Exam` | `examType` ('COMPOSITION'), `maxScore`, `coefficient`, `examDate`, `subjectId`, `classId`, `quarterId` | indirect | ✅ | Contexte d'examen |
+| `GradeCalculation` | `rawAverage`, `weightedAverage`, `finalGrade`, `calculationType`, `studentId`, `subjectId`, `quarterId`, `gradeRulesVersionId` | ✅ | ✅ | Moyennes calculées par algorithme (audit trail) |
+| `ReportCard` | `overallAverage`, `rank`, `status` ('DRAFT'\|'VALIDATED'\|...), `quarterId` (générique), `evaluationTypeId`, **`assiduite`** (String?), **`discipline`** (String?), `defautsMajeurs`, `qualitesRemarquables`, `analyseRecommandations` | ✅ | ✅ | ⭐ Annotations libres déjà présentes — à exploiter |
+| `Ranking` | `rank`, `average`, `totalStudents`, `rankingType`, `classId`, `quarterId` | ✅ | ✅ | Rang dans la classe |
+| `HonorRoll` | `mention`, `category`, `average`, `rank`, `classId`, `quarterId` | ✅ | ✅ | Félicitations/Tableau d'honneur (inverse du risque) |
+| `ClassCouncil` / `CouncilDecision` | `decision`, `decisionType`, `description`, `councilDate`, `studentId?`, `classId`, `quarterId`, votes | ✅ (nullable sur CouncilDecision) | ✅ | Décisions du conseil de classe (avertissement travail/conduite) |
+
+⚠️ **Période hybride** : `Grade.periodId` pointe vers `Quarter`, mais `Evaluation.periodId` pointe vers `AcademicPeriod`. `StudentPeriodAverage.periodId` pointe vers `Quarter`. Pour le risk-score, **toujours utiliser `Quarter`** comme période de référence (cohérent avec `conduct_ledger.quarterId`).
+
+A.3. ASSIDUITÉ — module Présences (dans schema.prisma)
+
+| Table (model Prisma) | Champs clés exploitables | studentId | academicYear / quarter | Usage pour risk-score |
+|---|---|---|---|---|
+| `AttendanceRecord` | `status` ('PRESENT' \| 'ABSENT' \| 'LATE' \| 'EXCUSED'), `date` (DateTime), `notes`, `studentId`, `classId`, `academicYearId`, `schoolLevelId`, `recordedBy`, UNIQUE(studentId, date) | ✅ NOT NULL | ✅ academicYearId (❌ pas de quarterId — calculer via `date ∈ quarter.startDate..endDate`) | ⭐ SOURCE PRINCIPALE ASSIDUITÉ — counts par statut sur la période |
+| `Absence` (legacy) | `date` (Date), `isJustified`, `justification`, `justifiedBy`, `studentId`, `classId`, `schoolLevelId` | ✅ | ❌ pas de academicYearId (filtre via `classId ∈ classes WHERE academicYearId=X`) | Source alternative — moins riche que `AttendanceRecord` (pas de LATE/EXCUSED) |
+| `AttendanceRegister` | `classId`, `teacherId`, `month`, `year`, `studentsData` (JSON [{studentId, absences:[{week,day,marked:'A'\|'P'\|'R'\|null}], totalAbsences, ...}]), récapitulatifs agrégés | indirect via JSON | ✅ academicYearId | Registre mensuel classe primaire — extraction JSON nécessaire |
+| `MonthlySummary` | `classId`, `monthlyData` (JSON) — agrégats mensuels classe | indirect | ✅ | Taux absence agrégé par classe × mois |
+
+⚠️ **Pas de table agrégée par trimestre par élève**. Le calcul du taux d'absence/trimestre doit se faire en agrégeant `AttendanceRecord` filtré par `date BETWEEN quarter.startDate AND quarter.endDate`.
+
+A.4. TABLES LIÉES AU RISQUE/PRÉDICTION EXISTANTES (à réutiliser ou étendre, ne pas dupliquer)
+
+| Table | Champs | Usage potentiel |
+|---|---|---|
+| `OrionRiskFlag` | `entityType`, `entityId`, `riskCategory`, `riskScore` (Float 0-1), `level` ('YELLOW'\|'RED'), `academicYearId` | ⚠️ Generic — entityType est actuellement 'GLOBAL_PEDAGOGY' ou 'CONFORMITY'. Pourrait accueillir entityType='STUDENT' + entityId=studentId, mais le modèle manque de `quarterId` (agrégation annuelle seulement). Pas idéal pour un score trimestriel. |
+| `OrionForecast` | `predictedAverage`, `riskProbability` (Float 0-1) | Prévision par entité — pourrait être étendue pour students |
+| `OrionDisciplinePrediction` | `classId`, `riskScore`, `riskLevel`, `factors` (Json) | ⭐ Prédiction par CLASSE (pas par élève) — modèle à cloner pour students |
+| `ClimateScoreSnapshot` / `ClimateAcademicCorrelation` / `SchoolStrategicSnapshot` | Snapshots agrégés école/classe | Référence pour la corrélation conduite ↔ performance |
+
+A.5. TABLES MANQUANTES (mentionnées dans la spec mais inexistantes)
+
+| Spec | Statut | Recommendation |
+|---|---|---|
+| `visites_classe` avec `grille_observation_json` | ❌ INEXISTANTE | À créer. Pas de table existante réutilisable (Inspection est trop QHSE-spécifique). Voir §C pour proposition. |
+| `fraudes_examens` | ❌ INEXISTANTE | À créer si le censeur doit tracer les fraudes. Alternative court-terme : réutiliser `Incident` avec `incidentType='EXAM_FRAUD'` + `studentId` (Incident le supporte). |
+| `student_risk_scores` (cache du score) | ❌ INEXISTANTE | À créer (voir §C). |
+
+=== B. Formule de score de risque proposée ===
+
+B.1. Score total (0–100) — pondération 40/40/20
+
+```
+SCORE_RISQUE = SCORE_CONDUITE (0-40) + SCORE_PEDAGOGIE (0-40) + SCORE_ASSIDUITE (0-20)
+```
+
+**Justification de la pondération :**
+- Conduite et Pédagogie à 40 pts chacune : reflète l'importance égale des deux signaux principaux de décrochage (mauvaise conduite = désengagement comportemental, mauvaises notes = désengagement cognitif).
+- Assiduité à 20 pts : signal important mais souvent conséquence (et non cause) des deux autres — pondération réduite pour éviter la double-peine (un élève absent a déjà baisé ses notes par manque de cours).
+
+B.2. Score CONDUITE (0–40 pts) — basé sur `conduct_ledger.conduct_final`
+
+```
+conduit_final ∈ [0, conduct_reference]   (généralement 0–20)
+
+SCORE_CONDUITE = 40 × (1 - conduct_final / conduct_reference)
+
+  → conduct_final = 20 (parfait)         → SCORE = 0   (aucun risque)
+  → conduct_final = 15                    → SCORE = 10
+  → conduct_final = 10                    → SCORE = 20
+  → conduct_final = 5 (seuil critique)   → SCORE = 30
+  → conduct_final = 0 (conduite nulle)   → SCORE = 40  (risque max)
+```
+
+Bonus malus (optionnel) :
+- `+5 pts` si au moins une sanction `severity='CRITICAL'` active ce trimestre.
+- `+3 pts` si `hours_attributed` total ≥ 10 h ce trimestre.
+- Plafonné à 40.
+
+**Seuils configurables** (table `conduct_settings`) :
+- `conduct_reference` : default 20 (modifiable par école).
+- `critical_threshold` : default 5 (en dessous = conduite critique).
+
+B.3. Score PÉDAGOGIE (0–40 pts) — basé sur `StudentPeriodAverage.generalAverage`
+
+```
+generalAverage ∈ [0, 20]   (sur 20)
+
+# Élève en difficulté si generalAverage < 10
+SCORE_PEDAGOGIE = 40 × max(0, (10 - generalAverage) / 10)
+
+  → generalAverage ≥ 10 (passable)       → SCORE = 0   (aucun risque)
+  → generalAverage = 9                   → SCORE = 4
+  → generalAverage = 8                   → SCORE = 8
+  → generalAverage = 6                   → SCORE = 16
+  → generalAverage = 5 (échec grave)     → SCORE = 20
+  → generalAverage ≤ 0                   → SCORE = 40  (risque max)
+```
+
+Bonus malus (optionnel) :
+- `+5 pts` si `generalAverage < moyenneClasse - 2` (élève significativement sous la moyenne de classe — requiert agrégation).
+- `+3 pts` si ≥ 3 matières ont `StudentSubjectAverage.average < 8` (échecs multiples).
+- `+3 pts` si `ReportCard.defautsMajeurs` est non vide (annotation manuelle enseignant).
+- `+2 pts` si `CouncilDecision` existe avec `decisionType='AVERTISSEMENT_TRAVAIL'` ce trimestre.
+- Plafonné à 40.
+
+**Seuils configurables** (à ajouter dans une nouvelle table `risk_score_settings` ou étendre `conduct_settings`) :
+- `pedagogy_critical_threshold` : default 10 (moyenne minimum requise).
+- `pedagogy_class_gap_threshold` : default 2 (écart maximal toléré vs moyenne classe).
+
+B.4. Score ASSIDUITÉ (0–20 pts) — basé sur `AttendanceRecord` agrégé par trimestre
+
+```
+Taux d'absence = nb AttendanceRecord.status='ABSENT' / nb total AttendanceRecord (par élève × trimestre)
+Taux de retard = nb AttendanceRecord.status='LATE' / nb total
+Taux non-justifié = nb Absence.isJustified=false / nb Absence total
+
+SCORE_ASSIDUITE = 12 × tauxAbsence + 5 × tauxRetard + 3 × tauxNonJustifie
+
+  → 0 absence, 0 retard                       → SCORE = 0
+  → 5 absences / 50 (10%)                     → SCORE = 1.2
+  → 10 absences / 50 (20%) + 5 retards (10%)  → SCORE = 2.4 + 0.5 = 2.9
+  → 25 absences / 50 (50%)                    → SCORE = 6
+  → 50 absences / 50 (100%)                   → SCORE = 12 (plafond absences)
+```
+
+Bonus malus (optionnel) :
+- `+3 pts` si tendance haussière vs trimestre précédent (delta > +10 pts d'absentéisme).
+- Plafonné à 20.
+
+**Seuils configurables** :
+- `attendance_warning_threshold` : default 10% (taux d'absence au-delà duquel le score commence à grimper).
+- `attendance_critical_threshold` : default 25% (taux critique = élève déscolarisé de fait).
+- `late_count_critical` : default 10 retards/trimestre.
+
+B.5. Catégorisation finale (seuils configurables)
+
+| Score total | Catégorie | Couleur | Action recommandée |
+|---|---|---|---|
+| 0–19 | **Faible** | 🟢 Vert | Aucune action — élève sans signaux d'alerte |
+| 20–39 | **Moyen** | 🟡 Jaune | Surveiller — mentionner au prochain conseil de classe |
+| 40–69 | **Élevé** | 🟠 Orange | Entretien DD-Eleve obligatoire, convocation parents |
+| 70–100 | **Critique** | 🔴 Rouge | Plan d'accompagnement personnalisé (PAP), alerte Directeur + CPE, risque de décrochage |
+
+B.6. Détection de DÉCROCHAGE (signal composite)
+
+Spécification spec : « conduite en baisse + absences en hausse + retards ».
+
+```
+DROPOUT_RISK_FLAG = TRUE si :
+  (conduct_final courant < conduct_final trim précédent - 3)
+  AND (tauxAbsence courant > tauxAbsence trim précédent + 5%)
+  AND (nbRetards courant > nbRetards trim précédent)
+
+→ Affiché en BADGE distinct du score ( signal de dégradation, pas absolu)
+```
+
+Justification : un élève peut avoir un score absolu modéré mais une dégradation rapide = le signal le plus prédictif du décrochage selon la littérature pédagogique.
+
+=== C. Architecture recommandée ===
+
+C.1. Nouveau module `risk-score` (backend NestJS)
+
+Emplacement : `apps/api-server/src/risk-score/`
+
+Justification module séparé :
+- Le risk-score est un signal TRANSVERSE (pédagogie + assiduité + conduite) — ne appartient pas à un module existant.
+- Évite la pollution de `discipline`, `pedagogy`, `students`.
+- Facilite l'extensibilité future (ajout de signaux finance, QHSE, etc.).
+
+Structure :
+```
+src/risk-score/
+├── risk-score.module.ts
+├── risk-score.controller.ts                ← GET /risk-score/students, GET /risk-score/students/:id
+├── risk-score.service.ts                   ← Calcul à la demande (avec cache)
+├── risk-score-calculator.service.ts        ← Pure functions de calcul (testable)
+├── risk-score-cron.service.ts              ← @Cron recalcul quotidien nocturne
+├── dto/
+│   ├── risk-score-query.dto.ts             ← academicYearId, quarterId, schoolLevelId, classId, minScore, category
+│   └── student-risk-score.dto.ts           ← réponse typée
+└── tests/
+    └── risk-score-calculator.spec.ts       ← tests unitaires sur les seuils
+```
+
+C.2. Stratégie de calcul : CRON quotidien + cache DB + calcul à la demande
+
+**Approche hybride recommandée** (pas soit/soit) :
+
+1. **Cache DB** : nouvelle table `student_risk_scores` (voir §D pour DDL).
+   - Une ligne par (tenantId, academicYearId, quarterId, studentId) — UNIQUE sur ces 4 champs.
+   - Stocke : `score_conduct`, `score_pedagogy`, `score_assiduite`, `score_total`, `category`, `dropout_risk_flag`, `factors_json` (détail des calculs pour audit), `calculated_at`.
+
+2. **Cron quotidien nocturne** (`@Cron('0 3 * * *')`) :
+   - Recalcule tous les scores pour le trimestre courant (et l'année courante).
+   - Fire-and-forget, ne bloque pas l'API.
+   - Utilise `Promise.all` par batch de 50 élèves (évite OOM sur grandes écoles).
+
+3. **Calcul à la demande** (GET endpoint) :
+   - Si `student_risk_scores` existe pour (tenantId, academicYearId, quarterId, studentId) ET `calculated_at < 24h` → retourne le cache.
+   - Sinon → recalcul synchrone + upsert dans le cache + retour.
+
+Justification :
+- Le score évolue lentement (pas besoin de temps réel).
+- Le cache permet des requêtes rapides sur listes d'élèves (tableau directeur).
+- Le cron garantit la fraîcheur sans dépendre d'un appel manuel.
+
+C.3. Endpoints API proposés
+
+```
+GET /api/risk-score/students
+  ?academicYearId=...&quarterId=...&schoolLevelId=...&classId=...
+  &minScore=40&category=ELEVE,CRITIQUE&limit=50&offset=0
+
+  → Retourne : [{
+    studentId, studentName, className,
+    scoreConduct, scorePedagogy, scoreAssiduite, scoreTotal,
+    category, dropoutRiskFlag,
+    factors: { conductFinal, generalAverage, classAverage, absenceRate, lateCount, ... },
+    calculatedAt
+  }, ...]
+
+GET /api/risk-score/students/:studentId
+  ?academicYearId=...&quarterId=...
+  → Retourne : détail complet + historique (évolution sur les 3 trimestres)
+
+GET /api/risk-score/settings
+  → Retourne la config des seuils par tenant + schoolLevel
+
+PUT /api/risk-score/settings
+  → Modifie les seuils (DIRECTOR only)
+
+POST /api/risk-score/recalculate
+  → Force le recalcul immédiat (DIRECTOR only, async via BackgroundJob)
+
+GET /api/risk-score/dashboard
+  ?academicYearId=...&quarterId=...
+  → Retourne agrégats : count par catégorie, top 10 élèves critiques,
+     répartition par classe, tendance vs trimestre précédent
+```
+
+Permissions :
+- `DIRECTOR`, `ADMIN`, `CENSEUR`, `SG` (surveillant général) : lecture.
+- `DIRECTOR`, `ADMIN` : modification des seuils + recalcul forcé.
+- `TEACHER`, `PARENT` : pas d'accès (donnée sensible).
+
+C.4. Modèles Prisma à ajouter (table `student_risk_scores` + `risk_score_settings`)
+
+```prisma
+model StudentRiskScore {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  quarterId       String
+  studentId       String
+  scoreConduct    Float    @default(0)   // 0-40
+  scorePedagogy   Float    @default(0)   // 0-40
+  scoreAssiduite  Float    @default(0)   // 0-20
+  scoreTotal      Float    @default(0)   // 0-100
+  category        String   @default("FAIBLE")  // FAIBLE | MOYEN | ELEVE | CRITIQUE
+  dropoutRiskFlag Boolean  @default(false)
+  factors         Json     @default("{}")  // audit détaillé
+  calculatedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  quarter         Quarter     @relation(fields: [quarterId], references: [id])
+  student         Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, academicYearId, quarterId, studentId])
+  @@index([tenantId, academicYearId, quarterId])
+  @@index([studentId])
+  @@index([category])
+  @@index([scoreTotal])
+  @@map("student_risk_scores")
+}
+
+model RiskScoreSettings {
+  id                          String   @id @default(uuid())
+  tenantId                    String
+  schoolLevelId               String?
+  conductWeight               Float    @default(40)
+  pedagogyWeight              Float    @default(40)
+  assiduiteWeight             Float    @default(20)
+  pedagogyCriticalThreshold   Float    @default(10)  // moyenne /20 minimale
+  pedagogyClassGapThreshold   Float    @default(2)
+  attendanceWarningThreshold  Float    @default(10)  // % absences
+  attendanceCriticalThreshold Float    @default(25)  // % absences critique
+  lateCountCritical           Int      @default(10)
+  categoryFaibleMax           Float    @default(19)
+  categoryMoyenMax            Float    @default(39)
+  categoryEleveMax            Float    @default(69)
+  // Au-dessus de categoryEleveMax = CRITIQUE
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  tenant                      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, schoolLevelId])
+  @@map("risk_score_settings")
+}
+```
+
+C.5. Modèles optionnels pour visites_classe et fraudes_examens (spec)
+
+Si le censeur doit pouvoir enregistrer ces signaux (sinon v1 peut s'en passer) :
+
+```prisma
+model ClassVisit {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  quarterId         String
+  classId           String
+  subjectId         String?
+  visitorId         String   // userId du censeur
+  visitDate         DateTime
+  teacherId         String?
+  observationGrid   Json     // grille_observation_json : {criteria: [{label, score, comment}]}
+  globalRating      Float?   // note globale /20
+  strengths         String?
+  weaknesses        String?
+  recommendations   String?
+  teacherFeedback   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  // ...relations
+  @@map("class_visits")
+}
+
+model ExamFraud {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  examId          String?  // FK Exam (interne) ou NationalExam
+  studentId       String
+  supervisorId    String
+  fraudDate       DateTime
+  fraudType       String   // COPIE | COMMUNICATION | FRAUDE_DOCUMENT | AUTRE
+  description     String
+  severity        String   @default("MAJOR")
+  sanctionApplied String?
+  reportedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  // ...relations
+  @@map("exam_frauds")
+}
+```
+
+Si ces tables sont créées, étendre la formule :
+- `SCORE_PEDAGOGIE` : `+5 pts` si élève a ≥ 1 fraude d'examen ce trimestre.
+- `SCORE_CONDUITE` : `+3 pts` si classe de l'élève reçoit ≥ 1 visite avec `globalRating < 10` (signal collectif).
+
+=== D. Fichiers à créer / modifier ===
+
+D.1. À CRÉER (nouveaux fichiers backend)
+
+- `apps/api-server/prisma/migrations/{TIMESTAMP}_create_risk_score_tables/migration.sql`
+  → CREATE TABLE `student_risk_scores`, `risk_score_settings`. + index.
+
+- `apps/api-server/prisma/migrations/{TIMESTAMP}_add_conduct_models_to_schema.sql` (optionnel mais recommandé)
+  → Ajoute les 4 modèles `Sanction`, `ConductLedger`, `DisciplineRule`, `ConductSettings` au schema.prisma pour quitter le SQL raw. Prérequis pour utiliser `prisma.conductLedger.findMany` dans `risk-score.service.ts`.
+
+- `apps/api-server/src/risk-score/risk-score.module.ts`
+- `apps/api-server/src/risk-score/risk-score.controller.ts`
+- `apps/api-server/src/risk-score/risk-score.service.ts`
+- `apps/api-server/src/risk-score/risk-score-calculator.service.ts` (pure functions, testable)
+- `apps/api-server/src/risk-score/risk-score-cron.service.ts` (@Cron '0 3 * * *')
+- `apps/api-server/src/risk-score/dto/risk-score-query.dto.ts`
+- `apps/api-server/src/risk-score/dto/student-risk-score.dto.ts`
+- `apps/api-server/src/risk-score/tests/risk-score-calculator.spec.ts`
+
+D.2. À CRÉER (nouveaux fichiers frontend)
+
+- `apps/web-app/src/app/api/risk-score/students/route.ts` (BFF proxy)
+- `apps/web-app/src/app/api/risk-score/students/[id]/route.ts`
+- `apps/web-app/src/app/api/risk-score/settings/route.ts`
+- `apps/web-app/src/services/risk-score.service.ts` (client HTTP)
+- `apps/web-app/src/hooks/useRiskScores.ts` (React Query : liste paginée + filtres)
+- `apps/web-app/src/hooks/useStudentRiskScore.ts` (détail élève)
+- `apps/web-app/src/hooks/useRiskScoreSettings.ts`
+- `apps/web-app/src/components/director/RiskScoreDashboard.tsx` (vue principale Directeur)
+- `apps/web-app/src/components/director/RiskScoreStudentCard.tsx` (carte élève : gauge + breakdown)
+- `apps/web-app/src/components/director/RiskScoreSettingsPanel.tsx` (config seuils)
+- `apps/web-app/src/app/platform/director/risk-score/page.tsx` (page wrapper)
+
+D.3. À MODIFIER (fichiers existants)
+
+- `apps/api-server/prisma/schema.prisma`
+  → Ajouter modèles `StudentRiskScore`, `RiskScoreSettings` (+ optionnel `ClassVisit`, `ExamFraud`).
+  → Ajouter relations inverses sur `Student`, `AcademicYear`, `Quarter`, `Tenant`.
+  → (Optionnel) Ajouter les 4 modèles discipline pour résoudre le schema drift.
+
+- `apps/api-server/src/app.module.ts`
+  → Importer `RiskScoreModule` dans `imports:[]`.
+
+- `apps/api-server/src/discipline/discipline.module.ts`
+  → Exporter un service d'accès lecture aux sanctions/conduct_ledger (ou laisser `risk-score.service` faire du SQL raw en attendant la migration Prisma).
+
+- `apps/api-server/src/common/permissions/role-permissions.matrix.ts`
+  → Ajouter permission `risk_score:read` (DIRECTOR, ADMIN, CENSEUR, SG).
+  → Ajouter permission `risk_score:manage` (DIRECTOR, ADMIN).
+
+- `apps/api-server/src/common/permissions/strict-permissions.matrix.ts`
+  → Idem.
+
+- `apps/web-app/src/components/portals/director/DirectorSidebar.tsx` (ou équivalent)
+  → Ajouter onglet "Score de risque" dans la navigation directeur.
+
+- `apps/api-server/.env.example`
+  → Documenter `RISK_SCORE_CRON_ENABLED=true` (permet désactiver le cron en dev).
+
+D.4. Ordre d'implémentation recommandé (v1 → v2)
+
+**v1 (MVP — 2 jours)** :
+1. Migration `student_risk_scores` + `risk_score_settings` (DDL only).
+2. Ajout des 2 modèles Prisma + `prisma generate`.
+3. `risk-score-calculator.service.ts` (pure functions, tests unitaires).
+4. `risk-score.service.ts` + endpoint `GET /risk-score/students` (calcul à la demande, sans cron).
+5. BFF + page frontend basique (tableau avec tri/filtre).
+
+**v2 (enrichissement — 1 jour)** :
+6. Cron quotidien + cache DB (`risk-score-cron.service.ts`).
+7. Endpoint `GET /risk-score/dashboard` (agrégats + top 10 + tendance).
+8. Settings panel (modification des seuils).
+9. Détection dropout_risk_flag (comparaison trimestres).
+
+**v3 (extensible — optionnel)** :
+10. Ajout `visites_classe` + `fraudes_examens` (si besoin censeur).
+11. Intégration au moteur ORION (alimentation `OrionRiskFlag` avec `entityType='STUDENT'`).
+12. Notifications WhatsApp aux parents en cas de passage en catégorie CRITIQUE.
+
+Stage Summary:
+- 13 tables pertinentes identifiées : 4 SQL-raw (conduct_* + sanctions) + 7 Prisma pédagogie (Grade, ExamScore, Evaluation, Exam, StudentPeriodAverage, ReportCard, Ranking) + 3 Prisma assiduité (AttendanceRecord, Absence, AttendanceRegister) + 3 Prisma "risk/analytics" existantes (OrionRiskFlag, OrionDisciplinePrediction, SchoolStrategicSnapshot).
+- Sources PRINCIPALES recommandées : `conduct_ledger` (conduite), `StudentPeriodAverage` (pédagogie), `AttendanceRecord` (assiduité). Toutes trois ont studentId + quarterId/periodId (calculable via date pour AttendanceRecord).
+- Tables MANQUANTES confirmées : `visites_classe`, `fraudes_examens`, `student_risk_scores`, `risk_score_settings`. Aucune table existante n'est réutilisable directement pour ces 4 besoins (Inspection est trop QHSE-spécifique).
+- Formule proposée : 40/40/20 (conduite/pédagogie/assiduité) → 0-100, 4 catégories (Faible/Moyen/Élevé/Critique), avec signal composite `dropout_risk_flag` pour détecter la dégradation rapide.
+- Architecture recommandée : nouveau module `risk-score` (NestJS), calcul hybride cron quotidien + cache DB + calcul à la demande si cache > 24h. 4 endpoints REST (students list, student detail, settings, dashboard).
+- 19 fichiers à créer (9 backend + 10 frontend), 6 fichiers à modifier. v1 MVP en 2 jours, v2 complète en 3 jours.
+- Schema drift discipline (4 tables SQL raw) reste un blocker recommandé à résoudre en parallèle (task "FIX-CLASSES-1" mentionnée dans AUDIT-CLASSES-1 peut être étendue pour inclure ces 4 modèles).
+- Files modified: 0 (audit only). Prochaine étape recommandée : Task "IMPL-RISK-SCORE-1" pour implémenter la v1 MVP selon le plan ci-dessus.

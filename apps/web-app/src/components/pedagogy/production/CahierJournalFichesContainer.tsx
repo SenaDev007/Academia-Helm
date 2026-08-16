@@ -66,6 +66,8 @@ export function CahierJournalFichesContainer({
   // ⭐ ClassId récupéré depuis le cahier journal — passé à PedagogicalSheetsTab
   //    pour pré-sélectionner automatiquement la classe
   const [currentClassId, setCurrentClassId] = useState<string | null>(null);
+  // ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche")
+  const [viewFicheId, setViewFicheId] = useState<string | null>(null);
 
   // Quand CahierJournalTab appelle onJournalSaved/onJournalSubmitted avec
   // l'ID du cahier journal, on bascule vers le sous-onglet fiches.
@@ -103,6 +105,17 @@ export function CahierJournalFichesContainer({
   const handlePrepareFicheFor = useCallback(
     (day: string, matiere: string, sheetType?: string) => {
       setPendingInitialPayload({ day, matiere, sheetType });
+      setViewFicheId(null); // Clear view mode — on veut créer, pas voir
+      setSubTab("fiches");
+    },
+    [],
+  );
+
+  // ⭐ L'utilisateur clique sur "Voir la fiche" — ouvre la fiche existante en édition
+  const handleViewFiche = useCallback(
+    (ficheId: string) => {
+      setViewFicheId(ficheId);
+      setPendingInitialPayload(null); // Clear prepare mode
       setSubTab("fiches");
     },
     [],
@@ -203,10 +216,12 @@ export function CahierJournalFichesContainer({
                   tenantId={tenantId}
                   journalId={currentJournalId}
                   onPrepareFiche={handlePrepareFicheFor}
+                  onViewFiche={handleViewFiche}
                   onCreateFreeFiche={() => {
                     // ⭐ Bouton "Créer une fiche libre" — ouvre le formulaire
                     //    sans pré-remplissage (l'utilisateur choisit tout)
                     setPendingInitialPayload(null);
+                    setViewFicheId(null);
                     // On ne fait rien ici — le formulaire PedagogicalSheetsTab
                     // a son propre bouton "+ Nouvelle fiche" qui s'affichera en bas
                     // Scroller vers le formulaire
@@ -226,6 +241,7 @@ export function CahierJournalFichesContainer({
                     initialLessonDay={pendingInitialPayload?.day}
                     initialSheetType={pendingInitialPayload?.sheetType}
                     initialMatiere={pendingInitialPayload?.matiere}
+                    initialFicheId={viewFicheId || undefined}
                   />
                 </div>
               </>
@@ -251,29 +267,35 @@ function FichesBadge({
     totalFichesManquantes: number;
   } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiClient.get(
-          `/pedagogy-space/cahier-journal/${journalId}/fiches`,
-        );
-        if (cancelled) return;
-        const data = res.data?.stats;
-        if (data) {
-          setStats({
-            totalFiches: data.totalFiches || 0,
-            totalFichesManquantes: data.totalFichesManquantes || 0,
-          });
-        }
-      } catch {
-        // silent fail
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await apiClient.get(
+        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
+      );
+      const data = res.data?.stats;
+      if (data) {
+        setStats({
+          totalFiches: data.totalFiches || 0,
+          totalFichesManquantes: data.totalFichesManquantes || 0,
+        });
       }
-    })();
-    return () => {
-      cancelled = true;
+    } catch {
+      // silent fail
+    }
+  }, [journalId]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // ⭐ Écouter l'event 'fiche:saved' pour mettre à jour le badge automatiquement
+  useEffect(() => {
+    const handleFicheSaved = () => {
+      setTimeout(() => loadStats(), 300);
     };
-  }, [tenantId, journalId]);
+    window.addEventListener('fiche:saved', handleFicheSaved);
+    return () => window.removeEventListener('fiche:saved', handleFicheSaved);
+  }, [loadStats]);
 
   if (!stats) return null;
   if (stats.totalFichesManquantes > 0) {
@@ -321,11 +343,14 @@ function FichesAPreparer({
   tenantId,
   journalId,
   onPrepareFiche,
+  onViewFiche,
   onCreateFreeFiche,
 }: {
   tenantId: string;
   journalId: string;
   onPrepareFiche: (day: string, matiere: string, sheetType?: string) => void;
+  /** ⭐ Callback pour le bouton "Voir la fiche" (ouvre la fiche existante en édition) */
+  onViewFiche?: (ficheId: string) => void;
   /** ⭐ Callback pour le bouton "Créer une fiche libre" (sans pré-remplissage) */
   onCreateFreeFiche?: () => void;
 }) {
@@ -351,6 +376,22 @@ function FichesAPreparer({
   useEffect(() => {
     load();
   }, [load]);
+
+  // ⭐ Écouter l'event 'fiche:saved' émis par PedagogicalSheetsTab après création/update
+  //    d'une fiche. Sans ça, le compteur "X/Y fiches préparées" ne se met pas à jour
+  //    tant que l'utilisateur ne recharge pas la page manuellement.
+  useEffect(() => {
+    const handleFicheSaved = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      // Recharger si la fiche concerne ce cahier journal
+      if (detail?.cahierJournalId === journalId || !detail?.cahierJournalId) {
+        // Petit délai (300ms) pour laisser le backend terminer l'enregistrement
+        setTimeout(() => load(), 300);
+      }
+    };
+    window.addEventListener('fiche:saved', handleFicheSaved);
+    return () => window.removeEventListener('fiche:saved', handleFicheSaved);
+  }, [load, journalId]);
 
   if (loading) {
     return (
@@ -475,9 +516,13 @@ function FichesAPreparer({
                         href="#"
                         onClick={(e) => {
                           e.preventDefault();
-                          // Scroller vers la fiche existante — pour simplifier,
-                          // on ouvre le formulaire avec les mêmes params (l'API fera le lien)
-                          onPrepareFiche(day, m.matiere);
+                          // ⭐ Ouvrir la fiche existante en édition (pas en créer une nouvelle)
+                          if (m.ficheId && onViewFiche) {
+                            onViewFiche(m.ficheId);
+                          } else {
+                            // Fallback : si pas de ficheId, on bascule vers l'onglet fiches
+                            onPrepareFiche(day, m.matiere);
+                          }
                         }}
                         className="text-[10px] font-bold text-blue-600 hover:underline ml-2"
                       >

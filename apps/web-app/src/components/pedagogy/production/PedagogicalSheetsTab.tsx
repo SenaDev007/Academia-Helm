@@ -53,6 +53,8 @@ interface PedagogicalSheetsTabProps {
   initialSheetType?: string;
   /** ⭐ Matière initiale (clé matière du cahier journal, ex: "francais") */
   initialMatiere?: string;
+  /** ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche" dans FichesAPreparer) */
+  initialFicheId?: string;
 }
 
 const SHEET_TYPES = [
@@ -144,7 +146,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -437,6 +439,29 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSheetType, initialLessonDay, initialMatiere]);
 
+  // ⭐ Ouvrir une fiche existante en édition quand initialFicheId est fourni
+  //    (depuis le bouton "Voir la fiche" dans FichesAPreparer)
+  useEffect(() => {
+    if (!initialFicheId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/pedagogy-space/fiches/${initialFicheId}`, { credentials: "include" });
+        if (!res.ok) throw new Error("Fiche introuvable");
+        const fiche = await res.json();
+        if (cancelled) return;
+        // Sélectionner la classe de la fiche
+        if (fiche.classId) setSelectedClassId(fiche.classId);
+        // Ouvrir en édition
+        handleEdit(fiche);
+      } catch (e: any) {
+        if (!cancelled) toast.error("Erreur", { description: e.message });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFicheId]);
+
   // === CRUD ===
   const handleCreateOrUpdate = async () => {
     if (!form.classId || !form.sheetType) { toast.error("Veuillez sélectionner une classe et un type de fiche"); return; }
@@ -450,6 +475,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
       toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
+
+      // ⭐ Notifier les autres composants (FichesAPreparer, FichesBadge) qu'une fiche
+      //    a été créée/mise à jour, pour qu'ils rechargent leurs données automatiquement.
+      //    Sans ça, le compteur "X/Y fiches préparées" ne se met pas à jour tant que
+      //    l'utilisateur ne recharge pas la page manuellement.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('fiche:saved', {
+          detail: {
+            cahierJournalId,
+            classId: form.classId || selectedClassId,
+            academicYearId,
+          },
+        }));
+      }
+
       setShowForm(false); setEditingFiche(null); setForm(emptyForm); loadFiches();
     } catch (e: any) { toast.error("Erreur", { description: e.message }); }
     finally { setSaving(false); }

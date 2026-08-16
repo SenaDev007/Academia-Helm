@@ -56,9 +56,24 @@ async function proxy(request: NextRequest, method: string) {
     }
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'no-store, max-age=0' } });
     }
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+
+    // ⭐ Cache control conditionnel :
+    //    - Les données d'appel (attendance) sont VOLATILES : un enseignant peut
+    //      marquer un élève absent à 8h, puis revenir à 14h pour marquer l'après-midi.
+    //      Si on cache le GET /attendance pendant 60s, le second affichage montrait
+    //      une version STALE (élève "présent" alors qu'il est absent) → le second
+    //      save écrasait le premier avec des PRESENT par défaut.
+    //      → no-store pour /attendance (GET et POST).
+    //    - Les autres endpoints (cahier journal, fiches, registres mensuels) sont
+    //      moins volatils → cache 60s + stale-while-revalidate 300s acceptable.
+    const isAttendancePath = path.startsWith('/attendance');
+    const cacheControl = isAttendancePath
+      ? 'no-store, max-age=0'
+      : 'public, s-maxage=60, stale-while-revalidate=300';
+
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': cacheControl } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[pedagogy-space] proxy error:', error);

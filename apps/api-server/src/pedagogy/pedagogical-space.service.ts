@@ -109,7 +109,7 @@ export class PedagogicalSpaceService {
   > {
     const { teacherId, userRole } = await this.resolveTeacherId(tenantId, rawTeacherId);
     if (teacherId) return { mode: 'teacher', teacherId };
-    if (userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole)) {
+    if (userRole && PedagogicalSpaceService.GLOBAL_ACCESS_ROLES.has(userRole)) {
       return { mode: 'all' };
     }
     return { mode: 'none' };
@@ -120,6 +120,18 @@ export class PedagogicalSpaceService {
    * dans l'Espace Pédagogique (vue superviseur/directeur).
    * Utilisé quand resolveTeacherId ne trouve pas de Teacher lié au User.
    */
+  // ⭐ Rôles qui ont accès global à TOUTES les classes (pour test/validation)
+  //    Restreint aux rôles plateforme + promoteur uniquement.
+  //    Les DIRECTEUR_* / CENSEUR / SURVEILLANT doivent avoir un profil Teacher
+  //    ou des accréditations pour accéder à l'Espace Pédagogique.
+  private static readonly GLOBAL_ACCESS_ROLES = new Set([
+    'PROMOTER',
+    'PLATFORM_OWNER',
+    'PLATFORM_SUPER_ADMIN',
+    'PLATFORM_ADMIN',
+    'SUPER_ADMIN',
+  ]);
+
   private static readonly DIRECTION_ROLES = new Set([
     'PROMOTER',
     'SCHOOL_OWNER',
@@ -164,16 +176,15 @@ export class PedagogicalSpaceService {
       teacherId,
     );
 
-    // ⭐ TEMPORAIRE (TEST PROMOTEUR/DIRECTION) :
-    // Si l'utilisateur n'a PAS de profil Teacher mais possède un rôle
-    // "direction" (PROMOTER, SCHOOL_OWNER, DIRECTEUR_*, ADMIN, etc.),
-    // on renvoie TOUTES les classes du tenant/année pour lui permettre
-    // de tester/valider l'Espace Pédagogique.
-    // ⚠️ À remettre en mode "restreint" une fois les tests terminés :
-    //    il suffit de commenter le bloc `if (!resolvedTeacherId && ...)` ci-dessous.
-    if (!resolvedTeacherId && userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole)) {
+    // ⭐ MODE ACCÈS GLOBAL (restreint aux rôles plateforme + promoteur) :
+    //    Si l'utilisateur n'a PAS de profil Teacher mais possède un rôle
+    //    plateforme/promoteur, on renvoie TOUTES les classes du tenant/année.
+    //    Les DIRECTEUR_* / CENSEUR / SURVEILLANT ne sont PLUS inclus ici :
+    //    ils doivent avoir un profil Teacher ou des accréditations pour
+    //    accéder à l'Espace Pédagogique (sécurité rentrée 2026).
+    if (!resolvedTeacherId && userRole && PedagogicalSpaceService.GLOBAL_ACCESS_ROLES.has(userRole)) {
       this.logger.log(
-        `[getMyClasses] Aucun profil Teacher pour user.role=${userRole} — renvoi de TOUTES les classes du tenant (mode test direction)`,
+        `[getMyClasses] Accès global pour user.role=${userRole} — renvoi de toutes les classes du tenant`,
       );
       return this.getAllClassesForTenant(tenantId, academicYearId);
     }
@@ -630,18 +641,10 @@ export class PedagogicalSpaceService {
       .filter(e => e.student?.id) // Filtrer les inscriptions orphelines
       .map(e => {
         const record = recordMap.get(e.student!.id);
-        // Parser le notes JSON pour récupérer morningStatus / afternoonStatus / late
-        let morningStatus: string = 'PRESENT';
-        let afternoonStatus: string = 'PRESENT';
-        let late = false;
-        if (record?.notes) {
-          try {
-            const parsed = JSON.parse(record.notes);
-            morningStatus = parsed.morning || 'PRESENT';
-            afternoonStatus = parsed.afternoon || 'PRESENT';
-            late = !!parsed.late;
-          } catch { /* silent */ }
-        }
+        // ⭐ Lire directement les colonnes dédiées (plus de hack JSON dans notes)
+        //    amStatus/pmStatus/eveningStatus sont PRESENT par défaut (DDL)
+        //    late est false par défaut (DDL)
+        //    notes redevient un vrai champ texte libre (observations enseignant)
         return {
           studentId: e.student?.id,
           firstName: e.student?.firstName,
@@ -649,11 +652,14 @@ export class PedagogicalSpaceService {
           gender: e.student?.gender,
           matricule: e.student?.matricule,
           photoUrl: e.student?.photoUrl,
-          // Compatibilité : status global dérivé de morning+afternoon
+          // Compatibilité : status global dérivé
           status: record?.status || 'PRESENT',
-          morningStatus,
-          afternoonStatus,
-          late,
+          morningStatus: record?.amStatus || 'PRESENT',
+          afternoonStatus: record?.pmStatus || 'PRESENT',
+          eveningStatus: record?.eveningStatus || 'PRESENT',
+          late: record?.late || false,
+          lateMinutes: record?.lateMinutes || undefined,
+          notes: record?.notes || undefined,
           attendanceId: record?.id || null,
         };
       });
@@ -673,7 +679,9 @@ export class PedagogicalSpaceService {
       status: string;
       morningStatus?: string;
       afternoonStatus?: string;
+      eveningStatus?: string;
       late?: boolean;
+      lateMinutes?: number;
       notes?: string;
     }[],
     recordedBy: string,
@@ -711,26 +719,33 @@ export class PedagogicalSpaceService {
         continue;
       }
 
-      // ⭐ Stocker morningStatus/afternoonStatus/late dans notes (JSON)
-      // Pas besoin de migration — on utilise le champ notes existant.
-      const notesJson = JSON.stringify({
-        morning: record.morningStatus || 'PRESENT',
-        afternoon: record.afternoonStatus || 'PRESENT',
-        late: !!record.late,
-      });
+      // ⭐ Utiliser les colonnes dédiées amStatus/pmStatus/eveningStatus/late
+      //    (plus de hack JSON dans notes — notes redevient texte libre)
+      const amStatus = record.morningStatus || 'PRESENT';
+      const pmStatus = record.afternoonStatus || 'PRESENT';
+      const eveningStatus = record.eveningStatus || 'PRESENT';
+      const isLate = !!record.late;
+      const lateMinutes = record.lateMinutes || null;
+      // notes est maintenant un vrai champ texte libre (observations enseignant)
+      const notesText = record.notes || null;
 
       // ⭐ Calculer le status global dérivé :
-      // PRESENT = présent matin ET après-midi
-      // ABSENT = absent matin ET après-midi (journée complète)
-      // ABSENT_HALF = absent matin OU après-midi (demi-journée)
+      // PRESENT = présent toutes périodes
+      // ABSENT = absent toutes périodes (journée complète)
+      // ABSENT_HALF = absent au moins une période (demi-journée)
+      // EXCUSED = excusé toutes périodes (prioritaire sur ABSENT)
       // LATE = en retard (prioritaire si pas d'absence)
-      const morning = record.morningStatus || 'PRESENT';
-      const afternoon = record.afternoonStatus || 'PRESENT';
-      const isLate = !!record.late;
       let globalStatus = 'PRESENT';
-      if (morning === 'ABSENT' && afternoon === 'ABSENT') {
+      const allAbsent = amStatus === 'ABSENT' && pmStatus === 'ABSENT' && (eveningStatus === 'ABSENT' || !eveningStatus);
+      const anyAbsent = amStatus === 'ABSENT' || pmStatus === 'ABSENT' || eveningStatus === 'ABSENT';
+      const allExcused = amStatus === 'EXCUSED' && pmStatus === 'EXCUSED' && (eveningStatus === 'EXCUSED' || !eveningStatus);
+      const anyExcused = amStatus === 'EXCUSED' || pmStatus === 'EXCUSED' || eveningStatus === 'EXCUSED';
+
+      if (allExcused) {
+        globalStatus = 'EXCUSED';
+      } else if (allAbsent) {
         globalStatus = 'ABSENT';
-      } else if (morning === 'ABSENT' || afternoon === 'ABSENT') {
+      } else if (anyAbsent || anyExcused) {
         globalStatus = 'ABSENT_HALF';
       } else if (isLate) {
         globalStatus = 'LATE';
@@ -746,7 +761,12 @@ export class PedagogicalSpaceService {
           where: { id: existing.id },
           data: {
             status: globalStatus,
-            notes: notesJson,
+            amStatus,
+            pmStatus,
+            eveningStatus,
+            late: isLate,
+            lateMinutes,
+            notes: notesText,
             recordedBy,
           },
         });
@@ -761,7 +781,12 @@ export class PedagogicalSpaceService {
             studentId: record.studentId,
             date: dateObj,
             status: globalStatus,
-            notes: notesJson,
+            amStatus,
+            pmStatus,
+            eveningStatus,
+            late: isLate,
+            lateMinutes,
+            notes: notesText,
             recordedBy,
           },
         });
@@ -1226,31 +1251,43 @@ export class PedagogicalSpaceService {
         const cell = dateToCell.get(dateStr);
         if (!cell) continue;
 
-        // Parser le notes JSON pour récupérer morning/afternoon/late
-        let morning = 'PRESENT';
-        let afternoon = 'PRESENT';
-        let late = false;
-        if (r.notes) {
-          try {
-            const parsed = JSON.parse(r.notes);
-            morning = parsed.morning || 'PRESENT';
-            afternoon = parsed.afternoon || 'PRESENT';
-            late = !!parsed.late;
-          } catch { /* silent */ }
-        }
+        // ⭐ Lire directement les colonnes dédiées (plus de hack JSON)
+        const morning = r.amStatus || 'PRESENT';
+        const afternoon = r.pmStatus || 'PRESENT';
+        const evening = r.eveningStatus || 'PRESENT';
+        const late = r.late || false;
 
         // Calculer le marquage et le nombre d'absences
+        // Symboles du registre :
+        //   '+' = absent toute la journée (matin + après-midi)
+        //   '-' = absent le matin seulement
+        //   '|' = absent l'après-midi seulement
+        //   'E' = excusé (toute la journée ou demi-journée)
         let marked = '';
         let absenceCount = 0;
-        if (morning === 'ABSENT' && afternoon === 'ABSENT') {
-          marked = '+'; // Croix (horizontal + vertical)
+        const amAbsent = morning === 'ABSENT';
+        const pmAbsent = afternoon === 'ABSENT';
+        const amExcused = morning === 'EXCUSED';
+        const pmExcused = afternoon === 'EXCUSED';
+
+        if (amAbsent && pmAbsent) {
+          marked = '+'; // Croix (absent toute la journée)
           absenceCount = 2;
-        } else if (morning === 'ABSENT') {
-          marked = '-'; // Trait horizontal
+        } else if (amAbsent) {
+          marked = '-'; // Trait horizontal (absent matin)
           absenceCount = 1;
-        } else if (afternoon === 'ABSENT') {
-          marked = '|'; // Trait vertical
+        } else if (pmAbsent) {
+          marked = '|'; // Trait vertical (absent après-midi)
           absenceCount = 1;
+        } else if (amExcused && pmExcused) {
+          marked = 'E'; // Excusé toute la journée
+          absenceCount = 0; // excusé ne compte pas comme absence
+        } else if (amExcused) {
+          marked = 'E'; // Excusé matin
+          absenceCount = 0;
+        } else if (pmExcused) {
+          marked = 'E'; // Excusé après-midi
+          absenceCount = 0;
         }
         // PRESENT + PRESENT → case vide (marked = '', absenceCount = 0)
 
@@ -3708,6 +3745,156 @@ export class PedagogicalSpaceService {
       ficheId,
     );
     return updated[0];
+  }
+
+  // ===========================================================================
+  // ⭐ CROSS-YEAR REUSE — Réutilisation des fiches d'une année sur l'autre
+  // ===========================================================================
+
+  /**
+   * Liste les fiches pédagogiques des années PRÉCÉDENTES pour la même
+   * classe + matière (ou même schoolLevel + matière si pas de classId).
+   *
+   * Permet à un enseignant de retrouver les fiches de l'année précédente
+   * et de les dupliquer vers l'année courante — même si ce n'est pas le
+   * même enseignant qui les a créées.
+   */
+  async getPreviousYearFiches(
+    tenantId: string,
+    currentAcademicYearId: string,
+    classId?: string,
+    subjectId?: string,
+    schoolLevelId?: string,
+  ) {
+    // Récupérer l'année courante pour connaître sa position
+    const currentYear: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name, "startDate" FROM "academic_years" WHERE id = $1 AND "tenantId" = $2`,
+      currentAcademicYearId, tenantId,
+    );
+    if (!currentYear || currentYear.length === 0) {
+      throw new NotFoundException('Année scolaire courante introuvable');
+    }
+    const currentStartDate = currentYear[0].startDate;
+
+    // Construire la requête : fiches des années PRÉCÉDENTES (startDate < currentStartDate)
+    let whereClause = `"tenantId" = $1 AND "academicYearId" != $2 AND "status" = 'VALIDATED'`;
+    const params: any[] = [tenantId, currentAcademicYearId];
+    let paramIdx = 3;
+
+    if (classId) {
+      whereClause += ` AND "classId" = $${paramIdx++}`;
+      params.push(classId);
+    }
+    if (subjectId) {
+      whereClause += ` AND "subjectId" = $${paramIdx++}`;
+      params.push(subjectId);
+    }
+
+    // Joindre avec academic_years pour filtrer par startDate < currentStartDate
+    const rows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT pf.*, ay.name as "academicYearName", ay."startDate" as "yearStartDate",
+              c.name as "className", s.name as "subjectName"
+       FROM "primary_pedagogical_fiches" pf
+       JOIN "academic_years" ay ON ay.id = pf."academicYearId"
+       LEFT JOIN "classes" c ON c.id = pf."classId"
+       LEFT JOIN "subjects" s ON s.id = pf."subjectId"
+       WHERE ${whereClause}
+         AND ay."startDate" < $${paramIdx++}
+       ORDER BY ay."startDate" DESC, pf."createdAt" DESC
+       LIMIT 100`,
+      ...params, currentStartDate,
+    );
+
+    return rows.map((r: any) => ({
+      id: r.id,
+      title: r.title || r.competence || 'Fiche sans titre',
+      academicYearId: r.academicYearId,
+      academicYearName: r.academicYearName,
+      classId: r.classId,
+      className: r.className,
+      subjectId: r.subjectId,
+      subjectName: r.subjectName,
+      teacherId: r.teacherId,
+      teacherName: r.teacherName,
+      status: r.status,
+      competence: r.competence,
+      contenu: r.contenu,
+      deroulement: r.deroulement,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /**
+   * Duplique une fiche d'une année précédente vers l'année courante.
+   * Crée une nouvelle fiche avec :
+   *   - academicYearId = année courante
+   *   - teacherId = nouvel enseignant (peut être différent de l'original)
+   *   - originalSheetId = fiche d'origine (traçabilité de la lignée)
+   *   - status = DRAFT (l'enseignant peut l'éditer avant soumission)
+   *
+   * L'enseignant reprend le contenu pédagogique mais doit l'adapter à sa classe
+   * (effectifs, dates, observations spécifiques).
+   */
+  async duplicateFicheToYear(
+    tenantId: string,
+    sourceFicheId: string,
+    targetAcademicYearId: string,
+    targetTeacherId?: string,
+    targetClassId?: string,
+  ) {
+    // 1. Charger la fiche source
+    const source: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      sourceFicheId, tenantId,
+    );
+    if (!source || source.length === 0) {
+      throw new NotFoundException('Fiche source introuvable');
+    }
+    const src = source[0];
+
+    // 2. Vérifier que l'année cible existe
+    const targetYear: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name FROM "academic_years" WHERE id = $1 AND "tenantId" = $2`,
+      targetAcademicYearId, tenantId,
+    );
+    if (!targetYear || targetYear.length === 0) {
+      throw new NotFoundException('Année scolaire cible introuvable');
+    }
+
+    // 3. Créer la nouvelle fiche (copie du contenu + nouveaux métadonnées)
+    const newId = crypto.randomUUID();
+    const newTeacherId = targetTeacherId || src.teacherId;
+    const newClassId = targetClassId || src.classId;
+
+    // Copier tous les champs pédagogiques (contenu, deroulement, evaluation, etc.)
+    // mais reset les champs admin (dates, signatures, statut)
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "primary_pedagogical_fiches"
+        ("id", "tenantId", "academicYearId", "teacherId", "classId", "subjectId",
+         "sheetType", "schoolName", "className", "academicYearLabel", "trimester", "weekNumber",
+         "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques",
+         "deroulement", "evaluation", "reference",
+         "status", "originalSheetId", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6,
+               $7, $8, $9, $10, $11, $12,
+               $13, $14, $15, $16, $17, $18,
+               $19, $20, $21,
+               'DRAFT', $22, NOW(), NOW())`,
+      newId, tenantId, targetAcademicYearId, newTeacherId, newClassId, src.subjectId,
+      src.sheetType || null, src.schoolName || null, src.className || null,
+      targetYear[0].name, src.trimester || null, src.weekNumber || null,
+      src.competence || null, src.habilete || null, src.prealable || null,
+      src.contenu || null, src.methodes || null, src.moyensDidactiques || null,
+      src.deroulement || null, src.evaluation || null, src.reference || null,
+      sourceFicheId, // originalSheetId — traçabilité
+    );
+
+    this.logger.log(
+      `Fiche dupliquée: ${sourceFicheId} → ${newId} (année ${targetYear[0].name}, teacher ${newTeacherId})`,
+    );
+
+    // 4. Retourner la nouvelle fiche
+    return this.getPedagogicalFiche(tenantId, newId);
   }
 
   // ===========================================================================

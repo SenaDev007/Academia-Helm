@@ -1416,7 +1416,11 @@ function AppelModal({
     setLoading(true);
     (async () => {
       try {
-        const res = await fetch(`/api/pedagogy-space/attendance/${selectedClassId}?date=${appelDate}`, { credentials: "include" });
+        // ⭐ cache: 'no-store' pour éviter le stale read (defense-in-depth)
+        const res = await fetch(
+          `/api/pedagogy-space/attendance/${selectedClassId}?date=${appelDate}`,
+          { credentials: "include", cache: "no-store" }
+        );
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
         studentsRef.current = list;
@@ -1429,10 +1433,10 @@ function AppelModal({
     })();
   }, [selectedClassId, appelDate]);
 
-  const setMorning = (studentId: string, status: string) => {
+  const setMorning = (studentId: string, status: 'PRESENT' | 'ABSENT' | 'EXCUSED') => {
     updateStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, morningStatus: status } : s));
   };
-  const setAfternoon = (studentId: string, status: string) => {
+  const setAfternoon = (studentId: string, status: 'PRESENT' | 'ABSENT' | 'EXCUSED') => {
     updateStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, afternoonStatus: status } : s));
   };
   const toggleLate = (studentId: string) => {
@@ -1442,7 +1446,6 @@ function AppelModal({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // ⭐ FIX : lire depuis studentsRef (synchro immédiate) au lieu de students (peut être stale)
       const records = studentsRef.current
         .filter(s => s && s.studentId)
         .map(s => ({
@@ -1450,6 +1453,7 @@ function AppelModal({
           status: s.status || 'PRESENT',
           morningStatus: s.morningStatus || 'PRESENT',
           afternoonStatus: s.afternoonStatus || 'PRESENT',
+          eveningStatus: s.eveningStatus || 'PRESENT',
           late: !!s.late,
         }));
       const res = await fetch("/api/pedagogy-space/attendance", {
@@ -1503,9 +1507,19 @@ function AppelModal({
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
                     <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom</th>
-                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={2}>☀️ Matin</th>
-                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={2}>🌙 Après-midi</th>
+                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={3}>☀️ Matin</th>
+                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={3}>🌙 Après-midi</th>
                     <th className="text-center px-2 py-2 font-semibold text-slate-700">⏰</th>
+                  </tr>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th colSpan={2}></th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-emerald-600">Présent</th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-red-600">Absent</th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-purple-600">Excusé</th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-emerald-600">Présent</th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-red-600">Absent</th>
+                    <th className="text-center px-2 py-1 text-[10px] font-bold text-purple-600">Excusé</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1518,19 +1532,25 @@ function AppelModal({
                       <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
                       <td className="px-3 py-2 font-medium text-slate-900">{s.lastName} {s.firstName}</td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setMorning(s.studentId, 'PRESENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.morningStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PM</button>
+                        <button onClick={() => setMorning(s.studentId, 'PRESENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.morningStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PM</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setMorning(s.studentId, 'ABSENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.morningStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AM</button>
+                        <button onClick={() => setMorning(s.studentId, 'ABSENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.morningStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AM</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setAfternoon(s.studentId, 'PRESENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PS</button>
+                        <button onClick={() => setMorning(s.studentId, 'EXCUSED')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.morningStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>EM</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setAfternoon(s.studentId, 'ABSENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AS</button>
+                        <button onClick={() => setAfternoon(s.studentId, 'PRESENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PS</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => toggleLate(s.studentId)} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.late ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>Retard</button>
+                        <button onClick={() => setAfternoon(s.studentId, 'ABSENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AS</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => setAfternoon(s.studentId, 'EXCUSED')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>ES</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => toggleLate(s.studentId)} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.late ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>Retard</button>
                       </td>
                     </tr>
                   ))}

@@ -5974,3 +5974,27 @@ Stage Summary:
 - **3 gaps fonctionnels majeurs** : (a) Pas de fiche pédagogique pour le secondaire (modèle `PedagogicalSheet` existe mais inutilisé), (b) Pas de visites de classe du censeur basées sur cahier journal, (c) Évaluation mensuelle secondaire hardcodée `isSecondaire = false` (TODO l. 162)
 - **15 actions priorisées** : 3 P0 (bloquants), 6 P1 (importants), 6 P2 (nice-to-have)
 - Files modified: 0 (audit read-only). Prochaine étape recommandée : Task "IMPL-TEACHER-UI-RENTREE-1" pour exécuter les 3 actions P0 (estimation : 1 jour), puis Task "IMPL-TEACHER-UI-P1-1" pour les 6 actions P1 (estimation : 5-7 jours).
+
+---
+Task ID: AUDIT-ATTENDANCE-BUG-1
+Agent: Explore (read-only audit)
+Task: Audit critique du module Appels — bug écrasement des demi-journées + absence d'option "excusé"
+
+Work Log:
+- Lu AttendanceTab.tsx (333 lignes, apps/web-app/src/components/pedagogy/production/)
+- Lu AppelModal dans AttendanceRegisterTab.tsx (l. 1382-1556)
+- Lu pedagogical-space.controller.ts (route POST /pedagogy-space/attendance l. 75-104 + GET /attendance/:classId l. 65-73)
+- Lu pedagogical-space.service.ts : getDailyAttendance (l. 591-660), saveDailyAttendance (l. 665-792), syncAttendanceToRegister (l. 1024-1293)
+- Lu attendance-prisma.controller.ts + attendance-prisma.service.ts (ancien module /attendance non utilisé par le frontend)
+- Lu RecordAttendanceDto / RecordClassAttendanceDto (dto/index.ts l. 109-126)
+- Lu BFF route /api/pedagogy-space/[...path]/route.ts (67 lignes, proxy brut avec Cache-Control: s-maxage=60, stale-while-revalidate=300)
+- Lu model AttendanceRecord dans schema.prisma (l. 4829-4853) + équivalent SQLite dans 002_full_schema_sqlite.sql (l. 684-705)
+
+Findings clés (voir rapport final pour détails) :
+- Bug racine : BFF cache `s-maxage=60` sur GET /attendance → le modal charge une version STALE après un save → le save suivant écrase la morningStatus/afternoonStatus fraîchement saisie
+- Schema : 1 seul AttendanceRecord par (studentId, date), @@unique([studentId, date]) — pas de notion de période
+- Hack actuel : morningStatus/afternoonStatus/late stockés dans le champ `notes` (JSON string) car pas de colonnes dédiées
+- Frontend envoie TOUS les élèves à chaque save (full-state) → toute stale data est persistée en retour
+- Aucun bouton "excusé" : enum EXCUSED existe côté backend (RecordAttendanceDto + getAttendanceStatistics) mais l'UI n'émet que PRESENT/ABSENT par demi-journée
+- Codes PM/AM/PS/AS : PM=Présent Matin, AM=Absent Matin, PS=Présent Soir (en réalité après-midi), AS=Absent Soir (en réalité après-midi) — labeling incohérent (commentaires disent "Soir", UI affiche "Après-midi", variable s'appelle `afternoonStatus`)
+- Files modified: 0 (audit read-only). Prochaine étape recommandée : Task "IMPL-ATTENDANCE-FIX-1" pour implémenter Option 2 (champs dédiés amStatus/pmStatus/eveningStatus + excusedStatus + suppression du cache BFF sur GET attendance).

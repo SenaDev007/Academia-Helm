@@ -4834,7 +4834,20 @@ model AttendanceRecord {
   studentId      String
   classId        String?
   date           DateTime
+  /// Statut global dérivé (PRESENT | ABSENT | ABSENT_HALF | LATE | EXCUSED).
+  /// Calculé depuis amStatus/pmStatus/eveningStatus pour compatibilité ascendante
+  /// (statistiques existantes, dashboards).
   status         String
+  /// ⭐ Statut par période (PRESENT | ABSENT | EXCUSED).
+  ///    Remplace le hack JSON dans `notes` (qui redevient texte libre).
+  ///    amStatus = matin, pmStatus = après-midi, eveningStatus = soir (nullable).
+  amStatus       String       @default("PRESENT")
+  pmStatus       String       @default("PRESENT")
+  eveningStatus  String?
+  /// Retard (booléen séparé du statut — un élève peut être présent ET en retard)
+  late           Boolean      @default(false)
+  lateMinutes    Int?
+  /// Notes texte libre de l'enseignant (observations, justificatifs…)
   notes          String?
   recordedBy     String?
   createdAt      DateTime     @default(now())
@@ -4849,6 +4862,7 @@ model AttendanceRecord {
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([studentId])
   @@index([date])
+  @@index([classId, date])
   @@map("attendance_records")
 }
 
@@ -6452,6 +6466,14 @@ model PedagogicalSheet {
   academicTrackId String?
   classId         String?
   subjectId       String?
+  /// ⭐ Enseignant qui a créé cette fiche (pour traçabilité cross-année).
+  ///    Quand une fiche est dupliquée depuis une année précédente, teacherId
+  ///    est mis à jour vers le nouvel enseignant, mais originalSheetId conserve
+  ///    le lien vers la fiche d'origine.
+  teacherId       String?
+  /// ⭐ Lien vers la fiche d'origine si celle-ci a été dupliquée depuis une année précédente.
+  ///    Permet de tracer la lignée d'une fiche à travers les années.
+  originalSheetId String?
   title           String
   description     String?
   content         String
@@ -6472,6 +6494,9 @@ model PedagogicalSheet {
   tenant          Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([tenantId, classId, subjectId])
+  @@index([teacherId])
+  @@index([originalSheetId])
   @@index([status])
   @@map("pedagogical_sheets")
 }

@@ -310,6 +310,95 @@ async function bootstrap() {
     }
     logger.log('Tax module tables ensured');
 
+    // ─── Ensure pedagogy + discipline + risk-score tables exist (idempotent) ──
+    // These tables may not be created by prisma migrate deploy if migrations
+    // weren't applied. CREATE TABLE IF NOT EXISTS is idempotent.
+    const pedagogyTableStatements = [
+      // ── weekly_seminar_config (Cahier du Semainier — migration 20260722100000) ──
+      `CREATE TABLE IF NOT EXISTS "weekly_seminar_config" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "weekNumber" INTEGER NOT NULL, "trimester" INTEGER NOT NULL DEFAULT 1, "weekStartDate" DATE NOT NULL, "weekEndDate" DATE NOT NULL, "teacherId" TEXT, "classIds" JSONB NOT NULL DEFAULT '[]'::jsonb, "status" TEXT NOT NULL DEFAULT 'PENDING', "teacherSignature" TEXT, "directorSignature" TEXT, "teacherSignedAt" TIMESTAMPTZ, "directorSignedAt" TIMESTAMPTZ, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "weekly_seminar_config_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "weekly_seminar_config_tenantId_academicYearId_weekNumber_key" ON "weekly_seminar_config"("tenantId", "academicYearId", "weekNumber")`,
+      `CREATE INDEX IF NOT EXISTS "weekly_seminar_config_tenantId_academicYearId_idx" ON "weekly_seminar_config"("tenantId", "academicYearId")`,
+      // ── weekly_seminar_daily_report (migration 20260722100000) ──
+      `CREATE TABLE IF NOT EXISTS "weekly_seminar_daily_report" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "seminarConfigId" TEXT NOT NULL, "dayOfWeek" INTEGER NOT NULL, "date" DATE NOT NULL, "teacherAttendance" JSONB, "studentAttendance" JSONB, "pedagogyNotes" TEXT, "disciplineNotes" TEXT, "hygieneNotes" TEXT, "visitNotes" TEXT, "communicationNotes" TEXT, "dailySummary" TEXT, "status" TEXT NOT NULL DEFAULT 'PENDING', "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "weekly_seminar_daily_report_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "weekly_seminar_daily_report_seminarConfigId_dayOfWeek_key" ON "weekly_seminar_daily_report"("seminarConfigId", "dayOfWeek")`,
+      `CREATE INDEX IF NOT EXISTS "weekly_seminar_daily_report_tenantId_academicYearId_idx" ON "weekly_seminar_daily_report"("tenantId", "academicYearId")`,
+
+      // ── discipline_rules (migration 20260815130000) ──
+      `CREATE TABLE IF NOT EXISTS "discipline_rules" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "name" TEXT NOT NULL, "description" TEXT, "hours_penalty" DOUBLE PRECISION NOT NULL DEFAULT 0, "points_deducted" DOUBLE PRECISION NOT NULL DEFAULT 0, "severity" TEXT NOT NULL DEFAULT 'MINOR', "schoolLevelId" TEXT, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "discipline_rules_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "discipline_rules_tenantId_idx" ON "discipline_rules"("tenantId")`,
+      // ── conduct_settings (migration 20260815130000) ──
+      `CREATE TABLE IF NOT EXISTS "conduct_settings" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "schoolLevelId" TEXT, "conduct_reference" DOUBLE PRECISION NOT NULL DEFAULT 20, "critical_threshold" DOUBLE PRECISION NOT NULL DEFAULT 5, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "conduct_settings_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "conduct_settings_tenantId_academicYearId_schoolLevelId_key" ON "conduct_settings"("tenantId", "academicYearId", "schoolLevelId")`,
+      // ── sanctions (migration 20260815130000 + 20260816120000 notification columns) ──
+      `CREATE TABLE IF NOT EXISTS "sanctions" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "ruleId" TEXT, "schoolLevelId" TEXT, "quarterId" TEXT, "fault_name" TEXT NOT NULL, "hours_attributed" DOUBLE PRECISION NOT NULL DEFAULT 0, "points_deducted" DOUBLE PRECISION NOT NULL DEFAULT 0, "sanction_date" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "supervisorId" TEXT, "comment" TEXT, "status" TEXT NOT NULL DEFAULT 'ACTIVE', "cancelled_by" TEXT, "cancelled_reason" TEXT, "cancelled_at" TIMESTAMPTZ, "parentNotifiedAt" TIMESTAMPTZ, "notificationStatus" TEXT DEFAULT 'PENDING', "notificationChannels" JSONB, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "sanctions_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "sanctions_tenantId_academicYearId_idx" ON "sanctions"("tenantId", "academicYearId")`,
+      `CREATE INDEX IF NOT EXISTS "sanctions_studentId_idx" ON "sanctions"("studentId")`,
+      `CREATE INDEX IF NOT EXISTS "sanctions_notificationStatus_idx" ON "sanctions"("notificationStatus")`,
+      // ── conduct_ledger (migration 20260815130000) ──
+      `CREATE TABLE IF NOT EXISTS "conduct_ledger" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "quarterId" TEXT NOT NULL, "conduct_reference" DOUBLE PRECISION NOT NULL DEFAULT 20, "total_points_deducted" DOUBLE PRECISION NOT NULL DEFAULT 0, "conduct_final" DOUBLE PRECISION NOT NULL DEFAULT 20, "calculated_at" TIMESTAMPTZ, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "conduct_ledger_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "conduct_ledger_tenantId_studentId_quarterId_key" ON "conduct_ledger"("tenantId", "studentId", "quarterId")`,
+
+      // ── staff_accreditations (migration 20260815140000) ──
+      `CREATE TABLE IF NOT EXISTS "staff_accreditations" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "staffId" TEXT NOT NULL, "module" TEXT NOT NULL, "grantedBy" TEXT, "grantedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "reason" TEXT, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "staff_accreditations_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "staff_accreditations_tenantId_staffId_idx" ON "staff_accreditations"("tenantId", "staffId")`,
+
+      // ── student_risk_scores (migration 20260816130000) ──
+      `CREATE TABLE IF NOT EXISTS "student_risk_scores" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "quarterId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "conductScore" DOUBLE PRECISION NOT NULL DEFAULT 0, "pedagogyScore" DOUBLE PRECISION NOT NULL DEFAULT 0, "attendanceScore" DOUBLE PRECISION NOT NULL DEFAULT 0, "totalScore" DOUBLE PRECISION NOT NULL DEFAULT 0, "riskLevel" TEXT NOT NULL DEFAULT 'LOW', "dropoutRiskFlag" BOOLEAN NOT NULL DEFAULT false, "sourceData" JSONB, "previousQuarterScore" DOUBLE PRECISION, "scoreDelta" DOUBLE PRECISION, "calculatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "student_risk_scores_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "student_risk_scores_unique_idx" ON "student_risk_scores"("tenantId", "studentId", "quarterId")`,
+      `CREATE INDEX IF NOT EXISTS "student_risk_scores_tenant_year_quarter_idx" ON "student_risk_scores"("tenantId", "academicYearId", "quarterId")`,
+      `CREATE INDEX IF NOT EXISTS "student_risk_scores_riskLevel_idx" ON "student_risk_scores"("riskLevel")`,
+      `CREATE INDEX IF NOT EXISTS "student_risk_scores_dropout_idx" ON "student_risk_scores"("dropoutRiskFlag") WHERE "dropoutRiskFlag" = true`,
+      // ── risk_score_settings (migration 20260816130000) ──
+      `CREATE TABLE IF NOT EXISTS "risk_score_settings" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL UNIQUE, "conductWeight" INTEGER NOT NULL DEFAULT 40, "pedagogyWeight" INTEGER NOT NULL DEFAULT 40, "attendanceWeight" INTEGER NOT NULL DEFAULT 20, "lowThreshold" INTEGER NOT NULL DEFAULT 20, "moderateThreshold" INTEGER NOT NULL DEFAULT 40, "highThreshold" INTEGER NOT NULL DEFAULT 70, "dropoutScoreDeltaThreshold" DOUBLE PRECISION NOT NULL DEFAULT 10, "dropoutAbsenceRateThreshold" DOUBLE PRECISION NOT NULL DEFAULT 0.15, "dropoutConductDropThreshold" DOUBLE PRECISION NOT NULL DEFAULT 5, "pedagogyReferenceAverage" DOUBLE PRECISION NOT NULL DEFAULT 10, "isEnabled" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "risk_score_settings_pkey" PRIMARY KEY ("id"))`,
+
+      // ── exam_frauds (migration 20260816150000) ──
+      `CREATE TABLE IF NOT EXISTS "exam_frauds" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "academicYearId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "evaluationId" TEXT, "examId" TEXT, "classId" TEXT, "subjectId" TEXT, "quarterId" TEXT, "fraudType" TEXT NOT NULL, "description" TEXT NOT NULL, "witnesses" TEXT, "evidencePhotoUrl" TEXT, "severity" TEXT NOT NULL DEFAULT 'MAJOR', "status" TEXT NOT NULL DEFAULT 'REPORTED', "reportedById" TEXT NOT NULL, "reportedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "investigatedById" TEXT, "investigationNotes" TEXT, "investigatedAt" TIMESTAMPTZ, "sanctionId" TEXT, "incidentDate" TIMESTAMPTZ, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "exam_frauds_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "exam_frauds_tenant_year_idx" ON "exam_frauds"("tenantId", "academicYearId")`,
+      `CREATE INDEX IF NOT EXISTS "exam_frauds_status_idx" ON "exam_frauds"("status")`,
+      // ── exam_fraud_sanctions (migration 20260816150000) ──
+      `CREATE TABLE IF NOT EXISTS "exam_fraud_sanctions" ("id" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "examFraudId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "sanctionType" TEXT NOT NULL, "description" TEXT, "newExamDate" TIMESTAMPTZ, "nullifiedGrade" DOUBLE PRECISION, "decidedById" TEXT NOT NULL, "decidedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "approvedById" TEXT, "approvedAt" TIMESTAMPTZ, "status" TEXT NOT NULL DEFAULT 'PENDING', "executedAt" TIMESTAMPTZ, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMPTZ NOT NULL, CONSTRAINT "exam_fraud_sanctions_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "exam_fraud_sanctions_fraud_idx" ON "exam_fraud_sanctions"("examFraudId")`,
+
+      // ── attendance_records : colonnes amStatus/pmStatus/eveningStatus/late (migration 20260816160000) ──
+      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "amStatus" TEXT NOT NULL DEFAULT 'PRESENT'`,
+      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "pmStatus" TEXT NOT NULL DEFAULT 'PRESENT'`,
+      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "eveningStatus" TEXT DEFAULT 'PRESENT'`,
+      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "late" BOOLEAN NOT NULL DEFAULT false`,
+      `ALTER TABLE "attendance_records" ADD COLUMN IF NOT EXISTS "lateMinutes" INTEGER`,
+      `CREATE INDEX IF NOT EXISTS "attendance_records_class_date_idx" ON "attendance_records"("classId", "date") WHERE "classId" IS NOT NULL`,
+
+      // ── timetable_entries : indexes pour détection conflits (migration 20260816140000) ──
+      `CREATE INDEX IF NOT EXISTS "timetable_entries_tenant_class_day_idx" ON "timetable_entries"("tenantId", "classId", "dayOfWeek") WHERE "classId" IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "timetable_entries_tenant_teacher_day_idx" ON "timetable_entries"("tenantId", "teacherId", "dayOfWeek") WHERE "teacherId" IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "timetable_entries_tenant_room_day_idx" ON "timetable_entries"("tenantId", "roomId", "dayOfWeek") WHERE "roomId" IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "timetable_entries_day_start_end_idx" ON "timetable_entries"("dayOfWeek", "startTime", "endTime")`,
+
+      // ── pedagogical_sheets : colonnes teacherId + originalSheetId (cross-year reuse) ──
+      `ALTER TABLE "pedagogical_sheets" ADD COLUMN IF NOT EXISTS "teacherId" TEXT`,
+      `ALTER TABLE "pedagogical_sheets" ADD COLUMN IF NOT EXISTS "originalSheetId" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "pedagogical_sheets_tenant_class_subject_idx" ON "pedagogical_sheets"("tenantId", "classId", "subjectId")`,
+      `CREATE INDEX IF NOT EXISTS "pedagogical_sheets_teacherId_idx" ON "pedagogical_sheets"("teacherId")`,
+      `CREATE INDEX IF NOT EXISTS "pedagogical_sheets_originalSheetId_idx" ON "pedagogical_sheets"("originalSheetId")`,
+
+      // ── primary_pedagogical_fiches : colonne originalSheetId (cross-year reuse) ──
+      //    La table primary_pedagogical_fiches est utilisée par le frontend (PedagogicalSheetsTab).
+      //    On ajoute originalSheetId pour tracer les duplications d'une année à l'autre.
+      `ALTER TABLE "primary_pedagogical_fiches" ADD COLUMN IF NOT EXISTS "originalSheetId" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "primary_pedagogical_fiches_originalSheetId_idx" ON "primary_pedagogical_fiches"("originalSheetId") WHERE "originalSheetId" IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "primary_pedagogical_fiches_tenant_class_subject_idx" ON "primary_pedagogical_fiches"("tenantId", "classId", "subjectId")`,
+    ];
+
+    for (const stmt of pedagogyTableStatements) {
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (e: any) {
+        if (!e.message?.includes('already exists') && !e.message?.includes('42P07')) {
+          logger.warn(`Pedagogy/discipline/risk-score table statement warning: ${e.message}`);
+        }
+      }
+    }
+    logger.log('Pedagogy + discipline + risk-score + exam-fraud tables ensured');
+
     // ─── Ensure missing columns from later migrations (idempotent ALTER) ───
     // These columns may not exist if migrations 20260606180000 or 20260606200000
     // were not applied on the production database.

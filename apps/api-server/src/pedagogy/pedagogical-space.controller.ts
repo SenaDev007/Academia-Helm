@@ -86,7 +86,9 @@ export class PedagogicalSpaceController {
         status: string;
         morningStatus?: string;
         afternoonStatus?: string;
+        eveningStatus?: string;
         late?: boolean;
+        lateMinutes?: number;
         notes?: string;
       }[];
     },
@@ -618,6 +620,52 @@ export class PedagogicalSpaceController {
     @Param('id') id: string,
   ) {
     return this.service.submitPedagogicalFiche(tenantId, id);
+  }
+
+  // ⭐ CROSS-YEAR REUSE : lister les fiches des années précédentes
+  //    pour la même classe + matière (ou même schoolLevel + matière).
+  //    Permet à un enseignant de retrouver les fiches de l'année précédente
+  //    et de les dupliquer vers l'année courante.
+  @Get('fiches/previous-years')
+  async getPreviousYearFiches(
+    @TenantId() tenantId: string,
+    @Query('currentAcademicYearId') currentAcademicYearId: string,
+    @Query('classId') classId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    if (!currentAcademicYearId) {
+      throw new BadRequestException('currentAcademicYearId est requis');
+    }
+    return this.service.getPreviousYearFiches(
+      tenantId, currentAcademicYearId, classId, subjectId, schoolLevelId,
+    );
+  }
+
+  // ⭐ CROSS-YEAR REUSE : dupliquer une fiche d'une année précédente vers l'année courante
+  //    Crée une nouvelle PedagogicalSheet avec :
+  //    - academicYearId = année courante
+  //    - teacherId = nouvel enseignant
+  //    - originalSheetId = fiche d'origine (traçabilité)
+  //    - status = DRAFT (l'enseignant peut l'éditer avant soumission)
+  @Post('fiches/:id/duplicate-to-year')
+  @HttpCode(HttpStatus.OK)
+  async duplicateFicheToCurrentYear(
+    @TenantId() tenantId: string,
+    @Param('id') sourceFicheId: string,
+    @Body() body: {
+      targetAcademicYearId: string;
+      targetTeacherId?: string;
+      targetClassId?: string;
+    },
+  ) {
+    if (!body.targetAcademicYearId) {
+      throw new BadRequestException('targetAcademicYearId est requis');
+    }
+    return this.service.duplicateFicheToYear(
+      tenantId, sourceFicheId, body.targetAcademicYearId,
+      body.targetTeacherId, body.targetClassId,
+    );
   }
 
   // ===========================================================================

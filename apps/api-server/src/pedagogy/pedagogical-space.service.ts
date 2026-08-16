@@ -3213,9 +3213,16 @@ export class PedagogicalSpaceService {
     }
 
     // ─── 6. Soumettre le cahier journal (DRAFT → SUBMITTED) ───
+    //    ⭐ Clear les anciennes observations/signatures du directeur pour éviter
+    //    que les anciennes observations d'une soumission précédente persistent.
     await this.prisma.$executeRawUnsafe(
       `UPDATE "cahier_journal_entries"
-       SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+       SET "status" = 'SUBMITTED',
+           "submittedAt" = NOW(),
+           "directorSignature" = NULL,
+           "directorValidatedAt" = NULL,
+           "rejectionReason" = NULL,
+           "updatedAt" = NOW()
        WHERE "id" = $1`,
       journalId,
     );
@@ -4634,15 +4641,18 @@ export class PedagogicalSpaceService {
 
   /// Récupère tous les cahiers journal soumis (en attente de validation direction).
   async getPendingCahierJournals(tenantId: string, academicYearId: string) {
+    // ⭐ Utiliser DISTINCT ON (cj.id) pour éviter la duplication quand une classe
+    //    a plusieurs TeacherClassAssignment (une par matière). Sans ça, un cahier
+    //    journal soumis apparaît 26 fois (une par matière assignée à la classe).
     return this.prisma.$queryRawUnsafe(
-      `SELECT cj.*, c."name" as "classNameResolved",
+      `SELECT DISTINCT ON (cj.id) cj.*, c."name" as "classNameResolved",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."status" = 'SUBMITTED'
-       ORDER BY cj."submittedAt" DESC`,
+       ORDER BY cj.id, cj."submittedAt" DESC`,
       tenantId, academicYearId,
     );
   }
@@ -4686,14 +4696,14 @@ export class PedagogicalSpaceService {
   /// Récupère toutes les fiches pédagogiques soumises (en attente de validation).
   async getPendingPedagogicalFiches(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
-      `SELECT pf.*, c."name" as "classNameResolved",
+      `SELECT DISTINCT ON (pf.id) pf.*, c."name" as "classNameResolved",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE pf."tenantId" = $1 AND pf."academicYearId" = $2 AND pf."status" = 'SUBMITTED'
-       ORDER BY pf."submittedAt" DESC`,
+       ORDER BY pf.id, pf."submittedAt" DESC`,
       tenantId, academicYearId,
     );
   }
@@ -5842,13 +5852,14 @@ export class PedagogicalSpaceService {
   /// Récupère le détail d'un cahier journal (vue direction).
   async getCahierJournalDetail(tenantId: string, journalId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
-      `SELECT cj.*, c."name" as "classNameResolved",
+      `SELECT DISTINCT ON (cj.id) cj.*, c."name" as "classNameResolved",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
-       WHERE cj."id" = $1 AND cj."tenantId" = $2`,
+       WHERE cj."id" = $1 AND cj."tenantId" = $2
+       ORDER BY cj.id`,
       journalId, tenantId,
     );
     if (!result || result.length === 0) {
@@ -5860,13 +5871,14 @@ export class PedagogicalSpaceService {
   /// Récupère le détail d'une fiche pédagogique (vue direction).
   async getPedagogicalFicheDetail(tenantId: string, ficheId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
-      `SELECT pf.*, c."name" as "classNameResolved",
+      `SELECT DISTINCT ON (pf.id) pf.*, c."name" as "classNameResolved",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
-       WHERE pf."id" = $1 AND pf."tenantId" = $2`,
+       WHERE pf."id" = $1 AND pf."tenantId" = $2
+       ORDER BY pf.id`,
       ficheId, tenantId,
     );
     if (!result || result.length === 0) {

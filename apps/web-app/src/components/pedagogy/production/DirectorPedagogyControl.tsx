@@ -44,6 +44,8 @@ import { pedagogySpaceService } from "@/services/pedagogy-space.service";
 import apiClient from "@/lib/api/client";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
+import { useModuleContext } from "@/hooks/useModuleContext";
+import { useAppSession } from "@/contexts/AppSessionContext";
 
 interface DirectorPedagogyControlProps {
   tenantId: string;
@@ -51,11 +53,15 @@ interface DirectorPedagogyControlProps {
   userId: string;
 }
 
+// ⭐ RESTRICTION NIVEAU : Cahier Journal, Fiches Pédagogiques, Registres d'Appel
+//    et Évaluations Mensuelles sont réservés aux niveaux MATERNELLE + PRIMAIRE.
+//    Un directeur affecté au SECONDAIRE ne voit PAS ces onglets dans son espace
+//    de validation direction. Le PROMOTEUR et les rôles plateforme ont accès à TOUT.
 const TABS = [
-  { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle },
-  { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet },
-  { id: "registres", label: "Registres d'Appel", icon: ClipboardList },
-  { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen },
+  { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle, maternellePrimaireOnly: false },
+  { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
+  { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
+  { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -95,13 +101,48 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
   const [tab, setTab] = useState<TabId>("dashboard");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // ⭐ Récupérer le niveau scolaire actif depuis le dropdown (useModuleContext)
+  //    et le rôle de l'utilisateur (useAppSession) pour filtrer les onglets.
+  const { schoolLevel } = useModuleContext();
+  const { user } = useAppSession();
+
+  // ⭐ Déterminer si le niveau scolaire actif est "Secondaire"
+  const schoolLevelCode = (schoolLevel?.code || '').toUpperCase();
+  const isSecondaryLevel =
+    schoolLevelCode.includes('SECOND') ||
+    schoolLevelCode.includes('COLLEGE') ||
+    schoolLevelCode.includes('LYCEE');
+
+  // ⭐ Rôles "accès global" qui voient TOUS les onglets quel que soit le niveau sélectionné
+  const GLOBAL_ACCESS_ROLES = new Set([
+    'PROMOTER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN', 'SUPER_ADMIN',
+  ]);
+  const userRole = (user?.role || '').toUpperCase();
+  const hasGlobalAccess = GLOBAL_ACCESS_ROLES.has(userRole);
+
+  // ⭐ Filtrer les onglets visibles selon le niveau scolaire :
+  //    - maternellePrimaireOnly=true → masqué si isSecondaryLevel (sauf accès global)
+  //    Le PROMOTEUR voit tous les onglets quel que soit le niveau sélectionné.
+  const VISIBLE_TABS = TABS.filter(t => {
+    if (t.maternellePrimaireOnly && isSecondaryLevel && !hasGlobalAccess) return false;
+    return true;
+  });
+
+  // ⭐ Si l'onglet actif n'est plus visible (ex: directeur passe au niveau Secondaire
+  //    alors que l'onglet 'cahier-journal' est actif), on revient à l'onglet 'dashboard'.
+  useEffect(() => {
+    if (tab !== 'dashboard' && !VISIBLE_TABS.some(t => t.id === tab)) {
+      setTab('dashboard');
+    }
+  }, [tab, VISIBLE_TABS]);
+
   const refresh = () => setRefreshKey(k => k + 1);
 
   return (
     <div className="flex flex-col gap-5">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex overflow-x-auto border-b border-slate-100">
-          {TABS.map(t => {
+          {VISIBLE_TABS.map(t => {
             const Icon = t.icon;
             return (
               <button
@@ -124,7 +165,7 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6">
         {tab === "dashboard" && (
-          <DashboardTab tenantId={tenantId} academicYearId={academicYearId} refreshKey={refreshKey} onNavigate={setTab} />
+          <DashboardTab tenantId={tenantId} academicYearId={academicYearId} refreshKey={refreshKey} onNavigate={setTab} isSecondaryLevel={isSecondaryLevel} hasGlobalAccess={hasGlobalAccess} />
         )}
         {tab === "cahier-journal" && (
           <PendingCahierJournalsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
@@ -144,8 +185,8 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
 // Tableau de bord
 // ============================================================================
 
-function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
-  tenantId: string; academicYearId: string; refreshKey: number; onNavigate: (t: TabId) => void;
+function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate, isSecondaryLevel, hasGlobalAccess }: {
+  tenantId: string; academicYearId: string; refreshKey: number; onNavigate: (t: TabId) => void; isSecondaryLevel: boolean; hasGlobalAccess: boolean;
 }) {
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
   const { data: dashboard, isLoading: loading, refetch } = useDirectorPedagogyDashboard(academicYearId);
@@ -226,6 +267,14 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
     },
   ];
 
+  // ⭐ Filtrer les cartes visibles selon le niveau scolaire :
+  //    Si le directeur est au niveau Secondaire et n'a pas d'accès global,
+  //    on masque les cartes pour Cahiers Journal, Registres, Évaluations
+  //    (ces fonctionnalités sont réservées Maternelle + Primaire).
+  const VISIBLE_CARDS = isSecondaryLevel && !hasGlobalAccess
+    ? cards.filter(card => !card.tab || !['cahier-journal', 'registres', 'evaluations'].includes(card.tab as string))
+    : cards;
+
   return (
     <div className="space-y-6">
       <div>
@@ -269,7 +318,7 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cards.map((card) => {
+        {VISIBLE_CARDS.map((card) => {
           const Icon = card.icon;
           return (
             <button

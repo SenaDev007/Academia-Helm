@@ -5222,20 +5222,32 @@ export class PedagogicalSpaceService {
   // VALIDATION DIRECTION — Cahier Journal, Fiches, Registres, Évaluations
   // ===========================================================================
 
-  /// Récupère tous les cahiers journal soumis (en attente de validation direction).
-  async getPendingCahierJournals(tenantId: string, academicYearId: string) {
+  /// Récupère les cahiers journaux à valider selon le filtre de statut.
+  /// ⭐ statusFilter options :
+  ///    - 'SUBMITTED' (default) : en attente de validation
+  ///    - 'VALIDATED'            : déjà validés
+  ///    - 'REJECTED'             : rejetés
+  ///    - 'ALL'                  : tous les cahiers journaux non-DRAFT de l'année
+  /// Inclut schoolLevelName + schoolLevelCode via JOIN school_levels.
+  async getPendingCahierJournals(tenantId: string, academicYearId: string, statusFilter: string = 'SUBMITTED') {
     // ⭐ Utiliser DISTINCT ON (cj.id) pour éviter la duplication quand une classe
     //    a plusieurs TeacherClassAssignment (une par matière). Sans ça, un cahier
     //    journal soumis apparaît 26 fois (une par matière assignée à la classe).
+    const statusCondition = statusFilter === 'ALL'
+      ? `AND cj."status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')`
+      : `AND cj."status" = '${statusFilter}'`;
     return this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT ON (cj.id) cj.*, c."name" as "classNameResolved",
+              c."schoolLevelId" as "schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
-       WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."status" = 'SUBMITTED'
-       ORDER BY cj.id, cj."submittedAt" DESC`,
+       WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 ${statusCondition}
+       ORDER BY cj.id, cj."submittedAt" DESC, cj."validatedAt" DESC`,
       tenantId, academicYearId,
     );
   }
@@ -5276,17 +5288,25 @@ export class PedagogicalSpaceService {
     return updated[0];
   }
 
-  /// Récupère toutes les fiches pédagogiques soumises (en attente de validation).
-  async getPendingPedagogicalFiches(tenantId: string, academicYearId: string) {
+  /// Récupère les fiches pédagogiques selon le filtre de statut.
+  /// ⭐ statusFilter options : 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL'
+  /// Inclut schoolLevelName + schoolLevelCode via JOIN school_levels.
+  async getPendingPedagogicalFiches(tenantId: string, academicYearId: string, statusFilter: string = 'SUBMITTED') {
+    const statusCondition = statusFilter === 'ALL'
+      ? `AND pf."status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')`
+      : `AND pf."status" = '${statusFilter}'`;
     return this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT ON (pf.id) pf.*, c."name" as "classNameResolved",
+              c."schoolLevelId" as "schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
-       WHERE pf."tenantId" = $1 AND pf."academicYearId" = $2 AND pf."status" = 'SUBMITTED'
-       ORDER BY pf.id, pf."submittedAt" DESC`,
+       WHERE pf."tenantId" = $1 AND pf."academicYearId" = $2 ${statusCondition}
+       ORDER BY pf.id, pf."submittedAt" DESC, pf."validatedAt" DESC`,
       tenantId, academicYearId,
     );
   }
@@ -5346,7 +5366,9 @@ export class PedagogicalSpaceService {
       directorSectionObservations?: Record<string, string>;
       directorObservation?: string;
       directorSignature?: string;
-      action: 'VALIDATED' | 'REJECTED';
+      // ⭐ action maintenant optionnelle — si absente → sauvegarde simple (pas de changement de statut, pas de notification)
+      //    Pattern identique à directorUpdateCahierJournal (ligne 3009)
+      action?: 'VALIDATED' | 'REJECTED';
       rejectionReason?: string;
       validatedBy?: string;
     },
@@ -5359,8 +5381,12 @@ export class PedagogicalSpaceService {
       throw new NotFoundException('Fiche pédagogique non trouvée');
     }
     const fiche = existing[0];
-    if (fiche.status !== 'SUBMITTED') {
-      throw new BadRequestException(`La fiche doit être en statut SUBMITTED (actuel: ${fiche.status})`);
+
+    // ⭐ Mode sauvegarde simple (sans action) : on accepte tous les statuts SUBMITTED/REJECTED/VALIDATED
+    //    pour permettre au directeur d'enregistrer ses observations même après validation/rejet.
+    //    Mode validation/rejet (avec action) : on exige SUBMITTED pour changer le statut.
+    if (body.action && fiche.status !== 'SUBMITTED') {
+      throw new BadRequestException(`La fiche doit être en statut SUBMITTED pour la valider/rejeter (actuel: ${fiche.status}). Utilisez le mode sauvegarde (sans action) pour modifier les observations.`);
     }
 
     // ⭐ Si VALIDATED, la signature du directeur est obligatoire
@@ -5368,40 +5394,116 @@ export class PedagogicalSpaceService {
       throw new BadRequestException('La signature du directeur est obligatoire pour valider');
     }
 
-    // ⭐ Mettre à jour la fiche avec les observations + signature + statut
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE "primary_pedagogical_fiches"
-       SET "status" = $3,
-           "directorSignature" = $4,
-           "directorSignatureDate" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "directorSignatureDate" END,
-           "directorObservation" = $5,
-           "directorSectionObservations" = $6::jsonb,
-           "validatedAt" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
-           "validatedBy" = $7,
-           "rejectionReason" = $8,
-           "updatedAt" = NOW()
-       WHERE "id" = $1 AND "tenantId" = $2`,
-      ficheId, tenantId,
-      body.action,
-      body.directorSignature || null,
-      body.directorObservation || null,
-      JSON.stringify(body.directorSectionObservations || {}),
-      body.validatedBy || null,
-      body.action === 'REJECTED' ? (body.rejectionReason || null) : null,
-    );
+    // ⭐ Construction dynamique de la requête UPDATE selon le mode (save-only vs validate/reject)
+    if (body.action) {
+      // Mode validation/rejet — change le statut + met à jour les champs
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "primary_pedagogical_fiches"
+         SET "status" = $3,
+             "directorSignature" = $4,
+             "directorSignatureDate" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "directorSignatureDate" END,
+             "directorObservation" = $5,
+             "directorSectionObservations" = $6::jsonb,
+             "validatedAt" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+             "validatedBy" = $7,
+             "rejectionReason" = $8,
+             "updatedAt" = NOW()
+         WHERE "id" = $1 AND "tenantId" = $2`,
+        ficheId, tenantId,
+        body.action,
+        body.directorSignature || null,
+        body.directorObservation || null,
+        JSON.stringify(body.directorSectionObservations || {}),
+        body.validatedBy || null,
+        body.action === 'REJECTED' ? (body.rejectionReason || null) : null,
+      );
+    } else {
+      // ⭐ Mode sauvegarde simple — ne change PAS le statut
+      //    Met à jour uniquement les observations + signature (sans notification)
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "primary_pedagogical_fiches"
+         SET "directorSignature" = $3,
+             "directorObservation" = $4,
+             "directorSectionObservations" = $5::jsonb,
+             "updatedAt" = NOW()
+         WHERE "id" = $1 AND "tenantId" = $2`,
+        ficheId, tenantId,
+        body.directorSignature || null,
+        body.directorObservation || null,
+        JSON.stringify(body.directorSectionObservations || {}),
+      );
+    }
 
     const updated: any = await this.prisma.$queryRawUnsafe(
       `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1`,
       ficheId,
     );
 
-    // ⭐ Notifier l'enseignant de la décision
-    this.notifyTeacherOfFicheDecision(
-      tenantId, fiche.classId, fiche.teacherId, body.action, fiche.sheetType, fiche.lessonDate,
-    ).catch((err) => this.logger.error('Teacher notification error:', err));
+    // ⭐ Notifier l'enseignant de la décision UNIQUEMENT si une action a été effectuée
+    //    (mode sauvegarde = pas de notification — pattern identique à directorUpdateCahierJournal)
+    if (body.action) {
+      this.notifyTeacherOfFicheDecision(
+        tenantId, fiche.classId, fiche.teacherId, body.action, fiche.sheetType, fiche.lessonDate,
+      ).catch((err) => this.logger.error('Teacher notification error:', err));
+    }
 
-    this.logger.log(`✅ Fiche pédagogique ${ficheId} ${body.action}`);
+    this.logger.log(`✅ Fiche pédagogique ${ficheId} ${body.action ? body.action : 'sauvegardée (sans action)'}`);
     return updated[0];
+  }
+
+  /**
+   * ⭐ Envoie manuellement une notification à l'enseignant après validation/rejet d'une fiche.
+   *    Permet au directeur de re-notifier l'enseignant (rappel) sans changer le statut.
+   *    Récupère le statut actuel de la fiche (VALIDATED ou REJECTED) et envoie la notification.
+   */
+  async sendFicheDecisionToTeacher(tenantId: string, ficheId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    const fiche = existing[0];
+    if (fiche.status !== 'VALIDATED' && fiche.status !== 'REJECTED') {
+      throw new BadRequestException(
+        `La fiche doit être VALIDATED ou REJECTED pour envoyer la notification (actuel: ${fiche.status}). Validez ou rejetez d'abord la fiche.`,
+      );
+    }
+
+    await this.notifyTeacherOfFicheDecision(
+      tenantId, fiche.classId, fiche.teacherId, fiche.status, fiche.sheetType, fiche.lessonDate,
+    );
+
+    this.logger.log(`📧 Notification renvoyée pour la fiche ${ficheId} (${fiche.status})`);
+    return { success: true, ficheId, status: fiche.status, sentAt: new Date().toISOString() };
+  }
+
+  /**
+   * ⭐ Envoie manuellement une notification à l'enseignant après validation/rejet d'un cahier journal.
+   *    Permet au directeur de re-notifier l'enseignant (rappel) sans changer le statut.
+   */
+  async sendCahierJournalDecisionToTeacher(tenantId: string, journalId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    const journal = existing[0];
+    if (journal.status !== 'VALIDATED' && journal.status !== 'REJECTED') {
+      throw new BadRequestException(
+        `Le cahier journal doit être VALIDATED ou REJECTED pour envoyer la notification (actuel: ${journal.status}). Validez ou rejetez d'abord le cahier journal.`,
+      );
+    }
+
+    await this.notifyTeacherOfCahierJournalDecision(
+      tenantId, journal.classId, journal.teacherId, journal.status, journal.weekStartDate,
+    );
+
+    this.logger.log(`📧 Notification renvoyée pour le cahier journal ${journalId} (${journal.status})`);
+    return { success: true, journalId, status: journal.status, sentAt: new Date().toISOString() };
   }
 
   /**

@@ -26,16 +26,17 @@ export const pedagogySpaceService = {
   },
 
   // ─── Director : Pending lists ────────────────────────────────────────────
-  async getPendingCahierJournals(academicYearId: string) {
+  // statusFilter : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+  async getPendingCahierJournals(academicYearId: string, statusFilter?: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL') {
     const res = await apiClient.get('/pedagogy-space/director/pending-cahier-journals', {
-      params: { academicYearId },
+      params: { academicYearId, status: statusFilter },
     });
     return res.data;
   },
 
-  async getPendingPedagogicalFiches(academicYearId: string) {
+  async getPendingPedagogicalFiches(academicYearId: string, statusFilter?: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL') {
     const res = await apiClient.get('/pedagogy-space/director/pending-fiches', {
-      params: { academicYearId },
+      params: { academicYearId, status: statusFilter },
     });
     return res.data;
   },

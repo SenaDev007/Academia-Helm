@@ -48,13 +48,16 @@ export function useDirectorPedagogyDashboard(academicYearId: string | null | und
 
 // ─── Director : Pending lists ──────────────────────────────────────────────────
 
-export function usePendingCahierJournals(academicYearId: string | null | undefined) {
+export function usePendingCahierJournals(
+  academicYearId: string | null | undefined,
+  statusFilter: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL' = 'SUBMITTED',
+) {
   return useQuery({
-    queryKey: pedagogyKeys.pendingCahierJournals(academicYearId || ''),
+    queryKey: pedagogyKeys.pendingCahierJournals(academicYearId || '', statusFilter),
     queryFn: async () => {
       if (!academicYearId) return [];
       try {
-        const data = await pedagogySpaceService.getPendingCahierJournals(academicYearId);
+        const data = await pedagogySpaceService.getPendingCahierJournals(academicYearId, statusFilter);
         return Array.isArray(data) ? data : (data?.data ?? []);
       } catch (err: any) {
         console.warn('[usePendingCahierJournals] Error:', err.message);
@@ -70,13 +73,16 @@ export function usePendingCahierJournals(academicYearId: string | null | undefin
   });
 }
 
-export function usePendingFiches(academicYearId: string | null | undefined) {
+export function usePendingFiches(
+  academicYearId: string | null | undefined,
+  statusFilter: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL' = 'SUBMITTED',
+) {
   return useQuery({
-    queryKey: pedagogyKeys.pendingFiches(academicYearId || ''),
+    queryKey: pedagogyKeys.pendingFiches(academicYearId || '', statusFilter),
     queryFn: async () => {
       if (!academicYearId) return [];
       try {
-        const data = await pedagogySpaceService.getPendingPedagogicalFiches(academicYearId);
+        const data = await pedagogySpaceService.getPendingPedagogicalFiches(academicYearId, statusFilter);
         return Array.isArray(data) ? data : (data?.data ?? []);
       } catch (err: any) {
         console.warn('[usePendingFiches] Error:', err.message);

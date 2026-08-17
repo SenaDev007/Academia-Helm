@@ -28,8 +28,8 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
-  ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
-  Download, Save, Activity,
+  ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
+  Download, Save, Activity, School,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -412,14 +412,26 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
 }) {
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
   const queryClient = useQueryClient();
-  const { data: items = [], isLoading: loading, refetch } = usePendingCahierJournals(academicYearId);
+  // ⭐ 3 sous-onglets : en attente (SUBMITTED) / validés (VALIDATED) / rejetés (REJECTED)
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const { data: items = [], isLoading: loading, refetch } = usePendingCahierJournals(academicYearId, statusTab);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
+  // ⭐ États repliables (chevrons) pour la hiérarchie : schoolLevel → trimester → class
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
+  const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set());
 
   // Recharger quand refreshKey change
   useEffect(() => {
     if (refreshKey > 0) refetch();
   }, [refreshKey, refetch]);
+
+  // ⭐ Réinitialiser la sélection quand on change de sous-onglet
+  useEffect(() => {
+    setSelected(null);
+    setModalItem(null);
+  }, [statusTab]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
@@ -430,7 +442,7 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     });
     toast.success(action === "VALIDATED" ? "✅ Cahier journal validé" : "Cahier journal rejeté");
     onRefresh();
-    // Invalider le cache pour forcer le re-fetch
+    // Invalider le cache pour forcer le re-fetch (tous les sous-onglets + dashboard)
     queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-cahier-journals"] });
     queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
@@ -443,8 +455,17 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     } catch { toast.error("Erreur lors du chargement"); }
   };
 
+  // ⭐ Toggle collapse/expand d'un niveau hiérarchique
+  const toggleCollapse = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // ⭐ Si un cahier journal est sélectionné, afficher la vue détaillée in-page
-  //    (pas un modal — identique à l'interface enseignant)
   if (selected) {
     return (
       <CahierJournalDirectorDetail
@@ -460,107 +481,233 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     );
   }
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
-
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <FileSpreadsheet className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-        <p className="font-medium text-slate-700">Aucun cahier journal en attente</p>
-      </div>
-    );
-  }
-
-  // ⭐ Hiérarchisation : par classe → trimestre
-  const getTrimester = (month: number): string => {
-    if (month >= 9 || month === 12) return 'Trimestre 1';
-    if (month >= 1 && month <= 3) return 'Trimestre 2';
-    if (month >= 4 && month <= 6) return 'Trimestre 3';
+  // ⭐ Hiérarchisation : schoolLevel → trimester → class → items
+  const getTrimester = (dateStr: string): string => {
+    if (!dateStr) return 'Trimestre inconnu';
+    const d = new Date(dateStr);
+    const m = d.getMonth() + 1;
+    if (m >= 9) return 'Trimestre 1';
+    if (m >= 1 && m <= 3) return 'Trimestre 2';
+    if (m >= 4 && m <= 6) return 'Trimestre 3';
     return 'Vacances (été)';
   };
-  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
-    const key = item.classNameResolved || item.className || 'Sans classe';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-  const classNames = Object.keys(grouped).sort();
 
-  // ⭐ Grouper par trimestre pour chaque classe
-  const groupedByTrimester: Record<string, Record<string, any[]>> = {};
-  for (const cn of classNames) {
-    groupedByTrimester[cn] = {};
-    for (const item of grouped[cn]) {
-      const trimester = getTrimester(item.month || 1);
-      if (!groupedByTrimester[cn][trimester]) groupedByTrimester[cn][trimester] = [];
-      groupedByTrimester[cn][trimester].push(item);
-    }
+  // Construire la structure hiérarchique à 3 niveaux
+  // schoolLevels: { Maternelle: { Trimestre 1: { CP1: [item, ...], ... }, ... }, ... }
+  const hierarchy: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const item of items) {
+    const schoolLevel = item.schoolLevelName || 'Autres';
+    const trimester = getTrimester(item.weekStartDate);
+    const className = item.classNameResolved || item.className || 'Sans classe';
+    if (!hierarchy[schoolLevel]) hierarchy[schoolLevel] = {};
+    if (!hierarchy[schoolLevel][trimester]) hierarchy[schoolLevel][trimester] = {};
+    if (!hierarchy[schoolLevel][trimester][className]) hierarchy[schoolLevel][trimester][className] = [];
+    hierarchy[schoolLevel][trimester][className].push(item);
   }
+
+  // Ordonner les niveaux scolaires
+  const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
+  const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
+    const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Couleurs par niveau scolaire
+  const levelColors: Record<string, string> = {
+    Maternelle: 'text-pink-700 bg-pink-50 border-pink-200',
+    Primaire: 'text-blue-700 bg-blue-50 border-blue-200',
+    Secondaire: 'text-purple-700 bg-purple-50 border-purple-200',
+    Collège: 'text-amber-700 bg-amber-50 border-amber-200',
+    Lycée: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    Autres: 'text-slate-700 bg-slate-50 border-slate-200',
+  };
+
+  // Statuts pour les sous-onglets
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validés', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetés', icon: XCircle, color: 'text-red-700 bg-red-50' },
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Cahiers Journal en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
+      {/* ⭐ Sous-onglets statut : En attente / Validés / Rejetés */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s
+                  ? `${cfg.color} border-current`
+                  : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
-        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Hiérarchisé par classe → trimestre */}
-      {classNames.map((className) => (
-        <div key={className} className="space-y-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
-            <FileSpreadsheet className="h-4 w-4 text-slate-600" />
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
-            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
-              {grouped[className].length}
-            </span>
-          </div>
-          {/* ⭐ Sous-groupement par trimestre */}
-          {Object.keys(groupedByTrimester[className]).map(trimester => (
-            <div key={trimester} className="space-y-2 pl-4">
-              <div className="flex items-center gap-2 px-2 py-1 bg-indigo-50 rounded">
-                <Calendar className="h-3 w-3 text-indigo-600" />
-                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
-                <span className="ml-auto text-xs text-indigo-500">
-                  {groupedByTrimester[className][trimester].length} soumission(s)
-                </span>
-              </div>
-              {/* ⭐ Registres du trimestre */}
-              <div className="space-y-2 pl-4">
-                {groupedByTrimester[className][trimester].map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-900">
-                        Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Enseignant: {item.teacherFirstName} {item.teacherLastName}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Soumis le {formatDateTimeFR(item.submittedAt)}
-                      </p>
-                      {/* ⭐ Indicateur fiches pédagogiques manquantes */}
-                      <FichesStatusIndicator journalId={item.id} />
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={() => handleView(item)}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                        <Eye className="h-3 w-3" /> Voir
-                      </button>
-                      <button onClick={() => setModalItem(item)}
-                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                        <CheckCircle2 className="h-3 w-3" /> Traiter
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+      <div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">
+          Cahiers Journal — {tabConfig[statusTab].label}
+        </h3>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12">
+          <FileSpreadsheet className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="font-medium text-slate-700">
+            Aucun cahier journal {statusTab === 'SUBMITTED' ? 'en attente' : statusTab === 'VALIDATED' ? 'validé' : 'rejeté'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {statusTab === 'SUBMITTED'
+              ? "Les nouvelles soumissions apparaîtront ici."
+              : statusTab === 'VALIDATED'
+                ? "Les cahiers journaux validés apparaîtront ici (historique)."
+                : "Les cahiers journaux rejetés apparaîtront ici (à corriger par les enseignants)."}
+          </p>
         </div>
-      ))}
+      ) : (
+        // ⭐ Hiérarchie collapsible : schoolLevel → trimester → class → items
+        <div className="space-y-3">
+          {sortedLevels.map(schoolLevel => {
+            const trimesters = hierarchy[schoolLevel];
+            const trimesterNames = Object.keys(trimesters);
+            const totalItems = trimesterNames.reduce(
+              (s, t) => s + Object.values(trimesters[t]).reduce((cs, items) => cs + items.length, 0), 0
+            );
+            const isLevelCollapsed = collapsedSchoolLevels.has(schoolLevel);
+            const levelColorClass = levelColors[schoolLevel] || levelColors.Autres;
+            return (
+              <div key={schoolLevel} className={cn('border rounded-lg overflow-hidden', levelColorClass.split(' ').slice(-1)[0])}>
+                {/* En-tête niveau scolaire */}
+                <button
+                  onClick={() => toggleCollapse(setCollapsedSchoolLevels, schoolLevel)}
+                  className={cn('w-full flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-colors', levelColorClass)}
+                >
+                  {isLevelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <School className="h-5 w-5" />
+                  <span>{schoolLevel}</span>
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    ({trimesterNames.length} trimestre{trimesterNames.length > 1 ? 's' : ''} · {totalItems} cahier{totalItems > 1 ? 's' : ''})
+                  </span>
+                </button>
+                {/* Contenu niveau scolaire (si déplié) */}
+                {!isLevelCollapsed && (
+                  <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                    {trimesterNames.map(trimester => {
+                      const classes = trimesters[trimester];
+                      const classNames = Object.keys(classes).sort();
+                      const trimesterItems = classNames.reduce((s, cn) => s + classes[cn].length, 0);
+                      const trimesterKey = `${schoolLevel}::${trimester}`;
+                      const isTrimesterCollapsed = collapsedTrimesters.has(trimesterKey);
+                      return (
+                        <div key={trimester} className="border border-indigo-100 rounded-lg overflow-hidden">
+                          {/* En-tête trimestre */}
+                          <button
+                            onClick={() => toggleCollapse(setCollapsedTrimesters, trimesterKey)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                          >
+                            {isTrimesterCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-indigo-600" /> : <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />}
+                            <Calendar className="h-4 w-4 text-indigo-600" />
+                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                            <span className="ml-auto text-xs text-indigo-500">{trimesterItems} cahier(s) · {classNames.length} classe(s)</span>
+                          </button>
+                          {/* Contenu trimestre (si déplié) */}
+                          {!isTrimesterCollapsed && (
+                            <div className="p-2 space-y-2 bg-white">
+                              {classNames.map(className => {
+                                const classItems = classes[className];
+                                const classKey = `${schoolLevel}::${trimester}::${className}`;
+                                const isClassCollapsed = collapsedClasses.has(classKey);
+                                return (
+                                  <div key={className} className="border border-slate-200 rounded-lg overflow-hidden">
+                                    {/* En-tête classe */}
+                                    <button
+                                      onClick={() => toggleCollapse(setCollapsedClasses, classKey)}
+                                      className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors"
+                                    >
+                                      {isClassCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                                      <FileSpreadsheet className="h-4 w-4 text-slate-600" />
+                                      <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</span>
+                                      <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+                                        {classItems.length}
+                                      </span>
+                                    </button>
+                                    {/* Contenu classe (si déplié) — liste des cahiers journaux */}
+                                    {!isClassCollapsed && (
+                                      <div className="p-2 space-y-2 bg-white">
+                                        {classItems.map(item => (
+                                          <div key={item.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="font-medium text-slate-900 text-sm">
+                                                Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
+                                              </p>
+                                              <p className="text-xs text-slate-500 mt-0.5">
+                                                Enseignant : {item.teacherFirstName} {item.teacherLastName}
+                                              </p>
+                                              <p className="text-xs text-slate-400 mt-0.5">
+                                                {item.submittedAt ? `Soumis le ${formatDateTimeFR(item.submittedAt)}` : ''}
+                                                {item.validatedAt ? ` · Validé le ${formatDateTimeFR(item.validatedAt)}` : ''}
+                                                {item.status === 'REJECTED' && item.rejectionReason ? ` · Motif : ${item.rejectionReason.substring(0, 80)}${item.rejectionReason.length > 80 ? '…' : ''}` : ''}
+                                              </p>
+                                              {/* ⭐ Indicateur fiches pédagogiques manquantes (seulement si SUBMITTED) */}
+                                              {item.status === 'SUBMITTED' && <FichesStatusIndicator journalId={item.id} />}
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                              <button onClick={() => handleView(item)}
+                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                                                <Eye className="h-3 w-3" /> Voir
+                                              </button>
+                                              {item.status === 'SUBMITTED' && (
+                                                <button onClick={() => setModalItem(item)}
+                                                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                                                  <CheckCircle2 className="h-3 w-3" /> Traiter
+                                                </button>
+                                              )}
+                                              {item.status !== 'SUBMITTED' && (
+                                                <span className={cn(
+                                                  'px-2 py-1 text-[10px] font-bold uppercase rounded',
+                                                  item.status === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                                )}>
+                                                  {item.status === 'VALIDATED' ? '✓ Validé' : '✗ Rejeté'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ⭐ L'ancien modal a été remplacé par la vue in-page CahierJournalDirectorDetail
           (rendue au début du composant quand `selected` est défini) */}
@@ -584,13 +731,25 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
 }) {
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
   const queryClient = useQueryClient();
-  const { data: items = [], isLoading: loading, refetch } = usePendingFiches(academicYearId);
+  // ⭐ 3 sous-onglets : en attente (SUBMITTED) / validés (VALIDATED) / rejetés (REJECTED)
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const { data: items = [], isLoading: loading, refetch } = usePendingFiches(academicYearId, statusTab);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
+  // ⭐ États repliables (chevrons) pour la hiérarchie : schoolLevel → trimester → class
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
+  const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (refreshKey > 0) refetch();
   }, [refreshKey, refetch]);
+
+  // ⭐ Réinitialiser la sélection quand on change de sous-onglet
+  useEffect(() => {
+    setSelected(null);
+    setModalItem(null);
+  }, [statusTab]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
@@ -612,6 +771,16 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     } catch { toast.error("Erreur"); }
   };
 
+  // ⭐ Toggle collapse/expand d'un niveau hiérarchique
+  const toggleCollapse = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // ⭐ Si une fiche est sélectionnée, afficher la vue détaillée in-page
   if (selected) {
     return (
@@ -630,128 +799,243 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     );
   }
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
+  // ⭐ Hiérarchisation : schoolLevel → trimester → class → items
+  const getTrimester = (dateStr: string): string => {
+    if (!dateStr) return 'Trimestre inconnu';
+    const d = new Date(dateStr);
+    const m = d.getMonth() + 1;
+    if (m >= 9) return 'Trimestre 1';
+    if (m >= 1 && m <= 3) return 'Trimestre 2';
+    if (m >= 4 && m <= 6) return 'Trimestre 3';
+    return 'Vacances (été)';
+  };
 
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-        <p className="font-medium text-slate-700">Aucune fiche en attente</p>
-      </div>
-    );
+  // Construire la structure hiérarchique à 3 niveaux
+  const hierarchy: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const item of items) {
+    const schoolLevel = item.schoolLevelName || 'Autres';
+    const dateField = item.lessonDate || item.adminDate;
+    const trimester = getTrimester(dateField);
+    const className = item.classNameResolved || item.className || 'Sans classe';
+    if (!hierarchy[schoolLevel]) hierarchy[schoolLevel] = {};
+    if (!hierarchy[schoolLevel][trimester]) hierarchy[schoolLevel][trimester] = {};
+    if (!hierarchy[schoolLevel][trimester][className]) hierarchy[schoolLevel][trimester][className] = [];
+    hierarchy[schoolLevel][trimester][className].push(item);
   }
 
-  // ⭐ Hiérarchisation : par classe → mois → semaine → jour
+  // Ordonner les niveaux scolaires
+  const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
+  const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
+    const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Couleurs par niveau scolaire
+  const levelColors: Record<string, string> = {
+    Maternelle: 'text-pink-700 bg-pink-50 border-pink-200',
+    Primaire: 'text-blue-700 bg-blue-50 border-blue-200',
+    Secondaire: 'text-purple-700 bg-purple-50 border-purple-200',
+    Collège: 'text-amber-700 bg-amber-50 border-amber-200',
+    Lycée: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    Autres: 'text-slate-700 bg-slate-50 border-slate-200',
+  };
+
   const monthNames = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
     'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
   const dayNames = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
-  // Grouper par classe
-  const groupedByClass: Record<string, any[]> = {};
-  for (const item of items) {
-    const key = item.classNameResolved || 'Sans classe';
-    if (!groupedByClass[key]) groupedByClass[key] = [];
-    groupedByClass[key].push(item);
-  }
-  const classNames = Object.keys(groupedByClass).sort();
-
-  // Pour chaque classe, grouper par mois
-  const groupedByMonth: Record<string, Record<string, Record<string, any[]>>> = {};
-  for (const cn of classNames) {
-    groupedByMonth[cn] = {};
-    for (const item of groupedByClass[cn]) {
-      const dateField = item.lessonDate || item.adminDate;
-      const d = dateField ? new Date(dateField) : new Date();
-      const monthKey = `${monthNames[d.getMonth() + 1]} ${d.getFullYear()}`;
-      if (!groupedByMonth[cn][monthKey]) groupedByMonth[cn][monthKey] = {};
-      // Grouper par semaine (numéro de semaine)
-      const weekKey = `Semaine ${item.adminWeek || Math.ceil(d.getDate() / 7)}`;
-      if (!groupedByMonth[cn][monthKey][weekKey]) groupedByMonth[cn][monthKey][weekKey] = [];
-      groupedByMonth[cn][monthKey][weekKey].push(item);
-    }
-  }
+  // Statuts pour les sous-onglets
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validées', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetées', icon: XCircle, color: 'text-red-700 bg-red-50' },
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Fiches Pédagogiques en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
+      {/* ⭐ Sous-onglets statut : En attente / Validées / Rejetées */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s
+                  ? `${cfg.color} border-current`
+                  : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
-        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Hiérarchisé par classe → mois → semaine → jour */}
-      {classNames.map((className) => (
-        <div key={className} className="space-y-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
-            <FileText className="h-4 w-4 text-slate-600" />
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
-            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
-              {groupedByClass[className].length}
-            </span>
-          </div>
-          {/* Sous-groupement par mois */}
-          {Object.keys(groupedByMonth[className]).map(monthKey => (
-            <div key={monthKey} className="space-y-2 pl-4">
-              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded">
-                <Calendar className="h-3 w-3 text-blue-600" />
-                <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">{monthKey}</span>
-              </div>
-              {/* Sous-groupement par semaine */}
-              {Object.keys(groupedByMonth[className][monthKey]).map(weekKey => (
-                <div key={weekKey} className="space-y-2 pl-4">
-                  <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 rounded">
-                    <Clock className="h-3 w-3 text-emerald-600" />
-                    <span className="text-xs font-bold text-emerald-700">{weekKey}</span>
-                    <span className="ml-auto text-xs text-emerald-500">
-                      {groupedByMonth[className][monthKey][weekKey].length} fiche(s)
-                    </span>
-                  </div>
-                  {/* Liste des fiches du jour */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-4">
-                    {groupedByMonth[className][monthKey][weekKey].map(item => {
-                      const sheetConfig = SHEET_TYPE_LABELS[item.sheetType] || { label: item.sheetType, icon: FileText, color: "bg-slate-100" };
-                      const Icon = sheetConfig.icon;
-                      const dateField = item.lessonDate || item.adminDate;
-                      const dayLabel = dateField ? dayNames[new Date(dateField).getDay()] : '—';
+      <div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">
+          Fiches Pédagogiques — {tabConfig[statusTab].label}
+        </h3>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12">
+          <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="font-medium text-slate-700">
+            Aucune fiche {statusTab === 'SUBMITTED' ? 'en attente' : statusTab === 'VALIDATED' ? 'validée' : 'rejetée'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {statusTab === 'SUBMITTED'
+              ? "Les nouvelles soumissions apparaîtront ici."
+              : statusTab === 'VALIDATED'
+                ? "Les fiches validées apparaîtront ici (historique)."
+                : "Les fiches rejetées apparaîtront ici (à corriger par les enseignants)."}
+          </p>
+        </div>
+      ) : (
+        // ⭐ Hiérarchie collapsible : schoolLevel → trimester → class → items
+        <div className="space-y-3">
+          {sortedLevels.map(schoolLevel => {
+            const trimesters = hierarchy[schoolLevel];
+            const trimesterNames = Object.keys(trimesters);
+            const totalItems = trimesterNames.reduce(
+              (s, t) => s + Object.values(trimesters[t]).reduce((cs, items) => cs + items.length, 0), 0
+            );
+            const isLevelCollapsed = collapsedSchoolLevels.has(schoolLevel);
+            const levelColorClass = levelColors[schoolLevel] || levelColors.Autres;
+            return (
+              <div key={schoolLevel} className={cn('border rounded-lg overflow-hidden', levelColorClass.split(' ').slice(-1)[0])}>
+                <button
+                  onClick={() => toggleCollapse(setCollapsedSchoolLevels, schoolLevel)}
+                  className={cn('w-full flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-colors', levelColorClass)}
+                >
+                  {isLevelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <School className="h-5 w-5" />
+                  <span>{schoolLevel}</span>
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    ({trimesterNames.length} trimestre{trimesterNames.length > 1 ? 's' : ''} · {totalItems} fiche{totalItems > 1 ? 's' : ''})
+                  </span>
+                </button>
+                {!isLevelCollapsed && (
+                  <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                    {trimesterNames.map(trimester => {
+                      const classes = trimesters[trimester];
+                      const classNames = Object.keys(classes).sort();
+                      const trimesterItems = classNames.reduce((s, cn) => s + classes[cn].length, 0);
+                      const trimesterKey = `${schoolLevel}::${trimester}`;
+                      const isTrimesterCollapsed = collapsedTrimesters.has(trimesterKey);
                       return (
-                        <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-white">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", sheetConfig.color)}>
-                              <Icon className="h-3 w-3" /> {sheetConfig.label}
+                        <div key={trimester} className="border border-indigo-100 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => toggleCollapse(setCollapsedTrimesters, trimesterKey)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                          >
+                            {isTrimesterCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-indigo-600" /> : <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />}
+                            <Calendar className="h-4 w-4 text-indigo-600" />
+                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                            <span className="ml-auto text-xs text-indigo-500">{trimesterItems} fiche(s) · {classNames.length} classe(s)</span>
+                          </button>
+                          {!isTrimesterCollapsed && (
+                            <div className="p-2 space-y-2 bg-white">
+                              {classNames.map(className => {
+                                const classItems = classes[className];
+                                const classKey = `${schoolLevel}::${trimester}::${className}`;
+                                const isClassCollapsed = collapsedClasses.has(classKey);
+                                return (
+                                  <div key={className} className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <button
+                                      onClick={() => toggleCollapse(setCollapsedClasses, classKey)}
+                                      className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors"
+                                    >
+                                      {isClassCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                                      <FileText className="h-4 w-4 text-slate-600" />
+                                      <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</span>
+                                      <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+                                        {classItems.length}
+                                      </span>
+                                    </button>
+                                    {!isClassCollapsed && (
+                                      <div className="p-2 grid grid-cols-1 md:grid-cols-2 gap-3 bg-white">
+                                        {classItems.map(item => {
+                                          const sheetConfig = SHEET_TYPE_LABELS[item.sheetType] || { label: item.sheetType, icon: FileText, color: "bg-slate-100 text-slate-700" };
+                                          const Icon = sheetConfig.icon || FileText;
+                                          const dateField = item.lessonDate || item.adminDate;
+                                          const dayLabel = dateField ? dayNames[new Date(dateField).getDay()] : '—';
+                                          return (
+                                            <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-white">
+                                              <div className="flex items-start justify-between mb-2">
+                                                <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", sheetConfig.color)}>
+                                                  <Icon className="h-3 w-3" /> {sheetConfig.label}
+                                                </div>
+                                                <span className="text-xs text-slate-400">{dayLabel}{dateField ? ` ${formatDateFR(dateField)}` : ''}</span>
+                                              </div>
+                                              <p className="text-sm text-slate-600 line-clamp-2">
+                                                {item.competence ? item.competence.replace(/<[^>]*>/g, '').substring(0, 80) + "..." : (item.titre || "—")}
+                                              </p>
+                                              <p className="text-xs text-slate-500 mt-1">
+                                                {item.teacherFirstName} {item.teacherLastName}
+                                              </p>
+                                              {item.submittedAt && (
+                                                <p className="text-[10px] text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
+                                              )}
+                                              {item.validatedAt && (
+                                                <p className="text-[10px] text-emerald-600 mt-1">Validé le {formatDateTimeFR(item.validatedAt)}</p>
+                                              )}
+                                              {item.status === 'REJECTED' && item.rejectionReason && (
+                                                <p className="text-[10px] text-red-600 mt-1">Motif : {item.rejectionReason.substring(0, 80)}{item.rejectionReason.length > 80 ? '…' : ''}</p>
+                                              )}
+                                              <div className="flex items-center gap-2 mt-3">
+                                                <button onClick={() => handleView(item)}
+                                                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                                                  <Eye className="h-3 w-3" /> Voir
+                                                </button>
+                                                {item.status === 'SUBMITTED' && (
+                                                  <button onClick={() => setModalItem(item)}
+                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                                                    <CheckCircle2 className="h-3 w-3" /> Traiter
+                                                  </button>
+                                                )}
+                                                {item.status !== 'SUBMITTED' && (
+                                                  <span className={cn(
+                                                    'px-2 py-1 text-[10px] font-bold uppercase rounded',
+                                                    item.status === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                                  )}>
+                                                    {item.status === 'VALIDATED' ? '✓ Validée' : '✗ Rejetée'}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                            <span className="text-xs text-slate-400">{dayLabel}</span>
-                          </div>
-                          <p className="text-sm text-slate-600 line-clamp-2">
-                            {item.competence ? item.competence.replace(/<[^>]*>/g, '').substring(0, 80) + "..." : "—"}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {item.teacherFirstName} {item.teacherLastName}
-                            {" · "}{dateField ? formatDateFR(dateField) : '—'}
-                          </p>
-                          <div className="flex items-center gap-2 mt-3">
-                            <button onClick={() => handleView(item)}
-                              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                              <Eye className="h-3 w-3" /> Voir
-                            </button>
-                            <button onClick={() => setModalItem(item)}
-                              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                              <CheckCircle2 className="h-3 w-3" /> Traiter
-                            </button>
-                          </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              ))}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
-      ))}
-
-      {/* ⭐ L'ancien modal a été remplacé par la vue in-page PedagogicalFicheDirectorDetail */}
+      )}
 
       <ValidationModal
         open={!!modalItem}
@@ -1086,10 +1370,14 @@ function CahierJournalDirectorDetail({
   onValidated: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [sendingToTeacher, setSendingToTeacher] = useState(false);
+  const [hasBeenSent, setHasBeenSent] = useState(false); // ⭐ Track si notification déjà envoyée
   const [directorSignature, setDirectorSignature] = useState<string | null>(journal.directorSignature || null);
   const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(journal.observations || "");
   const [directorObservations, setDirectorObservations] = useState<Record<string, string>>({});
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
+  // ⭐ Modale de confirmation professionnelle personnalisée (remplace window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'VALIDATED' | 'REJECTED' | null }>({ open: false, action: null });
   // ⭐ Fiches pédagogiques rattachées au cahier journal (vue hiérarchique par jour)
   const [fichesData, setFichesData] = useState<any>(null);
   const [fichesLoading, setFichesLoading] = useState(false);
@@ -1365,12 +1653,6 @@ function CahierJournalDirectorDetail({
       });
       return;
     }
-    const ok = window.confirm(
-      action === 'VALIDATED'
-        ? `Valider ce cahier journal ?\n\nL'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et votre signature.`
-        : `Rejeter ce cahier journal ?\n\nL'enseignant recevra une notification de rejet.`
-    );
-    if (!ok) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/director-update`, {
@@ -1390,14 +1672,61 @@ function CahierJournalDirectorDetail({
       }
       toast.success(action === 'VALIDATED' ? '✅ Cahier journal validé' : 'Cahier journal rejeté', {
         description: action === 'VALIDATED'
-          ? "L'enseignant a été notifié et recevra la version validée avec votre signature."
+          ? "L'enseignant a été notifié et recevra la version validée avec votre signature. Utilisez le bouton 'Envoyer à l'enseignant' pour renvoyer la notification si besoin."
           : "L'enseignant a été notifié du rejet.",
       });
+      setHasBeenSent(true);
       onValidated();
     } catch (err: any) {
       toast.error('Erreur lors de la validation', { description: err.message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ⭐ openConfirmModal — ouvre la modale de confirmation professionnelle personnalisée
+  //    Remplace le window.confirm() générique par une modale branded
+  const openConfirmModal = (action: 'VALIDATED' | 'REJECTED') => {
+    if (action === 'VALIDATED' && !directorSignature) {
+      toast.error("Signature obligatoire", {
+        description: "Vous devez signer avant de valider le cahier journal.",
+      });
+      return;
+    }
+    setConfirmModal({ open: true, action });
+  };
+
+  // ⭐ handleConfirmValidation — appelée quand l'utilisateur confirme dans la modale personnalisée
+  const handleConfirmValidation = () => {
+    const action = confirmModal.action;
+    if (!action) return;
+    setConfirmModal({ open: false, action: null });
+    handleValidate(action);
+  };
+
+  // ⭐ handleSendToTeacher — envoie manuel de notification à l'enseignant
+  //    Appelle POST /cahier-journal/:id/send-to-teacher
+  //    Permet de re-notifier (rappel) sans changer le statut
+  const handleSendToTeacher = async () => {
+    setSendingToTeacher(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/send-to-teacher`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success('📧 Notification envoyée à l'enseignant', {
+        description: `L'enseignant recevra ${journal.status === 'VALIDATED' ? 'la version validée' : 'le rejet'} avec vos observations par email, WhatsApp et SMS.`,
+      });
+      setHasBeenSent(true);
+    } catch (err: any) {
+      toast.error('Erreur lors de l'envoi', { description: err.message });
+    } finally {
+      setSendingToTeacher(false);
     }
   };
 
@@ -1514,6 +1843,85 @@ function CahierJournalDirectorDetail({
 
   return (
     <div className="space-y-4">
+      {/* ⭐ Modale de confirmation personnalisée (remplace window.confirm) */}
+      {confirmModal.open && confirmModal.action && (() => {
+        const isValidate = confirmModal.action === 'VALIDATED';
+        const modalConfig = {
+          title: isValidate ? 'Valider le cahier journal' : 'Rejeter le cahier journal',
+          icon: isValidate
+            ? <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+            : <XCircle className="h-10 w-10 text-red-500" />,
+          message: isValidate
+            ? "Vous êtes sur le point de valider ce cahier journal."
+            : "Vous êtes sur le point de rejeter ce cahier journal.",
+          details: isValidate
+            ? [
+                "L'enseignant sera notifié immédiatement (email + WhatsApp + SMS)",
+                "La version validée avec votre signature et vos observations sera envoyée",
+                "L'enseignant verra le cahier journal comme « Validé » dans son espace pédagogique",
+                "Vous pourrez re-notifier l'enseignant via le bouton « Envoyer à l'enseignant »",
+              ]
+            : [
+                "L'enseignant sera notifié immédiatement (email + WhatsApp + SMS)",
+                "L'enseignant verra le cahier journal comme « Rejeté » dans son espace pédagogique",
+                "L'enseignant devra corriger le cahier journal et le resoumettre",
+                "Vos observations seront visibles par l'enseignant pour lui indiquer les corrections à apporter",
+              ],
+          confirmLabel: isValidate ? '✓ Valider le cahier journal' : '✗ Rejeter le cahier journal',
+          confirmClass: isValidate ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700',
+        };
+        return (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              {/* En-tête coloré */}
+              <div className={cn('px-6 py-4 border-b', isValidate ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200')}>
+                <div className="flex items-center gap-3">
+                  {modalConfig.icon}
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">{modalConfig.title}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Action de validation direction</p>
+                  </div>
+                </div>
+              </div>
+              {/* Corps */}
+              <div className="p-6 space-y-3">
+                <p className="text-sm text-slate-700 font-medium">{modalConfig.message}</p>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Conséquences :</p>
+                  {modalConfig.details.map((d, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-xs text-slate-700">
+                      <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                      <span>{d}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  <strong>ℹ️ Cahier journal :</strong> {journal.classNameResolved || journal.className || '—'} · Semaine du {formatDate(journal.weekStartDate)} au {formatDate(journal.weekEndDate)}
+                </div>
+              </div>
+              {/* Actions */}
+              <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                <button
+                  onClick={() => setConfirmModal({ open: false, action: null })}
+                  disabled={saving}
+                  className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleConfirmValidation}
+                  disabled={saving}
+                  className={cn('flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50', modalConfig.confirmClass)}
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {modalConfig.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ⭐ Action bar */}
       <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
         <button
@@ -1523,7 +1931,7 @@ function CahierJournalDirectorDetail({
           <ChevronRight className="w-4 h-4 rotate-180" />
           Retour à la liste
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isAlreadyValidated && (
             <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">
               ✓ Validé
@@ -1547,7 +1955,7 @@ function CahierJournalDirectorDetail({
                 Enregistrer
               </button>
               <button
-                onClick={() => handleValidate('REJECTED')}
+                onClick={() => openConfirmModal('REJECTED')}
                 disabled={saving}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
               >
@@ -1555,15 +1963,27 @@ function CahierJournalDirectorDetail({
                 Rejeter
               </button>
               <button
-                onClick={() => handleValidate('VALIDATED')}
+                onClick={() => openConfirmModal('VALIDATED')}
                 disabled={saving || !directorSignature}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                title={!directorSignature ? "Signature obligatoire" : "Valider"}
+                title={!directorSignature ? "Signature obligatoire" : "Valider le cahier journal"}
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {directorSignature ? 'Valider' : 'Signature requise'}
               </button>
             </>
+          )}
+          {/* ⭐ Bouton "Envoyer à l'enseignant" — visible après validation/rejet */}
+          {(isAlreadyValidated || isAlreadyRejected) && (
+            <button
+              onClick={handleSendToTeacher}
+              disabled={sendingToTeacher}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+              title="Envoyer/Renvoyer la notification (email + WhatsApp + SMS) à l'enseignant avec votre décision et vos observations"
+            >
+              {sendingToTeacher ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {hasBeenSent ? 'Renvoyer à l\'enseignant' : 'Envoyer à l\'enseignant'}
+            </button>
           )}
         </div>
       </div>
@@ -2047,9 +2467,13 @@ const SHEET_TYPE_HEADERS: Record<string, { label: string; bg: string }> = {
 
 function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: { fiche: any; userId: string; onBack: () => void; onValidated: () => void; }) {
   const [saving, setSaving] = useState(false);
+  const [sendingToTeacher, setSendingToTeacher] = useState(false);
+  const [hasBeenSent, setHasBeenSent] = useState(false); // ⭐ Track si notification déjà envoyée
   const [directorSignature, setDirectorSignature] = useState<string | null>(fiche.directorSignature || null);
   const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(fiche.directorObservation || "");
   const [sectionObservations, setSectionObservations] = useState<Record<string, string>>({});
+  // ⭐ Modale de confirmation professionnelle personnalisée (remplace window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: "VALIDATED" | "REJECTED" | null }>({ open: false, action: null });
 
   useEffect(() => {
     let existing = fiche.directorSectionObservations;
@@ -2063,16 +2487,108 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
   let deroulement: any[] = [];
   if (fiche.deroulement) { if (typeof fiche.deroulement === "string") { try { deroulement = JSON.parse(fiche.deroulement); } catch { deroulement = []; } } else if (Array.isArray(fiche.deroulement)) { deroulement = fiche.deroulement; } }
 
-  const handleValidate = async (action: "VALIDATED" | "REJECTED") => {
-    if (action === "VALIDATED" && !directorSignature) { toast.error("Signature obligatoire"); return; }
-    if (!window.confirm(action === "VALIDATED" ? "Valider cette fiche ?" : "Rejeter cette fiche ?")) return;
+  // ⭐ handleSave — sauvegarde simple sans changement de statut ni notification
+  //    Pattern identique à CahierJournalDirectorDetail.handleSave
+  const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/pedagogy-space/director/fiches/" + fiche.id + "/director-update", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ directorSectionObservations: sectionObservations, directorObservation: directorGeneralObservation, directorSignature, action, validatedBy: userId }) });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      toast.success(action === "VALIDATED" ? "Fiche validée" : "Fiche rejetée");
+      const res = await fetch("/api/pedagogy-space/director/fiches/" + fiche.id + "/director-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          directorSectionObservations: sectionObservations,
+          directorObservation: directorGeneralObservation,
+          directorSignature,
+          // Pas d'action → sauvegarde simple sans changer le statut
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success("✅ Observations enregistrées", {
+        description: "Vos observations et signature sont sauvegardées. Vous pouvez valider plus tard.",
+      });
+    } catch (err: any) {
+      toast.error("Erreur lors de la sauvegarde", { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ⭐ handleValidate — validation/rejet AVEC notification automatique côté backend
+  //    Ouvre d'abord la modale de confirmation professionnelle personnalisée.
+  //    Si confirmée, envoie la requête PUT avec action='VALIDATED'/'REJECTED'.
+  const openConfirmModal = (action: "VALIDATED" | "REJECTED") => {
+    if (action === "VALIDATED" && !directorSignature) {
+      toast.error("Signature obligatoire", { description: "Vous devez signer avant de valider la fiche." });
+      return;
+    }
+    setConfirmModal({ open: true, action });
+  };
+
+  const handleValidate = async () => {
+    const action = confirmModal.action;
+    if (!action) return;
+    setConfirmModal({ open: false, action: null });
+    setSaving(true);
+    try {
+      const res = await fetch("/api/pedagogy-space/director/fiches/" + fiche.id + "/director-update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          directorSectionObservations: sectionObservations,
+          directorObservation: directorGeneralObservation,
+          directorSignature,
+          action,
+          validatedBy: userId,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success(action === "VALIDATED" ? "✅ Fiche validée" : "Fiche rejetée", {
+        description: action === "VALIDATED"
+          ? "L'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et votre signature. Utilisez le bouton 'Envoyer à l'enseignant' pour renvoyer la notification si besoin."
+          : "L'enseignant a été notifié du rejet.",
+      });
+      // ⭐ Marquer comme envoyé (notification auto déclenchée par le backend)
+      setHasBeenSent(true);
       onValidated();
-    } catch (err: any) { toast.error("Erreur", { description: err.message }); } finally { setSaving(false); }
+    } catch (err: any) {
+      toast.error("Erreur", { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ⭐ handleSendToTeacher — envoie manuel de notification à l'enseignant
+  //    Appelle POST /director/fiches/:id/send-to-teacher
+  //    Permet de re-notifier (rappel) sans changer le statut
+  const handleSendToTeacher = async () => {
+    setSendingToTeacher(true);
+    try {
+      const res = await fetch("/api/pedagogy-space/director/fiches/" + fiche.id + "/send-to-teacher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success("📧 Notification envoyée à l'enseignant", {
+        description: `L'enseignant recevra ${fiche.status === "VALIDATED" ? "la version validée" : "le rejet"} avec vos observations par email, WhatsApp et SMS.`,
+      });
+      setHasBeenSent(true);
+    } catch (err: any) {
+      toast.error("Erreur lors de l'envoi", { description: err.message });
+    } finally {
+      setSendingToTeacher(false);
+    }
   };
 
   const renderField = (label: string, value: string | null | undefined) => (
@@ -2083,14 +2599,138 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
   );
   const fmt = (d: string | Date) => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
 
+  // ⭐ Modale de confirmation professionnelle personnalisée
+  const confirmModalConfig = confirmModal.action === "VALIDATED"
+    ? {
+        title: "Valider la fiche pédagogique",
+        icon: <CheckCircle2 className="h-10 w-10 text-emerald-500" />,
+        color: "emerald",
+        message: "Vous êtes sur le point de valider cette fiche pédagogique.",
+        details: [
+          "L'enseignant sera notifié immédiatement (email + WhatsApp + SMS)",
+          "La version validée avec votre signature et vos observations sera envoyée",
+          "L'enseignant verra la fiche comme « Validée » dans son espace pédagogique",
+          "Vous pourrez re-notifier l'enseignant via le bouton « Envoyer à l'enseignant »",
+        ],
+        confirmLabel: "✓ Valider la fiche",
+        confirmClass: "bg-emerald-600 hover:bg-emerald-700",
+      }
+    : {
+        title: "Rejeter la fiche pédagogique",
+        icon: <XCircle className="h-10 w-10 text-red-500" />,
+        color: "red",
+        message: "Vous êtes sur le point de rejeter cette fiche pédagogique.",
+        details: [
+          "L'enseignant sera notifié immédiatement (email + WhatsApp + SMS)",
+          "L'enseignant verra la fiche comme « Rejetée » dans son espace pédagogique",
+          "L'enseignant devra corriger la fiche et la resoumettre",
+          "Vos observations seront visibles par l'enseignant pour lui indiquer les corrections à apporter",
+        ],
+        confirmLabel: "✗ Rejeter la fiche",
+        confirmClass: "bg-red-600 hover:bg-red-700",
+      };
+
   return (
     <div className="space-y-4">
+      {/* ⭐ Modale de confirmation personnalisée */}
+      {confirmModal.open && confirmModal.action && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* En-tête coloré */}
+            <div className={cn("px-6 py-4 border-b", confirmModal.color === "emerald" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200")}>
+              <div className="flex items-center gap-3">
+                {confirmModalConfig.icon}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{confirmModalConfig.title}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Action de validation direction</p>
+                </div>
+              </div>
+            </div>
+            {/* Corps */}
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-slate-700 font-medium">{confirmModalConfig.message}</p>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Conséquences :</p>
+                {confirmModalConfig.details.map((d, i) => (
+                  <div key={i} className="flex items-start gap-1.5 text-xs text-slate-700">
+                    <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                    <span>{d}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>ℹ️ Fiche :</strong> {fiche.classNameResolved || "—"} · {SHEET_TYPE_LABELS[fiche.sheetType]?.label || fiche.sheetType} · {fmt(fiche.lessonDate)}
+              </div>
+            </div>
+            {/* Actions */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => setConfirmModal({ open: false, action: null })}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleValidate}
+                disabled={saving}
+                className={cn("flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50", confirmModalConfig.confirmClass)}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {confirmModalConfig.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
         <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-4 h-4 rotate-180" /> Retour</button>
-        <div className="flex items-center gap-2">
-          {isAlreadyValidated && <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">Validé</span>}
-          {isAlreadyRejected && <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">Rejeté</span>}
-          {!isAlreadyValidated && !isAlreadyRejected && (<><button onClick={() => handleValidate("REJECTED")} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rejeter</button><button onClick={() => handleValidate("VALIDATED")} disabled={saving || !directorSignature} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {directorSignature ? "Valider" : "Signature requise"}</button></>)}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAlreadyValidated && <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">✓ Validé</span>}
+          {isAlreadyRejected && <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">✗ Rejeté</span>}
+          {!isAlreadyValidated && !isAlreadyRejected && (
+            <>
+              {/* ⭐ Bouton Enregistrer (sauvegarde simple sans action) */}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                title="Enregistrer les observations sans valider"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Enregistrer
+              </button>
+              <button
+                onClick={() => openConfirmModal("REJECTED")}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rejeter
+              </button>
+              <button
+                onClick={() => openConfirmModal("VALIDATED")}
+                disabled={saving || !directorSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                title={!directorSignature ? "Signature obligatoire" : "Valider la fiche"}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {directorSignature ? "Valider" : "Signature requise"}
+              </button>
+            </>
+          )}
+          {/* ⭐ Bouton "Envoyer à l'enseignant" — visible après validation/rejet */}
+          {(isAlreadyValidated || isAlreadyRejected) && (
+            <button
+              onClick={handleSendToTeacher}
+              disabled={sendingToTeacher}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+              title="Envoyer/Renvoyer la notification (email + WhatsApp + SMS) à l'enseignant avec votre décision et vos observations"
+            >
+              {sendingToTeacher ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {hasBeenSent ? "Renvoyer à l'enseignant" : "Envoyer à l'enseignant"}
+            </button>
+          )}
         </div>
       </div>
       <div className={cn("bg-white border-2 rounded-xl p-4 text-center", sheetConfig.bg)}><h2 className="text-lg font-bold text-slate-900">FICHE DE {sheetConfig.label}</h2><div className="text-sm text-slate-600 mt-1">Classe : <strong>{fiche.classNameResolved || "—"}</strong> · Enseignant : {fiche.teacherFirstName} {fiche.teacherLastName}</div><div className="text-xs text-slate-500 mt-1">Date : <strong>{fmt(fiche.lessonDate)}</strong>{fiche.adminWeek ? " · S" + fiche.adminWeek : ""}{fiche.trimester ? " · T" + fiche.trimester : ""} · Statut : <strong>{fiche.status}</strong></div></div>

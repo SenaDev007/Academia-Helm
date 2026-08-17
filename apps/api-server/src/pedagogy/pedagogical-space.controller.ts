@@ -831,9 +831,14 @@ export class PedagogicalSpaceController {
   async getPendingCahierJournals(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('status') status?: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
-    return this.service.getPendingCahierJournals(tenantId, academicYearId);
+    // ⭐ status options : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+    const statusFilter = status && ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'].includes(status)
+      ? status
+      : 'SUBMITTED';
+    return this.service.getPendingCahierJournals(tenantId, academicYearId, statusFilter);
   }
 
   @Get('director/cahier-journal/:id')
@@ -866,9 +871,14 @@ export class PedagogicalSpaceController {
   async getPendingPedagogicalFiches(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('status') status?: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
-    return this.service.getPendingPedagogicalFiches(tenantId, academicYearId);
+    // ⭐ status options : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+    const statusFilter = status && ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'].includes(status)
+      ? status
+      : 'SUBMITTED';
+    return this.service.getPendingPedagogicalFiches(tenantId, academicYearId, statusFilter);
   }
 
   @Get('director/fiches/:id')
@@ -896,6 +906,8 @@ export class PedagogicalSpaceController {
   }
 
   // ⭐ Mise à jour directeur : observations + signature + validation fiche pédagogique
+  //    action maintenant optionnelle — si absente → sauvegarde simple (pas de changement de statut, pas de notification)
+  //    Pattern identique à directorUpdateCahierJournal
   @Put('director/fiches/:id/director-update')
   async directorUpdatePedagogicalFiche(
     @TenantId() tenantId: string,
@@ -904,12 +916,33 @@ export class PedagogicalSpaceController {
       directorSectionObservations?: Record<string, string>;
       directorObservation?: string;
       directorSignature?: string;
-      action: 'VALIDATED' | 'REJECTED';
+      action?: 'VALIDATED' | 'REJECTED';
       rejectionReason?: string;
       validatedBy?: string;
     },
   ) {
     return this.service.directorUpdatePedagogicalFiche(tenantId, id, body);
+  }
+
+  // ⭐ Envoi manuel de notification à l'enseignant après validation/rejet d'une fiche
+  //    Permet au directeur de re-notifier l'enseignant (rappel) sans changer le statut
+  @Post('director/fiches/:id/send-to-teacher')
+  @HttpCode(HttpStatus.OK)
+  async sendFicheDecisionToTeacher(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.sendFicheDecisionToTeacher(tenantId, id);
+  }
+
+  // ⭐ Envoi manuel de notification à l'enseignant après validation/rejet d'un cahier journal
+  @Post('cahier-journal/:id/send-to-teacher')
+  @HttpCode(HttpStatus.OK)
+  async sendCahierJournalDecisionToTeacher(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.sendCahierJournalDecisionToTeacher(tenantId, id);
   }
 
   // --- Registres d'appel ---

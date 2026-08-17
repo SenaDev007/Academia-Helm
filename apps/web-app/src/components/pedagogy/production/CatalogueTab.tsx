@@ -40,6 +40,7 @@ import {
   FolderOpen,
   Folder,
   ChevronRight,
+  ChevronDown,
   Loader2,
   Calendar,
   FileText,
@@ -60,6 +61,8 @@ import {
   XCircle,
   CalendarDays,
   CalendarRange,
+  Search,
+  School,
 } from "lucide-react";
 
 interface CatalogueTabProps {
@@ -122,6 +125,11 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
   const [duplicatingIds, setDuplicatingIds] = useState<Set<string>>(new Set());
   // ⭐ ID en cours d'export PDF
   const [exportingId, setExportingId] = useState<string | null>(null);
+  // ⭐ Recherche par nom de classe (filtre les dossiers racine)
+  const [searchQuery, setSearchQuery] = useState("");
+  // ⭐ Niveaux scolaires dépliés/repliés (collapsed school levels)
+  //    Initialisé à "all open" — l'utilisateur replie manuellement si trop de classes
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
 
   // === CHARGEMENT DU CATALOGUE ===
   const load = useCallback(async () => {
@@ -426,46 +434,150 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
         )}
       </div>
 
-      {/* === NIVEAU RACINE : liste des CLASSES === */}
+      {/* === NIVEAU RACINE : liste des CLASSES, regroupées par niveau scolaire === */}
       {/*    Affiché quand aucune classe n'est sélectionnée ET qu'il y a plusieurs classes. */}
       {/*    S'il n'y a qu'une seule classe, on saute directement au niveau année. */}
       {!currentClass && data.classes.length > 1 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {data.classes.map((cls: any) => {
-            // Compter le total de semaines et de fiches sur toutes les années
-            const totalWeeks = cls.academicYears?.reduce(
-              (s: number, y: any) => s + y.trimesters.reduce(
-                (ts: number, t: any) => ts + t.months.reduce((ms: number, m: any) => ms + m.weeks.length, 0), 0
-              ), 0
-            ) || 0;
-            const totalFiches = cls.academicYears?.reduce(
-              (s: number, y: any) => s + y.trimesters.reduce(
-                (ts: number, t: any) => ts + t.months.reduce(
-                  (ms: number, m: any) => ms + m.weeks.reduce((ws: number, w: any) => ws + (w.fiches?.length || 0), 0), 0
-                ), 0
-              ), 0
-            ) || 0;
-            const hasActiveYear = cls.academicYears?.some((y: any) => y.isActive);
-            return (
+        <div className="space-y-4">
+          {/* ⭐ Barre de recherche par nom de classe */}
+          <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-2 sticky top-0 z-10">
+            <Search className="h-4 w-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher une classe par nom (ex: CP1, CE2, 6ème...)"
+              className="flex-1 px-2 py-1.5 text-sm border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 rounded"
+            />
+            {searchQuery && (
               <button
-                key={cls.id}
-                onClick={() => navigateTo({ type: "class", id: cls.id, label: cls.name })}
-                className="group flex items-center gap-3 p-4 border-2 border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-left"
+                onClick={() => setSearchQuery("")}
+                className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 hover:bg-slate-100 rounded"
               >
-                <Folder className={cn("h-10 w-10", hasActiveYear ? "text-emerald-500" : "text-indigo-500")} />
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-900 text-sm truncate">{cls.name}</h3>
-                  {cls.schoolLevelName && (
-                    <p className="text-[10px] text-slate-400 mt-0.5">{cls.schoolLevelName}</p>
-                  )}
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {cls.academicYears?.length || 0} année(s) · {totalWeeks} semaine(s) · {totalFiches} fiche(s)
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
+                ✕ Effacer
               </button>
+            )}
+            <span className="text-[10px] text-slate-400 hidden sm:inline whitespace-nowrap">
+              {data.classes.filter(c => !searchQuery || c.name?.toLowerCase().includes(searchQuery.toLowerCase())).length} classe(s)
+            </span>
+          </div>
+
+          {/* ⭐ Groupement par niveau scolaire (Maternelle, Primaire, Secondaire, ...) */}
+          {/*    Chaque niveau est un dossier collapsible contenant ses classes */}
+          {(() => {
+            // Filtrer les classes par recherche
+            const filteredClasses = data.classes.filter(c =>
+              !searchQuery || c.name?.toLowerCase().includes(searchQuery.toLowerCase())
             );
-          })}
+
+            if (filteredClasses.length === 0) {
+              return (
+                <div className="text-center py-12 text-slate-400">
+                  <Search className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                  <p className="font-medium">Aucune classe trouvée</p>
+                  <p className="text-xs mt-1">Essayez un autre terme de recherche.</p>
+                </div>
+              );
+            }
+
+            // Grouper par schoolLevelName (fallback "Autres" si null)
+            const groups: Record<string, any[]> = {};
+            for (const cls of filteredClasses) {
+              const level = cls.schoolLevelName || "Autres";
+              if (!groups[level]) groups[level] = [];
+              groups[level].push(cls);
+            }
+
+            // Ordonner les niveaux : Maternelle < Primaire < Secondaire < Collège < Lycée < Autres
+            const levelOrder = ["Maternelle", "Primaire", "Secondaire", "Collège", "Lycée", "Autres"];
+            const sortedLevels = Object.keys(groups).sort((a, b) => {
+              const ia = levelOrder.indexOf(a);
+              const ib = levelOrder.indexOf(b);
+              return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+            });
+
+            // Couleurs distinctes par niveau scolaire pour différenciation visuelle
+            const levelColors: Record<string, string> = {
+              Maternelle: "text-pink-600 bg-pink-50 border-pink-200",
+              Primaire: "text-blue-600 bg-blue-50 border-blue-200",
+              Secondaire: "text-purple-600 bg-purple-50 border-purple-200",
+              Collège: "text-amber-600 bg-amber-50 border-amber-200",
+              Lycée: "text-emerald-600 bg-emerald-50 border-emerald-200",
+              Autres: "text-slate-600 bg-slate-50 border-slate-200",
+            };
+
+            return sortedLevels.map((level) => {
+              const classesInGroup = groups[level];
+              const isCollapsed = collapsedSchoolLevels.has(level);
+              const colorClasses = levelColors[level] || levelColors.Autres;
+              return (
+                <div key={level} className={cn("border rounded-lg overflow-hidden", colorClasses.split(' ').slice(-1)[0])}>
+                  {/* En-tête du niveau scolaire (cliquable pour replier/déplier) */}
+                  <button
+                    onClick={() => {
+                      setCollapsedSchoolLevels(prev => {
+                        const next = new Set(prev);
+                        if (next.has(level)) next.delete(level);
+                        else next.add(level);
+                        return next;
+                      });
+                    }}
+                    className={cn("w-full flex items-center gap-2 px-4 py-3 font-bold text-sm transition-colors", colorClasses)}
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                    <School className="h-5 w-5" />
+                    <span>{level}</span>
+                    <span className="ml-1 text-xs font-normal opacity-75">
+                      ({classesInGroup.length} classe{classesInGroup.length > 1 ? "s" : ""})
+                    </span>
+                  </button>
+                  {/* Liste des classes du niveau (si déplié) */}
+                  {!isCollapsed && (
+                    <div className="bg-white border-t border-slate-200 p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {classesInGroup.map((cls: any) => {
+                        const totalWeeks = cls.academicYears?.reduce(
+                          (s: number, y: any) => s + y.trimesters.reduce(
+                            (ts: number, t: any) => ts + t.months.reduce((ms: number, m: any) => ms + m.weeks.length, 0), 0
+                          ), 0
+                        ) || 0;
+                        const totalFiches = cls.academicYears?.reduce(
+                          (s: number, y: any) => s + y.trimesters.reduce(
+                            (ts: number, t: any) => ts + t.months.reduce(
+                              (ms: number, m: any) => ms + m.weeks.reduce((ws: number, w: any) => ws + (w.fiches?.length || 0), 0), 0
+                            ), 0
+                          ), 0
+                        ) || 0;
+                        const hasActiveYear = cls.academicYears?.some((y: any) => y.isActive);
+                        return (
+                          <button
+                            key={cls.id}
+                            onClick={() => navigateTo({ type: "class", id: cls.id, label: cls.name })}
+                            className="group flex items-center gap-3 p-4 border-2 border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-left"
+                          >
+                            <Folder className={cn("h-10 w-10", hasActiveYear ? "text-emerald-500" : "text-indigo-500")} />
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-slate-900 text-sm truncate">{cls.name}</h3>
+                              {cls.schoolLevelName && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">{cls.schoolLevelName}</p>
+                              )}
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                {cls.academicYears?.length || 0} année(s) · {totalWeeks} semaine(s) · {totalFiches} fiche(s)
+                              </p>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
 

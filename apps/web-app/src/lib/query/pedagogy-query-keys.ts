@@ -12,11 +12,11 @@ export const pedagogyKeys = {
   dashboard: (academicYearId: string) =>
     [...pedagogyKeys.director(), 'dashboard', academicYearId] as const,
 
-  // Director pending lists
-  pendingCahierJournals: (academicYearId: string) =>
-    [...pedagogyKeys.director(), 'pending-cahier-journals', academicYearId] as const,
-  pendingFiches: (academicYearId: string) =>
-    [...pedagogyKeys.director(), 'pending-fiches', academicYearId] as const,
+  // Director pending lists (avec filtre status pour 3 sous-onglets pending/validated/rejected)
+  pendingCahierJournals: (academicYearId: string, status: string = 'SUBMITTED') =>
+    [...pedagogyKeys.director(), 'pending-cahier-journals', academicYearId, status] as const,
+  pendingFiches: (academicYearId: string, status: string = 'SUBMITTED') =>
+    [...pedagogyKeys.director(), 'pending-fiches', academicYearId, status] as const,
   pendingRegisters: (academicYearId: string) =>
     [...pedagogyKeys.director(), 'pending-registers', academicYearId] as const,
   pendingEvaluations: (academicYearId: string) =>

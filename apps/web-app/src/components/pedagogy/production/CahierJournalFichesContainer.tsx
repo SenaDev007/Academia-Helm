@@ -367,6 +367,35 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ─── Helper : mapper une matière (clé du cahier journal) vers un sheetType ──
+
+/**
+ * Mappe le nom d'une matière (clé dans les entries du cahier journal)
+ * vers le sheetType correspondant pour la fiche pédagogique.
+ *
+ * Le cahier journal utilise les noms de matières comme clés (ex: "Français", "Mathématiques"),
+ * tandis que les fiches pédagogiques utilisent des codes (FRANCAIS, MATH, etc.).
+ * Cette fonction fait la correspondance pour que quand on clique "Préparer la fiche"
+ * pour une matière, le bon type de fiche soit pré-sélectionné.
+ */
+function mapMatiereToSheetType(matiere: string): string {
+  const m = (matiere || '').toLowerCase().trim();
+  // Français
+  if (m === 'français' || m === 'francais' || m === 'fran\u00e7ais') return 'FRANCAIS';
+  // Mathématiques
+  if (m === 'mathématiques' || m === 'mathematiques' || m === 'maths' || m === 'math' || m === 'pré-mathématique' || m === 'pre-mathematique') return 'MATH';
+  // Éducation Scientifique et Technologique
+  if (m.includes('scientifique') || m.includes('est') || m === 'science' || m === 'sciences') return 'EST';
+  // Éducation Sociale
+  if (m.includes('social') || m.includes('morale') || m.includes('civisme') || m.includes('histoire') || m.includes('géographie') || m.includes('geographie')) return 'ES';
+  // Éducation Artistique
+  if (m.includes('artistique') || m.includes('chant') || m.includes('dessin') || m.includes('poésie') || m.includes('poesie') || m.includes('musique')) return 'EA';
+  // Direct observation (qui ne devrait pas apparaître — c'est un type non standard)
+  if (m.includes('direct') || m.includes('observation')) return '';
+  // Default: pas de correspondance → laisse l'utilisateur choisir
+  return '';
+}
+
 // ─── Liste des matières planifiées + boutons "Préparer la fiche" ────────────
 
 function FichesAPreparer({
@@ -551,7 +580,7 @@ function FichesAPreparer({
                             onViewFiche(m.ficheId);
                           } else {
                             // Fallback : si pas de ficheId, on bascule vers l'onglet fiches
-                            onPrepareFiche(day, m.matiere);
+                            onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere));
                           }
                         }}
                         className="text-[10px] font-bold text-blue-600 hover:underline ml-2"
@@ -560,7 +589,7 @@ function FichesAPreparer({
                       </a>
                     ) : (
                       <button
-                        onClick={() => onPrepareFiche(day, m.matiere)}
+                        onClick={() => onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere))}
                         className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded ml-2"
                       >
                         <Plus className="h-3 w-3" />

@@ -198,9 +198,11 @@ export function CahierJournalFichesContainer({
         )}
       </div>
 
-      {/* Contenu du sous-onglet */}
+      {/* Contenu du sous-onglet — les deux composants sont TOUJOURS montés
+          mais cachés via CSS display:none. Ça évite le rechargement complet
+          quand on switch d'onglet (qui causait la lenteur et le chargement infini). */}
       <div>
-        {subTab === "cahier" && (
+        <div className={subTab === "cahier" ? "" : "hidden"}>
           <div className="space-y-4">
             <CahierJournalTab
               tenantId={tenantId}
@@ -211,11 +213,6 @@ export function CahierJournalFichesContainer({
               onJournalSubmitted={handleJournalSubmitted}
               onJournalLoaded={handleJournalLoaded}
             />
-            {/* ⭐ Fiches pédagogiques liées au cahier journal courant.
-                Affichées en dessous de la grille hebdo pour que l'enseignant
-                voie directement quelles fiches sont déjà préparées pour cette
-                semaine. Cliquer sur une fiche bascule vers le sous-onglet
-                Fiches en mode édition. */}
             {currentJournalId && (
               <FichesLieesJournal
                 journalId={currentJournalId}
@@ -225,18 +222,17 @@ export function CahierJournalFichesContainer({
               />
             )}
           </div>
-        )}
-        {subTab === "fiches" && (
-          <>
-            {!currentJournalId ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="h-10 w-10 text-slate-300 mb-3" />
-                <p className="font-semibold text-slate-700">
-                  Aucun cahier journal sélectionné
-                </p>
-                <p className="text-sm text-slate-500 mt-1 mb-4">
-                  Pour préparer les fiches pédagogiques, enregistrez d&apos;abord votre cahier journal de la semaine.
-                </p>
+        </div>
+        <div className={subTab === "fiches" ? "" : "hidden"}>
+          {!currentJournalId ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <FileText className="h-10 w-10 text-slate-300 mb-3" />
+              <p className="font-semibold text-slate-700">
+                Aucun cahier journal sélectionné
+              </p>
+              <p className="text-sm text-slate-500 mt-1 mb-4">
+                Pour préparer les fiches pédagogiques, enregistrez d&apos;abord votre cahier journal de la semaine.
+              </p>
                 <button
                   onClick={() => setSubTab("cahier")}
                   className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
@@ -281,8 +277,7 @@ export function CahierJournalFichesContainer({
                 </div>
               </>
             )}
-          </>
-        )}
+        </div>
       </div>
     </div>
   );

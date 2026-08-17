@@ -6029,82 +6029,153 @@ export class PedagogicalSpaceService {
 
   /// Dashboard direction : synthèse des éléments en attente.
   async getDirectorPedagogyDashboard(tenantId: string, academicYearId: string) {
+    // ⭐ Comptage groupé par statut (SUBMITTED | VALIDATED | REJECTED) pour chaque catégorie.
+    //    Permet d'afficher le compteur total avec breakdown au tableau de bord :
+    //    "47 registres au total — 5 en attente, 38 validés, 4 rejetés"
     const [
-      pendingCahierJournals,
-      pendingFiches,
-      pendingRegisters,
-      pendingEvaluations,
-      pendingExamEvaluations,
-      pendingWeeklyLogs,
-      pendingWeeklySummaries,
-      pendingCahierTests,
+      cahierJournalsByStatus,
+      fichesByStatus,
+      registersByStatus,
+      evaluationsByStatus,
+      examEvaluationsByStatus,
+      weeklyLogsByStatus,
+      weeklySummariesByStatus,
+      cahierTestsByStatus,
     ] = await Promise.all([
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "cahier_journal_entries"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "cahier_journal_entries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count, "sheetType" FROM "primary_pedagogical_fiches"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'
-         GROUP BY "sheetType"`,
+        `SELECT "status", COUNT(*)::int as count, "sheetType" FROM "primary_pedagogical_fiches"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status", "sheetType"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "attendance_registers"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "attendance_registers"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "monthly_evaluations"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "monthly_evaluations"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       // ⭐ Aussi compter les évaluations du Module Examen
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "evaluations"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "evaluations"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "pedagogical_weekly_logs"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "pedagogical_weekly_logs"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "weekly_log_summaries"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "weekly_log_summaries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "cahier_de_textes"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        `SELECT "status", COUNT(*)::int as count FROM "cahier_de_textes"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
         tenantId, academicYearId,
       ),
     ]);
 
-    const cahierCount = pendingCahierJournals[0]?.count || 0;
-    const fichesByType = (pendingFiches as any[]).reduce((acc, row) => {
-      acc[row.sheetType] = row.count;
+    // ⭐ Helper : extrait le count d'un statut donné depuis une requête GROUP BY
+    const extractCount = (rows: any[], status: string): number => {
+      const row = (rows as any[])?.find(r => r.status === status);
+      return row?.count || 0;
+    };
+
+    // Compteurs par statut pour chaque catégorie
+    const cahierCount = extractCount(cahierJournalsByStatus, 'SUBMITTED');
+    const cahierValidated = extractCount(cahierJournalsByStatus, 'VALIDATED');
+    const cahierRejected = extractCount(cahierJournalsByStatus, 'REJECTED');
+    const cahierTotal = cahierCount + cahierValidated + cahierRejected;
+
+    const fichesByType = (fichesByStatus as any[]).reduce((acc, row) => {
+      if (row.status === 'SUBMITTED') {
+        acc[row.sheetType] = row.count;
+      }
       return acc;
     }, {} as Record<string, number>);
-    const fichesCount = Object.values(fichesByType).reduce((s, c) => s + (c as number), 0);
-    const registersCount = pendingRegisters[0]?.count || 0;
-    const evaluationsCount = (pendingEvaluations[0]?.count || 0) + (pendingExamEvaluations[0]?.count || 0);
-    const weeklyLogsCount = pendingWeeklyLogs[0]?.count || 0;
-    const weeklySummariesCount = pendingWeeklySummaries[0]?.count || 0;
-    const cahierTestsCount = pendingCahierTests[0]?.count || 0;
+    const fichesCount = extractCount(fichesByStatus, 'SUBMITTED');
+    const fichesValidated = extractCount(fichesByStatus, 'VALIDATED');
+    const fichesRejected = extractCount(fichesByStatus, 'REJECTED');
+    const fichesTotal = fichesCount + fichesValidated + fichesRejected;
+
+    const registersCount = extractCount(registersByStatus, 'SUBMITTED');
+    const registersValidated = extractCount(registersByStatus, 'VALIDATED');
+    const registersRejected = extractCount(registersByStatus, 'REJECTED');
+    const registersTotal = registersCount + registersValidated + registersRejected;
+
+    const evaluationsCount = extractCount(evaluationsByStatus, 'SUBMITTED') + extractCount(examEvaluationsByStatus, 'SUBMITTED');
+    const evaluationsValidated = extractCount(evaluationsByStatus, 'VALIDATED') + extractCount(examEvaluationsByStatus, 'VALIDATED');
+    const evaluationsRejected = extractCount(evaluationsByStatus, 'REJECTED') + extractCount(examEvaluationsByStatus, 'REJECTED');
+    const evaluationsTotal = evaluationsCount + evaluationsValidated + evaluationsRejected;
+
+    const weeklyLogsCount = extractCount(weeklyLogsByStatus, 'SUBMITTED');
+    const weeklySummariesCount = extractCount(weeklySummariesByStatus, 'SUBMITTED');
+    const cahierTestsCount = extractCount(cahierTestsByStatus, 'SUBMITTED');
+
+    // Totaux globaux (toutes catégories confondues)
+    const totalPending = cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount + cahierTestsCount;
+    const totalValidated = cahierValidated + fichesValidated + registersValidated + evaluationsValidated;
+    const totalRejected = cahierRejected + fichesRejected + registersRejected + evaluationsRejected;
+    const totalProcessed = totalPending + totalValidated + totalRejected;
 
     return {
+      // ⭐ Compteurs par statut pour chaque catégorie (3 statuts × 4 catégories principales)
       pendingCahierJournals: cahierCount,
+      validatedCahierJournals: cahierValidated,
+      rejectedCahierJournals: cahierRejected,
+      totalCahierJournals: cahierTotal,
+
       pendingFiches: fichesCount,
+      validatedFiches: fichesValidated,
+      rejectedFiches: fichesRejected,
+      totalFiches: fichesTotal,
       pendingFichesByType: fichesByType,
+
       pendingAttendanceRegisters: registersCount,
+      validatedAttendanceRegisters: registersValidated,
+      rejectedAttendanceRegisters: registersRejected,
+      totalAttendanceRegisters: registersTotal,
+
       pendingMonthlyEvaluations: evaluationsCount,
+      validatedMonthlyEvaluations: evaluationsValidated,
+      rejectedMonthlyEvaluations: evaluationsRejected,
+      totalMonthlyEvaluations: evaluationsTotal,
+
       pendingWeeklyLogs: weeklyLogsCount,
       pendingWeeklySummaries: weeklySummariesCount,
       pendingCahierTests: cahierTestsCount,
-      totalPending: cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount + cahierTestsCount,
+
+      // ⭐ Totaux globaux (toutes catégories)
+      totalPending,
+      totalValidated,
+      totalRejected,
+      totalProcessed,
     };
   }
 

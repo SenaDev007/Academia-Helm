@@ -164,12 +164,66 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
   }
 
   const cards = [
-    { label: "Cahiers Journal", count: dashboard.pendingCahierJournals, icon: FileSpreadsheet, color: "bg-blue-50 text-blue-700 border-blue-200", tab: "cahier-journal" as TabId },
-    { label: "Fiches Pédagogiques", count: dashboard.pendingFiches, icon: FileText, color: "bg-emerald-50 text-emerald-700 border-emerald-200", tab: "fiches" as TabId },
-    { label: "Registres d'Appel", count: dashboard.pendingAttendanceRegisters, icon: ClipboardList, color: "bg-amber-50 text-amber-700 border-amber-200", tab: "registres" as TabId },
-    { label: "Évaluations Mensuelles", count: dashboard.pendingMonthlyEvaluations, icon: BookOpen, color: "bg-purple-50 text-purple-700 border-purple-200", tab: "evaluations" as TabId },
-    { label: "Semainiers (anciens)", count: dashboard.pendingWeeklyLogs, icon: Clock, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
-    { label: "Rapports fin de semaine", count: dashboard.pendingWeeklySummaries, icon: Send, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
+    {
+      label: "Cahiers Journal",
+      pending: dashboard.pendingCahierJournals,
+      validated: dashboard.validatedCahierJournals || 0,
+      rejected: dashboard.rejectedCahierJournals || 0,
+      total: dashboard.totalCahierJournals || (dashboard.pendingCahierJournals || 0),
+      icon: FileSpreadsheet,
+      color: "bg-blue-50 text-blue-700 border-blue-200",
+      tab: "cahier-journal" as TabId,
+    },
+    {
+      label: "Fiches Pédagogiques",
+      pending: dashboard.pendingFiches,
+      validated: dashboard.validatedFiches || 0,
+      rejected: dashboard.rejectedFiches || 0,
+      total: dashboard.totalFiches || (dashboard.pendingFiches || 0),
+      icon: FileText,
+      color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      tab: "fiches" as TabId,
+    },
+    {
+      label: "Registres d'Appel",
+      pending: dashboard.pendingAttendanceRegisters,
+      validated: dashboard.validatedAttendanceRegisters || 0,
+      rejected: dashboard.rejectedAttendanceRegisters || 0,
+      total: dashboard.totalAttendanceRegisters || (dashboard.pendingAttendanceRegisters || 0),
+      icon: ClipboardList,
+      color: "bg-amber-50 text-amber-700 border-amber-200",
+      tab: "registres" as TabId,
+    },
+    {
+      label: "Évaluations Mensuelles",
+      pending: dashboard.pendingMonthlyEvaluations,
+      validated: dashboard.validatedMonthlyEvaluations || 0,
+      rejected: dashboard.rejectedMonthlyEvaluations || 0,
+      total: dashboard.totalMonthlyEvaluations || (dashboard.pendingMonthlyEvaluations || 0),
+      icon: BookOpen,
+      color: "bg-purple-50 text-purple-700 border-purple-200",
+      tab: "evaluations" as TabId,
+    },
+    {
+      label: "Semainiers (anciens)",
+      pending: dashboard.pendingWeeklyLogs,
+      validated: 0,
+      rejected: 0,
+      total: dashboard.pendingWeeklyLogs,
+      icon: Clock,
+      color: "bg-slate-50 text-slate-700 border-slate-200",
+      tab: null,
+    },
+    {
+      label: "Rapports fin de semaine",
+      pending: dashboard.pendingWeeklySummaries,
+      validated: 0,
+      rejected: 0,
+      total: dashboard.pendingWeeklySummaries,
+      icon: Send,
+      color: "bg-slate-50 text-slate-700 border-slate-200",
+      tab: null,
+    },
   ];
 
   return (
@@ -180,6 +234,39 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
           {dashboard.totalPending} soumission(s) en attente de validation
         </p>
       </div>
+
+      {/* ⭐ COMPTEUR TOTAL avec breakdown par statut (en attente / validés / rejetés) */}
+      {/*    Ex: "47 registres au total — 5 en attente, 38 validés, 4 rejetés" */}
+      {(dashboard.totalProcessed || 0) > 0 && (
+        <div className="bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-5 w-5 text-blue-600" />
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+              Synthèse globale — {dashboard.totalProcessed} élément(s) traité(s) au total
+            </h3>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white border border-blue-200 rounded-lg p-2.5 text-center">
+              <div className="text-2xl font-bold text-blue-700">{dashboard.totalPending}</div>
+              <div className="text-[10px] font-semibold uppercase text-blue-600 mt-0.5 flex items-center justify-center gap-1">
+                <Clock className="h-3 w-3" /> En attente
+              </div>
+            </div>
+            <div className="bg-white border border-emerald-200 rounded-lg p-2.5 text-center">
+              <div className="text-2xl font-bold text-emerald-700">{dashboard.totalValidated}</div>
+              <div className="text-[10px] font-semibold uppercase text-emerald-600 mt-0.5 flex items-center justify-center gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Validés
+              </div>
+            </div>
+            <div className="bg-white border border-red-200 rounded-lg p-2.5 text-center">
+              <div className="text-2xl font-bold text-red-700">{dashboard.totalRejected}</div>
+              <div className="text-[10px] font-semibold uppercase text-red-600 mt-0.5 flex items-center justify-center gap-1">
+                <XCircle className="h-3 w-3" /> Rejetés
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cards.map((card) => {
@@ -198,9 +285,27 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
               <div className="flex-shrink-0">
                 <Icon className="h-8 w-8" />
               </div>
-              <div className="flex-1">
-                <div className="text-3xl font-bold">{card.count}</div>
+              <div className="flex-1 min-w-0">
+                {/* ⭐ Affichage du compteur total + breakdown par statut */}
+                <div className="flex items-baseline gap-1.5">
+                  <div className="text-3xl font-bold">{card.total}</div>
+                  <div className="text-[10px] text-slate-500 font-medium">au total</div>
+                </div>
                 <div className="text-xs font-semibold uppercase tracking-wide mt-1">{card.label}</div>
+                {/* ⭐ Breakdown par statut (uniquement si au moins 1 validé/rejeté) */}
+                {(card.validated > 0 || card.rejected > 0) && (
+                  <div className="flex items-center gap-2 mt-1.5 text-[10px] font-medium">
+                    <span className="text-blue-600 flex items-center gap-0.5" title="En attente de validation">
+                      <Clock className="h-2.5 w-2.5" /> {card.pending}
+                    </span>
+                    <span className="text-emerald-600 flex items-center gap-0.5" title="Validés">
+                      <CheckCircle2 className="h-2.5 w-2.5" /> {card.validated}
+                    </span>
+                    <span className="text-red-600 flex items-center gap-0.5" title="Rejetés">
+                      <XCircle className="h-2.5 w-2.5" /> {card.rejected}
+                    </span>
+                  </div>
+                )}
               </div>
               {card.tab && <ChevronRight className="h-5 w-5 opacity-50" />}
             </button>
@@ -505,6 +610,19 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     hierarchy[schoolLevel][trimester][className].push(item);
   }
 
+  // ⭐ Pre-populer les 3 trimesters (T1, T2, T3) sous chaque school level
+  //    Même si un trimestre a 0 items dans le sous-onglet courant, on l'affiche
+  //    comme dossier vide — permet au bouton 'Tout replier' de ne replier QUE
+  //    ces niveaux vides (cf. demande utilisateur).
+  const ALL_TRIMESTERS_CJ = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+  for (const sl of Object.keys(hierarchy)) {
+    for (const tr of ALL_TRIMESTERS_CJ) {
+      if (!hierarchy[sl][tr]) {
+        hierarchy[sl][tr] = {}; // Trimestre vide (0 items)
+      }
+    }
+  }
+
   // Ordonner les niveaux scolaires
   const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
   const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
@@ -530,17 +648,35 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
   };
 
   // ⭐ Helpers Tout déplier / Tout replier (pour gérer les grandes listes)
-  //    Rassemble toutes les clés des 3 niveaux hiérarchiques (schoolLevel, trimester, class)
-  //    à partir de la hiérarchie calculée plus haut.
+  //    'Tout replier' ne replie QUE les niveaux vides (ceux qui n'ont pas d'items
+  //    dans le sous-onglet courant) — cf. demande utilisateur.
+  //    Les niveaux avec items restent dépliés pour préserver la visibilité des items.
   const allSchoolLevelKeysCJ = sortedLevels;
   const allTrimesterKeysCJ: string[] = [];
   const allClassKeysCJ: string[] = [];
+  // ⭐ Niveaux vides = niveaux avec 0 item dans le sous-onglet courant
+  const emptySchoolLevelKeysCJ: string[] = [];
+  const emptyTrimesterKeysCJ: string[] = [];
   for (const sl of sortedLevels) {
+    let slHasItems = false;
     for (const tr of Object.keys(hierarchy[sl])) {
-      allTrimesterKeysCJ.push(`${sl}::${tr}`);
-      for (const cn of Object.keys(hierarchy[sl][tr])) {
+      const trimesterKey = `${sl}::${tr}`;
+      allTrimesterKeysCJ.push(trimesterKey);
+      const classKeysInTrimester = Object.keys(hierarchy[sl][tr]);
+      const trimesterItemsCount = classKeysInTrimester.reduce(
+        (s, cn) => s + (hierarchy[sl][tr][cn]?.length || 0), 0
+      );
+      for (const cn of classKeysInTrimester) {
         allClassKeysCJ.push(`${sl}::${tr}::${cn}`);
       }
+      if (trimesterItemsCount === 0) {
+        emptyTrimesterKeysCJ.push(trimesterKey);
+      } else {
+        slHasItems = true;
+      }
+    }
+    if (!slHasItems) {
+      emptySchoolLevelKeysCJ.push(sl);
     }
   }
   const handleExpandAllCJ = () => {
@@ -548,10 +684,11 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     setCollapsedTrimesters(new Set());
     setCollapsedClasses(new Set());
   };
+  // ⭐ 'Tout replier' ne replie QUE les niveaux vides (sans items dans le sous-onglet courant)
   const handleCollapseAllCJ = () => {
-    setCollapsedSchoolLevels(new Set(allSchoolLevelKeysCJ));
-    setCollapsedTrimesters(new Set(allTrimesterKeysCJ));
-    setCollapsedClasses(new Set(allClassKeysCJ));
+    setCollapsedSchoolLevels(new Set(emptySchoolLevelKeysCJ));
+    setCollapsedTrimesters(new Set(emptyTrimesterKeysCJ));
+    setCollapsedClasses(new Set()); // Les classes ont toujours des items (construites à partir d'items)
   };
 
   return (
@@ -590,7 +727,7 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
           <button
             onClick={handleCollapseAllCJ}
             className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
-            title="Tout replier (masquer toutes les classes)"
+            title="Tout replier (replie uniquement les niveaux vides — les niveaux avec items restent visibles)"
           >
             <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
           </button>
@@ -863,6 +1000,19 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     hierarchy[schoolLevel][trimester][className].push(item);
   }
 
+  // ⭐ Pre-populer les 3 trimesters (T1, T2, T3) sous chaque school level
+  //    Même si un trimestre a 0 items dans le sous-onglet courant, on l'affiche
+  //    comme dossier vide — permet au bouton 'Tout replier' de ne replier QUE
+  //    ces niveaux vides (cf. demande utilisateur).
+  const ALL_TRIMESTERS_PF = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+  for (const sl of Object.keys(hierarchy)) {
+    for (const tr of ALL_TRIMESTERS_PF) {
+      if (!hierarchy[sl][tr]) {
+        hierarchy[sl][tr] = {};
+      }
+    }
+  }
+
   // Ordonner les niveaux scolaires
   const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
   const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
@@ -892,15 +1042,33 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
   };
 
   // ⭐ Helpers Tout déplier / Tout replier (pour gérer les grandes listes)
+  //    'Tout replier' ne replie QUE les niveaux vides (ceux qui n'ont pas d'items
+  //    dans le sous-onglet courant) — les niveaux avec items restent dépliés.
   const allSchoolLevelKeysPF = sortedLevels;
   const allTrimesterKeysPF: string[] = [];
   const allClassKeysPF: string[] = [];
+  const emptySchoolLevelKeysPF: string[] = [];
+  const emptyTrimesterKeysPF: string[] = [];
   for (const sl of sortedLevels) {
+    let slHasItems = false;
     for (const tr of Object.keys(hierarchy[sl])) {
-      allTrimesterKeysPF.push(`${sl}::${tr}`);
-      for (const cn of Object.keys(hierarchy[sl][tr])) {
+      const trimesterKey = `${sl}::${tr}`;
+      allTrimesterKeysPF.push(trimesterKey);
+      const classKeysInTrimester = Object.keys(hierarchy[sl][tr]);
+      const trimesterItemsCount = classKeysInTrimester.reduce(
+        (s, cn) => s + (hierarchy[sl][tr][cn]?.length || 0), 0
+      );
+      for (const cn of classKeysInTrimester) {
         allClassKeysPF.push(`${sl}::${tr}::${cn}`);
       }
+      if (trimesterItemsCount === 0) {
+        emptyTrimesterKeysPF.push(trimesterKey);
+      } else {
+        slHasItems = true;
+      }
+    }
+    if (!slHasItems) {
+      emptySchoolLevelKeysPF.push(sl);
     }
   }
   const handleExpandAllPF = () => {
@@ -909,9 +1077,9 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     setCollapsedClasses(new Set());
   };
   const handleCollapseAllPF = () => {
-    setCollapsedSchoolLevels(new Set(allSchoolLevelKeysPF));
-    setCollapsedTrimesters(new Set(allTrimesterKeysPF));
-    setCollapsedClasses(new Set(allClassKeysPF));
+    setCollapsedSchoolLevels(new Set(emptySchoolLevelKeysPF));
+    setCollapsedTrimesters(new Set(emptyTrimesterKeysPF));
+    setCollapsedClasses(new Set());
   };
 
   return (
@@ -950,7 +1118,7 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
           <button
             onClick={handleCollapseAllPF}
             className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
-            title="Tout replier (masquer toutes les classes)"
+            title="Tout replier (replie uniquement les niveaux vides — les niveaux avec items restent visibles)"
           >
             <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
           </button>
@@ -1222,6 +1390,19 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     hierarchy[schoolLevel][trimester][className].push(item);
   }
 
+  // ⭐ Pre-populer les 3 trimesters (T1, T2, T3) sous chaque school level
+  //    Même si un trimestre a 0 items dans le sous-onglet courant, on l'affiche
+  //    comme dossier vide — permet au bouton 'Tout replier' de ne replier QUE
+  //    ces niveaux vides (cf. demande utilisateur).
+  const ALL_TRIMESTERS_RG = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+  for (const sl of Object.keys(hierarchy)) {
+    for (const tr of ALL_TRIMESTERS_RG) {
+      if (!hierarchy[sl][tr]) {
+        hierarchy[sl][tr] = {};
+      }
+    }
+  }
+
   // Ordonner les niveaux scolaires
   const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
   const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
@@ -1240,16 +1421,33 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
   };
 
   // ⭐ Helpers Tout déplier / Tout replier
-  //    Rassemble toutes les clés des 3 niveaux hiérarchiques
+  //    'Tout replier' ne replie QUE les niveaux vides (ceux qui n'ont pas d'items
+  //    dans le sous-onglet courant) — les niveaux avec items restent dépliés.
   const allSchoolLevelKeys = sortedLevels;
   const allTrimesterKeys: string[] = [];
   const allClassKeys: string[] = [];
+  const emptySchoolLevelKeys: string[] = [];
+  const emptyTrimesterKeys: string[] = [];
   for (const sl of sortedLevels) {
+    let slHasItems = false;
     for (const tr of Object.keys(hierarchy[sl])) {
-      allTrimesterKeys.push(`${sl}::${tr}`);
-      for (const cn of Object.keys(hierarchy[sl][tr])) {
+      const trimesterKey = `${sl}::${tr}`;
+      allTrimesterKeys.push(trimesterKey);
+      const classKeysInTrimester = Object.keys(hierarchy[sl][tr]);
+      const trimesterItemsCount = classKeysInTrimester.reduce(
+        (s, cn) => s + (hierarchy[sl][tr][cn]?.length || 0), 0
+      );
+      for (const cn of classKeysInTrimester) {
         allClassKeys.push(`${sl}::${tr}::${cn}`);
       }
+      if (trimesterItemsCount === 0) {
+        emptyTrimesterKeys.push(trimesterKey);
+      } else {
+        slHasItems = true;
+      }
+    }
+    if (!slHasItems) {
+      emptySchoolLevelKeys.push(sl);
     }
   }
   const handleExpandAll = () => {
@@ -1258,9 +1456,9 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     setCollapsedClasses(new Set());
   };
   const handleCollapseAll = () => {
-    setCollapsedSchoolLevels(new Set(allSchoolLevelKeys));
-    setCollapsedTrimesters(new Set(allTrimesterKeys));
-    setCollapsedClasses(new Set(allClassKeys));
+    setCollapsedSchoolLevels(new Set(emptySchoolLevelKeys));
+    setCollapsedTrimesters(new Set(emptyTrimesterKeys));
+    setCollapsedClasses(new Set());
   };
 
   // Statuts pour les sous-onglets
@@ -1306,7 +1504,7 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
           <button
             onClick={handleCollapseAll}
             className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
-            title="Tout replier (masquer toutes les classes)"
+            title="Tout replier (replie uniquement les niveaux vides — les niveaux avec items restent visibles)"
           >
             <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
           </button>
@@ -1570,6 +1768,19 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     hierarchy[schoolLevel][trimester][className].push(item);
   }
 
+  // ⭐ Pre-populer les 3 trimesters (T1, T2, T3) sous chaque school level
+  //    Même si un trimestre a 0 items dans le sous-onglet courant, on l'affiche
+  //    comme dossier vide — permet au bouton 'Tout replier' de ne replier QUE
+  //    ces niveaux vides (cf. demande utilisateur).
+  const ALL_TRIMESTERS_EV = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+  for (const sl of Object.keys(hierarchy)) {
+    for (const tr of ALL_TRIMESTERS_EV) {
+      if (!hierarchy[sl][tr]) {
+        hierarchy[sl][tr] = {};
+      }
+    }
+  }
+
   // Ordonner les niveaux scolaires
   const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
   const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
@@ -1588,15 +1799,33 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
   };
 
   // ⭐ Helpers Tout déplier / Tout replier
+  //    'Tout replier' ne replie QUE les niveaux vides (ceux qui n'ont pas d'items
+  //    dans le sous-onglet courant) — les niveaux avec items restent dépliés.
   const allSchoolLevelKeys = sortedLevels;
   const allTrimesterKeys: string[] = [];
   const allClassKeys: string[] = [];
+  const emptySchoolLevelKeys: string[] = [];
+  const emptyTrimesterKeys: string[] = [];
   for (const sl of sortedLevels) {
+    let slHasItems = false;
     for (const tr of Object.keys(hierarchy[sl])) {
-      allTrimesterKeys.push(`${sl}::${tr}`);
-      for (const cn of Object.keys(hierarchy[sl][tr])) {
+      const trimesterKey = `${sl}::${tr}`;
+      allTrimesterKeys.push(trimesterKey);
+      const classKeysInTrimester = Object.keys(hierarchy[sl][tr]);
+      const trimesterItemsCount = classKeysInTrimester.reduce(
+        (s, cn) => s + (hierarchy[sl][tr][cn]?.length || 0), 0
+      );
+      for (const cn of classKeysInTrimester) {
         allClassKeys.push(`${sl}::${tr}::${cn}`);
       }
+      if (trimesterItemsCount === 0) {
+        emptyTrimesterKeys.push(trimesterKey);
+      } else {
+        slHasItems = true;
+      }
+    }
+    if (!slHasItems) {
+      emptySchoolLevelKeys.push(sl);
     }
   }
   const handleExpandAll = () => {
@@ -1605,9 +1834,9 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     setCollapsedClasses(new Set());
   };
   const handleCollapseAll = () => {
-    setCollapsedSchoolLevels(new Set(allSchoolLevelKeys));
-    setCollapsedTrimesters(new Set(allTrimesterKeys));
-    setCollapsedClasses(new Set(allClassKeys));
+    setCollapsedSchoolLevels(new Set(emptySchoolLevelKeys));
+    setCollapsedTrimesters(new Set(emptyTrimesterKeys));
+    setCollapsedClasses(new Set());
   };
 
   // Statuts pour les sous-onglets
@@ -1653,7 +1882,7 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
           <button
             onClick={handleCollapseAll}
             className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
-            title="Tout replier (masquer toutes les classes)"
+            title="Tout replier (replie uniquement les niveaux vides — les niveaux avec items restent visibles)"
           >
             <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
           </button>
@@ -2197,12 +2426,12 @@ function CahierJournalDirectorDetail({
         const errText = await res.text();
         throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
       }
-      toast.success('📧 Notification envoyée à l'enseignant', {
+      toast.success("📧 Notification envoyée à l'enseignant", {
         description: `L'enseignant recevra ${journal.status === 'VALIDATED' ? 'la version validée' : 'le rejet'} avec vos observations par email, WhatsApp et SMS.`,
       });
       setHasBeenSent(true);
     } catch (err: any) {
-      toast.error('Erreur lors de l'envoi', { description: err.message });
+      toast.error("Erreur lors de l'envoi", { description: err.message });
     } finally {
       setSendingToTeacher(false);
     }

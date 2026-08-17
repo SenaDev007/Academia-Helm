@@ -44,6 +44,8 @@ import apiClient from "@/lib/api/client";
 import { CahierJournalTab } from "./CahierJournalTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { CatalogueTab } from "./CatalogueTab";
+import { useModuleContext } from "@/hooks/useModuleContext";
+import { useAppSession } from "@/contexts/AppSessionContext";
 
 type SubTab = "cahier" | "fiches" | "catalogue";
 
@@ -60,6 +62,21 @@ export function CahierJournalFichesContainer({
 }: CahierJournalFichesContainerProps) {
   const [subTab, setSubTab] = useState<SubTab>("cahier");
   const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
+  // ⭐ Niveau scolaire actif + rôle pour restreindre le Catalogue aux enseignants
+  //    Maternelle/Primaire (le Secondaire n'a pas de cahier journal ni fiches).
+  const { schoolLevel } = useModuleContext();
+  const { user } = useAppSession();
+  const schoolLevelCode = (schoolLevel?.code || '').toUpperCase();
+  const isSecondaryLevel =
+    schoolLevelCode.includes('SECOND') ||
+    schoolLevelCode.includes('COLLEGE') ||
+    schoolLevelCode.includes('LYCEE');
+  const GLOBAL_ACCESS_ROLES = new Set([
+    'PROMOTER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN', 'SUPER_ADMIN',
+  ]);
+  const hasGlobalAccess = GLOBAL_ACCESS_ROLES.has((user?.role || '').toUpperCase());
+  // ⭐ Le Catalogue n'est visible que pour Maternelle/Primaire OU accès global
+  const showCatalogue = !isSecondaryLevel || hasGlobalAccess;
   const [currentJournalMeta, setCurrentJournalMeta] = useState<{
     weekStartDate?: string;
     weekEndDate?: string;
@@ -124,6 +141,14 @@ export function CahierJournalFichesContainer({
     [],
   );
 
+  // ⭐ Si le Catalogue est masqué (enseignant Secondaire) mais que subTab est
+  //    encore "catalogue", on revient à "cahier" pour éviter un écran vide.
+  useEffect(() => {
+    if (subTab === "catalogue" && !showCatalogue) {
+      setSubTab("cahier");
+    }
+  }, [subTab, showCatalogue]);
+
   // L'utilisateur clique sur "Préparer la fiche pour [jour] [matière]"
   // On bascule vers l'onglet Fiches avec un payload initial
   const handlePrepareFicheFor = useCallback(
@@ -181,18 +206,22 @@ export function CahierJournalFichesContainer({
         </button>
         {/* ⭐ 3e sous-onglet : Catalogue des années antérieures */}
         {/*    Vue hiérarchique type Explorateur Windows : Année → Trimestre → Mois → Semaine */}
-        <button
-          onClick={() => setSubTab("catalogue")}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-all",
-            subTab === "catalogue"
-              ? "bg-white text-blue-600 shadow-sm"
-              : "text-slate-500 hover:text-slate-700",
-          )}
-        >
-          <FolderOpen className="h-4 w-4" />
-          <span>Catalogue</span>
-        </button>
+        {/*    Masqué pour les enseignants Secondaire (le catalogue ne contient que des */}
+        {/*    cahiers journaux + fiches = réservés Maternelle/Primaire). */}
+        {showCatalogue && (
+          <button
+            onClick={() => setSubTab("catalogue")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-all",
+              subTab === "catalogue"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700",
+            )}
+          >
+            <FolderOpen className="h-4 w-4" />
+            <span>Catalogue</span>
+          </button>
+        )}
 
         {currentJournalMeta && (
           <div className="ml-auto text-xs text-slate-500 px-3 hidden sm:flex items-center gap-2">
@@ -301,14 +330,17 @@ export function CahierJournalFichesContainer({
         {/* ⭐ 3e sous-onglet : Catalogue des années antérieures */}
         {/*    Le composant est TOUJOURS monté mais caché via CSS pour éviter */}
         {/*    le rechargement du catalogue à chaque switch d'onglet. */}
-        <div className={subTab === "catalogue" ? "" : "hidden"}>
-          <CatalogueTab
-            tenantId={tenantId}
-            academicYearId={academicYearId}
-            teacherId={teacherId}
-            onViewFiche={handleViewFiche}
-          />
-        </div>
+        {/*    Masqué pour les enseignants Secondaire (showCatalogue=false). */}
+        {showCatalogue && (
+          <div className={subTab === "catalogue" ? "" : "hidden"}>
+            <CatalogueTab
+              tenantId={tenantId}
+              academicYearId={academicYearId}
+              teacherId={teacherId}
+              onViewFiche={handleViewFiche}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16297,6 +16297,13 @@ model PrimaryPedagogicalFiche {
   // Signatures
   teacherSignature   String?
   directorSignature  String?
+  // ⭐ Observations du directeur (validation direction)
+  //    directorObservation : observation générale (texte riche HTML)
+  //    directorSectionObservations : observations par section (JSON)
+  //    directorSignatureDate : date de signature du directeur
+  directorObservation           String?
+  directorSectionObservations   Json?    @default("{}")
+  directorSignatureDate         DateTime?
 
   // Workflow
   status             String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED

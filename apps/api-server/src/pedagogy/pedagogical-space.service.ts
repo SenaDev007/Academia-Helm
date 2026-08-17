@@ -1253,6 +1253,42 @@ export class PedagogicalSpaceService {
 
       </div>
 
+      <!-- ═══ OBSERVATIONS DU DIRECTEUR (si VALIDATED ou REJECTED) ═══ -->
+      ${(() => {
+        // ⭐ Observations par section (in-line, en rouge)
+        let sectionObs = fiche.directorSectionObservations;
+        if (typeof sectionObs === 'string') { try { sectionObs = JSON.parse(sectionObs); } catch { sectionObs = {}; } }
+        const sectionLabels: Record<string, string> = {
+          phase_preparatoire: 'Phase préparatoire',
+          deroulement: 'Déroulement',
+          retour_projection: 'Retour et projection',
+        };
+        let sectionObsHtml = '';
+        if (sectionObs && typeof sectionObs === 'object') {
+          for (const [key, val] of Object.entries(sectionObs)) {
+            if (val && String(val).trim()) {
+              sectionObsHtml += `<tr><td style="border:1px solid #fca5a5;padding:4px;width:30%;font-weight:bold;background:#fef2f2;color:#dc2626;">${sectionLabels[key] || key}</td><td style="border:1px solid #fca5a5;padding:4px;color:#dc2626;">${String(val)}</td></tr>`;
+            }
+          }
+        }
+        // Observation générale
+        const hasGeneralObs = fiche.directorObservation && String(fiche.directorObservation).trim();
+        // Motif de rejet
+        const hasRejectionReason = fiche.status === 'REJECTED' && fiche.rejectionReason;
+        if (sectionObsHtml || hasGeneralObs || hasRejectionReason) {
+          return `
+      <div style="margin-top:10px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS DU DIRECTEUR</div>
+        <div style="border:1px solid #fca5a5;border-top:none;border-radius:0 0 3px 3px;padding:8px;">
+          ${sectionObsHtml ? `<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:6px;">${sectionObsHtml}</table>` : ''}
+          ${hasGeneralObs ? `<div style="font-size:9px;font-weight:bold;color:#dc2626;margin-bottom:2px;">Observation générale</div><div style="font-size:9px;color:#dc2626;padding:4px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;">${fiche.directorObservation.replace(/<[^>]*>/g, '')}</div>` : ''}
+          ${hasRejectionReason ? `<div style="font-size:9px;font-weight:bold;color:#dc2626;margin-top:4px;">Motif du rejet</div><div style="font-size:9px;color:#dc2626;padding:4px;background:#fee2e2;border:1px solid #fecaca;border-radius:3px;">${fiche.rejectionReason}</div>` : ''}
+        </div>
+      </div>`;
+        }
+        return '';
+      })()}
+
       <!-- ═══ SIGNATURES ═══ -->
       <div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
         <div style="text-align:center;width:45%;">
@@ -7545,7 +7581,12 @@ td.name{text-align:left;font-weight:bold;}
         const val = dayEntries[subj] || '';
         html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td>`;
       }
-      html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}</td></tr>`;
+      html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}`;
+      // ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant)
+      if (dayEntries['directorObservation']) {
+        html += `<div style="margin-top:4px;padding:3px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;"><div style="font-size:7px;font-weight:bold;color:#dc2626;text-transform:uppercase;margin-bottom:2px;">Observation du Directeur</div><div style="font-size:8px;color:#dc2626;">${strip(dayEntries['directorObservation'])}</div></div>`;
+      }
+      html += `</td></tr>`;
     }
     html += '</tbody></table></div>';
 
@@ -7554,6 +7595,20 @@ td.name{text-align:left;font-weight:bold;}
       html += `<div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS GÉNÉRALES</div>
         <div style="border:1px solid #0A2A5E;border-top:none;padding:8px;font-size:9px;">${strip(j.observations)}</div>
+      </div>`;
+    }
+
+    // ═══ OBSERVATION GÉNÉRALE DU DIRECTEUR (si VALIDATED/REJECTED, en rouge) ═══
+    if ((j.status === 'VALIDATED' || j.status === 'REJECTED') && j.observations) {
+      html += `<div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATION DU DIRECTEUR</div>
+        <div style="border:1px solid #fca5a5;border-top:none;padding:8px;font-size:9px;color:#dc2626;font-weight:bold;">${strip(j.observations)}</div>
+      </div>`;
+    }
+    if (j.status === 'REJECTED' && j.rejectionReason) {
+      html += `<div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">MOTIF DU REJET</div>
+        <div style="border:1px solid #fca5a5;border-top:none;padding:8px;font-size:9px;color:#dc2626;">${strip(j.rejectionReason)}</div>
       </div>`;
     }
 

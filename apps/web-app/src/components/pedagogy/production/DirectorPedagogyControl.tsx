@@ -1337,14 +1337,22 @@ function CahierJournalDirectorDetail({
   const [exportingFiche, setExportingFiche] = useState<string | null>(null);
 
   // ⭐ Charger les fiches pédagogiques rattachées à ce cahier journal
+  //    ⚠️ Utiliser fetch() (BFF proxy) au lieu de apiClient.get() (direct backend)
+  //    car le BFF proxy gère l'auth via cookies (getProxyAuthHeaders), tandis que
+  //    apiClient.get() utilise le token localStorage qui peut être stale.
   useEffect(() => {
     if (!journal.id) return;
     let cancelled = false;
     (async () => {
       setFichesLoading(true);
       try {
-        const res = await apiClient.get(`/pedagogy-space/cahier-journal/${journal.id}/fiches`);
-        if (!cancelled) setFiches(res.data);
+        const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/fiches`, {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) setFiches(data);
       } catch {
         if (!cancelled) setFichesData(null);
       } finally {

@@ -149,8 +149,9 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
   try {
     const apiUrl = getApiBaseUrl();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout (était 3s — trop court)
 
+    // ⭐ Essayer d'abord by-subdomain (qui accepte slug OU subdomain OU UUID)
     const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
       method: 'GET',
       headers: {
@@ -163,21 +164,44 @@ async function resolveTenant(subdomain: string): Promise<{ id: string; slug: str
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      // ⭐ Fallback : si by-subdomain échoue (404), essayer by-slug
+      if (response.status === 404) {
+        const fallbackController = new AbortController();
+        const fallbackTimeout = setTimeout(() => fallbackController.abort(), 3000);
+        const fallbackResponse = await fetch(`${apiUrl}/tenants/by-slug/${subdomain}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          signal: fallbackController.signal,
+        });
+        clearTimeout(fallbackTimeout);
+        if (!fallbackResponse.ok) return null;
+        const fallbackTenant = await fallbackResponse.json();
+        if (!fallbackTenant || (fallbackTenant.subscriptionStatus === 'PENDING' || fallbackTenant.subscriptionStatus === 'TERMINATED')) {
+          return null;
+        }
+        return fallbackTenant;
+      }
       return null;
     }
 
     const tenant = await response.json();
 
+    // ⭐ Accepter ACTIVE_SUBSCRIBED comme statut valide
+    // (avant, on rejetait si subscriptionStatus n'était pas défini ET status !== 'active')
+    // Maintenant on accepte : subscriptionStatus = ACTIVE_SUBSCRIBED OU status = 'active'
     if (tenant.subscriptionStatus === 'PENDING' || tenant.subscriptionStatus === 'TERMINATED') {
       return null;
     }
-    if (!tenant.subscriptionStatus && (tenant.status !== 'active' && tenant.status !== 'trial')) {
+    // Accepter si subscriptionStatus est défini et actif, OU si status est active/trial
+    if (!tenant.subscriptionStatus && tenant.status !== 'active' && tenant.status !== 'trial') {
       return null;
     }
 
     return tenant;
   } catch (error) {
     // Timeout ou erreur réseau — ne pas bloquer le rendu
+    console.warn('resolveTenant error (non-blocking):', error instanceof Error ? error.message : String(error));
     return null;
   }
 }

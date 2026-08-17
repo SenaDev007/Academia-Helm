@@ -1148,8 +1148,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       expiresAt: data.expiresAt,
     });
 
+    // ⭐ FIX : utiliser le slug du tenant retourné par l'API (data.tenant.slug)
+    //    plutôt que tenantSlug de l'URL qui peut être un UUID ou un slug
+    //    incomplet. Si data.tenant.slug existe, c'est le slug canonique
+    //    (ex: "cspeb-eveildafriqueeducation"). Sinon, fallback sur l'UUID.
+    const effectiveSlug = data.tenant?.slug || data.tenant?.subdomain || tenantSlug || data.tenant?.id || tenantIdForApi;
     const redirectUrl = getTenantRedirectUrl({
-      tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+      tenantSlug: effectiveSlug,
       tenantId: tenantIdForApi,
       path: redirectPath,
       portalType: 'TEACHER',

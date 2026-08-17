@@ -2511,24 +2511,100 @@ export class PedagogicalSpaceService {
 
   /**
    * Catalogue hiérarchique des cahiers journaux + fiches pédagogiques
-   * d'un enseignant (ou d'une classe pour le directeur), sur TOUTES les
-   * années scolaires du tenant.
+   * d'un enseignant (ou de toutes les classes pour le directeur/promoteur),
+   * sur TOUTES les années scolaires du tenant.
    *
    * Le catalogue est organisé comme un explorateur Windows :
-   *   Année → Trimestre → Mois → Semaine (cahier journal + fiches jointes)
+   *   Classe → Année → Trimestre → Mois → Semaine (cahier journal + fiches jointes)
+   *
+   * ⭐ UX différente selon le rôle :
+   *   - Enseignant : ne voit QUE les classes qui lui sont assignées
+   *     (via teacher_class_assignments).
+   *   - Promoteur / Directeur / Admin plateforme : voit TOUTES les classes
+   *     du tenant (vue superviseur pour audit / réutilisation cross-année).
    *
    * @param tenantId  ID du tenant
    * @param teacherId ID du User (PROMOTER/DIRECTOR/TEACHER) — résolu en teacherId
-   * @param classId   Optionnel — filtre par classe si fourni
+   * @param classId   Optionnel — filtre pour ne voir qu'une seule classe
    */
   async getCatalogue(tenantId: string, teacherId: string, classId?: string) {
     // 1. Résoudre le filtre enseignant (mode "teacher" ou mode "direction")
     const filter = await this.resolveTeacherFilter(tenantId, teacherId);
     if (filter.mode === 'none') {
-      return { academicYears: [] };
+      return { classes: [] };
     }
 
-    // 2. Charger TOUTES les années scolaires du tenant (triées par date de début DESC)
+    // 2. Déterminer la liste des classes à afficher dans le catalogue
+    //    - Mode "teacher" : classes assignées à l'enseignant
+    //    - Mode "all" (direction/promoteur) : toutes les classes du tenant
+    let classesToList: { id: string; name: string; code: string | null; schoolLevelId: string | null; schoolLevelName: string | null; schoolLevelCode: string | null }[] = [];
+
+    if (filter.mode === 'teacher') {
+      // Récupérer les classes assignées à l'enseignant (toutes années confondues
+      // pour le catalogue cross-year — un enseignant peut avoir eu la même classe
+      // pendant plusieurs années).
+      const assignments: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT c."id", c."name", c."code", c."schoolLevelId",
+                sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode"
+         FROM "teacher_class_assignments" tca
+         JOIN "classes" c ON c."id" = tca."classId"
+         LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+         WHERE tca."tenantId" = $1 AND tca."teacherId" = $2
+         ORDER BY sl."name" ASC NULLS LAST, c."name" ASC`,
+        tenantId, filter.teacherId,
+      );
+      classesToList = assignments.map((a: any) => ({
+        id: a.id, name: a.name, code: a.code,
+        schoolLevelId: a.schoolLevelId, schoolLevelName: a.schoolLevelName, schoolLevelCode: a.schoolLevelCode,
+      }));
+      // ⭐ En mode teacher, on AJOUTE aussi les classes qui ont des cahiers journaux
+      //    ou fiches à son nom (au cas où l'assignment ait été supprimé mais qu'il
+      //    reste des données historiques).
+      const classesWithJournals: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT c."id", c."name", c."code", c."schoolLevelId",
+                sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode"
+         FROM "cahier_journal_entries" cj
+         JOIN "classes" c ON c."id" = cj."classId"
+         LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+         WHERE cj."tenantId" = $1 AND cj."teacherId" = $2
+           AND c."id" NOT IN (SELECT "classId" FROM "teacher_class_assignments" WHERE "tenantId" = $1 AND "teacherId" = $2)
+         ORDER BY sl."name" ASC NULLS LAST, c."name" ASC`,
+        tenantId, filter.teacherId,
+      );
+      for (const c of classesWithJournals) {
+        classesToList.push({
+          id: c.id, name: c.name, code: c.code,
+          schoolLevelId: c.schoolLevelId, schoolLevelName: c.schoolLevelName, schoolLevelCode: c.schoolLevelCode,
+        });
+      }
+    } else {
+      // Mode direction : toutes les classes du tenant
+      const allClasses: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT c."id", c."name", c."code", c."schoolLevelId",
+                sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode"
+         FROM "classes" c
+         LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+         WHERE c."tenantId" = $1
+         ORDER BY sl."name" ASC NULLS LAST, c."name" ASC`,
+        tenantId,
+      );
+      classesToList = allClasses.map((c: any) => ({
+        id: c.id, name: c.name, code: c.code,
+        schoolLevelId: c.schoolLevelId, schoolLevelName: c.schoolLevelName, schoolLevelCode: c.schoolLevelCode,
+      }));
+    }
+
+    // 3. Filtrer par classId si fourni (vue mono-classe)
+    if (classId) {
+      classesToList = classesToList.filter(c => c.id === classId);
+    }
+
+    if (classesToList.length === 0) {
+      return { classes: [] };
+    }
+
+    // 4. Charger TOUTES les années scolaires du tenant (une seule fois —
+    //    elles sont partagées entre toutes les classes)
     const years: any[] = await this.prisma.$queryRawUnsafe(
       `SELECT id, name, label, "startDate", "endDate", "isActive"
        FROM "academic_years"
@@ -2537,106 +2613,109 @@ export class PedagogicalSpaceService {
       tenantId,
     );
     if (!years || years.length === 0) {
-      return { academicYears: [] };
+      return { classes: [] };
     }
 
-    // 3. Pour chaque année, charger les cahiers journaux (filtrés par enseignant + classe)
-    //    + les fiches pédagogiques liées (filtrées pareil).
-    //    On fait les 2 requêtes en parallèle pour chaque année.
+    // 5. Pour chaque classe, construire l'arbre années → trimestres → mois → semaines
+    const classes = [];
+    for (const cls of classesToList) {
+      const academicYears = await this.buildClassCatalogueForYears(
+        tenantId, cls.id, years, filter,
+      );
+      classes.push({
+        id: cls.id,
+        name: cls.name,
+        code: cls.code,
+        schoolLevelId: cls.schoolLevelId,
+        schoolLevelName: cls.schoolLevelName,
+        schoolLevelCode: cls.schoolLevelCode,
+        academicYears,
+      });
+    }
+
+    return { classes };
+  }
+
+  /**
+   * Helper privé : construit l'arbre années → trimestres → mois → semaines
+   * pour UNE classe donnée, sur TOUTES les années scolaires fournies.
+   *
+   * @param tenantId  ID du tenant
+   * @param classId   ID de la classe à filtrer
+   * @param years     Liste des années (déjà chargées — évite N requêtes)
+   * @param filter    Filtre enseignant ({mode:'teacher',teacherId} ou {mode:'all'})
+   * @returns Tableau d'années avec trimestres → mois → semaines
+   */
+  private async buildClassCatalogueForYears(
+    tenantId: string,
+    classId: string,
+    years: any[],
+    filter: { mode: 'teacher'; teacherId: string } | { mode: 'all' },
+  ): Promise<any[]> {
     const academicYears = [];
+    const MONTH_LABELS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+                          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
     for (const year of years) {
-      // 3a. Cahiers journaux de l'année
+      // 1a. Cahiers journaux de cette classe + année (+ filtre enseignant si mode teacher)
       let journals: any[] = [];
       try {
         const journalQuery = filter.mode === 'teacher'
-          ? (classId
-              ? `SELECT cj.*, c."name" as "classNameResolved",
-                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-                 FROM "cahier_journal_entries" cj
-                 LEFT JOIN classes c ON c."id" = cj."classId"
-                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
-                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
-                   AND cj."teacherId" = $3 AND cj."classId" = $4
-                 ORDER BY cj."weekStartDate" ASC`
-              : `SELECT cj.*, c."name" as "classNameResolved",
-                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-                 FROM "cahier_journal_entries" cj
-                 LEFT JOIN classes c ON c."id" = cj."classId"
-                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
-                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
-                   AND cj."teacherId" = $3
-                 ORDER BY cj."weekStartDate" ASC`)
-          : (classId
-              ? `SELECT cj.*, c."name" as "classNameResolved",
-                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-                 FROM "cahier_journal_entries" cj
-                 LEFT JOIN classes c ON c."id" = cj."classId"
-                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
-                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
-                   AND cj."classId" = $3
-                 ORDER BY cj."weekStartDate" ASC`
-              : `SELECT cj.*, c."name" as "classNameResolved",
-                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-                 FROM "cahier_journal_entries" cj
-                 LEFT JOIN classes c ON c."id" = cj."classId"
-                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
-                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
-                 ORDER BY cj."weekStartDate" ASC`);
+          ? `SELECT cj.*, c."name" as "classNameResolved",
+                    t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+             FROM "cahier_journal_entries" cj
+             LEFT JOIN classes c ON c."id" = cj."classId"
+             LEFT JOIN teachers t ON t."id" = cj."teacherId"
+             WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+               AND cj."classId" = $3 AND cj."teacherId" = $4
+             ORDER BY cj."weekStartDate" ASC`
+          : `SELECT cj.*, c."name" as "classNameResolved",
+                    t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+             FROM "cahier_journal_entries" cj
+             LEFT JOIN classes c ON c."id" = cj."classId"
+             LEFT JOIN teachers t ON t."id" = cj."teacherId"
+             WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+               AND cj."classId" = $3
+             ORDER BY cj."weekStartDate" ASC`;
         const journalParams = filter.mode === 'teacher'
-          ? (classId ? [tenantId, year.id, filter.teacherId, classId] : [tenantId, year.id, filter.teacherId])
-          : (classId ? [tenantId, year.id, classId] : [tenantId, year.id]);
+          ? [tenantId, year.id, classId, filter.teacherId]
+          : [tenantId, year.id, classId];
         journals = await this.prisma.$queryRawUnsafe(journalQuery, ...journalParams);
       } catch (err: any) {
-        this.logger.warn(`getCatalogue: failed to load journals for year ${year.id}: ${err.message}`);
+        this.logger.warn(`buildClassCatalogueForYears: journals failed for year ${year.id} class ${classId}: ${err.message}`);
         journals = [];
       }
 
-      // 3b. Fiches pédagogiques de l'année
+      // 1b. Fiches pédagogiques de cette classe + année
       let fiches: any[] = [];
       try {
         const ficheQuery = filter.mode === 'teacher'
-          ? (classId
-              ? `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
-                        f.status, f."className", f."cahierJournalId", f."subjectId",
-                        f."teacherId", f."classId"
-                 FROM "primary_pedagogical_fiches" f
-                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
-                   AND f."teacherId" = $3 AND f."classId" = $4
-                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`
-              : `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
-                        f.status, f."className", f."cahierJournalId", f."subjectId",
-                        f."teacherId", f."classId"
-                 FROM "primary_pedagogical_fiches" f
-                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
-                   AND f."teacherId" = $3
-                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`)
-          : (classId
-              ? `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
-                        f.status, f."className", f."cahierJournalId", f."subjectId",
-                        f."teacherId", f."classId"
-                 FROM "primary_pedagogical_fiches" f
-                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
-                   AND f."classId" = $3
-                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`
-              : `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
-                        f.status, f."className", f."cahierJournalId", f."subjectId",
-                        f."teacherId", f."classId"
-                 FROM "primary_pedagogical_fiches" f
-                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
-                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`);
+          ? `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                    f.status, f."className", f."cahierJournalId", f."subjectId",
+                    f."teacherId", f."classId"
+             FROM "primary_pedagogical_fiches" f
+             WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+               AND f."classId" = $3 AND f."teacherId" = $4
+             ORDER BY f."lessonDate" ASC, f."adminDate" ASC`
+          : `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                    f.status, f."className", f."cahierJournalId", f."subjectId",
+                    f."teacherId", f."classId"
+             FROM "primary_pedagogical_fiches" f
+             WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+               AND f."classId" = $3
+             ORDER BY f."lessonDate" ASC, f."adminDate" ASC`;
         const ficheParams = filter.mode === 'teacher'
-          ? (classId ? [tenantId, year.id, filter.teacherId, classId] : [tenantId, year.id, filter.teacherId])
-          : (classId ? [tenantId, year.id, classId] : [tenantId, year.id]);
+          ? [tenantId, year.id, classId, filter.teacherId]
+          : [tenantId, year.id, classId];
         fiches = await this.prisma.$queryRawUnsafe(ficheQuery, ...ficheParams);
       } catch (err: any) {
-        this.logger.warn(`getCatalogue: failed to load fiches for year ${year.id}: ${err.message}`);
+        this.logger.warn(`buildClassCatalogueForYears: fiches failed for year ${year.id} class ${classId}: ${err.message}`);
         fiches = [];
       }
 
       if (journals.length === 0 && fiches.length === 0) {
-        // Année vide pour cet enseignant/classe — on l'inclut quand même pour
-        // montrer qu'elle existe (l'utilisateur peut cliquer dessus et voir
-        // un dossier vide). Mais on ne met aucun trimestre.
+        // Année vide pour cette classe — on l'inclut quand même pour montrer
+        // qu'elle existe (l'utilisateur peut cliquer dessus et voir un dossier vide).
         academicYears.push({
           id: year.id,
           name: year.name,
@@ -2649,7 +2728,7 @@ export class PedagogicalSpaceService {
         continue;
       }
 
-      // 4. Construire l'arbre trimestres → mois → semaines
+      // 2. Construire l'arbre trimestres → mois → semaines
       const trimestersMap: Record<number, {
         trimester: number;
         label: string;
@@ -2660,12 +2739,10 @@ export class PedagogicalSpaceService {
         2: { trimester: 2, label: 'Deuxième trimestre', dateRange: { start: null, end: null }, monthsMap: {} },
         3: { trimester: 3, label: 'Troisième trimestre', dateRange: { start: null, end: null }, monthsMap: {} },
       };
-      const MONTH_LABELS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-                            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
 
       // Indexer les fiches par cahierJournalId pour les associer aux semaines
       const fichesByJournal: Record<string, any[]> = {};
-      const fichesUnattached: any[] = []; // fiches sans cahierJournalId (à ranger par date)
+      const fichesUnattached: any[] = []; // fiches sans cahierJournalId
       for (const fiche of fiches) {
         if (fiche.cahierJournalId) {
           if (!fichesByJournal[fiche.cahierJournalId]) {
@@ -2677,8 +2754,7 @@ export class PedagogicalSpaceService {
         }
       }
 
-      // 4a. Pour chaque cahier journal, le placer dans le bon mois/trimestre
-      const usedFicheIds = new Set<string>();
+      // 2a. Pour chaque cahier journal, le placer dans le bon mois/trimestre
       for (const journal of journals) {
         const weekStart = new Date(journal.weekStartDate);
         const month = weekStart.getMonth() + 1; // 1-12
@@ -2699,7 +2775,6 @@ export class PedagogicalSpaceService {
 
         // Associer les fiches liées à ce cahier journal
         const linkedFiches = fichesByJournal[journal.id] || [];
-        for (const f of linkedFiches) usedFicheIds.add(f.id);
 
         trimestersMap[trimester].monthsMap[month].weeks.push({
           weekStartDate: journal.weekStartDate,
@@ -2730,8 +2805,7 @@ export class PedagogicalSpaceService {
         });
       }
 
-      // 4b. Ranger les fiches "non attachées" à un cahier journal
-      //     par date (lessonDate ou adminDate) dans le bon mois/trimestre
+      // 2b. Ranger les fiches "non attachées" à un cahier journal
       for (const fiche of fichesUnattached) {
         const dateStr = fiche.lessonDate || fiche.adminDate;
         if (!dateStr) continue; // on ignore les fiches sans date
@@ -2744,7 +2818,6 @@ export class PedagogicalSpaceService {
         }
 
         // Chercher une semaine dans ce mois qui chevauche la date de la fiche
-        // Si trouvée, on y rattache la fiche. Sinon, on crée une "semaine virtuelle".
         const existingWeek = trimestersMap[trimester].monthsMap[month].weeks.find(w => {
           const ws = new Date(w.weekStartDate);
           const we = new Date(w.weekEndDate);
@@ -2753,15 +2826,9 @@ export class PedagogicalSpaceService {
 
         if (existingWeek) {
           existingWeek.fiches.push({
-            id: fiche.id,
-            sheetType: fiche.sheetType,
-            titre: fiche.titre,
-            cours: fiche.cours,
-            lessonDate: fiche.lessonDate,
-            adminDate: fiche.adminDate,
-            status: fiche.status,
-            className: fiche.className,
-            subjectId: fiche.subjectId,
+            id: fiche.id, sheetType: fiche.sheetType, titre: fiche.titre,
+            cours: fiche.cours, lessonDate: fiche.lessonDate, adminDate: fiche.adminDate,
+            status: fiche.status, className: fiche.className, subjectId: fiche.subjectId,
           });
         } else {
           // Semaine virtuelle (sans cahier journal) — juste pour la fiche
@@ -2774,25 +2841,18 @@ export class PedagogicalSpaceService {
             weekEndDate: we.toISOString().substring(0, 10),
             cahierJournal: null,
             fiches: [{
-              id: fiche.id,
-              sheetType: fiche.sheetType,
-              titre: fiche.titre,
-              cours: fiche.cours,
-              lessonDate: fiche.lessonDate,
-              adminDate: fiche.adminDate,
-              status: fiche.status,
-              className: fiche.className,
-              subjectId: fiche.subjectId,
+              id: fiche.id, sheetType: fiche.sheetType, titre: fiche.titre,
+              cours: fiche.cours, lessonDate: fiche.lessonDate, adminDate: fiche.adminDate,
+              status: fiche.status, className: fiche.className, subjectId: fiche.subjectId,
             }],
           });
         }
       }
 
-      // 5. Convertir les Maps en Arrays triés
+      // 3. Convertir les Maps en Arrays triés
       const trimesters = [1, 2, 3].map(t => {
         const tData = trimestersMap[t];
         const months = Object.values(tData.monthsMap).sort((a, b) => a.month - b.month);
-        // Trier les semaines de chaque mois par date croissante
         for (const m of months) {
           m.weeks.sort((a, b) => new Date(a.weekStartDate).getTime() - new Date(b.weekStartDate).getTime());
         }
@@ -2815,7 +2875,7 @@ export class PedagogicalSpaceService {
       });
     }
 
-    return { academicYears };
+    return academicYears;
   }
 
   /// Met à jour une entrée du cahier journal (grille, observations, etc.)

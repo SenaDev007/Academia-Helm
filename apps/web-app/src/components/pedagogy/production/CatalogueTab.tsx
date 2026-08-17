@@ -71,6 +71,11 @@ interface CatalogueTabProps {
   onViewFiche?: (ficheId: string) => void;
 }
 
+// ⭐ Type du chemin de navigation dans l'arbre hiérarchique
+//    Niveaux : class → year → trimester → month
+type NavLevel = "class" | "year" | "trimester" | "month";
+type NavStep = { type: NavLevel; id: string; label: string };
+
 // ⭐ Libellés + icônes + couleurs pour les types de fiche
 const SHEET_LABELS: Record<string, { label: string; icon: any; color: string }> = {
   MATH: { label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700" },
@@ -105,11 +110,12 @@ function formatDateShort(dateStr: string): string {
 // ============================================================================
 
 export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche }: CatalogueTabProps) {
-  const [data, setData] = useState<{ academicYears: any[] } | null>(null);
+  const [data, setData] = useState<{ classes: any[] } | null>(null);
   const [loading, setLoading] = useState(true);
   // ⭐ Chemin de navigation dans l'arbre ( breadcrumbs)
-  //    Ex: [{type:'year', id:'abc'}, {type:'trimester', id:'1'}, {type:'month', id:'9'}]
-  const [path, setPath] = useState<{ type: "year" | "trimester" | "month"; id: string; label: string }[]>([]);
+  //    Ex: [{type:'class', id:'abc', label:'CP1'}, {type:'year', id:'2025', label:'2025-2026'},
+  //         {type:'trimester', id:'1', label:'Premier trimestre'}, {type:'month', id:'9', label:'Septembre'}]
+  const [path, setPath] = useState<NavStep[]>([]);
   // ⭐ Cahier journal en cours de visualisation inline (null = vue arbre)
   const [viewedJournal, setViewedJournal] = useState<any>(null);
   // ⭐ IDs en cours de duplication (pour désactiver les boutons)
@@ -144,22 +150,22 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
   }, [load]);
 
   // === NAVIGATION ===
-  const navigateTo = (folder: { type: "year" | "trimester" | "month"; id: string; label: string }) => {
+  const navigateTo = (folder: NavStep) => {
     // Tronquer le path jusqu'au niveau parent du folder
-    const typeOrder = { year: 0, trimester: 1, month: 2 };
+    const typeOrder: Record<NavLevel, number> = { class: 0, year: 1, trimester: 2, month: 3 };
     const newLevel = typeOrder[folder.type];
     const truncated = path.filter(p => typeOrder[p.type] < newLevel);
     setPath([...truncated, folder]);
     setViewedJournal(null);
   };
 
-  const navigateUp = (level: "year" | "trimester" | "month" | "root") => {
+  const navigateUp = (level: NavLevel | "root") => {
     if (level === "root") {
       setPath([]);
       setViewedJournal(null);
       return;
     }
-    const typeOrder = { year: 0, trimester: 1, month: 2 };
+    const typeOrder: Record<NavLevel, number> = { class: 0, year: 1, trimester: 2, month: 3 };
     const targetLevel = typeOrder[level];
     setPath(path.filter(p => typeOrder[p.type] <= targetLevel));
     setViewedJournal(null);
@@ -309,13 +315,13 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
     );
   }
 
-  if (!data || !data.academicYears || data.academicYears.length === 0) {
+  if (!data || !data.classes || data.classes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-500">
         <FolderOpen className="h-12 w-12 text-slate-300 mb-3" />
         <p className="font-medium">Catalogue vide</p>
         <p className="text-sm text-slate-400 mt-1">
-          Aucun cahier journal ou fiche pédagogique trouvé pour votre compte.
+          Aucune classe ni cahier journal ou fiche pédagogique trouvé pour votre compte.
           Commencez par enregistrer un cahier journal ou créer une fiche.
         </p>
       </div>
@@ -335,11 +341,22 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
   }
 
   // ⭐ Trouver le niveau courant dans l'arbre
+  const currentClass = path.find(p => p.type === "class");
   const currentYear = path.find(p => p.type === "year");
   const currentTrimester = path.find(p => p.type === "trimester");
   const currentMonth = path.find(p => p.type === "month");
 
-  const yearData = currentYear ? data.academicYears.find(y => y.id === currentYear.id) : null;
+  // ⭐ Donnée de la classe courante (racine du sous-arbre années)
+  const classData = currentClass ? data.classes.find(c => c.id === currentClass.id) : null;
+  // ⭐ Pour rétrocompatibilité : si pas de currentClass mais que data.classes a 1 seule classe,
+  //    on la prend automatiquement (cas ancien appel sans niveau class)
+  const effectiveClass = currentClass
+    ? classData
+    : (data.classes.length === 1 ? data.classes[0] : null);
+
+  const yearData = currentYear && effectiveClass
+    ? effectiveClass.academicYears.find((y: any) => y.id === currentYear.id)
+    : null;
   const trimesterData = currentYear && yearData && currentTrimester
     ? yearData.trimesters.find((t: any) => String(t.trimester) === currentTrimester.id)
     : null;
@@ -358,6 +375,19 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
           <FolderOpen className="h-3.5 w-3.5 text-amber-600" />
           Catalogue
         </button>
+        {/* ⭐ Niveau CLASSE (nouveau) */}
+        {(effectiveClass || currentClass) && (
+          <>
+            <ChevronRight className="h-3 w-3 text-slate-400" />
+            <button
+              onClick={() => navigateUp("class")}
+              className="flex items-center gap-1.5 px-2 py-1 font-semibold text-slate-700 hover:bg-slate-200 rounded"
+            >
+              <Users className="h-3.5 w-3.5 text-indigo-600" />
+              {(effectiveClass || currentClass)?.label || (effectiveClass || currentClass)?.name}
+            </button>
+          </>
+        )}
         {currentYear && (
           <>
             <ChevronRight className="h-3 w-3 text-slate-400" />
@@ -396,40 +426,91 @@ export function CatalogueTab({ tenantId, academicYearId, teacherId, onViewFiche 
         )}
       </div>
 
-      {/* === NIVEAU RACINE : liste des années === */}
-      {!currentYear && (
+      {/* === NIVEAU RACINE : liste des CLASSES === */}
+      {/*    Affiché quand aucune classe n'est sélectionnée ET qu'il y a plusieurs classes. */}
+      {/*    S'il n'y a qu'une seule classe, on saute directement au niveau année. */}
+      {!currentClass && data.classes.length > 1 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {data.academicYears.map((year: any) => {
-            const trimesterCount = year.trimesters?.length || 0;
-            const weekCount = year.trimesters?.reduce(
-              (s: number, t: any) => s + t.months.reduce((ms: number, m: any) => ms + m.weeks.length, 0), 0
+          {data.classes.map((cls: any) => {
+            // Compter le total de semaines et de fiches sur toutes les années
+            const totalWeeks = cls.academicYears?.reduce(
+              (s: number, y: any) => s + y.trimesters.reduce(
+                (ts: number, t: any) => ts + t.months.reduce((ms: number, m: any) => ms + m.weeks.length, 0), 0
+              ), 0
             ) || 0;
-            const isActive = year.isActive;
+            const totalFiches = cls.academicYears?.reduce(
+              (s: number, y: any) => s + y.trimesters.reduce(
+                (ts: number, t: any) => ts + t.months.reduce(
+                  (ms: number, m: any) => ms + m.weeks.reduce((ws: number, w: any) => ws + (w.fiches?.length || 0), 0), 0
+                ), 0
+              ), 0
+            ) || 0;
+            const hasActiveYear = cls.academicYears?.some((y: any) => y.isActive);
             return (
               <button
-                key={year.id}
-                onClick={() => navigateTo({ type: "year", id: year.id, label: `Année ${year.name}` })}
-                className="group flex items-center gap-3 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
+                key={cls.id}
+                onClick={() => navigateTo({ type: "class", id: cls.id, label: cls.name })}
+                className="group flex items-center gap-3 p-4 border-2 border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 transition-all text-left"
               >
-                <Folder className={cn("h-10 w-10", isActive ? "text-emerald-500" : "text-amber-500")} />
+                <Folder className={cn("h-10 w-10", hasActiveYear ? "text-emerald-500" : "text-indigo-500")} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-bold text-slate-900 text-sm">{year.name}</h3>
-                    {isActive && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">Courante</span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {formatDateFR(year.startDate)} → {formatDateFR(year.endDate)}
-                  </p>
+                  <h3 className="font-bold text-slate-900 text-sm truncate">{cls.name}</h3>
+                  {cls.schoolLevelName && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">{cls.schoolLevelName}</p>
+                  )}
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    {trimesterCount} trimestre(s) · {weekCount} semaine(s)
+                    {cls.academicYears?.length || 0} année(s) · {totalWeeks} semaine(s) · {totalFiches} fiche(s)
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-blue-500" />
+                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-indigo-500" />
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* === NIVEAU CLASSE → liste des années === */}
+      {/*    Affiché quand une classe est sélectionnée (ou qu'il n'y a qu'une seule classe). */}
+      {effectiveClass && !currentYear && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {effectiveClass.academicYears.length === 0 ? (
+            <div className="col-span-full text-center py-12 text-slate-400">
+              <FolderOpen className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="font-medium">Aucun cahier journal ni fiche pour cette classe</p>
+            </div>
+          ) : (
+            effectiveClass.academicYears.map((year: any) => {
+              const trimesterCount = year.trimesters?.length || 0;
+              const weekCount = year.trimesters?.reduce(
+                (s: number, t: any) => s + t.months.reduce((ms: number, m: any) => ms + m.weeks.length, 0), 0
+              ) || 0;
+              const isActive = year.isActive;
+              return (
+                <button
+                  key={year.id}
+                  onClick={() => navigateTo({ type: "year", id: year.id, label: `Année ${year.name}` })}
+                  className="group flex items-center gap-3 p-4 border-2 border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
+                >
+                  <Folder className={cn("h-10 w-10", isActive ? "text-emerald-500" : "text-amber-500")} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-slate-900 text-sm">{year.name}</h3>
+                      {isActive && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 uppercase">Courante</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      {formatDateFR(year.startDate)} → {formatDateFR(year.endDate)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {trimesterCount} trimestre(s) · {weekCount} semaine(s)
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-blue-500" />
+                </button>
+              );
+            })
+          )}
         </div>
       )}
 

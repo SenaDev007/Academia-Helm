@@ -738,6 +738,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                         placeholder="—"
                         minHeight="96px"
                       />
+                      {/* ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant) */}
+                      {getEntry(day.key, "directorObservation") && (
+                        <div className="p-2 bg-red-50 border-t-2 border-red-300">
+                          <div className="text-[9px] font-bold text-red-600 uppercase mb-1">Observation du Directeur</div>
+                          <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{getEntry(day.key, "directorObservation")}</div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -802,9 +809,16 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
           </div>
 
           {/* === OBSERVATIONS GLOBALES (bas de page) === */}
-          <div className="mb-6">
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-              Observations générales de la semaine
+          {/* ⭐ Observations générales de la semaine */}
+          {/*    En rouge quand le cahier journal est VALIDATED/REJECTED (observation du directeur) */}
+          <div className={cn("mb-6 p-3 rounded-lg border", isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED') ? "bg-red-50 border-red-300" : "bg-white border-slate-200")}>
+            <label className={cn(
+              "block text-xs font-bold uppercase mb-2",
+              isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED') ? "text-red-700" : "text-slate-700"
+            )}>
+              {isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')
+                ? "Observation générale du Directeur"
+                : "Observations générales de la semaine"}
             </label>
             <textarea
               value={observations}
@@ -812,7 +826,12 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               disabled={isReadOnly}
               rows={3}
               placeholder="Observations générales sur la semaine..."
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-50"
+              className={cn(
+                "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400",
+                isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')
+                  ? "text-red-800 font-semibold border-red-200 bg-red-50/50"
+                  : "border-slate-300 disabled:bg-slate-50"
+              )}
             />
           </div>
 

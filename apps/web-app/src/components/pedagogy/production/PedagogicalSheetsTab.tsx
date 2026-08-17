@@ -701,6 +701,20 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             )}
           </section>
 
+          {/* ⭐ Observation du directeur — Phase préparatoire (IN-LINE, juste après la section I.bis) */}
+          {(() => {
+            let obs = form.directorSectionObservations;
+            if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+            const val = (obs as any)?.phase_preparatoire;
+            if (!val || !String(val).trim()) return null;
+            return (
+              <div className="mt-2 mb-4 p-2 bg-red-50 border border-red-300 rounded-lg">
+                <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Phase préparatoire</div>
+                <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+              </div>
+            );
+          })()}
+
           {/* II- Déroulement (tableau N° / Consignes / Résultats attendus) */}
           <section className="border-l-4 border-slate-300 pl-4">
             <div className="flex items-center justify-between mb-3">
@@ -748,6 +762,20 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             </div>
           </section>
 
+          {/* ⭐ Observation du directeur — Déroulement (IN-LINE, juste après la section II) */}
+          {(() => {
+            let obs = form.directorSectionObservations;
+            if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+            const val = (obs as any)?.deroulement;
+            if (!val || !String(val).trim()) return null;
+            return (
+              <div className="mt-2 mb-4 p-2 bg-red-50 border border-red-300 rounded-lg">
+                <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Déroulement</div>
+                <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+              </div>
+            );
+          })()}
+
           {/* III- Retour et projection */}
           <section className="border-l-4 border-slate-300 pl-4">
             <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">
@@ -769,44 +797,35 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             </div>
           </section>
 
-          {/* ⭐ Observations du directeur — visibles quand la fiche est VALIDATED ou REJECTED */}
-          {(form.status === 'VALIDATED' || form.status === 'REJECTED' || form.status === 'SUBMITTED') && (form.directorObservation || form.directorSectionObservations) && (
-            <section className="border-l-4 border-red-400 pl-4 bg-red-50/20 rounded-r-lg p-3">
+          {/* ⭐ Observation du directeur — Retour et projection (IN-LINE, juste après la section III) */}
+          {(() => {
+            let obs = form.directorSectionObservations;
+            if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+            const val = (obs as any)?.retour_projection;
+            if (!val || !String(val).trim()) return null;
+            return (
+              <div className="mt-2 mb-4 p-2 bg-red-50 border border-red-300 rounded-lg">
+                <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Retour et projection</div>
+                <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+              </div>
+            );
+          })()}
+
+          {/* ⭐ Observation générale du directeur (juste avant les signatures, en rouge) */}
+          {(form.status === 'VALIDATED' || form.status === 'REJECTED' || form.status === 'SUBMITTED') && (form.directorObservation || (form.status === 'REJECTED' && form.rejectionReason)) && (
+            <section className="border-l-4 border-red-400 pl-4">
               <h3 className="text-sm font-bold text-red-700 uppercase mb-3 bg-red-100 px-3 py-2 rounded-lg">
-                Observations du Directeur
+                Observation générale du Directeur
               </h3>
-              {/* Observation générale */}
               {form.directorObservation && (
-                <div className="mb-3">
-                  <label className="block text-xs font-bold text-red-600 mb-1">Observation générale</label>
-                  <div className="text-sm text-slate-800 p-2 bg-white border border-red-200 rounded-lg min-h-[40px]">
-                    <div dangerouslySetInnerHTML={{ __html: form.directorObservation }} />
-                  </div>
+                <div className="text-sm text-red-900 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div dangerouslySetInnerHTML={{ __html: form.directorObservation }} />
                 </div>
               )}
-              {/* Observations par section */}
-              {form.directorSectionObservations && (() => {
-                let obs = form.directorSectionObservations;
-                if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
-                const obsEntries = Object.entries(obs || {}).filter(([_, v]) => v && v.trim());
-                if (obsEntries.length === 0) return null;
-                return (
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-red-600">Observations par section</label>
-                    {obsEntries.map(([key, val]) => (
-                      <div key={key} className="p-2 bg-white border border-red-200 rounded">
-                        <div className="text-[10px] font-bold text-red-600 uppercase mb-0.5">{key.replace(/_/g, ' ')}</div>
-                        <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{val as string}</div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-              {/* Motif de rejet si REJECTED */}
               {form.status === 'REJECTED' && form.rejectionReason && (
                 <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
                   <div className="text-[10px] font-bold text-red-700 uppercase mb-0.5">Motif du rejet</div>
-                  <div className="text-xs text-red-800">{form.rejectionReason}</div>
+                  <div className="text-xs text-red-800 font-semibold">{form.rejectionReason}</div>
                 </div>
               )}
             </section>

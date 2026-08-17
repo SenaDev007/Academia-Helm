@@ -544,6 +544,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
   // === RENDU FORMULAIRE ===
   if (showForm) {
+    // ⭐ Badge de statut affiché dans la barre d'actions
+    const formStatus = STATUS_CONFIG[form.status as keyof typeof STATUS_CONFIG];
     return (
       <div className="space-y-4">
         {/* Barre d'actions */}
@@ -552,9 +554,19 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">
             <ChevronLeft className="h-4 w-4" /> Retour à la liste
           </button>
-          <div className="text-sm font-semibold text-slate-700">{editingFiche ? "Modifier la fiche" : "Nouvelle fiche pédagogique"}</div>
-          <button onClick={handleCreateOrUpdate} disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+          <div className="flex items-center gap-2">
+            {/* ⭐ Badge de statut (Soumis / Validé / Rejeté) */}
+            {formStatus && form.status !== 'DRAFT' && (
+              <span className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold uppercase", formStatus.color)}>
+                <formStatus.icon className="h-3.5 w-3.5" /> {formStatus.label}
+              </span>
+            )}
+            <div className="text-sm font-semibold text-slate-700">{editingFiche ? "Modifier la fiche" : "Nouvelle fiche pédagogique"}</div>
+          </div>
+          {/* ⭐ Bouton 'Mettre à jour' désactivé si isReadOnly (fiche soumise/validée/rejetée) */}
+          <button onClick={handleCreateOrUpdate} disabled={saving || isReadOnly}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : undefined}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {editingFiche ? "Mettre à jour" : "Créer la fiche"}
           </button>
@@ -756,6 +768,49 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               </div>
             </div>
           </section>
+
+          {/* ⭐ Observations du directeur — visibles quand la fiche est VALIDATED ou REJECTED */}
+          {(form.status === 'VALIDATED' || form.status === 'REJECTED' || form.status === 'SUBMITTED') && (form.directorObservation || form.directorSectionObservations) && (
+            <section className="border-l-4 border-red-400 pl-4 bg-red-50/20 rounded-r-lg p-3">
+              <h3 className="text-sm font-bold text-red-700 uppercase mb-3 bg-red-100 px-3 py-2 rounded-lg">
+                Observations du Directeur
+              </h3>
+              {/* Observation générale */}
+              {form.directorObservation && (
+                <div className="mb-3">
+                  <label className="block text-xs font-bold text-red-600 mb-1">Observation générale</label>
+                  <div className="text-sm text-slate-800 p-2 bg-white border border-red-200 rounded-lg min-h-[40px]">
+                    <div dangerouslySetInnerHTML={{ __html: form.directorObservation }} />
+                  </div>
+                </div>
+              )}
+              {/* Observations par section */}
+              {form.directorSectionObservations && (() => {
+                let obs = form.directorSectionObservations;
+                if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+                const obsEntries = Object.entries(obs || {}).filter(([_, v]) => v && v.trim());
+                if (obsEntries.length === 0) return null;
+                return (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold text-red-600">Observations par section</label>
+                    {obsEntries.map(([key, val]) => (
+                      <div key={key} className="p-2 bg-white border border-red-200 rounded">
+                        <div className="text-[10px] font-bold text-red-600 uppercase mb-0.5">{key.replace(/_/g, ' ')}</div>
+                        <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{val as string}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              {/* Motif de rejet si REJECTED */}
+              {form.status === 'REJECTED' && form.rejectionReason && (
+                <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-0.5">Motif du rejet</div>
+                  <div className="text-xs text-red-800">{form.rejectionReason}</div>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Signatures (SignatureCanvas) */}
           <section className="border-t-2 border-slate-300 pt-4">

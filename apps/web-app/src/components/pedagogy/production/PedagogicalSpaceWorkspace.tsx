@@ -12,13 +12,14 @@
  *   3. Cahier Journal — saisie des séances quotidiennes
  *   4. Cahier Journal Hebdo — grille hebdomadaire 5 jours × 8 matières
  *   5. Cahier de Semaine — monitoring institutionnel (semainier)
- *   6. Fiches Pédagogiques — 5 types (MATH/FRANCAIS/EST/ES/EA) pour le primaire
+ *   6. Fiches Pédagogiques — 6 types (MATH/FRANCAIS/EST/ES/EA/EPS) pour le primaire
  *   7. Registre d'Appel — registre mensuel + évaluation certificative + relevés
  *   8. Devoirs — création de devoirs + suivi par élève
- *   9. Cahier de Texte (secondaire uniquement)
- *  10. Cahier de Test (secondaire uniquement) — évaluations et compositions
- *  11. Bibliothèque virtuelle — ressources pédagogiques
- *  12. Matériel pédagogique — inventaire et ressources
+ *   9. Cahier de Texte — évaluations (visible pour tous les niveaux)
+ *  10. Bibliothèque virtuelle — ressources pédagogiques
+ *  11. Matériel pédagogique — inventaire et ressources
+ *
+ *   ⭐ SUPPRIMÉ : Cahier de Test (sous-onglet supprimé définitivement)
  *
  * Design identique aux autres modules (cards, tables, boutons cohérents).
  * Isolation : chaque enseignant ne voit QUE ses classes.
@@ -44,7 +45,6 @@ import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
-import { CahierDeTestTab } from "./CahierDeTestTab";
 import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
 import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -56,14 +56,14 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 //   4. Cahier Journal & Fiches Pédagogiques (grille hebdo 5j × 8 matières + fiches liées)
 //   5. Cahier de Semaine (monitoring institutionnel)
 //   6. Travaux & Suivi (devoirs, exercices & suivi des élèves)
-//   7. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
-//   8. Cahier de Test (secondaire uniquement)
-//   9. Matériel pédagogique
+//   7. Cahier de Texte (visible pour tous les niveaux — anciennement secondaire uniquement)
+//   8. Matériel pédagogique
 //
 //   ⭐ Supprimé : Devoirs (fusionné dans Travaux & Suivi)
 //   ⭐ Supprimé : Bibliothèque (supprimé du module pédagogie)
 //   ⭐ Travaux & Suivi déplacé depuis le module orga pédagogique vers ici
 //   ⭐ Cahier de Texte déplacé depuis le module orga pédagogique vers ici
+//   ⭐ SUPPRIMÉ : Cahier de Test (sous-onglet supprimé définitivement — ce n'était pas pertinent)
 const ALL_TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false },
@@ -71,8 +71,7 @@ const ALL_TABS = [
   { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false },
   { id: 'tasks', label: 'Travaux & Suivi', icon: ClipboardList, description: 'Devoirs & suivi des élèves', secondaryOnly: false },
-  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)', secondaryOnly: true },
-  { id: 'cahier-test', label: 'Cahier de Test', icon: FileText, description: 'Évaluations & compositions', secondaryOnly: true },
+  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations', secondaryOnly: false },
   { id: 'materiel', label: 'Matériel', icon: Package, description: 'Inventaire & ressources', secondaryOnly: false },
 ] as const;
 
@@ -202,13 +201,6 @@ export function PedagogicalSpaceWorkspace({
           )}
           {tab === 'cahier-texte' && (
             <CahierDeTexteTab
-              tenantId={resolvedTenantId}
-              academicYearId={resolvedAcademicYearId}
-              teacherId={teacherId}
-            />
-          )}
-          {tab === 'cahier-test' && (
-            <CahierDeTestTab
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}

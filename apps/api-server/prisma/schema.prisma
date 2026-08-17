@@ -16230,12 +16230,13 @@ model CahierJournal {
 }
 
 // ============================================================================
-// FICHES PÉDAGOGIQUES PRIMAIRE — 5 types (primaire uniquement)
+// FICHES PÉDAGOGIQUES PRIMAIRE — 6 types (primaire uniquement)
 // ============================================================================
 
 /// Fiche pédagogique pour l'enseignement PRIMAIRE (maternelle/primaire).
-/// 5 types: MATH | FRANCAIS | EST (Éducation Scientifique et Technologique)
+/// 6 types: MATH | FRANCAIS | EST (Éducation Scientifique et Technologique)
 ///         | ES (Éducation Sociale) | EA (Éducation Artistique)
+///         | EPS (Éducation Physique et Sportive)
 /// Structure: en-tête + effectifs + ruban pédagogique + ruban administratif + signatures
 /// NB: Ne pas confondre avec le modèle `PedagogicalSheet` (secondaire) qui est
 /// une simple fiche titre/description/contenu. Le modèle ci-dessous suit le
@@ -16247,7 +16248,7 @@ model PrimaryPedagogicalFiche {
   teacherId       String
   classId         String
   subjectId       String?
-  sheetType       String   // MATH | FRANCAIS | EST | ES | EA
+  sheetType       String   // MATH | FRANCAIS | EST | ES | EA | EPS
 
   // En-tête
   schoolName         String?

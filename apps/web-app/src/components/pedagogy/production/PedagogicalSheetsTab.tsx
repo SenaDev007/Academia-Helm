@@ -5,8 +5,9 @@
  * FICHES PÉDAGOGIQUES PRIMAIRE — Structure conforme aux PDFs officiels
  * ============================================================================
  *
- * 5 types : MATH, FRANCAIS, EST (Éducation Scientifique et Technologique),
- *          ES (Éducation Sociale), EA (Éducation Artistique)
+ * 6 types : MATH, FRANCAIS, EST (Éducation Scientifique et Technologique),
+ *          ES (Éducation Sociale), EA (Éducation Artistique),
+ *          EPS (Éducation Physique et Sportive)
  *
  * Structure commune (conforme aux PDFs) :
  *   En-tête : SAN°, Séquence N°, Date, Cours, Titre, Durée
@@ -32,7 +33,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
-  FlaskConical, Users, Palette, Download, History, Copy,
+  FlaskConical, Users, Palette, Download, History, Copy, Dumbbell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -63,6 +64,7 @@ const SHEET_TYPES = [
   { type: "EST", label: "Éducation Scientifique et Technologique", icon: FlaskConical, color: "bg-purple-100 text-purple-700 border-purple-200", headerBg: "bg-purple-600", sectionBorder: "border-purple-300" },
   { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200", headerBg: "bg-amber-600", sectionBorder: "border-amber-300" },
   { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200", headerBg: "bg-pink-600", sectionBorder: "border-pink-300" },
+  { type: "EPS", label: "Éducation Physique et Sportive", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700 border-cyan-200", headerBg: "bg-cyan-600", sectionBorder: "border-cyan-300" },
 ] as const;
 
 const STATUS_CONFIG = {
@@ -142,6 +144,13 @@ const SHEET_TYPE_CONFIG: Record<string, {
     ibisFields: [
       { label: "Annoncer l'objet d'apprentissage (titre du chant/dessin)", key: "ibis_1", placeholder: "Ex: Annoncer le titre du chant à apprendre..." },
       { label: "Pré-conception", key: "ibis_2", placeholder: "Ex: Demander aux enfants s'ils connaissent le chant à partir du titre..." },
+    ],
+  },
+  EPS: {
+    ibisTitle: "Proposition de nouvelles acquisitions",
+    ibisFields: [
+      { label: "Annoncer l'objet d'apprentissage (titre de l'activité physique et sportive)", key: "ibis_1", placeholder: "Ex: Annoncer le titre de l'activité physique à apprendre (course, saut, jeu collectif...)" },
+      { label: "Pré-conception", key: "ibis_2", placeholder: "Ex: Demander aux enfants s'ils connaissent l'activité à partir du titre, recueillir leurs représentations..." },
     ],
   },
 };
@@ -554,7 +563,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         {/* Sélection du type de fiche */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <label className="block text-xs font-bold text-slate-700 uppercase mb-3">Type de fiche pédagogique</label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
             {SHEET_TYPES.map((t) => {
               const Icon = t.icon;
               return (
@@ -921,7 +930,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                         a.href = url;
                         // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                         const SHEET_LABELS: Record<string, string> = {
-                          MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique',
+                          MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
                         };
                         const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
                         const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

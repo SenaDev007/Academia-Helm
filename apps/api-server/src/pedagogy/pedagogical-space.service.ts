@@ -1028,6 +1028,14 @@ export class PedagogicalSpaceService {
           { label: 'Pré-conception', key: 'ibis_2' },
         ],
       },
+      EPS: {
+        label: 'Éducation Physique et Sportive', color: '#0e7490', bg: '#cffafe', border: '#06b6d4',
+        ibisTitle: 'Proposition de nouvelles acquisitions',
+        ibisFields: [
+          { label: "Annoncer l'objet d'apprentissage (titre de l'activité physique et sportive)", key: 'ibis_1' },
+          { label: 'Pré-conception', key: 'ibis_2' },
+        ],
+      },
     };
     const typeConfig = SHEET_TYPE_CONFIG[fiche.sheetType] || { label: fiche.sheetType || '—', color: '#0A2A5E', bg: '#f1f5f9', border: '#cbd5e1', ibisTitle: 'Section spécifique', ibisFields: [] };
     const typeLabel = typeConfig.label;
@@ -3009,8 +3017,12 @@ export class PedagogicalSpaceService {
       return 'MATH';
     }
     if (k.includes('est') || k.includes('science') || k.includes('technologie')
-      || k.includes('eps') || k.includes('sport') || k.includes('informatique')) {
+      || k.includes('informatique')) {
       return 'EST';
+    }
+    if (k.includes('eps') || k.includes('sport') || k.includes('education physique')
+      || k.includes('athletisme') || k.includes('gymnastique') || k.includes('jeu collectif')) {
+      return 'EPS';
     }
     if (k.includes('histoire') || k.includes('geographie') || k.includes('geographie')
       || k.includes('morale') || k.includes('civisme') || k.includes('educ_sociale')
@@ -3711,7 +3723,7 @@ export class PedagogicalSpaceService {
 
 
   // ===========================================================================
-  // FICHES PÉDAGOGIQUES PRIMAIRE (5 types: MATH/FRANCAIS/EST/ES/EA)
+  // FICHES PÉDAGOGIQUES PRIMAIRE (6 types: MATH/FRANCAIS/EST/ES/EA/EPS)
   // ===========================================================================
 
   /// Liste les fiches pédagogiques d'un enseignant.
@@ -4872,7 +4884,7 @@ export class PedagogicalSpaceService {
 
     const sheetTypeLabels: Record<string, string> = {
       MATH: 'Mathématiques', FRANCAIS: 'Français', EST: 'Éduc. Scientifique & Tech.',
-      ES: 'Éducation Sociale', EA: 'Éducation Artistique',
+      ES: 'Éducation Sociale', EA: 'Éducation Artistique', EPS: 'Éducation Physique et Sportive',
     };
     const dateLabel = lessonDate ? new Date(lessonDate).toLocaleDateString('fr-FR') : '—';
     const actionLabel = action === 'VALIDATED' ? 'validée' : 'rejetée';

@@ -561,7 +561,7 @@ export class PedagogicalSpaceController {
   }
 
   // ===========================================================================
-  // FICHES PÉDAGOGIQUES PRIMAIRE (5 types: MATH/FRANCAIS/EST/ES/EA)
+  // FICHES PÉDAGOGIQUES PRIMAIRE (6 types: MATH/FRANCAIS/EST/ES/EA/EPS)
   // ===========================================================================
 
   @Get('fiches')

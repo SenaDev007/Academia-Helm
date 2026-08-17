@@ -28,17 +28,17 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
-  ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award, Calendar,
-  Download, Save,
+  ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
+  Download, Save, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useDirectorPedagogyDashboard,
   usePendingCahierJournals, usePendingFiches, usePendingRegisters,
-  usePendingEvaluations, usePendingCahierTextes,
+  usePendingEvaluations,
   useCahierJournalDetail, useFicheDetail, useRegisterDetail,
-  useEvaluationDetail, useCahierTexteDetail,
+  useEvaluationDetail,
 } from "@/lib/query/pedagogy-hooks";
 import { pedagogySpaceService } from "@/services/pedagogy-space.service";
 import apiClient from "@/lib/api/client";
@@ -56,7 +56,6 @@ const TABS = [
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen },
-  { id: "cahier-textes", label: "Cahiers de Test", icon: Award },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -67,6 +66,7 @@ const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: strin
   EST: { label: "Éduc. Scientifique & Tech.", icon: FlaskConical, color: "bg-purple-100 text-purple-700" },
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
+  EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
 };
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -135,9 +135,6 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         {tab === "evaluations" && (
           <PendingEvaluationsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
-        {tab === "cahier-textes" && (
-          <PendingCahierTestsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
-        )}
       </div>
     </div>
   );
@@ -171,7 +168,6 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
     { label: "Fiches Pédagogiques", count: dashboard.pendingFiches, icon: FileText, color: "bg-emerald-50 text-emerald-700 border-emerald-200", tab: "fiches" as TabId },
     { label: "Registres d'Appel", count: dashboard.pendingAttendanceRegisters, icon: ClipboardList, color: "bg-amber-50 text-amber-700 border-amber-200", tab: "registres" as TabId },
     { label: "Évaluations Mensuelles", count: dashboard.pendingMonthlyEvaluations, icon: BookOpen, color: "bg-purple-50 text-purple-700 border-purple-200", tab: "evaluations" as TabId },
-    { label: "Cahiers de Test", count: dashboard.pendingCahierTests, icon: Award, color: "bg-rose-50 text-rose-700 border-rose-200", tab: "cahier-textes" as TabId },
     { label: "Semainiers (anciens)", count: dashboard.pendingWeeklyLogs, icon: Clock, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
     { label: "Rapports fin de semaine", count: dashboard.pendingWeeklySummaries, icon: Send, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
   ];
@@ -1055,246 +1051,6 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
         onClose={() => setModalItem(null)}
         onValidate={handleValidate}
         title={`Évaluation — ${modalItem ? MONTH_NAMES[modalItem.registerMonth || modalItem.month] : ""}`}
-      />
-    </div>
-  );
-}
-
-// ============================================================================
-// Pending Cahiers de Test (SECONDAIRE)
-// ============================================================================
-
-const TEST_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  DEVOIR: { label: "Devoir", color: "bg-blue-100 text-blue-700" },
-  COMPOSITION: { label: "Composition", color: "bg-purple-100 text-purple-700" },
-  INTERROGATION: { label: "Interrogation", color: "bg-amber-100 text-amber-700" },
-  TEST: { label: "Test", color: "bg-emerald-100 text-emerald-700" },
-};
-
-function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
-  tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
-}) {
-  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
-  const queryClient = useQueryClient();
-  const { data: items = [], isLoading: loading, refetch } = usePendingCahierTextes(academicYearId);
-  const [selected, setSelected] = useState<any>(null);
-  const [modalItem, setModalItem] = useState<any>(null);
-
-  useEffect(() => {
-    if (refreshKey > 0) refetch();
-  }, [refreshKey, refetch]);
-
-  const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
-    if (!modalItem) return;
-    await pedagogySpaceService.validateCahierTexte(modalItem.id, {
-      action,
-      validatedBy: userId,
-      rejectionReason: reason,
-    });
-    toast.success(action === "VALIDATED" ? "✅ Cahier de test validé" : "Cahier de test rejeté");
-    onRefresh();
-    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-cahier-textes"] });
-    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
-  };
-
-  const handleView = async (item: any) => {
-    try {
-      const data = await pedagogySpaceService.getCahierTexteDetail(item.id);
-      setSelected(data);
-    } catch { toast.error("Erreur"); }
-  };
-
-  // ⭐ Si une évaluation est sélectionnée, afficher la vue détaillée in-page
-  if (selected) {
-    return (
-      <MonthlyEvaluationDirectorDetail
-        evaluation={selected}
-        userId={userId}
-        onBack={() => setSelected(null)}
-        onValidated={() => {
-          setSelected(null);
-          onRefresh();
-          refetch();
-          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-evaluations"] });
-          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
-        }}
-      />
-    );
-  }
-
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
-
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <Award className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-        <p className="font-medium text-slate-700">Aucun cahier de test en attente</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Cahiers de Test en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s)</p>
-        </div>
-        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {items.map(item => {
-          const testType = TEST_TYPE_LABELS[item.testType] || { label: item.testType, color: "bg-slate-100 text-slate-700" };
-          return (
-            <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-white">
-              <div className="flex items-start justify-between mb-2">
-                <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", testType.color)}>
-                  {testType.label} N°{item.testNumber}
-                </div>
-                <span className="text-xs text-slate-400">T{item.trimester}</span>
-              </div>
-              <p className="font-medium text-slate-900 text-sm mb-1">{item.testTitle}</p>
-              <p className="text-xs text-slate-500">
-                Classe: <strong>{item.classNameResolved || "—"}</strong>
-                {item.subjectName && <span> · {item.subjectName}</span>}
-              </p>
-              <p className="text-xs text-slate-500">
-                {item.teacherFirstName} {item.teacherLastName} · {formatDateFR(item.testDate)}
-              </p>
-              <div className="flex items-center gap-3 mt-2 text-xs">
-                <span>Sur {item.maxScore} · Seuil {item.passingScore} · Coef {item.coefficient}</span>
-              </div>
-              {item.averageScore !== null && item.averageScore !== undefined && (
-                <div className="flex items-center gap-3 mt-2 text-xs">
-                  <span className="font-bold text-blue-700">Moy: {item.averageScore?.toFixed(2)}</span>
-                  <span className="font-bold text-emerald-700">Réussite: {item.passRate?.toFixed(1)}%</span>
-                  <span className="text-slate-500">{item.totalStudents} élèves</span>
-                </div>
-              )}
-              <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
-              <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
-                <button onClick={() => handleView(item)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                  <Eye className="h-3 w-3" /> Voir détail
-                </button>
-                <button onClick={() => setModalItem(item)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                  <CheckCircle2 className="h-3 w-3" /> Traiter
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">{selected.testTitle}</h3>
-              <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <div><strong>Type:</strong> {TEST_TYPE_LABELS[selected.testType]?.label || selected.testType} N°{selected.testNumber}</div>
-                <div><strong>Trimestre:</strong> T{selected.trimester}</div>
-                <div><strong>Date:</strong> {formatDateFR(selected.testDate)}</div>
-                <div><strong>Classe:</strong> {selected.classNameResolved || "—"}</div>
-                <div><strong>Matière:</strong> {selected.subjectName || "—"}</div>
-                <div><strong>Enseignant:</strong> {selected.teacherFirstName} {selected.teacherLastName}</div>
-                <div><strong>Sur:</strong> {selected.maxScore} points</div>
-                <div><strong>Seuil réussite:</strong> {selected.passingScore}</div>
-                <div><strong>Coefficient:</strong> {selected.coefficient}</div>
-              </div>
-
-              {/* Statistiques */}
-              {selected.averageScore !== null && selected.averageScore !== undefined && (
-                <div className="p-3 bg-slate-50 rounded-lg">
-                  <strong>Statistiques:</strong>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2 text-xs">
-                    <div>Effectif: {selected.totalStudents || "—"} ({selected.boysCount || 0}G / {selected.girlsCount || 0}F)</div>
-                    <div>Présents: {selected.totalPresent ?? "—"} / Absents: {selected.totalAbsent ?? "—"}</div>
-                    <div className="font-bold text-blue-700">Moyenne: {selected.averageScore?.toFixed?.(2) ?? "—"}</div>
-                    <div className="font-bold text-emerald-700">Réussite: {selected.passRate?.toFixed?.(1) ?? "—"}%</div>
-                    <div>Note max: {selected.highestScore ?? "—"}</div>
-                    <div>Note min: {selected.lowestScore ?? "—"}</div>
-                    <div>G moy: {selected.boysAverage?.toFixed?.(2) ?? "—"} · F moy: {selected.girlsAverage?.toFixed?.(2) ?? "—"}</div>
-                    <div>Réussi: {selected.passedCount ?? "—"} / Échoué: {selected.failedCount ?? "—"}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Notes des élèves */}
-              {(() => {
-                let scores = selected.studentScores;
-                if (typeof scores === "string") {
-                  try { scores = JSON.parse(scores); } catch { scores = []; }
-                }
-                if (!Array.isArray(scores) || scores.length === 0) {
-                  return <div className="text-slate-400 text-xs italic">Aucune note saisie.</div>;
-                }
-                return (
-                  <div>
-                    <strong>Notes des élèves ({scores.length}):</strong>
-                    <div className="overflow-x-auto mt-2 border border-slate-200 rounded-lg max-h-80 overflow-y-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-100 sticky top-0">
-                          <tr>
-                            <th className="px-2 py-1 text-left">N°</th>
-                            <th className="px-2 py-1 text-left">Nom</th>
-                            <th className="px-2 py-1 text-center">Sexe</th>
-                            <th className="px-2 py-1 text-center">Note /{selected.maxScore}</th>
-                            <th className="px-2 py-1 text-center">Statut</th>
-                            <th className="px-2 py-1 text-left">Appréciation</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {scores.map((s: any, i: number) => {
-                            const sc = parseFloat(s.score);
-                            const isPassed = !isNaN(sc) && sc >= (selected.passingScore || 10);
-                            return (
-                              <tr key={s.studentId || i} className="hover:bg-slate-50">
-                                <td className="px-2 py-1">{s.numero || i + 1}</td>
-                                <td className="px-2 py-1">{s.nom} {s.prenom}</td>
-                                <td className="px-2 py-1 text-center">{s.sexe}</td>
-                                <td className="px-2 py-1 text-center font-bold">{s.absent ? "Absent" : (s.score ?? "—")}</td>
-                                <td className="px-2 py-1 text-center">
-                                  {s.absent ? "—" : (!isNaN(sc) ? (isPassed ? "✅" : "❌") : "—")}
-                                </td>
-                                <td className="px-2 py-1 text-xs">{s.appreciation || "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {selected.pedagogicalObservations && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs">
-                  <strong>Observations pédagogiques:</strong>
-                  <p className="mt-1 text-slate-700">{selected.pedagogicalObservations}</p>
-                </div>
-              )}
-              {selected.recommandations && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-                  <strong>Recommandations:</strong>
-                  <p className="mt-1 text-slate-700">{selected.recommandations}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <ValidationModal
-        open={!!modalItem}
-        onClose={() => setModalItem(null)}
-        onValidate={handleValidate}
-        title={`Cahier de test — ${modalItem?.testTitle || ""}`}
       />
     </div>
   );

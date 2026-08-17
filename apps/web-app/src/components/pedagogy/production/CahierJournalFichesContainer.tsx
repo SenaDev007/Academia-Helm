@@ -386,6 +386,8 @@ function mapMatiereToSheetType(matiere: string): string {
   if (m === 'mathématiques' || m === 'mathematiques' || m === 'maths' || m === 'math' || m === 'pré-mathématique' || m === 'pre-mathematique') return 'MATH';
   // Éducation Scientifique et Technologique
   if (m.includes('scientifique') || m.includes('est') || m === 'science' || m === 'sciences') return 'EST';
+  // Éducation Physique et Sportive
+  if (m.includes('eps') || m.includes('sport') || m.includes('éducation physique') || m.includes('education physique') || m.includes('athlétisme') || m.includes('athletisme') || m.includes('gymnastique') || m.includes('jeu collectif')) return 'EPS';
   // Éducation Sociale
   if (m.includes('social') || m.includes('morale') || m.includes('civisme') || m.includes('histoire') || m.includes('géographie') || m.includes('geographie')) return 'ES';
   // Éducation Artistique
@@ -727,7 +729,7 @@ function FichesLieesJournal({
                     a.href = url;
                     // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                     const SHEET_LABELS: Record<string, string> = {
-                      MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique',
+                      MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
                     };
                     const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
                     const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

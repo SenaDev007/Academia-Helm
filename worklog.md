@@ -5998,3 +5998,80 @@ Findings clés (voir rapport final pour détails) :
 - Aucun bouton "excusé" : enum EXCUSED existe côté backend (RecordAttendanceDto + getAttendanceStatistics) mais l'UI n'émet que PRESENT/ABSENT par demi-journée
 - Codes PM/AM/PS/AS : PM=Présent Matin, AM=Absent Matin, PS=Présent Soir (en réalité après-midi), AS=Absent Soir (en réalité après-midi) — labeling incohérent (commentaires disent "Soir", UI affiche "Après-midi", variable s'appelle `afternoonStatus`)
 - Files modified: 0 (audit read-only). Prochaine étape recommandée : Task "IMPL-ATTENDANCE-FIX-1" pour implémenter Option 2 (champs dédiés amStatus/pmStatus/eveningStatus + excusedStatus + suppression du cache BFF sur GET attendance).
+
+---
+Task ID: IMPL-PEDAGOGY-CLEANUP-EPS-1
+Agent: main
+Task: (1) Supprimer le sous-onglet "Cahier de Test" dans l'espace pédagogique enseignant ET dans la Validation Direction. (2) Rendre "Cahier de Texte" toujours visible (retirer secondaryOnly). (3) Ajouter un 6e type de fiche pédagogique "Éducation Physique et Sportive" (EPS) avec le même format que "Éducation Artistique" (EA).
+
+Work Log:
+- Lu PedagogicalSpaceWorkspace.tsx (218 lignes) — structure ALL_TABS avec 9 onglets, filtre secondaryOnly.
+- Lu PedagogicalSheetsTab.tsx (1067 lignes) — structure SHEET_TYPES (5 types) + SHEET_TYPE_CONFIG avec section I.bis par type.
+- Lu DirectorPedagogyControl.tsx (2417 lignes) — TABS avec 5 onglets dont "cahier-textes" labellisé "Cahiers de Test" qui rend PendingCahierTestsTab (228 lignes, lignes 1063-1301).
+- Lu backend pedagogical-space.service.ts — SHEET_TYPE_CONFIG (l. 978-1031), sheetTypeLabels email (l. 4873-4876), mapMatiereKeyToSheetType (l. 3000-3025), commentaire "5 types" (l. 3714).
+- Lu schema.prisma l. 16232-16251 — modèle PrimaryPedagogicalFiche, sheetType est TEXT (pas enum) donc ajout du type EPS ne nécessite pas de migration.
+- Lu pedagogical-space.controller.ts l. 564 — commentaire "5 types" à mettre à jour.
+- Lu CahierJournalFichesContainer.tsx — fonction mapMatiereToSheetType (l. 381-397) + SHEET_LABELS pour export PDF (l. 731-733).
+
+Modifications effectuées :
+
+1. PedagogicalSpaceWorkspace.tsx (apps/web-app/src/components/pedagogy/production/)
+   - Supprimé l'import de CahierDeTestTab
+   - Supprimé l'entrée `{ id: 'cahier-test', label: 'Cahier de Test', ... secondaryOnly: true }` du tableau ALL_TABS
+   - Modifié l'entrée `cahier-texte` : `secondaryOnly: true` → `secondaryOnly: false` (toujours visible)
+   - Supprimé le bloc de rendu `{tab === 'cahier-test' && <CahierDeTestTab ... />}`
+   - Mis à jour le commentaire d'en-tête (5→6 types, suppression mention "Cahier de Test")
+
+2. CahierDeTestTab.tsx — FICHIER SUPPRIMÉ DÉFINITIVEMENT (818 lignes de code mort)
+
+3. DirectorPedagogyControl.tsx (apps/web-app/src/components/pedagogy/production/)
+   - Supprimé l'import `Award` de lucide-react
+   - Supprimé les imports `usePendingCahierTextes` et `useCahierTexteDetail` de pedagogy-hooks
+   - Supprimé l'entrée `{ id: "cahier-textes", label: "Cahiers de Test", icon: Award }` du tableau TABS
+   - Supprimé le bloc de rendu `{tab === "cahier-textes" && <PendingCahierTestsTab ... />}`
+   - Supprimé la card "Cahiers de Test" du DashboardTab
+   - Supprimé toute la fonction `PendingCahierTestsTab` (228 lignes, lignes 1063-1301) via sed
+   - Supprimé la constante `TEST_TYPE_LABELS` (lignes 1062-1067)
+   - Mis à jour SHEET_TYPE_LABELS : ajout de `EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" }`
+   - Ajouté l'import `Activity` à lucide-react
+
+4. PedagogicalSheetsTab.tsx (apps/web-app/src/components/pedagogy/production/)
+   - Mis à jour le commentaire d'en-tête "5 types" → "6 types"
+   - Ajouté l'import `Dumbbell` à lucide-react
+   - Ajouté l'entrée EPS à SHEET_TYPES (ligne 67) avec couleur cyan
+   - Ajouté la config EPS à SHEET_TYPE_CONFIG (lignes 149-155) :
+     * ibisTitle: "Proposition de nouvelles acquisitions" (même que EA)
+     * ibisFields: 2 champs (Annoncer l'objet d'apprentissage + Pré-conception) avec placeholders adaptés EPS
+   - Mis à jour le grid layout : `lg:grid-cols-5` → `lg:grid-cols-6` (pour afficher 6 types sur une ligne)
+   - Mis à jour SHEET_LABELS pour export PDF : ajout de `EPS: 'Education Physique et Sportive'`
+
+5. CahierJournalFichesContainer.tsx
+   - Mis à jour la fonction `mapMatiereToSheetType` : ajout d'un bloc EPS (eps/sport/éducation physique/athlétisme/gymnastique/jeu collectif) AVANT le bloc EST (pour ne pas être écrasé par le test `k.includes('est')`)
+   - Mis à jour SHEET_LABELS pour export PDF : ajout de `EPS: 'Education Physique et Sportive'`
+
+6. pedagogical-space.service.ts (backend NestJS)
+   - Mis à jour le commentaire "5 types" → "6 types" (l. 3722)
+   - Ajouté la config EPS à SHEET_TYPE_CONFIG (l. 1031-1038) :
+     * label: 'Éducation Physique et Sportive'
+     * color: '#0e7490' (cyan-700), bg: '#cffafe' (cyan-100), border: '#06b6d4' (cyan-500)
+     * ibisTitle: 'Proposition de nouvelles acquisitions'
+     * ibisFields: 2 champs (Annoncer l'objet d'apprentissage + Pré-conception)
+   - Mis à jour sheetTypeLabels (email de notification) : ajout de `EPS: 'Éducation Physique et Sportive'` (l. 4883)
+   - Mis à jour `mapMatiereKeyToSheetType` : retiré `eps`/`sport` du bloc EST, ajouté un bloc EPS dédié (l. 3023-3026) avec mots-clés : eps, sport, education physique, athletisme, gymnastique, jeu collectif
+
+7. pedagogical-space.controller.ts — Mis à jour commentaire "5 types" → "6 types" (l. 564)
+
+8. schema.prisma — Mis à jour commentaires du modèle PrimaryPedagogicalFiche (l. 16232-16251) : "5 types" → "6 types", ajout de EPS à la liste des types. La colonne `sheetType` est TEXT (pas enum) → aucune migration SQL nécessaire.
+
+Stage Summary:
+- ✅ Sous-onglet "Cahier de Test" supprimé définitivement de l'espace pédagogique enseignant (PedagogicalSpaceWorkspace.tsx) ET de la Validation Direction (DirectorPedagogyControl.tsx)
+- ✅ Fichier CahierDeTestTab.tsx supprimé physiquement (818 lignes de code supprimées)
+- ✅ PendingCahierTestsTab (228 lignes) supprimé du DirectorPedagogyControl.tsx
+- ✅ Sous-onglet "Cahier de Texte" maintenant visible pour TOUS les niveaux (primaire/maternelle/secondaire) — anciennement `secondaryOnly: true`
+- ✅ Nouveau type de fiche pédagogique "Éducation Physique et Sportive" (EPS) ajouté :
+  - Frontend : SHEET_TYPES + SHEET_TYPE_CONFIG (bouton couleur cyan, icône Dumbbell) — structure identique à EA (Annoncer objet d'apprentissage + Pré-conception)
+  - Frontend CahierJournalFichesContainer : mapMatiereToSheetType reconnaît "eps", "sport", "éducation physique", "athlétisme", "gymnastique", "jeu collectif" → type EPS
+  - Backend : SHEET_TYPE_CONFIG (PDF export + affichage directeur) + sheetTypeLabels (email notification) + mapMatiereKeyToSheetType (devine le type depuis matière cahier journal)
+- ✅ Même format que la fiche éducation artistique : I- Éléments de planification (7 champs RichTextEditor), I.bis- Proposition de nouvelles acquisitions (2 champs), II- Déroulement (tableau dynamique), III- Retour et projection (3 champs), Signatures Maîtresse + Directrice
+- 6 fichiers modifiés au frontend, 3 fichiers modifiés au backend, 1 fichier supprimé
+- Aucune migration SQL nécessaire (sheetType est TEXT, pas enum)

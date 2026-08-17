@@ -98,13 +98,16 @@ export function usePendingFiches(
   });
 }
 
-export function usePendingRegisters(academicYearId: string | null | undefined) {
+export function usePendingRegisters(
+  academicYearId: string | null | undefined,
+  statusFilter: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL' = 'SUBMITTED',
+) {
   return useQuery({
-    queryKey: pedagogyKeys.pendingRegisters(academicYearId || ''),
+    queryKey: pedagogyKeys.pendingRegisters(academicYearId || '', statusFilter),
     queryFn: async () => {
       if (!academicYearId) return [];
       try {
-        const data = await pedagogySpaceService.getPendingAttendanceRegisters(academicYearId);
+        const data = await pedagogySpaceService.getPendingAttendanceRegisters(academicYearId, statusFilter);
         return Array.isArray(data) ? data : (data?.data ?? []);
       } catch (err: any) {
         console.warn('[usePendingRegisters] Error:', err.message);
@@ -120,13 +123,16 @@ export function usePendingRegisters(academicYearId: string | null | undefined) {
   });
 }
 
-export function usePendingEvaluations(academicYearId: string | null | undefined) {
+export function usePendingEvaluations(
+  academicYearId: string | null | undefined,
+  statusFilter: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL' = 'SUBMITTED',
+) {
   return useQuery({
-    queryKey: pedagogyKeys.pendingEvaluations(academicYearId || ''),
+    queryKey: pedagogyKeys.pendingEvaluations(academicYearId || '', statusFilter),
     queryFn: async () => {
       if (!academicYearId) return [];
       try {
-        const data = await pedagogySpaceService.getPendingMonthlyEvaluations(academicYearId);
+        const data = await pedagogySpaceService.getPendingMonthlyEvaluations(academicYearId, statusFilter);
         return Array.isArray(data) ? data : (data?.data ?? []);
       } catch (err: any) {
         console.warn('[usePendingEvaluations] Error:', err.message);

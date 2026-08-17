@@ -951,9 +951,14 @@ export class PedagogicalSpaceController {
   async getPendingAttendanceRegisters(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('status') status?: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
-    return this.service.getPendingAttendanceRegisters(tenantId, academicYearId);
+    // ⭐ status options : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+    const statusFilter = status && ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'].includes(status)
+      ? status
+      : 'SUBMITTED';
+    return this.service.getPendingAttendanceRegisters(tenantId, academicYearId, statusFilter);
   }
 
   @Get('director/attendance-register/:id')
@@ -1002,9 +1007,14 @@ export class PedagogicalSpaceController {
   async getPendingMonthlyEvaluations(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('status') status?: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
-    return this.service.getPendingMonthlyEvaluations(tenantId, academicYearId);
+    // ⭐ status options : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+    const statusFilter = status && ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'].includes(status)
+      ? status
+      : 'SUBMITTED';
+    return this.service.getPendingMonthlyEvaluations(tenantId, academicYearId, statusFilter);
   }
 
   @Get('director/evaluation/:id')

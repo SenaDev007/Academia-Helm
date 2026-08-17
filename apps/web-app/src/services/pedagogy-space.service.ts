@@ -41,16 +41,16 @@ export const pedagogySpaceService = {
     return res.data;
   },
 
-  async getPendingAttendanceRegisters(academicYearId: string) {
+  async getPendingAttendanceRegisters(academicYearId: string, statusFilter?: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL') {
     const res = await apiClient.get('/pedagogy-space/director/pending-registers', {
-      params: { academicYearId },
+      params: { academicYearId, status: statusFilter },
     });
     return res.data;
   },
 
-  async getPendingMonthlyEvaluations(academicYearId: string) {
+  async getPendingMonthlyEvaluations(academicYearId: string, statusFilter?: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL') {
     const res = await apiClient.get('/pedagogy-space/director/pending-evaluations', {
-      params: { academicYearId },
+      params: { academicYearId, status: statusFilter },
     });
     return res.data;
   },

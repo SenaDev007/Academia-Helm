@@ -5626,16 +5626,25 @@ export class PedagogicalSpaceService {
   }
 
   /// Récupère tous les registres d'appel soumis (en attente de validation).
-  async getPendingAttendanceRegisters(tenantId: string, academicYearId: string) {
+  /// Récupère les registres d'appel selon le filtre de statut.
+  /// ⭐ statusFilter options : 'SUBMITTED' (default) | 'VALIDATED' | 'REJECTED' | 'ALL'
+  /// Inclut schoolLevelName + schoolLevelCode via JOIN school_levels.
+  async getPendingAttendanceRegisters(tenantId: string, academicYearId: string, statusFilter: string = 'SUBMITTED') {
+    const validStatuses = ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'];
+    const status = validStatuses.includes(statusFilter) ? statusFilter : 'SUBMITTED';
+    const statusCondition = status === 'ALL'
+      ? `AND ar."status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')`
+      : `AND ar."status" = '${status}'`;
     return this.prisma.$queryRawUnsafe(
-      `SELECT ar.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
-              sl."code" as "schoolLevelCode"
+      `SELECT ar.*, c."name" as "classNameResolved", c."schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
        FROM "attendance_registers" ar
        LEFT JOIN "classes" c ON c."id" = ar."classId"
-       LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
        LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
-       WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."status" = 'SUBMITTED'
-       ORDER BY ar."submittedAt" DESC`,
+       LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 ${statusCondition}
+       ORDER BY ar."submittedAt" DESC, ar."validatedAt" DESC`,
       tenantId, academicYearId,
     );
   }
@@ -5921,14 +5930,24 @@ export class PedagogicalSpaceService {
 
   /// Récupère toutes les évaluations mensuelles soumises (en attente de validation).
   /// ⭐ Inclut les évaluations du Module Examen (institutional-exams) avec status=SUBMITTED
-  async getPendingMonthlyEvaluations(tenantId: string, academicYearId: string) {
+  async getPendingMonthlyEvaluations(tenantId: string, academicYearId: string, statusFilter: string = 'SUBMITTED') {
+    const validStatuses = ['SUBMITTED', 'VALIDATED', 'REJECTED', 'ALL'];
+    const status = validStatuses.includes(statusFilter) ? statusFilter : 'SUBMITTED';
+    const statusCondition = status === 'ALL'
+      ? `AND e."status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')`
+      : `AND e."status" = '${status}'`;
+    const statusConditionMe = status === 'ALL'
+      ? `AND me."status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')`
+      : `AND me."status" = '${status}'`;
+
     // 1. Évaluations depuis le module Examen (institutional-exams)
     const examEvals: any = await this.prisma.$queryRawUnsafe(
       `SELECT e.id, e.title, e.status, e.submittedAt, e.validatedAt, e.classId,
               e.evaluationDate, e.startDate, e.endDate,
               e."evaluationTypeId", et."name" as "evaluationTypeName",
               c."name" as "classNameResolved",
-              sl."code" as "schoolLevelCode",
+              c."schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
               e."academicYearId", e.tenantId,
               EXTRACT(MONTH FROM COALESCE(e."startDate", e."evaluationDate"))::int as "month",
@@ -5939,7 +5958,7 @@ export class PedagogicalSpaceService {
        LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN "teachers" t ON t."id" = e."teacherId"
        LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
-       WHERE e."tenantId" = $1 AND e."academicYearId" = $2 AND e."status" = 'SUBMITTED'
+       WHERE e."tenantId" = $1 AND e."academicYearId" = $2 ${statusCondition}
        ORDER BY e."submittedAt" DESC`,
       tenantId, academicYearId,
     );
@@ -5947,12 +5966,15 @@ export class PedagogicalSpaceService {
     // 2. Évaluations depuis l'ancien système pedagogy-space (monthly_evaluations)
     const pedagogyEvals: any = await this.prisma.$queryRawUnsafe(
       `SELECT me.*, c."name" as "classNameResolved",
+              c."schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               ar."month" as "registerMonth", ar."year" as "registerYear",
               'PEDAGOGY' as "source"
        FROM "monthly_evaluations" me
        LEFT JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
        LEFT JOIN "classes" c ON c."id" = me."classId"
-       WHERE me."tenantId" = $1 AND me."academicYearId" = $2 AND me."status" = 'SUBMITTED'
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       WHERE me."tenantId" = $1 AND me."academicYearId" = $2 ${statusConditionMe}
        ORDER BY me."submittedAt" DESC`,
       tenantId, academicYearId,
     ).catch(() => []);

@@ -29,7 +29,7 @@ import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
-  Download, Save, Activity, School,
+  Download, Save, Activity, School, ChevronsDownUp, ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -529,6 +529,31 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     REJECTED: { label: 'Rejetés', icon: XCircle, color: 'text-red-700 bg-red-50' },
   };
 
+  // ⭐ Helpers Tout déplier / Tout replier (pour gérer les grandes listes)
+  //    Rassemble toutes les clés des 3 niveaux hiérarchiques (schoolLevel, trimester, class)
+  //    à partir de la hiérarchie calculée plus haut.
+  const allSchoolLevelKeysCJ = sortedLevels;
+  const allTrimesterKeysCJ: string[] = [];
+  const allClassKeysCJ: string[] = [];
+  for (const sl of sortedLevels) {
+    for (const tr of Object.keys(hierarchy[sl])) {
+      allTrimesterKeysCJ.push(`${sl}::${tr}`);
+      for (const cn of Object.keys(hierarchy[sl][tr])) {
+        allClassKeysCJ.push(`${sl}::${tr}::${cn}`);
+      }
+    }
+  }
+  const handleExpandAllCJ = () => {
+    setCollapsedSchoolLevels(new Set());
+    setCollapsedTrimesters(new Set());
+    setCollapsedClasses(new Set());
+  };
+  const handleCollapseAllCJ = () => {
+    setCollapsedSchoolLevels(new Set(allSchoolLevelKeysCJ));
+    setCollapsedTrimesters(new Set(allTrimesterKeysCJ));
+    setCollapsedClasses(new Set(allClassKeysCJ));
+  };
+
   return (
     <div className="space-y-4">
       {/* ⭐ Sous-onglets statut : En attente / Validés / Rejetés */}
@@ -554,6 +579,21 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
         })}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          {/* ⭐ Boutons Tout déplier / Tout replier */}
+          <button
+            onClick={handleExpandAllCJ}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+            title="Tout déplier (afficher toutes les classes)"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" /> Tout déplier
+          </button>
+          <button
+            onClick={handleCollapseAllCJ}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
+            title="Tout replier (masquer toutes les classes)"
+          >
+            <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
+          </button>
           <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
             <RefreshCw className="h-4 w-4" />
           </button>
@@ -851,6 +891,29 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     REJECTED: { label: 'Rejetées', icon: XCircle, color: 'text-red-700 bg-red-50' },
   };
 
+  // ⭐ Helpers Tout déplier / Tout replier (pour gérer les grandes listes)
+  const allSchoolLevelKeysPF = sortedLevels;
+  const allTrimesterKeysPF: string[] = [];
+  const allClassKeysPF: string[] = [];
+  for (const sl of sortedLevels) {
+    for (const tr of Object.keys(hierarchy[sl])) {
+      allTrimesterKeysPF.push(`${sl}::${tr}`);
+      for (const cn of Object.keys(hierarchy[sl][tr])) {
+        allClassKeysPF.push(`${sl}::${tr}::${cn}`);
+      }
+    }
+  }
+  const handleExpandAllPF = () => {
+    setCollapsedSchoolLevels(new Set());
+    setCollapsedTrimesters(new Set());
+    setCollapsedClasses(new Set());
+  };
+  const handleCollapseAllPF = () => {
+    setCollapsedSchoolLevels(new Set(allSchoolLevelKeysPF));
+    setCollapsedTrimesters(new Set(allTrimesterKeysPF));
+    setCollapsedClasses(new Set(allClassKeysPF));
+  };
+
   return (
     <div className="space-y-4">
       {/* ⭐ Sous-onglets statut : En attente / Validées / Rejetées */}
@@ -876,6 +939,21 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
         })}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          {/* ⭐ Boutons Tout déplier / Tout replier */}
+          <button
+            onClick={handleExpandAllPF}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+            title="Tout déplier (afficher toutes les classes)"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" /> Tout déplier
+          </button>
+          <button
+            onClick={handleCollapseAllPF}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
+            title="Tout replier (masquer toutes les classes)"
+          >
+            <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
+          </button>
           <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
             <RefreshCw className="h-4 w-4" />
           </button>
@@ -1056,13 +1134,25 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
 }) {
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
   const queryClient = useQueryClient();
-  const { data: items = [], isLoading: loading, refetch } = usePendingRegisters(academicYearId);
+  // ⭐ 3 sous-onglets : en attente (SUBMITTED) / validés (VALIDATED) / rejetés (REJECTED)
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const { data: items = [], isLoading: loading, refetch } = usePendingRegisters(academicYearId, statusTab);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
+  // ⭐ États repliables (chevrons) pour la hiérarchie : schoolLevel → trimester → class
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
+  const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (refreshKey > 0) refetch();
   }, [refreshKey, refetch]);
+
+  // ⭐ Réinitialiser la sélection quand on change de sous-onglet
+  useEffect(() => {
+    setSelected(null);
+    setModalItem(null);
+  }, [statusTab]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
@@ -1084,6 +1174,16 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     } catch { toast.error("Erreur"); }
   };
 
+  // ⭐ Toggle collapse/expand d'un niveau hiérarchique
+  const toggleCollapse = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // ⭐ Si un registre est sélectionné, afficher la vue détaillée in-page
   if (selected) {
     return (
@@ -1102,81 +1202,265 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     );
   }
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
+  // ⭐ Hiérarchisation : schoolLevel → trimester → class → items
+  const getTrimester = (month: number): string => {
+    if (month >= 9) return 'Trimestre 1';
+    if (month >= 1 && month <= 3) return 'Trimestre 2';
+    if (month >= 4 && month <= 6) return 'Trimestre 3';
+    return 'Vacances (été)';
+  };
 
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <ClipboardList className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-        <p className="font-medium text-slate-700">Aucun registre en attente</p>
-      </div>
-    );
+  // Construire la structure hiérarchique à 3 niveaux
+  const hierarchy: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const item of items) {
+    const schoolLevel = item.schoolLevelName || 'Autres';
+    const trimester = getTrimester(item.month || 1);
+    const className = item.classNameResolved || item.className || 'Sans classe';
+    if (!hierarchy[schoolLevel]) hierarchy[schoolLevel] = {};
+    if (!hierarchy[schoolLevel][trimester]) hierarchy[schoolLevel][trimester] = {};
+    if (!hierarchy[schoolLevel][trimester][className]) hierarchy[schoolLevel][trimester][className] = [];
+    hierarchy[schoolLevel][trimester][className].push(item);
   }
 
-  // ⭐ Catégoriser par classe
-  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
-    const key = item.classNameResolved || item.className || 'Sans classe';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-  const classNames = Object.keys(grouped).sort();
+  // Ordonner les niveaux scolaires
+  const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
+  const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
+    const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Couleurs par niveau scolaire
+  const levelColors: Record<string, string> = {
+    Maternelle: 'text-pink-700 bg-pink-50 border-pink-200',
+    Primaire: 'text-blue-700 bg-blue-50 border-blue-200',
+    Secondaire: 'text-purple-700 bg-purple-50 border-purple-200',
+    Collège: 'text-amber-700 bg-amber-50 border-amber-200',
+    Lycée: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    Autres: 'text-slate-700 bg-slate-50 border-slate-200',
+  };
+
+  // ⭐ Helpers Tout déplier / Tout replier
+  //    Rassemble toutes les clés des 3 niveaux hiérarchiques
+  const allSchoolLevelKeys = sortedLevels;
+  const allTrimesterKeys: string[] = [];
+  const allClassKeys: string[] = [];
+  for (const sl of sortedLevels) {
+    for (const tr of Object.keys(hierarchy[sl])) {
+      allTrimesterKeys.push(`${sl}::${tr}`);
+      for (const cn of Object.keys(hierarchy[sl][tr])) {
+        allClassKeys.push(`${sl}::${tr}::${cn}`);
+      }
+    }
+  }
+  const handleExpandAll = () => {
+    setCollapsedSchoolLevels(new Set());
+    setCollapsedTrimesters(new Set());
+    setCollapsedClasses(new Set());
+  };
+  const handleCollapseAll = () => {
+    setCollapsedSchoolLevels(new Set(allSchoolLevelKeys));
+    setCollapsedTrimesters(new Set(allTrimesterKeys));
+    setCollapsedClasses(new Set(allClassKeys));
+  };
+
+  // Statuts pour les sous-onglets
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validés', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetés', icon: XCircle, color: 'text-red-700 bg-red-50' },
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Registres d'Appel en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
+      {/* ⭐ Sous-onglets statut : En attente / Validés / Rejetés */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s
+                  ? `${cfg.color} border-current`
+                  : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          {/* ⭐ Boutons Tout déplier / Tout replier */}
+          <button
+            onClick={handleExpandAll}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+            title="Tout déplier (afficher toutes les classes)"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" /> Tout déplier
+          </button>
+          <button
+            onClick={handleCollapseAll}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
+            title="Tout replier (masquer toutes les classes)"
+          >
+            <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
+          </button>
+          <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
-        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Groupé par classe */}
-      {classNames.map((className) => (
-        <div key={className} className="space-y-2">
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
-            <ClipboardList className="h-4 w-4 text-slate-600" />
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
-            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
-              {grouped[className].length}
-            </span>
-          </div>
-          <div className="space-y-2 pl-4">
-            {grouped[className].map(item => (
-              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                <div>
-                  <p className="font-medium text-slate-900">
-                    Registre de {MONTH_NAMES[item.month] || item.month} {item.year}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {item.teacherFirstName} {item.teacherLastName}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1 text-xs">
-                    <span className="text-emerald-600 font-semibold">Présences: {item.pourcentagePresences ?? "—"}%</span>
-                    <span className="text-red-600 font-semibold">Absences: {item.pourcentageAbsences ?? "—"}%</span>
-                    <span className="text-slate-500">Demi-j: {item.demiJourneeMois ?? "—"}</span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleView(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                    <Eye className="h-3 w-3" /> Voir
-                  </button>
-                  <button onClick={() => setModalItem(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                    <CheckCircle2 className="h-3 w-3" /> Traiter
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+      <div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">
+          Registres d'Appel — {tabConfig[statusTab].label}
+        </h3>
+      </div>
 
-      {/* ⭐ L'ancien modal a été remplacé par la vue in-page AttendanceRegisterDirectorDetail
-          (rendue au début du composant quand `selected` est défini) */}
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12">
+          <ClipboardList className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="font-medium text-slate-700">
+            Aucun registre {statusTab === 'SUBMITTED' ? 'en attente' : statusTab === 'VALIDATED' ? 'validé' : 'rejeté'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {statusTab === 'SUBMITTED'
+              ? "Les nouvelles soumissions apparaîtront ici."
+              : statusTab === 'VALIDATED'
+                ? "Les registres validés apparaîtront ici (historique)."
+                : "Les registres rejetés apparaîtront ici (à corriger par les enseignants)."}
+          </p>
+        </div>
+      ) : (
+        // ⭐ Hiérarchie collapsible : schoolLevel → trimester → class → items
+        <div className="space-y-3">
+          {sortedLevels.map(schoolLevel => {
+            const trimesters = hierarchy[schoolLevel];
+            const trimesterNames = Object.keys(trimesters);
+            const totalItems = trimesterNames.reduce(
+              (s, t) => s + Object.values(trimesters[t]).reduce((cs, items) => cs + items.length, 0), 0
+            );
+            const isLevelCollapsed = collapsedSchoolLevels.has(schoolLevel);
+            const levelColorClass = levelColors[schoolLevel] || levelColors.Autres;
+            return (
+              <div key={schoolLevel} className={cn('border rounded-lg overflow-hidden', levelColorClass.split(' ').slice(-1)[0])}>
+                <button
+                  onClick={() => toggleCollapse(setCollapsedSchoolLevels, schoolLevel)}
+                  className={cn('w-full flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-colors', levelColorClass)}
+                >
+                  {isLevelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <School className="h-5 w-5" />
+                  <span>{schoolLevel}</span>
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    ({trimesterNames.length} trimestre{trimesterNames.length > 1 ? 's' : ''} · {totalItems} registre{totalItems > 1 ? 's' : ''})
+                  </span>
+                </button>
+                {!isLevelCollapsed && (
+                  <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                    {trimesterNames.map(trimester => {
+                      const classes = trimesters[trimester];
+                      const classNames = Object.keys(classes).sort();
+                      const trimesterItems = classNames.reduce((s, cn) => s + classes[cn].length, 0);
+                      const trimesterKey = `${schoolLevel}::${trimester}`;
+                      const isTrimesterCollapsed = collapsedTrimesters.has(trimesterKey);
+                      return (
+                        <div key={trimester} className="border border-indigo-100 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => toggleCollapse(setCollapsedTrimesters, trimesterKey)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                          >
+                            {isTrimesterCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-indigo-600" /> : <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />}
+                            <Calendar className="h-4 w-4 text-indigo-600" />
+                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                            <span className="ml-auto text-xs text-indigo-500">{trimesterItems} registre(s) · {classNames.length} classe(s)</span>
+                          </button>
+                          {!isTrimesterCollapsed && (
+                            <div className="p-2 space-y-2 bg-white">
+                              {classNames.map(className => {
+                                const classItems = classes[className];
+                                const classKey = `${schoolLevel}::${trimester}::${className}`;
+                                const isClassCollapsed = collapsedClasses.has(classKey);
+                                return (
+                                  <div key={className} className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <button
+                                      onClick={() => toggleCollapse(setCollapsedClasses, classKey)}
+                                      className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors"
+                                    >
+                                      {isClassCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                                      <ClipboardList className="h-4 w-4 text-slate-600" />
+                                      <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</span>
+                                      <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+                                        {classItems.length}
+                                      </span>
+                                    </button>
+                                    {!isClassCollapsed && (
+                                      <div className="p-2 space-y-2 bg-white">
+                                        {classItems.map(item => (
+                                          <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="font-medium text-slate-900 text-sm">
+                                                Registre de {MONTH_NAMES[item.month] || item.month} {item.year}
+                                              </p>
+                                              <p className="text-xs text-slate-500 mt-0.5">
+                                                {item.teacherFirstName} {item.teacherLastName}
+                                              </p>
+                                              <div className="flex items-center gap-3 mt-1 text-xs">
+                                                <span className="text-emerald-600 font-semibold">Présences: {item.pourcentagePresences ?? "—"}%</span>
+                                                <span className="text-red-600 font-semibold">Absences: {item.pourcentageAbsences ?? "—"}%</span>
+                                                <span className="text-slate-500">Demi-j: {item.demiJourneeMois ?? "—"}</span>
+                                              </div>
+                                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                                {item.submittedAt ? `Soumis le ${formatDateTimeFR(item.submittedAt)}` : ''}
+                                                {item.validatedAt ? ` · Validé le ${formatDateTimeFR(item.validatedAt)}` : ''}
+                                                {item.status === 'REJECTED' && item.rejectionReason ? ` · Motif : ${item.rejectionReason.substring(0, 80)}${item.rejectionReason.length > 80 ? '…' : ''}` : ''}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                              <button onClick={() => handleView(item)}
+                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                                                <Eye className="h-3 w-3" /> Voir
+                                              </button>
+                                              {item.status === 'SUBMITTED' && (
+                                                <button onClick={() => setModalItem(item)}
+                                                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                                                  <CheckCircle2 className="h-3 w-3" /> Traiter
+                                                </button>
+                                              )}
+                                              {item.status !== 'SUBMITTED' && (
+                                                <span className={cn(
+                                                  'px-2 py-1 text-[10px] font-bold uppercase rounded',
+                                                  item.status === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                                )}>
+                                                  {item.status === 'VALIDATED' ? '✓ Validé' : '✗ Rejeté'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <ValidationModal
         open={!!modalItem}
@@ -1197,13 +1481,25 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
 }) {
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
   const queryClient = useQueryClient();
-  const { data: items = [], isLoading: loading, refetch } = usePendingEvaluations(academicYearId);
+  // ⭐ 3 sous-onglets : en attente (SUBMITTED) / validés (VALIDATED) / rejetés (REJECTED)
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const { data: items = [], isLoading: loading, refetch } = usePendingEvaluations(academicYearId, statusTab);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
+  // ⭐ États repliables (chevrons) pour la hiérarchie : schoolLevel → trimester → class
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
+  const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (refreshKey > 0) refetch();
   }, [refreshKey, refetch]);
+
+  // ⭐ Réinitialiser la sélection quand on change de sous-onglet
+  useEffect(() => {
+    setSelected(null);
+    setModalItem(null);
+  }, [statusTab]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
@@ -1225,111 +1521,293 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     } catch { toast.error("Erreur"); }
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
-
-  if (items.length === 0) {
+  // ⭐ Si une évaluation est sélectionnée, afficher la vue détaillée in-page
+  if (selected) {
     return (
-      <div className="text-center py-12">
-        <BookOpen className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-        <p className="font-medium text-slate-700">Aucune évaluation en attente</p>
-      </div>
+      <MonthlyEvaluationDirectorDetail
+        evaluation={selected}
+        userId={userId}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-evaluations"] });
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
+        }}
+      />
     );
   }
 
-  // ⭐ Hiérarchisation : par classe → trimestre
+  // ⭐ Toggle collapse/expand d'un niveau hiérarchique
+  const toggleCollapse = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // ⭐ Hiérarchisation : schoolLevel → trimester → class → items
   const getTrimester = (month: number): string => {
-    if (month >= 9 || month === 12) return 'Trimestre 1';
+    if (month >= 9) return 'Trimestre 1';
     if (month >= 1 && month <= 3) return 'Trimestre 2';
     if (month >= 4 && month <= 6) return 'Trimestre 3';
     return 'Vacances (été)';
   };
-  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
-    const key = item.classNameResolved || item.className || 'Sans classe';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-  const classNames = Object.keys(grouped).sort();
 
-  // ⭐ Grouper par trimestre pour chaque classe
-  const groupedByTrimester: Record<string, Record<string, any[]>> = {};
-  for (const cn of classNames) {
-    groupedByTrimester[cn] = {};
-    for (const item of grouped[cn]) {
-      const m = item.registerMonth || item.month || 1;
-      const trimester = getTrimester(m);
-      if (!groupedByTrimester[cn][trimester]) groupedByTrimester[cn][trimester] = [];
-      groupedByTrimester[cn][trimester].push(item);
+  // Construire la structure hiérarchique à 3 niveaux
+  const hierarchy: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const item of items) {
+    const schoolLevel = item.schoolLevelName || 'Autres';
+    const m = item.registerMonth || item.month || 1;
+    const trimester = getTrimester(m);
+    const className = item.classNameResolved || item.className || 'Sans classe';
+    if (!hierarchy[schoolLevel]) hierarchy[schoolLevel] = {};
+    if (!hierarchy[schoolLevel][trimester]) hierarchy[schoolLevel][trimester] = {};
+    if (!hierarchy[schoolLevel][trimester][className]) hierarchy[schoolLevel][trimester][className] = [];
+    hierarchy[schoolLevel][trimester][className].push(item);
+  }
+
+  // Ordonner les niveaux scolaires
+  const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
+  const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
+    const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  // Couleurs par niveau scolaire
+  const levelColors: Record<string, string> = {
+    Maternelle: 'text-pink-700 bg-pink-50 border-pink-200',
+    Primaire: 'text-blue-700 bg-blue-50 border-blue-200',
+    Secondaire: 'text-purple-700 bg-purple-50 border-purple-200',
+    Collège: 'text-amber-700 bg-amber-50 border-amber-200',
+    Lycée: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    Autres: 'text-slate-700 bg-slate-50 border-slate-200',
+  };
+
+  // ⭐ Helpers Tout déplier / Tout replier
+  const allSchoolLevelKeys = sortedLevels;
+  const allTrimesterKeys: string[] = [];
+  const allClassKeys: string[] = [];
+  for (const sl of sortedLevels) {
+    for (const tr of Object.keys(hierarchy[sl])) {
+      allTrimesterKeys.push(`${sl}::${tr}`);
+      for (const cn of Object.keys(hierarchy[sl][tr])) {
+        allClassKeys.push(`${sl}::${tr}::${cn}`);
+      }
     }
   }
+  const handleExpandAll = () => {
+    setCollapsedSchoolLevels(new Set());
+    setCollapsedTrimesters(new Set());
+    setCollapsedClasses(new Set());
+  };
+  const handleCollapseAll = () => {
+    setCollapsedSchoolLevels(new Set(allSchoolLevelKeys));
+    setCollapsedTrimesters(new Set(allTrimesterKeys));
+    setCollapsedClasses(new Set(allClassKeys));
+  };
+
+  // Statuts pour les sous-onglets
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validées', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetées', icon: XCircle, color: 'text-red-700 bg-red-50' },
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Évaluations Mensuelles en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
+      {/* ⭐ Sous-onglets statut : En attente / Validées / Rejetées */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s
+                  ? `${cfg.color} border-current`
+                  : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-500">{items.length} élément(s)</span>
+          {/* ⭐ Boutons Tout déplier / Tout replier */}
+          <button
+            onClick={handleExpandAll}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200"
+            title="Tout déplier (afficher toutes les classes)"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" /> Tout déplier
+          </button>
+          <button
+            onClick={handleCollapseAll}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200"
+            title="Tout replier (masquer toutes les classes)"
+          >
+            <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
+          </button>
+          <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
-        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Hiérarchisé par classe → trimestre */}
-      {classNames.map((className) => (
-        <div key={className} className="space-y-3">
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
-            <BookOpen className="h-4 w-4 text-slate-600" />
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
-            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
-              {grouped[className].length}
-            </span>
-          </div>
-          {/* ⭐ Sous-groupement par trimestre */}
-          {Object.keys(groupedByTrimester[className]).map(trimester => (
-            <div key={trimester} className="space-y-2 pl-4">
-              <div className="flex items-center gap-2 px-2 py-1 bg-indigo-50 rounded">
-                <Calendar className="h-3 w-3 text-indigo-600" />
-                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
-                <span className="ml-auto text-xs text-indigo-500">
-                  {groupedByTrimester[className][trimester].length} soumission(s)
-                </span>
-              </div>
-              {/* ⭐ Évaluations du trimestre */}
-              <div className="space-y-2 pl-4">
-                {groupedByTrimester[className][trimester].map(item => (
-              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                <div>
-                  <p className="font-medium text-slate-900">
-                    Évaluation N°{item.evaluationNumber || "—"} — {MONTH_NAMES[item.registerMonth || item.month] || "—"} {item.registerYear || item.year}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {item.teacherFirstName} {item.teacherLastName}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1 text-xs">
-                    <span className="text-blue-600 font-semibold">% réussite total: {item.pourcentageReussiteTotal?.toFixed?.(1) ?? item.pourcentageReussiteTotal ?? "—"}%</span>
-                    <span className="text-emerald-600">Atteint: {item.ayantAtteintSeuilTotal ?? "—"}/{item.ayantComposeTotal ?? "—"}</span>
-                    <span className="text-slate-500">Seuil: {item.seuilReussite ?? 10}/20</span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleView(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                    <Eye className="h-3 w-3" /> Voir
-                  </button>
-                  <button onClick={() => setModalItem(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                    <CheckCircle2 className="h-3 w-3" /> Traiter
-                  </button>
-                </div>
-              </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
+      <div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">
+          Évaluations Mensuelles — {tabConfig[statusTab].label}
+        </h3>
+      </div>
 
-      {/* Modal remplacé par vue in-page MonthlyEvaluationDirectorDetail */}
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-12">
+          <BookOpen className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+          <p className="font-medium text-slate-700">
+            Aucune évaluation {statusTab === 'SUBMITTED' ? 'en attente' : statusTab === 'VALIDATED' ? 'validée' : 'rejetée'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {statusTab === 'SUBMITTED'
+              ? "Les nouvelles soumissions apparaîtront ici."
+              : statusTab === 'VALIDATED'
+                ? "Les évaluations validées apparaîtront ici (historique)."
+                : "Les évaluations rejetées apparaîtront ici (à corriger par les enseignants)."}
+          </p>
+        </div>
+      ) : (
+        // ⭐ Hiérarchie collapsible : schoolLevel → trimester → class → items
+        <div className="space-y-3">
+          {sortedLevels.map(schoolLevel => {
+            const trimesters = hierarchy[schoolLevel];
+            const trimesterNames = Object.keys(trimesters);
+            const totalItems = trimesterNames.reduce(
+              (s, t) => s + Object.values(trimesters[t]).reduce((cs, items) => cs + items.length, 0), 0
+            );
+            const isLevelCollapsed = collapsedSchoolLevels.has(schoolLevel);
+            const levelColorClass = levelColors[schoolLevel] || levelColors.Autres;
+            return (
+              <div key={schoolLevel} className={cn('border rounded-lg overflow-hidden', levelColorClass.split(' ').slice(-1)[0])}>
+                <button
+                  onClick={() => toggleCollapse(setCollapsedSchoolLevels, schoolLevel)}
+                  className={cn('w-full flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-colors', levelColorClass)}
+                >
+                  {isLevelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <School className="h-5 w-5" />
+                  <span>{schoolLevel}</span>
+                  <span className="ml-1 text-xs font-normal opacity-75">
+                    ({trimesterNames.length} trimestre{trimesterNames.length > 1 ? 's' : ''} · {totalItems} évaluation{totalItems > 1 ? 's' : ''})
+                  </span>
+                </button>
+                {!isLevelCollapsed && (
+                  <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                    {trimesterNames.map(trimester => {
+                      const classes = trimesters[trimester];
+                      const classNames = Object.keys(classes).sort();
+                      const trimesterItems = classNames.reduce((s, cn) => s + classes[cn].length, 0);
+                      const trimesterKey = `${schoolLevel}::${trimester}`;
+                      const isTrimesterCollapsed = collapsedTrimesters.has(trimesterKey);
+                      return (
+                        <div key={trimester} className="border border-indigo-100 rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => toggleCollapse(setCollapsedTrimesters, trimesterKey)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                          >
+                            {isTrimesterCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-indigo-600" /> : <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />}
+                            <Calendar className="h-4 w-4 text-indigo-600" />
+                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                            <span className="ml-auto text-xs text-indigo-500">{trimesterItems} évaluation(s) · {classNames.length} classe(s)</span>
+                          </button>
+                          {!isTrimesterCollapsed && (
+                            <div className="p-2 space-y-2 bg-white">
+                              {classNames.map(className => {
+                                const classItems = classes[className];
+                                const classKey = `${schoolLevel}::${trimester}::${className}`;
+                                const isClassCollapsed = collapsedClasses.has(classKey);
+                                return (
+                                  <div key={className} className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <button
+                                      onClick={() => toggleCollapse(setCollapsedClasses, classKey)}
+                                      className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors"
+                                    >
+                                      {isClassCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                                      <BookOpen className="h-4 w-4 text-slate-600" />
+                                      <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</span>
+                                      <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+                                        {classItems.length}
+                                      </span>
+                                    </button>
+                                    {!isClassCollapsed && (
+                                      <div className="p-2 space-y-2 bg-white">
+                                        {classItems.map(item => (
+                                          <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white hover:border-slate-300">
+                                            <div className="flex-1 min-w-0">
+                                              <p className="font-medium text-slate-900 text-sm">
+                                                Évaluation N°{item.evaluationNumber || "—"} — {MONTH_NAMES[item.registerMonth || item.month] || "—"} {item.registerYear || item.year}
+                                              </p>
+                                              <p className="text-xs text-slate-500 mt-0.5">
+                                                {item.teacherFirstName} {item.teacherLastName}
+                                              </p>
+                                              <div className="flex items-center gap-3 mt-1 text-xs">
+                                                <span className="text-blue-600 font-semibold">% réussite total: {item.pourcentageReussiteTotal?.toFixed?.(1) ?? item.pourcentageReussiteTotal ?? "—"}%</span>
+                                                <span className="text-emerald-600">Atteint: {item.ayantAtteintSeuilTotal ?? "—"}/{item.ayantComposeTotal ?? "—"}</span>
+                                                <span className="text-slate-500">Seuil: {item.seuilReussite ?? 10}/20</span>
+                                              </div>
+                                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                                {item.submittedAt ? `Soumis le ${formatDateTimeFR(item.submittedAt)}` : ''}
+                                                {item.validatedAt ? ` · Validé le ${formatDateTimeFR(item.validatedAt)}` : ''}
+                                                {item.status === 'REJECTED' && item.rejectionReason ? ` · Motif : ${item.rejectionReason.substring(0, 80)}${item.rejectionReason.length > 80 ? '…' : ''}` : ''}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                              <button onClick={() => handleView(item)}
+                                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                                                <Eye className="h-3 w-3" /> Voir
+                                              </button>
+                                              {item.status === 'SUBMITTED' && (
+                                                <button onClick={() => setModalItem(item)}
+                                                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                                                  <CheckCircle2 className="h-3 w-3" /> Traiter
+                                                </button>
+                                              )}
+                                              {item.status !== 'SUBMITTED' && (
+                                                <span className={cn(
+                                                  'px-2 py-1 text-[10px] font-bold uppercase rounded',
+                                                  item.status === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                                )}>
+                                                  {item.status === 'VALIDATED' ? '✓ Validée' : '✗ Rejetée'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <ValidationModal
         open={!!modalItem}

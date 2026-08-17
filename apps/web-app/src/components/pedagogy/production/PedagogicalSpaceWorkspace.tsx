@@ -33,7 +33,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
-  ClipboardCheck, Book, Package, Send, Bell,
+  ClipboardCheck, Package, Send, Bell,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
@@ -45,9 +45,8 @@ import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { CahierDeTestTab } from "./CahierDeTestTab";
-import { HomeworkTab } from "./HomeworkTab";
-import { GlobalLibraryHub } from "@/components/pedagogy/library/GlobalLibraryHub";
 import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
+import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ⭐ Ordre des onglets — Fiches Pédagogiques fusionnées avec Cahier Journal :
@@ -56,21 +55,24 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 //   3. Registre d'Appel (registre mensuel + évaluations)
 //   4. Cahier Journal & Fiches Pédagogiques (grille hebdo 5j × 8 matières + fiches liées)
 //   5. Cahier de Semaine (monitoring institutionnel)
-//   6. Devoirs
+//   6. Travaux & Suivi (devoirs, exercices & suivi des élèves)
 //   7. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
 //   8. Cahier de Test (secondaire uniquement)
-//   9. Bibliothèque virtuelle
-//  10. Matériel pédagogique
+//   9. Matériel pédagogique
+//
+//   ⭐ Supprimé : Devoirs (fusionné dans Travaux & Suivi)
+//   ⭐ Supprimé : Bibliothèque (supprimé du module pédagogie)
+//   ⭐ Travaux & Suivi déplacé depuis le module orga pédagogique vers ici
+//   ⭐ Cahier de Texte déplacé depuis le module orga pédagogique vers ici
 const ALL_TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations', secondaryOnly: false },
   { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false },
-  { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi', secondaryOnly: false },
+  { id: 'tasks', label: 'Travaux & Suivi', icon: ClipboardList, description: 'Devoirs & suivi des élèves', secondaryOnly: false },
   { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)', secondaryOnly: true },
   { id: 'cahier-test', label: 'Cahier de Test', icon: FileText, description: 'Évaluations & compositions', secondaryOnly: true },
-  { id: 'biblio', label: 'Bibliothèque', icon: Book, description: 'Ressources pédagogiques', secondaryOnly: false },
   { id: 'materiel', label: 'Matériel', icon: Package, description: 'Inventaire & ressources', secondaryOnly: false },
 ] as const;
 
@@ -212,19 +214,11 @@ export function PedagogicalSpaceWorkspace({
               teacherId={teacherId}
             />
           )}
-          {tab === 'biblio' && (
-            <GlobalLibraryHub />
+          {tab === 'tasks' && (
+            <TeacherTasksWorkspace />
           )}
           {tab === 'materiel' && (
             <MaterialsWorkspace />
-          )}
-          {tab === 'homework' && (
-            <HomeworkTab
-              tenantId={resolvedTenantId}
-              academicYearId={resolvedAcademicYearId}
-              schoolLevelId={schoolLevel?.schoolLevelId || schoolLevel?.id || ''}
-              teacherId={teacherId}
-            />
           )}
         </div>
       </div>

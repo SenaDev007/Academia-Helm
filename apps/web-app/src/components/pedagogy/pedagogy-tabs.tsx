@@ -12,8 +12,6 @@ import {
   BarChart3,
   CalendarDays,
   NotebookPen,
-  Sparkles,
-  BookMarked,
 } from 'lucide-react';
 
 /**
@@ -259,47 +257,6 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     roles: [
       'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
       'PROMOTER', 'director', 'admin',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
-    id: 'teacher-tasks',
-    label: 'Travaux & Suivi',
-    path: '/app/pedagogy/tasks',
-    icon: ClipboardList,
-    roles: [
-      'TEACHER', 'TEACHER_RESP',
-      'SUPER_DIRECTOR', 'director', 'admin',
-      'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
-    id: 'sara-compose',
-    label: 'Sarah Compose (IA)',
-    path: '/app/pedagogy/sara-compose',
-    icon: Sparkles,
-    roles: [
-      'TEACHER', 'TEACHER_RESP',
-      'SUPER_DIRECTOR', 'director', 'admin',
-      'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
-    id: 'class-diaries',
-    label: 'Cahiers de textes',
-    path: '/app/pedagogy/class-diaries',
-    icon: BookMarked,
-    roles: [
-      'TEACHER', 'TEACHER_RESP',
-      'SUPER_DIRECTOR', 'director', 'admin',
-      'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
       'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
       'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
       'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',

@@ -1320,6 +1320,27 @@ export class PedagogicalSpaceController {
     return this.service.updateSeminarConfig(tenantId, id, body);
   }
 
+  // ⭐ Soumet le cahier de semaine au directeur (enseignant → direction)
+  @Post('seminar-config/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitSeminarConfig(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitSeminarConfig(tenantId, id);
+  }
+
+  // ⭐ Valide ou rejette le cahier de semaine (direction)
+  @Post('seminar-config/:id/validate')
+  @HttpCode(HttpStatus.OK)
+  async validateSeminarConfig(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { action: 'VALIDATED' | 'REJECTED'; directorSignature: string; validatedBy: string; rejectionReason?: string },
+  ) {
+    return this.service.validateSeminarConfig(tenantId, id, body.action, body.directorSignature, body.validatedBy, body.rejectionReason);
+  }
+
   @Get('seminar-daily-report')
   async getDailyReport(
     @TenantId() tenantId: string,

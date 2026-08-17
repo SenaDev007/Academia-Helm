@@ -7713,7 +7713,9 @@ td.name{text-align:left;font-weight:bold;}
     //   - tri par lastName ASC, firstName ASC pour rotation stable
     //
     // assignedLanguages est stocké en JSONB. On utilise jsonb_array_elements_text
-    // pour vérifier qu'il contient exactement 'FR' (et pas EN).
+    // ⭐ Inclure TOUS les enseignants FR et EN (maternelle + primaire)
+    //    L'utilisateur a demandé que les enseignants anglophones figurent aussi
+    //    dans la liste de présence du semainier.
     const teachers: any = await this.prisma.$queryRawUnsafe(
       `SELECT t.id, t."firstName", t."lastName", t."schoolLevelId",
               sl.code AS "schoolLevelCode",
@@ -7723,17 +7725,6 @@ td.name{text-align:left;font-weight:bold;}
        WHERE t."tenantId" = $1
          AND t.status = 'active'
          AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
-         AND (
-           -- Cas 1 : assignedLanguages est null → on suppose FR par défaut
-           t."assignedLanguages" IS NULL
-           OR
-           -- Cas 2 : assignedLanguages est un tableau JSON contenant exactement 'FR'
-           -- (et pas 'EN') — on exclut donc les bilingues FR+EN
-           (
-             jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'FR'
-             AND NOT jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'EN'
-           )
-         )
        ORDER BY t."lastName" ASC, t."firstName" ASC`,
       tenantId,
     );
@@ -7746,8 +7737,8 @@ td.name{text-align:left;font-weight:bold;}
     }
 
     // ⭐ Récupérer les classes de chaque enseignant via TeacherClassAssignment
-    // (relation enseignant → classe physique CI/A, CP/B, etc.)
-    // On exclut les classes dont la piste linguistique est "EN" (english only).
+    // ⭐ Récupérer TOUTES les classes assignées (FR + EN) — l'utilisateur a demandé
+    //    que les enseignants anglophones et leurs classes figurent aussi.
     const teacherClasses: any = await this.prisma.$queryRawUnsafe(
       `SELECT tca."teacherId",
               tca."classId",
@@ -7759,7 +7750,6 @@ td.name{text-align:left;font-weight:bold;}
        WHERE tca."tenantId" = $1
          AND tca."academicYearId" = $2
          AND tca."classId" IS NOT NULL
-         AND (c.language IS NULL OR c.language = 'FR' OR c.language != 'EN')
        ORDER BY c.name ASC`,
       tenantId, academicYearId,
     );
@@ -7969,13 +7959,6 @@ td.name{text-align:left;font-weight:bold;}
        WHERE t."tenantId" = $1
          AND t.status = 'active'
          AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
-         AND (
-           t."assignedLanguages" IS NULL
-           OR (
-             jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'FR'
-             AND NOT jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'EN'
-           )
-         )
        ORDER BY sl.code ASC, t."lastName" ASC, t."firstName" ASC`,
       tenantId,
     );
@@ -7994,7 +7977,6 @@ td.name{text-align:left;font-weight:bold;}
          WHERE tca."tenantId" = $1
            AND tca."academicYearId" = $2
            AND tca."classId" IS NOT NULL
-           AND (c.language IS NULL OR c.language != 'EN')
          ORDER BY c.name ASC`,
         tenantId, academicYearId,
       );
@@ -8022,7 +8004,9 @@ td.name{text-align:left;font-weight:bold;}
     const params: any[] = [];
     let paramIdx = 1;
 
-    const allowedFields = ['teacherId', 'teacherSignature', 'status', 'classIds'];
+    const allowedFields = ['teacherId', 'teacherSignature', 'status', 'classIds',
+      // ⭐ Champs directeur pour le workflow de validation
+      'directorSignature', 'rejectionReason', 'submittedAt', 'validatedAt', 'validatedBy'];
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
         if (field === 'classIds') {
@@ -8052,6 +8036,69 @@ td.name{text-align:left;font-weight:bold;}
       configId,
     );
     return updated[0];
+  }
+
+  /// ⭐ Soumet le cahier de semaine au directeur (enseignant → direction)
+  ///    Change le statut de SIGNED → SUBMITTED + set submittedAt
+  async submitSeminarConfig(tenantId: string, configId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_config" WHERE "id" = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Semainier non trouvé');
+    }
+    if (existing[0].status !== 'SIGNED') {
+      throw new BadRequestException(`Le semainier doit être signé avant soumission (actuel: ${existing[0].status})`);
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_config" SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
+      configId,
+    );
+    this.logger.log(`📧 Semainier ${configId} soumis au directeur`);
+    return { success: true, configId, status: 'SUBMITTED' };
+  }
+
+  /// ⭐ Valide ou rejette le cahier de semaine (direction)
+  ///    Change le statut SUBMITTED → VALIDATED ou REJECTED + set directorSignature + validatedAt
+  async validateSeminarConfig(
+    tenantId: string,
+    configId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    directorSignature: string,
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_config" WHERE "id" = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Semainier non trouvé');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException(`Le semainier doit être en statut SUBMITTED pour validation (actuel: ${existing[0].status})`);
+    }
+    if (action === 'VALIDATED' && !directorSignature) {
+      throw new BadRequestException('La signature du directeur est obligatoire pour valider');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_config"
+       SET "status" = $1,
+           "directorSignature" = $2,
+           "validatedAt" = CASE WHEN $1 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+           "validatedBy" = $3,
+           "rejectionReason" = $4,
+           "updatedAt" = NOW()
+       WHERE "id" = $5`,
+      action,
+      directorSignature || null,
+      validatedBy,
+      action === 'REJECTED' ? (rejectionReason || null) : null,
+      configId,
+    );
+    this.logger.log(`✅ Semainier ${configId} ${action} par ${validatedBy}`);
+    return { success: true, configId, status: action };
   }
 
   async getOrCreateDailyReport(tenantId: string, configId: string, dayOfWeek: number) {

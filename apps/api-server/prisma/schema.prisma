@@ -16215,6 +16215,10 @@ model CahierJournal {
   validatedBy     String?
   rejectionReason String?
 
+  // ⭐ Traçabilité cross-year : ID du cahier journal source si ce cahier a été
+  //    dupliqué depuis une année précédente (bouton "Réutiliser" du Catalogue)
+  originalJournalId String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -16226,6 +16230,7 @@ model CahierJournal {
   @@unique([tenantId, academicYearId, classId, weekStartDate])
   @@index([tenantId, academicYearId, teacherId])
   @@index([status])
+  @@index([originalJournalId])
   @@map("cahier_journal_entries")
 }
 

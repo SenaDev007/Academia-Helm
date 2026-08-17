@@ -2461,6 +2461,363 @@ export class PedagogicalSpaceService {
     );
   }
 
+  // ===========================================================================
+  // CATALOGUE — Hiérarchie années → trimestres → mois → semaines
+  //    Pour l'espace pédagogie enseignant, sous-onglet "Catalogue"
+  //    Pattern identique à l'explorateur Windows : on navigue dans les dossiers
+  //
+  //    Retourne : {
+  //      academicYears: [
+  //        {
+  //          id, name, startDate, endDate, isActive,
+  //          trimesters: [
+  //            {
+  //              trimester: 1, label: "Premier trimestre",
+  //              dateRange: { start, end },
+  //              months: [
+  //                {
+  //                  month: 9, label: "Septembre",
+  //                  weeks: [
+  //                    {
+  //                      weekStartDate, weekEndDate,
+  //                      cahierJournal: { id, status, className, ... } | null,
+  //                      fiches: [ { id, sheetType, titre, lessonDate, status, ... }, ... ]
+  //                    }
+  //                  ]
+  //                }
+  //              ]
+  //            }
+  //          ]
+  //        }
+  //      ]
+  //    }
+  // ===========================================================================
+
+  /**
+   * Détermine le trimestre (1, 2 ou 3) à partir d'une date.
+   * Calendrier scolaire Bénin :
+   *   T1 = Septembre → Décembre (mois 9, 10, 11, 12)
+   *   T2 = Janvier → Mars       (mois 1, 2, 3)
+   *   T3 = Avril → Juin         (mois 4, 5, 6)
+   * Juillet et Août sont généralement en vacances — rattachés au T3 par défaut.
+   */
+  private getTrimesterForDate(date: Date | string): 1 | 2 | 3 {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    const m = d.getMonth() + 1; // 1=Jan, 12=Dec
+    if (m >= 9) return 1;        // Sep, Oct, Nov, Dec
+    if (m <= 3) return 2;        // Jan, Feb, Mar
+    return 3;                    // Apr, May, Jun (Jul, Aug)
+  }
+
+  /**
+   * Catalogue hiérarchique des cahiers journaux + fiches pédagogiques
+   * d'un enseignant (ou d'une classe pour le directeur), sur TOUTES les
+   * années scolaires du tenant.
+   *
+   * Le catalogue est organisé comme un explorateur Windows :
+   *   Année → Trimestre → Mois → Semaine (cahier journal + fiches jointes)
+   *
+   * @param tenantId  ID du tenant
+   * @param teacherId ID du User (PROMOTER/DIRECTOR/TEACHER) — résolu en teacherId
+   * @param classId   Optionnel — filtre par classe si fourni
+   */
+  async getCatalogue(tenantId: string, teacherId: string, classId?: string) {
+    // 1. Résoudre le filtre enseignant (mode "teacher" ou mode "direction")
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') {
+      return { academicYears: [] };
+    }
+
+    // 2. Charger TOUTES les années scolaires du tenant (triées par date de début DESC)
+    const years: any[] = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name, label, "startDate", "endDate", "isActive"
+       FROM "academic_years"
+       WHERE "tenantId" = $1
+       ORDER BY "startDate" DESC`,
+      tenantId,
+    );
+    if (!years || years.length === 0) {
+      return { academicYears: [] };
+    }
+
+    // 3. Pour chaque année, charger les cahiers journaux (filtrés par enseignant + classe)
+    //    + les fiches pédagogiques liées (filtrées pareil).
+    //    On fait les 2 requêtes en parallèle pour chaque année.
+    const academicYears = [];
+    for (const year of years) {
+      // 3a. Cahiers journaux de l'année
+      let journals: any[] = [];
+      try {
+        const journalQuery = filter.mode === 'teacher'
+          ? (classId
+              ? `SELECT cj.*, c."name" as "classNameResolved",
+                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+                 FROM "cahier_journal_entries" cj
+                 LEFT JOIN classes c ON c."id" = cj."classId"
+                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
+                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+                   AND cj."teacherId" = $3 AND cj."classId" = $4
+                 ORDER BY cj."weekStartDate" ASC`
+              : `SELECT cj.*, c."name" as "classNameResolved",
+                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+                 FROM "cahier_journal_entries" cj
+                 LEFT JOIN classes c ON c."id" = cj."classId"
+                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
+                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+                   AND cj."teacherId" = $3
+                 ORDER BY cj."weekStartDate" ASC`)
+          : (classId
+              ? `SELECT cj.*, c."name" as "classNameResolved",
+                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+                 FROM "cahier_journal_entries" cj
+                 LEFT JOIN classes c ON c."id" = cj."classId"
+                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
+                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+                   AND cj."classId" = $3
+                 ORDER BY cj."weekStartDate" ASC`
+              : `SELECT cj.*, c."name" as "classNameResolved",
+                        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+                 FROM "cahier_journal_entries" cj
+                 LEFT JOIN classes c ON c."id" = cj."classId"
+                 LEFT JOIN teachers t ON t."id" = cj."teacherId"
+                 WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+                 ORDER BY cj."weekStartDate" ASC`);
+        const journalParams = filter.mode === 'teacher'
+          ? (classId ? [tenantId, year.id, filter.teacherId, classId] : [tenantId, year.id, filter.teacherId])
+          : (classId ? [tenantId, year.id, classId] : [tenantId, year.id]);
+        journals = await this.prisma.$queryRawUnsafe(journalQuery, ...journalParams);
+      } catch (err: any) {
+        this.logger.warn(`getCatalogue: failed to load journals for year ${year.id}: ${err.message}`);
+        journals = [];
+      }
+
+      // 3b. Fiches pédagogiques de l'année
+      let fiches: any[] = [];
+      try {
+        const ficheQuery = filter.mode === 'teacher'
+          ? (classId
+              ? `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                        f.status, f."className", f."cahierJournalId", f."subjectId",
+                        f."teacherId", f."classId"
+                 FROM "primary_pedagogical_fiches" f
+                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+                   AND f."teacherId" = $3 AND f."classId" = $4
+                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`
+              : `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                        f.status, f."className", f."cahierJournalId", f."subjectId",
+                        f."teacherId", f."classId"
+                 FROM "primary_pedagogical_fiches" f
+                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+                   AND f."teacherId" = $3
+                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`)
+          : (classId
+              ? `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                        f.status, f."className", f."cahierJournalId", f."subjectId",
+                        f."teacherId", f."classId"
+                 FROM "primary_pedagogical_fiches" f
+                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+                   AND f."classId" = $3
+                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`
+              : `SELECT f.id, f."sheetType", f."titre", f."cours", f."lessonDate", f."adminDate",
+                        f.status, f."className", f."cahierJournalId", f."subjectId",
+                        f."teacherId", f."classId"
+                 FROM "primary_pedagogical_fiches" f
+                 WHERE f."tenantId" = $1 AND f."academicYearId" = $2
+                 ORDER BY f."lessonDate" ASC, f."adminDate" ASC`);
+        const ficheParams = filter.mode === 'teacher'
+          ? (classId ? [tenantId, year.id, filter.teacherId, classId] : [tenantId, year.id, filter.teacherId])
+          : (classId ? [tenantId, year.id, classId] : [tenantId, year.id]);
+        fiches = await this.prisma.$queryRawUnsafe(ficheQuery, ...ficheParams);
+      } catch (err: any) {
+        this.logger.warn(`getCatalogue: failed to load fiches for year ${year.id}: ${err.message}`);
+        fiches = [];
+      }
+
+      if (journals.length === 0 && fiches.length === 0) {
+        // Année vide pour cet enseignant/classe — on l'inclut quand même pour
+        // montrer qu'elle existe (l'utilisateur peut cliquer dessus et voir
+        // un dossier vide). Mais on ne met aucun trimestre.
+        academicYears.push({
+          id: year.id,
+          name: year.name,
+          label: year.label,
+          startDate: year.startDate,
+          endDate: year.endDate,
+          isActive: year.isActive,
+          trimesters: [],
+        });
+        continue;
+      }
+
+      // 4. Construire l'arbre trimestres → mois → semaines
+      const trimestersMap: Record<number, {
+        trimester: number;
+        label: string;
+        dateRange: { start: string | null; end: string | null };
+        monthsMap: Record<number, { month: number; label: string; weeks: any[] }>;
+      }> = {
+        1: { trimester: 1, label: 'Premier trimestre', dateRange: { start: null, end: null }, monthsMap: {} },
+        2: { trimester: 2, label: 'Deuxième trimestre', dateRange: { start: null, end: null }, monthsMap: {} },
+        3: { trimester: 3, label: 'Troisième trimestre', dateRange: { start: null, end: null }, monthsMap: {} },
+      };
+      const MONTH_LABELS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+                            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+      // Indexer les fiches par cahierJournalId pour les associer aux semaines
+      const fichesByJournal: Record<string, any[]> = {};
+      const fichesUnattached: any[] = []; // fiches sans cahierJournalId (à ranger par date)
+      for (const fiche of fiches) {
+        if (fiche.cahierJournalId) {
+          if (!fichesByJournal[fiche.cahierJournalId]) {
+            fichesByJournal[fiche.cahierJournalId] = [];
+          }
+          fichesByJournal[fiche.cahierJournalId].push(fiche);
+        } else {
+          fichesUnattached.push(fiche);
+        }
+      }
+
+      // 4a. Pour chaque cahier journal, le placer dans le bon mois/trimestre
+      const usedFicheIds = new Set<string>();
+      for (const journal of journals) {
+        const weekStart = new Date(journal.weekStartDate);
+        const month = weekStart.getMonth() + 1; // 1-12
+        const trimester = this.getTrimesterForDate(weekStart);
+
+        if (!trimestersMap[trimester].monthsMap[month]) {
+          trimestersMap[trimester].monthsMap[month] = { month, label: MONTH_LABELS[month], weeks: [] };
+        }
+        // Date range du trimestre (min/max)
+        const ws = journal.weekStartDate;
+        const we = journal.weekEndDate;
+        if (!trimestersMap[trimester].dateRange.start || ws < trimestersMap[trimester].dateRange.start) {
+          trimestersMap[trimester].dateRange.start = ws;
+        }
+        if (!trimestersMap[trimester].dateRange.end || we > trimestersMap[trimester].dateRange.end) {
+          trimestersMap[trimester].dateRange.end = we;
+        }
+
+        // Associer les fiches liées à ce cahier journal
+        const linkedFiches = fichesByJournal[journal.id] || [];
+        for (const f of linkedFiches) usedFicheIds.add(f.id);
+
+        trimestersMap[trimester].monthsMap[month].weeks.push({
+          weekStartDate: journal.weekStartDate,
+          weekEndDate: journal.weekEndDate,
+          cahierJournal: {
+            id: journal.id,
+            status: journal.status,
+            className: journal.classNameResolved || journal.className,
+            classId: journal.classId,
+            teacherFirstName: journal.teacherFirstName,
+            teacherLastName: journal.teacherLastName,
+            observations: journal.observations,
+            submittedAt: journal.submittedAt,
+            validatedAt: journal.validatedAt,
+            entries: journal.entries, // JSON grid { lundi: {...}, mardi: {...}, ... }
+          },
+          fiches: linkedFiches.map((f: any) => ({
+            id: f.id,
+            sheetType: f.sheetType,
+            titre: f.titre,
+            cours: f.cours,
+            lessonDate: f.lessonDate,
+            adminDate: f.adminDate,
+            status: f.status,
+            className: f.className,
+            subjectId: f.subjectId,
+          })),
+        });
+      }
+
+      // 4b. Ranger les fiches "non attachées" à un cahier journal
+      //     par date (lessonDate ou adminDate) dans le bon mois/trimestre
+      for (const fiche of fichesUnattached) {
+        const dateStr = fiche.lessonDate || fiche.adminDate;
+        if (!dateStr) continue; // on ignore les fiches sans date
+        const d = new Date(dateStr);
+        const month = d.getMonth() + 1;
+        const trimester = this.getTrimesterForDate(d);
+
+        if (!trimestersMap[trimester].monthsMap[month]) {
+          trimestersMap[trimester].monthsMap[month] = { month, label: MONTH_LABELS[month], weeks: [] };
+        }
+
+        // Chercher une semaine dans ce mois qui chevauche la date de la fiche
+        // Si trouvée, on y rattache la fiche. Sinon, on crée une "semaine virtuelle".
+        const existingWeek = trimestersMap[trimester].monthsMap[month].weeks.find(w => {
+          const ws = new Date(w.weekStartDate);
+          const we = new Date(w.weekEndDate);
+          return d >= ws && d <= we;
+        });
+
+        if (existingWeek) {
+          existingWeek.fiches.push({
+            id: fiche.id,
+            sheetType: fiche.sheetType,
+            titre: fiche.titre,
+            cours: fiche.cours,
+            lessonDate: fiche.lessonDate,
+            adminDate: fiche.adminDate,
+            status: fiche.status,
+            className: fiche.className,
+            subjectId: fiche.subjectId,
+          });
+        } else {
+          // Semaine virtuelle (sans cahier journal) — juste pour la fiche
+          const ws = new Date(d);
+          ws.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // revenir à lundi
+          const we = new Date(ws);
+          we.setDate(ws.getDate() + 4); // vendredi
+          trimestersMap[trimester].monthsMap[month].weeks.push({
+            weekStartDate: ws.toISOString().substring(0, 10),
+            weekEndDate: we.toISOString().substring(0, 10),
+            cahierJournal: null,
+            fiches: [{
+              id: fiche.id,
+              sheetType: fiche.sheetType,
+              titre: fiche.titre,
+              cours: fiche.cours,
+              lessonDate: fiche.lessonDate,
+              adminDate: fiche.adminDate,
+              status: fiche.status,
+              className: fiche.className,
+              subjectId: fiche.subjectId,
+            }],
+          });
+        }
+      }
+
+      // 5. Convertir les Maps en Arrays triés
+      const trimesters = [1, 2, 3].map(t => {
+        const tData = trimestersMap[t];
+        const months = Object.values(tData.monthsMap).sort((a, b) => a.month - b.month);
+        // Trier les semaines de chaque mois par date croissante
+        for (const m of months) {
+          m.weeks.sort((a, b) => new Date(a.weekStartDate).getTime() - new Date(b.weekStartDate).getTime());
+        }
+        return {
+          trimester: tData.trimester,
+          label: tData.label,
+          dateRange: tData.dateRange,
+          months,
+        };
+      }).filter(t => t.months.length > 0); // retirer les trimestres vides
+
+      academicYears.push({
+        id: year.id,
+        name: year.name,
+        label: year.label,
+        startDate: year.startDate,
+        endDate: year.endDate,
+        isActive: year.isActive,
+        trimesters,
+      });
+    }
+
+    return { academicYears };
+  }
+
   /// Met à jour une entrée du cahier journal (grille, observations, etc.)
   async updateCahierJournal(
     tenantId: string,
@@ -4174,6 +4531,159 @@ export class PedagogicalSpaceService {
 
     // 4. Retourner la nouvelle fiche
     return this.getPedagogicalFiche(tenantId, newId);
+  }
+
+  /**
+   * ⭐ CROSS-YEAR REUSE pour les cahiers journaux
+   *    Duplique un cahier journal d'une année précédente vers l'année courante.
+   *    Le nouveau cahier journal a :
+   *    - academicYearId = année cible
+   *    - teacherId = enseignant cible (ou enseignant d'origine)
+   *    - classId = classe cible (ou classe d'origine)
+   *    - weekStartDate/weekEndDate = recalculées pour la même semaine de l'année cible
+   *      (si targetWeekStartDate fourni, utilisé tel quel ; sinon décalage de N années
+   *       pour conserver le n° de semaine)
+   *    - entries = copie de la grille hebdo (contenu pédagogique)
+   *    - status = 'DRAFT' (l'enseignant peut l'éditer avant soumission)
+   *    - directorSignature, teacherSignature = null (à refaire)
+   *    - originalJournalId = ID du cahier journal d'origine (traçabilité)
+   */
+  async duplicateCahierJournalToYear(
+    tenantId: string,
+    sourceJournalId: string,
+    targetAcademicYearId: string,
+    targetTeacherId?: string,
+    targetClassId?: string,
+    targetWeekStartDate?: string,
+  ) {
+    // 1. Charger le cahier journal source
+    const source: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      sourceJournalId, tenantId,
+    );
+    if (!source || source.length === 0) {
+      throw new NotFoundException('Cahier journal source introuvable');
+    }
+    const src = source[0];
+
+    // 2. Vérifier que l'année cible existe
+    const targetYear: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name, "startDate", "endDate" FROM "academic_years" WHERE id = $1 AND "tenantId" = $2`,
+      targetAcademicYearId, tenantId,
+    );
+    if (!targetYear || targetYear.length === 0) {
+      throw new NotFoundException('Année scolaire cible introuvable');
+    }
+
+    // 3. Calculer les nouvelles dates de semaine
+    //    Si targetWeekStartDate est fourni, l'utiliser.
+    //    Sinon, prendre la weekStartDate source et la décaler de (targetYear - sourceYear) années.
+    let newWeekStart: Date;
+    let newWeekEnd: Date;
+    if (targetWeekStartDate) {
+      newWeekStart = new Date(targetWeekStartDate);
+      newWeekEnd = new Date(newWeekStart);
+      newWeekEnd.setDate(newWeekStart.getDate() + 4); // vendredi (lundi + 4)
+    } else {
+      // Décalage d'années : préserver le n° de semaine
+      const srcWeekStart = new Date(src.weekStartDate);
+      const srcYear = srcWeekStart.getFullYear();
+      // Trouver le début de l'année cible
+      const targetStart = new Date(targetYear[0].startDate);
+      const targetYearNum = targetStart.getFullYear();
+      const yearDiff = targetYearNum - srcYear;
+      newWeekStart = new Date(srcWeekStart);
+      newWeekStart.setFullYear(srcWeekStart.getFullYear() + yearDiff);
+      // Si la nouvelle semaine tombe avant le début de l'année cible, décaler d'1 semaine
+      if (newWeekStart < targetStart) {
+        newWeekStart = new Date(targetStart);
+        // Ajuster au lundi de la semaine du targetStart
+        const dayOfWeek = newWeekStart.getDay(); // 0=Sun, 1=Mon...
+        const diff = dayOfWeek === 0 ? -6 : (1 - dayOfWeek);
+        newWeekStart.setDate(newWeekStart.getDate() + diff);
+      }
+      newWeekEnd = new Date(newWeekStart);
+      newWeekEnd.setDate(newWeekStart.getDate() + 4); // vendredi
+    }
+
+    // 4. Vérifier qu'il n'existe pas déjà un cahier journal pour cette combinaison
+    //    (tenantId, academicYearId, classId, weekStartDate) — contrainte @@unique
+    const newTeacherId = targetTeacherId || src.teacherId;
+    const newClassId = targetClassId || src.classId;
+    const newWeekStartStr = newWeekStart.toISOString().substring(0, 10);
+    const newWeekEndStr = newWeekEnd.toISOString().substring(0, 10);
+
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, status FROM "cahier_journal_entries"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2
+         AND "classId" = $3 AND "weekStartDate" = $4
+       LIMIT 1`,
+      tenantId, targetAcademicYearId, newClassId, newWeekStartStr,
+    );
+    if (existing && existing.length > 0) {
+      // Si déjà un cahier journal pour cette semaine → on l'écrase (ou on retourne l'existant)
+      // Choix : on retourne l'existant pour éviter la perte de données
+      this.logger.log(
+        `duplicateCahierJournalToYear: journal déjà existant pour ${newWeekStartStr} → retourne l'existant ${existing[0].id}`,
+      );
+      return this.getCahierJournal(tenantId, existing[0].id);
+    }
+
+    // 5. Créer le nouveau cahier journal
+    //    NB : on ne copie PAS teacherSignature/directorSignature car ces colonnes
+    //    n'existent pas sur cahier_journal_entries (elles sont gérées autrement).
+    //    On copie par contre : entries (la grille pédagogique), observations,
+    //    className. Le statut est forcé à DRAFT pour permettre l'édition.
+    const newId = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "cahier_journal_entries"
+        ("id", "tenantId", "academicYearId", "teacherId", "classId",
+         "weekStartDate", "weekEndDate", "className",
+         "entries", "observations",
+         "status", "submittedAt", "validatedAt", "validatedBy",
+         "rejectionReason", "directorName", "directorValidatedAt",
+         "originalJournalId",
+         "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5,
+               $6, $7, $8,
+               $9, $10,
+               'DRAFT', NULL, NULL, NULL,
+               NULL, NULL, NULL,
+               $11,
+               NOW(), NOW())`,
+      newId, tenantId, targetAcademicYearId, newTeacherId, newClassId,
+      newWeekStartStr, newWeekEndStr, src.className || null,
+      // entries est un Json — Prisma le sérialise automatiquement si on passe un objet,
+      // mais en raw SQL on doit passer une string JSON
+      typeof src.entries === 'string' ? src.entries : JSON.stringify(src.entries || {}),
+      src.observations || null,
+      sourceJournalId, // originalJournalId — traçabilité
+    );
+
+    this.logger.log(
+      `Cahier journal dupliqué: ${sourceJournalId} → ${newId} (année ${targetYear[0].name}, semaine ${newWeekStartStr})`,
+    );
+
+    // 6. Retourner le nouveau cahier journal (avec le nom de la classe résolu)
+    return this.getCahierJournal(tenantId, newId);
+  }
+
+  /**
+   * Récupère un cahier journal par son ID (avec jointures classe + enseignant).
+   * Utilisé par duplicateCahierJournalToYear pour retourner l'objet complet.
+   */
+  private async getCahierJournal(tenantId: string, journalId: string) {
+    const rows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT cj.*, c."name" as "classNameResolved",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN classes c ON c."id" = cj."classId"
+       LEFT JOIN teachers t ON t."id" = cj."teacherId"
+       WHERE cj."id" = $1 AND cj."tenantId" = $2
+       LIMIT 1`,
+      journalId, tenantId,
+    );
+    return rows && rows.length > 0 ? rows[0] : null;
   }
 
   // ===========================================================================

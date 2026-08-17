@@ -668,6 +668,55 @@ export class PedagogicalSpaceController {
     );
   }
 
+  // ⭐ CROSS-YEAR REUSE : dupliquer un cahier journal d'une année précédente vers l'année courante
+  //    Crée un nouveau CahierJournal avec :
+  //    - academicYearId = année cible
+  //    - teacherId = enseignant cible (ou enseignant d'origine)
+  //    - classId = classe cible (ou classe d'origine)
+  //    - weekStartDate/weekEndDate = recalculées pour la même semaine de l'année cible
+  //    - entries = copie de la grille hebdo (contenu pédagogique)
+  //    - status = DRAFT (l'enseignant peut l'éditer avant soumission)
+  //    - originalJournalId = ID du cahier journal d'origine (traçabilité)
+  @Post('cahier-journal/:id/duplicate-to-year')
+  @HttpCode(HttpStatus.OK)
+  async duplicateCahierJournalToCurrentYear(
+    @TenantId() tenantId: string,
+    @Param('id') sourceJournalId: string,
+    @Body() body: {
+      targetAcademicYearId: string;
+      targetTeacherId?: string;
+      targetClassId?: string;
+      targetWeekStartDate?: string; // ISO date — si non fourni, décalage de N années
+    },
+  ) {
+    if (!body.targetAcademicYearId) {
+      throw new BadRequestException('targetAcademicYearId est requis');
+    }
+    return this.service.duplicateCahierJournalToYear(
+      tenantId, sourceJournalId, body.targetAcademicYearId,
+      body.targetTeacherId, body.targetClassId, body.targetWeekStartDate,
+    );
+  }
+
+  // ===========================================================================
+  // CATALOGUE — Hiérarchie années → trimestres → mois → semaines
+  //    Pour l'espace pédagogie enseignant, sous-onglet "Catalogue"
+  //    Pattern identique à l'explorateur Windows : on navigue dans les dossiers
+  //    pour retrouver les cahiers journaux + fiches pédagogiques des années antérieures
+  // ===========================================================================
+
+  @Get('catalogue')
+  async getCatalogue(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('classId') classId?: string,
+  ) {
+    if (!teacherId) {
+      throw new BadRequestException('teacherId est requis');
+    }
+    return this.service.getCatalogue(tenantId, teacherId, classId);
+  }
+
   // ===========================================================================
   // REGISTRE D'APPEL — Registre mensuel + Évaluation + Tableau annuel
   // ===========================================================================

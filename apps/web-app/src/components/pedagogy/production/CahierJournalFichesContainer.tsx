@@ -5,12 +5,16 @@
  * CAHIER JOURNAL & FICHES PÉDAGOGIQUES — Container unifié
  * ============================================================================
  *
- * Container qui regroupe le Cahier Journal (grille hebdo 5j × matières) ET
- * les Fiches Pédagogiques associées dans une vue à 2 sous-onglets :
+ * Container qui regroupe le Cahier Journal (grille hebdo 5j × matières), les
+ * Fiches Pédagogiques associées, et le Catalogue des années antérieures dans
+ * une vue à 3 sous-onglets :
  *
  *   1. "Cahier Journal" — la grille hebdo (composant CahierJournalTab)
  *   2. "Fiches Pédagogiques" — liste des fiches rattachées au cahier journal
  *      courant + boutons "Préparer la fiche" par matière planifiée
+ *   3. "Catalogue" — vue hiérarchique type Explorateur Windows des cahiers
+ *      journaux + fiches pédagogiques de TOUTES les années antérieures.
+ *      Permet de visualiser + PDF + réutiliser (duplication vers l'année courante).
  *
  * ⭐ Flow automatique : quand l'enseignant enregistre ou soumet son cahier
  *    journal, le système bascule automatiquement vers le sous-onglet Fiches
@@ -34,12 +38,14 @@ import {
   CalendarDays,
   Eye,
   Download,
+  FolderOpen,
 } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { CahierJournalTab } from "./CahierJournalTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
+import { CatalogueTab } from "./CatalogueTab";
 
-type SubTab = "cahier" | "fiches";
+type SubTab = "cahier" | "fiches" | "catalogue";
 
 interface CahierJournalFichesContainerProps {
   tenantId: string;
@@ -173,6 +179,20 @@ export function CahierJournalFichesContainer({
             />
           )}
         </button>
+        {/* ⭐ 3e sous-onglet : Catalogue des années antérieures */}
+        {/*    Vue hiérarchique type Explorateur Windows : Année → Trimestre → Mois → Semaine */}
+        <button
+          onClick={() => setSubTab("catalogue")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-all",
+            subTab === "catalogue"
+              ? "bg-white text-blue-600 shadow-sm"
+              : "text-slate-500 hover:text-slate-700",
+          )}
+        >
+          <FolderOpen className="h-4 w-4" />
+          <span>Catalogue</span>
+        </button>
 
         {currentJournalMeta && (
           <div className="ml-auto text-xs text-slate-500 px-3 hidden sm:flex items-center gap-2">
@@ -277,6 +297,17 @@ export function CahierJournalFichesContainer({
                 </div>
               </>
             )}
+        </div>
+        {/* ⭐ 3e sous-onglet : Catalogue des années antérieures */}
+        {/*    Le composant est TOUJOURS monté mais caché via CSS pour éviter */}
+        {/*    le rechargement du catalogue à chaque switch d'onglet. */}
+        <div className={subTab === "catalogue" ? "" : "hidden"}>
+          <CatalogueTab
+            tenantId={tenantId}
+            academicYearId={academicYearId}
+            teacherId={teacherId}
+            onViewFiche={handleViewFiche}
+          />
         </div>
       </div>
     </div>

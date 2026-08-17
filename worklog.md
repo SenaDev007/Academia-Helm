@@ -6075,3 +6075,87 @@ Stage Summary:
 - ✅ Même format que la fiche éducation artistique : I- Éléments de planification (7 champs RichTextEditor), I.bis- Proposition de nouvelles acquisitions (2 champs), II- Déroulement (tableau dynamique), III- Retour et projection (3 champs), Signatures Maîtresse + Directrice
 - 6 fichiers modifiés au frontend, 3 fichiers modifiés au backend, 1 fichier supprimé
 - Aucune migration SQL nécessaire (sheetType est TEXT, pas enum)
+
+---
+Task ID: FIX-DIRECTOR-FICHES-JOINTES-1
+Agent: main
+Task: Bug critique — dans l'espace Validation Direction, le détail d'un cahier journal affichait "Aucune fiche pédagogique jointe à ce cahier journal" alors que le dashboard annonçait des fiches jointes. Le directeur ne pouvait pas non plus cliquer sur "Voir" pour ouvrir une fiche individuelle. Réplication du pattern enseignant (CahierJournalFichesContainer avec FichesLieesJournal + bouton "Voir" → PedagogicalFicheDirectorDetail).
+
+Work Log:
+- Lu CahierJournalFichesContainer.tsx (767 lignes) — pattern enseignant :
+  - Composant FichesLieesJournal (l. 623-768) : fetch `/pedagogy-space/cahier-journal/${journalId}/fiches` → extrait `data.fichesLiees || data.fiches` → affiche grille avec boutons "Voir" (Eye icon) + "PDF"
+  - Composant FichesAPreparer (l. 403-610) : même endpoint, affiche bandeau stats + matières planifiées avec statut fiche préparée/manquante
+  - Bouton "Voir" → onViewFiche(fiche.id) qui ouvre la fiche en édition côté enseignant via PedagogicalSheetsTab
+
+- Lu DirectorPedagogyControl.tsx — CahierJournalDirectorDetail (fonction l. 1076-1681) :
+  - État `fichesData` (l. 1091) + useEffect fetch `/api/pedagogy-space/cahier-journal/${journal.id}/fiches` (l. 1099-1119)
+  - Bandeau "Fiches Pédagogiques Jointes" avec stats (l. 1610-1627)
+  - Affichage par jour via `fichesData.parJour?.[day]` (l. 1641-1678)
+  - Bouton PDF par fiche + bouton "Tout exporter en PDF"
+
+- ⭐ BUG RACINE IDENTIFIÉ :
+  - Ligne 1111 (avant fix) : `if (!cancelled) setFiches(data);` — TYPO : `setFiches` au lieu de `setFichesData`
+  - Le setter `setFiches` n'existe pas dans le scope du composant → déclenche une ReferenceError
+  - L'erreur est catchée par le bloc `catch` qui exécute `setFichesData(null)`
+  - Conséquence : `fichesData` reste TOUJOURS `null` → la condition `!fichesData?.fiches || fichesData.fiches.length === 0` (l. 1686) est toujours vraie → "Aucune fiche pédagogique jointe à ce cahier journal" affiché systématiquement
+  - Le dashboard, lui, interroge un autre endpoint (`useDirectorPedagogyDashboard`) qui compte les fiches via SQL — c'est pourquoi il annonce un nombre correct de fiches jointes
+
+- ⭐ Vérification backend endpoint `GET /pedagogy-space/cahier-journal/:id/fiches` (service l. 2815-3000) :
+  - Retourne un objet : `{ journalId, weekStartDate, weekEndDate, className, status, fiches: [...], parJour: { lundi: [...], mardi: [...] }, matieresPlanifiees: { ... }, stats: { totalFiches, totalMatieresPlanifiees, totalFichesPreparees, totalFichesManquantes, toutesFichesPreparees } }`
+  - Donc le contrat backend était correct — le bug était purement côté frontend (typo)
+
+Modifications effectuées (DirectorPedagogyControl.tsx) :
+
+1. ⭐ FIX BUG TYPO (l. 1119 AVANT → APRÈS) :
+   - AVANT : `if (!cancelled) setFiches(data);`  ← typo fatale
+   - APRÈS : `if (!cancelled) setFichesData(data);`  ← correct
+
+2. Ajout de 2 nouveaux états (l. 1094-1098) :
+   - `selectedFiche` : fiche sélectionnée pour affichage détaillé (pattern identique à PendingFichesTab l. 587)
+   - `loadingFicheId` : ID de la fiche en cours de chargement (pour désactiver le bouton "Voir" pendant le fetch)
+
+3. Ajout fonction `handleViewFiche(ficheId)` (l. 1126-1140) :
+   - Pattern identique à PendingFichesTab.handleView (l. 607-612)
+   - Appelle `pedagogySpaceService.getPedagogicalFicheDetail(ficheId)` → met le résultat dans `selectedFiche`
+   - En cas d'erreur : toast d'erreur
+
+4. Ajout early-return dans le render (l. 1486-1513) :
+   - Si `selectedFiche` est set → render `<PedagogicalFicheDirectorDetail fiche={selectedFiche} userId={userId} onBack={...} onValidated={...} />`
+   - `onBack` : `setSelectedFiche(null)` → retour au cahier journal
+   - `onValidated` : `setSelectedFiche(null)` + re-fetch des fiches du cahier journal pour refléter le nouveau statut (VALIDATED/REJECTED)
+
+5. Signature de fonction mise à jour (l. 1077-1087) :
+   - AVANT : `function CahierJournalDirectorDetail({ journal, onBack, onValidated }: { journal: any; onBack: () => void; onValidated: () => void; })`
+   - APRÈS : ajout de `userId: string` (nécessaire pour PedagogicalFicheDirectorDetail)
+   - Site d'appel mis à jour (l. 450-460) : `<CahierJournalDirectorDetail journal={selected} userId={userId} onBack={...} onValidated={...} />`
+
+6. Refonte complète de la section "Fiches Pédagogiques Jointes" (l. 1661-1778) :
+   - AVANT : badge texte brut `{fiche.sheetType} — {fiche.titre}` + bouton PDF seul
+   - APRÈS (pattern enseignant FichesLieesJournal répliqué) :
+     * Bandeau récapitulatif enrichi : "X fiche(s) au total · Y/Z matières ont leur fiche" (au lieu de "X fiche(s) · Y/Z préparées")
+     * Icône FileText (couleur emerald) à côté du titre "Fiches Pédagogiques Jointes"
+     * Regroupement par jour dans un cadre bg-emerald-50/20 (au lieu de bg-transparent)
+     * Chaque carte de fiche :
+       - Icône du type de fiche (SheetIcon depuis SHEET_TYPE_LABELS — Sigma pour MATH, BookOpen pour FRANCAIS, etc.)
+       - Badge couleur du type (ex: bg-blue-100 text-blue-700 pour MATH) avec libellé complet (ex: "Mathématiques" au lieu de "MATH")
+       - Statut (✓ Soumise / ✓ Validée / Brouillon)
+       - Titre de la fiche (fiche.titre || fiche.cours || 'Sans titre')
+       - Date de la leçon (format : "lun. 15/09/2025")
+       - Bouton "Voir" (icône Eye, couleur emerald) → déclenche handleViewFiche(fiche.id)
+       - Bouton "PDF" (icône Download, couleur blue) → déclenche handleExportFiche(fiche.id) (inchangé)
+       - Spinners Loader2 pendant le chargement/fetch
+     * Cards avec bordure emerald (au lieu de slate) pour cohérence visuelle
+
+7. Ajout EPS à SHEET_TYPE_HEADERS (l. 2046) :
+   - `EPS: { label: "ÉDUCATION PHYSIQUE ET SPORTIVE", bg: "bg-cyan-50 border-cyan-300" }`
+   - Utilisé dans PedagogicalFicheDirectorDetail pour l'en-tête de la fiche détaillée — sinon les fiches EPS auraient affiché "EPS" en texte brut avec couleur slate par défaut
+
+Stage Summary:
+- ✅ BUG RACINE FIXÉ : typo `setFiches(data)` → `setFichesData(data)` — les fiches pédagogiques jointes au cahier journal s'affichent maintenant correctement dans la Validation Direction (fini le "Aucune fiche pédagogique jointe" erroné)
+- ✅ Pattern enseignant répliqué : la section "Fiches Pédagogiques Jointes" suit maintenant le même pattern que `FichesLieesJournal` côté enseignant (badge couleur + libellé complet + statut + boutons "Voir" + "PDF")
+- ✅ Bouton "Voir" ajouté — pattern identique à PendingFichesTab : handleViewFiche(ficheId) → pedagogySpaceService.getPedagogicalFicheDetail → PedagogicalFicheDirectorDetail (vue détaillée in-page avec tous les champs + signatures + boutons valider/rejeter)
+- ✅ Navigation retour : depuis la vue fiche détaillée, bouton "Retour" ramène au cahier journal (setSelectedFiche(null))
+- ✅ Rechargement auto : après validation/rejet d'une fiche depuis la vue détaillée, la liste des fiches du cahier journal est re-fetch pour refléter le nouveau statut
+- ✅ Type EPS ajouté à SHEET_TYPE_HEADERS pour que les fiches EPS s'affichent correctement en vue détaillée (label complet + couleur cyan)
+- 1 fichier modifié : apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx (+~80 lignes nettes)
+- Aucune modification backend nécessaire — le contrat API était déjà correct, seul le frontend avait un typo

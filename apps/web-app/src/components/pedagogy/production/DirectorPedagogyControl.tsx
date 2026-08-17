@@ -449,6 +449,7 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     return (
       <CahierJournalDirectorDetail
         journal={selected}
+        userId={userId}
         onBack={() => setSelected(null)}
         onValidated={() => {
           setSelected(null);
@@ -1075,10 +1076,12 @@ const CJ_DAYS = [
 
 function CahierJournalDirectorDetail({
   journal,
+  userId,
   onBack,
   onValidated,
 }: {
   journal: any;
+  userId: string;
   onBack: () => void;
   onValidated: () => void;
 }) {
@@ -1091,6 +1094,11 @@ function CahierJournalDirectorDetail({
   const [fichesData, setFichesData] = useState<any>(null);
   const [fichesLoading, setFichesLoading] = useState(false);
   const [exportingFiche, setExportingFiche] = useState<string | null>(null);
+  // ⭐ Fiche sélectionnée pour affichage détaillé (vue PedagogicalFicheDirectorDetail)
+  //    Pattern identique à PendingFichesTab : handleView() charge la fiche détaillée
+  //    puis le composant bascule vers PedagogicalFicheDirectorDetail.
+  const [selectedFiche, setSelectedFiche] = useState<any>(null);
+  const [loadingFicheId, setLoadingFicheId] = useState<string | null>(null);
 
   // ⭐ Charger les fiches pédagogiques rattachées à ce cahier journal
   //    ⚠️ Utiliser fetch() (BFF proxy) au lieu de apiClient.get() (direct backend)
@@ -1108,7 +1116,7 @@ function CahierJournalDirectorDetail({
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!cancelled) setFiches(data);
+        if (!cancelled) setFichesData(data);
       } catch {
         if (!cancelled) setFichesData(null);
       } finally {
@@ -1117,6 +1125,22 @@ function CahierJournalDirectorDetail({
     })();
     return () => { cancelled = true; };
   }, [journal.id]);
+
+  // ⭐ Voir une fiche pédagogique en détail (pattern identique à PendingFichesTab)
+  //    Charge la fiche complète via pedagogySpaceService.getPedagogicalFicheDetail
+  //    puis bascule l'affichage vers PedagogicalFicheDirectorDetail.
+  //    Le directeur peut alors voir tous les champs + valider/rejeter.
+  const handleViewFiche = async (ficheId: string) => {
+    setLoadingFicheId(ficheId);
+    try {
+      const data = await pedagogySpaceService.getPedagogicalFicheDetail(ficheId);
+      setSelectedFiche(data);
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message || "Impossible de charger la fiche." });
+    } finally {
+      setLoadingFicheId(null);
+    }
+  };
 
   // ⭐ Export PDF d'une fiche individuelle
   const handleExportFiche = async (ficheId: string) => {
@@ -1459,6 +1483,35 @@ function CahierJournalDirectorDetail({
   const isAlreadyValidated = journal.status === 'VALIDATED';
   const isAlreadyRejected = journal.status === 'REJECTED';
 
+  // ⭐ Si une fiche est sélectionnée (bouton "Voir"), afficher la vue détaillée
+  //    in-page PedagogicalFicheDirectorDetail — pattern identique à PendingFichesTab.
+  //    Le directeur peut voir tous les champs de la fiche + valider/rejeter,
+  //    puis revenir au cahier journal via le bouton "Retour au cahier journal".
+  if (selectedFiche) {
+    return (
+      <PedagogicalFicheDirectorDetail
+        fiche={selectedFiche}
+        userId={userId}
+        onBack={() => setSelectedFiche(null)}
+        onValidated={() => {
+          setSelectedFiche(null);
+          // ⭐ Recharger les fiches du cahier journal pour refléter le nouveau statut
+          if (journal.id) {
+            (async () => {
+              try {
+                const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/fiches`, {
+                  credentials: 'include',
+                  cache: 'no-store',
+                });
+                if (res.ok) setFichesData(await res.json());
+              } catch { /* silent */ }
+            })();
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* ⭐ Action bar */}
@@ -1605,13 +1658,23 @@ function CahierJournalDirectorDetail({
         </div>
       </div>
 
-      {/* ⭐ FICHES PÉDAGOGIQUES RATTACHÉES — Vue hiérarchique par jour */}
+      {/* ⭐ FICHES PÉDAGOGIQUES RATTACHÉES — Vue hiérarchique par jour
+          Pattern identique à FichesLieesJournal côté enseignant (CahierJournalFichesContainer) :
+          - Bandeau récapitulatif (X/Y matières ont leur fiche · Z fiche(s) au total)
+          - Regroupement par jour (lundi → vendredi)
+          - Chaque fiche a un badge couleur (SHEET_TYPE_LABELS) + statut + boutons "Voir" + "PDF"
+          - Bouton "Voir" → handleViewFiche → PedagogicalFicheDirectorDetail (vue détaillée + validation) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mt-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Fiches Pédagogiques Jointes</h3>
-            <p className="text-xs text-slate-500">
-              {fichesData?.stats ? `${fichesData.stats.totalFiches || 0} fiche(s) · ${fichesData.stats.totalFichesPreparees || 0}/${fichesData.stats.totalMatieresPlanifiees || 0} préparées` : ''}
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="h-4 w-4 text-emerald-600" />
+              Fiches Pédagogiques Jointes
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {fichesData?.stats
+                ? `${fichesData.stats.totalFiches || 0} fiche(s) au total · ${fichesData.stats.totalFichesPreparees || 0}/${fichesData.stats.totalMatieresPlanifiees || 0} matières ont leur fiche`
+                : 'Chargement…'}
             </p>
           </div>
           {fichesData?.fiches && fichesData.fiches.length > 0 && (
@@ -1645,33 +1708,67 @@ function CahierJournalDirectorDetail({
                 lundi: 'Lundi', mardi: 'Mardi', mercredi: 'Mercredi', jeudi: 'Jeudi', vendredi: 'Vendredi',
               };
               return (
-                <div key={day} className="border border-slate-100 rounded-lg p-3">
+                <div key={day} className="border border-slate-200 rounded-lg p-3 bg-emerald-50/20">
                   <div className="flex items-center gap-2 mb-2">
                     <Calendar className="h-3.5 w-3.5 text-blue-600" />
                     <h4 className="text-xs font-bold uppercase text-slate-700">{dayLabels[day]}</h4>
                     <span className="text-[10px] text-slate-400">{dayFiches.length} fiche(s)</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {dayFiches.map((fiche: any) => (
-                      <div key={fiche.id} className="flex items-center justify-between border border-slate-100 rounded-lg p-2 bg-slate-50/50">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-slate-700 truncate">
-                            {fiche.sheetType} — {fiche.titre || fiche.cours || 'Sans titre'}
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {fiche.status === 'SUBMITTED' ? '✓ Soumise' : fiche.status === 'VALIDATED' ? '✓ Validée' : 'Brouillon'}
-                          </p>
+                    {dayFiches.map((fiche: any) => {
+                      // ⭐ Utiliser SHEET_TYPE_LABELS pour afficher le libellé complet
+                      //    (ex: "Mathématiques" au lieu de "MATH")
+                      const sheetInfo = SHEET_TYPE_LABELS[fiche.sheetType] || { label: fiche.sheetType, color: 'bg-slate-100 text-slate-700' };
+                      const SheetIcon = sheetInfo.icon || FileText;
+                      const ficheDate = fiche.lessonDate ? new Date(fiche.lessonDate) : null;
+                      return (
+                        <div key={fiche.id} className="flex items-center justify-between border border-emerald-200 rounded-lg p-2 bg-white">
+                          <div className="min-w-0 flex-1 flex items-center gap-2">
+                            <SheetIcon className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded", sheetInfo.color)}>
+                                  {sheetInfo.label}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {fiche.status === 'SUBMITTED' ? '✓ Soumise' : fiche.status === 'VALIDATED' ? '✓ Validée' : 'Brouillon'}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-700 truncate">
+                                {fiche.titre || fiche.cours || 'Sans titre'}
+                              </p>
+                              {ficheDate && (
+                                <p className="text-[9px] text-slate-400">
+                                  {ficheDate.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 ml-2">
+                            {/* ⭐ Bouton "Voir" — pattern identique à PendingFichesTab
+                                Ouvre PedagogicalFicheDirectorDetail (vue détaillée + validation/rejet) */}
+                            <button
+                              onClick={() => handleViewFiche(fiche.id)}
+                              disabled={loadingFicheId === fiche.id}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 disabled:opacity-50"
+                              title="Voir la fiche en détail"
+                            >
+                              {loadingFicheId === fiche.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Eye className="h-2.5 w-2.5" />}
+                              Voir
+                            </button>
+                            <button
+                              onClick={() => handleExportFiche(fiche.id)}
+                              disabled={exportingFiche === fiche.id}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
+                              title="Télécharger la fiche en PDF"
+                            >
+                              {exportingFiche === fiche.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
+                              PDF
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => handleExportFiche(fiche.id)}
-                          disabled={exportingFiche === fiche.id}
-                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 shrink-0 ml-2"
-                        >
-                          {exportingFiche === fiche.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
-                          PDF
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -1945,6 +2042,7 @@ const SHEET_TYPE_HEADERS: Record<string, { label: string; bg: string }> = {
   EST: { label: "ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE", bg: "bg-purple-50 border-purple-300" },
   ES: { label: "ÉDUCATION SOCIALE", bg: "bg-amber-50 border-amber-300" },
   EA: { label: "ÉDUCATION ARTISTIQUE", bg: "bg-pink-50 border-pink-300" },
+  EPS: { label: "ÉDUCATION PHYSIQUE ET SPORTIVE", bg: "bg-cyan-50 border-cyan-300" },
 };
 
 function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: { fiche: any; userId: string; onBack: () => void; onValidated: () => void; }) {

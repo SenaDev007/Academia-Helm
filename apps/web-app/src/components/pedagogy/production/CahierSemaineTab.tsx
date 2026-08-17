@@ -22,7 +22,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   CalendarDays, Settings, List, FileText, Loader2, Save, RefreshCw,
-  Plus, Trash2, CheckCircle2, X, Zap, Hand,
+  Plus, Trash2, CheckCircle2, X, Zap, Hand, ChevronRight,
   ClipboardList, Users, BookOpen, Shield, Sparkles, CalendarRange,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -62,6 +62,10 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // ⭐ Modal de confirmation professionnel pour la génération auto (remplace confirm())
+  const [showAutoGenModal, setShowAutoGenModal] = useState(false);
+  // ⭐ Modal de signature (pour le tableau Paramétrage + Liste)
+  const [signModal, setSignModal] = useState<{ open: boolean; configId: string; teacherId: string; teacherName: string }>({ open: false, configId: '', teacherId: '', teacherName: '' });
 
   // ⭐ Permissions : Paramétrage visible uniquement pour PROMOTER + DIRECTOR
   const canConfigure = ['PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR',
@@ -84,9 +88,9 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // === Génération automatique ===
+  // === Génération automatique (avec modal professionnel) ===
   const handleAutoGenerate = async () => {
-    if (!confirm(`⚠️ Cela va supprimer tous les semainiers existants et en générer 36 nouveaux par rotation des enseignants FR (maternelle + primaire). Continuer ?`)) return;
+    setShowAutoGenModal(false);
     setSaving(true);
     try {
       const res = await fetch("/api/pedagogy-space/seminar-config/auto-generate", {
@@ -143,9 +147,9 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
     }
   };
 
-  // === Suppression manuelle ===
+  // === Suppression manuelle (avec modal) ===
   const handleDeleteConfig = async (configId: string, weekNumber: number) => {
-    if (!confirm(`Supprimer le semainier S${weekNumber} ? (Action irréversible)`)) return;
+    setSaving(true);
     try {
       const res = await fetch(`/api/pedagogy-space/seminar-config/${configId}`, {
         method: "DELETE",
@@ -159,6 +163,8 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
       loadData();
     } catch (e: any) {
       toast.error("Erreur de suppression", { description: e.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -179,10 +185,34 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
     }
   };
 
-  // === Signature enseignant ===
-  const handleSign = async (configId: string, signature: string | null) => {
-    if (!signature) return;
-    await handleUpdateConfig(configId, { teacherSignature: signature, status: "SIGNED" });
+  // === Signature enseignant avec propagation automatique ===
+  // ⭐ Quand l'enseignant signe une ligne, sa signature est propagée à TOUTES
+  //    les autres lignes où il est désigné comme semainier.
+  const handleSignWithPropagation = async (signature: string | null) => {
+    if (!signature || !signModal.teacherId) return;
+    setSaving(true);
+    try {
+      // ⭐ Trouver toutes les configs du même enseignant
+      const teacherConfigs = configs.filter(c => c.teacherId === signModal.teacherId);
+      // ⭐ Mettre à jour chaque config avec la signature + status SIGNED
+      await Promise.all(teacherConfigs.map(async (cfg) => {
+        await fetch(`/api/pedagogy-space/seminar-config/${cfg.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ teacherSignature: signature, status: "SIGNED" }),
+        });
+      }));
+      toast.success("✅ Signature enregistrée", {
+        description: `Propagée à ${teacherConfigs.length} semaine(s) où vous êtes désigné.`,
+      });
+      setSignModal({ open: false, configId: '', teacherId: '', teacherName: '' });
+      loadData();
+    } catch (e: any) {
+      toast.error("Erreur lors de la signature", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -234,7 +264,13 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
         <ListeSemainiersTab
           configs={configs}
           currentUserId={user?.id || ""}
-          onSign={handleSign}
+          onSign={(configId: string, signature: string | null) => {
+            // ⭐ Ouvrir le modal de signature avec propagation
+            const cfg = configs.find(c => c.id === configId);
+            if (cfg) {
+              setSignModal({ open: true, configId, teacherId: cfg.teacherId, teacherName: cfg.teacherName || '' });
+            }
+          }}
         />
       )}
 
@@ -246,6 +282,84 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
           academicYearId={academicYearId}
           tenantId={tenantId}
         />
+      )}
+
+      {/* ⭐ MODAL: Confirmation génération automatique (professionnel, remplace confirm()) */}
+      {showAutoGenModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-amber-50 border-amber-200">
+              <div className="flex items-center gap-3">
+                <Zap className="h-10 w-10 text-amber-500" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Génération automatique des semainiers</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Action de configuration direction</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-slate-700 font-medium">
+                Vous êtes sur le point de générer automatiquement 36 semaines de semainiers.
+              </p>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Conséquences :</p>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700"><ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" /><span>Tous les semainiers existants seront supprimés</span></div>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700"><ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" /><span>36 nouveaux semainiers seront créés par rotation des enseignants FR</span></div>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700"><ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" /><span>Seuls les enseignants FR (maternelle + primaire) sont éligibles</span></div>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700"><ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" /><span>Les classes assignées à chaque enseignant seront récupérées automatiquement</span></div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button onClick={() => setShowAutoGenModal(false)} disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50">Annuler</button>
+              <button onClick={handleAutoGenerate} disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Générer les 36 semainiers
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ MODAL: Signature enseignant (avec propagation à toutes les lignes) */}
+      {signModal.open && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-emerald-50 border-emerald-200">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Signature du Semainier</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{signModal.teacherName}</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>ℹ️ Propagation automatique :</strong> Votre signature sera appliquée à
+                toutes les semaines où vous êtes désigné comme semainier ({configs.filter(c => c.teacherId === signModal.teacherId).length} semaine(s)).
+                Vous n'avez pas besoin de signer chaque ligne individuellement.
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Votre signature</label>
+                <SignatureCanvas
+                  width={360}
+                  height={140}
+                  placeholder="Signez ici..."
+                  onSignatureChange={(data: string | null) => handleSignWithPropagation(data)}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button onClick={() => setSignModal({ open: false, configId: '', teacherId: '', teacherName: '' })}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50">
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -275,8 +389,8 @@ function ParametrageTab({ configs, saving, onAutoGenerate, onManualCreate, onDel
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hand className="h-4 w-4" />}
           Configuration manuelle
         </button>
-        {/* ⭐ Bouton Générer automatiquement */}
-        <button onClick={onAutoGenerate} disabled={saving}
+        {/* ⭐ Bouton Générer automatiquement — ouvre le modal professionnel */}
+        <button onClick={() => setShowAutoGenModal(true)} disabled={saving}
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
           Générer automatiquement

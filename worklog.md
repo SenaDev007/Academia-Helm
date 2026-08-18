@@ -6159,3 +6159,110 @@ Stage Summary:
 - ✅ Type EPS ajouté à SHEET_TYPE_HEADERS pour que les fiches EPS s'affichent correctement en vue détaillée (label complet + couleur cyan)
 - 1 fichier modifié : apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx (+~80 lignes nettes)
 - Aucune modification backend nécessaire — le contrat API était déjà correct, seul le frontend avait un typo
+
+---
+Task ID: IMPL-SEMAINIER-PHASES-3-4
+Agent: main
+Task: (Phase 3) Implémenter la Section 2 "Présence des élèves" auto-récupérée depuis les appels enseignants dans le Cahier du Semainier. (Phase 4) Ajouter un onglet "Cahier du Semainier" dans l'espace Validation Direction avec 4 sous-onglets (En attente / Validés / Rejetés / Catalogue) + vue détaillée in-page.
+
+Work Log:
+- Lu CahierSemaineTab.tsx (1504 lignes) — DailyReportCard avec 8 sections (Section 2 = 4 champs texte simples + 1 RichTextEditor)
+- Lu pedagogical-space.service.ts (backend NestJS) — vérifié que les 3 endpoints de sync existent déjà (syncStaffAttendanceFromRh, syncStudentPresenceFromAttendance, syncScheduleFromEdt) + validateSeminarConfig + submitSeminarConfig
+- Lu pedagogical-space.controller.ts — vérifié les endpoints POST /seminar-daily-report/:id/sync-from-students + POST /seminar-config/:id/validate
+- Lu DirectorPedagogyControl.tsx (3667 lignes) — 4 onglets + PendingCahierJournalsTab pattern avec 3 sous-onglets statut + chevrons collapsibles
+- Lu pedagogy-hooks.ts (350 lignes) + pedagogy-query-keys.ts (51 lignes) — pattern hooks React Query
+- Lu pedagogy-space.service.ts (frontend, 205 lignes) — pattern service methods
+- Lu SemainierAttendancePanel.tsx (365 lignes) — confirmé que le bug FK staff_attendance est DÉJÀ RÉSOLU via onMark callback (pas d'API call à staff_attendances quand onMark est fourni)
+- Vérifié que le backend /seminar-daily-report/:id/sync-from-students agrège déjà attendance_records par classe, calcule le taux global, identifie les classes >30% absent
+
+Modifications effectuées :
+
+=== PHASE 3 — Section 2 : Présence des élèves auto-récupérée ===
+
+1. apps/web-app/src/components/pedagogy/production/CahierSemaineTab.tsx (+316 lignes nettes)
+   - Ajouté l'import `AlertCircle` à lucide-react
+   - Remplacé la Section 2 (4 Field + 1 RichTextEditor) par un nouveau composant `<StudentPresenceSection>` qui :
+     * Récupère `studentPresence` (compatible string JSON ou objet déjà parsé)
+     * Mapper les champs backend → affichage (compatibilité ancien `globalRate` / nouveau `attendanceRate`)
+     * Agrège `byClass` (par statut) en présents/absents/retards/total par classe
+     * Calcule le taux de présence par classe + marque celles >30% absent
+     * Bouton "Sync depuis appels enseignants" → POST /api/pedagogy-space/seminar-daily-report/:id/sync-from-students
+     * Met à jour `dailyReport.studentPresence` avec les données synchronisées (préserve _manualEdit=true si l'utilisateur a déjà édité manuellement)
+     * Affiche 4 StatCards : Taux présence global (couleur dynamique 90%+ / 70%+ / rouge) | Total absents | Total retards | Classes à risque
+     * Alerte visuelle "Classes avec +30% d'absents" avec chips rouges par classe
+     * Tableau par classe : className | effectif | présents | absents | retards | taux | alerte
+     * Ligne TOTAL en tfoot
+     * Champ manuel "Absences signalées par les parents" (préserve _manualEdit=true)
+     * RichTextEditor "Cas particuliers observés" (préserve _manualEdit=true)
+     * Bandeau d'aide : "🔒 Rapport verrouillé (soumis/validé)" si disabled, sinon "💡 La sync ne remplit QUE les champs calculés"
+     * Toast de confirmation : "✅ Présence des élèves synchronisée — X enregistrements • taux=Y%"
+     * Toast info si sync ignorée (section déjà éditée manuellement)
+   - Backend n'a pas été modifié — `syncStudentPresenceFromAttendance` (l. 8622-8681) existait déjà et persiste dans le champ JSONB `studentPresence`
+
+=== PHASE 4 — Validation Direction : sous-onglet Cahier du Semainier + catalogue ===
+
+2. apps/web-app/src/services/pedagogy-space.service.ts (+74 lignes nettes)
+   - Ajouté `getPendingSemainiers(academicYearId, statusFilter)` — GET /pedagogy-space/seminar-config?academicYearId=X puis filtre client par statut
+   - Ajouté `validateSemainier(id, body)` — POST /pedagogy-space/seminar-config/:id/validate
+   - Ajouté `getSemainierReports(configId)` — fetch séquentiel des 5 rapports journaliers (Lun-Ven) + 1 rapport hebdo
+   - Ajouté `exportSemainierPdf(id)` — GET /pedagogy-space/seminar-config/:id/export?format=pdf (responseType: blob)
+   - Ajouté `getSemainierCatalogue(academicYearId)` — réutilise /seminar-config?academicYearId=X avec un ancien ID d'année
+
+3. apps/web-app/src/lib/query/pedagogy-query-keys.ts (+6 lignes)
+   - Ajouté `pendingSemainiers(academicYearId, status)` — cache par (academicYearId, status)
+   - Ajouté `semainierReports(configId)` — cache par configId (activé on click)
+   - Ajouté `semainierCatalogue(academicYearId)` — cache par academicYearId
+
+4. apps/web-app/src/lib/query/pedagogy-hooks.ts (+74 lignes nettes)
+   - Ajouté `usePendingSemainiers(academicYearId, statusFilter)` — React Query, cache 2 min, dégradation gracieuse (catch err → [])
+   - Ajouté `useSemainierReports(configId)` — activé uniquement quand un semainier est sélectionné
+   - Ajouté `useSemainierCatalogue(academicYearId)` — utilisé pour le 4e sous-onglet catalogue
+
+5. apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx (+751 lignes nettes)
+   - Ajouté imports : usePendingSemainiers, useSemainierReports, useSemainierCatalogue (depuis pedagogy-hooks) + CalendarDays, CalendarRange (depuis lucide-react)
+   - Ajouté TAB entry `{ id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: false }` — visible pour TOUS les niveaux (maternelle+primaire+secondaire)
+   - Ajouté le rendu `{tab === "seminaire" && <PendingSemainiersTab ... />}`
+   - Mis à jour la dashboard card "Semainiers (anciens)"/"Rapports fin de semaine" → fusionné en "Cahier du Semainier" qui pointe vers `tab: "seminaire"` (avec icône CalendarDays, couleur purple)
+   - Nouvelle fonction `PendingSemainiersTab` (~340 lignes) :
+     * 4 sous-onglets : SUBMITTED (En attente) / VALIDATED (Validés) / REJECTED (Rejetés) / CATALOGUE
+     * Badge count par sous-onglet (sauf catalogue)
+     * Hiérarchie trimester → items avec chevrons collapsibles (pattern PendingCahierJournalsTab)
+     * Pre-population des 3 trimesters (T1, T2, T3) même vides
+     * Cartes par semainier : badge "Sem N / T N" + teacherName + dates + classes + statut + boutons "Voir" / "PDF" / "Valider / Rejeter"
+     * Modal ValidationModal réutilisé pour valider/rejeter (le directeur n'a pas besoin de signer visuellement — 'DIRECTOR_VALIDATED' est enregistré comme directorSignature)
+     * Cache invalidation après validation : pending-semainiers + dashboard
+     * Catalogue : liste à plat triée par semaine avec boutons "Voir" + "PDF"
+   - Nouvelle fonction `SemainierDirectorDetail` (~260 lignes) :
+     * Récupère les 5 rapports journaliers + 1 rapport hebdo via useSemainierReports(config.id)
+     * En-tête : badge "Sem N / T N" + teacherName + dates + classes + statut
+     * Stats agrégées (4 cartes) : présence enseignants / présence élèves / jours couverts / classes à risque (depuis weeklyReport.staffAttendanceStats + studentAttendanceStats)
+     * Liste des 5 rapports journaliers avec DailyReportSummaryCard (vue compacte)
+     * Rapport hebdo (page 8) avec 4 sections HTML : observations présence enseignants / analyse présence élèves / bilan pédagogique / recommandations (dangerouslySetInnerHTML)
+     * Signatures bas de page : enseignant (auto depuis config) + directeur (auto si VALIDATED, "En attente de validation" si SUBMITTED)
+     * Boutons d'action : Valider / Rejeter (si SUBMITTED) + PDF
+   - Nouvelle fonction `DailyReportSummaryCard` (~115 lignes) :
+     * Vue compacte d'un rapport journalier (journée, date, nb enseignants/élèves, taux présence badge)
+     * 5 sections en grille 2-col : 1. Présence enseignants (✓ présents / ✗ absents / ⏰ retards) | 2. Présence élèves (taux + classes à risque) | 3. Pédagogie (EDT respecté, cours manquants/modifiés) | 4. Discipline (positif/problèmes) | 5. Hygiène (salles, toilettes)
+     * Parse les JSONB fields (teacherAttendance, studentPresence, pedagogy, discipline, hygiene) avec fallback objet/string
+
+Stage Summary:
+- ✅ Phase 3 — Section 2 "Présence des élèves" entièrement refondue :
+  - Auto-récupération des appels enseignants via backend endpoint syncStudentPresenceFromAttendance
+  - Tableau par classe avec présents/absents/retards/taux
+  - Détection automatique des classes >30% absent (alerte visuelle)
+  - 4 StatCards synthétiques (taux global / total absents / total retards / classes à risque)
+  - Champs manuels (absences parents + cas particuliers) avec flag _manualEdit pour empêcher écrasement par sync future
+  - Backend inchangé : l'endpoint /sync-from-students persiste dans JSONB studentPresence (avec _source, _syncedAt, _manualEdit)
+- ✅ Phase 4 — Validation Direction "Cahier du Semainier" :
+  - Nouvel onglet visible pour TOUS les niveaux (maternelle + primaire + secondaire) car le semainier est transverse
+  - 4 sous-onglets (En attente / Validés / Rejetés / Catalogue) avec badge count
+  - Hiérarchie trimester → items avec chevrons collapsibles
+  - Vue détaillée in-page SemainierDirectorDetail avec 5 rapports journaliers + rapport hebdo
+  - Stats agrégées hebdo (présence enseignants/élèves/jours couverts/classes à risque)
+  - Catalogue : liste à plat triée par semaine avec export PDF
+  - Validation/rejet via ValidationModal (pattern identique aux autres pending tabs)
+- ✅ Bug FK staff_attendance (résumé conversation précédente) : confirmé RÉSOLU — SemainierAttendancePanel utilise onMark callback quand fourni (CahierSemaineTab passe onMark), donc aucun API call à /api/hr/attendance/semainier-check-in → plus de violation FK staff_attendance_staff_id
+- ✅ Backend inchangé : tous les endpoints nécessaires (getSeminarConfigs, submitSeminarConfig, validateSeminarConfig, getOrCreateDailyReport, getOrCreateWeeklyReport, fetchCrossModuleData, syncStaffAttendanceFromRh, syncStudentPresenceFromAttendance, syncScheduleFromEdt, exportSeminarConfig) existaient déjà
+- 5 fichiers modifiés : CahierSemaineTab.tsx (+316), DirectorPedagogyControl.tsx (+751), pedagogy-space.service.ts (+74), pedagogy-hooks.ts (+74), pedagogy-query-keys.ts (+6)
+- Aucune migration SQL nécessaire (toutes les tables weekly_seminar_* + colonnes JSONB existent déjà)
+- TypeScript check : aucun erreur sur les fichiers modifiés (uniquement des erreurs préexistantes dans useAutoSave.ts non liées)

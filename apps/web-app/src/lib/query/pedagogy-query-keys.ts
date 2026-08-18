@@ -23,6 +23,12 @@ export const pedagogyKeys = {
     [...pedagogyKeys.director(), 'pending-evaluations', academicYearId, status] as const,
   pendingCahierTextes: (academicYearId: string) =>
     [...pedagogyKeys.director(), 'pending-cahier-textes', academicYearId] as const,
+  pendingSemainiers: (academicYearId: string, status: string = 'SUBMITTED') =>
+    [...pedagogyKeys.director(), 'pending-semainiers', academicYearId, status] as const,
+  semainierReports: (configId: string) =>
+    [...pedagogyKeys.director(), 'semainier-reports', configId] as const,
+  semainierCatalogue: (academicYearId: string) =>
+    [...pedagogyKeys.director(), 'seminier-catalogue', academicYearId] as const,
 
   // Director details
   cahierJournalDetail: (id: string) =>

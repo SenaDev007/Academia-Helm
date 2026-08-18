@@ -62,6 +62,80 @@ export const pedagogySpaceService = {
     return res.data;
   },
 
+  // ─── Director : Semainiers (cahier du semainier) ───────────────────────────
+  //    Le backend GET /pedagogy-space/seminar-config?academicYearId=X renvoie
+  //    TOUTES les configs de l'année (PENDING + SIGNED + SUBMITTED + VALIDATED + REJECTED).
+  //    On filtre côté client par statut pour les 3 sous-onglets (en attente / validés / rejetés).
+  //    Note : "en attente" = SUBMITTED (envoyé au directeur, en attente de validation direction).
+  async getPendingSemainiers(academicYearId: string, statusFilter?: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL') {
+    const res = await apiClient.get('/pedagogy-space/seminar-config', {
+      params: { academicYearId },
+    });
+    const all = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+    if (!statusFilter || statusFilter === 'ALL') return all;
+    return all.filter((c: any) => (c.status || '').toUpperCase() === statusFilter);
+  },
+
+  // ⭐ Valider / Rejeter un semainier (direction)
+  //    POST /pedagogy-space/seminar-config/:id/validate
+  //    Body: { action: 'VALIDATED' | 'REJECTED', directorSignature, validatedBy, rejectionReason? }
+  async validateSemainier(id: string, body: {
+    action: 'VALIDATED' | 'REJECTED';
+    directorSignature?: string;
+    validatedBy: string;
+    rejectionReason?: string;
+  }) {
+    const res = await apiClient.post(`/pedagogy-space/seminar-config/${id}/validate`, body);
+    return res.data;
+  },
+
+  // ⭐ Récupérer les rapports journaliers + hebdo d'un semainier
+  //    La config (infos semaine, enseignant, classes, signatures) est déjà
+  //    disponible depuis la liste — on n'a donc besoin de fetch QUE les rapports.
+  //    Renvoie { dailyReports: [...5 ou moins], weeklyReport: {...} | null }
+  async getSemainierReports(configId: string) {
+    const dailyReports: any[] = [];
+    // Les 5 rapports journaliers (Lun=1, ..., Ven=5) — fetch séquentiel
+    // (le backend getOrCreate crée le rapport s'il n'existe pas encore)
+    for (let day = 1; day <= 5; day++) {
+      try {
+        const r = await apiClient.get('/pedagogy-space/seminar-daily-report', {
+          params: { configId, dayOfWeek: day },
+        });
+        if (r.data?.id) dailyReports.push({ dayOfWeek: day, ...r.data });
+      } catch { /* rapport non créé — c'est normal */ }
+    }
+
+    let weeklyReport: any = null;
+    try {
+      const r = await apiClient.get('/pedagogy-space/seminar-weekly-report', { params: { configId } });
+      if (r.data?.id) weeklyReport = r.data;
+    } catch { /* rapport non créé */ }
+
+    return { dailyReports, weeklyReport };
+  },
+
+  // ⭐ Export PDF d'un semainier (rapport complet PDF via backend Puppeteer)
+  async exportSemainierPdf(id: string): Promise<Blob> {
+    const res = await apiClient.get(`/pedagogy-space/seminar-config/${id}/export`, {
+      params: { format: 'pdf' },
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  // ─── Director : Catalogue (anciennes années) ────────────────────────────────
+  //    Le backend n'a pas d'endpoint catalogue spécifique pour les semainiers.
+  //    On utilise le même endpoint /seminar-config?academicYearId=X avec un
+  //    ancien academicYearId pour récupérer les configs passées.
+  //    Le frontend DirectorPedagogyControl gère le sélecteur d'année.
+  async getSemainierCatalogue(academicYearId: string) {
+    const res = await apiClient.get('/pedagogy-space/seminar-config', {
+      params: { academicYearId },
+    });
+    return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+  },
+
   // ─── Director : Validate mutations ───────────────────────────────────────
   async validateCahierJournal(id: string, body: { action: string; validatedBy: string; rejectionReason?: string }) {
     const res = await apiClient.post(`/pedagogy-space/director/validate-cahier-journal/${id}`, body);

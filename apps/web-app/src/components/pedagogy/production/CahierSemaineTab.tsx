@@ -24,6 +24,7 @@ import {
   CalendarDays, Settings, List, FileText, Loader2, Save, RefreshCw,
   Plus, Trash2, CheckCircle2, X, Zap, Hand, ChevronRight, Send,
   ClipboardList, Users, BookOpen, Shield, Sparkles, CalendarRange,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -1117,19 +1118,13 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
         </div>
       </Section>
 
-      {/* 2. PRÉSENCE DES ÉLÈVES */}
-      <Section title="2. Présence des élèves" icon={Users}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Taux de présence global" value={dailyReport?.studentPresence?.globalRate} onChange={v => setDailyReport({ ...dailyReport, studentPresence: { ...dailyReport?.studentPresence, globalRate: v } })} />
-          <Field label="Classes avec + de 10% d'absences" value={dailyReport?.studentPresence?.classesOver10} onChange={v => setDailyReport({ ...dailyReport, studentPresence: { ...dailyReport?.studentPresence, classesOver10: v } })} />
-          <Field label="Absences signalées par les parents" value={dailyReport?.studentPresence?.parentAbsences} onChange={v => setDailyReport({ ...dailyReport, studentPresence: { ...dailyReport?.studentPresence, parentAbsences: v } })} />
-          <Field label="Retards" value={dailyReport?.studentPresence?.lateStudents} onChange={v => setDailyReport({ ...dailyReport, studentPresence: { ...dailyReport?.studentPresence, lateStudents: v } })} />
-        </div>
-        <div className="mt-2">
-          <label className="text-xs font-bold text-slate-600 block mb-1">Cas particuliers observés</label>
-          <RichTextEditor value={dailyReport?.studentPresence?.specialCases || ""} onChange={html => setDailyReport({ ...dailyReport, studentPresence: { ...dailyReport?.studentPresence, specialCases: html } })} minHeight="60px" />
-        </div>
-      </Section>
+      {/* 2. PRÉSENCE DES ÉLÈVES — auto-récupération depuis appels enseignants */}
+      <StudentPresenceSection
+        dailyReport={dailyReport}
+        setDailyReport={setDailyReport}
+        dayDate={dayDate}
+        disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
+      />
 
       {/* 3. DÉROULEMENT PÉDAGOGIQUE */}
       <Section title="3. Déroulement pédagogique" icon={BookOpen}>
@@ -1414,6 +1409,328 @@ function WeeklyReportCard({ config, weeklyReport, setWeeklyReport }: any) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// ⭐ SECTION 2 — PRÉSENCE DES ÉLÈVES (auto-récupération depuis appels enseignants)
+// ============================================================================
+//    Backend endpoint: POST /api/pedagogy-space/seminar-daily-report/:id/sync-from-students
+//    Le backend lit attendance_records pour la date du jour, agrège par classe,
+//    calcule le taux de présence global, identifie les classes > 30% d'absents,
+//    et persiste dans le champ JSONB "studentPresence" du rapport journalier.
+//
+//    Cette section affiche :
+//      1. Bandeau stats synthétiques (4 chiffres clés)
+//      2. Tableau par classe (className | présents | absents | retards | taux)
+//      3. Alerte classes > 30% d'absents
+//      4. Champ manuel "Absences signalées par les parents"
+//      5. Editeur RichText "Cas particuliers observés"
+// ============================================================================
+function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled }: any) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncedAt, setSyncedAt] = useState<string | null>(null);
+
+  // ⭐ Récupérer le studentPresence (compatible string JSON ou objet déjà parsé)
+  const getSp = (): any => {
+    const sp = dailyReport?.studentPresence;
+    if (!sp) return null;
+    if (typeof sp === 'string') {
+      try { return JSON.parse(sp); } catch { return null; }
+    }
+    return sp;
+  };
+  const sp = getSp();
+
+  // ⭐ Mapper les champs du backend → affichage (compatibilité ancien/nouveau format)
+  const attendanceRate = sp?.attendanceRate ?? sp?.globalRate ?? null;
+  const byClass: any[] = sp?.byClass || [];
+  const summary = sp?.summary || null;
+  const highAbsenceClasses: string[] = sp?.highAbsenceClasses || [];
+  const syncedAtFromData = sp?._syncedAt || null;
+  const source = sp?._source || null;
+
+  // ⭐ Helper : regrouper byClass (qui peut être par statut) par classId/className
+  //    Le backend renvoie byClass = [{ classId, className, status, count, notes }]
+  //    Pour chaque classe, on agrège les statuts en présents/absents/retards/total.
+  const byClassAggregated: any[] = (() => {
+    if (!byClass || byClass.length === 0) return [];
+    const map = new Map<string, { className: string; total: number; present: number; absent: number; late: number }>();
+    for (const r of byClass) {
+      const key = r.classId || r.className;
+      if (!map.has(key)) {
+        map.set(key, { className: r.className || '—', total: 0, present: 0, absent: 0, late: 0 });
+      }
+      const entry = map.get(key)!;
+      entry.total += Number(r.count) || 0;
+      if (r.status === 'PRESENT') entry.present += Number(r.count) || 0;
+      else if (r.status === 'ABSENT') entry.absent += Number(r.count) || 0;
+      else if (r.status === 'LATE') entry.late += Number(r.count) || 0;
+    }
+    // Calculer le taux de présence par classe et marquer celles > 30% absent
+    return Array.from(map.values()).map(c => ({
+      ...c,
+      rate: c.total > 0 ? Number(((c.present / c.total) * 100).toFixed(1)) : 0,
+      highAbsence: c.total > 0 && (c.absent / c.total) > 0.3,
+    }));
+  })();
+
+  // ⭐ Bouton "Sync depuis appels" — appelle POST /seminar-daily-report/:id/sync-from-students
+  //    Ne pas écraser si l'utilisateur a déjà édité manuellement (détecté via _manualEdit=true)
+  const handleSync = async () => {
+    if (!dailyReport?.id) {
+      toast.error('Aucun rapport journalier à synchroniser');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/seminar-daily-report/${dailyReport.id}/sync-from-students`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data?.skipped) {
+          toast.info('Sync ignorée', {
+            description: data.reason || 'La section a été éditée manuellement.',
+          });
+        } else {
+          throw new Error(data?.message || 'Erreur de synchronisation');
+        }
+      } else {
+        // ⭐ Mettre à jour le rapport avec les données synchronisées
+        //    Le backend renvoie { synced: true, studentPresence: {...} }
+        const newSp = data.studentPresence || data;
+        setDailyReport({
+          ...dailyReport,
+          studentPresence: newSp,
+        });
+        setSyncedAt(newSp?._syncedAt || new Date().toISOString());
+        toast.success('✅ Présence des élèves synchronisée depuis les appels', {
+          description: `${newSp?.summary?.totalRecords || 0} enregistrements • taux=${newSp?.attendanceRate || 0}%`,
+        });
+      }
+    } catch (e: any) {
+      toast.error('Erreur de synchronisation', { description: e.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // ⭐ Marquer la section comme éditée manuellement dès qu'on touche aux champs manuels
+  //    (parentAbsences, specialCases) — pour empêcher un futur sync d'écraser
+  const markManualEdit = () => {
+    const currentSp = getSp() || {};
+    if (currentSp._manualEdit === true) return; // déjà marqué
+    setDailyReport({
+      ...dailyReport,
+      studentPresence: { ...currentSp, _manualEdit: true },
+    });
+  };
+
+  return (
+    <Section title="2. Présence des élèves" icon={Users}>
+      {/* ⭐ Barre d'actions : Sync depuis appels + indicateur de source/dernière sync */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5">
+        <button
+          onClick={handleSync}
+          disabled={syncing || disabled}
+          className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Récupère automatiquement les appels effectués par les enseignants ce jour pour toutes les classes"
+        >
+          {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+          Sync depuis appels enseignants
+        </button>
+        {source && (
+          <span className="text-[10px] font-bold uppercase text-emerald-700 bg-white px-2 py-0.5 rounded">
+            Source : {source}
+          </span>
+        )}
+        {(syncedAt || syncedAtFromData) && (
+          <span className="text-[10px] text-slate-600">
+            Dernière sync : {new Date(syncedAt || syncedAtFromData).toLocaleString('fr-FR', {
+              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            })}
+          </span>
+        )}
+        <span className="text-[10px] text-slate-500 ml-auto">
+          {disabled
+            ? '🔒 Rapport verrouillé (soumis/validé)'
+            : '💡 La sync ne remplit QUE les champs calculés. Les champs "Absences parents" et "Cas particuliers" restent manuels.'}
+        </span>
+      </div>
+
+      {/* ⭐ Bandeau stats synthétiques (4 chiffres clés) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+        <div className={cn(
+          "border rounded-lg p-2.5 text-center",
+          attendanceRate != null && Number(attendanceRate) >= 90
+            ? "border-emerald-200 bg-emerald-50"
+            : attendanceRate != null && Number(attendanceRate) >= 70
+              ? "border-amber-200 bg-amber-50"
+              : "border-rose-200 bg-rose-50"
+        )}>
+          <p className="text-[10px] font-semibold uppercase opacity-70">Taux présence global</p>
+          <p className="text-2xl font-bold mt-0.5">
+            {attendanceRate != null ? `${Number(attendanceRate).toFixed(1)}%` : '—'}
+          </p>
+          <p className="text-[10px] opacity-60 mt-0.5">
+            {summary ? `${summary.present}/${summary.totalRecords} élèves` : 'Non synchronisé'}
+          </p>
+        </div>
+        <div className="border border-rose-200 bg-rose-50 rounded-lg p-2.5 text-center">
+          <p className="text-[10px] font-semibold uppercase opacity-70 text-rose-700">Total absents</p>
+          <p className="text-2xl font-bold mt-0.5 text-rose-700">
+            {summary?.absent ?? '—'}
+          </p>
+          <p className="text-[10px] opacity-60 mt-0.5">
+            {byClassAggregated.length > 0 ? `${byClassAggregated.length} classes pointées` : 'N/A'}
+          </p>
+        </div>
+        <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 text-center">
+          <p className="text-[10px] font-semibold uppercase opacity-70 text-amber-700">Total retards</p>
+          <p className="text-2xl font-bold mt-0.5 text-amber-700">
+            {summary?.late ?? sp?.lateStudents ?? '—'}
+          </p>
+          <p className="text-[10px] opacity-60 mt-0.5">signalés ce jour</p>
+        </div>
+        <div className="border border-purple-200 bg-purple-50 rounded-lg p-2.5 text-center">
+          <p className="text-[10px] font-semibold uppercase opacity-70 text-purple-700">Classes à risque</p>
+          <p className="text-2xl font-bold mt-0.5 text-purple-700">
+            {highAbsenceClasses.length}
+          </p>
+          <p className="text-[10px] opacity-60 mt-0.5">&gt; 30% d'absents</p>
+        </div>
+      </div>
+
+      {/* ⭐ Alerte classes à forte absence (> 30%) */}
+      {highAbsenceClasses.length > 0 && (
+        <div className="bg-rose-50 border-2 border-rose-300 rounded-lg p-3 mb-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-rose-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-rose-800">
+                Classes avec plus de 30% d'absents :
+              </p>
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {highAbsenceClasses.map((cn, i) => (
+                  <span key={i} className="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-semibold">
+                    {cn}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10px] text-rose-600 mt-1.5 italic">
+                Ces classes nécessitent un suivi particulier — vérifier les motifs d'absence et notifier les parents si nécessaire.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ Tableau par classe — désagrégation des présences */}
+      {byClassAggregated.length > 0 ? (
+        <div className="overflow-x-auto mb-3">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-2 text-left font-bold">Classe</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Effectif</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Présents</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Absents</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Retards</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Taux présence</th>
+                <th className="border border-slate-300 px-2 py-2 text-center font-bold">Alerte</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byClassAggregated.map((c, i) => (
+                <tr key={i} className={c.highAbsence ? "bg-rose-50/40" : ""}>
+                  <td className="border border-slate-300 px-2 py-1.5 font-semibold">{c.className}</td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center">{c.total}</td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center text-emerald-700 font-bold">{c.present}</td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center text-rose-700 font-bold">{c.absent}</td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center text-amber-700">{c.late}</td>
+                  <td className={cn(
+                    "border border-slate-300 px-2 py-1.5 text-center font-bold",
+                    c.rate >= 90 ? "text-emerald-700" : c.rate >= 70 ? "text-amber-700" : "text-rose-700"
+                  )}>
+                    {c.rate.toFixed(1)}%
+                  </td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                    {c.highAbsence ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-bold">
+                        <AlertCircle className="h-2.5 w-2.5" /> &gt;30%
+                      </span>
+                    ) : (
+                      <CheckCircle2 className="h-3 w-3 text-emerald-600 mx-auto" />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-100 font-bold">
+                <td className="border border-slate-300 px-2 py-1.5">TOTAL</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-center">{byClassAggregated.reduce((s, c) => s + c.total, 0)}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-center text-emerald-700">{byClassAggregated.reduce((s, c) => s + c.present, 0)}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-center text-rose-700">{byClassAggregated.reduce((s, c) => s + c.absent, 0)}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-center text-amber-700">{byClassAggregated.reduce((s, c) => s + c.late, 0)}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-center" colSpan={2}>
+                  {(() => {
+                    const tot = byClassAggregated.reduce((s, c) => s + c.total, 0);
+                    const pres = byClassAggregated.reduce((s, c) => s + c.present, 0);
+                    return tot > 0 ? `${((pres / tot) * 100).toFixed(1)}%` : '—';
+                  })()}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 text-xs text-amber-800">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold mb-0.5">Aucune donnée d'appel synchronisée pour ce jour.</p>
+              <p>Cliquez sur <strong>"Sync depuis appels enseignants"</strong> pour récupérer automatiquement
+              les présences saisies par les enseignants dans leur module d'appel quotidien.
+              Vous pourrez ensuite ajouter manuellement les absences signalées par les parents.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ Champ manuel : Absences signalées par les parents ( reste manuel) */}
+      <Field
+        label="Absences signalées par les parents (manuel)"
+        value={sp?.parentAbsences ?? sp?.parentNotifiedAbsences}
+        onChange={v => {
+          markManualEdit();
+          setDailyReport({
+            ...dailyReport,
+            studentPresence: { ...getSp(), parentAbsences: v, _manualEdit: true },
+          });
+        }}
+      />
+
+      {/* ⭐ Editeur RichText : Cas particuliers observés (manuel) */}
+      <div className="mt-2">
+        <label className="text-xs font-bold text-slate-600 block mb-1">Cas particuliers observés (manuel)</label>
+        <RichTextEditor
+          value={sp?.specialCases || ""}
+          onChange={html => {
+            markManualEdit();
+            setDailyReport({
+              ...dailyReport,
+              studentPresence: { ...getSp(), specialCases: html, _manualEdit: true },
+            });
+          }}
+          disabled={disabled}
+          minHeight="60px"
+        />
+      </div>
+    </Section>
   );
 }
 

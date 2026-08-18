@@ -170,6 +170,79 @@ export function usePendingCahierTextes(academicYearId: string | null | undefined
   });
 }
 
+// ─── Director : Pending Semainiers (cahier du semainier) ─────────────────────
+//    3 sous-onglets : SUBMITTED (en attente) / VALIDATED / REJECTED
+export function usePendingSemainiers(
+  academicYearId: string | null | undefined,
+  statusFilter: 'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'ALL' = 'SUBMITTED',
+) {
+  return useQuery({
+    queryKey: pedagogyKeys.pendingSemainiers(academicYearId || '', statusFilter),
+    queryFn: async () => {
+      if (!academicYearId) return [];
+      try {
+        const data = await pedagogySpaceService.getPendingSemainiers(academicYearId, statusFilter);
+        return Array.isArray(data) ? data : (data?.data ?? []);
+      } catch (err: any) {
+        console.warn('[usePendingSemainiers] Error:', err.message);
+        return [];
+      }
+    },
+    enabled: !!academicYearId,
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// ─── Director : Semainier reports (daily + weekly) ───────────────────────────
+//    Activé uniquement quand un semainier est sélectionné pour vue détaillée
+export function useSemainierReports(configId: string | null | undefined) {
+  return useQuery({
+    queryKey: pedagogyKeys.semainierReports(configId || ''),
+    queryFn: async () => {
+      if (!configId) return null;
+      try {
+        return await pedagogySpaceService.getSemainierReports(configId);
+      } catch (err: any) {
+        console.warn('[useSemainierReports] Error:', err.message);
+        return null;
+      }
+    },
+    enabled: !!configId,
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// ─── Director : Semainier catalogue (toutes les configs d'une année) ─────────
+//    Utilisé pour le catalogue (anciennes années)
+export function useSemainierCatalogue(academicYearId: string | null | undefined) {
+  return useQuery({
+    queryKey: pedagogyKeys.semainierCatalogue(academicYearId || ''),
+    queryFn: async () => {
+      if (!academicYearId) return [];
+      try {
+        const data = await pedagogySpaceService.getSemainierCatalogue(academicYearId);
+        return Array.isArray(data) ? data : (data?.data ?? []);
+      } catch (err: any) {
+        console.warn('[useSemainierCatalogue] Error:', err.message);
+        return [];
+      }
+    },
+    enabled: !!academicYearId,
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
 // ─── Director : Detail views (enabled on click) ─────────────────────────────
 
 export function useCahierJournalDetail(id: string | null | undefined) {

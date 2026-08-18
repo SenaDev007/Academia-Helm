@@ -30,6 +30,7 @@ import {
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
   Download, Save, Activity, School, ChevronsDownUp, ChevronsUpDown,
+  CalendarDays, CalendarRange,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,6 +38,7 @@ import {
   useDirectorPedagogyDashboard,
   usePendingCahierJournals, usePendingFiches, usePendingRegisters,
   usePendingEvaluations,
+  usePendingSemainiers, useSemainierReports, useSemainierCatalogue,
   useCahierJournalDetail, useFicheDetail, useRegisterDetail,
   useEvaluationDetail,
 } from "@/lib/query/pedagogy-hooks";
@@ -57,11 +59,14 @@ interface DirectorPedagogyControlProps {
 //    et Évaluations Mensuelles sont réservés aux niveaux MATERNELLE + PRIMAIRE.
 //    Un directeur affecté au SECONDAIRE ne voit PAS ces onglets dans son espace
 //    de validation direction. Le PROMOTEUR et les rôles plateforme ont accès à TOUT.
+//    ⭐ Cahier du Semainier est visible pour TOUS les niveaux (maternelle + primaire
+//       + secondaire) car le semainier est une responsabilité transverse.
 const TABS = [
   { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle, maternellePrimaireOnly: false },
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
+  { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: false },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -176,6 +181,9 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         {tab === "evaluations" && (
           <PendingEvaluationsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
+        {tab === "seminaire" && (
+          <PendingSemainiersTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
+        )}
       </div>
     </div>
   );
@@ -246,24 +254,14 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate, isSeco
       tab: "evaluations" as TabId,
     },
     {
-      label: "Semainiers (anciens)",
-      pending: dashboard.pendingWeeklyLogs,
+      label: "Cahier du Semainier",
+      pending: dashboard.pendingWeeklySummaries || dashboard.pendingWeeklyLogs || 0,
       validated: 0,
       rejected: 0,
-      total: dashboard.pendingWeeklyLogs,
-      icon: Clock,
-      color: "bg-slate-50 text-slate-700 border-slate-200",
-      tab: null,
-    },
-    {
-      label: "Rapports fin de semaine",
-      pending: dashboard.pendingWeeklySummaries,
-      validated: 0,
-      rejected: 0,
-      total: dashboard.pendingWeeklySummaries,
-      icon: Send,
-      color: "bg-slate-50 text-slate-700 border-slate-200",
-      tab: null,
+      total: dashboard.pendingWeeklySummaries || dashboard.pendingWeeklyLogs || 0,
+      icon: CalendarDays,
+      color: "bg-purple-50 text-purple-700 border-purple-200",
+      tab: "seminaire" as TabId,
     },
   ];
 
@@ -3661,6 +3659,757 @@ function MonthlyEvaluationDirectorDetail({ evaluation, userId, onBack, onValidat
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
         <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Titulaire</div>{evaluation.teacherSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={evaluation.teacherSignature} alt="Sig" className="max-h-24 mx-auto" /></div> : <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400 italic">Non signé</div>}</div>
         <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Directeur {isAlreadyValidated ? "" : "(obligatoire)"}</div>{directorSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative"><img src={directorSignature} alt="Sig" className="max-h-24 mx-auto" />{!isAlreadyValidated && <button type="button" onClick={() => setDirectorSignature(null)} className="absolute top-1 right-1 text-xs text-red-500">Effacer</button>}</div> : <SignatureCanvas width={400} height={120} disabled={saving || isAlreadyValidated} placeholder="Signature (obligatoire)" onSignatureChange={(data) => setDirectorSignature(data)} />}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ PHASE 4 — CAHIER DU SEMAINIER : Validation direction
+// ============================================================================
+//  Nouvel onglet "Cahier du Semainier" dans DirectorPedagogyControl
+//  4 sous-onglets : En attente (SUBMITTED) / Validés (VALIDATED) / Rejetés (REJECTED) / Catalogue
+//  Le directeur peut consulter, valider ou rejeter les rapports de fin de semaine
+//  soumis par les semainiers.
+// ============================================================================
+
+function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
+  tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
+}) {
+  const queryClient = useQueryClient();
+  // ⭐ 4 sous-onglets : en attente / validés / rejetés / catalogue
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'CATALOGUE'>('SUBMITTED');
+  const { data: items = [], isLoading: loading, refetch } = usePendingSemainiers(academicYearId, statusTab === 'CATALOGUE' ? 'ALL' : statusTab);
+  const [selected, setSelected] = useState<any>(null);
+  const [modalItem, setModalItem] = useState<any>(null);
+  // ⭐ États repliables (chevrons) pour la hiérarchie : trimester → items
+  const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
+
+  // ⭐ Réinitialiser la sélection quand on change de sous-onglet
+  useEffect(() => {
+    setSelected(null);
+    setModalItem(null);
+  }, [statusTab]);
+
+  // ⭐ Handler de validation/rejet — appelle POST /seminar-config/:id/validate
+  //    Body: { action: 'VALIDATED' | 'REJECTED', directorSignature, validatedBy, rejectionReason }
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED', reason?: string) => {
+    if (!modalItem) return;
+    try {
+      // ⭐ Pour validation : utiliser signature pré-signée (le directeur signe
+      //    via le modal — pas une signature canvas, mais le backend accepte
+      //    une signature vide/brève qui sera remplacée par défaut)
+      await pedagogySpaceService.validateSemainier(modalItem.id, {
+        action,
+        directorSignature: action === 'VALIDATED' ? 'DIRECTOR_VALIDATED' : '',
+        validatedBy: userId,
+        rejectionReason: reason,
+      });
+      toast.success(action === 'VALIDATED' ? '✅ Semainier validé' : 'Semainier rejeté');
+      onRefresh();
+      queryClient.invalidateQueries({ queryKey: ['pedagogy', 'director', 'pending-semainiers'] });
+      queryClient.invalidateQueries({ queryKey: ['pedagogy', 'director', 'dashboard'] });
+    } catch (e: any) {
+      toast.error('Erreur', { description: e.message });
+    }
+  };
+
+  const handleView = async (item: any) => {
+    setSelected(item); // la vue détaillée utilise useSemainierReports(configId) en interne
+  };
+
+  const toggleCollapse = (key: string) => {
+    setCollapsedTrimesters(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // ⭐ Si un semainier est sélectionné, afficher la vue détaillée in-page
+  if (selected) {
+    return (
+      <SemainierDirectorDetail
+        config={selected}
+        userId={userId}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+        }}
+      />
+    );
+  }
+
+  // ⭐ Hiérarchisation : trimester → items (le semainier n'a pas de schoolLevel)
+  const getTrimester = (trimesterNum?: number): string => {
+    if (trimesterNum === 1) return 'Trimestre 1';
+    if (trimesterNum === 2) return 'Trimestre 2';
+    if (trimesterNum === 3) return 'Trimestre 3';
+    return 'Trimestre inconnu';
+  };
+
+  const hierarchy: Record<string, any[]> = {};
+  for (const item of items) {
+    const tr = getTrimester(item.trimester);
+    if (!hierarchy[tr]) hierarchy[tr] = [];
+    hierarchy[tr].push(item);
+  }
+
+  // ⭐ Pre-populer les 3 trimesters même vides
+  const ALL_TRIMESTERS_SM = ['Trimestre 1', 'Trimestre 2', 'Trimestre 3'];
+  for (const tr of ALL_TRIMESTERS_SM) {
+    if (!hierarchy[tr]) hierarchy[tr] = [];
+  }
+
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validés', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetés', icon: XCircle, color: 'text-red-700 bg-red-50' },
+    CATALOGUE: { label: 'Catalogue', icon: CalendarRange, color: 'text-slate-700 bg-slate-50' },
+  };
+
+  // ⭐ Helper format date court
+  const fmtDate = (s?: string) => {
+    if (!s) return '—';
+    return new Date(s).toLocaleDateString('fr-FR');
+  };
+
+  // ⭐ Statut badge
+  const getStatusBadge = (status: string) => {
+    const s = (status || '').toUpperCase();
+    const styles: Record<string, string> = {
+      PENDING: 'bg-slate-100 text-slate-700',
+      SIGNED: 'bg-blue-100 text-blue-700',
+      SUBMITTED: 'bg-amber-100 text-amber-700',
+      VALIDATED: 'bg-emerald-100 text-emerald-700',
+      REJECTED: 'bg-rose-100 text-rose-700',
+    };
+    const labels: Record<string, string> = {
+      PENDING: 'En attente',
+      SIGNED: 'Signé',
+      SUBMITTED: 'Soumis',
+      VALIDATED: 'Validé',
+      REJECTED: 'Rejeté',
+    };
+    return (
+      <span className={cn('px-2 py-0.5 rounded text-xs font-bold', styles[s] || styles.PENDING)}>
+        {labels[s] || s}
+      </span>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ⭐ En-tête descriptif */}
+      <div className="bg-gradient-to-r from-purple-50 to-slate-50 border border-purple-200 rounded-xl p-3">
+        <div className="flex items-start gap-2">
+          <CalendarDays className="h-5 w-5 text-purple-600 mt-0.5 shrink-0" />
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Validation des Cahiers du Semainier</h2>
+            <p className="text-xs text-slate-600 mt-0.5">
+              {statusTab === 'CATALOGUE'
+                ? 'Catalogue de toutes les semaines de l\'année (tous statuts confondus).'
+                : `Le semainier soumet chaque semaine un rapport quotidien (5 jours) + un rapport hebdo. Validez ou rejetez les soumissions reçues.`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ⭐ Sous-onglets statut : En attente / Validés / Rejetés / Catalogue */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          // ⭐ Compteur pour les sous-onglets (catalogue n'a pas de badge count)
+          const count = s === 'CATALOGUE' ? null : items.length;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s
+                  ? `${cfg.color} border-current`
+                  : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+              {count !== null && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500">
+          <CalendarDays className="h-12 w-12 text-slate-300 mb-3" />
+          <p className="font-medium">
+            {statusTab === 'SUBMITTED' && 'Aucun semainier en attente de validation'}
+            {statusTab === 'VALIDATED' && 'Aucun semainier validé'}
+            {statusTab === 'REJECTED' && 'Aucun semainier rejeté'}
+            {statusTab === 'CATALOGUE' && 'Aucun semainier dans le catalogue'}
+          </p>
+          <p className="text-sm text-slate-400 mt-1">
+            Les semainiers soumis par les enseignants apparaîtront ici pour validation.
+          </p>
+        </div>
+      ) : statusTab === 'CATALOGUE' ? (
+        // ⭐ Catalogue : liste à plat (pas de hiérarchie), triée par semaine
+        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-200">
+                <th className="text-left px-4 py-3 font-bold text-slate-700">Semaine</th>
+                <th className="text-left px-4 py-3 font-bold text-slate-700">Trimestre</th>
+                <th className="text-left px-4 py-3 font-bold text-slate-700">Dates</th>
+                <th className="text-left px-4 py-3 font-bold text-slate-700">Enseignant</th>
+                <th className="text-left px-4 py-3 font-bold text-slate-700">Classe(s)</th>
+                <th className="text-center px-4 py-3 font-bold text-slate-700">Statut</th>
+                <th className="text-center px-4 py-3 font-bold text-slate-700">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...items].sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0)).map((cfg: any) => (
+                <tr key={cfg.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-bold text-slate-900">S{cfg.weekNumber}</td>
+                  <td className="px-4 py-2.5">T{cfg.trimester}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500">
+                    {fmtDate(cfg.weekStartDate)} → {fmtDate(cfg.weekEndDate)}
+                  </td>
+                  <td className="px-4 py-2.5 font-medium">{cfg.teacherName || '—'}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-700">
+                    {cfg.classNames?.join(', ') || '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-center">{getStatusBadge(cfg.status)}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    <button onClick={() => handleView(cfg)}
+                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Voir le détail">
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => window.open(`/api/pedagogy-space/seminar-config/${cfg.id}/export?format=pdf`, '_blank')}
+                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded ml-1" title="Exporter en PDF">
+                      <Download className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        // ⭐ 3 sous-onglets statut : hiérarchie par trimestre (chevrons collapsibles)
+        <div className="space-y-3">
+          {Object.keys(hierarchy).sort((a, b) => {
+            const ord = (x: string) => x === 'Trimestre 1' ? 1 : x === 'Trimestre 2' ? 2 : 3;
+            return ord(a) - ord(b);
+          }).map(tr => {
+            const trimesterItems = hierarchy[tr] || [];
+            const isCollapsed = collapsedTrimesters.has(tr);
+            return (
+              <div key={tr} className="border border-slate-200 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => toggleCollapse(tr)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100"
+                >
+                  <div className="flex items-center gap-2">
+                    {isCollapsed
+                      ? <ChevronRight className="h-4 w-4 text-slate-500" />
+                      : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                    <span className="font-bold text-slate-900">{tr}</span>
+                    <span className="text-xs text-slate-500">({trimesterItems.length})</span>
+                  </div>
+                </button>
+                {!isCollapsed && (
+                  <div className="p-3 space-y-2">
+                    {trimesterItems.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic text-center py-3">
+                        Aucun semainier dans ce trimestre pour ce statut.
+                      </p>
+                    ) : (
+                      trimesterItems
+                        .sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0))
+                        .map((cfg: any) => (
+                          <div key={cfg.id} className="border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-all bg-white">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex flex-col items-center justify-center w-14 h-14 bg-purple-50 border border-purple-200 rounded-lg shrink-0">
+                                  <div className="text-[10px] font-bold uppercase text-purple-600">Sem</div>
+                                  <div className="text-lg font-bold text-purple-700">{cfg.weekNumber}</div>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 text-sm">
+                                    {cfg.teacherName || 'Enseignant non assigné'}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {fmtDate(cfg.weekStartDate)} → {fmtDate(cfg.weekEndDate)}
+                                  </p>
+                                  <p className="text-xs text-slate-600 mt-0.5">
+                                    <span className="font-semibold">Classes :</span>{' '}
+                                    {cfg.classNames?.join(', ') || cfg.classIds?.join(', ') || '—'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex-1" />
+                              <div className="flex items-center gap-2">
+                                {getStatusBadge(cfg.status)}
+                                <button
+                                  onClick={() => handleView(cfg)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+                                  title="Voir le détail (rapports journaliers + hebdo)"
+                                >
+                                  <Eye className="h-3.5 w-3.5" /> Voir
+                                </button>
+                                <button
+                                  onClick={() => window.open(`/api/pedagogy-space/seminar-config/${cfg.id}/export?format=pdf`, '_blank')}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100"
+                                  title="Exporter en PDF"
+                                >
+                                  <Download className="h-3.5 w-3.5" /> PDF
+                                </button>
+                                {statusTab === 'SUBMITTED' && (
+                                  <button
+                                    onClick={() => setModalItem(cfg)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border-2 border-emerald-300 rounded-lg hover:bg-emerald-100"
+                                    title="Valider ou rejeter ce semainier"
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> Valider / Rejeter
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ⭐ Modale de validation/rejet (réutilise ValidationModal) */}
+      <ValidationModal
+        open={!!modalItem}
+        onClose={() => setModalItem(null)}
+        onValidate={handleValidate}
+        title={`Valider le Semainier S${modalItem?.weekNumber || ''} — ${modalItem?.teacherName || ''}`}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ SEMAINIER DIRECTOR DETAIL — Vue détaillée in-page d'un semainier
+// ============================================================================
+//    Affiche :
+//      - En-tête (semaine, trimestre, dates, enseignant, classes, statut)
+//      - Boutons Valider / Rejeter (si statut SUBMITTED)
+//      - Liste des 5 rapports journaliers (Lun-Ven) avec contenu détaillé
+//      - Rapport hebdomadaire (page 8)
+//      - Signatures (enseignant + directeur)
+// ============================================================================
+function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
+  config: any;
+  userId: string;
+  onBack: () => void;
+  onValidated: () => void;
+}) {
+  // ⭐ Hook React Query — fetch les rapports journaliers + hebdo
+  const { data: reportsData, isLoading: loadingReports } = useSemainierReports(config.id);
+  const [validationModalOpen, setValidationModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const dailyReports = reportsData?.dailyReports || [];
+  const weeklyReport = reportsData?.weeklyReport;
+
+  // ⭐ Helper format date court + long
+  const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('fr-FR') : '—';
+
+  // ⭐ Handler validation — appelle validateSemainier
+  //    Remarque : le directeur n'a pas besoin de signer visuellement — le backend
+  //    enregistre la validation + l'ID validateur + la date.
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED', reason?: string) => {
+    setSaving(true);
+    try {
+      await pedagogySpaceService.validateSemainier(config.id, {
+        action,
+        directorSignature: action === 'VALIDATED' ? 'DIRECTOR_VALIDATED' : '',
+        validatedBy: userId,
+        rejectionReason: reason,
+      });
+      toast.success(action === 'VALIDATED' ? '✅ Semainier validé' : 'Semainier rejeté');
+      setValidationModalOpen(false);
+      onValidated();
+    } catch (e: any) {
+      toast.error('Erreur', { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ⭐ Récupérer les stats agrégées depuis le rapport hebdo (auto-calculées par le backend)
+  const parseJson = (v: any) => {
+    if (!v) return null;
+    if (typeof v === 'string') {
+      try { return JSON.parse(v); } catch { return null; }
+    }
+    return v;
+  };
+  const staffStats = parseJson(weeklyReport?.staffAttendanceStats);
+  const studentStats = parseJson(weeklyReport?.studentAttendanceStats);
+
+  const isAlreadyValidated = (config.status || '').toUpperCase() === 'VALIDATED';
+  const isAlreadyRejected = (config.status || '').toUpperCase() === 'REJECTED';
+  const isSubmitted = (config.status || '').toUpperCase() === 'SUBMITTED';
+
+  return (
+    <div className="space-y-4">
+      {/* ⭐ Bandeau retour */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
+          ← Retour à la liste
+        </button>
+        <div className="flex-1" />
+        {/* ⭐ Statut + boutons d'action */}
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'px-3 py-1.5 rounded-lg text-xs font-bold',
+            isAlreadyValidated ? 'bg-emerald-100 text-emerald-700'
+              : isAlreadyRejected ? 'bg-rose-100 text-rose-700'
+                : isSubmitted ? 'bg-amber-100 text-amber-700'
+                  : 'bg-slate-100 text-slate-700'
+          )}>
+            {isAlreadyValidated ? '✓ Validé' : isAlreadyRejected ? '✗ Rejeté' : isSubmitted ? '⏳ En attente' : 'Non soumis'}
+          </span>
+          {isSubmitted && (
+            <button
+              onClick={() => setValidationModalOpen(true)}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Valider / Rejeter
+            </button>
+          )}
+          <button
+            onClick={() => window.open(`/api/pedagogy-space/seminar-config/${config.id}/export?format=pdf`, '_blank')}
+            className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold"
+            title="Exporter le rapport complet en PDF"
+          >
+            <Download className="h-4 w-4" /> PDF
+          </button>
+        </div>
+      </div>
+
+      {/* ⭐ En-tête du semainier */}
+      <div className="bg-white rounded-2xl border-2 border-purple-200 p-5">
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="flex flex-col items-center justify-center w-20 h-20 bg-purple-50 border-2 border-purple-300 rounded-xl shrink-0">
+            <div className="text-[10px] font-bold uppercase text-purple-600">Semaine</div>
+            <div className="text-2xl font-bold text-purple-700">S{config.weekNumber}</div>
+            <div className="text-[10px] font-bold uppercase text-purple-600">T{config.trimester}</div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-slate-900">Cahier du Semainier</h2>
+            <p className="text-sm text-slate-600 mt-1">
+              <strong>Période :</strong> {fmtDate(config.weekStartDate)} → {fmtDate(config.weekEndDate)}
+            </p>
+            <p className="text-sm text-slate-600 mt-0.5">
+              <strong>Semainier :</strong> {config.teacherName || '—'}
+            </p>
+            <p className="text-sm text-slate-600 mt-0.5">
+              <strong>Classes :</strong>{' '}
+              {config.classNames?.join(', ') || config.classIds?.join(', ') || '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* ⭐ Stats agrégées (depuis le rapport hebdo si présent) */}
+        {staffStats && studentStats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-100">
+            <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 text-center">
+              <p className="text-[10px] font-semibold uppercase opacity-70 text-blue-700">Présence enseignants</p>
+              <p className="text-2xl font-bold mt-1 text-blue-700">
+                {staffStats.averagePresenceRate != null ? `${staffStats.averagePresenceRate}%` : '—'}
+              </p>
+              <p className="text-[10px] opacity-60 mt-0.5">{staffStats.totalPresent || 0}/{staffStats.totalRecords || 0} présences</p>
+            </div>
+            <div className="border border-emerald-200 bg-emerald-50 rounded-lg p-3 text-center">
+              <p className="text-[10px] font-semibold uppercase opacity-70 text-emerald-700">Présence élèves</p>
+              <p className="text-2xl font-bold mt-1 text-emerald-700">
+                {studentStats.averageAttendanceRate != null ? `${studentStats.averageAttendanceRate}%` : '—'}
+              </p>
+              <p className="text-[10px] opacity-60 mt-0.5">{studentStats.totalAbsent || 0} absences cumulées</p>
+            </div>
+            <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-center">
+              <p className="text-[10px] font-semibold uppercase opacity-70 text-amber-700">Jours couverts</p>
+              <p className="text-2xl font-bold mt-1 text-amber-700">{staffStats.daysCovered || 0}/5</p>
+              <p className="text-[10px] opacity-60 mt-0.5">rapports journaliers</p>
+            </div>
+            <div className="border border-rose-200 bg-rose-50 rounded-lg p-3 text-center">
+              <p className="text-[10px] font-semibold uppercase opacity-70 text-rose-700">Classes à risque</p>
+              <p className="text-2xl font-bold mt-1 text-rose-700">
+                {studentStats.highAbsenceClasses?.length || 0}
+              </p>
+              <p className="text-[10px] opacity-60 mt-0.5">&gt; 30% d'absents</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ⭐ Liste des 5 rapports journaliers */}
+      {loadingReports ? (
+        <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : dailyReports.length === 0 ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900 text-center">
+          <CalendarDays className="h-10 w-10 mx-auto text-amber-400 mb-2" />
+          <p className="font-medium">Aucun rapport journalier pour ce semainier</p>
+          <p className="text-xs text-amber-700 mt-1">
+            Le semainier n'a pas encore saisi les rapports journaliers pour cette semaine.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-slate-700 uppercase">Rapports journaliers ({dailyReports.length}/5)</h3>
+          {dailyReports
+            .sort((a, b) => (a.dayOfWeek || 0) - (b.dayOfWeek || 0))
+            .map((dr: any) => (
+              <DailyReportSummaryCard key={dr.id} report={dr} weekStartDate={config.weekStartDate} />
+            ))
+          }
+        </div>
+      )}
+
+      {/* ⭐ Rapport hebdo (page 8) si présent */}
+      {weeklyReport && (
+        <div className="bg-white rounded-2xl border-2 border-purple-300 p-4">
+          <h3 className="text-sm font-bold text-purple-700 uppercase mb-3 flex items-center gap-2">
+            <CalendarRange className="h-4 w-4" /> Rapport de fin de semaine
+          </h3>
+          <div className="space-y-3 text-xs">
+            {weeklyReport.staffAttendanceObservations && (
+              <div>
+                <p className="font-bold text-slate-700 mb-1">Observations présence enseignants</p>
+                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
+                  dangerouslySetInnerHTML={{ __html: weeklyReport.staffAttendanceObservations }} />
+              </div>
+            )}
+            {weeklyReport.studentAttendanceAnalysis && (
+              <div>
+                <p className="font-bold text-slate-700 mb-1">Analyse présence élèves</p>
+                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
+                  dangerouslySetInnerHTML={{ __html: weeklyReport.studentAttendanceAnalysis }} />
+              </div>
+            )}
+            {weeklyReport.pedagogyAnalysis && (
+              <div>
+                <p className="font-bold text-slate-700 mb-1">Bilan pédagogique</p>
+                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
+                  dangerouslySetInnerHTML={{ __html: weeklyReport.pedagogyAnalysis }} />
+              </div>
+            )}
+            {weeklyReport.recommendations && (
+              <div>
+                <p className="font-bold text-slate-700 mb-1">Recommandations</p>
+                <div className="bg-indigo-50 border border-indigo-200 rounded p-2 text-indigo-900"
+                  dangerouslySetInnerHTML={{ __html: weeklyReport.recommendations }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ Signatures bas de page */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <div className="grid grid-cols-2 gap-6">
+          <div className="text-center">
+            <p className="text-xs font-bold text-slate-700 uppercase">Signature du Semainier</p>
+            <p className="text-sm mt-1">{config.teacherName || '—'}</p>
+            <div className="mt-3 h-[80px] border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center">
+              {config.teacherSignature ? (
+                <img src={config.teacherSignature} alt="Signature semainier" className="max-h-20 mx-auto" />
+              ) : (
+                <span className="text-xs text-slate-400 italic">Non signé</span>
+              )}
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-xs font-bold text-slate-700 uppercase">Visa de la Direction</p>
+            <p className="text-sm mt-1">
+              {isAlreadyValidated ? 'Validé' : isAlreadyRejected ? 'Rejeté' : 'En attente'}
+            </p>
+            <div className="mt-3 h-[80px] border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center">
+              {config.directorSignature && isAlreadyValidated ? (
+                <img src={config.directorSignature} alt="Signature directeur" className="max-h-20 mx-auto" />
+              ) : (
+                <span className="text-xs text-slate-400 italic">
+                  {isSubmitted ? 'En attente de validation' : '—'}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ⭐ Modale de validation/rejet — réutilise ValidationModal */}
+      <ValidationModal
+        open={validationModalOpen}
+        onClose={() => setValidationModalOpen(false)}
+        onValidate={handleValidate}
+        title={`Valider le Semainier S${config.weekNumber}`}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ CARTE RÉSUMÉ D'UN RAPPORT JOURNALIER — vue compacte pour le directeur
+// ============================================================================
+function DailyReportSummaryCard({ report, weekStartDate }: { report: any; weekStartDate: string }) {
+  const DAY_NAMES = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+  const dayName = DAY_NAMES[(report.dayOfWeek || 1) - 1];
+
+  // ⭐ Calculer la date précise du jour (lundi + (day-1))
+  const dayDate = (() => {
+    const base = new Date(weekStartDate);
+    base.setDate(base.getDate() + ((report.dayOfWeek || 1) - 1));
+    return base.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  })();
+
+  // ⭐ Parse JSON fields
+  const parseJson = (v: any) => {
+    if (!v) return null;
+    if (typeof v === 'string') {
+      try { return JSON.parse(v); } catch { return null; }
+    }
+    return v;
+  };
+  const teacherAttendance = parseJson(report.teacherAttendance);
+  const studentPresence = parseJson(report.studentPresence);
+  const pedagogy = parseJson(report.pedagogy);
+  const discipline = parseJson(report.discipline);
+  const hygiene = parseJson(report.hygiene);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <div className="flex flex-col items-center justify-center w-10 h-10 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="text-[9px] font-bold uppercase text-blue-600">{dayName.substring(0, 3)}</div>
+            <div className="text-sm font-bold text-blue-700">{dayDate.split('/')[0]}</div>
+          </div>
+          <div>
+            <p className="font-bold text-slate-900 text-sm">{dayName} {dayDate}</p>
+            <p className="text-xs text-slate-500">
+              {teacherAttendance?.staff?.length || teacherAttendance?.length || 0} enseignants •{' '}
+              {studentPresence?.summary?.totalRecords || 0} élèves pointés
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {studentPresence?.attendanceRate != null && (
+            <span className={cn(
+              'px-2 py-0.5 rounded text-xs font-bold',
+              Number(studentPresence.attendanceRate) >= 90 ? 'bg-emerald-100 text-emerald-700'
+                : Number(studentPresence.attendanceRate) >= 70 ? 'bg-amber-100 text-amber-700'
+                  : 'bg-rose-100 text-rose-700'
+            )}>
+              {Number(studentPresence.attendanceRate).toFixed(1)}% présence
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+        {/* Section 1 : Présence enseignants */}
+        <div className="border-l-2 border-blue-300 pl-2">
+          <p className="font-bold text-slate-700 uppercase text-[10px]">1. Présence enseignants</p>
+          {teacherAttendance ? (
+            <div className="mt-1">
+              {teacherAttendance.summary ? (
+                <div className="flex gap-3 text-[11px]">
+                  <span className="text-emerald-700">✓ {teacherAttendance.summary.present || 0} présents</span>
+                  <span className="text-rose-700">✗ {teacherAttendance.summary.absent || 0} absents</span>
+                  <span className="text-amber-700">⏰ {teacherAttendance.summary.late || 0} retards</span>
+                </div>
+              ) : (
+                <p className="text-slate-500 italic">{(teacherAttendance.staff || teacherAttendance).length || 0} enseignants pointés</p>
+              )}
+            </div>
+          ) : <p className="text-slate-400 italic">—</p>}
+        </div>
+
+        {/* Section 2 : Présence élèves */}
+        <div className="border-l-2 border-emerald-300 pl-2">
+          <p className="font-bold text-slate-700 uppercase text-[10px]">2. Présence élèves</p>
+          {studentPresence ? (
+            <div className="mt-1 text-[11px]">
+              <p className="text-emerald-700 font-semibold">
+                Taux : {Number(studentPresence.attendanceRate || studentPresence.globalRate || 0).toFixed(1)}%
+              </p>
+              {studentPresence.highAbsenceClasses?.length > 0 && (
+                <p className="text-rose-700 mt-0.5">
+                  ⚠ Classes à risque : {studentPresence.highAbsenceClasses.join(', ')}
+                </p>
+              )}
+            </div>
+          ) : <p className="text-slate-400 italic">—</p>}
+        </div>
+
+        {/* Section 3 : Pédagogie */}
+        <div className="border-l-2 border-purple-300 pl-2">
+          <p className="font-bold text-slate-700 uppercase text-[10px]">3. Pédagogie</p>
+          {pedagogy ? (
+            <div className="mt-1 text-[11px] text-slate-700">
+              {pedagogy.scheduleRespected !== undefined && (
+                <p>EDT respecté : {pedagogy.scheduleRespected ? '✓' : '✗'}</p>
+              )}
+              {pedagogy.missingCourses?.length > 0 && (
+                <p className="text-rose-600">{pedagogy.missingCourses.length} cours manquants</p>
+              )}
+              {pedagogy.modifiedCourses?.length > 0 && (
+                <p className="text-amber-600">{pedagogy.modifiedCourses.length} cours modifiés</p>
+              )}
+            </div>
+          ) : <p className="text-slate-400 italic">—</p>}
+        </div>
+
+        {/* Section 4 : Discipline */}
+        <div className="border-l-2 border-amber-300 pl-2">
+          <p className="font-bold text-slate-700 uppercase text-[10px]">4. Discipline</p>
+          {discipline ? (
+            <div className="mt-1 text-[11px] text-slate-700">
+              {discipline.positiveBehaviors ? <p>✓ Positif signalé</p> : null}
+              {discipline.problemBehaviors ? <p className="text-rose-600">⚠ Problèmes signalés</p> : null}
+            </div>
+          ) : <p className="text-slate-400 italic">—</p>}
+        </div>
+
+        {/* Section 5 : Hygiène */}
+        <div className="border-l-2 border-cyan-300 pl-2">
+          <p className="font-bold text-slate-700 uppercase text-[10px]">5. Hygiène & logistique</p>
+          {hygiene ? (
+            <div className="mt-1 text-[11px] text-slate-700">
+              {hygiene.roomCleanliness && <p>Salles : {hygiene.roomCleanliness}</p>}
+              {hygiene.toilets && <p>Toilettes : {hygiene.toilets}</p>}
+            </div>
+          ) : <p className="text-slate-400 italic">—</p>}
+        </div>
       </div>
     </div>
   );

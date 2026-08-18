@@ -95,7 +95,13 @@ export function SemainierAttendancePanel({ date, onMark, attendanceData, disable
     }
   }, [targetDate]);
 
-  useEffect(() => { if (!attendanceData) loadStaff(); else setLoading(false); }, [loadStaff, attendanceData]);
+  // ⭐ TOUJOURS charger la liste des enseignants depuis l'API RH
+  //    (même si attendanceData est fourni non vide) car attendanceData ne
+  //    contient que les statuts des enseignants déjà pointés — pas la liste
+  //    complète des enseignants actifs qu'il faut afficher pour pointage.
+  //    attendanceData sert uniquement à retrouver le statut d'un enseignant
+  //    (via getStaffStatus ci-dessous).
+  useEffect(() => { loadStaff(); }, [loadStaff]);
 
   // ⭐ Récupérer le statut d'un enseignant depuis attendanceData (rapport JSON)
   //    ou depuis staff (API HR)

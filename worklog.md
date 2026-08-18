@@ -6266,3 +6266,48 @@ Stage Summary:
 - 5 fichiers modifiés : CahierSemaineTab.tsx (+316), DirectorPedagogyControl.tsx (+751), pedagogy-space.service.ts (+74), pedagogy-hooks.ts (+74), pedagogy-query-keys.ts (+6)
 - Aucune migration SQL nécessaire (toutes les tables weekly_seminar_* + colonnes JSONB existent déjà)
 - TypeScript check : aucun erreur sur les fichiers modifiés (uniquement des erreurs préexistantes dans useAutoSave.ts non liées)
+
+---
+Task ID: FIX-SEMAINIER-TEACHER-LIST-1
+Agent: main
+Task: Bug — la liste des enseignants ne s'affichait plus dans le Cahier du Semainier (panel de pointage vide). Commit + push de l'ensemble des modifications (Phase 3 + 4 + fix).
+
+Work Log:
+- Lu SemainierAttendancePanel.tsx (365 lignes) — le panneau de pointage
+- Lu CahierSemaineTab.tsx DailyReportCard (l. 1010-1035) — le call site qui passe `attendanceData={dailyReport?.teacherAttendance || []}`
+
+⭐ BUG RACINE IDENTIFIÉ (l. 98 avant fix) :
+  - useEffect conditionnel : `if (!attendanceData) loadStaff(); else setLoading(false);`
+  - CahierSemaineTab passe `attendanceData={dailyReport?.teacherAttendance || []}`
+  - Quand dailyReport.teacherAttendance est undefined (état initial), le `|| []` coerce en `[]` (array vide)
+  - JavaScript évalue `![]` comme `false` → loadStaff() n'est PAS appelé → staff state reste `[]`
+  - Conséquence : la table affiche systématiquement "Aucun enseignant actif trouvé"
+  - Le bug affectait aussi le cas où teacherAttendance était déjà non vide (entries déjà marquées)
+    car `!arrayNonEmpty` est aussi `false` → loadStaff jamais appelé
+
+⭐ FIX :
+  - Changement de useEffect pour TOUJOURS appeler loadStaff() :
+    `useEffect(() => { loadStaff(); }, [loadStaff]);`
+  - Le panneau charge désormais la liste complète des enseignants depuis l'API RH
+    (GET /api/hr/attendance/daily-staff → backend getDailyStaffAttendances qui
+    SELECT depuis la table teachers — confirmé fonctionnel)
+  - attendanceData reste utilisé uniquement pour lookup de statut (getStaffStatus)
+    ce qui était déjà le comportement attendu
+  - La logique onMark vs API HR (legacy mode) est préservée — quand onMark est fourni,
+    les clics de boutons appellent onMark callback (pas l'API HR), évitant ainsi
+    le bug FK staff_attendance_staff_id documenté précédemment
+
+Modifications effectuées :
+1. apps/web-app/src/components/hr/SemainierAttendancePanel.tsx
+   - useEffect l. 98 : `if (!attendanceData) loadStaff(); else setLoading(false);` → `loadStaff();`
+   - Ajout d'un commentaire de 4 lignes expliquant pourquoi le fetch est inconditionnel
+   - Aucune autre modification — la logique getStaffStatus/handleMark/stats est inchangée
+
+Stage Summary:
+- ✅ Bug racine fixé : useEffect TOUJOURS charge la liste des enseignants depuis l'API RH
+- ✅ Le panneau affiche désormais tous les enseignants actifs (table teachers, filtré MATERNELLE+PRIMAIRE)
+- ✅ attendanceData reste utilisé pour lookup de statut (comportement attendu)
+- ✅ Le bug FK staff_attendance_staff_id reste résolu (onMark callback quand fourni)
+- ✅ TypeScript check : aucun erreur sur les fichiers modifiés
+- 1 fichier modifié : SemainierAttendancePanel.tsx (1 ligne effective, +4 lignes commentaire)
+- Files modified: 1 (apps/web-app/src/components/hr/SemainierAttendancePanel.tsx)

@@ -833,42 +833,46 @@ export class AttendancePrismaService {
    * Utilisé par le semainier pour voir/marquer tous les enseignants du jour.
    */
   async getDailyStaffAttendances(tenantId: string, date: Date) {
-    // ⭐ Inclure TOUS les enseignants actifs (FR + EN + bilingues), quel que soit
-    //    leur roleType exact (TEACHER, ENSEIGNANT, FR_TEACHER, EN_TEACHER, etc.)
+    // ⭐ Récupérer TOUS les enseignants actifs depuis la table `teachers`
+    //    (pas depuis `staff` qui n'a que 3 enregistrements TEACHER).
+    //    La table `teachers` est la source de vérité pour les enseignants.
+    //    On inclut les enseignants FR + EN (maternelle + primaire).
+    //    On ne JOIN pas avec staff_attendances car il n'y a pas de lien direct
+    //    entre teachers et staff (pas de colonne linkedStaffId).
+    //    Le statut de présence sera géré par le JSON du rapport quotidien du semainier.
     const records = await this.prisma.$queryRawUnsafe(
-      `SELECT sa.*, s."firstName", s."lastName",
-              COALESCE(s."tenantMatricule", s."globalMatricule", s."employeeNumber") AS matricule,
-              s."roleType", sl.code AS "schoolLevelCode"
-       FROM "staff_attendances" sa
-       RIGHT JOIN "staff" s ON s.id = sa."staffId" AND sa.date = $2 AND sa."tenantId" = $1
-       LEFT JOIN "school_levels" sl ON sl.id = s."schoolLevelId"
-       WHERE s."tenantId" = $1 AND s.status = 'ACTIVE'
-         AND (
-           s."roleType" = 'TEACHER'
-           OR s."roleType" ILIKE '%TEACHER%'
-           OR s."roleType" ILIKE '%ENSEIGN%'
-           OR s."roleType" ILIKE '%PROF%'
-         )
-       ORDER BY s."lastName" ASC, s."firstName" ASC`,
-      tenantId, date,
+      `SELECT t.id AS "teacherId", t."firstName", t."lastName",
+              t."matricule" AS "teacherMatricule",
+              t."assignedLanguages",
+              sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName"
+       FROM "teachers" t
+       LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
+       WHERE t."tenantId" = $1
+         AND t.status = 'active'
+         AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
+       ORDER BY t."lastName" ASC, t."firstName" ASC`,
+      tenantId,
     ) as any[];
 
     return records.map(r => ({
-      id: r.id,
-      staffId: r.staffId,
+      id: null,
+      staffId: r.teacherId,
+      teacherId: r.teacherId,
       staffName: `${r.firstName} ${r.lastName}`,
-      matricule: r.matricule,
-      roleType: r.roleType,
+      matricule: r.teacherMatricule,
+      roleType: 'TEACHER',
       schoolLevelCode: r.schoolLevelCode,
-      date: r.date,
-      checkIn: r.checkIn,
-      checkOut: r.checkOut,
-      status: r.status,
-      hoursWorked: r.hoursWorked,
-      markedByRole: r.markedByRole || 'NONE',
-      geoVerified: r.geoVerified || false,
-      geoDistance: r.geoDistance,
-      notes: r.notes,
+      schoolLevelName: r.schoolLevelName,
+      assignedLanguages: r.assignedLanguages,
+      date: date.toISOString().split('T')[0],
+      checkIn: null,
+      checkOut: null,
+      status: null,
+      hoursWorked: null,
+      markedByRole: 'NONE',
+      geoVerified: false,
+      geoDistance: null,
+      notes: null,
     }));
   }
 }

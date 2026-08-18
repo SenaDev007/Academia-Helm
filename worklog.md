@@ -6311,3 +6311,38 @@ Stage Summary:
 - ✅ TypeScript check : aucun erreur sur les fichiers modifiés
 - 1 fichier modifié : SemainierAttendancePanel.tsx (1 ligne effective, +4 lignes commentaire)
 - Files modified: 1 (apps/web-app/src/components/hr/SemainierAttendancePanel.tsx)
+
+---
+Task ID: FIX-CHECK-NOT-DEFINED-1
+Agent: main
+Task: Bug — quand on clique sur un bouton de pointage (Présent/Absent/Retard/etc.), une notification de succès s'affiche MAIS une erreur "Check is not defined" apparaît immédiatement après, et rien n'est modifié côté frontend (la table reste vide, les badges de statut ne s'affichent pas).
+
+Work Log:
+- Lu CahierSemaineTab.tsx — la table Section 1 "Présence des enseignants" (l. 1085)
+- Lu les imports lucide-react (l. 23-28) — vérifié que `Check` n'était PAS importé (uniquement `CheckCircle2`)
+
+⭐ BUG RACINE IDENTIFIÉ :
+  - Dans la table de la Section 1 (l. 1085) : `{t.present ? <Check className="h-3.5 w-3.5 text-emerald-600 mx-auto" /> : ''}`
+  - L'icône `Check` (lucide-react) est utilisée pour afficher ✓ dans la colonne "Présent"
+  - Mais `Check` n'est PAS dans la liste des imports lucide-react (uniquement `CheckCircle2`)
+  - Au démarrage, la table ne rend aucune ligne (teacherAttendance vide) → pas d'erreur visible
+  - Dès que l'utilisateur clique sur un bouton de pointage :
+    1. onMark callback est appelé → met à jour dailyReport.teacherAttendance
+    2. Le composant se re-render avec la nouvelle entrée dans teacherAttendance
+    3. La table essaie de rendre `<Check ... />` → ReferenceError: "Check is not defined"
+    4. L'erreur est captée par le ErrorBoundary du module → affiche "Erreur du module / Check is not defined"
+    5. Le state est mis à jour en mémoire (la notification succès s'affiche) mais le re-render échoue
+       → visuellement, rien ne change
+
+⭐ FIX :
+  - Ajout de `Check` à la liste des imports lucide-react (l. 25)
+  - Une seule ligne modifiée : `Plus, Trash2, CheckCircle2, X, Zap, ...` → `Plus, Trash2, CheckCircle2, Check, X, Zap, ...`
+  - Aucune autre modification nécessaire — la table rend maintenant correctement ✓ dans la colonne "Présent"
+  - Vérification complémentaire : tous les autres icônes utilisés (X, AlertCircle, etc.) sont bien importés
+
+Stage Summary:
+- ✅ Bug racine fixé : `Check` ajouté aux imports lucide-react
+- ✅ Workflow complet restauré : clic bouton pointage → onMark callback → state update → re-render OK → ✓ s'affiche dans la colonne "Présent"
+- ✅ TypeScript check : aucun erreur sur CahierSemaineTab.tsx
+- 1 fichier modifié : CahierSemaineTab.tsx (+1 mot dans la liste d'imports)
+- Files modified: 1 (apps/web-app/src/components/pedagogy/production/CahierSemaineTab.tsx)

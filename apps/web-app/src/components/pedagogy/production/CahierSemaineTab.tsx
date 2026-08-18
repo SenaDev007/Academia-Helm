@@ -22,7 +22,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   CalendarDays, Settings, List, FileText, Loader2, Save, RefreshCw,
-  Plus, Trash2, CheckCircle2, X, Zap, Hand, ChevronRight, Send,
+  Plus, Trash2, CheckCircle2, Check, X, Zap, Hand, ChevronRight, Send,
   ClipboardList, Users, BookOpen, Shield, Sparkles, CalendarRange,
   AlertCircle,
 } from "lucide-react";

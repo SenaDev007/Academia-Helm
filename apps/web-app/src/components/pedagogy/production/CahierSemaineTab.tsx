@@ -185,31 +185,59 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
     }
   };
 
+  // ⭐ État pour stocker la signature en cours de dessin (avant confirmation)
+  const [pendingSignature, setPendingSignature] = useState<string | null>(null);
+
   // === Signature enseignant avec propagation automatique ===
-  // ⭐ Quand l'enseignant signe une ligne, sa signature est propagée à TOUTES
+  // ⭐ Quand l'enseignant signe, sa signature est propagée à TOUTES
   //    les autres lignes où il est désigné comme semainier.
-  const handleSignWithPropagation = async (signature: string | null) => {
-    if (!signature || !signModal.teacherId) return;
+  //    Appelée UNIQUEMENT quand l'utilisateur clique "Confirmer" (pas auto)
+  const handleSignWithPropagation = async () => {
+    if (!pendingSignature || !signModal.teacherId) return;
     setSaving(true);
     try {
-      // ⭐ Trouver toutes les configs du même enseignant
       const teacherConfigs = configs.filter(c => c.teacherId === signModal.teacherId);
-      // ⭐ Mettre à jour chaque config avec la signature + status SIGNED
       await Promise.all(teacherConfigs.map(async (cfg) => {
         await fetch(`/api/pedagogy-space/seminar-config/${cfg.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ teacherSignature: signature, status: "SIGNED" }),
+          body: JSON.stringify({ teacherSignature: pendingSignature, status: "SIGNED" }),
         });
       }));
       toast.success("✅ Signature enregistrée", {
         description: `Propagée à ${teacherConfigs.length} semaine(s) où vous êtes désigné.`,
       });
       setSignModal({ open: false, configId: '', teacherId: '', teacherName: '' });
+      setPendingSignature(null);
       loadData();
     } catch (e: any) {
       toast.error("Erreur lors de la signature", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ⭐ Supprimer la signature d'un enseignant
+  const handleDeleteSignature = async (teacherId: string) => {
+    if (!confirm('Supprimer la signature de cet enseignant ?')) return;
+    setSaving(true);
+    try {
+      const teacherConfigs = configs.filter(c => c.teacherId === teacherId);
+      await Promise.all(teacherConfigs.map(async (cfg) => {
+        await fetch(`/api/pedagogy-space/seminar-config/${cfg.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ teacherSignature: null, status: "PENDING" }),
+        });
+      }));
+      toast.success('🗑️ Signature supprimée', {
+        description: `Retirée de ${teacherConfigs.length} semaine(s).`,
+      });
+      loadData();
+    } catch (e: any) {
+      toast.error('Erreur', { description: e.message });
     } finally {
       setSaving(false);
     }
@@ -266,12 +294,12 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
           configs={configs}
           currentUserId={user?.id || ""}
           onSign={(configId: string, signature: string | null) => {
-            // ⭐ Ouvrir le modal de signature avec propagation
             const cfg = configs.find(c => c.id === configId);
             if (cfg) {
               setSignModal({ open: true, configId, teacherId: cfg.teacherId, teacherName: cfg.teacherName || '' });
             }
           }}
+          onDeleteSignature={handleDeleteSignature}
         />
       )}
 
@@ -344,19 +372,27 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Votre signature</label>
+                {/* ⭐ SignatureCanvas stocke dans pendingSignature (ne soumet PAS automatiquement) */}
                 <SignatureCanvas
                   width={360}
                   height={140}
                   placeholder="Signez ici..."
-                  onSignatureChange={(data: string | null) => handleSignWithPropagation(data)}
+                  onSignatureChange={(data: string | null) => setPendingSignature(data)}
                 />
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
-              <button onClick={() => setSignModal({ open: false, configId: '', teacherId: '', teacherName: '' })}
+              <button onClick={() => { setSignModal({ open: false, configId: '', teacherId: '', teacherName: '' }); setPendingSignature(null); }}
                 disabled={saving}
                 className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50">
-                Fermer
+                Annuler
+              </button>
+              {/* ⭐ Bouton Confirmer — soumet la signature SEULEMENT quand l'utilisateur clique */}
+              <button onClick={handleSignWithPropagation}
+                disabled={saving || !pendingSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Confirmer la signature
               </button>
             </div>
           </div>
@@ -692,7 +728,7 @@ function ManualConfigModal({ onClose, onCreate, existingWeeks, academicYearId, t
 // ============================================================================
 // SOUS-ONGLET 2: LISTE DES SEMAINIERS (avec signature enseignant)
 // ============================================================================
-function ListeSemainiersTab({ configs, currentUserId, onSign }: any) {
+function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature }: any) {
   return (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -735,11 +771,14 @@ function ListeSemainiersTab({ configs, currentUserId, onSign }: any) {
                     </td>
                     <td className="px-4 py-2.5">
                       {cfg.teacherSignature ? (
-                        <div className="flex flex-col items-center gap-1">
-                          <img src={cfg.teacherSignature} alt="Signature" className="h-12" />
-                          <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Signé
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <img src={cfg.teacherSignature} alt="Signature" className="h-10" />
+                          <button
+                            onClick={() => onDeleteSignature?.(cfg.teacherId)}
+                            className="p-1 text-red-500 hover:bg-red-50 rounded"
+                            title="Supprimer la signature">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       ) : cfg.teacherId ? (
                         <button

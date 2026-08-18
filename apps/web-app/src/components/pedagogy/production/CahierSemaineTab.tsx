@@ -731,6 +731,57 @@ function ManualConfigModal({ onClose, onCreate, existingWeeks, academicYearId, t
 // SOUS-ONGLET 2: LISTE DES SEMAINIERS (avec signature enseignant)
 // ============================================================================
 function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature }: any) {
+  // ⭐ Sécurité anti-impersonnation : résoudre le teacherId lié à l'utilisateur connecté
+  //    Le frontend appelle GET /seminar-config/my-teacher-id?userId=X au montage.
+  //    Le backend retourne { teacherId, userRole }.
+  //    - Si userRole est un rôle direction (PROMOTER, DIRECTEUR_*, admin...),
+  //      l'utilisateur peut signer TOUTES les lignes (à la place de n'importe quel enseignant).
+  //    - Sinon (rôle teacher), seul la ligne où cfg.teacherId === currentTeacherId est éditable.
+  //    Les autres lignes sont grisées (disabled).
+  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [loadingIdentity, setLoadingIdentity] = useState(true);
+
+  // ⭐ Rôles direction qui peuvent signer à la place de n'importe quel enseignant
+  //    (gestion des remplacements, signatures par défaut, etc.)
+  const DIRECTOR_ROLES = new Set([
+    'PROMOTER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
+    'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR',
+    'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTOR', 'DIRECTEUR',
+    'admin', 'director',
+  ]);
+  const canSignAnyLine = currentUserRole ? DIRECTOR_ROLES.has(currentUserRole.toUpperCase()) : false;
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setLoadingIdentity(false);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`/api/pedagogy-space/seminar-config/my-teacher-id?userId=${currentUserId}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentTeacherId(data.teacherId || null);
+          setCurrentUserRole(data.userRole || null);
+        }
+      } catch {
+        // Erreur silencieuse — la sécurité reste active (aucune ligne éditable)
+      } finally {
+        setLoadingIdentity(false);
+      }
+    })();
+  }, [currentUserId]);
+
+  // ⭐ Vérifier si une ligne correspond à l'enseignant connecté
+  //    - Si canSignAnyLine = true (rôle direction), toutes les lignes sont éditables
+  //    - Sinon, seule la ligne où cfg.teacherId === currentTeacherId est éditable
+  const isLineEditable = (cfg: any): boolean => {
+    if (canSignAnyLine) return true;
+    if (!currentTeacherId) return false;
+    return cfg.teacherId === currentTeacherId;
+  };
+
   return (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
@@ -738,6 +789,18 @@ function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature 
           <strong>Liste des semainiers de l'année.</strong> Cliquez sur "Signer" pour signer.
           Votre signature sera propagée automatiquement à toutes les semaines où vous êtes désigné.
         </p>
+        {/* ⭐ Message de sécurité : seul l'enseignant connecté peut signer sa ligne */}
+        {!loadingIdentity && !canSignAnyLine && (
+          <p className="text-[11px] text-blue-700 mt-1.5 italic">
+            🔒 Pour des raisons de sécurité, seule la ligne où vous êtes désigné comme semainier est éditable.
+            Les autres lignes sont en lecture seule.
+          </p>
+        )}
+        {canSignAnyLine && (
+          <p className="text-[11px] text-purple-700 mt-1.5 italic">
+            👤 Vous êtes connecté en tant que <strong>direction</strong> ({currentUserRole}) — vous pouvez signer à la place de n'importe quel enseignant.
+          </p>
+        )}
       </div>
 
       {configs.length === 0 ? (
@@ -760,9 +823,24 @@ function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature 
             </thead>
             <tbody>
               {configs.map((cfg: any) => {
+                // ⭐ Vérifier si CETTE ligne est éditable par l'utilisateur connecté
+                const editable = isLineEditable(cfg);
+                // ⭐ Surligner la ligne de l'utilisateur connecté (pour qu'il la repère)
+                const isMyLine = currentTeacherId && cfg.teacherId === currentTeacherId;
                 return (
-                  <tr key={cfg.id} className="border-b border-slate-100">
-                    <td className="px-4 py-2.5 font-bold text-slate-900">S{cfg.weekNumber}</td>
+                  <tr key={cfg.id} className={cn(
+                    "border-b border-slate-100",
+                    isMyLine && "bg-emerald-50/40",  // ⭐ Ligne de l'utilisateur connecté = fond emerald clair
+                    !editable && !cfg.teacherSignature && "opacity-50",  // ⭐ Lignes non éditables = grisées
+                  )}>
+                    <td className="px-4 py-2.5 font-bold text-slate-900">
+                      S{cfg.weekNumber}
+                      {isMyLine && (
+                        <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">
+                          ★ Vous
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5">T{cfg.trimester}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-500">
                       {formatDateShort(cfg.weekStartDate)} → {formatDateShort(cfg.weekEndDate)}
@@ -775,19 +853,34 @@ function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature 
                       {cfg.teacherSignature ? (
                         <div className="flex items-center gap-2">
                           <img src={cfg.teacherSignature} alt="Signature" className="h-10" />
-                          <button
-                            onClick={() => onDeleteSignature?.(cfg.teacherId)}
-                            className="p-1 text-red-500 hover:bg-red-50 rounded"
-                            title="Supprimer la signature">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {/* ⭐ Bouton supprimer signature : seulement si la ligne est éditable */}
+                          {editable && (
+                            <button
+                              onClick={() => onDeleteSignature?.(cfg.teacherId)}
+                              className="p-1 text-red-500 hover:bg-red-50 rounded"
+                              title="Supprimer la signature"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       ) : cfg.teacherId ? (
-                        <button
-                          onClick={() => onSign(cfg.id, null)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Signer
-                        </button>
+                        editable ? (
+                          <button
+                            onClick={() => onSign(cfg.id, null)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Signer
+                          </button>
+                        ) : (
+                          // ⭐ Ligne non éditable : bouton Signer désactivé (grisé)
+                          <button
+                            disabled
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200 rounded-lg cursor-not-allowed"
+                            title="Vous n'êtes pas désigné comme semainier pour cette semaine — signature non autorisée"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Non autorisé
+                          </button>
+                        )
                       ) : (
                         <span className="text-slate-300 text-xs">Aucun enseignant</span>
                       )}

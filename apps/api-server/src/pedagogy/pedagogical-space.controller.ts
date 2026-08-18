@@ -1302,6 +1302,18 @@ export class PedagogicalSpaceController {
     return this.service.getMySeminarAssignment(tenantId, teacherId, academicYearId);
   }
 
+  // ⭐ Résout le teacherId lié à l'utilisateur connecté (par email User → Teacher)
+  //    Utilisé par le frontend pour vérifier que seul l'enseignant connecté
+  //    peut signer son cahier de semaine (sécurité anti-impersonnation).
+  //    Le frontend passe user.id, le backend retourne { teacherId, userRole }.
+  @Get('seminar-config/my-teacher-id')
+  async getMyTeacherId(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+  ) {
+    return this.service.resolveTeacherIdPublic(tenantId, userId);
+  }
+
   // ⭐ Suppression manuelle d'un semainier (uniquement si PENDING)
   @Delete('seminar-config/:id')
   async deleteSeminarConfig(

@@ -88,6 +88,21 @@ export class PedagogicalSpaceService {
   }
 
   /**
+   * ⭐ Version publique de resolveTeacherId — exposée via le controller
+   *    GET /seminar-config/my-teacher-id?userId=X
+   *
+   *    Utilisée par le frontend ListeSemainiersTab pour vérifier que seul
+   *    l'enseignant connecté peut signer son cahier de semaine (sécurité
+   *    anti-impersonnation). Le frontend récupère le teacherId lié au
+   *    user.id connecté, puis compare avec cfg.teacherId de chaque ligne.
+   *
+   * @returns { teacherId: string | null, userRole: string | null }
+   */
+  async resolveTeacherIdPublic(tenantId: string, userId: string) {
+    return this.resolveTeacherId(tenantId, userId);
+  }
+
+  /**
    * Résout le filtre teacherId à appliquer aux requêtes de lecture.
    *
    * ⭐ MODE TEST (PROMOTEUR/DIRECTION) :

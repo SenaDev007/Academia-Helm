@@ -249,13 +249,14 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
         <ParametrageTab
           configs={configs}
           saving={saving}
-          onAutoGenerate={handleAutoGenerate}
+          onAutoGenerate={() => setShowAutoGenModal(true)}
           onManualCreate={handleManualCreate}
           onDelete={handleDeleteConfig}
           onUpdate={handleUpdateConfig}
           onReload={loadData}
           academicYearId={academicYearId}
           tenantId={tenantId}
+          onSign={(teacherId: string, teacherName: string) => setSignModal({ open: true, configId: '', teacherId, teacherName })}
         />
       )}
 
@@ -368,7 +369,7 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
 // ============================================================================
 // SOUS-ONGLET 1: PARAMÉTRAGE
 // ============================================================================
-function ParametrageTab({ configs, saving, onAutoGenerate, onManualCreate, onDelete, onUpdate, onReload, academicYearId, tenantId }: any) {
+function ParametrageTab({ configs, saving, onAutoGenerate, onManualCreate, onDelete, onUpdate, onReload, academicYearId, tenantId, onSign }: any) {
   const [showManualModal, setShowManualModal] = useState(false);
 
   return (
@@ -389,8 +390,8 @@ function ParametrageTab({ configs, saving, onAutoGenerate, onManualCreate, onDel
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hand className="h-4 w-4" />}
           Configuration manuelle
         </button>
-        {/* ⭐ Bouton Générer automatiquement — ouvre le modal professionnel */}
-        <button onClick={() => setShowAutoGenModal(true)} disabled={saving}
+        {/* ⭐ Bouton Générer automatiquement — ouvre le modal professionnel via onAutoGenerate */}
+        <button onClick={onAutoGenerate} disabled={saving}
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
           Générer automatiquement
@@ -447,9 +448,12 @@ function ParametrageTab({ configs, saving, onAutoGenerate, onManualCreate, onDel
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     {cfg.teacherSignature ? (
-                      <img src={cfg.teacherSignature} alt="Signature" className="h-8 mx-auto" />
+                      <img src={cfg.teacherSignature} alt="Signature" className="h-8 mx-auto cursor-pointer" onClick={() => onSign?.(cfg.teacherId, cfg.teacherName)} />
                     ) : (
-                      <span className="text-slate-300 text-xs">En attente</span>
+                      <button onClick={() => onSign?.(cfg.teacherId, cfg.teacherName)}
+                        className="text-blue-600 text-xs hover:underline cursor-pointer">
+                        Signer
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-center">

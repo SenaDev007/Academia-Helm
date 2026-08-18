@@ -7754,13 +7754,19 @@ td.name{text-align:left;font-weight:bold;}
       tenantId, academicYearId,
     );
 
-    // Construire un map teacherId → [classIds]
+    // Construire un map teacherId → [classes uniques] (déduplication par classId)
     const teacherClassMap = new Map<string, { id: string; name: string }[]>();
+    const seenClassIds = new Map<string, Set<string>>(); // Pour dédupliquer
     for (const tc of teacherClasses) {
       if (!teacherClassMap.has(tc.teacherId)) {
         teacherClassMap.set(tc.teacherId, []);
+        seenClassIds.set(tc.teacherId, new Set());
       }
-      teacherClassMap.get(tc.teacherId)!.push({ id: tc.classId, name: tc.className });
+      // Ne pas ajouter le même classId deux fois (déduplication)
+      if (!seenClassIds.get(tc.teacherId)!.has(tc.classId)) {
+        seenClassIds.get(tc.teacherId)!.add(tc.classId);
+        teacherClassMap.get(tc.teacherId)!.push({ id: tc.classId, name: tc.className });
+      }
     }
 
     // Supprimer les configs existantes
@@ -7968,8 +7974,8 @@ td.name{text-align:left;font-weight:bold;}
     let teacherClasses: any[] = [];
     if (teacherIds.length > 0) {
       teacherClasses = await this.prisma.$queryRawUnsafe(
-        `SELECT tca."teacherId",
-                tca."classId",
+        `SELECT DISTINCT ON (tca."teacherId", tca."classId")
+                tca."teacherId", tca."classId",
                 c.name AS "className",
                 c.code AS "classCode"
          FROM "teacher_class_assignments" tca
@@ -7977,7 +7983,7 @@ td.name{text-align:left;font-weight:bold;}
          WHERE tca."tenantId" = $1
            AND tca."academicYearId" = $2
            AND tca."classId" IS NOT NULL
-         ORDER BY c.name ASC`,
+         ORDER BY tca."teacherId", tca."classId", c.name ASC`,
         tenantId, academicYearId,
       );
     }

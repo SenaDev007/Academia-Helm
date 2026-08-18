@@ -833,6 +833,8 @@ export class AttendancePrismaService {
    * Utilisé par le semainier pour voir/marquer tous les enseignants du jour.
    */
   async getDailyStaffAttendances(tenantId: string, date: Date) {
+    // ⭐ Inclure TOUS les enseignants actifs (FR + EN + bilingues), quel que soit
+    //    leur roleType exact (TEACHER, ENSEIGNANT, FR_TEACHER, EN_TEACHER, etc.)
     const records = await this.prisma.$queryRawUnsafe(
       `SELECT sa.*, s."firstName", s."lastName",
               COALESCE(s."tenantMatricule", s."globalMatricule", s."employeeNumber") AS matricule,
@@ -841,7 +843,12 @@ export class AttendancePrismaService {
        RIGHT JOIN "staff" s ON s.id = sa."staffId" AND sa.date = $2 AND sa."tenantId" = $1
        LEFT JOIN "school_levels" sl ON sl.id = s."schoolLevelId"
        WHERE s."tenantId" = $1 AND s.status = 'ACTIVE'
-         AND (s."roleType" = 'TEACHER' OR s."roleType" LIKE '%TEACHER%')
+         AND (
+           s."roleType" = 'TEACHER'
+           OR s."roleType" ILIKE '%TEACHER%'
+           OR s."roleType" ILIKE '%ENSEIGN%'
+           OR s."roleType" ILIKE '%PROF%'
+         )
        ORDER BY s."lastName" ASC, s."firstName" ASC`,
       tenantId, date,
     ) as any[];

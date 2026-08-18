@@ -35,11 +35,16 @@ interface SemainierAttendancePanelProps {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'PRESENT', label: 'Présent', color: 'emerald', icon: Check },
-  { value: 'LATE', label: 'Retard', color: 'amber', icon: Clock },
-  { value: 'ABSENT', label: 'Absent', color: 'rose', icon: X },
-  { value: 'HALF_DAY', label: 'Demi-journée', color: 'blue', icon: Clock },
-  { value: 'MISSION', label: 'Mission', color: 'purple', icon: AlertCircle },
+  { value: 'PRESENT', label: 'Présent', color: 'emerald', icon: Check,
+    activeClass: 'bg-emerald-600 text-white', inactiveClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' },
+  { value: 'LATE', label: 'Retard', color: 'amber', icon: Clock,
+    activeClass: 'bg-amber-600 text-white', inactiveClass: 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100' },
+  { value: 'ABSENT', label: 'Absent', color: 'rose', icon: X,
+    activeClass: 'bg-rose-600 text-white', inactiveClass: 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100' },
+  { value: 'HALF_DAY', label: 'Demi-journée', color: 'blue', icon: Clock,
+    activeClass: 'bg-blue-600 text-white', inactiveClass: 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100' },
+  { value: 'MISSION', label: 'Mission', color: 'purple', icon: AlertCircle,
+    activeClass: 'bg-purple-600 text-white', inactiveClass: 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100' },
 ];
 
 const STATUS_BADGES: Record<string, string> = {
@@ -231,9 +236,7 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
                                 title={opt.label}
                                 className={cn(
                                   "px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition",
-                                  isActive
-                                    ? `bg-${opt.color}-600 text-white`
-                                    : `bg-${opt.color}-50 text-${opt.color}-700 border border-${opt.color}-200 hover:bg-${opt.color}-100`,
+                                  isActive ? opt.activeClass : opt.inactiveClass,
                                   saving === s.staffId && "opacity-50"
                                 )}
                               >

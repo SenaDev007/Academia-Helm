@@ -697,8 +697,8 @@ function ListeSemainiersTab({ configs, currentUserId, onSign }: any) {
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <p className="text-xs text-blue-800">
-          <strong>Liste des semainiers de l'année.</strong> Chaque enseignant peut signer UNIQUEMENT
-          la semaine qui lui a été assignée. Les autres lignes sont en lecture seule.
+          <strong>Liste des semainiers de l'année.</strong> Cliquez sur "Signer" pour signer.
+          Votre signature sera propagée automatiquement à toutes les semaines où vous êtes désigné.
         </p>
       </div>
 
@@ -722,9 +722,8 @@ function ListeSemainiersTab({ configs, currentUserId, onSign }: any) {
             </thead>
             <tbody>
               {configs.map((cfg: any) => {
-                const isMyRow = cfg.teacherId === currentUserId;
                 return (
-                  <tr key={cfg.id} className={cn("border-b border-slate-100", !isMyRow && "opacity-60 bg-slate-50/50")}>
+                  <tr key={cfg.id} className="border-b border-slate-100">
                     <td className="px-4 py-2.5 font-bold text-slate-900">S{cfg.weekNumber}</td>
                     <td className="px-4 py-2.5">T{cfg.trimester}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-500">
@@ -742,15 +741,14 @@ function ListeSemainiersTab({ configs, currentUserId, onSign }: any) {
                             <CheckCircle2 className="h-3 w-3" /> Signé
                           </span>
                         </div>
-                      ) : isMyRow ? (
-                        <SignatureCanvas
-                          width={200}
-                          height={80}
-                          placeholder="Ma signature"
-                          onSignatureChange={(data) => onSign(cfg.id, data)}
-                        />
+                      ) : cfg.teacherId ? (
+                        <button
+                          onClick={() => onSign(cfg.id, null)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Signer
+                        </button>
                       ) : (
-                        <span className="text-slate-300 text-xs">—</span>
+                        <span className="text-slate-300 text-xs">Aucun enseignant</span>
                       )}
                     </td>
                   </tr>

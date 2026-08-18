@@ -9056,7 +9056,7 @@ td.name{text-align:left;font-weight:bold;}
    * @param configId   ID de la weekly_seminar_config (semaine)
    * @param format     'pdf' | 'excel' (excel = CSV avec BOM)
    */
-  async exportSeminarWeek(tenantId: string, configId: string, format: string): Promise<Buffer> {
+  async exportSeminarWeek(tenantId: string, configId: string, format: string): Promise<{ buffer: Buffer; filename: string }> {
     // Charger la config + l'année scolaire + l'école (avec profil d'identité)
     const configRows: any = await this.prisma.$queryRawUnsafe(
       `SELECT wsc.*, t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName",
@@ -9087,6 +9087,29 @@ td.name{text-align:left;font-weight:bold;}
       : '—';
     const weekLabel = `Semaine ${cfg.weekNumber} (S${cfg.weekNumber})`;
     const trimesterLabel = `Trimestre ${cfg.trimester}`;
+
+    // ⭐ Construire le nom du fichier PDF/CSV : "Cahier_du_Semainier_S{N}_{ddMMyyyy-ddMMyyyy}_{Nom_Avec_Espaces}"
+    //    Exemple : "Cahier_du_Semainier_S1_01092025-05092025_Jean_Dupont.pdf"
+    //    - Période = dates de début et fin de semaine au format ddMMyyyy
+    //    - Nom du semainier = prénom + nom (espaces remplacés par _)
+    const fmtDateForFilename = (d: any): string => {
+      if (!d) return 'unknown';
+      const date = new Date(d);
+      const dd = String(date.getDate()).padStart(2, '0');
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const yyyy = date.getFullYear();
+      return `${dd}${mm}${yyyy}`;
+    };
+    const periodStart = fmtDateForFilename(cfg.weekStartDate);
+    const periodEnd = fmtDateForFilename(cfg.weekEndDate);
+    // ⭐ Nettoyer le nom du semainier pour le nom de fichier (espaces → _,
+    //    caractères spéciaux supprimés, max 50 chars pour éviter noms trop longs)
+    const cleanTeacherName = (cfg.teacherFirstName && cfg.teacherLastName
+      ? `${cfg.teacherFirstName}_${cfg.teacherLastName}`
+      : 'sans_enseignant'
+    ).replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 50);
+    const ext = format === 'excel' ? 'csv' : 'pdf';
+    const filename = `Cahier_du_Semainier_S${cfg.weekNumber}_${periodStart}-${periodEnd}_${cleanTeacherName}.${ext}`;
 
     if (format === 'excel') {
       // ── Export CSV (synthèse des 5 jours) ────────────────────────────
@@ -9126,7 +9149,7 @@ td.name{text-align:left;font-weight:bold;}
         ].join(','));
       }
       // BOM UTF-8 pour Excel
-      return Buffer.from('\uFEFF' + rows.join('\n'), 'utf-8');
+      return { buffer: Buffer.from('\uFEFF' + rows.join('\n'), 'utf-8'), filename };
     }
 
     // ── Export PDF via Puppeteer ───────────────────────────────────────
@@ -9556,8 +9579,8 @@ td.name{text-align:left;font-weight:bold;}
         `,
       });
       const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
-      this.logger.log(`✅ PDF Cahier du Semainier généré (${buf.length} octets, configId=${configId})`);
-      return buf;
+      this.logger.log(`✅ PDF Cahier du Semainier généré (${buf.length} octets, configId=${configId}, filename=${filename})`);
+      return { buffer: buf, filename };
     } finally {
       await this.puppeteerPool.releasePage(page);
     }

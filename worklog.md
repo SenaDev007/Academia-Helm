@@ -6616,3 +6616,73 @@ Stage Summary:
 - TypeScript check frontend : aucun erreur
 - Backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
 - Aucune migration SQL nécessaire
+
+---
+Task ID: FIX-PDF-FILENAME-DIRECTOR-SIGNATURE-1
+Agent: main
+Task: (1) PDF filename doit être "Cahier_du_Semainier_S{N}_{période}_{nom_semainier}.pdf". (2) Quand le directeur visualise un cahier soumis, bouton "Signer" qui ouvre un modal de signature manuscrite, et dès qu'il signe, la signature est propagée à TOUTES les zones de signature du directeur dans le document (5 rapports journaliers + 1 rapport hebdo).
+
+Work Log:
+
+=== 1 — PDF filename personnalisé ===
+- AVANT : `Cahier_Semainier_S${configId}.pdf` (utilise l'ID de config, peu lisible)
+- APRÈS : `Cahier_du_Semainier_S{N}_{ddMMyyyy-ddMMyyyy}_{Prenom_Nom}.pdf`
+  * Exemple : `Cahier_du_Semainier_S1_01092025-05092025_Jean_Dupont.pdf`
+  * Période = dates de début et fin de semaine au format ddMMyyyy (séparées par -)
+  * Nom du semainier = prénom + nom (espaces remplacés par _, caractères spéciaux supprimés, max 50 chars)
+- Modifications backend :
+  * pedagogical-space.service.ts `exportSeminarWeek` :
+    - Signature modifiée : `Promise<Buffer>` → `Promise<{ buffer: Buffer; filename: string }>`
+    - Ajout logique de construction du filename après teacherName/weekLabel
+    - 2 return statements modifiés (excel CSV + PDF) pour retourner `{ buffer, filename }`
+  * pedagogical-space.controller.ts `exportSeminarConfig` :
+    - Destructuration `const { buffer, filename } = await this.service.exportSeminarWeek(...)`
+    - `Content-Disposition: attachment; filename="${filename}"` (utilise le filename du service)
+    - Suppression de l'ancien `Cahier_Semainier_S${id}.${ext}` hardcoded
+
+=== 2 — Signature manuscrite du directeur avec propagation ===
+- AVANT : bouton unique "Valider / Rejeter" qui ouvrait ValidationModal générique
+  (sans SignatureCanvas — directorSignature hardcoded à 'DIRECTOR_VALIDATED')
+- APRÈS : 2 boutons séparés + 2 modals dédiés :
+  * Bouton "Signer" (vert, CheckCircle2) → ouvre SignModal
+  * Bouton "Rejeter" (rouge, XCircle) → ouvre RejectModal
+
+- SignModal (modal de signature) :
+  * En-tête coloré emerald "Signature du Directeur — Semaine S{N} · {teacherName}"
+  * Encart info "ℹ️ Propagation automatique : Votre signature sera appliquée à toutes les zones de signature du directeur dans le document (5 rapports journaliers + 1 rapport hebdomadaire)"
+  * SignatureCanvas (360×140) avec placeholder "Signez ici..."
+  * Pattern identique à CahierSemaineTab : SignatureCanvas appelle onSignatureChange à chaque trait → stocke dans pendingSignature → ne soumet QUE quand "Confirmer la signature"
+  * Boutons Annuler / Confirmer la signature (désactivé si pas de signature)
+  * Sur confirm : appelle `validateSemainier(config.id, { action: 'VALIDATED', directorSignature: pendingSignature, validatedBy: userId })`
+  * Toast succès "✅ Cahier du Semainier signé et validé — Votre signature a été propagée à toutes les zones de signature du document"
+
+- RejectModal (modal de rejet) :
+  * En-tête coloré rose "Rejet du Cahier du Semainier — Semaine S{N} · {teacherName}"
+  * Encart "⚠ Conséquences : Après rejet, l'enseignant devra modifier les rapports et les resoumettre"
+  * Textarea pour le motif de rejet (obligatoire, rows=4)
+  * Boutons Annuler / Confirmer le rejet (désactivé si motif vide)
+  * Sur confirm : appelle `validateSemainier(config.id, { action: 'REJECTED', directorSignature: '', validatedBy: userId, rejectionReason })`
+
+- Propagation de la signature :
+  * Le backend `validateSeminarConfig` enregistre `directorSignature` (base64) + change status → VALIDATED
+  * DailyReportCard + WeeklyReportCard lisent `config.directorSignature` et l'affichent quand `status === 'VALIDATED'`
+  * Après signature, `onValidated()` callback → re-fetch → la signature apparaît automatiquement dans TOUTES les zones (5 rapports journaliers + 1 rapport hebdo)
+  * Le PDF généré après validation inclut aussi la signature via `<img src="${cfg.directorSignature}">` dans les signature-block
+
+- Nettoyage PendingSemainiersTab :
+  * Suppression de `modalItem` / `setModalItem` (plus utilisé)
+  * Suppression de `handleValidate` (remplacé par handleConfirmSignature/handleConfirmReject dans SemainierDirectorDetail)
+  * Suppression de `queryClient` (plus utilisé)
+  * Suppression du ValidationModal générique au niveau liste
+  * Le bouton "Valider / Rejeter" de la liste devient "Signer / Rejeter" qui redirige vers la vue détaillée (handleView) où les nouveaux modals sont disponibles
+
+Stage Summary:
+- ✅ 1 — PDF filename : "Cahier_du_Semainier_S{N}_{ddMMyyyy-ddMMyyyy}_{Prenom_Nom}.pdf" (au lieu de "Cahier_Semainier_S{configId}.pdf")
+- ✅ 2a — Bouton "Signer" (vert) dans SemainierDirectorDetail quand status=SUBMITTED → ouvre SignModal avec SignatureCanvas
+- ✅ 2b — Sur confirm : signature base64 envoyée au backend → directorSignature enregistré → status=VALIDATED → signature propagée à TOUTES les zones (DailyReportCard + WeeklyReportCard + PDF)
+- ✅ 2c — Bouton "Rejeter" (rouge) → ouvre RejectModal avec textarea motif obligatoire
+- 2 fichiers modifiés backend : pedagogical-space.service.ts (signature + return), pedagogical-space.controller.ts (destructure + filename)
+- 1 fichier modifié frontend : DirectorPedagogyControl.tsx (SignModal + RejectModal + nettoyage PendingSemainiersTab)
+- TypeScript check frontend : aucun erreur
+- Backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
+- Aucune migration SQL nécessaire

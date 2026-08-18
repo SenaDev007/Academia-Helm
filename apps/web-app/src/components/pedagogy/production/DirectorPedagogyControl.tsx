@@ -3678,7 +3678,6 @@ function MonthlyEvaluationDirectorDetail({ evaluation, userId, onBack, onValidat
 function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const queryClient = useQueryClient();
   // ⭐ 4 sous-onglets : en attente / validés / rejetés / catalogue
   const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'CATALOGUE'>('SUBMITTED');
   // ⭐ FIX : fetch ALL semainiers une seule fois (status='ALL'), puis filtrer côté client.
@@ -3691,7 +3690,6 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
   //    officiellement validés par le directeur — pas tous les 36 semaines).
   const { data: allSemainiers = [], isLoading: loading, refetch } = usePendingSemainiers(academicYearId, 'ALL');
   const [selected, setSelected] = useState<any>(null);
-  const [modalItem, setModalItem] = useState<any>(null);
   // ⭐ États repliables (chevrons) pour la hiérarchie : trimester → items
   const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
 
@@ -3714,31 +3712,11 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
   // ⭐ Réinitialiser la sélection quand on change de sous-onglet
   useEffect(() => {
     setSelected(null);
-    setModalItem(null);
   }, [statusTab]);
 
-  // ⭐ Handler de validation/rejet — appelle POST /seminar-config/:id/validate
-  //    Body: { action: 'VALIDATED' | 'REJECTED', directorSignature, validatedBy, rejectionReason }
-  const handleValidate = async (action: 'VALIDATED' | 'REJECTED', reason?: string) => {
-    if (!modalItem) return;
-    try {
-      // ⭐ Pour validation : utiliser signature pré-signée (le directeur signe
-      //    via le modal — pas une signature canvas, mais le backend accepte
-      //    une signature vide/brève qui sera remplacée par défaut)
-      await pedagogySpaceService.validateSemainier(modalItem.id, {
-        action,
-        directorSignature: action === 'VALIDATED' ? 'DIRECTOR_VALIDATED' : '',
-        validatedBy: userId,
-        rejectionReason: reason,
-      });
-      toast.success(action === 'VALIDATED' ? '✅ Semainier validé' : 'Semainier rejeté');
-      onRefresh();
-      queryClient.invalidateQueries({ queryKey: ['pedagogy', 'director', 'pending-semainiers'] });
-      queryClient.invalidateQueries({ queryKey: ['pedagogy', 'director', 'dashboard'] });
-    } catch (e: any) {
-      toast.error('Erreur', { description: e.message });
-    }
-  };
+  // ⭐ Note : la validation/rejet se fait maintenant dans SemainierDirectorDetail
+  //    (vue détaillée) qui a son propre SignModal (avec SignatureCanvas) et
+  //    RejectModal (avec motif). Plus de ValidationModal générique au niveau liste.
 
   const handleView = async (item: any) => {
     setSelected(item); // la vue détaillée utilise useSemainierReports(configId) en interne
@@ -3989,11 +3967,11 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
                                 </button>
                                 {statusTab === 'SUBMITTED' && (
                                   <button
-                                    onClick={() => setModalItem(cfg)}
+                                    onClick={() => handleView(cfg)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border-2 border-emerald-300 rounded-lg hover:bg-emerald-100"
-                                    title="Valider ou rejeter ce semainier"
+                                    title="Ouvrir la vue détaillée pour signer ou rejeter ce semainier"
                                   >
-                                    <CheckCircle2 className="h-3.5 w-3.5" /> Valider / Rejeter
+                                    <CheckCircle2 className="h-3.5 w-3.5" /> Signer / Rejeter
                                   </button>
                                 )}
                               </div>
@@ -4009,13 +3987,9 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
         </div>
       )}
 
-      {/* ⭐ Modale de validation/rejet (réutilise ValidationModal) */}
-      <ValidationModal
-        open={!!modalItem}
-        onClose={() => setModalItem(null)}
-        onValidate={handleValidate}
-        title={`Valider le Semainier S${modalItem?.weekNumber || ''} — ${modalItem?.teacherName || ''}`}
-      />
+      {/* ⭐ Pas de modal ici — la signature/rejet se fait dans la vue détaillée
+          (SemainierDirectorDetail) qui a son propre SignModal + RejectModal
+          avec SignatureCanvas pour la signature manuscrite du directeur */}
     </div>
   );
 }
@@ -4038,7 +4012,16 @@ function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
 }) {
   // ⭐ Hook React Query — fetch les rapports journaliers + hebdo
   const { data: reportsData, isLoading: loadingReports } = useSemainierReports(config.id);
-  const [validationModalOpen, setValidationModalOpen] = useState(false);
+  // ⭐ 2 modals séparés : un pour SIGNER (valider avec signature), un pour REJETER
+  const [signModalOpen, setSignModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  // ⭐ État pour stocker la signature en cours de dessin (avant confirmation)
+  //    Pattern identique à CahierSemaineTab : SignatureCanvas appelle
+  //    onSignatureChange à chaque trait, on stocke dans un état, et on ne
+  //    soumet QUE quand l'utilisateur clique "Confirmer la signature".
+  const [pendingSignature, setPendingSignature] = useState<string | null>(null);
+  // ⭐ État pour le motif de rejet
+  const [rejectionReason, setRejectionReason] = useState('');
   const [saving, setSaving] = useState(false);
 
   const dailyReports = reportsData?.dailyReports || [];
@@ -4047,23 +4030,65 @@ function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
   // ⭐ Helper format date court + long
   const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('fr-FR') : '—';
 
-  // ⭐ Handler validation — appelle validateSemainier
-  //    Remarque : le directeur n'a pas besoin de signer visuellement — le backend
-  //    enregistre la validation + l'ID validateur + la date.
-  const handleValidate = async (action: 'VALIDATED' | 'REJECTED', reason?: string) => {
+  // ⭐ Handler SIGNATURE du directeur :
+  //    - Ouvre le modal de signature
+  //    - Le directeur dessine sa signature via SignatureCanvas
+  //    - Sur "Confirmer la signature" : appelle validateSemainier avec action='VALIDATED'
+  //      + directorSignature=<base64 de la signature>
+  //    - Le backend enregistre la signature + change le statut à VALIDATED
+  //    - La signature est propagée automatiquement à TOUTES les zones de
+  //      signature du directeur (DailyReportCard + WeeklyReportCard) car
+  //      ces composants lisent `config.directorSignature` et l'affichent
+  //      quand `status === 'VALIDATED'`.
+  const handleConfirmSignature = async () => {
+    if (!pendingSignature) {
+      toast.error('Veuillez dessiner votre signature avant de confirmer');
+      return;
+    }
     setSaving(true);
     try {
       await pedagogySpaceService.validateSemainier(config.id, {
-        action,
-        directorSignature: action === 'VALIDATED' ? 'DIRECTOR_VALIDATED' : '',
+        action: 'VALIDATED',
+        directorSignature: pendingSignature,  // ⭐ base64 de la signature dessinée
         validatedBy: userId,
-        rejectionReason: reason,
       });
-      toast.success(action === 'VALIDATED' ? '✅ Semainier validé' : 'Semainier rejeté');
-      setValidationModalOpen(false);
+      toast.success('✅ Cahier du Semainier signé et validé', {
+        description: 'Votre signature a été propagée à toutes les zones de signature du document.',
+      });
+      setSignModalOpen(false);
+      setPendingSignature(null);
       onValidated();
     } catch (e: any) {
-      toast.error('Erreur', { description: e.message });
+      toast.error('Erreur lors de la signature', { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ⭐ Handler REJET du directeur :
+  //    - Ouvre le modal de rejet
+  //    - Le directeur saisit un motif de rejet
+  //    - Sur "Confirmer le rejet" : appelle validateSemainier avec action='REJECTED'
+  //      + rejectionReason=<motif>
+  const handleConfirmReject = async () => {
+    if (!rejectionReason.trim()) {
+      toast.error('Veuillez saisir un motif de rejet');
+      return;
+    }
+    setSaving(true);
+    try {
+      await pedagogySpaceService.validateSemainier(config.id, {
+        action: 'REJECTED',
+        directorSignature: '',
+        validatedBy: userId,
+        rejectionReason,
+      });
+      toast.success('Cahier du Semainier rejeté');
+      setRejectModalOpen(false);
+      setRejectionReason('');
+      onValidated();
+    } catch (e: any) {
+      toast.error('Erreur lors du rejet', { description: e.message });
     } finally {
       setSaving(false);
     }
@@ -4105,14 +4130,28 @@ function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
             {isAlreadyValidated ? '✓ Validé' : isAlreadyRejected ? '✗ Rejeté' : isSubmitted ? '⏳ En attente' : 'Non soumis'}
           </span>
           {isSubmitted && (
-            <button
-              onClick={() => setValidationModalOpen(true)}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Valider / Rejeter
-            </button>
+            <>
+              {/* ⭐ Bouton "Signer" (valider avec signature) — vert, ouvre le modal SignatureCanvas */}
+              <button
+                onClick={() => setSignModalOpen(true)}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                title="Signer et valider ce cahier de semaine — votre signature sera propagée à toutes les zones de signature du document"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Signer
+              </button>
+              {/* ⭐ Bouton "Rejeter" — rouge, ouvre le modal de motif de rejet */}
+              <button
+                onClick={() => setRejectModalOpen(true)}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                title="Rejeter ce cahier de semaine — l'enseignant devra le modifier et le resoumettre"
+              >
+                <XCircle className="h-4 w-4" />
+                Rejeter
+              </button>
+            </>
           )}
           <button
             onClick={() => window.open(`/api/pedagogy-space/seminar-config/${config.id}/export?format=pdf`, '_blank')}
@@ -4257,13 +4296,128 @@ function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
         </div>
       </div>
 
-      {/* ⭐ Modale de validation/rejet — réutilise ValidationModal */}
-      <ValidationModal
-        open={validationModalOpen}
-        onClose={() => setValidationModalOpen(false)}
-        onValidate={handleValidate}
-        title={`Valider le Semainier S${config.weekNumber}`}
-      />
+      {/* ⭐ MODAL DE SIGNATURE (validation avec signature manuscrite)
+          Pattern identique au modal de signature enseignant dans CahierSemaineTab :
+          - SignatureCanvas stocke la signature dans pendingSignature à chaque trait
+          - L'utilisateur clique "Confirmer la signature" pour soumettre
+          - La signature (base64) est envoyée au backend via validateSemainier
+          - Le backend enregistre directorSignature + change status → VALIDATED
+          - La signature est propagée automatiquement à toutes les zones de signature
+            (DailyReportCard + WeeklyReportCard) car ces composants lisent
+            config.directorSignature et l'affichent quand status === 'VALIDATED' */}
+      {signModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* En-tête coloré emerald */}
+            <div className="px-6 py-4 border-b bg-emerald-50 border-emerald-200">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Signature du Directeur</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Semaine S{config.weekNumber} · {config.teacherName || '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="p-6 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                <strong>ℹ️ Propagation automatique :</strong> Votre signature sera appliquée à
+                toutes les zones de signature du directeur dans le document
+                (5 rapports journaliers + 1 rapport hebdomadaire).
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                  Votre signature
+                </label>
+                <SignatureCanvas
+                  width={360}
+                  height={140}
+                  placeholder="Signez ici..."
+                  onSignatureChange={(data: string | null) => setPendingSignature(data)}
+                />
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setSignModalOpen(false); setPendingSignature(null); }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmSignature}
+                disabled={saving || !pendingSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Confirmer la signature
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ MODAL DE REJET (avec motif obligatoire) */}
+      {rejectModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* En-tête coloré rose */}
+            <div className="px-6 py-4 border-b bg-rose-50 border-rose-200">
+              <div className="flex items-center gap-3">
+                <XCircle className="h-10 w-10 text-rose-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Rejet du Cahier du Semainier</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Semaine S{config.weekNumber} · {config.teacherName || '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="p-6 space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                <strong>⚠ Conséquences :</strong> Après rejet, l'enseignant devra modifier les
+                rapports et les resoumettre. Le motif de rejet sera visible par l'enseignant.
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                  Motif du rejet <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  rows={4}
+                  placeholder="Expliquez la raison du rejet (ex: rapports incomplets, informations manquantes...)"
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-400"
+                  autoFocus
+                />
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setRejectModalOpen(false); setRejectionReason(''); }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmReject}
+                disabled={saving || !rejectionReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Confirmer le rejet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

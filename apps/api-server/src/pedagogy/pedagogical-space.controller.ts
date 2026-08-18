@@ -1429,14 +1429,16 @@ export class PedagogicalSpaceController {
     if (!format || (format !== 'pdf' && format !== 'excel')) {
       throw new BadRequestException('format doit être "pdf" ou "excel"');
     }
-    const buffer = await this.service.exportSeminarWeek(tenantId, id, format);
-    const ext = format === 'excel' ? 'csv' : 'pdf';
+    // ⭐ exportSeminarWeek renvoie maintenant { buffer, filename } où filename est
+    //    "Cahier_du_Semainier_S{N}_{ddMMyyyy-ddMMyyyy}_{TeacherName}.{ext}"
+    //    (ex: "Cahier_du_Semainier_S1_01092025-05092025_Jean_Dupont.pdf")
+    const { buffer, filename } = await this.service.exportSeminarWeek(tenantId, id, format);
     const mimeType = format === 'excel'
       ? 'text/csv; charset=utf-8'
       : 'application/pdf';
     res.set({
       'Content-Type': mimeType,
-      'Content-Disposition': `attachment; filename="Cahier_Semainier_S${id}.${ext}"`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
     });
     res.send(buffer);
   }

@@ -258,6 +258,12 @@ export function SemainierAttendancePanel({ date, onMark, attendanceData, disable
                       <div className="font-semibold text-slate-900">{s.staffName}</div>
                       <div className="text-xs text-slate-500">
                         {s.matricule || '—'}
+                        {/* ⭐ Afficher le rôle admin si le staff a un double rôle (DIRECTEUR, CENSEUR...) */}
+                        {s.staffRoleType && s.staffRoleType !== 'TEACHER' && (
+                          <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700">
+                            {s.staffRoleType}
+                          </span>
+                        )}
                         {s.checkIn && (
                           <span className="ml-2 text-slate-400">
                             • Arrivée: {new Date(s.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}

@@ -840,13 +840,36 @@ export class AttendancePrismaService {
     //    On ne JOIN pas avec staff_attendances car il n'y a pas de lien direct
     //    entre teachers et staff (pas de colonne linkedStaffId).
     //    Le statut de présence sera géré par le JSON du rapport quotidien du semainier.
+    //
+    // ⭐ VÉRIFICATION STAFF ↔ TEACHERS (demande utilisateur) :
+    //    À chaque fois, on vérifie la table `staff` pour identifier les staff
+    //    avec un roleType != 'TEACHER' (DIRECTEUR, CENSEUR, etc.).
+    //    Pour ces staff non-enseignant, on vérifie dans la table `teachers`
+    //    s'ils ont été "attribués au rôle d'enseignant" (i.e., s'ils ont un
+    //    enregistrement dans `teachers`). Si oui, ils sont inclus dans la liste
+    //    des enseignants pour le pointage du semainier (par exemple, un directeur
+    //    qui enseigne aussi une classe).
+    //
+    //    La stratégie :
+    //      1. Sélectionner TOUS les teachers actifs (MATERNELLE+PRIMAIRE)
+    //         → c'est la source canonique, ils sont tous enseignants.
+    //      2. LEFT JOIN staff (par email) pour récupérer le `roleType` du staff
+    //         → permet d'identifier les enseignants qui ont aussi un rôle
+    //           administratif (DIRECTEUR, CENSEUR, etc.).
+    //      3. Le résultat inclut :
+    //         - Tous les teachers "purs" (roleType='TEACHER' ou pas de staff lié)
+    //         - Les teachers qui ont aussi un rôle non-enseignant (DIRECTEUR qui enseigne)
+    //    La logique de filtrage par roleType est gérée par le frontend si besoin.
     const records = await this.prisma.$queryRawUnsafe(
       `SELECT t.id AS "teacherId", t."firstName", t."lastName",
               t."matricule" AS "teacherMatricule",
               t."assignedLanguages",
-              sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName"
+              sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName",
+              s."roleType" AS "staffRoleType",
+              s."employeeNumber" AS "staffEmployeeNumber"
        FROM "teachers" t
        LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
+       LEFT JOIN "staff" s ON s."email" = t."email" AND s."tenantId" = t."tenantId"
        WHERE t."tenantId" = $1
          AND t.status = 'active'
          AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
@@ -854,13 +877,32 @@ export class AttendancePrismaService {
       tenantId,
     ) as any[];
 
-    return records.map(r => ({
+    // ⭐ LOG de vérification : identifier les staff non-enseignant qui sont
+    //    aussi dans la table teachers (par exemple, un directeur qui enseigne)
+    const nonTeacherStaffInTeachers = records.filter(
+      (r: any) => r.staffRoleType && r.staffRoleType !== 'TEACHER'
+    );
+    if (nonTeacherStaffInTeachers.length > 0) {
+      this.logger.log(
+        `📋 getDailyStaffAttendances — ${nonTeacherStaffInTeachers.length} staff non-TEACHER ` +
+        `trouvé(s) dans la table teachers (rôle administratif + enseignant) : ` +
+        nonTeacherStaffInTeachers.slice(0, 5).map((r: any) =>
+          `${r.firstName} ${r.lastName} (${r.staffRoleType})`
+        ).join(', ') + (nonTeacherStaffInTeachers.length > 5 ? '...' : ''),
+      );
+    }
+
+    return records.map((r: any) => ({
       id: null,
       staffId: r.teacherId,
       teacherId: r.teacherId,
       staffName: `${r.firstName} ${r.lastName}`,
       matricule: r.teacherMatricule,
-      roleType: 'TEACHER',
+      // ⭐ roleType : 'TEACHER' par défaut, mais si le staff a un rôle différent
+      //    (DIRECTEUR, CENSEUR), on l'indique pour info — le semainier peut
+      //    ainsi savoir qu'il s'agit d'un staff avec un double rôle.
+      roleType: r.staffRoleType || 'TEACHER',
+      staffRoleType: r.staffRoleType || null,  // rôle admin (DIRECTEUR, CENSEUR) si applicable
       schoolLevelCode: r.schoolLevelCode,
       schoolLevelName: r.schoolLevelName,
       assignedLanguages: r.assignedLanguages,

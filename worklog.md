@@ -6534,3 +6534,85 @@ Stage Summary:
 - TypeScript check frontend : aucun erreur
 - Backend : erreurs pré-existantes (Cannot find module '@nestjs/common' — contexte tsconfig isolé)
 - Aucune migration SQL nécessaire
+
+---
+Task ID: FIX-SEMAINIER-STAFF-PDF-CATALOGUE-FIDELITY-1
+Agent: main
+Task: (1) getDailyStaffAttendances doit vérifier la table staff (roleType != TEACHER) + croiser avec teachers. (2) PDF : cover page avec logo école + statut en français (Signé, non Signed) + header/footer avec Academia Helm + date/heure. (2c) Fix Présent/Absent affichaient des rectangles au lieu de croix. (3a) Badges sous-onglets affichaient 36 36 36 faux. (3b) Catalogue ne doit contenir QUE les VALIDATED. (3c) Catalogue detail doit être IDENTIQUE à l'espace pédagogique (full DailyReportCard + WeeklyReportCard, pas un summary).
+
+Work Log:
+
+=== 1 — Vérification staff ↔ teachers ===
+- Lu attendance-prisma.service.ts getDailyStaffAttendances (l. 835-877)
+- AVANT : query sur `teachers` uniquement, sans vérifier la table `staff`
+- APRÈS : LEFT JOIN staff (par email) pour récupérer `roleType` du staff
+  * Permet d'identifier les enseignants qui ont aussi un rôle administratif (DIRECTEUR, CENSEUR)
+  * Le résultat inclut `staffRoleType` (null si pas de staff lié, ou le rôle admin)
+  * Log de vérification : compte + liste les 5 premiers staff non-TEACHER trouvés dans teachers
+- Frontend (SemainierAttendancePanel.tsx) : affiche un badge `staffRoleType` à côté du matricule si le staff a un double rôle (DIRECTEUR, CENSEUR...)
+
+=== 2 — PDF cover page redesign + header/footer ===
+- Lu pedagogical-space.service.ts exportSeminarWeek (l. 9225-9537)
+- AVANT : cover page basique (h1+h2+meta+badge), pas de logo, statut en anglais
+- APRÈS : cover page redesignée avec :
+  * Logo école dans un cercle (avec fallback "AH" si pas de logo configuré)
+  * Titre "CAHIER DU SEMAINIER" + sous-titre "Suivi pédagogique hebdomadaire"
+  * Carte meta structurée (label/value) avec bordure + shadow
+  * Statut en FRANÇAIS : En attente / Signé / Soumis / Validé / Rejeté (badge coloré par statut)
+  * Footer cover "Document généré par Academia Helm — {date longue à heure}"
+- CSS cover enrichi : .cover, .logo-wrapper, .logo-placeholder, .meta, .badge-pending/signed/submitted/validated/rejected, .footer-cover
+- Header/footer sur TOUTES les pages via Puppeteer `displayHeaderFooter: true` :
+  * Header : "Academia Helm | {école}" à gauche, "Cahier du Semainier — S{N}" à droite
+  * Footer : "Généré par Academia Helm" à gauche, "{date à heure}" au centre, "Page X / Y" à droite
+  * Marges top/bottom 22mm pour laisser place au header/footer
+
+=== 2c — Fix Présent/Absent affichaient des rectangles ===
+- AVANT : `<td>${isPresent ? '✓' : ''}</td>` — les caractères Unicode ✓/✗ ne s'affichaient pas correctement dans le PDF (apparaissaient comme "carreaux rectangulaires verticaux" — police Helvetica/Arial sans glyphes pour ces caractères)
+- APRÈS : SVG inline pour les coches/croix (universellement supportés par Puppeteer/Chromium) :
+  * checkSvg : `<svg><path d="M3 8 L6.5 11.5 L13 4.5" stroke="#10b981" stroke-width="2.5"/></svg>` (vert)
+  * crossSvg : `<svg><path d="M4 4 L12 12 M12 4 L4 12" stroke="#ef4444" stroke-width="2.5"/></svg>` (rouge)
+
+=== 3a — Badges sous-onglets 36 36 36 faux ===
+- AVANT : usePendingSemainiers(statusTab) → fetch par statut → mais tous les badges utilisaient `items.length` du sous-onglet ACTIF → tous affichaient le même nombre
+- APRÈS : fetch ALL semainiers une seule fois (status='ALL'), puis compute counts par statut côté client :
+  * submittedCount = filter(status='SUBMITTED').length
+  * validatedCount = filter(status='VALIDATED').length
+  * rejectedCount = filter(status='REJECTED').length
+  * Chaque badge affiche son PROPRE count (couleur différente par statut)
+  * `items` est filtré selon le sous-onglet actif pour l'affichage
+- Bénéfice : 1 seul fetch au lieu de 3, et les counts sont toujours corrects
+
+=== 3b — Catalogue ne doit contenir QUE les VALIDATED ===
+- AVANT : catalogue affichait TOUTES les 36 semaines (status='ALL')
+- APRÈS :
+  * `items` pour CATALOGUE = `allSemainiers.filter(status='VALIDATED')`
+  * `loadSemainiersForYear` filtre côté client les VALIDATED seulement
+  * Badge catalogue affiche `validatedCount` (pas le total)
+  * Message empty : "Aucun semainier validé dans le catalogue — Le catalogue ne contient que les cahiers de semaine OFFICIELLEMENT VALIDÉS par le directeur."
+  * Message année : "X cahier(s) de semaine validé(s) pour {année}" (au lieu de "X semainier(s) trouvé(s)")
+
+=== 3c — Catalogue detail IDENTIQUE à l'espace pédagogique ===
+- AVANT : `SemainierDirectorDetail` utilisait `DailyReportSummaryCard` (résumé compact) au lieu du vrai `DailyReportCard`
+- APRÈS :
+  * Export `DailyReportCard` et `WeeklyReportCard` depuis CahierSemaineTab.tsx (ajout du mot-clé `export`)
+  * Import dans DirectorPedagogyControl.tsx
+  * `SemainierDirectorDetail` utilise maintenant les VRAIS composants full-fidelity :
+    - `<DailyReportCard config={config} selectedDay={dr.dayOfWeek} dailyReport={dr} setDailyReport={() => {}} />` pour chaque jour
+    - `<WeeklyReportCard config={config} weeklyReport={weeklyReport} setWeeklyReport={() => {}} />` pour le rapport hebdo
+  * Le mode read-only est géré par `disabled={config?.status === 'SUBMITTED' || 'VALIDATED'}` déjà présent dans DailyReportCard
+  * Le catalogue est maintenant IDENTIQUE à l'espace pédagogique enseignant (mêmes 8 sections par jour, mêmes tableaux, mêmes champs, mêmes signatures)
+  * Suppression de l'ancien bloc weekly report résumé (dangerouslySetInnerHTML pour 4 sections)
+
+Stage Summary:
+- ✅ 1 — getDailyStaffAttendances vérifie staff ↔ teachers (LEFT JOIN par email) + log les non-TEACHER trouvés dans teachers + frontend affiche le staffRoleType
+- ✅ 2a — PDF cover page redesignée avec logo école + statut en français (En attente/Signé/Soumis/Validé/Rejeté) + footer cover "Academia Helm + date"
+- ✅ 2b — Header/footer sur TOUTES les pages PDF : "Academia Helm | école" + "Cahier du Semainier — S{N}" + "Généré par Academia Helm" + date/heure + page X/Y
+- ✅ 2c — Fix Présent/Absent : SVG inline (checkmark vert + croix rouge) au lieu de caractères Unicode qui affichaient des rectangles
+- ✅ 3a — Badges sous-onglets : fetch ALL une fois + compute counts par statut (chaque badge a son propre count, plus de 36 36 36)
+- ✅ 3b — Catalogue ne contient QUE les VALIDATED (filtré côté client)
+- ✅ 3c — Catalogue detail IDENTIQUE à l'espace pédagogique : utilisation des VRAIS DailyReportCard + WeeklyReportCard (exportés depuis CahierSemaineTab.tsx)
+- 4 fichiers modifiés : attendance-prisma.service.ts (+45), pedagogical-space.service.ts (+85 pour cover/header/footer/SVG), CahierSemaineTab.tsx (+2 export), DirectorPedagogyControl.tsx (+30 imports + use full-fidelity components)
+- 1 fichier modifié : SemainierAttendancePanel.tsx (+7 pour afficher staffRoleType)
+- TypeScript check frontend : aucun erreur
+- Backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
+- Aucune migration SQL nécessaire

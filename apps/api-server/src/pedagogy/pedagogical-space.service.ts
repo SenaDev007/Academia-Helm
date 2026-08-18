@@ -9179,10 +9179,17 @@ td.name{text-align:left;font-weight:bold;}
             // le backend syncStaffAttendanceFromRh stocke `status` (string)
             const isPresent = s.present === true || s.status === 'PRESENT' || s.status === 'LATE' || s.status === 'HALF_DAY' || s.status === 'MISSION';
             const isAbsent = s.absent === true || s.status === 'ABSENT';
+            // ⭐ FIX : utiliser des SVG inline pour les coches/croix au lieu de
+            //    caractères Unicode (✓ ✗) qui ne s'affichaient pas correctement
+            //    dans le PDF (apparaissaient comme des "carreaux rectangulaires
+            //    verticaux" — l'utilisateur a rapporté ce bug). Les SVG sont
+            //    universellement supportés par Puppeteer/Chromium.
+            const checkSvg = `<svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align:middle"><path d="M3 8 L6.5 11.5 L13 4.5" stroke="#10b981" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+            const crossSvg = `<svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align:middle"><path d="M4 4 L12 12 M12 4 L4 12" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>`;
             body += `<tr>
               <td>${txt(s.name || s.staffName || '—')}</td>
-              <td style="text-align:center">${isPresent ? '✓' : ''}</td>
-              <td style="text-align:center">${isAbsent ? '✗' : ''}</td>
+              <td style="text-align:center">${isPresent ? checkSvg : ''}</td>
+              <td style="text-align:center">${isAbsent ? crossSvg : ''}</td>
               <td>${txt(s.motif || (s.status === 'ABSENT' ? s.notes || '' : ''))}</td>
               <td>${txt(s.observation || '')}</td>
               <td>${txt(s.replacement || '')}</td>
@@ -9349,21 +9356,99 @@ td.name{text-align:left;font-weight:bold;}
   .signature-block .sig-line img { max-height: 60px; max-width: 200px; margin: 0 auto; display: block; }
   /* ⭐ Footer avec numéro de page */
   .footer { text-align: center; font-size: 9px; color: #94a3b8; margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+  /* ⭐ Cover page redesign — plus propre avec logo école + statut français */
+  .cover {
+    text-align: center;
+    padding: 60px 30px;
+    page-break-after: always;
+    min-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+    border: 4px double #1e3a8a;
+    border-radius: 8px;
+    margin: 10px;
+  }
+  .cover .logo-wrapper {
+    width: 110px; height: 110px;
+    margin: 0 auto 20px auto;
+    border: 3px solid #1e3a8a;
+    border-radius: 50%;
+    background: white;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .cover .logo-wrapper img { max-width: 90%; max-height: 90%; object-fit: contain; }
+  .cover .logo-placeholder { font-size: 36px; color: #1e3a8a; font-weight: bold; }
+  .cover h1 { font-size: 30px; color: #1e3a8a; margin: 10px 0 6px 0; letter-spacing: 1px; }
+  .cover .subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; font-style: italic; }
+  .cover h2 { font-size: 18px; color: #475569; margin: 4px 0; }
+  .cover .meta {
+    margin-top: 30px;
+    font-size: 13px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 30px;
+    min-width: 350px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  }
+  .cover .meta div { margin: 8px 0; text-align: left; }
+  .cover .meta .label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 8px; }
+  .cover .badge {
+    display: inline-block;
+    padding: 6px 18px;
+    color: white;
+    border-radius: 20px;
+    font-weight: 600;
+    margin-top: 25px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+  .cover .badge-pending { background: #64748b; }
+  .cover .badge-signed { background: #1e3a8a; }
+  .cover .badge-submitted { background: #f59e0b; }
+  .cover .badge-validated { background: #10b981; }
+  .cover .badge-rejected { background: #ef4444; }
+  .cover .footer-cover { margin-top: 40px; font-size: 10px; color: #94a3b8; text-align: center; }
 </style>
 </head>
 <body>
   <div class="cover">
+    <!-- ⭐ Logo école (si configuré dans Tenant Identity Profile) -->
+    <div class="logo-wrapper">
+      ${cfg.schoolLogo
+        ? `<img src="${cfg.schoolLogo}" alt="Logo école" />`
+        : `<div class="logo-placeholder">AH</div>`
+      }
+    </div>
     <h1>CAHIER DU SEMAINIER</h1>
-    <h2>${txt(cfg.schoolName || '')}</h2>
+    <div class="subtitle">Suivi pédagogique hebdomadaire</div>
+    ${cfg.schoolName ? `<h2>${txt(cfg.schoolName)}</h2>` : ''}
     ${cfg.schoolCity ? `<h2>${txt(cfg.schoolCity)}</h2>` : ''}
     <div class="meta">
-      <div><strong>${txt(cfg.academicYearLabel || '')}</strong></div>
-      <div>${weekLabel}</div>
-      <div>${trimesterLabel}</div>
-      <div>Enseignant: <strong>${teacherName}</strong></div>
-      <div>Période: ${new Date(cfg.weekStartDate).toLocaleDateString('fr-FR')} — ${new Date(cfg.weekEndDate).toLocaleDateString('fr-FR')}</div>
+      <div><span class="label">Année scolaire</span> <strong>${txt(cfg.academicYearLabel || '')}</strong></div>
+      <div><span class="label">Semaine</span> <strong>${weekLabel}</strong></div>
+      <div><span class="label">Trimestre</span> <strong>${trimesterLabel}</strong></div>
+      <div><span class="label">Semainier</span> <strong>${teacherName}</strong></div>
+      <div><span class="label">Période</span> <strong>${new Date(cfg.weekStartDate).toLocaleDateString('fr-FR')} — ${new Date(cfg.weekEndDate).toLocaleDateString('fr-FR')}</strong></div>
     </div>
-    <div class="badge">STATUT: ${txt(cfg.status || 'PENDING')}</div>
+    ${(() => {
+      const statusUpper = (cfg.status || 'PENDING').toUpperCase();
+      const statusFr = statusUpper === 'PENDING' ? 'En attente'
+        : statusUpper === 'SIGNED' ? 'Signé'
+        : statusUpper === 'SUBMITTED' ? 'Soumis'
+        : statusUpper === 'VALIDATED' ? 'Validé'
+        : statusUpper === 'REJECTED' ? 'Rejeté'
+        : statusUpper;
+      const badgeClass = `badge-${statusUpper.toLowerCase()}`;
+      return `<div class="badge ${badgeClass}">Statut : ${statusFr}</div>`;
+    })()}
+    <div class="footer-cover">
+      Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}
+    </div>
   </div>`;
 
     // Une page par jour
@@ -9434,6 +9519,13 @@ td.name{text-align:left;font-weight:bold;}
     html += '</body></html>';
 
     // ⭐ Puppeteer → real PDF
+    //    headerTemplate/footerTemplate : affichent "Academia Helm" + date/heure
+    //    sur CHAQUE page (sauf la cover qui a déjà son propre footer).
+    //    L'option `displayHeaderFooter: true` active les en-têtes/pieds de page.
+    //    Les marges top/bottom doivent être assez grandes pour laisser de la
+    //    place au header/footer (20mm minimum recommandé).
+    const todayFormatted = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const nowTimeFormatted = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     const { page } = await this.puppeteerPool.acquirePage();
     try {
       await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -9441,7 +9533,27 @@ td.name{text-align:left;font-weight:bold;}
         format: 'A4',
         landscape: false,
         printBackground: true,
-        margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
+        displayHeaderFooter: true,
+        margin: { top: '22mm', bottom: '22mm', left: '12mm', right: '12mm' },
+        // ⭐ Header : logo Academia Helm + nom école à gauche, semaine à droite
+        headerTemplate: `
+          <div style="width: 100%; font-size: 9px; color: #64748b; padding: 0 12mm; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-weight: bold; color: #1e3a8a; font-size: 11px;">Academia Helm</span>
+              <span style="color: #94a3b8;">|</span>
+              <span>${txt(cfg.schoolName || 'École')}</span>
+            </div>
+            <div style="color: #1e3a8a; font-weight: 600;">Cahier du Semainier — ${weekLabel}</div>
+          </div>
+        `,
+        // ⭐ Footer : "Généré par Academia Helm" à gauche, date+heure au centre, page X/Y à droite
+        footerTemplate: `
+          <div style="width: 100%; font-size: 8px; color: #94a3b8; padding: 4px 12mm 0 12mm; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0;">
+            <div>Généré par <strong style="color: #1e3a8a;">Academia Helm</strong></div>
+            <div>${todayFormatted} à ${nowTimeFormatted}</div>
+            <div>Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>
+          </div>
+        `,
       });
       const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
       this.logger.log(`✅ PDF Cahier du Semainier généré (${buf.length} octets, configId=${configId})`);

@@ -1083,7 +1083,7 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
 // ============================================================================
 // CARTE: RAPPORT JOURNALIER (avec date précise "Lundi 23/07/2026")
 // ============================================================================
-function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: any) {
+export function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: any) {
   const dayLabel = formatDayWithDate(selectedDay, config.weekStartDate);
 
   // ⭐ Calculer la date précise du jour sélectionné (YYYY-MM-DD)
@@ -1331,7 +1331,7 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
 // ============================================================================
 // CARTE: RAPPORT DE FIN DE SEMAINE (page 8 du document)
 // ============================================================================
-function WeeklyReportCard({ config, weeklyReport, setWeeklyReport }: any) {
+export function WeeklyReportCard({ config, weeklyReport, setWeeklyReport }: any) {
   // ⭐ Conversion JSONB → objet (peut venir comme string ou objet depuis l'API)
   const parseJson = (v: any) => {
     if (!v) return null;

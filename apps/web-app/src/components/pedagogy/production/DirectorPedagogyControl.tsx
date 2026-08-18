@@ -48,6 +48,8 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
+// ⭐ Import des composants full-fidelity du Cahier du Semainier (même rendu que l'espace enseignant)
+import { DailyReportCard, WeeklyReportCard } from "@/components/pedagogy/production/CahierSemaineTab";
 
 interface DirectorPedagogyControlProps {
   tenantId: string;
@@ -3679,11 +3681,31 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
   const queryClient = useQueryClient();
   // ⭐ 4 sous-onglets : en attente / validés / rejetés / catalogue
   const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED' | 'CATALOGUE'>('SUBMITTED');
-  const { data: items = [], isLoading: loading, refetch } = usePendingSemainiers(academicYearId, statusTab === 'CATALOGUE' ? 'ALL' : statusTab);
+  // ⭐ FIX : fetch ALL semainiers une seule fois (status='ALL'), puis filtrer côté client.
+  //    Avant ce fix, on fetchait 3 fois (une par statusTab), mais les badges de
+  //    compteur affichaient TOUS le même nombre (le count du sous-onglet actif)
+  //    car ils utilisaient le même `items` array.
+  //    Maintenant on fetch ALL une fois, on calcule les counts par statut, et on
+  //    filtre l'affichage selon le sous-onglet actif.
+  //    Catalogue : ne contient QUE les semainiers VALIDATED (cahiers de semaine
+  //    officiellement validés par le directeur — pas tous les 36 semaines).
+  const { data: allSemainiers = [], isLoading: loading, refetch } = usePendingSemainiers(academicYearId, 'ALL');
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
   // ⭐ États repliables (chevrons) pour la hiérarchie : trimester → items
   const [collapsedTrimesters, setCollapsedTrimesters] = useState<Set<string>>(new Set());
+
+  // ⭐ Compter les items par statut (pour les badges des sous-onglets)
+  const submittedCount = allSemainiers.filter((c: any) => (c.status || '').toUpperCase() === 'SUBMITTED').length;
+  const validatedCount = allSemainiers.filter((c: any) => (c.status || '').toUpperCase() === 'VALIDATED').length;
+  const rejectedCount = allSemainiers.filter((c: any) => (c.status || '').toUpperCase() === 'REJECTED').length;
+
+  // ⭐ Items à afficher selon le sous-onglet actif (filtrer côté client)
+  //    CATALOGUE : ne montre QUE les VALIDATED
+  //    SUBMITTED/VALIDATED/REJECTED : montre les items correspondants
+  const items = statusTab === 'CATALOGUE'
+    ? allSemainiers.filter((c: any) => (c.status || '').toUpperCase() === 'VALIDATED')
+    : allSemainiers.filter((c: any) => (c.status || '').toUpperCase() === statusTab);
 
   useEffect(() => {
     if (refreshKey > 0) refetch();
@@ -3827,8 +3849,17 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
         {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
           const cfg = tabConfig[s];
           const Icon = cfg.icon;
-          // ⭐ Compteur pour les sous-onglets (catalogue n'a pas de badge count)
-          const count = s === 'CATALOGUE' ? null : items.length;
+          // ⭐ FIX : chaque sous-onglet affiche son PROPRE compteur (pas le même)
+          //    Avant, tous les badges affichaient le même `items.length` (celui du
+          //    sous-onglet actif) — par ex. 36 36 36 si on était sur un sous-onglet
+          //    avec 36 items. Maintenant chaque badge a son propre count.
+          //    Catalogue : affiche le count de VALIDATED (seuls les validés sont
+          //    dans le catalogue).
+          const count = s === 'SUBMITTED' ? submittedCount
+            : s === 'VALIDATED' ? validatedCount
+              : s === 'REJECTED' ? rejectedCount
+                : s === 'CATALOGUE' ? validatedCount
+                  : null;
           return (
             <button
               key={s}
@@ -3843,7 +3874,13 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
               <Icon className="h-4 w-4" />
               {cfg.label}
               {count !== null && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">
+                <span className={cn(
+                  "ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold",
+                  s === 'SUBMITTED' ? "bg-blue-100 text-blue-700"
+                    : s === 'VALIDATED' || s === 'CATALOGUE' ? "bg-emerald-100 text-emerald-700"
+                      : s === 'REJECTED' ? "bg-rose-100 text-rose-700"
+                        : "bg-slate-200 text-slate-700"
+                )}>
                   {count}
                 </span>
               )}
@@ -3861,10 +3898,12 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
             {statusTab === 'SUBMITTED' && 'Aucun semainier en attente de validation'}
             {statusTab === 'VALIDATED' && 'Aucun semainier validé'}
             {statusTab === 'REJECTED' && 'Aucun semainier rejeté'}
-            {statusTab === 'CATALOGUE' && 'Aucun semainier dans le catalogue'}
+            {statusTab === 'CATALOGUE' && 'Aucun semainier validé dans le catalogue'}
           </p>
           <p className="text-sm text-slate-400 mt-1">
-            Les semainiers soumis par les enseignants apparaîtront ici pour validation.
+            {statusTab === 'CATALOGUE'
+              ? 'Le catalogue ne contient que les cahiers de semaine OFFICIELLEMENT VALIDÉS par le directeur. Validez d\'abord des semainiers dans l\'onglet "En attente" pour les voir apparaître ici.'
+              : 'Les semainiers soumis par les enseignants apparaîtront ici pour validation.'}
           </p>
         </div>
       ) : statusTab === 'CATALOGUE' ? (
@@ -4155,52 +4194,35 @@ function SemainierDirectorDetail({ config, userId, onBack, onValidated }: {
       ) : (
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-slate-700 uppercase">Rapports journaliers ({dailyReports.length}/5)</h3>
+          {/* ⭐ FIX : utiliser le VRAI DailyReportCard (comme l'espace enseignant)
+              au lieu du DailyReportSummaryCard (résumé compact). L'utilisateur
+              a demandé que le catalogue reflète EXACTEMENT ce qui est dans le
+              Cahier du Semainier de l'espace pédagogique — pas un résumé.
+              Le composant DailyReportCard gère déjà le mode read-only via
+              `disabled={config?.status === 'SUBMITTED' || 'VALIDATED'}`. */}
           {dailyReports
             .sort((a, b) => (a.dayOfWeek || 0) - (b.dayOfWeek || 0))
             .map((dr: any) => (
-              <DailyReportSummaryCard key={dr.id} report={dr} weekStartDate={config.weekStartDate} />
+              <DailyReportCard
+                key={dr.id}
+                config={config}
+                selectedDay={dr.dayOfWeek}
+                dailyReport={dr}
+                setDailyReport={() => {/* no-op : read-only en catalogue */}}
+              />
             ))
           }
         </div>
       )}
 
-      {/* ⭐ Rapport hebdo (page 8) si présent */}
+      {/* ⭐ Rapport hebdo (page 8) si présent — utilise le VRAI WeeklyReportCard
+          (pas un résumé) pour que le catalogue soit identique à l'espace enseignant */}
       {weeklyReport && (
-        <div className="bg-white rounded-2xl border-2 border-purple-300 p-4">
-          <h3 className="text-sm font-bold text-purple-700 uppercase mb-3 flex items-center gap-2">
-            <CalendarRange className="h-4 w-4" /> Rapport de fin de semaine
-          </h3>
-          <div className="space-y-3 text-xs">
-            {weeklyReport.staffAttendanceObservations && (
-              <div>
-                <p className="font-bold text-slate-700 mb-1">Observations présence enseignants</p>
-                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
-                  dangerouslySetInnerHTML={{ __html: weeklyReport.staffAttendanceObservations }} />
-              </div>
-            )}
-            {weeklyReport.studentAttendanceAnalysis && (
-              <div>
-                <p className="font-bold text-slate-700 mb-1">Analyse présence élèves</p>
-                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
-                  dangerouslySetInnerHTML={{ __html: weeklyReport.studentAttendanceAnalysis }} />
-              </div>
-            )}
-            {weeklyReport.pedagogyAnalysis && (
-              <div>
-                <p className="font-bold text-slate-700 mb-1">Bilan pédagogique</p>
-                <div className="bg-slate-50 border border-slate-200 rounded p-2 text-slate-700"
-                  dangerouslySetInnerHTML={{ __html: weeklyReport.pedagogyAnalysis }} />
-              </div>
-            )}
-            {weeklyReport.recommendations && (
-              <div>
-                <p className="font-bold text-slate-700 mb-1">Recommandations</p>
-                <div className="bg-indigo-50 border border-indigo-200 rounded p-2 text-indigo-900"
-                  dangerouslySetInnerHTML={{ __html: weeklyReport.recommendations }} />
-              </div>
-            )}
-          </div>
-        </div>
+        <WeeklyReportCard
+          config={config}
+          weeklyReport={weeklyReport}
+          setWeeklyReport={() => {/* no-op : read-only en catalogue */}}
+        />
       )}
 
       {/* ⭐ Signatures bas de page */}
@@ -4447,7 +4469,13 @@ function SemainierCatalogueContent({ academicYearId, onView }: {
       const res = await fetch(`/api/pedagogy-space/seminar-config?academicYearId=${yearId}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setSemainiers(Array.isArray(data) ? data : (data?.data ?? []));
+        const allSemainiers = Array.isArray(data) ? data : (data?.data ?? []);
+        // ⭐ FIX : le catalogue ne contient QUE les semainiers VALIDATED
+        //    (cahiers de semaine officiellement validés par le directeur)
+        const validatedOnly = allSemainiers.filter((c: any) =>
+          (c.status || '').toUpperCase() === 'VALIDATED'
+        );
+        setSemainiers(validatedOnly);
       } else {
         setSemainiers([]);
       }
@@ -4623,12 +4651,10 @@ function SemainierCatalogueContent({ academicYearId, onView }: {
         ) : (
           <>
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-900">
-              <strong>{semainiers.length} semainier(s)</strong> trouvé(s) pour {path[0].label}
-              {semainiers.length > 0 && (
-                <span className="ml-2 opacity-70">
-                  • {semainiers.filter(s => s.status === 'VALIDATED').length} validé(s),
-                  {' '}{semainiers.filter(s => s.status === 'SUBMITTED').length} en attente,
-                  {' '}{semainiers.filter(s => s.status === 'PENDING' || s.status === 'SIGNED').length} non soumis
+              <strong>{semainiers.length} cahier(s) de semaine validé(s)</strong> pour {path[0].label}
+              {semainiers.length === 0 && (
+                <span className="ml-2 opacity-70 italic">
+                  — Aucun cahier validé pour cette année. Le catalogue ne contient que les cahiers OFFICIELLEMENT VALIDÉS par le directeur.
                 </span>
               )}
             </div>

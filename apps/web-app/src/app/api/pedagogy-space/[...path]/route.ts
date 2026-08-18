@@ -60,19 +60,22 @@ async function proxy(request: NextRequest, method: string) {
     }
 
     // ⭐ Cache control conditionnel :
-    //    - Les données d'appel (attendance), cahier journal, fiches pédagogiques
-    //      et sujets sont VOLATILES : l'enseignant peut modifier/soumettre à tout moment,
-    //      et le directeur doit voir les changements immédiatement après soumission.
+    //    - Les données d'appel (attendance), cahier journal, fiches pédagogiques,
+    //      sujets ET assignation semainier sont VOLATILES : l'enseignant peut
+    //      modifier/soumettre à tout moment, et le directeur doit voir les
+    //      changements immédiatement après soumission.
     //      Si on cache ces endpoints pendant 60s, le directeur voit une version
     //      STALE (0 fiche jointe alors qu'il y en a 1) → frustration utilisateur.
-    //      → no-store pour /attendance, /cahier-journal, /fiches, /subjects
+    //      → no-store pour /attendance, /cahier-journal, /fiches, /subjects,
+    //        /seminar-config/my-assignment (notification dashboard enseignant)
     //    - Les autres endpoints (registres mensuels, évaluations) sont moins
     //      volatils → cache 60s + stale-while-revalidate 300s acceptable.
     const isVolatilePath =
       path.startsWith('/attendance') ||
       path.startsWith('/cahier-journal') ||
       path.startsWith('/fiches') ||
-      path.startsWith('/subjects');
+      path.startsWith('/subjects') ||
+      path.startsWith('/seminar-config/my-assignment');
     const cacheControl = isVolatilePath
       ? 'no-store, max-age=0'
       : 'public, s-maxage=60, stale-while-revalidate=300';

@@ -1284,6 +1284,24 @@ export class PedagogicalSpaceController {
     return this.service.getEligibleSeminarTeachers(tenantId, academicYearId);
   }
 
+  // ⭐ Vérifie si l'enseignant connecté est le semainier pour la semaine
+  //    courante OU la semaine prochaine. Utilisé par le dashboard enseignant
+  //    pour afficher une bannière de notification "Vous êtes le semainier
+  //    cette semaine / la semaine prochaine".
+  //    La notification doit s'afficher :
+  //      - Le week-end (samedi/dimanche) AVANT le début de la semaine où l'enseignant est semainier
+  //      - Pendant toute la semaine où l'enseignant est semainier
+  //    Retourne { currentWeek: config|null, nextWeek: config|null } où config
+  //    contient les infos essentielles (weekNumber, trimester, dates, classes, status).
+  @Get('seminar-config/my-assignment')
+  async getMySeminarAssignment(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getMySeminarAssignment(tenantId, teacherId, academicYearId);
+  }
+
   // ⭐ Suppression manuelle d'un semainier (uniquement si PENDING)
   @Delete('seminar-config/:id')
   async deleteSeminarConfig(

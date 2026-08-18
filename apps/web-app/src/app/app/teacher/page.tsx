@@ -15,8 +15,10 @@ import {
   BookOpen, Users, CalendarDays, ClipboardList, Video,
   Library, MessageSquare, BarChart3, GraduationCap,
   Clock, FileText, CheckCircle2, Building2, Loader2, FileEdit,
+  AlertCircle, CalendarRange,
 } from "lucide-react";
 import { MyAttendanceCard } from "@/components/hr/MyAttendanceCard";
+import { SemainierNotificationBanner } from "@/components/pedagogy/production/SemainierNotificationBanner";
 
 export default function TeacherDashboardPage() {
   const { user, tenant } = useAppSession();
@@ -89,6 +91,15 @@ export default function TeacherDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ⭐ Bannière de notification "Vous êtes le semainier cette semaine / la semaine prochaine"
+          S'affiche automatiquement quand l'enseignant a été désigné comme semainier.
+          Apparaît dès le week-end (samedi/dimanche) AVANT la semaine concernée,
+          et reste visible pendant toute la semaine. */}
+      <SemainierNotificationBanner
+        teacherId={teacherId}
+        academicYearId={academicYear?.id || ""}
+      />
 
       {/* Stats rapides — données réelles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

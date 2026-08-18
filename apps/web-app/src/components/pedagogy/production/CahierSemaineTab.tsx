@@ -311,6 +311,7 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
           currentUserId={user?.id || ""}
           academicYearId={academicYearId}
           tenantId={tenantId}
+          onRefresh={loadData}
         />
       )}
 
@@ -805,13 +806,16 @@ function ListeSemainiersTab({ configs, currentUserId, onSign, onDeleteSignature 
 // ============================================================================
 // SOUS-ONGLET 3: CAHIER DU SEMAINIER (rapport quotidien + rapport de fin de semaine)
 // ============================================================================
-function CahierSemainierContent({ configs, currentUserId, academicYearId, tenantId }: any) {
+function CahierSemainierContent({ configs, currentUserId, academicYearId, tenantId, onRefresh }: any) {
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
   // ⭐ selectedDay : 1-5 = Lun-Ven, 6 = Rapport de fin de semaine
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [dailyReport, setDailyReport] = useState<any>(null);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // ⭐ Modal personnalisé professionnel pour l'envoi au directeur (remplace confirm())
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const currentConfig = configs.find((c: any) => c.weekNumber === selectedWeek);
 
@@ -968,29 +972,11 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
         />
       )}
 
-      {/* ⭐ Bouton "Envoyer au directeur" — envoie tous les rapports de la semaine */}
+      {/* ⭐ Bouton "Envoyer au directeur" — ouvre un modal personnalisé (pas de confirm() natif) */}
       {currentConfig && (
         <div className="flex justify-end pt-4 border-t border-slate-200">
           <button
-            onClick={async () => {
-              if (!confirm('Envoyer tous les rapports de cette semaine au directeur ? Vous ne pourrez plus les modifier après envoi.')) return;
-              try {
-                const res = await fetch(`/api/pedagogy-space/seminar-config/${currentConfig.id}/submit`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include',
-                });
-                if (!res.ok) {
-                  const err = await res.json();
-                  throw new Error(err.message || 'Erreur');
-                }
-                toast.success('📧 Rapports envoyés au directeur', {
-                  description: 'Le directeur recevra les rapports de cette semaine pour validation.',
-                });
-              } catch (e: any) {
-                toast.error('Erreur lors de l\'envoi', { description: e.message });
-              }
-            }}
+            onClick={() => setShowSubmitModal(true)}
             disabled={!currentConfig.teacherSignature || currentConfig.status === 'SUBMITTED' || currentConfig.status === 'VALIDATED'}
             className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title={!currentConfig.teacherSignature ? 'Vous devez signer d\'abord (Liste des semainiers)' : currentConfig.status === 'SUBMITTED' ? 'Déjà envoyé au directeur' : 'Envoyer tous les rapports au directeur'}
@@ -998,6 +984,96 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
             <Send className="h-4 w-4" />
             {currentConfig.status === 'SUBMITTED' ? 'Envoyé au directeur' : currentConfig.status === 'VALIDATED' ? 'Validé par le directeur' : 'Envoyer au directeur'}
           </button>
+        </div>
+      )}
+
+      {/* ⭐ MODAL PERSONNALISÉ : Confirmation envoi au directeur (remplace confirm() natif)
+          Pattern identique au modal de génération auto — en-tête coloré indigo,
+          body avec conséquences, footer avec boutons Annuler / Confirmer. */}
+      {showSubmitModal && currentConfig && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* En-tête coloré */}
+            <div className="px-6 py-4 border-b bg-indigo-50 border-indigo-200">
+              <div className="flex items-center gap-3">
+                <Send className="h-10 w-10 text-indigo-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Envoyer au directeur</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Semaine S{currentConfig.weekNumber} · Trimestre {currentConfig.trimester}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {/* Body */}
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-slate-700 font-medium">
+                Vous êtes sur le point d'envoyer tous les rapports de cette semaine au directeur pour validation.
+              </p>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase">Ce qui sera envoyé :</p>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700">
+                  <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                  <span>5 rapports journaliers (Lundi → Vendredi)</span>
+                </div>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700">
+                  <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                  <span>1 rapport de fin de semaine (synthèse hebdomadaire)</span>
+                </div>
+                <div className="flex items-start gap-1.5 text-xs text-slate-700">
+                  <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                  <span>Votre signature d'enseignant semainier</span>
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                <p className="text-[10px] font-bold text-amber-700 uppercase">⚠ Conséquences :</p>
+                <p className="text-xs text-amber-900">
+                  Après envoi, vous ne pourrez plus modifier les rapports de cette semaine.
+                  Le directeur les validera ou les rejettera via son espace Validation Direction.
+                </p>
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => setShowSubmitModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    const res = await fetch(`/api/pedagogy-space/seminar-config/${currentConfig.id}/submit`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                    });
+                    if (!res.ok) {
+                      const err = await res.json();
+                      throw new Error(err.message || 'Erreur');
+                    }
+                    toast.success('📧 Rapports envoyés au directeur', {
+                      description: 'Le directeur recevra les rapports de cette semaine pour validation.',
+                    });
+                    setShowSubmitModal(false);
+                    onRefresh?.();
+                  } catch (e: any) {
+                    toast.error('Erreur lors de l\'envoi', { description: e.message });
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                disabled={submitting}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Confirmer l'envoi
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1491,10 +1567,21 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
   const source = sp?._source || null;
   // ⭐ Diagnostic info (renvoyé par le backend depuis le fix)
   const queriedDate = sp?._queriedDate || dayDate || null;
+  const queriedStrategy: 'day' | 'week' | 'recent' | null = sp?._queriedStrategy || null;
+  const queriedRange: { start: string; end: string } | null = sp?._queriedRange || null;
   const totalFound = sp?._totalFound ?? (summary?.totalRecords ?? 0);
   const classesCount = sp?._classesCount ?? 0;
   // ⭐ Si la sync a été faite mais 0 records trouvés → afficher warning
   const isSyncedButEmpty = source === 'STUDENTS' && totalFound === 0;
+
+  // ⭐ Libellé de la stratégie utilisée pour l'affichage
+  const strategyLabel = queriedStrategy === 'day'
+    ? 'Date du rapport'
+    : queriedStrategy === 'week'
+      ? 'Plage semaine'
+      : queriedStrategy === 'recent'
+        ? '7 derniers jours'
+        : null;
 
   // ⭐ Helper : regrouper byClass (qui peut être par statut) par classId/className
   //    Le backend renvoie byClass = [{ classId, className, status, count, lateCount, notes }]
@@ -1596,8 +1683,12 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
           </span>
         )}
         {queriedDate && (
-          <span className="text-[10px] text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
-            📅 Date recherchée : {new Date(queriedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+          <span className="text-[10px] text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200" title="Plage de dates recherchée pour récupérer les appels élèves">
+            📅 {strategyLabel || 'Date du rapport'} : {
+              queriedRange
+                ? `${new Date(queriedRange.start).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} → ${new Date(queriedRange.end).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`
+                : new Date(queriedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })
+            }
           </span>
         )}
         {(syncedAt || syncedAtFromData) && (
@@ -1621,14 +1712,15 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
             <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
             <div className="flex-1">
               <p className="text-xs font-bold text-amber-900">
-                Aucun appel élève trouvé pour le {queriedDate ? new Date(queriedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : 'cette date'}
+                Aucun appel élève trouvé — sync a essayé 3 stratégies sans résultat
               </p>
               <p className="text-[11px] text-amber-800 mt-1">
-                Les enseignants doivent prendre l'appel via le module <strong>Appels</strong> pour cette date précise
-                (et non pas "aujourd'hui"). Le sync recherche les enregistrements à la <strong>date du rapport journalier</strong>,
-                qui correspond au jour de la semaine du semainier (ex: Lundi de la semaine S1 = 1er septembre).
-                <br />
-                Si vous testez le système en dehors des dates réelles du semainier, les appels pris aujourd'hui ne seront pas trouvés.
+                Le système a recherché les appels avec :
+                <br />1. <strong>Date du rapport journalier</strong> ({queriedDate ? new Date(queriedDate).toLocaleDateString('fr-FR') : '—'})
+                <br />2. <strong>Plage de la semaine</strong> ({queriedRange ? `${new Date(queriedRange.start).toLocaleDateString('fr-FR')} → ${new Date(queriedRange.end).toLocaleDateString('fr-FR')}` : 'non applicable'})
+                <br />3. <strong>7 derniers jours</strong>
+                <br /><br />
+                Aucun appel n'a été enregistré pour ces plages. Les enseignants doivent prendre l'appel via le module <strong>Appels</strong>.
               </p>
             </div>
           </div>
@@ -1650,13 +1742,21 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
             {attendanceRate != null ? `${Number(attendanceRate).toFixed(1)}%` : '—'}
           </p>
           <p className="text-[10px] opacity-60 mt-0.5">
-            {summary ? `${summary.present}/${summary.totalRecords} élèves` : 'Non synchronisé'}
+            {/* ⭐ FIX : ne pas afficher "0/0 élèves" si totalRecords=0 — afficher "—" à la place
+                pour éviter la confusion (l'utilisateur a dit "C'est pas cohérent 0/0 élèves
+                avec tout ce nombre d'élèves qu'il y a") */}
+            {summary && summary.totalRecords > 0
+              ? `${summary.present}/${summary.totalRecords} élèves`
+              : summary && source === 'STUDENTS'
+                ? 'Aucun appel trouvé'
+                : 'Non synchronisé'}
           </p>
         </div>
         <div className="border border-rose-200 bg-rose-50 rounded-lg p-2.5 text-center">
           <p className="text-[10px] font-semibold uppercase opacity-70 text-rose-700">Total absents</p>
           <p className="text-2xl font-bold mt-0.5 text-rose-700">
-            {summary?.absent ?? '—'}
+            {/* ⭐ FIX : afficher "—" au lieu de 0 quand pas de données */}
+            {summary && summary.totalRecords > 0 ? (summary.absent ?? 0) : '—'}
           </p>
           <p className="text-[10px] opacity-60 mt-0.5">
             {byClassAggregated.length > 0 ? `${byClassAggregated.length} classes pointées` : 'N/A'}
@@ -1665,7 +1765,8 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
         <div className="border border-amber-200 bg-amber-50 rounded-lg p-2.5 text-center">
           <p className="text-[10px] font-semibold uppercase opacity-70 text-amber-700">Total retards</p>
           <p className="text-2xl font-bold mt-0.5 text-amber-700">
-            {summary?.late ?? sp?.lateStudents ?? '—'}
+            {/* ⭐ FIX : afficher "—" au lieu de 0 quand pas de données */}
+            {summary && summary.totalRecords > 0 ? (summary.late ?? sp?.lateStudents ?? 0) : '—'}
           </p>
           <p className="text-[10px] opacity-60 mt-0.5">signalés ce jour</p>
         </div>

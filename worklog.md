@@ -6456,3 +6456,81 @@ Stage Summary:
 - TypeScript check frontend : aucun erreur
 - TypeScript check backend (tsconfig.build.json) : aucun erreur
 - Aucune migration SQL nécessaire
+
+---
+Task ID: FIX-SEMAINIER-FALLBACK-MODAL-NOTIF-1
+Agent: main
+Task: (1) Fix bug "0/0 élèves" incohérent — la sync Section 2 retourne toujours 0 records même quand des appels ont été pris "cette semaine". (2) Remplacer confirm() natif par un modal personnalisé professionnel pour "Envoyer au directeur". (3) Notifier l'enseignant dans son dashboard quand c'est son tour d'être semainier (dès le week-end avant + pendant toute la semaine).
+
+Work Log:
+
+=== 1 — Fix "0/0 élèves" par fallback intelligent ===
+- Cause racine : le sync query `DATE(ar."date") = DATE($3)` utilisait UNIQUEMENT la date du rapport journalier (ex: Lun. 01/09/2026). Si l'utilisateur teste en août mais visionne la semaine S1 (sept), la query retourne 0 records → cards affichent "0/0 élèves" (incohérent avec le nb d'élèves de l'école).
+- FIX backend (pedagogical-space.service.ts syncStudentPresenceFromAttendance) :
+  * Stratégie de fallback en 3 étapes :
+    1. Date exacte du rapport journalier (comportement actuel)
+    2. Si 0 records → plage semaine (weekStart → weekEnd)
+    3. Si toujours 0 records → 7 derniers jours (today - 7 → today)
+  * Nouvelle méthode privée `_computeStudentSummary(byClass)` pour calculer summary depuis byClass dans les fallbacks week/recent
+  * Ajout de champs de diagnostic dans studentPresence JSONB :
+    - `_queriedStrategy`: 'day' | 'week' | 'recent'
+    - `_queriedRange`: { start, end } si strategy='week' ou 'recent'
+  * Response enrichie : `{ synced, studentPresence, diagnostic: { queriedDate, queriedStrategy, queriedRange, totalFound, classesCount } }`
+- FIX frontend (CahierSemaineTab.tsx StudentPresenceSection) :
+  * Lecture de `_queriedStrategy` et `_queriedRange` pour afficher la stratégie utilisée
+  * Chip "📅 {stratégie} : {date ou plage}" (ex: "📅 Plage semaine : 01/09 → 05/09" ou "📅 7 derniers jours : 11/08 → 18/08")
+  * Cards affichent "—" au lieu de "0/0" quand summary.totalRecords=0
+    - "Taux présence global" : "—" si 0 records (au lieu de "0.0%")
+    - "Total absents" : "—" si 0 records (au lieu de "0")
+    - "Total retards" : "—" si 0 records (au lieu de "0")
+    - "0/0 élèves" → "Aucun appel trouvé" si sync faite sans records, sinon "Non synchronisé"
+  * Warning enrichi : affiche les 3 stratégies essayées + l'invite à prendre l'appel via le module Appels
+
+=== 2 — Modal personnalisé pour "Envoyer au directeur" ===
+- AVANT : bouton utilisait `confirm('Envoyer tous les rapports...')` (modal natif)
+- APRÈS : bouton ouvre `showSubmitModal` (state) → modal personnalisé avec :
+  * En-tête coloré indigo (icône Send) "Envoyer au directeur — Semaine S{N} · Trimestre {T}"
+  * Body avec 2 encarts :
+    - "Ce qui sera envoyé" (5 rapports journaliers + 1 rapport hebdo + signature)
+    - "⚠ Conséquences" (verrouillage des rapports après envoi)
+  * Footer avec boutons Annuler / Confirmer l'envoi (Loader2 pendant submit)
+  * State submitting pour désactiver les boutons pendant l'envoi
+  * Callback onRefresh() pour recharger les configs après envoi (le statut passe à SUBMITTED)
+- Ajout de `onRefresh` prop à `CahierSemainierContent` pour permettre le refresh après submit
+
+=== 3 — Notification dashboard enseignant semainier ===
+- Backend (pedagogical-space.controller.ts + service.ts) :
+  * Nouvel endpoint GET /seminar-config/my-assignment?teacherId=X&academicYearId=Y
+  * Méthode `getMySeminarAssignment(tenantId, teacherId, academicYearId)` :
+    - Récupère TOUTES les configs de l'année pour cet enseignant (jointure teachers + classes)
+    - Trouve la SEMAINE COURANTE : config dont weekStart <= today <= weekEnd
+    - Trouve la SEMAINE PROCHAINE : config dont weekStart dans les 7 prochains jours
+    - Retourne { currentWeek: config|null, nextWeek: config|null }
+  * Config formatée : { id, weekNumber, trimester, weekStartDate, weekEndDate, teacherName, classNames, status, teacherSignature }
+- Frontend :
+  * Nouveau composant `SemainierNotificationBanner.tsx` (~190 lignes)
+  * Bannière colorée (purple pour semaine courante, blue pour semaine prochaine)
+  * Affiche : "Vous êtes le semainier cette semaine/la semaine prochaine — Semaine S{N} · Trimestre {T} — Du {start} au {end}"
+  * Liste les classes assignées
+  * Badge statut si déjà signé/soumis/validé
+  * Bouton "Aller au Cahier du Semainier" → /app/teacher/pedagogy
+  * Auto-refresh toutes les 5 minutes
+  * Bouton recharger discret en haut à droite
+- Intégré dans `/app/teacher/page.tsx` (dashboard enseignant) juste après le welcome header
+- BFF (apps/web-app/src/app/api/pedagogy-space/[...path]/route.ts) :
+  * Ajout de `/seminar-config/my-assignment` aux paths volatiles (no-store) pour éviter le cache 60s
+
+Stage Summary:
+- ✅ 1 — Bug "0/0 élèves" résolu : backend essaie 3 stratégies (date / semaine / 7 derniers jours), frontend affiche "—" au lieu de "0/0" + chip indique la stratégie utilisée + warning explique les 3 stratégies essayées
+- ✅ 2 — Modal personnalisé professionnel pour "Envoyer au directeur" (remplace confirm() natif) — pattern identique au modal de génération auto
+- ✅ 3 — Notification semainier dans dashboard enseignant :
+  - Backend endpoint GET /seminar-config/my-assignment qui détecte currentWeek/nextWeek
+  - Composant SemainierNotificationBanner affiché dans /app/teacher/page.tsx
+  - Bannière visible dès le week-end avant (quand weekStart est dans 7 jours) + pendant toute la semaine
+  - Auto-refresh 5 min pour gérer le changement de semaine
+  - Cache BFF désactivé (no-store) pour l'endpoint my-assignment
+- 5 fichiers modifiés : pedagogical-space.service.ts (+110), pedagogical-space.controller.ts (+17), CahierSemaineTab.tsx (+85), teacher/page.tsx (+7), BFF route.ts (+3)
+- 1 nouveau fichier : SemainierNotificationBanner.tsx (~190 lignes)
+- TypeScript check frontend : aucun erreur
+- Backend : erreurs pré-existantes (Cannot find module '@nestjs/common' — contexte tsconfig isolé)
+- Aucune migration SQL nécessaire

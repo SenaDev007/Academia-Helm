@@ -8005,6 +8005,114 @@ td.name{text-align:left;font-weight:bold;}
     }));
   }
 
+  /**
+   * ⭐ Vérifie si l'enseignant est le semainier pour la semaine courante
+   *    OU la semaine prochaine. Utilisé par le dashboard enseignant pour
+   *    afficher une bannière de notification.
+   *
+   * Règles d'affichage :
+   *   - Si l'enseignant est le semainier de la SEMAINE COURANTE :
+   *     afficher "Vous êtes le semainier cette semaine (S{N} du {start} au {end})"
+   *   - Si l'enseignant est le semainier de la SEMAINE PROCHAINE :
+   *     afficher dès le SAMEDI précédent "Vous êtes le semainier la semaine prochaine
+   *     (S{N} du {start} au {end})"
+   *
+   * La logique temporelle est :
+   *   - Trouver la config dont weekStartDate <= today <= weekEndDate → semaine courante
+   *   - Trouver la config dont weekStartDate = today + (1 à 2 jours) → semaine prochaine
+   *     (si on est samedi/dimanche, "semaine prochaine" = lundi à vendredi suivants)
+   */
+  async getMySeminarAssignment(tenantId: string, teacherId: string, academicYearId: string) {
+    if (!teacherId || !academicYearId) {
+      return { currentWeek: null, nextWeek: null };
+    }
+
+    // Récupérer TOUTES les configs de l'année pour cet enseignant
+    const configs: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wsc.*, t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName"
+       FROM "weekly_seminar_config" wsc
+       LEFT JOIN "teachers" t ON t."id" = wsc."teacherId"
+       WHERE wsc."tenantId" = $1 AND wsc."academicYearId" = $2
+         AND wsc."teacherId" = $3
+       ORDER BY wsc."weekNumber" ASC`,
+      tenantId, academicYearId, teacherId,
+    );
+
+    if (!configs || configs.length === 0) {
+      return { currentWeek: null, nextWeek: null };
+    }
+
+    // Récupérer les noms de classes
+    const allClassIds = new Set<string>();
+    for (const c of configs) {
+      const ids: string[] = typeof c.classIds === 'string' ? JSON.parse(c.classIds) : (c.classIds || []);
+      for (const id of ids) allClassIds.add(id);
+    }
+    let classMap = new Map<string, string>();
+    if (allClassIds.size > 0) {
+      const classes: any = await this.prisma.$queryRawUnsafe(
+        `SELECT id, name FROM "classes" WHERE id = ANY($1::text[])`,
+        Array.from(allClassIds),
+      );
+      for (const c of classes) classMap.set(c.id, c.name);
+    }
+
+    const formatConfig = (c: any) => {
+      const classIds: string[] = typeof c.classIds === 'string' ? JSON.parse(c.classIds) : (c.classIds || []);
+      return {
+        id: c.id,
+        weekNumber: c.weekNumber,
+        trimester: c.trimester,
+        weekStartDate: c.weekStartDate,
+        weekEndDate: c.weekEndDate,
+        teacherName: c.teacherFirstName ? `${c.teacherFirstName} ${c.teacherLastName}` : null,
+        classNames: classIds.map((id: string) => classMap.get(id) || id),
+        status: c.status,
+        teacherSignature: c.teacherSignature,
+      };
+    };
+
+    // ⭐ Trouver la semaine courante (weekStart <= today <= weekEnd)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Minuit pour comparer correctement
+
+    let currentWeek: any = null;
+    let nextWeek: any = null;
+
+    for (const c of configs) {
+      const ws = new Date(c.weekStartDate);
+      ws.setHours(0, 0, 0, 0);
+      const we = new Date(c.weekEndDate);
+      we.setHours(23, 59, 59, 999);
+
+      if (today >= ws && today <= we) {
+        currentWeek = formatConfig(c);
+      }
+    }
+
+    // ⭐ Trouver la semaine prochaine : config dont weekStartDate est dans le futur
+    //    ET dans les 7 prochains jours
+    //    Si on est samedi/dimanche, la semaine prochaine commence lundi suivant
+    //    (donc weekStartDate devrait être à 1-2 jours de today)
+    const sevenDaysLater = new Date(today);
+    sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
+
+    for (const c of configs) {
+      if (currentWeek && c.id === currentWeek.id) continue; // skip current week
+      const ws = new Date(c.weekStartDate);
+      ws.setHours(0, 0, 0, 0);
+      if (ws > today && ws <= sevenDaysLater) {
+        nextWeek = formatConfig(c);
+        break;
+      }
+    }
+
+    this.logger.log(
+      `📋 getMySeminarAssignment teacherId=${teacherId} → currentWeek=${currentWeek?.weekNumber || 'none'}, nextWeek=${nextWeek?.weekNumber || 'none'}`,
+    );
+    return { currentWeek, nextWeek };
+  }
+
   async updateSeminarConfig(tenantId: string, configId: string, data: any) {
     const updates: string[] = [];
     const params: any[] = [];
@@ -8639,6 +8747,17 @@ td.name{text-align:left;font-weight:bold;}
    * Écrit dans studentPresence (JSONB).
    * Calcule le taux de présence par classe et identifie les classes à forte absence.
    *
+   * ⭐ STRATÉGIE DE FALLBACK INTELLIGENT (au lieu de retourner 0/0 si la date du
+   *    rapport journalier n'a pas d'appel enregistré — par ex. en période de test
+   *    hors des dates réelles du semainier) :
+   *
+   *    1. Essayer DATE EXACTE du rapport journalier (ex: Lun. 01/09/2026)
+   *    2. Si 0 records → essayer la PLAGE SEMAINE (weekStart → weekEnd)
+   *    3. Si 0 records → essayer les 7 DERNIERS JOURS (aujourd'hui - 7 jours)
+   *
+   *    Le résultat renvoyé contient `_queriedStrategy` ('day' | 'week' | 'recent')
+   *    pour que le frontend puisse afficher clairement quelle plage a été utilisée.
+   *
    * ⭐ Retourne des informations de diagnostic (queriedDate, totalFound, classesCount)
    *    pour que le frontend puisse afficher un message clair en cas de 0 records.
    */
@@ -8657,8 +8776,80 @@ td.name{text-align:left;font-weight:bold;}
       };
     }
 
-    const summary = crossData.students.summary;
-    const byClass = crossData.students.byClass;
+    // ── STRATÉGIE DE FALLBACK ────────────────────────────────────────────
+    //    1. Date exacte du rapport journalier (crossData.students déjà chargé)
+    //    2. Plage semaine (weekStart → weekEnd)
+    //    3. 7 derniers jours (aujourd'hui - 7 jours)
+    let byClass = crossData.students.byClass;
+    let summary = crossData.students.summary;
+    let queriedStrategy: 'day' | 'week' | 'recent' = 'day';
+    let queriedRange: { start: string; end: string } | null = null;
+    const dayDateStr = report.date
+      ? new Date(report.date).toISOString().split('T')[0]
+      : null;
+
+    // ⭐ Si 0 records pour la date exacte, essayer la plage semaine
+    if ((!byClass || byClass.length === 0) && report.weekStartDate && report.weekEndDate) {
+      const weekStart = new Date(report.weekStartDate);
+      const weekEnd = new Date(report.weekEndDate);
+      const weekRange: any = await this.prisma.$queryRawUnsafe(
+        `SELECT ar."classId", ar."status", ar."late", ar."notes",
+                COUNT(*)::int AS "count",
+                SUM(CASE WHEN ar."late" = true THEN 1 ELSE 0 END)::int AS "lateCount",
+                c."name" AS "className"
+         FROM "attendance_records" ar
+         LEFT JOIN "classes" c ON c."id" = ar."classId"
+         WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2
+           AND DATE(ar."date") BETWEEN DATE($3) AND DATE($4)
+         GROUP BY ar."classId", ar."status", ar."late", ar."notes", c."name"
+         ORDER BY c."name" ASC`,
+        tenantId, report.academicYearId, weekStart, weekEnd,
+      );
+      if (weekRange && weekRange.length > 0) {
+        byClass = weekRange.map((sa: any) => ({
+          classId: sa.classId, className: sa.className, status: sa.status,
+          count: sa.count, late: sa.late, lateCount: sa.lateCount, notes: sa.notes,
+        }));
+        summary = this._computeStudentSummary(byClass);
+        queriedStrategy = 'week';
+        queriedRange = {
+          start: weekStart.toISOString().split('T')[0],
+          end: weekEnd.toISOString().split('T')[0],
+        };
+      }
+    }
+
+    // ⭐ Si toujours 0 records, essayer les 7 derniers jours
+    if ((!byClass || byClass.length === 0) && report.academicYearId) {
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const recentRange: any = await this.prisma.$queryRawUnsafe(
+        `SELECT ar."classId", ar."status", ar."late", ar."notes",
+                COUNT(*)::int AS "count",
+                SUM(CASE WHEN ar."late" = true THEN 1 ELSE 0 END)::int AS "lateCount",
+                c."name" AS "className"
+         FROM "attendance_records" ar
+         LEFT JOIN "classes" c ON c."id" = ar."classId"
+         WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2
+           AND DATE(ar."date") BETWEEN DATE($3) AND DATE($4)
+         GROUP BY ar."classId", ar."status", ar."late", ar."notes", c."name"
+         ORDER BY c."name" ASC`,
+        tenantId, report.academicYearId, sevenDaysAgo, today,
+      );
+      if (recentRange && recentRange.length > 0) {
+        byClass = recentRange.map((sa: any) => ({
+          classId: sa.classId, className: sa.className, status: sa.status,
+          count: sa.count, late: sa.late, lateCount: sa.lateCount, notes: sa.notes,
+        }));
+        summary = this._computeStudentSummary(byClass);
+        queriedStrategy = 'recent';
+        queriedRange = {
+          start: sevenDaysAgo.toISOString().split('T')[0],
+          end: today.toISOString().split('T')[0],
+        };
+      }
+    }
 
     // Identifier les classes à forte absence (>30% d'absents)
     const highAbsenceClasses = byClass
@@ -8683,7 +8874,9 @@ td.name{text-align:left;font-weight:bold;}
       _syncedAt: new Date().toISOString(),
       _manualEdit: false,
       // ⭐ Information de diagnostic pour le frontend
-      _queriedDate: report.date ? new Date(report.date).toISOString().split('T')[0] : null,
+      _queriedDate: dayDateStr,
+      _queriedStrategy: queriedStrategy,  // 'day' | 'week' | 'recent'
+      _queriedRange: queriedRange,  // { start, end } si strategy='week' ou 'recent'
       _totalFound: totalRecords,
       _classesCount: byClass
         .map((c: any) => c.classId)
@@ -8707,18 +8900,44 @@ td.name{text-align:left;font-weight:bold;}
     );
 
     this.logger.log(
-      `✅ Sync Élèves → rapport ${reportId} (date=${studentPresence._queriedDate}, ` +
-      `${totalRecords} records, ${studentPresence._classesCount} classes, taux=${rate.toFixed(1)}%)`,
+      `✅ Sync Élèves → rapport ${reportId} (strategy=${queriedStrategy}, ` +
+      `date=${dayDateStr}, ${totalRecords} records, ${studentPresence._classesCount} classes, ` +
+      `taux=${rate.toFixed(1)}%)`,
     );
     return {
       synced: true,
       studentPresence,
       // ⭐ Diagnostic info pour le frontend
       diagnostic: {
-        queriedDate: studentPresence._queriedDate,
+        queriedDate: dayDateStr,
+        queriedStrategy,
+        queriedRange,
         totalFound: totalRecords,
         classesCount: studentPresence._classesCount,
       },
+    };
+  }
+
+  /**
+   * Helper privé : compute student summary from byClass array.
+   * Utilisé par syncStudentPresenceFromAttendance pour les fallbacks week/recent.
+   */
+  private _computeStudentSummary(byClass: any[]) {
+    return {
+      totalRecords: byClass.reduce((acc: number, sa: any) => acc + sa.count, 0),
+      absent: byClass
+        .filter((sa: any) => sa.status === 'ABSENT' || sa.status === 'ABSENT_HALF')
+        .reduce((acc: number, sa: any) => acc + sa.count, 0),
+      late: byClass.reduce((acc: number, sa: any) => acc + (Number(sa.lateCount) || 0), 0),
+      present: byClass
+        .filter((sa: any) => sa.status === 'PRESENT')
+        .reduce((acc: number, sa: any) => acc + sa.count, 0),
+      excused: byClass
+        .filter((sa: any) => sa.status === 'EXCUSED')
+        .reduce((acc: number, sa: any) => acc + sa.count, 0),
+      absentHalf: byClass
+        .filter((sa: any) => sa.status === 'ABSENT_HALF')
+        .reduce((acc: number, sa: any) => acc + sa.count, 0),
     };
   }
 

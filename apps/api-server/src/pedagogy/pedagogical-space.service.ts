@@ -8477,15 +8477,21 @@ td.name{text-align:left;font-weight:bold;}
     );
 
     // ── Élèves : appels du jour (agrégés par classe) ───────────────────
+    // ⭐ FIX : inclure le champ `late` (boolean séparé du status) pour que la
+    //    synthèse des retards soit correcte. Un élève peut être PRESENT avec
+    //    late=true (en retard) — l'ancienne requête ne retournait pas ce champ.
+    // ⭐ FIX : filtrer aussi par schoolLevelId si présent dans la config du
+    //    semainier (les semainiers sont affectés à MATERNELLE + PRIMAIRE).
     const studentAttendances: any = await this.prisma.$queryRawUnsafe(
-      `SELECT ar."classId", ar."status", ar."notes",
+      `SELECT ar."classId", ar."status", ar."late", ar."notes",
               COUNT(*)::int AS "count",
+              SUM(CASE WHEN ar."late" = true THEN 1 ELSE 0 END)::int AS "lateCount",
               c."name" AS "className"
        FROM "attendance_records" ar
        LEFT JOIN "classes" c ON c."id" = ar."classId"
        WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2
          AND DATE(ar."date") = DATE($3)
-       GROUP BY ar."classId", ar."status", ar."notes", c."name"
+       GROUP BY ar."classId", ar."status", ar."late", ar."notes", c."name"
        ORDER BY c."name" ASC`,
       tenantId, r.academicYearId, targetDate,
     );
@@ -8532,18 +8538,32 @@ td.name{text-align:left;font-weight:bold;}
           className: sa.className,
           status: sa.status,
           count: sa.count,
+          late: sa.late,
+          lateCount: sa.lateCount,
           notes: sa.notes,
         })),
         summary: {
           totalRecords: studentAttendances.reduce((acc: number, sa: any) => acc + sa.count, 0),
+          // ⭐ FIX : compter ABSENT et ABSENT_HALF comme absents (l'élève est
+          //    absent au moins une demi-journée). Avant, seul 'ABSENT' (journée
+          //    complète) était compté → les ABSENT_HALF tombaient dans l'oubli.
           absent: studentAttendances
-            .filter((sa: any) => sa.status === 'ABSENT')
+            .filter((sa: any) => sa.status === 'ABSENT' || sa.status === 'ABSENT_HALF')
             .reduce((acc: number, sa: any) => acc + sa.count, 0),
+          // ⭐ FIX : compter les retards via le boolean `late` (pas via le status).
+          //    Avant, la requête ne retournait pas `late`, donc les élèves en
+          //    retard (PRESENT + late=true) n'étaient pas comptés.
           late: studentAttendances
-            .filter((sa: any) => sa.status === 'LATE')
-            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+            .reduce((acc: number, sa: any) => acc + (Number(sa.lateCount) || 0), 0),
           present: studentAttendances
             .filter((sa: any) => sa.status === 'PRESENT')
+            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+          // ⭐ Nouvelles métriques pour affinage
+          excused: studentAttendances
+            .filter((sa: any) => sa.status === 'EXCUSED')
+            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+          absentHalf: studentAttendances
+            .filter((sa: any) => sa.status === 'ABSENT_HALF')
             .reduce((acc: number, sa: any) => acc + sa.count, 0),
         },
       },
@@ -8618,6 +8638,9 @@ td.name{text-align:left;font-weight:bold;}
    * Synchronise la Section 2 (Présence élèves) depuis le module Élèves (Attendance).
    * Écrit dans studentPresence (JSONB).
    * Calcule le taux de présence par classe et identifie les classes à forte absence.
+   *
+   * ⭐ Retourne des informations de diagnostic (queriedDate, totalFound, classesCount)
+   *    pour que le frontend puisse afficher un message clair en cas de 0 records.
    */
   async syncStudentPresenceFromAttendance(tenantId: string, reportId: string) {
     const crossData = await this.fetchCrossModuleData(tenantId, reportId);
@@ -8644,7 +8667,7 @@ td.name{text-align:left;font-weight:bold;}
           .filter((x: any) => x.classId === c.classId)
           .reduce((acc: number, x: any) => acc + x.count, 0);
         const absent = byClass
-          .filter((x: any) => x.classId === c.classId && x.status === 'ABSENT')
+          .filter((x: any) => x.classId === c.classId && (x.status === 'ABSENT' || x.status === 'ABSENT_HALF'))
           .reduce((acc: number, x: any) => acc + x.count, 0);
         return total > 0 && (absent / total) > 0.3;
       })
@@ -8659,6 +8682,13 @@ td.name{text-align:left;font-weight:bold;}
       _source: 'STUDENTS',
       _syncedAt: new Date().toISOString(),
       _manualEdit: false,
+      // ⭐ Information de diagnostic pour le frontend
+      _queriedDate: report.date ? new Date(report.date).toISOString().split('T')[0] : null,
+      _totalFound: totalRecords,
+      _classesCount: byClass
+        .map((c: any) => c.classId)
+        .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
+        .length,
       attendanceRate: Number(rate.toFixed(2)),
       summary,
       byClass,
@@ -8676,8 +8706,20 @@ td.name{text-align:left;font-weight:bold;}
       JSON.stringify(studentPresence), reportId, tenantId,
     );
 
-    this.logger.log(`✅ Sync Élèves → rapport ${reportId} (taux=${rate.toFixed(1)}%)`);
-    return { synced: true, studentPresence };
+    this.logger.log(
+      `✅ Sync Élèves → rapport ${reportId} (date=${studentPresence._queriedDate}, ` +
+      `${totalRecords} records, ${studentPresence._classesCount} classes, taux=${rate.toFixed(1)}%)`,
+    );
+    return {
+      synced: true,
+      studentPresence,
+      // ⭐ Diagnostic info pour le frontend
+      diagnostic: {
+        queriedDate: studentPresence._queriedDate,
+        totalFound: totalRecords,
+        classesCount: studentPresence._classesCount,
+      },
+    };
   }
 
   /**
@@ -8874,8 +8916,16 @@ td.name{text-align:left;font-weight:bold;}
     const txt = (v: any) => String(v ?? '').replace(/<[^>]*>/g, '');
 
     // Helper pour rendre une section journalière
+    // ⭐ FIX : utiliser les MÊMES noms de champs que le frontend (CahierSemaineTab.tsx)
+    //    Avant ce fix, plusieurs champs étaient absents du PDF car les noms ne
+    //    correspondaient pas (ex: c.toiletsCondition vs c.toilets côté frontend).
+    // ⭐ FIX : rendre TOUS les champs affichés dans l'interface pour que le PDF
+    //    soit identique à l'écran (l'utilisateur a explicitement demandé que
+    //    tous les champs soient renseignés dans le PDF).
     const renderDailySection = (title: string, color: string, content: any): string => {
       const txt = (v: any) => String(v ?? '').replace(/<[^>]*>/g, '');
+      // ⭐ Helper : rendre le HTML tel quel (RichTextEditor stocke en HTML)
+      const html = (v: any) => v ? String(v ?? '') : '';
       if (!content) {
         return `<div class="section" style="border-left-color:${color}">
           <h3 style="background:${color}">${title}</h3>
@@ -8885,37 +8935,100 @@ td.name{text-align:left;font-weight:bold;}
       const c = typeof content === 'string' ? JSON.parse(content) : content;
       let body = '';
       if (title === '1. Présence des enseignants') {
-        body = `
-          <p><strong>Synthèse:</strong> ${txt(c.summary
-            ? `${c.summary.present}/${c.summary.total} présents, ${c.summary.absent} absents, ${c.summary.late} en retard`
-            : c.teacherAttendanceSynthesis || '')}</p>`;
-        if (c.staff && c.staff.length > 0) {
-          body += '<table><thead><tr><th>Nom</th><th>Statut</th><th>Arrivée</th><th>Départ</th><th>Heures</th></tr></thead><tbody>';
-          for (const s of c.staff) {
-            body += `<tr><td>${txt(s.name)}</td><td>${txt(s.status)}</td>
-              <td>${s.checkIn ? new Date(s.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-              <td>${s.checkOut ? new Date(s.checkOut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-              <td>${s.hoursWorked ? s.hoursWorked.toFixed(1) + 'h' : '—'}</td></tr>`;
+        // ⭐ Le frontend stocke teacherAttendance comme un TABLEAU d'entrées
+        //    [{ name, status, present, absent, motif, observation, replacement }]
+        //    Le backend syncStaffAttendanceFromRh stocke un objet { summary, staff }
+        //    On gère les deux formats pour que le PDF marche dans tous les cas.
+        const staffArray = Array.isArray(c) ? c : (c.staff || []);
+        const summary = c.summary || null;
+        const synthesis = c.teacherAttendanceSynthesis || c.synthesis || '';
+
+        // ⭐ Bandeau synthèse (4 cartes mini)
+        if (summary) {
+          body += `<div class="stats-row">
+            <div class="stat-box stat-emerald"><strong>${summary.present ?? 0}</strong><span>Présents</span></div>
+            <div class="stat-box stat-rose"><strong>${summary.absent ?? 0}</strong><span>Absents</span></div>
+            <div class="stat-box stat-amber"><strong>${summary.late ?? 0}</strong><span>Retards</span></div>
+            <div class="stat-box stat-slate"><strong>${summary.total ?? staffArray.length ?? 0}</strong><span>Total</span></div>
+          </div>`;
+        }
+        // ⭐ Tableau détaillé des enseignants (toutes les colonnes comme l'interface)
+        if (staffArray.length > 0) {
+          body += '<table><thead><tr><th>Nom</th><th>Présent</th><th>Absent</th><th>Motif d\'absence</th><th>Observation</th><th>Remplacement</th></tr></thead><tbody>';
+          for (const s of staffArray) {
+            // ⭐ Compatibilité ancien/nouveau format : le frontend stocke `present`/`absent` (booleens),
+            // le backend syncStaffAttendanceFromRh stocke `status` (string)
+            const isPresent = s.present === true || s.status === 'PRESENT' || s.status === 'LATE' || s.status === 'HALF_DAY' || s.status === 'MISSION';
+            const isAbsent = s.absent === true || s.status === 'ABSENT';
+            body += `<tr>
+              <td>${txt(s.name || s.staffName || '—')}</td>
+              <td style="text-align:center">${isPresent ? '✓' : ''}</td>
+              <td style="text-align:center">${isAbsent ? '✗' : ''}</td>
+              <td>${txt(s.motif || (s.status === 'ABSENT' ? s.notes || '' : ''))}</td>
+              <td>${txt(s.observation || '')}</td>
+              <td>${txt(s.replacement || '')}</td>
+            </tr>`;
           }
           body += '</tbody></table>';
+        }
+        // ⭐ Synthèse libre (RichTextEditor HTML)
+        if (synthesis) {
+          body += `<div class="rt-field"><strong>Synthèse :</strong> ${html(synthesis)}</div>`;
         }
       } else if (title === '2. Présence des élèves') {
-        body = `
-          <p><strong>Taux de présence:</strong> ${c.attendanceRate != null ? c.attendanceRate + '%' : '—'}</p>
-          <p><strong>Absents:</strong> ${c.summary?.absent ?? 0} &nbsp; <strong>Retards:</strong> ${c.summary?.late ?? 0}</p>`;
-        if (c.highAbsenceClasses && c.highAbsenceClasses.length > 0) {
-          body += `<p><strong>Classes à forte absence:</strong> ${c.highAbsenceClasses.join(', ')}</p>`;
+        // ⭐ Bandeau stats (4 chiffres)
+        const rate = c.attendanceRate ?? c.globalRate;
+        const summary = c.summary || {};
+        body += `<div class="stats-row">
+          <div class="stat-box ${rate != null && rate >= 90 ? 'stat-emerald' : rate != null && rate >= 70 ? 'stat-amber' : 'stat-rose'}">
+            <strong>${rate != null ? rate + '%' : '—'}</strong><span>Taux présence</span></div>
+          <div class="stat-box stat-rose"><strong>${summary.absent ?? 0}</strong><span>Absents</span></div>
+          <div class="stat-box stat-amber"><strong>${summary.late ?? c.lateCount ?? 0}</strong><span>Retards</span></div>
+          <div class="stat-box stat-purple"><strong>${(c.highAbsenceClasses || []).length}</strong><span>Classes à risque</span></div>
+        </div>`;
+        if (summary.totalRecords != null) {
+          body += `<p><strong>Élèves pointés:</strong> ${summary.totalRecords} (${summary.present ?? 0} présents, ${summary.absent ?? 0} absents, ${summary.late ?? 0} retards)</p>`;
         }
+        // ⭐ Alerte classes >30% absent
+        if (c.highAbsenceClasses && c.highAbsenceClasses.length > 0) {
+          body += `<p class="alert"><strong>⚠ Classes à forte absence (&gt;30%):</strong> ${c.highAbsenceClasses.join(', ')}</p>`;
+        }
+        // ⭐ Tableau par classe (complet comme l'interface)
         if (c.byClass && c.byClass.length > 0) {
-          body += '<table><thead><tr><th>Classe</th><th>Statut</th><th>Effectif</th></tr></thead><tbody>';
+          // Agréger par classe (le backend renvoie une ligne par classId+status)
+          const classMap = new Map<string, any>();
           for (const b of c.byClass) {
-            body += `<tr><td>${txt(b.className)}</td><td>${txt(b.status)}</td><td>${b.count}</td></tr>`;
+            const key = b.classId || b.className;
+            if (!classMap.has(key)) {
+              classMap.set(key, { className: b.className || '—', total: 0, present: 0, absent: 0, late: 0 });
+            }
+            const e = classMap.get(key);
+            e.total += Number(b.count) || 0;
+            if (b.status === 'PRESENT') e.present += Number(b.count) || 0;
+            else if (b.status === 'ABSENT' || b.status === 'ABSENT_HALF') e.absent += Number(b.count) || 0;
+            e.late += Number(b.lateCount) || 0;
+          }
+          body += '<table><thead><tr><th>Classe</th><th>Effectif</th><th>Présents</th><th>Absents</th><th>Retards</th><th>Taux</th></tr></thead><tbody>';
+          for (const [, e] of classMap) {
+            const classRate = e.total > 0 ? ((e.present / e.total) * 100).toFixed(1) : '0.0';
+            body += `<tr><td>${e.className}</td><td style="text-align:center">${e.total}</td><td style="text-align:center">${e.present}</td><td style="text-align:center">${e.absent}</td><td style="text-align:center">${e.late}</td><td style="text-align:center">${classRate}%</td></tr>`;
           }
           body += '</tbody></table>';
         }
+        // ⭐ Absences signalées par les parents (manuel)
+        if (c.parentAbsences || c.parentNotifiedAbsences) {
+          body += `<p><strong>Absences signalées par les parents:</strong> ${txt(c.parentAbsences || c.parentNotifiedAbsences)}</p>`;
+        }
+        // ⭐ Cas particuliers observés (RichTextEditor HTML)
+        if (c.specialCases) {
+          body += `<div class="rt-field"><strong>Cas particuliers observés:</strong> ${html(c.specialCases)}</div>`;
+        }
       } else if (title === '3. Pédagogie / Respect du programme') {
-        body = `<p><strong>Programme respecté:</strong> ${c.scheduleRespected ? 'Oui' : 'Non'}</p>`;
-        if (c.missingCourses && c.missingCourses.length > 0) {
+        // ⭐ FIX : utiliser edtRespect (frontend) au lieu de scheduleRespected (ancien nom)
+        body += `<p><strong>Respect de l'emploi du temps:</strong> ${txt(c.edtRespect ?? (c.scheduleRespected ? 'Oui' : 'Non'))}</p>`;
+        // ⭐ FIX : utiliser missedClasses (frontend) au lieu de missedCourses
+        if (c.missedClasses) body += `<div class="rt-field"><strong>Cours non assurés ou modifiés:</strong> ${html(c.missedClasses)}</div>`;
+        else if (c.missingCourses && c.missingCourses.length > 0) {
           body += '<p><strong>Cours non assurés:</strong></p><ul>';
           for (const m of c.missingCourses) {
             body += `<li>${txt(m.className)} — ${txt(m.subjectName)} (${m.startTime}-${m.endTime})</li>`;
@@ -8929,39 +9042,38 @@ td.name{text-align:left;font-weight:bold;}
           }
           body += '</ul>';
         }
-        if (c.remarkableActivities) body += `<p><strong>Activités remarquables:</strong> ${txt(c.remarkableActivities)}</p>`;
-        if (c.classClimate) body += `<p><strong>Climat de classe:</strong> ${txt(c.classClimate)}</p>`;
+        if (c.remarkableActivities) body += `<div class="rt-field"><strong>Activités pédagogiques remarquables:</strong> ${html(c.remarkableActivities)}</div>`;
+        if (c.classClimate) body += `<p><strong>Climat des classes:</strong> ${txt(c.classClimate)}</p>`;
       } else if (title === '4. Discipline') {
-        body = `
-          <p><strong>Comportements positifs:</strong> ${txt(c.positiveBehaviors)}</p>
-          <p><strong>Comportements problématiques:</strong> ${txt(c.problematicBehaviors)}</p>
-          <p><strong>Mesures correctives:</strong> ${txt(c.correctiveMeasures)}</p>`;
+        if (c.positiveBehaviors) body += `<div class="rt-field"><strong>Comportements positifs observés:</strong> ${html(c.positiveBehaviors)}</div>`;
+        if (c.problemBehaviors) body += `<div class="rt-field"><strong>Comportements problématiques:</strong> ${html(c.problemBehaviors)}</div>`;
+        if (c.correctiveMeasures) body += `<div class="rt-field"><strong>Mesures correctives appliquées:</strong> ${html(c.correctiveMeasures)}</div>`;
       } else if (title === '5. Hygiène') {
-        body = `
-          <p><strong>Propreté des locaux:</strong> ${txt(c.roomCleanliness)}</p>
-          <p><strong>État des toilettes:</strong> ${txt(c.toiletsCondition)}</p>
-          <p><strong>Eau:</strong> ${txt(c.waterStatus)}</p>
-          <p><strong>Électricité:</strong> ${txt(c.electricityStatus)}</p>
-          <p><strong>Réparations urgentes:</strong> ${txt(c.urgentRepairs)}</p>`;
+        // ⭐ FIX : utiliser les BONS noms de champs (toilets, water, electricity)
+        body += `
+          <p><strong>Propreté des salles:</strong> ${txt(c.roomCleanliness)}</p>
+          <p><strong>Toilettes:</strong> ${txt(c.toilets ?? c.toiletsCondition)}</p>
+          <p><strong>Eau:</strong> ${txt(c.water ?? c.waterStatus)}</p>
+          <p><strong>Électricité:</strong> ${txt(c.electricity ?? c.electricityStatus)}</p>`;
+        if (c.urgentRepairs) body += `<div class="rt-field"><strong>Points de réparation urgente:</strong> ${html(c.urgentRepairs)}</div>`;
       } else if (title === '6. Visites') {
-        body = `
+        // ⭐ FIX : utiliser pedagogicVisit (frontend) au lieu de pedagoVisit
+        body += `
           <p>• Visite administrative: ${c.adminVisit ? 'Oui' : 'Non'}</p>
-          <p>• Visite pédagogique: ${c.pedagoVisit ? 'Oui' : 'Non'}</p>
-          <p>• Visite de parents: ${c.parentVisit ? 'Oui' : 'Non'}</p>
-          <p><strong>Détails:</strong> ${txt(c.visitDetails)}</p>`;
+          <p>• Visite pédagogique: ${(c.pedagogicVisit ?? c.pedagoVisit) ? 'Oui' : 'Non'}</p>
+          <p>• Visite de parents: ${c.parentVisit ? 'Oui' : 'Non'}</p>`;
+        if (c.visitDetails) body += `<div class="rt-field"><strong>Détails (visiteur, objet, durée):</strong> ${html(c.visitDetails)}</div>`;
       } else if (title === '7. Communication') {
-        body = `
-          <p><strong>Instructions du directeur:</strong> ${txt(c.directorInstructions)}</p>
-          <p><strong>Besoins urgents:</strong> ${txt(c.urgentNeeds)}</p>`;
+        if (c.directionInstructions) body += `<div class="rt-field"><strong>Instructions reçues de la direction:</strong> ${html(c.directionInstructions)}</div>`;
+        if (c.urgentNeeds) body += `<div class="rt-field"><strong>Besoins urgents communiqués:</strong> ${html(c.urgentNeeds)}</div>`;
       } else if (title === '8. Résumé journalier') {
-        body = `
-          <p><strong>Points forts:</strong> ${txt(c.strengths)}</p>
-          <p><strong>Améliorations:</strong> ${txt(c.improvements)}</p>
-          <p><strong>Recommandations:</strong> ${txt(c.recommendations)}</p>`;
+        if (c.strengths) body += `<div class="rt-field"><strong>Points forts:</strong> ${html(c.strengths)}</div>`;
+        if (c.improvements) body += `<div class="rt-field"><strong>Points à améliorer:</strong> ${html(c.improvements)}</div>`;
+        if (c.recommendations) body += `<div class="rt-field"><strong>Recommandations:</strong> ${html(c.recommendations)}</div>`;
       }
       return `<div class="section" style="border-left-color:${color}">
         <h3 style="background:${color}">${title}</h3>
-        ${body}
+        <div class="section-body">${body}</div>
       </div>`;
     };
 
@@ -8990,16 +9102,34 @@ td.name{text-align:left;font-weight:bold;}
   .section { border: 1px solid #e5e7eb; border-left: 4px solid #1e3a8a;
              border-radius: 4px; margin-bottom: 10px; overflow: hidden; }
   .section h3 { margin: 0; padding: 6px 10px; color: white; font-size: 11px; font-weight: 600; }
-  .section .empty, .section p, .section ul, .section table { padding: 8px 10px; margin: 0; }
+  .section-body { padding: 6px 0; }
+  .section .empty, .section p, .section ul, .section table, .section .rt-field, .section .stats-row { padding: 6px 10px; margin: 0; }
+  .section .rt-field { word-wrap: break-word; }
+  .section .rt-field p { padding: 0; margin: 0 0 4px 0; }
+  .section .rt-field p:last-child { margin: 0; }
+  .section .alert { background: #fef2f2; border: 1px solid #fecaca; padding: 6px 10px; margin: 4px 10px; border-radius: 3px; }
   .section ul { padding-left: 26px; }
-  .section table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .section table { width: 100%; border-collapse: collapse; font-size: 10px; margin: 4px 0; }
   .section table th { background: #f8fafc; text-align: left; padding: 4px 6px;
                       border-bottom: 1px solid #e5e7eb; font-weight: 600; }
   .section table td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; }
+  /* ⭐ Stats row (4 mini cards) for Section 1 + Section 2 */
+  .stats-row { display: flex; gap: 6px; margin: 6px 10px !important; padding: 0 !important; }
+  .stat-box { flex: 1; padding: 6px 8px; text-align: center; border-radius: 4px; border: 1px solid #e5e7eb; }
+  .stat-box strong { display: block; font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  .stat-box span { font-size: 9px; text-transform: uppercase; opacity: 0.7; }
+  .stat-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .stat-rose { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .stat-amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+  .stat-slate { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+  .stat-purple { background: #faf5ff; color: #7c3aed; border-color: #ddd6fe; }
   .signature-block { margin-top: 30px; display: flex; justify-content: space-between; gap: 40px; }
   .signature-block > div { flex: 1; text-align: center; }
   .signature-block .sig-label { font-weight: 600; color: #1e3a8a; margin-bottom: 50px; }
-  .signature-block .sig-line { border-top: 1px solid #64748b; padding-top: 6px; }
+  .signature-block .sig-line { border-top: 1px solid #64748b; padding-top: 6px; min-height: 24px; }
+  .signature-block .sig-line img { max-height: 60px; max-width: 200px; margin: 0 auto; display: block; }
+  /* ⭐ Footer avec numéro de page */
+  .footer { text-align: center; font-size: 9px; color: #94a3b8; margin-top: 14px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
 </style>
 </head>
 <body>
@@ -9048,11 +9178,11 @@ td.name{text-align:left;font-weight:bold;}
       html += `<div class="signature-block">
         <div>
           <div class="sig-label">Visa du Directeur</div>
-          <div class="sig-line">${txt(cfg.directorSignature || '')}</div>
+          <div class="sig-line">${cfg.directorSignature ? `<img src="${cfg.directorSignature}" alt="Signature directeur" />` : ''}</div>
         </div>
         <div>
-          <div class="sig-label">Visa de l'Enseignant</div>
-          <div class="sig-line">${txt(cfg.teacherSignature || teacherName)}</div>
+          <div class="sig-label">Visa du Semainier (${teacherName})</div>
+          <div class="sig-line">${cfg.teacherSignature ? `<img src="${cfg.teacherSignature}" alt="Signature semainier" />` : '<em>Non signé</em>'}</div>
         </div>
       </div>`;
       html += '</div>';
@@ -9068,14 +9198,16 @@ td.name{text-align:left;font-weight:bold;}
       <p><strong>Période:</strong> ${new Date(cfg.weekStartDate).toLocaleDateString('fr-FR')} — ${new Date(cfg.weekEndDate).toLocaleDateString('fr-FR')}</p>
       <p><strong>Statut:</strong> ${txt(cfg.status || 'PENDING')}</p>
       ${cfg.rejectionReason ? `<p><strong>Motif de rejet:</strong> ${txt(cfg.rejectionReason)}</p>` : ''}
+      ${cfg.submittedAt ? `<p><strong>Soumis le:</strong> ${new Date(cfg.submittedAt).toLocaleString('fr-FR')}</p>` : ''}
+      ${cfg.validatedAt ? `<p><strong>Validé le:</strong> ${new Date(cfg.validatedAt).toLocaleString('fr-FR')}</p>` : ''}
       <div class="signature-block">
         <div>
           <div class="sig-label">Visa du Directeur</div>
-          <div class="sig-line">${txt(cfg.directorSignature || '')}</div>
+          <div class="sig-line">${cfg.directorSignature ? `<img src="${cfg.directorSignature}" alt="Signature directeur" />` : ''}</div>
         </div>
         <div>
-          <div class="sig-label">Visa de l'Enseignant</div>
-          <div class="sig-line">${txt(cfg.teacherSignature || teacherName)}</div>
+          <div class="sig-label">Visa du Semainier (${teacherName})</div>
+          <div class="sig-line">${cfg.teacherSignature ? `<img src="${cfg.teacherSignature}" alt="Signature semainier" />` : '<em>Non signé</em>'}</div>
         </div>
       </div>
     </div>`;

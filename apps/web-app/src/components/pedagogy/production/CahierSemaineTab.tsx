@@ -923,6 +923,31 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
             <Save className="h-4 w-4" /> Enregistrer
           </button>
         )}
+        {/* ⭐ Bouton "Générer PDF" — exporte le rapport complet de la semaine
+            (5 rapports journaliers + rapport hebdo) avec en-tête école + footer.
+            Backend: GET /api/pedagogy-space/seminar-config/:id/export?format=pdf
+            (Puppeteer génère un PDF professionnel identique à l'interface) */}
+        {currentConfig && (
+          <button
+            onClick={async () => {
+              try {
+                toast.success('⏳ Génération du PDF en cours...', {
+                  description: 'Le rapport complet de la semaine sera téléchargé dans quelques secondes.',
+                });
+                const url = `/api/pedagogy-space/seminar-config/${currentConfig.id}/export?format=pdf`;
+                // ⭐ Ouvrir dans un nouvel onglet pour déclencher le download
+                window.open(url, '_blank');
+              } catch (e: any) {
+                toast.error('Erreur de génération PDF', { description: e.message });
+              }
+            }}
+            disabled={!currentConfig}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+            title="Génère un PDF complet (Lundi → Vendredi + rapport hebdo) avec en-tête école, signatures et footer"
+          >
+            <FileText className="h-4 w-4" /> Générer PDF
+          </button>
+        )}
       </div>
 
       {/* ⭐ Affichage du rapport journalier (1-5) ou du rapport hebdo (6) */}
@@ -1014,6 +1039,16 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
             // ⭐ Mettre à jour le teacherAttendance du rapport quotidien
             const current = dailyReport?.teacherAttendance || [];
             const existing = current.find((t: any) => t.teacherId === teacherId);
+            // ⭐ Observation par défaut selon le statut :
+            //    - LATE → "En retard"
+            //    - MISSION → "En mission"
+            //    - HALF_DAY → "Demi-journée"
+            //    - ABSENT → "" (motif déjà rempli dans la colonne motif)
+            //    - PRESENT → ""
+            const defaultObservation = status === 'LATE' ? 'En retard'
+              : status === 'MISSION' ? 'En mission'
+              : status === 'HALF_DAY' ? 'Demi-journée'
+              : '';
             if (existing) {
               // Mettre à jour la ligne existante
               const updated = current.map((t: any) =>
@@ -1024,6 +1059,8 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
                       present: status === 'PRESENT' || status === 'LATE' || status === 'HALF_DAY' || status === 'MISSION',
                       absent: status === 'ABSENT',
                       motif: status === 'ABSENT' ? (motif || '') : '',
+                      // ⭐ Pré-remplir l'observation SEULEMENT si vide (pour ne pas écraser une saisie manuelle)
+                      observation: t.observation || defaultObservation,
                     }
                   : t
               );
@@ -1033,11 +1070,11 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
               const newEntry = {
                 teacherId,
                 name: teacherName,
-                subject: '', // À remplir manuellement ou auto
                 status,
                 present: status === 'PRESENT' || status === 'LATE' || status === 'HALF_DAY' || status === 'MISSION',
                 absent: status === 'ABSENT',
                 motif: status === 'ABSENT' ? (motif || '') : '',
+                observation: defaultObservation,
                 replacement: '',
               };
               setDailyReport({ ...dailyReport, teacherAttendance: [...current, newEntry] });
@@ -1056,10 +1093,12 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
             <thead>
               <tr className="bg-slate-100">
                 <th className="border border-slate-300 px-2 py-2 text-left font-bold">Enseignant(e)</th>
-                <th className="border border-slate-300 px-2 py-2 text-left font-bold">Matière</th>
                 <th className="border border-slate-300 px-2 py-2 text-center font-bold">Présent</th>
                 <th className="border border-slate-300 px-2 py-2 text-center font-bold">Absent</th>
                 <th className="border border-slate-300 px-2 py-2 text-left font-bold">Motif d'absence</th>
+                {/* ⭐ Colonne "Observation" (remplace "Matière") — placée APRÈS "Motif d'absence"
+                    Sert pour les cas de retard, mission, demi-journée (texte libre) */}
+                <th className="border border-slate-300 px-2 py-2 text-left font-bold">Observation</th>
                 <th className="border border-slate-300 px-2 py-2 text-left font-bold">Remplacement</th>
               </tr>
             </thead>
@@ -1067,20 +1106,6 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
               {(dailyReport?.teacherAttendance || []).map((t: any, i: number) => (
                 <tr key={i} className={t.absent ? "bg-rose-50/30" : ""}>
                   <td className="border border-slate-300 px-2 py-1 font-semibold">{t.name}</td>
-                  <td className="border border-slate-300 px-2 py-1">
-                    <input
-                      type="text"
-                      value={t.subject || ''}
-                      onChange={(e) => {
-                        const updated = [...(dailyReport?.teacherAttendance || [])];
-                        updated[i] = { ...t, subject: e.target.value };
-                        setDailyReport({ ...dailyReport, teacherAttendance: updated });
-                      }}
-                      disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
-                      placeholder="Matière..."
-                      className="w-full px-1 py-0.5 text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-400 rounded"
-                    />
-                  </td>
                   <td className="border border-slate-300 px-2 py-1 text-center">
                     {t.present ? <Check className="h-3.5 w-3.5 text-emerald-600 mx-auto" /> : ''}
                   </td>
@@ -1088,6 +1113,21 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
                     {t.absent ? <X className="h-3.5 w-3.5 text-rose-600 mx-auto" /> : ''}
                   </td>
                   <td className="border border-slate-300 px-2 py-1 text-rose-700">{t.motif || ''}</td>
+                  {/* ⭐ Observation : texte libre pour cas retard / mission / demi-journée */}
+                  <td className="border border-slate-300 px-2 py-1">
+                    <input
+                      type="text"
+                      value={t.observation || ''}
+                      onChange={(e) => {
+                        const updated = [...(dailyReport?.teacherAttendance || [])];
+                        updated[i] = { ...t, observation: e.target.value };
+                        setDailyReport({ ...dailyReport, teacherAttendance: updated });
+                      }}
+                      disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
+                      placeholder="Observation (retard, mission, demi-journée...)"
+                      className="w-full px-1 py-0.5 text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-400 rounded"
+                    />
+                  </td>
                   <td className="border border-slate-300 px-2 py-1">
                     <input
                       type="text"
@@ -1449,9 +1489,15 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
   const highAbsenceClasses: string[] = sp?.highAbsenceClasses || [];
   const syncedAtFromData = sp?._syncedAt || null;
   const source = sp?._source || null;
+  // ⭐ Diagnostic info (renvoyé par le backend depuis le fix)
+  const queriedDate = sp?._queriedDate || dayDate || null;
+  const totalFound = sp?._totalFound ?? (summary?.totalRecords ?? 0);
+  const classesCount = sp?._classesCount ?? 0;
+  // ⭐ Si la sync a été faite mais 0 records trouvés → afficher warning
+  const isSyncedButEmpty = source === 'STUDENTS' && totalFound === 0;
 
   // ⭐ Helper : regrouper byClass (qui peut être par statut) par classId/className
-  //    Le backend renvoie byClass = [{ classId, className, status, count, notes }]
+  //    Le backend renvoie byClass = [{ classId, className, status, count, lateCount, notes }]
   //    Pour chaque classe, on agrège les statuts en présents/absents/retards/total.
   const byClassAggregated: any[] = (() => {
     if (!byClass || byClass.length === 0) return [];
@@ -1464,8 +1510,10 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
       const entry = map.get(key)!;
       entry.total += Number(r.count) || 0;
       if (r.status === 'PRESENT') entry.present += Number(r.count) || 0;
-      else if (r.status === 'ABSENT') entry.absent += Number(r.count) || 0;
-      else if (r.status === 'LATE') entry.late += Number(r.count) || 0;
+      // ⭐ FIX : compter ABSENT_HALF comme absent (l'élève est absent au moins une demi-journée)
+      else if (r.status === 'ABSENT' || r.status === 'ABSENT_HALF') entry.absent += Number(r.count) || 0;
+      // ⭐ FIX : utiliser lateCount (boolean late multiplié par count) au lieu de status==='LATE'
+      entry.late += Number(r.lateCount) || 0;
     }
     // Calculer le taux de présence par classe et marquer celles > 30% absent
     return Array.from(map.values()).map(c => ({
@@ -1547,6 +1595,11 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
             Source : {source}
           </span>
         )}
+        {queriedDate && (
+          <span className="text-[10px] text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">
+            📅 Date recherchée : {new Date(queriedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+          </span>
+        )}
         {(syncedAt || syncedAtFromData) && (
           <span className="text-[10px] text-slate-600">
             Dernière sync : {new Date(syncedAt || syncedAtFromData).toLocaleString('fr-FR', {
@@ -1560,6 +1613,27 @@ function StudentPresenceSection({ dailyReport, setDailyReport, dayDate, disabled
             : '💡 La sync ne remplit QUE les champs calculés. Les champs "Absences parents" et "Cas particuliers" restent manuels.'}
         </span>
       </div>
+
+      {/* ⭐ Warning : si sync a été faite mais 0 records trouvés */}
+      {isSyncedButEmpty && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 mb-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-bold text-amber-900">
+                Aucun appel élève trouvé pour le {queriedDate ? new Date(queriedDate).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : 'cette date'}
+              </p>
+              <p className="text-[11px] text-amber-800 mt-1">
+                Les enseignants doivent prendre l'appel via le module <strong>Appels</strong> pour cette date précise
+                (et non pas "aujourd'hui"). Le sync recherche les enregistrements à la <strong>date du rapport journalier</strong>,
+                qui correspond au jour de la semaine du semainier (ex: Lundi de la semaine S1 = 1er septembre).
+                <br />
+                Si vous testez le système en dehors des dates réelles du semainier, les appels pris aujourd'hui ne seront pas trouvés.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ⭐ Bandeau stats synthétiques (4 chiffres clés) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">

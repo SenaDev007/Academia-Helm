@@ -30,7 +30,7 @@ import {
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
   Download, Save, Activity, School, ChevronsDownUp, ChevronsUpDown,
-  CalendarDays, CalendarRange,
+  CalendarDays, CalendarRange, Folder, FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -3868,48 +3868,16 @@ function PendingSemainiersTab({ tenantId, academicYearId, userId, refreshKey, on
           </p>
         </div>
       ) : statusTab === 'CATALOGUE' ? (
-        // ⭐ Catalogue : liste à plat (pas de hiérarchie), triée par semaine
-        <div className="overflow-x-auto bg-white rounded-xl border border-slate-200">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-100 border-b border-slate-200">
-                <th className="text-left px-4 py-3 font-bold text-slate-700">Semaine</th>
-                <th className="text-left px-4 py-3 font-bold text-slate-700">Trimestre</th>
-                <th className="text-left px-4 py-3 font-bold text-slate-700">Dates</th>
-                <th className="text-left px-4 py-3 font-bold text-slate-700">Enseignant</th>
-                <th className="text-left px-4 py-3 font-bold text-slate-700">Classe(s)</th>
-                <th className="text-center px-4 py-3 font-bold text-slate-700">Statut</th>
-                <th className="text-center px-4 py-3 font-bold text-slate-700">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...items].sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0)).map((cfg: any) => (
-                <tr key={cfg.id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-bold text-slate-900">S{cfg.weekNumber}</td>
-                  <td className="px-4 py-2.5">T{cfg.trimester}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-500">
-                    {fmtDate(cfg.weekStartDate)} → {fmtDate(cfg.weekEndDate)}
-                  </td>
-                  <td className="px-4 py-2.5 font-medium">{cfg.teacherName || '—'}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-700">
-                    {cfg.classNames?.join(', ') || '—'}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">{getStatusBadge(cfg.status)}</td>
-                  <td className="px-4 py-2.5 text-center">
-                    <button onClick={() => handleView(cfg)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Voir le détail">
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => window.open(`/api/pedagogy-space/seminar-config/${cfg.id}/export?format=pdf`, '_blank')}
-                      className="p-1.5 text-purple-600 hover:bg-purple-50 rounded ml-1" title="Exporter en PDF">
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        // ⭐ CATALOGUE : dossiers imbriqués par année scolaire → trimestre → semaines
+        //    Pattern identique à CatalogueTab (cahiers journaux) :
+        //    - Niveau racine : liste des années scolaires (dossiers)
+        //    - Clic sur une année → liste des trimestres (dossiers)
+        //    - Clic sur un trimestre → liste des semaines (chacune avec 5 rapports journaliers + 1 rapport hebdo)
+        //    - Clic sur une semaine → vue détaillée SemainierDirectorDetail
+        <SemainierCatalogueContent
+          academicYearId={academicYearId}
+          onView={(cfg) => handleView(cfg)}
+        />
       ) : (
         // ⭐ 3 sous-onglets statut : hiérarchie par trimestre (chevrons collapsibles)
         <div className="space-y-3">
@@ -4413,4 +4381,365 @@ function DailyReportSummaryCard({ report, weekStartDate }: { report: any; weekSt
       </div>
     </div>
   );
+}
+
+// ============================================================================
+// ⭐ PHASE 4 (refactor) — CATALOGUE SEMAINIERS : dossiers imbriqués
+// ============================================================================
+//  Architecture en dossiers (pattern identique à CatalogueTab pour cahier journal):
+//    📁 Année scolaire 2024-2025  (folder)
+//      └─ 📁 Trimestre 1  (folder)
+//          ├─ 📄 Semaine S1  (item: clic → vue détaillée + PDF)
+//          ├─ 📄 Semaine S2
+//          └─ 📄 Semaine S3 ...
+//      └─ 📁 Trimestre 2
+//      └─ 📁 Trimestre 3
+//    📁 Année scolaire 2025-2026
+//      └─ ...
+//
+//  Chaque "semaine" (S1, S2...) contient 5 rapports journaliers (Lun-Ven)
+//  + 1 rapport hebdomadaire global, téléchargeables en PDF individuel ou
+//  groupé (via le bouton PDF de la vue détaillée).
+// ============================================================================
+
+function SemainierCatalogueContent({ academicYearId, onView }: {
+  academicYearId: string;
+  onView: (cfg: any) => void;
+}) {
+  // ⭐ Navigation path (breadcrumbs) : [{ type: 'year', id, label }, ...]
+  const [path, setPath] = useState<{ type: 'year' | 'trimester'; id: string; label: string; academicYearId?: string }[]>([]);
+  // ⭐ Liste des années scolaires (chargées au démarrage)
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  // ⭐ Semainiers de l'année sélectionnée (tous statuts)
+  const [semainiers, setSemainiers] = useState<any[]>([]);
+  const [loadingYears, setLoadingYears] = useState(true);
+  const [loadingSemainiers, setLoadingSemainiers] = useState(false);
+
+  // === Chargement initial : liste des années scolaires ===
+  useEffect(() => {
+    (async () => {
+      setLoadingYears(true);
+      try {
+        const res = await fetch('/api/academic-years', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const years = Array.isArray(data) ? data : (data?.data ?? []);
+          // Trier par startDate desc (année la plus récente en premier)
+          years.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+          setAcademicYears(years);
+        } else {
+          setAcademicYears([]);
+        }
+      } catch (e) {
+        setAcademicYears([]);
+      } finally {
+        setLoadingYears(false);
+      }
+    })();
+  }, []);
+
+  // === Chargement des semainiers quand une année est sélectionnée ===
+  //    On utilise l'hook useSemainierCatalogue mais en mode manuel pour
+  //    éviter le re-fetch quand l'année racine du composant change.
+  const loadSemainiersForYear = useCallback(async (yearId: string) => {
+    setLoadingSemainiers(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/seminar-config?academicYearId=${yearId}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setSemainiers(Array.isArray(data) ? data : (data?.data ?? []));
+      } else {
+        setSemainiers([]);
+      }
+    } catch (e) {
+      setSemainiers([]);
+      toast.error("Erreur chargement semainiers");
+    } finally {
+      setLoadingSemainiers(false);
+    }
+  }, []);
+
+  // === Navigation ===
+  const navigateIntoYear = (year: any) => {
+    setPath([{ type: 'year', id: year.id, label: year.label || `${year.startDate?.substring(0, 4)}-${year.endDate?.substring(0, 4)}` }]);
+    loadSemainiersForYear(year.id);
+  };
+
+  const navigateIntoTrimester = (trimesterNum: number) => {
+    if (path.length === 0 || path[0].type !== 'year') return;
+    setPath([
+      path[0],
+      { type: 'trimester', id: `T${trimesterNum}`, label: `Trimestre ${trimesterNum}` },
+    ]);
+  };
+
+  const navigateUp = (level: 'root' | 'year') => {
+    if (level === 'root') {
+      setPath([]);
+      setSemainiers([]);
+    } else if (level === 'year') {
+      // Revenir à la liste des trimestres (enlever le dernier folder "trimester")
+      setPath(path.filter(p => p.type === 'year'));
+    }
+  };
+
+  // === Regroupement par trimestre ===
+  const trimesterGroups: Record<number, any[]> = { 1: [], 2: [], 3: [] };
+  for (const cfg of semainiers) {
+    const tr = cfg.trimester || 1;
+    if (!trimesterGroups[tr]) trimesterGroups[tr] = [];
+    trimesterGroups[tr].push(cfg);
+  }
+
+  // === Trimestres visibles (avec semainiers) ===
+  const visibleTrimesters = [1, 2, 3].filter(tr => trimesterGroups[tr].length > 0);
+  // Si tous vides, on affiche quand même T1 T2 T3 comme dossiers vides
+  const trimestersToShow = visibleTrimesters.length > 0 ? [1, 2, 3] : [1, 2, 3];
+
+  // === Helper format date ===
+  const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('fr-FR') : '—';
+
+  // === Helper statut badge ===
+  const getStatusBadge = (status: string) => {
+    const s = (status || '').toUpperCase();
+    const styles: Record<string, string> = {
+      PENDING: 'bg-slate-100 text-slate-700',
+      SIGNED: 'bg-blue-100 text-blue-700',
+      SUBMITTED: 'bg-amber-100 text-amber-700',
+      VALIDATED: 'bg-emerald-100 text-emerald-700',
+      REJECTED: 'bg-rose-100 text-rose-700',
+    };
+    const labels: Record<string, string> = {
+      PENDING: 'En attente',
+      SIGNED: 'Signé',
+      SUBMITTED: 'Soumis',
+      VALIDATED: 'Validé',
+      REJECTED: 'Rejeté',
+    };
+    return (
+      <span className={cn('px-2 py-0.5 rounded text-xs font-bold', styles[s] || styles.PENDING)}>
+        {labels[s] || s}
+      </span>
+    );
+  };
+
+  // === Rendu : breadcrumbs ===
+  const breadcrumbs = (
+    <div className="flex items-center gap-1.5 text-sm bg-white border border-slate-200 rounded-lg p-2 mb-3 flex-wrap">
+      <button
+        onClick={() => navigateUp('root')}
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold",
+          path.length === 0 ? "bg-purple-100 text-purple-700" : "text-slate-600 hover:bg-slate-100"
+        )}
+      >
+        <Folder className="h-3.5 w-3.5" /> Catalogue
+      </button>
+      {path.map((p, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <ChevronRight className="h-3 w-3 text-slate-400" />
+          <button
+            onClick={() => {
+              if (p.type === 'year') navigateUp('root');
+              else if (p.type === 'trimester') navigateUp('year');
+            }}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold",
+              i === path.length - 1 ? "bg-purple-100 text-purple-700" : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            {p.type === 'year' ? <Folder className="h-3.5 w-3.5" /> : <FolderOpen className="h-3.5 w-3.5" />}
+            {p.label}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
+  // === Rendu : niveau racine (liste des années scolaires) ===
+  if (path.length === 0) {
+    return (
+      <div className="space-y-3">
+        {breadcrumbs}
+        {loadingYears ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+        ) : academicYears.length === 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center text-amber-900">
+            <CalendarDays className="h-12 w-12 mx-auto text-amber-400 mb-2" />
+            <p className="font-bold">Aucune année scolaire configurée</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Créez une année scolaire dans Paramètres → Années scolaires pour générer des semainiers.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {academicYears.map(year => {
+              // ⭐ Déterminer si l'année est active
+              const isActive = year.isActive || year.status === 'ACTIVE';
+              return (
+                <button
+                  key={year.id}
+                  onClick={() => navigateIntoYear(year)}
+                  className={cn(
+                    "flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all hover:shadow-md",
+                    isActive
+                      ? "bg-emerald-50 border-emerald-300 hover:bg-emerald-100"
+                      : "bg-white border-slate-200 hover:border-purple-300 hover:bg-purple-50"
+                  )}
+                >
+                  <div className="flex-shrink-0">
+                    <Folder className={cn("h-10 w-10", isActive ? "text-emerald-600" : "text-purple-500")} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-900 text-sm">
+                      {year.label || `${year.startDate?.substring(0, 4)}-${year.endDate?.substring(0, 4)}`}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      {fmtDate(year.startDate)} → {fmtDate(year.endDate)}
+                    </p>
+                    {isActive && (
+                      <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white">
+                        ● Active
+                      </span>
+                    )}
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // === Rendu : niveau année → liste des trimestres ===
+  if (path.length === 1 && path[0].type === 'year') {
+    return (
+      <div className="space-y-3">
+        {breadcrumbs}
+        {loadingSemainiers ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+        ) : (
+          <>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-900">
+              <strong>{semainiers.length} semainier(s)</strong> trouvé(s) pour {path[0].label}
+              {semainiers.length > 0 && (
+                <span className="ml-2 opacity-70">
+                  • {semainiers.filter(s => s.status === 'VALIDATED').length} validé(s),
+                  {' '}{semainiers.filter(s => s.status === 'SUBMITTED').length} en attente,
+                  {' '}{semainiers.filter(s => s.status === 'PENDING' || s.status === 'SIGNED').length} non soumis
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {trimestersToShow.map(tr => {
+                const items = trimesterGroups[tr] || [];
+                const validatedCount = items.filter(s => s.status === 'VALIDATED').length;
+                return (
+                  <button
+                    key={tr}
+                    onClick={() => navigateIntoTrimester(tr)}
+                    className={cn(
+                      "flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all hover:shadow-md",
+                      items.length > 0
+                        ? "bg-white border-purple-200 hover:border-purple-400 hover:bg-purple-50"
+                        : "bg-slate-50 border-slate-200 opacity-70"
+                    )}
+                  >
+                    <Folder className={cn("h-10 w-10", items.length > 0 ? "text-purple-500" : "text-slate-400")} />
+                    <div className="flex-1">
+                      <p className="font-bold text-slate-900 text-sm">Trimestre {tr}</p>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        {items.length} semaine(s) • {validatedCount} validée(s)
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // === Rendu : niveau trimestre → liste des semaines ===
+  if (path.length === 2 && path[1].type === 'trimester') {
+    const trimesterNum = parseInt(path[1].id.replace('T', ''));
+    const items = (trimesterGroups[trimesterNum] || []).sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0));
+    return (
+      <div className="space-y-3">
+        {breadcrumbs}
+        {items.length === 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center text-amber-900">
+            <CalendarDays className="h-10 w-10 mx-auto text-amber-400 mb-2" />
+            <p className="font-bold">Aucun semainier dans le Trimestre {trimesterNum}</p>
+            <p className="text-xs text-amber-700 mt-1">
+              Générez des semainiers via "Paramétrage" dans l'espace pédagogique enseignant.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((cfg: any) => (
+              <div key={cfg.id} className="border-2 border-slate-200 rounded-lg p-3 hover:border-purple-300 hover:shadow-sm transition-all bg-white">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* ⭐ Badge Semaine */}
+                  <div className="flex flex-col items-center justify-center w-16 h-16 bg-purple-50 border-2 border-purple-200 rounded-xl shrink-0">
+                    <div className="text-[10px] font-bold uppercase text-purple-600">Sem</div>
+                    <div className="text-xl font-bold text-purple-700">S{cfg.weekNumber}</div>
+                  </div>
+                  {/* ⭐ Infos */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-900 text-sm">
+                      {cfg.teacherName || 'Enseignant non assigné'}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {fmtDate(cfg.weekStartDate)} → {fmtDate(cfg.weekEndDate)}
+                    </p>
+                    {cfg.classNames && cfg.classNames.length > 0 && (
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        <span className="font-semibold">Classes :</span> {cfg.classNames.join(', ')}
+                      </p>
+                    )}
+                    {/* ⭐ Indicateur rapports disponibles */}
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
+                      <span className="flex items-center gap-0.5">
+                        <FileText className="h-3 w-3" /> 5 rapports journaliers
+                      </span>
+                      <span className="text-slate-300">•</span>
+                      <span className="flex items-center gap-0.5">
+                        <CalendarRange className="h-3 w-3" /> 1 rapport hebdo
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {getStatusBadge(cfg.status)}
+                    <button
+                      onClick={() => onView(cfg)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+                      title="Voir les 6 rapports (5 journaliers + 1 hebdo)"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> Voir
+                    </button>
+                    <button
+                      onClick={() => window.open(`/api/pedagogy-space/seminar-config/${cfg.id}/export?format=pdf`, '_blank')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100"
+                      title="Télécharger le PDF complet de la semaine"
+                    >
+                      <Download className="h-3.5 w-3.5" /> PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback (ne devrait jamais arriver)
+  return <div className="text-center text-slate-500 text-sm py-6">{breadcrumbs}<p>Navigation invalide</p></div>;
 }

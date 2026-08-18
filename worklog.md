@@ -6346,3 +6346,113 @@ Stage Summary:
 - ✅ TypeScript check : aucun erreur sur CahierSemaineTab.tsx
 - 1 fichier modifié : CahierSemaineTab.tsx (+1 mot dans la liste d'imports)
 - Files modified: 1 (apps/web-app/src/components/pedagogy/production/CahierSemaineTab.tsx)
+
+---
+Task ID: FIX-SEMAINIER-UX-PDF-CATALOGUE-1
+Agent: main
+Task: (1a) Fix statut actuel column shows raw values (PRESENT/LATE/ABSENT/HALF_DAY/MISSION) instead of labels (Présent/Retard/Absent/Demi-journée/Mission). (1b) Fix stat cards (Total/Présents/Retards/Absents/Non marqués/Auto-pointés) don't update when marking — they always show 0 for Présents/Retards/Absents and Total for Non marqués (false). (1c) Replace Section 1 "Matière" column with "Observation" (placed just after "Motif d'absence") for retard/mission/demi-journée cases. (1d) Debug Section 2 sync from students — taux présence global=0/0 élèves, total absents/retards/classes à risque all broken. (1e) Add "Générer PDF" button that generates full PDF (Monday→Friday + weekly report, all fields, school header+footer). (2) Refactor Catalogue sub-tab: nested folders by academic year → trimester → weeks (pattern CatalogueTab.tsx).
+
+Work Log:
+
+=== 1a — Statut actuel column shows labels instead of raw values ===
+- Lu SemainierAttendancePanel.tsx — ligne 255 affichait `{currentStatus}` qui est la valeur brute (PRESENT/LATE/ABSENT/HALF_DAY/MISSION)
+- Ajouté un `STATUS_LABELS` map (Présent/Retard/Absent/Demi-journée/Mission) à côté de STATUS_BADGES
+- Remplacé `{currentStatus}` par `{STATUS_LABELS[currentStatus] || currentStatus}` dans le badge de statut
+
+=== 1b — Stat cards don't update when marking ===
+- Lu le code des stats (l. 164-171) : `staff.filter(s => s.status === 'PRESENT')` — mais `s.status` est null en mode rapport quotidien (le statut vient de attendanceData, pas de staff)
+- Créé un helper `getEffectiveStatus(s)` qui appelle `getStaffStatus(s)` (qui lit attendanceData si fourni, sinon staff.status)
+- Mis à jour les stats : `present = staff.filter(s => getEffectiveStatus(s) === 'PRESENT').length` etc.
+- Ajouté les nouvelles métriques `halfDay` et `mission` pour les nouveaux statuts
+- Le composant se re-render automatiquement quand `attendanceData` change (React props), donc les stats sont mises à jour après chaque clic de pointage
+
+=== 1c — Section 1 : remplacer "Matière" par "Observation" ===
+- Lu CahierSemaineTab.tsx Section 1 (l. 1054-1114) — table avec colonnes Enseignant/Matière/Présent/Absent/Motif/Remplacement
+- Modifié l'ordre des colonnes : Enseignant / Présent / Absent / Motif d'absence / Observation / Remplacement
+- L'observation est un input texte libre avec placeholder "Observation (retard, mission, demi-journée...)"
+- Mis à jour le onMark callback pour pré-remplir l'observation selon le statut :
+  - LATE → "En retard"
+  - MISSION → "En mission"
+  - HALF_DAY → "Demi-journée"
+  - ABSENT/PRESENT → "" (vide)
+- L'observation n'est PAS écrasée si l'utilisateur a déjà saisi quelque chose (via `t.observation || defaultObservation`)
+
+=== 1d — Sync depuis appels enseignants cassé (taux=0/0) ===
+- Lu backend syncStudentPresenceFromAttendance (l. 8622-8681) + fetchCrossModuleData (l. 8452-8570)
+- BUG #1 : la requête SQL ne retournait pas le champ `late` (boolean) → summary.late=0 toujours
+- BUG #2 : summary.absent ne comptait que status='ABSENT' (journée complète) — manquait 'ABSENT_HALF' (demi-journée)
+- BUG #3 : summary.late ne comptait que status='LATE' — mais late est un boolean séparé (PRESENT + late=true)
+- BUG #4 : pas de diagnostic info retournée au frontend → l'utilisateur ne sait pas quelle date est recherchée
+- FIX backend :
+  - Requête SQL enrichie : `SELECT ar."classId", ar."status", ar."late", ar."notes", COUNT(*), SUM(CASE WHEN ar."late"=true THEN 1 ELSE 0 END) AS "lateCount", c."name"`
+  - summary.absent compte ABSENT + ABSENT_HALF
+  - summary.late utilise `lateCount` (SUM du boolean late)
+  - Ajouté `summary.excused` et `summary.absentHalf` pour métriques détaillées
+  - byClass enrichi avec `late` et `lateCount` par classe
+  - Ajout de champs de diagnostic dans studentPresence JSONB : `_queriedDate`, `_totalFound`, `_classesCount`
+  - Response du endpoint : `{ synced, studentPresence, diagnostic: { queriedDate, totalFound, classesCount } }`
+- FIX frontend (CahierSemaineTab.tsx StudentPresenceSection) :
+  - byClassAggregated compte ABSENT_HALF comme absent + utilise `lateCount` au lieu de status='LATE'
+  - Affiche la date recherchée (chip "📅 Date recherchée : Lun. 01/09/2026")
+  - Affiche un warning clair si sync faite mais 0 records trouvés : "Aucun appel élève trouvé pour le {date}. Les enseignants doivent prendre l'appel via le module Appels pour cette date précise..."
+  - Explication du comportement : le sync utilise la DATE DU RAPPORT JOURNALIER (sept 1 pour S1-Lundi), pas "aujourd'hui"
+
+=== 1e — Bouton "Générer PDF" professionnel ===
+- Lu backend exportSeminarWeek (l. 8840-9230) — méthode EXISTANTE qui génère déjà un PDF complet :
+  * Cover page (école, année, semaine, trimestre, enseignant, période, statut)
+  * 5 pages journalières (Lun-Ven) avec 8 sections chacune
+  * 1 page synthèse hebdomadaire avec signatures
+  * Puppeteer → PDF A4 portrait
+- BUGS IDENTIFIÉS dans le PDF existant :
+  * renderDailySection utilisait des MAUVAIS noms de champs (c.toiletsCondition vs c.toilets côté frontend, c.pedagoVisit vs c.pedagogicVisit, c.scheduleRespected vs c.edtRespect, c.missingCourses vs c.missedClasses, c.directorInstructions vs c.directionInstructions)
+  * Plusieurs champs affichés dans l'interface n'étaient PAS rendus dans le PDF (ex: observation, parentAbsences, specialCases, missedClasses en HTML)
+  * Les signatures (base64 data URLs) étaient rendues comme texte brut au lieu de `<img>` tags
+  * Manquait les styles CSS pour les nouvelles classes (stats-row, stat-box, rt-field, alert, section-body)
+- FIX backend (renderDailySection réécrit via script Python) :
+  * Tous les noms de champs alignés avec le frontend (CahierSemaineTab.tsx)
+  * Rendu de TOUS les champs de l'interface (vérifié champ par champ)
+  * Support des 2 formats de teacherAttendance (array from frontend, object from syncStaffAttendanceFromRh)
+  * Tableau par classe agrégé (className | effectif | présents | absents | retards | taux)
+  * HTML rendu tel quel pour les RichTextEditor fields (synthèse, specialCases, missedClasses, etc.) au lieu d'être strippé
+  * Signatures rendues via `<img src="data:image/png;base64,...">` quand elles sont présentes
+  * Ajout d'infos submittedAt/validatedAt dans la page synthèse hebdo
+- FIX CSS PDF : ajouté styles pour .stats-row, .stat-box (+ variantes emerald/rose/amber/slate/purple), .rt-field, .alert, .section-body, .footer, .sig-line img
+- FIX frontend : ajouté bouton "Générer PDF" (rouge, icône FileText) dans CahierSemainierContent à côté de "Enregistrer"
+  * Ouvre `/api/pedagogy-space/seminar-config/:id/export?format=pdf` dans un nouvel onglet
+  * Toast de confirmation "⏳ Génération du PDF en cours..."
+
+=== 2 — Refactor Catalogue sub-tab : dossiers imbriqués ===
+- Lu CatalogueTab.tsx (1071 lignes) — pattern de navigation en dossiers imbriqués (class→year→trimester→month→week)
+- Remplacé la vue Catalogue "tableau plat" par un nouveau composant `SemainierCatalogueContent` qui implémente la navigation en dossiers :
+  * Niveau racine : liste des années scolaires (folders Folder icon, triées par startDate desc)
+    - Fetch via GET /api/academic-years (renvoie toutes les années du tenant)
+    - Badges "● Active" sur l'année active
+    - Cartes cliquables avec hover effect
+  * Niveau 2 (année sélectionnée) : liste des 3 trimestres (T1, T2, T3)
+    - Fetch semainiers via GET /api/pedagogy-space/seminar-config?academicYearId=X
+    - Groupement par `cfg.trimester` (1, 2, ou 3)
+    - Affiche count + nb validés par trimestre
+  * Niveau 3 (trimestre sélectionné) : liste des semaines triées par weekNumber
+    - Chaque semaine : badge "Sem N" + teacherName + dates + classes + status
+    - Indicateurs "5 rapports journaliers + 1 rapport hebdo"
+    - Boutons "Voir" (ouvre SemainierDirectorDetail) + "PDF" (download direct)
+  * Breadcrumbs en haut de chaque niveau (Catalogue > [Année] > [Trimestre])
+  * États vide : "Aucune année scolaire configurée" / "Aucun semainier dans le Trimestre X"
+- Ajouté imports lucide-react : Folder, FolderOpen
+- Le composant `SemainierCatalogueContent` est autonome (gère son propre état path/semainiers)
+- Intégré dans PendingSemainiersTab en remplaçant l'ancien `{statusTab === 'CATALOGUE' && <table>...</table>}` par `{statusTab === 'CATALOGUE' && <SemainierCatalogueContent academicYearId={...} onView={handleView} />}`
+
+Stage Summary:
+- ✅ 1a — Statut actuel affiche maintenant les libellés français (Présent/Retard/Absent/Demi-journée/Mission) au lieu des valeurs brutes
+- ✅ 1b — Stat cards utilisent getEffectiveStatus() (qui lit attendanceData) → les cartes se mettent à jour après chaque clic de pointage
+- ✅ 1c — Section 1 : colonne "Matière" remplacée par "Observation" (déplacée juste après "Motif d'absence") avec pré-remplissage automatique selon le statut (En retard/En mission/Demi-journée)
+- ✅ 1d — Backend syncStudentPresenceFromAttendance corrigé : compte ABSENT_HALF comme absent, utilise lateCount (boolean late * count) au lieu de status='LATE', retourne diagnostic info (queriedDate, totalFound, classesCount)
+- ✅ 1d — Frontend affiche la date recherchée + warning clair si 0 records ("Les enseignants doivent prendre l'appel via le module Appels pour cette date précise...")
+- ✅ 1e — Backend PDF renderDailySection réécrit pour utiliser les MÊMES noms de champs que le frontend + rend TOUS les champs (tableau enseignants avec 6 colonnes, tableau classes avec 6 colonnes, tous les RichTextEditor en HTML)
+- ✅ 1e — Signatures rendues via <img> (base64) au lieu de texte brut
+- ✅ 1e — Bouton "Générer PDF" (rouge) ajouté dans CahierSemainierContent à côté de "Enregistrer"
+- ✅ 2 — Catalogue sub-tab refactorisé : dossiers imbriqués par année scolaire → trimestre → semaines (pattern CatalogueTab)
+- 4 fichiers modifiés : SemainierAttendancePanel.tsx (+15), CahierSemaineTab.tsx (+90), pedagogical-space.service.ts (~330 lignes pour renderDailySection réécrit + CSS), DirectorPedagogyControl.tsx (+360 lignes pour SemainierCatalogueContent)
+- TypeScript check frontend : aucun erreur
+- TypeScript check backend (tsconfig.build.json) : aucun erreur
+- Aucune migration SQL nécessaire

@@ -67,6 +67,16 @@ const STATUS_BADGES: Record<string, string> = {
   MISSION: 'bg-purple-100 text-purple-700',
 };
 
+// ⭐ Map statut → libellé affiché (Présent / Retard / Absent / Demi-journée / Mission)
+//    au lieu d'afficher la valeur brute (PRESENT / LATE / ABSENT / HALF_DAY / MISSION)
+const STATUS_LABELS: Record<string, string> = {
+  PRESENT: 'Présent',
+  LATE: 'Retard',
+  ABSENT: 'Absent',
+  HALF_DAY: 'Demi-journée',
+  MISSION: 'Mission',
+};
+
 export function SemainierAttendancePanel({ date, onMark, attendanceData, disabled }: SemainierAttendancePanelProps) {
   const { user } = useAppSession();
   const targetDate = date || new Date().toISOString().split('T')[0];
@@ -161,13 +171,23 @@ export function SemainierAttendancePanel({ date, onMark, attendanceData, disable
   };
 
   // === Stats rapides ===
+  // ⭐ FIX : calculer les stats à partir du statut RÉEL de chaque enseignant
+  //    (via getStaffStatus qui lit depuis attendanceData si fourni, ou depuis
+  //    staff.status sinon). Avant ce fix, les stats lisaient `s.status` directement
+  //    sur l'objet staff (qui reste null en mode rapport quotidien) → les cartes
+  //    affichaient toujours 0 pour Présents/Retards/Absents et Total pour
+  //    Non marqués (qui était donc faux aussi).
+  const getEffectiveStatus = (s: any): string | null => getStaffStatus(s);
   const stats = {
     total: staff.length,
-    present: staff.filter(s => s.status === 'PRESENT').length,
-    late: staff.filter(s => s.status === 'LATE').length,
-    absent: staff.filter(s => s.status === 'ABSENT').length,
-    notMarked: staff.filter(s => !s.status).length,
-    selfMarked: staff.filter(s => s.markedByRole === 'SELF').length,
+    present: staff.filter((s: any) => getEffectiveStatus(s) === 'PRESENT').length,
+    late: staff.filter((s: any) => getEffectiveStatus(s) === 'LATE').length,
+    absent: staff.filter((s: any) => getEffectiveStatus(s) === 'ABSENT').length,
+    halfDay: staff.filter((s: any) => getEffectiveStatus(s) === 'HALF_DAY').length,
+    mission: staff.filter((s: any) => getEffectiveStatus(s) === 'MISSION').length,
+    // ⭐ Non marqués = enseignants sans statut (null) — pas seulement ceux sans s.status
+    notMarked: staff.filter((s: any) => !getEffectiveStatus(s)).length,
+    selfMarked: staff.filter((s: any) => s.markedByRole === 'SELF').length,
   };
 
   if (loading) {
@@ -252,7 +272,8 @@ export function SemainierAttendancePanel({ date, onMark, attendanceData, disable
                       {currentStatus ? (
                         <div className="flex flex-col items-center gap-1">
                           <span className={cn("px-2 py-0.5 rounded text-xs font-bold", STATUS_BADGES[currentStatus] || 'bg-slate-100')}>
-                            {currentStatus}
+                            {/* ⭐ Afficher le libellé français (Présent/Retard/Absent/Demi-journée/Mission) au lieu de la valeur brute */}
+                            {STATUS_LABELS[currentStatus] || currentStatus}
                           </span>
                           {isSelfMarked && (
                             <span className="text-[10px] text-purple-600 font-semibold flex items-center gap-0.5">

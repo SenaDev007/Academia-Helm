@@ -22,7 +22,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   CalendarDays, Settings, List, FileText, Loader2, Save, RefreshCw,
-  Plus, Trash2, CheckCircle2, X, Zap, Hand, ChevronRight,
+  Plus, Trash2, CheckCircle2, X, Zap, Hand, ChevronRight, Send,
   ClipboardList, Users, BookOpen, Shield, Sparkles, CalendarRange,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -941,6 +941,39 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
           setWeeklyReport={setWeeklyReport}
         />
       )}
+
+      {/* ⭐ Bouton "Envoyer au directeur" — envoie tous les rapports de la semaine */}
+      {currentConfig && (
+        <div className="flex justify-end pt-4 border-t border-slate-200">
+          <button
+            onClick={async () => {
+              if (!confirm('Envoyer tous les rapports de cette semaine au directeur ? Vous ne pourrez plus les modifier après envoi.')) return;
+              try {
+                const res = await fetch(`/api/pedagogy-space/seminar-config/${currentConfig.id}/submit`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                });
+                if (!res.ok) {
+                  const err = await res.json();
+                  throw new Error(err.message || 'Erreur');
+                }
+                toast.success('📧 Rapports envoyés au directeur', {
+                  description: 'Le directeur recevra les rapports de cette semaine pour validation.',
+                });
+              } catch (e: any) {
+                toast.error('Erreur lors de l\'envoi', { description: e.message });
+              }
+            }}
+            disabled={!currentConfig.teacherSignature || currentConfig.status === 'SUBMITTED' || currentConfig.status === 'VALIDATED'}
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!currentConfig.teacherSignature ? 'Vous devez signer d\'abord (Liste des semainiers)' : currentConfig.status === 'SUBMITTED' ? 'Déjà envoyé au directeur' : 'Envoyer tous les rapports au directeur'}
+          >
+            <Send className="h-4 w-4" />
+            {currentConfig.status === 'SUBMITTED' ? 'Envoyé au directeur' : currentConfig.status === 'VALIDATED' ? 'Validé par le directeur' : 'Envoyer au directeur'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1078,19 +1111,35 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
         <RichTextField label="Recommandations" value={dailyReport?.dailySummary?.recommendations} onChange={v => setDailyReport({ ...dailyReport, dailySummary: { ...dailyReport?.dailySummary, recommendations: v } })} />
       </Section>
 
-      {/* Signatures bas de page */}
+      {/* ⭐ Signatures bas de page — signature auto-récupérée depuis Liste des semainiers */}
       <div className="grid grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
         <div className="text-center">
           <p className="text-xs font-bold text-slate-700 uppercase">Nom du Semainier</p>
           <p className="text-sm mt-1">{config?.teacherName || '—'}</p>
           <p className="text-xs text-slate-500 mt-4">Signature</p>
-          <div className="h-16" />
+          {config?.teacherSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 mt-1">
+              <img src={config.teacherSignature} alt="Signature du semainier" className="max-h-20 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 mt-1 text-xs text-slate-400 italic">
+              ⚠️ Signature non disponible. Allez dans "Liste des semainiers" pour signer.
+            </div>
+          )}
         </div>
         <div className="text-center">
           <p className="text-xs font-bold text-slate-700 uppercase">Visa de la Direction</p>
-          <p className="text-sm mt-1">—</p>
+          <p className="text-sm mt-1">{config?.status === 'VALIDATED' ? 'Validé' : '—'}</p>
           <p className="text-xs text-slate-500 mt-4">Cachet</p>
-          <div className="h-16" />
+          {config?.directorSignature && config?.status === 'VALIDATED' ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 mt-1">
+              <img src={config.directorSignature} alt="Signature du directeur" className="max-h-20 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 mt-1 h-[80px] flex items-center justify-center text-xs text-slate-400 italic">
+              {config?.status === 'SUBMITTED' ? 'En attente de validation du directeur' : '—'}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1262,19 +1311,35 @@ function WeeklyReportCard({ config, weeklyReport, setWeeklyReport }: any) {
         />
       </WeeklySection>
 
-      {/* Signatures bas de page */}
+      {/* ⭐ Signatures bas de page — auto-récupérées */}
       <div className="grid grid-cols-2 gap-6 pt-6 border-t-2 border-purple-300 mt-6">
         <div className="text-center">
           <p className="text-xs font-bold text-purple-700 uppercase">Nom du Semainier</p>
           <p className="text-sm mt-1">{config?.teacherName || '—'}</p>
           <p className="text-xs text-slate-500 mt-4">Signature</p>
-          <div className="h-16" />
+          {config?.teacherSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 mt-1">
+              <img src={config.teacherSignature} alt="Signature du semainier" className="max-h-20 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 mt-1 text-xs text-slate-400 italic">
+              ⚠️ Signature non disponible.
+            </div>
+          )}
         </div>
         <div className="text-center">
           <p className="text-xs font-bold text-purple-700 uppercase">Visa de la Direction</p>
-          <p className="text-sm mt-1">—</p>
+          <p className="text-sm mt-1">{config?.status === 'VALIDATED' ? 'Validé' : '—'}</p>
           <p className="text-xs text-slate-500 mt-4">Cachet</p>
-          <div className="h-16" />
+          {config?.directorSignature && config?.status === 'VALIDATED' ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 mt-1">
+              <img src={config.directorSignature} alt="Signature du directeur" className="max-h-20 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 mt-1 h-[80px] flex items-center justify-center text-xs text-slate-400 italic">
+              {config?.status === 'SUBMITTED' ? 'En attente de validation' : '—'}
+            </div>
+          )}
         </div>
       </div>
     </div>

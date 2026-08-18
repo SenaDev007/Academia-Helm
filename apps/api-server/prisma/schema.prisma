@@ -7766,10 +7766,27 @@ model HomeworkEntry {
   lessonPlanId    String?
   classId         String?
   subjectId       String?
+  /// ⭐ Type de tâche pédagogique pour discriminer les sous-onglets de Travaux & Suivi :
+  ///    HOMEWORK (devoirs & exercices — défaut)
+  ///    RESEARCH (recherches & exposés)
+  ///    LESSON (leçons à recopier)
+  ///    RECITATION (récitations)
+  ///    PRACTICAL (activités pratiques)
+  ///    PROJECT (projets)
+  /// Permet de filtrer les homeworks par sous-onglet dans le frontend.
+  taskType        String               @default("HOMEWORK")
+  /// ⭐ Statut de la tâche : DRAFT (brouillon) | ASSIGNED (assignée) | COMPLETED (terminée) | ARCHIVED (archivée)
+  status          String               @default("ASSIGNED")
   title           String
   description     String
   dueDate         DateTime
   maxScore        Float?
+  /// ⭐ Échéance/Date de présentation (pour les exposés, récitations, activités pratiques)
+  presentationDate DateTime?
+  /// ⭐ Pièces jointes (PDFs, images, etc.) — JSONB array of {url, name, type}
+  attachments     Json?
+  /// ⭐ Observations globales de l'enseignant sur cette tâche
+  observations    String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   academicTrack   AcademicTrack?       @relation(fields: [academicTrackId], references: [id])
@@ -7782,6 +7799,7 @@ model HomeworkEntry {
   submissions     HomeworkSubmission[]
 
   @@index([tenantId, academicYearId, schoolLevelId])
+  @@index([tenantId, academicYearId, taskType])
   @@index([dueDate])
   @@map("homework_entries")
 }

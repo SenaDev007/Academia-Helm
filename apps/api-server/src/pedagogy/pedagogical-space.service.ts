@@ -1877,7 +1877,11 @@ export class PedagogicalSpaceService {
       description: string;
       dueDate: string;
       maxScore?: number;
-      taskType?: string; // EXERCISE | HOMEWORK | RESEARCH | EXPOSE | LESSON | RECITATION | READING | PRACTICAL | PROJECT
+      taskType?: string; // HOMEWORK | RESEARCH | LESSON | RECITATION | PRACTICAL | PROJECT
+      status?: string; // DRAFT | ASSIGNED | COMPLETED | ARCHIVED
+      presentationDate?: string;
+      attachments?: any;
+      observations?: string;
     },
   ) {
     // Créer le HomeworkEntry
@@ -1892,6 +1896,12 @@ export class PedagogicalSpaceService {
         description: data.description,
         dueDate: new Date(data.dueDate),
         maxScore: data.maxScore || null,
+        // ⭐ Nouveaux champs (Phase 2) : taskType, status, presentationDate, attachments, observations
+        taskType: data.taskType || 'HOMEWORK',
+        status: data.status || 'ASSIGNED',
+        presentationDate: data.presentationDate ? new Date(data.presentationDate) : null,
+        attachments: data.attachments || undefined,
+        observations: data.observations || null,
       },
     });
 
@@ -1919,12 +1929,143 @@ export class PedagogicalSpaceService {
       });
     }
 
-    this.logger.log(`✅ Devoir créé: ${homework.title} — ${enrollments.length} élèves initialisés`);
+    this.logger.log(`✅ Devoir créé: ${homework.title} (taskType=${data.taskType || 'HOMEWORK'}) — ${enrollments.length} élèves initialisés`);
 
     return {
       ...homework,
       studentCount: enrollments.length,
     };
+  }
+
+  /**
+   * ⭐ Met à jour un HomeworkEntry existant.
+   *    Utilisé par PUT /pedagogy-space/homeworks/:id.
+   *    Permet de modifier le titre, la description, la date, le type, etc.
+   *    Si la classe change, on réinitialise le suivi des élèves (supprime les
+   *    anciens PedagogicalTaskStudent et crée les nouveaux pour la nouvelle classe).
+   */
+  async updateHomework(
+    tenantId: string,
+    homeworkId: string,
+    data: {
+      title?: string;
+      description?: string;
+      classId?: string;
+      subjectId?: string | null;
+      dueDate?: string;
+      maxScore?: number | null;
+      taskType?: string;
+      status?: string;
+      presentationDate?: string | null;
+      attachments?: any;
+      observations?: string | null;
+    },
+  ) {
+    const existing = await this.prisma.homeworkEntry.findFirst({
+      where: { id: homeworkId, tenantId },
+      include: {
+        academicYear: { select: { id: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Devoir non trouvé');
+
+    // Construire l'objet data pour Prisma en ignorant les champs non fournis
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.classId !== undefined) updateData.classId = data.classId || null;
+    if (data.subjectId !== undefined) updateData.subjectId = data.subjectId || null;
+    if (data.dueDate !== undefined) updateData.dueDate = new Date(data.dueDate);
+    if (data.maxScore !== undefined) updateData.maxScore = data.maxScore;
+    if (data.taskType !== undefined) updateData.taskType = data.taskType;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.presentationDate !== undefined) {
+      updateData.presentationDate = data.presentationDate
+        ? new Date(data.presentationDate)
+        : null;
+    }
+    if (data.attachments !== undefined) updateData.attachments = data.attachments;
+    if (data.observations !== undefined) updateData.observations = data.observations;
+
+    const updated = await this.prisma.homeworkEntry.update({
+      where: { id: homeworkId },
+      data: updateData,
+    });
+
+    // ⭐ Si la classe change, on réinitialise le suivi des élèves pour la nouvelle classe.
+    //    Sinon on conserve le suivi existant.
+    if (data.classId && data.classId !== existing.classId) {
+      // Supprimer les anciens suivis
+      await this.prisma.pedagogicalTaskStudent.deleteMany({
+        where: { homeworkEntryId: homeworkId },
+      });
+      // Récupérer le teacherId depuis un ancien suivi (avant suppression —
+      // ici on n'y a plus accès, donc on le récupère via les assignments)
+      const teacherAssignment = await this.prisma.teacherClassAssignment.findFirst({
+        where: {
+          tenantId,
+          academicYearId: existing.academicYearId,
+          classId: data.classId,
+        },
+        select: { teacherId: true },
+      });
+      const newTeacherId = teacherAssignment?.teacherId || null;
+      // Créer les nouveaux suivis pour les élèves de la nouvelle classe
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicYearId: existing.academicYearId,
+          classId: data.classId,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+        },
+        select: { studentId: true },
+      });
+      if (enrollments.length > 0) {
+        await this.prisma.pedagogicalTaskStudent.createMany({
+          data: enrollments.map((e) => ({
+            tenantId,
+            academicYearId: existing.academicYearId,
+            homeworkEntryId: homeworkId,
+            studentId: e.studentId,
+            teacherId: newTeacherId || '',
+            status: 'PENDING',
+          })),
+        });
+      }
+      this.logger.log(
+        `✅ Devoir ${homeworkId} mis à jour — classe changée → ${enrollments.length} élèves réinitialisés`,
+      );
+    }
+
+    return updated;
+  }
+
+  /**
+   * ⭐ Supprime un HomeworkEntry + en cascade les PedagogicalTaskStudent et
+   *    HomeworkSubmission associés.
+   *    Utilisé par DELETE /pedagogy-space/homeworks/:id.
+   */
+  async deleteHomework(tenantId: string, homeworkId: string) {
+    const existing = await this.prisma.homeworkEntry.findFirst({
+      where: { id: homeworkId, tenantId },
+      select: { id: true, title: true },
+    });
+    if (!existing) throw new NotFoundException('Devoir non trouvé');
+
+    // Supprimer en cascade les dépendances (les contraintes FK ON DELETE SET NULL
+    // devraient déjà s'en occuper, mais on est explicite pour éviter tout risque)
+    await this.prisma.pedagogicalTaskStudent.deleteMany({
+      where: { homeworkEntryId: homeworkId },
+    });
+    await this.prisma.homeworkSubmission.deleteMany({
+      where: { homeworkId: homeworkId },
+    });
+    await this.prisma.homeworkEntry.delete({
+      where: { id: homeworkId },
+    });
+
+    this.logger.log(`✅ Devoir supprimé: ${existing.title} (${homeworkId})`);
+    return { success: true, id: homeworkId };
   }
 
   /**
@@ -1935,6 +2076,7 @@ export class PedagogicalSpaceService {
     academicYearId: string,
     teacherId: string,
     classId?: string,
+    taskType?: string,
   ) {
     // ⭐ TEST PROMOTEUR/DIRECTION :
     // - Si Teacher → filtre via les classes assignées (comportement normal)
@@ -1964,6 +2106,11 @@ export class PedagogicalSpaceService {
     }
     // Mode direction : pas de filtre classId → toutes les classes
 
+    // ⭐ Filtrer par taskType si fourni (HOMEWORK, RESEARCH, LESSON, RECITATION, PRACTICAL, PROJECT)
+    if (taskType) {
+      where.taskType = taskType;
+    }
+
     const homeworks = await this.prisma.homeworkEntry.findMany({
       where,
       include: {
@@ -1988,6 +2135,13 @@ export class PedagogicalSpaceService {
         notDone: tasks.filter(t => t.status === 'NOT_DONE').length,
         pending: tasks.filter(t => t.status === 'PENDING').length,
         late: tasks.filter(t => t.status === 'LATE').length,
+        // ⭐ Stats supplémentaires pour les autres sous-onglets
+        recited: tasks.filter(t => t.status === 'RECITED').length,
+        notRecited: tasks.filter(t => t.status === 'NOT_RECITED').length,
+        presented: tasks.filter(t => t.status === 'PRESENTED').length,
+        notPresented: tasks.filter(t => t.status === 'NOT_PRESENTED').length,
+        incomplete: tasks.filter(t => t.status === 'INCOMPLETE').length,
+        toRedo: tasks.filter(t => t.status === 'TO_REDO').length,
       });
     }
 
@@ -2042,6 +2196,408 @@ export class PedagogicalSpaceService {
     });
 
     return tasks;
+  }
+
+  // ===========================================================================
+  // ⭐ TRAVAUX & SUIVI — Nouveaux endpoints (Phase 4)
+  //    Méthodes pour les sous-onglets :
+  //      - Suivi par élève (student-engagement)
+  //      - Statistiques & alertes (activity-stats)
+  //      - Corrections & retours (submissions)
+  //      - Cahiers & copies (notebook-checks)
+  // ===========================================================================
+
+  /**
+   * ⭐ Suivi par élève : agrège l'engagement de chaque élève d'une classe
+   *    pour tous les HomeworkEntry d'un enseignant.
+   *    Retourne : [{ studentId, firstName, lastName, matricule, photoUrl,
+   *                  totalTasks, done, notDone, pending, late, incomplete,
+   *                  participationRate, averageScore, alerts }]
+   *
+   * Utilisé par le sous-onglet "Suivi par élève" de Travaux & Suivi.
+   */
+  async getStudentEngagement(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    classId?: string,
+  ) {
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    // Récupérer tous les HomeworkEntry de l'enseignant (tous types confondus)
+    let classIds: string[] | null = null;
+    if (filter.mode === 'teacher') {
+      const assignedClassIds = await this.prisma.teacherClassAssignment.findMany({
+        where: { tenantId, academicYearId, teacherId: filter.teacherId },
+        select: { classId: true },
+      });
+      classIds = assignedClassIds.map(a => a.classId).filter(Boolean);
+    }
+
+    const whereHw: any = { tenantId, academicYearId };
+    if (classId) {
+      whereHw.classId = classId;
+    } else if (classIds !== null) {
+      whereHw.classId = { in: classIds };
+    }
+
+    const homeworks = await this.prisma.homeworkEntry.findMany({
+      where: whereHw,
+      select: { id: true },
+    });
+
+    if (homeworks.length === 0) return [];
+
+    // Récupérer tous les PedagogicalTaskStudent pour ces homeworks
+    const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
+      where: {
+        tenantId,
+        homeworkEntryId: { in: homeworks.map(h => h.id) },
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true, gender: true },
+        },
+      },
+    });
+
+    // Grouper par étudiant
+    const byStudent = new Map<string, any>();
+    for (const t of tasks) {
+      if (!byStudent.has(t.studentId)) {
+        byStudent.set(t.studentId, {
+          studentId: t.studentId,
+          firstName: t.student?.firstName || '',
+          lastName: t.student?.lastName || '',
+          matricule: t.student?.matricule || '',
+          photoUrl: t.student?.photoUrl || null,
+          gender: t.student?.gender || null,
+          tasks: [],
+        });
+      }
+      byStudent.get(t.studentId)!.tasks.push(t);
+    }
+
+    // Calculer les stats par élève
+    const result = Array.from(byStudent.values()).map(s => {
+      const totalTasks = s.tasks.length;
+      const done = s.tasks.filter((t: any) => t.status === 'DONE').length;
+      const notDone = s.tasks.filter((t: any) => t.status === 'NOT_DONE').length;
+      const pending = s.tasks.filter((t: any) => t.status === 'PENDING').length;
+      const late = s.tasks.filter((t: any) => t.status === 'LATE').length;
+      const incomplete = s.tasks.filter((t: any) => t.status === 'INCOMPLETE').length;
+      const toRedo = s.tasks.filter((t: any) => t.status === 'TO_REDO').length;
+      const recited = s.tasks.filter((t: any) => t.status === 'RECITED').length;
+      const notRecited = s.tasks.filter((t: any) => t.status === 'NOT_RECITED').length;
+      const presented = s.tasks.filter((t: any) => t.status === 'PRESENTED').length;
+      const notPresented = s.tasks.filter((t: any) => t.status === 'NOT_PRESENTED').length;
+
+      // Participation = (done + recited + presented) / total
+      const completedCount = done + recited + presented;
+      const participationRate = totalTasks > 0 ? Number(((completedCount / totalTasks) * 100).toFixed(1)) : 0;
+
+      // Moyenne des scores
+      const scoredTasks = s.tasks.filter((t: any) => t.score != null);
+      const averageScore = scoredTasks.length > 0
+        ? Number((scoredTasks.reduce((acc: number, t: any) => acc + Number(t.score), 0) / scoredTasks.length).toFixed(2))
+        : null;
+
+      // Alertes : élève en difficulté (participation < 40% ou moyenne < 10/20)
+      const alerts: string[] = [];
+      if (totalTasks >= 3 && participationRate < 40) {
+        alerts.push('PARTICIPATION_FAIBLE');
+      }
+      if (averageScore != null && averageScore < 10) {
+        alerts.push('MOYENNE_FAIBLE');
+      }
+      if (notDone + toRedo >= 3) {
+        alerts.push('TACHES_NON_RENDUES');
+      }
+
+      return {
+        studentId: s.studentId,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        matricule: s.matricule,
+        photoUrl: s.photoUrl,
+        gender: s.gender,
+        totalTasks,
+        done,
+        notDone,
+        pending,
+        late,
+        incomplete,
+        toRedo,
+        recited,
+        notRecited,
+        presented,
+        notPresented,
+        participationRate,
+        averageScore,
+        alerts,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * ⭐ Statistiques & alertes : agrège les statistiques globales de l'enseignant
+   *    pour tous ses HomeworkEntry. Retourne :
+   *    { totalTasks, totalStudents, averageParticipation, averageScore,
+   *      tasksByType: { HOMEWORK: n, RESEARCH: n, ... },
+   *      studentsAtRisk: [{ studentId, firstName, lastName, reason }],
+   *      recentActivity: [{ date, count }] }
+   *
+   * Utilisé par le sous-onglet "Statistiques & alertes" de Travaux & Suivi.
+   */
+  async getActivityStats(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+  ) {
+    const engagement = await this.getStudentEngagement(tenantId, academicYearId, teacherId);
+
+    // Stats globales
+    const totalStudents = engagement.length;
+    const totalTasks = engagement.reduce((acc, s) => acc + s.totalTasks, 0);
+    const totalDone = engagement.reduce((acc, s) => acc + s.done, 0);
+    const totalPending = engagement.reduce((acc, s) => acc + s.pending, 0);
+    const totalLate = engagement.reduce((acc, s) => acc + s.late, 0);
+    const totalNotDone = engagement.reduce((acc, s) => acc + s.notDone, 0);
+
+    const averageParticipation = totalStudents > 0
+      ? Number((engagement.reduce((acc, s) => acc + s.participationRate, 0) / totalStudents).toFixed(1))
+      : 0;
+
+    const studentsWithScore = engagement.filter(s => s.averageScore != null);
+    const averageScore = studentsWithScore.length > 0
+      ? Number((studentsWithScore.reduce((acc, s) => acc + s.averageScore, 0) / studentsWithScore.length).toFixed(2))
+      : null;
+
+    // Élèves à risque (alerts non vide)
+    const studentsAtRisk = engagement
+      .filter(s => s.alerts.length > 0)
+      .map(s => ({
+        studentId: s.studentId,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        participationRate: s.participationRate,
+        averageScore: s.averageScore,
+        alerts: s.alerts,
+      }));
+
+    // Tasks par type
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    let classIds: string[] | null = null;
+    if (filter.mode === 'teacher') {
+      const assignedClassIds = await this.prisma.teacherClassAssignment.findMany({
+        where: { tenantId, academicYearId, teacherId: filter.teacherId },
+        select: { classId: true },
+      });
+      classIds = assignedClassIds.map(a => a.classId).filter(Boolean);
+    }
+    const whereHw: any = { tenantId, academicYearId };
+    if (classIds !== null) {
+      whereHw.classId = { in: classIds };
+    }
+    const allHomeworks = await this.prisma.homeworkEntry.findMany({
+      where: whereHw,
+      select: { taskType: true, status: true, createdAt: true, dueDate: true },
+    });
+
+    const tasksByType: Record<string, number> = {};
+    for (const hw of allHomeworks) {
+      const t = hw.taskType || 'HOMEWORK';
+      tasksByType[t] = (tasksByType[t] || 0) + 1;
+    }
+
+    const tasksByStatus: Record<string, number> = {};
+    for (const hw of allHomeworks) {
+      const s = hw.status || 'ASSIGNED';
+      tasksByStatus[s] = (tasksByStatus[s] || 0) + 1;
+    }
+
+    return {
+      totalTasks: allHomeworks.length,
+      totalStudents,
+      totalDone,
+      totalPending,
+      totalLate,
+      totalNotDone,
+      averageParticipation,
+      averageScore,
+      studentsAtRiskCount: studentsAtRisk.length,
+      studentsAtRisk,
+      tasksByType,
+      tasksByStatus,
+    };
+  }
+
+  /**
+   * ⭐ Corrections & retours : liste les HomeworkSubmission pour un HomeworkEntry.
+   *    Chaque soumission représente le travail rendu par un élève + la correction
+   *    de l'enseignant (score, feedback, gradedAt, gradedBy).
+   */
+  async getHomeworkSubmissions(
+    tenantId: string,
+    homeworkEntryId: string,
+  ) {
+    const submissions = await this.prisma.homeworkSubmission.findMany({
+      where: { tenantId, homeworkId: homeworkEntryId },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
+        },
+      },
+      orderBy: { gradedAt: 'desc' },
+    });
+
+    return submissions;
+  }
+
+  /**
+   * ⭐ Crée ou met à jour une soumission (correction) pour un HomeworkEntry.
+   *    L'enseignant enregistre la note + le feedback pour un élève.
+   */
+  async upsertHomeworkSubmission(
+    tenantId: string,
+    homeworkEntryId: string,
+    data: {
+      studentId: string;
+      academicYearId: string;
+      schoolLevelId: string;
+      content?: string;
+      attachments?: any;
+      score?: number;
+      maxScore?: number;
+      feedback?: string;
+      gradedBy: string;
+    },
+  ) {
+    // Vérifier si une soumission existe déjà pour ce homework + student
+    const existing = await this.prisma.homeworkSubmission.findFirst({
+      where: { tenantId, homeworkId: homeworkEntryId, studentId: data.studentId },
+    });
+
+    if (existing) {
+      // Mettre à jour la soumission existante
+      const updated = await this.prisma.homeworkSubmission.update({
+        where: { id: existing.id },
+        data: {
+          content: data.content ?? existing.content,
+          attachments: data.attachments ?? existing.attachments,
+          score: data.score ?? existing.score,
+          maxScore: data.maxScore ?? existing.maxScore,
+          feedback: data.feedback ?? existing.feedback,
+          gradedAt: new Date(),
+          gradedBy: data.gradedBy,
+        },
+      });
+      this.logger.log(`✅ Soumission mise à jour pour homework=${homeworkEntryId} student=${data.studentId}`);
+      return updated;
+    }
+
+    // Créer une nouvelle soumission
+    const submission = await this.prisma.homeworkSubmission.create({
+      data: {
+        tenantId,
+        homeworkId: homeworkEntryId,
+        studentId: data.studentId,
+        academicYearId: data.academicYearId,
+        schoolLevelId: data.schoolLevelId,
+        content: data.content || '',
+        attachments: data.attachments || undefined,
+        score: data.score || undefined,
+        maxScore: data.maxScore || undefined,
+        feedback: data.feedback || undefined,
+        gradedAt: new Date(),
+        gradedBy: data.gradedBy,
+        submittedAt: new Date(),
+      },
+    });
+    this.logger.log(`✅ Soumission créée pour homework=${homeworkEntryId} student=${data.studentId}`);
+    return submission;
+  }
+
+  /**
+   * ⭐ Cahiers & copies : récupère les PedagogicalTaskStudent avec statut
+   *    lié au contrôle des cahiers (DONE, NOT_DONE, TO_REDO, INCOMPLETE).
+   *    L'enseignant peut vérifier les cahiers de chaque élève + laisser un commentaire.
+   */
+  async getNotebookChecks(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    classId?: string,
+  ) {
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    // Récupérer les HomeworkEntry de type LESSON (leçons à recopier)
+    let classIds: string[] | null = null;
+    if (filter.mode === 'teacher') {
+      const assignedClassIds = await this.prisma.teacherClassAssignment.findMany({
+        where: { tenantId, academicYearId, teacherId: filter.teacherId },
+        select: { classId: true },
+      });
+      classIds = assignedClassIds.map(a => a.classId).filter(Boolean);
+    }
+
+    const whereHw: any = { tenantId, academicYearId, taskType: 'LESSON' };
+    if (classId) {
+      whereHw.classId = classId;
+    } else if (classIds !== null) {
+      whereHw.classId = { in: classIds };
+    }
+
+    const homeworks = await this.prisma.homeworkEntry.findMany({
+      where: whereHw,
+      include: { class: { select: { id: true, name: true } }, subject: { select: { id: true, name: true } } },
+      orderBy: { dueDate: 'desc' },
+      take: 20,
+    });
+
+    // Pour chaque homework LESSON, récupérer les task students
+    const result = [];
+    for (const hw of homeworks) {
+      const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
+        where: { tenantId, homeworkEntryId: hw.id },
+        include: {
+          student: {
+            select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+
+      result.push({
+        homework: {
+          id: hw.id,
+          title: hw.title,
+          description: hw.description,
+          dueDate: hw.dueDate,
+          class: hw.class,
+          subject: hw.subject,
+          observations: hw.observations,
+        },
+        students: tasks.map(t => ({
+          id: t.id,
+          studentId: t.studentId,
+          firstName: t.student?.firstName,
+          lastName: t.student?.lastName,
+          matricule: t.student?.matricule,
+          photoUrl: t.student?.photoUrl,
+          status: t.status, // DONE | NOT_DONE | TO_REDO | INCOMPLETE
+          observation: t.observation,
+          appreciation: t.appreciation,
+          evaluatedAt: t.evaluatedAt,
+        })),
+      });
+    }
+
+    return result;
   }
 
   // ===========================================================================

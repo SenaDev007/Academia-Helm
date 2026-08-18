@@ -459,14 +459,25 @@ class PedagogyService {
   }
 
   // --- Homework Entries (Devoirs & Exercices) ---
-  async getHomeworkEntries(classId?: string): Promise<any> {
-    const qs = classId ? `?classId=${classId}` : '';
+  // ⭐ FIX : les homework entries utilisent maintenant le endpoint dédié
+  //    /pedagogy-space/homeworks (modèle Prisma HomeworkEntry + PedagogicalTaskStudent)
+  //    au lieu de /daily-logs (modèle DailyLog — cahier journal).
+  //    Avant ce fix, le frontend routait vers /daily-logs qui mappe les champs
+  //    title/description → summary et dueDate → date (hack legacy).
+  //    Maintenant on utilise directement /pedagogy-space/homeworks qui expose
+  //    les vrais champs HomeworkEntry + agrège les stats par élève
+  //    (totalStudents/done/notDone/pending/late).
+  async getHomeworkEntries(teacherId?: string, academicYearId?: string, classId?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (teacherId) params.append('teacherId', teacherId);
+    if (academicYearId) params.append('academicYearId', academicYearId);
+    if (classId) params.append('classId', classId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("homeworkentry", { tenantId: getTenantId() });
     }
     try {
-      // Homework entries route through daily-logs controller
-      return await apiFetch(`/daily-logs${qs}`);
+      return await apiFetch(`/pedagogy-space/homeworks${qs}`);
     } catch (e) {
       return LocalSearchService.search("homeworkentry", { tenantId: getTenantId() });
     }
@@ -477,7 +488,7 @@ class PedagogyService {
     if (tenantId) {
       return createEntityOffline(tenantId, 'HOMEWORK_ENTRY', data);
     }
-    return apiFetch('/daily-logs', { method: 'POST', body: data });
+    return apiFetch('/pedagogy-space/homeworks', { method: 'POST', body: data });
   }
 
   async updateHomeworkEntry(id: string, data: any): Promise<any> {
@@ -485,7 +496,7 @@ class PedagogyService {
     if (tenantId) {
       return updateEntityOffline(tenantId, 'HOMEWORK_ENTRY', id, data);
     }
-    return apiFetch(`/daily-logs/${id}`, { method: 'PUT', body: data });
+    return apiFetch(`/pedagogy-space/homeworks/${id}`, { method: 'PUT', body: data });
   }
 
   async deleteHomeworkEntry(id: string): Promise<any> {
@@ -493,7 +504,7 @@ class PedagogyService {
     if (tenantId) {
       return deleteEntityOffline(tenantId, 'HOMEWORK_ENTRY', id);
     }
-    return apiFetch(`/daily-logs/${id}`, { method: 'DELETE' });
+    return apiFetch(`/pedagogy-space/homeworks/${id}`, { method: 'DELETE' });
   }
 }
 

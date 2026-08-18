@@ -179,8 +179,9 @@ export class PedagogicalSpaceController {
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('classId') classId?: string,
+    @Query('taskType') taskType?: string,
   ) {
-    return this.service.getHomeworks(tenantId, academicYearId, teacherId, classId);
+    return this.service.getHomeworks(tenantId, academicYearId, teacherId, classId, taskType);
   }
 
   @Post('homeworks')
@@ -196,6 +197,11 @@ export class PedagogicalSpaceController {
       description: string;
       dueDate: string;
       maxScore?: number;
+      taskType?: string;
+      status?: string;
+      presentationDate?: string;
+      attachments?: any;
+      observations?: string;
     },
   ) {
     return this.service.createHomework(
@@ -205,6 +211,41 @@ export class PedagogicalSpaceController {
       body.teacherId,
       body,
     );
+  }
+
+  // ⭐ Mettre à jour un devoir (PUT /pedagogy-space/homeworks/:id)
+  //    Body : { title?, description?, classId?, subjectId?, dueDate?, maxScore?,
+  //             taskType?, status?, presentationDate?, attachments?, observations? }
+  @Put('homeworks/:id')
+  async updateHomework(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      title?: string;
+      description?: string;
+      classId?: string;
+      subjectId?: string;
+      dueDate?: string;
+      maxScore?: number | null;
+      taskType?: string;
+      status?: string;
+      presentationDate?: string | null;
+      attachments?: any;
+      observations?: string | null;
+    },
+  ) {
+    return this.service.updateHomework(tenantId, id, body);
+  }
+
+  // ⭐ Supprimer un devoir (DELETE /pedagogy-space/homeworks/:id)
+  //    Supprime aussi en cascade les PedagogicalTaskStudent + HomeworkSubmission associés.
+  @Delete('homeworks/:id')
+  @HttpCode(HttpStatus.OK)
+  async deleteHomework(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.deleteHomework(tenantId, id);
   }
 
   @Get('homeworks/:id/students')
@@ -227,6 +268,71 @@ export class PedagogicalSpaceController {
     },
   ) {
     return this.service.updateTaskStudent(tenantId, id, body);
+  }
+
+  // ⭐ TRAVAUX & SUIVI — Nouveaux endpoints (Phase 4)
+  //    Sous-onglets : Suivi par élève, Statistiques & alertes,
+  //    Corrections & retours, Cahiers & copies
+
+  // ⭐ Suivi par élève — agrège l'engagement de chaque élève d'une classe
+  @Get('student-engagement')
+  async getStudentEngagement(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+  ) {
+    return this.service.getStudentEngagement(tenantId, academicYearId, teacherId, classId);
+  }
+
+  // ⭐ Statistiques & alertes — stats globales de l'enseignant
+  @Get('activity-stats')
+  async getActivityStats(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getActivityStats(tenantId, academicYearId, teacherId);
+  }
+
+  // ⭐ Corrections & retours — liste les soumissions pour un devoir
+  @Get('homeworks/:id/submissions')
+  async getHomeworkSubmissions(
+    @TenantId() tenantId: string,
+    @Param('id') homeworkEntryId: string,
+  ) {
+    return this.service.getHomeworkSubmissions(tenantId, homeworkEntryId);
+  }
+
+  // ⭐ Créer/mettre à jour une correction (soumission élève)
+  @Post('homeworks/:id/submissions')
+  async upsertHomeworkSubmission(
+    @TenantId() tenantId: string,
+    @Param('id') homeworkEntryId: string,
+    @Body() body: {
+      studentId: string;
+      academicYearId: string;
+      schoolLevelId: string;
+      content?: string;
+      attachments?: any;
+      score?: number;
+      maxScore?: number;
+      feedback?: string;
+      gradedBy: string;
+    },
+  ) {
+    return this.service.upsertHomeworkSubmission(tenantId, homeworkEntryId, body);
+  }
+
+  // ⭐ Cahiers & copies — contrôle des cahiers (leçons à recopier)
+  @Get('notebook-checks')
+  async getNotebookChecks(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+  ) {
+    return this.service.getNotebookChecks(tenantId, academicYearId, teacherId, classId);
   }
 
   // ─── CONTRÔLE PÉDAGOGIQUE DIRECTION ──────────────────────────────────────

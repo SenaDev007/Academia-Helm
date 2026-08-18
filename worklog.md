@@ -6686,3 +6686,127 @@ Stage Summary:
 - TypeScript check frontend : aucun erreur
 - Backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
 - Aucune migration SQL nécessaire
+
+---
+Task ID: REFACT-TASKS-WORKSPACE-FULL-1
+Agent: main + full-stack-developer subagent
+Task: (1) Sécurité signature semainier — seul l'enseignant connecté peut signer sa ligne, autres lignes grisées. (2) Refonte COMPLÈTE de l'onglet "Travaux & Suivi" : aligner design avec autres onglets, supprimer toutes les données mock, brancher au backend, CRUD 100% fonctionnel pour chaque sous-onglet.
+
+Work Log:
+
+=== 1 — Sécurité signature semainier ===
+- AVANT : tous les utilisateurs pouvaient signer n'importe quelle ligne
+- APRÈS : seul l'enseignant connecté (cfg.teacherId === currentTeacherId) peut signer sa ligne
+- Backend : nouvel endpoint GET /seminar-config/my-teacher-id?userId=X
+  * Méthode resolveTeacherIdPublic() — résout User → Teacher par email
+  * Retourne { teacherId, userRole }
+- Frontend ListeSemainiersTab :
+  * Fetch du teacherId lié à l'utilisateur connecté au montage
+  * DIRECTOR_ROLES (PROMOTER, DIRECTEUR_*, admin) peuvent signer toutes les lignes
+  * isLineEditable(cfg) : true si canSignAnyLine OU cfg.teacherId === currentTeacherId
+  * Lignes non éditables : bouton "Signer" désactivé + opacity-50 + tooltip "Non autorisé"
+  * Ligne de l'utilisateur : fond emerald-50 + badge "★ Vous"
+  * Messages distincts : "🔒 Sécurité" pour enseignant, "👤 Direction" pour directeurs
+
+=== 2 — Refonte Travaux & Suivi (5 phases) ===
+
+--- Phase 1 — Nettoyage ---
+- Supprimé HomeworkTab.tsx orphelin (200 lignes — non importé)
+- Corrigé pedagogyService.getHomeworkEntries() → /pedagogy-space/homeworks (au lieu de /daily-logs)
+  * Avant : hack legacy qui mapait title/description → summary, dueDate → date (modèle DailyLog)
+  * Après : utilise directement /pedagogy-space/homeworks (modèle HomeworkEntry + PedagogicalTaskStudent)
+  * Signature étendue : getHomeworkEntries(teacherId?, academicYearId?, classId?) (au lieu de classId seul)
+
+--- Phase 2 — Migration Prisma ---
+- Ajout de 5 champs au modèle HomeworkEntry (schema.prisma) :
+  * taskType String @default("HOMEWORK") — HOMEWORK|RESEARCH|LESSON|RECITATION|PRACTICAL|PROJECT
+  * status String @default("ASSIGNED") — DRAFT|ASSIGNED|COMPLETED|ARCHIVED
+  * presentationDate DateTime? — pour exposés/récitations/activités
+  * attachments Json? — pièces jointes [{url, name, type}]
+  * observations String? — observations globales de l'enseignant
+- Nouvel index : @@index([tenantId, academicYearId, taskType]) pour filtrer rapidement
+- Migration SQL créée : 20260819100000_add_task_type_to_homework_entries/migration.sql
+  * ALTER TABLE homework_entries ADD COLUMN taskType, status, presentationDate, attachments, observations
+  * CREATE INDEX homework_entries_tenant_year_tasktype_idx
+
+--- Phase 4 — Nouveaux endpoints backend (5 endpoints) ---
+- GET /pedagogy-space/student-engagement?teacherId=&academicYearId=&classId=
+  * Agrège l'engagement de chaque élève : totalTasks, done, notDone, pending, late, incomplete, toRedo, recited, notRecited, presented, notPresented, participationRate, averageScore, alerts
+  * Alerts : PARTICIPATION_FAIBLE (<40%), MOYENNE_FAIBLE (<10/20), TACHES_NON_RENDUES (≥3)
+- GET /pedagogy-space/activity-stats?teacherId=&academicYearId=
+  * Stats globales : totalTasks, totalStudents, totalDone, totalPending, totalLate, totalNotDone, averageParticipation, averageScore, studentsAtRiskCount, studentsAtRisk[], tasksByType{}, tasksByStatus{}
+- GET /pedagogy-space/homeworks/:id/submissions
+  * Liste les HomeworkSubmission (travail rendu + correction enseignant) pour un devoir
+- POST /pedagogy-space/homeworks/:id/submissions
+  * upsertHomeworkSubmission : crée ou met à jour une soumission (score, maxScore, feedback, gradedBy)
+- GET /pedagogy-space/notebook-checks?teacherId=&academicYearId=&classId=
+  * Liste les HomeworkEntry de taskType=LESSON + les PedagogicalTaskStudent par élève (statut DONE/NOT_DONE/TO_REDO/INCOMPLETE)
+- Étendu GET /homeworks : ajout paramètre taskType pour filtrer par sous-onglet
+- Étendu POST /homeworks : accepte taskType, status, presentationDate, attachments, observations
+- Ajouté PUT /homeworks/:id + DELETE /homeworks/:id (CRUD complet)
+
+--- Phase 3+5 — Refonte frontend (6 fichiers) ---
+Refonte COMPLÈTE de TeacherTasksWorkspace.tsx + 5 sous-composants extraits :
+
+1. TeacherTasksWorkspace.tsx (1625 lignes) — shell principal
+   * 10 sous-onglets : dashboard, homework, research, lessons, notebooks, practical, student-followup, feedback, activity-library, stats
+   * useAppSession() + useModuleContext() (PAS de useToast/useAuth custom)
+   * fetch() direct avec credentials: "include" (PAS de service wrapper)
+   * toast de sonner (PAS de useToast)
+   * rounded-xl border-slate-200 (PAS de rounded-3xl)
+   * PAS de framer-motion/AnimatePresence/motion.div
+   * TasksDashboard : 4 cartes stats RÉELLES (totalTasks, totalStudents, averageParticipation, studentsAtRiskCount)
+   * HomeworkManager : CRUD complet pour homework/research/practical (filtre taskType)
+   * HomeworkFormModal : modal inline (title, description, classId, subjectId, dueDate, maxScore, taskType, presentationDate, observations)
+   * TaskStudentsModal : liste élèves + update statut (DONE/NOT_DONE/INCOMPLETE/LATE/TO_REDO/RECITED/NOT_RECITED/PRESENTED/NOT_PRESENTED) + score + appreciation + observation
+   * ActivityLibraryTab : utilise /api/pedagogy/global-library
+
+2. LessonsTrackingTab.tsx (424 lignes) — Leçons & Récitations
+   * Liste des récitations (taskType=RECITATION) + leçons (taskType=LESSON)
+   * Expand par élève pour voir le statut
+   * Update statut : RECITED/NOT_RECITED pour récitations, DONE/NOT_DONE pour leçons
+   * Pas de données mock
+
+3. NotebooksChecksTab.tsx (311 lignes) — Cahiers & Copies
+   * Utilise endpoint notebook-checks
+   * Liste les leçons à recopier (taskType=LESSON) par élève
+   * Statut DONE/NOT_DONE/TO_REDO/INCOMPLETE
+   * Update observation + appreciation par élève
+   * Pas de données mock
+
+4. StudentEngagementTab.tsx (262 lignes) — Suivi par élève
+   * Utilise endpoint student-engagement
+   * Affiche par élève : totalTasks, done, notDone, participationRate, averageScore, alerts
+   * Filtre par classe (select)
+   * Code couleur : rouge si participationRate < 40%, orange si < 70%, vert si >= 70%
+   * Pas de données mock
+
+5. CorrectionsFeedbackTab.tsx (454 lignes) — Corrections & Retours
+   * Utilise endpoint homeworks/:id/submissions
+   * Sélection d'un devoir → liste des soumissions
+   * Modal de correction : score + maxScore (défaut 20) + feedback
+   * POST /homeworks/:id/submissions pour créer/mettre à jour
+   * Pas de données mock
+
+6. ActivityStatsTab.tsx (375 lignes) — Statistiques & Alertes
+   * Utilise endpoint activity-stats
+   * 4 cartes KPI : totalTasks, averageParticipation, averageScore, studentsAtRiskCount
+   * Breakdown par taskType (HOMEWORK, RESEARCH, LESSON, etc.)
+   * Liste des élèves à risque (alerts non vide)
+   * Pas de données mock
+
+Stage Summary:
+- ✅ 1 — Sécurité signature semainier : seul l'enseignant connecté peut signer sa ligne (rôles direction exceptés)
+- ✅ 2 — Refonte complète Travaux & Suivi :
+  * 5 phases (nettoyage + migration + endpoints + refonte + branchement)
+  * 6 fichiers frontend (TeacherTasksWorkspace 1625 lignes + 5 sous-composants 1742 lignes)
+  * 3 fichiers backend modifiés (controller, service, schema.prisma)
+  * 1 migration SQL (taskType + status + presentationDate + attachments + observations)
+  * 5 nouveaux endpoints backend (student-engagement, activity-stats, submissions GET/POST, notebook-checks)
+  * 11 endpoints totaux disponibles pour les 10 sous-onglets
+  * Toutes les données mock supprimées (chiffres codés en dur, fausses données, [1,2,3].map, etc.)
+  * Design aligné avec autres onglets (rounded-xl, sonner, fetch direct, props)
+  * CRUD 100% fonctionnel pour chaque sous-onglet
+- TypeScript check frontend : 0 erreur (erreurs pré-existantes useAutoSave.ts non liées)
+- TypeScript check backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
+- 1 migration SQL à appliquer au déploiement

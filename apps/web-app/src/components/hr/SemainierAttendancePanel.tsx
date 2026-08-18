@@ -32,6 +32,18 @@ const cn = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" 
 interface SemainierAttendancePanelProps {
   /** Date cible (YYYY-MM-DD). Défaut = aujourd'hui. */
   date?: string;
+  /** ⭐ Callback optionnel pour stocker le pointage dans le rapport quotidien JSON
+   *    au lieu de l'API HR staff_attendances. Si fourni, onMark est appelé
+   *    au lieu de /api/hr/attendance/semainier-check-in.
+   *    Signature: (teacherId, teacherName, status, motif?) => void
+   */
+  onMark?: (teacherId: string, teacherName: string, status: string, motif?: string) => void;
+  /** ⭐ Données de présence actuelles (depuis le rapport quotidien JSON).
+   *    Si fourni, remplace le fetch API. Format: [{ teacherId, status, motif }]
+   */
+  attendanceData?: any[];
+  /** ⭐ Désactiver les boutons (rapport déjà soumis/validé) */
+  disabled?: boolean;
 }
 
 const STATUS_OPTIONS = [
@@ -55,13 +67,16 @@ const STATUS_BADGES: Record<string, string> = {
   MISSION: 'bg-purple-100 text-purple-700',
 };
 
-export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps) {
+export function SemainierAttendancePanel({ date, onMark, attendanceData, disabled }: SemainierAttendancePanelProps) {
   const { user } = useAppSession();
   const targetDate = date || new Date().toISOString().split('T')[0];
 
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null); // staffId en cours de save
+  // ⭐ Modal pour le motif d'absence
+  const [absenceModal, setAbsenceModal] = useState<{ teacherId: string; teacherName: string } | null>(null);
+  const [absenceMotif, setAbsenceMotif] = useState('');
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -80,20 +95,41 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
     }
   }, [targetDate]);
 
-  useEffect(() => { loadStaff(); }, [loadStaff]);
+  useEffect(() => { if (!attendanceData) loadStaff(); else setLoading(false); }, [loadStaff, attendanceData]);
 
-  const handleMark = async (staffId: string, status: string) => {
+  // ⭐ Récupérer le statut d'un enseignant depuis attendanceData (rapport JSON)
+  //    ou depuis staff (API HR)
+  const getStaffStatus = (s: any): string | null => {
+    if (attendanceData && onMark) {
+      // Mode rapport quotidien : chercher dans attendanceData
+      const entry = attendanceData.find((a: any) => a.teacherId === s.teacherId || a.teacherId === s.staffId);
+      return entry?.status || null;
+    }
+    return s.status || null;
+  };
+
+  const handleMark = async (staffId: string, staffName: string, status: string) => {
+    // ⭐ Si onMark est fourni (mode rapport quotidien), l'utiliser au lieu de l'API HR
+    if (onMark) {
+      if (status === 'ABSENT') {
+        // Ouvrir le modal pour le motif d'absence
+        setAbsenceModal({ teacherId: staffId, teacherName: staffName });
+        setAbsenceMotif('');
+        return; // Ne pas marquer tout de suite — attendre le motif
+      }
+      setSaving(staffId);
+      onMark(staffId, staffName, status);
+      setSaving(null);
+      return;
+    }
+    // Mode legacy : appeler l'API HR
     setSaving(staffId);
     try {
       const res = await fetch("/api/hr/attendance/semainier-check-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          staffId,
-          date: targetDate,
-          status,
-        }),
+        body: JSON.stringify({ staffId, date: targetDate, status }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -101,11 +137,20 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
         return;
       }
       toast.success(`✅ ${data.staffName} marqué(e) "${status}"`);
-      loadStaff(); // recharge la liste
+      loadStaff();
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
     } finally {
       setSaving(null);
+    }
+  };
+
+  // ⭐ Confirmer le motif d'absence et marquer l'enseignant
+  const confirmAbsence = () => {
+    if (absenceModal && onMark) {
+      onMark(absenceModal.teacherId, absenceModal.teacherName, 'ABSENT', absenceMotif);
+      setAbsenceModal(null);
+      setAbsenceMotif('');
     }
   };
 
@@ -176,6 +221,7 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
             </thead>
             <tbody>
               {staff.map((s: any) => {
+                const currentStatus = getStaffStatus(s);
                 const isSelfMarked = s.markedByRole === 'SELF';
                 return (
                   <tr key={s.staffId} className={cn(
@@ -197,19 +243,14 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
                       {s.schoolLevelCode || '—'}
                     </td>
                     <td className="px-3 py-2.5 text-center">
-                      {s.status ? (
+                      {currentStatus ? (
                         <div className="flex flex-col items-center gap-1">
-                          <span className={cn("px-2 py-0.5 rounded text-xs font-bold", STATUS_BADGES[s.status] || 'bg-slate-100')}>
-                            {s.status}
+                          <span className={cn("px-2 py-0.5 rounded text-xs font-bold", STATUS_BADGES[currentStatus] || 'bg-slate-100')}>
+                            {currentStatus}
                           </span>
                           {isSelfMarked && (
                             <span className="text-[10px] text-purple-600 font-semibold flex items-center gap-0.5">
                               <Check className="h-2.5 w-2.5" /> AUTO-POINTÉ
-                            </span>
-                          )}
-                          {s.markedByRole === 'SEMINARIER' && (
-                            <span className="text-[10px] text-purple-600 font-semibold">
-                              PAR SEMAINIER
                             </span>
                           )}
                         </div>
@@ -219,7 +260,6 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
                     </td>
                     <td className="px-3 py-2.5">
                       {isSelfMarked ? (
-                        // ⭐ Mutual exclusion : si auto-pointé, le semainier ne peut PAS modifier
                         <div className="text-xs text-purple-600 italic text-center">
                           🔒 Auto-pointé — non modifiable
                         </div>
@@ -227,17 +267,17 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
                         <div className="flex gap-1 justify-center flex-wrap">
                           {STATUS_OPTIONS.map(opt => {
                             const Icon = opt.icon;
-                            const isActive = s.status === opt.value;
+                            const isActive = currentStatus === opt.value;
                             return (
                               <button
                                 key={opt.value}
-                                onClick={() => handleMark(s.staffId, opt.value)}
-                                disabled={saving === s.staffId}
+                                onClick={() => handleMark(s.staffId, s.staffName, opt.value)}
+                                disabled={saving === s.staffId || disabled}
                                 title={opt.label}
                                 className={cn(
                                   "px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition",
                                   isActive ? opt.activeClass : opt.inactiveClass,
-                                  saving === s.staffId && "opacity-50"
+                                  (saving === s.staffId || disabled) && "opacity-50 cursor-not-allowed"
                                 )}
                               >
                                 {saving === s.staffId ? (
@@ -257,6 +297,50 @@ export function SemainierAttendancePanel({ date }: SemainierAttendancePanelProps
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ⭐ MODAL: Motif d'absence */}
+      {absenceModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-rose-50 border-rose-200">
+              <div className="flex items-center gap-3">
+                <X className="h-10 w-10 text-rose-500" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Motif d'absence</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{absenceModal.teacherName}</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                Indiquez le motif de l'absence
+              </label>
+              <textarea
+                value={absenceMotif}
+                onChange={(e) => setAbsenceMotif(e.target.value)}
+                rows={3}
+                placeholder="Ex: Maladie, Congé, Formation, Mission..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-400"
+                autoFocus
+              />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setAbsenceModal(null); setAbsenceMotif(''); }}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg">
+                Annuler
+              </button>
+              <button
+                onClick={confirmAbsence}
+                disabled={!absenceMotif.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                <X className="h-4 w-4" />
+                Confirmer l'absence
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

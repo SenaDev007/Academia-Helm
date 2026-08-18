@@ -1004,12 +1004,51 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
         </p>
       </div>
 
-      {/* ⭐ Panneau de pointage des enseignants par le semainier */}
+      {/* ⭐ Panneau de pointage des enseignants par le semainier
+          Connecté au rapport quotidien JSON (teacherAttendance) au lieu de l'API HR */}
       <div className="mb-6">
-        <SemainierAttendancePanel date={dayDate} />
+        <SemainierAttendancePanel
+          date={dayDate}
+          onMark={(teacherId: string, teacherName: string, status: string, motif?: string) => {
+            // ⭐ Mettre à jour le teacherAttendance du rapport quotidien
+            const current = dailyReport?.teacherAttendance || [];
+            const existing = current.find((t: any) => t.teacherId === teacherId);
+            if (existing) {
+              // Mettre à jour la ligne existante
+              const updated = current.map((t: any) =>
+                t.teacherId === teacherId
+                  ? {
+                      ...t,
+                      status,
+                      present: status === 'PRESENT' || status === 'LATE' || status === 'HALF_DAY' || status === 'MISSION',
+                      absent: status === 'ABSENT',
+                      motif: status === 'ABSENT' ? (motif || '') : '',
+                    }
+                  : t
+              );
+              setDailyReport({ ...dailyReport, teacherAttendance: updated });
+            } else {
+              // Créer une nouvelle ligne
+              const newEntry = {
+                teacherId,
+                name: teacherName,
+                subject: '', // À remplir manuellement ou auto
+                status,
+                present: status === 'PRESENT' || status === 'LATE' || status === 'HALF_DAY' || status === 'MISSION',
+                absent: status === 'ABSENT',
+                motif: status === 'ABSENT' ? (motif || '') : '',
+                replacement: '',
+              };
+              setDailyReport({ ...dailyReport, teacherAttendance: [...current, newEntry] });
+            }
+            toast.success(`✅ ${teacherName} marqué(e) "${status}"`);
+          }}
+          attendanceData={dailyReport?.teacherAttendance || []}
+          disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
+        />
       </div>
 
-      {/* 1. PRÉSENCE DES ENSEIGNANTS */}
+      {/* 1. PRÉSENCE DES ENSEIGNANTS — auto-rempli depuis le pointage */}
       <Section title="1. Présence des enseignants" icon={Users}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
@@ -1025,24 +1064,56 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
             </thead>
             <tbody>
               {(dailyReport?.teacherAttendance || []).map((t: any, i: number) => (
-                <tr key={i}>
-                  <td className="border border-slate-300 px-2 py-1">{t.name}</td>
-                  <td className="border border-slate-300 px-2 py-1">{t.subject}</td>
-                  <td className="border border-slate-300 px-2 py-1 text-center">{t.present ? '✓' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-1 text-center">{t.absent ? '✗' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-1">{t.motif || ''}</td>
-                  <td className="border border-slate-300 px-2 py-1">{t.replacement || ''}</td>
+                <tr key={i} className={t.absent ? "bg-rose-50/30" : ""}>
+                  <td className="border border-slate-300 px-2 py-1 font-semibold">{t.name}</td>
+                  <td className="border border-slate-300 px-2 py-1">
+                    <input
+                      type="text"
+                      value={t.subject || ''}
+                      onChange={(e) => {
+                        const updated = [...(dailyReport?.teacherAttendance || [])];
+                        updated[i] = { ...t, subject: e.target.value };
+                        setDailyReport({ ...dailyReport, teacherAttendance: updated });
+                      }}
+                      disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
+                      placeholder="Matière..."
+                      className="w-full px-1 py-0.5 text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-400 rounded"
+                    />
+                  </td>
+                  <td className="border border-slate-300 px-2 py-1 text-center">
+                    {t.present ? <Check className="h-3.5 w-3.5 text-emerald-600 mx-auto" /> : ''}
+                  </td>
+                  <td className="border border-slate-300 px-2 py-1 text-center">
+                    {t.absent ? <X className="h-3.5 w-3.5 text-rose-600 mx-auto" /> : ''}
+                  </td>
+                  <td className="border border-slate-300 px-2 py-1 text-rose-700">{t.motif || ''}</td>
+                  <td className="border border-slate-300 px-2 py-1">
+                    <input
+                      type="text"
+                      value={t.replacement || ''}
+                      onChange={(e) => {
+                        const updated = [...(dailyReport?.teacherAttendance || [])];
+                        updated[i] = { ...t, replacement: e.target.value };
+                        setDailyReport({ ...dailyReport, teacherAttendance: updated });
+                      }}
+                      disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'}
+                      placeholder="Nom du remplaçant..."
+                      className="w-full px-1 py-0.5 text-xs border-0 bg-transparent focus:ring-1 focus:ring-blue-400 rounded"
+                    />
+                  </td>
                 </tr>
               ))}
               {(!dailyReport?.teacherAttendance || dailyReport.teacherAttendance.length === 0) && (
-                <tr><td colSpan={6} className="border border-slate-300 px-4 py-4 text-center text-slate-400">Aucun enseignant chargé.</td></tr>
+                <tr><td colSpan={6} className="border border-slate-300 px-4 py-4 text-center text-slate-400">
+                  Aucun enseignant pointé. Utilisez les boutons de pointage ci-dessus pour marquer les enseignants.
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
         <div className="mt-2">
           <label className="text-xs font-bold text-slate-600 block mb-1">Synthèse</label>
-          <RichTextEditor value={dailyReport?.teacherAttendanceSynthesis || ""} onChange={html => setDailyReport({ ...dailyReport, teacherAttendanceSynthesis: html })} minHeight="60px" />
+          <RichTextEditor value={dailyReport?.teacherAttendanceSynthesis || ""} onChange={html => setDailyReport({ ...dailyReport, teacherAttendanceSynthesis: html })} disabled={config?.status === 'SUBMITTED' || config?.status === 'VALIDATED'} minHeight="60px" />
         </div>
       </Section>
 

@@ -2265,17 +2265,54 @@ export class PedagogicalSpaceService {
     tenantId: string,
     homeworkEntryId: string,
   ) {
-    const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
-      where: { tenantId, homeworkEntryId },
-      include: {
-        student: {
-          select: { id: true, firstName: true, lastName: true, gender: true, matricule: true, photoUrl: true },
-        },
-      },
-      orderBy: { student: { lastName: 'asc' } },
-    });
+    // ⭐ FIX : le modèle PedagogicalTaskStudent n'a PAS de relation `student`
+    //    déclarée dans schema.prisma (studentId est un plain String, pas une
+    //    relation @relation). Donc `include: { student: ... }` lance l'erreur
+    //    Prisma "champ student invalide". On utilise du raw SQL avec JOIN
+    //    à la place pour récupérer les infos de l'élève.
+    const tasks: any = await this.prisma.$queryRawUnsafe(
+      `SELECT pts."id", pts."tenantId", pts."academicYearId", pts."homeworkEntryId",
+              pts."studentId", pts."teacherId", pts."status", pts."score",
+              pts."appreciation", pts."observation", pts."submittedAt",
+              pts."evaluatedAt", pts."parentNotified", pts."createdAt", pts."updatedAt",
+              s."firstName" AS "studentFirstName",
+              s."lastName" AS "studentLastName",
+              s."gender" AS "studentGender",
+              s."matricule" AS "studentMatricule",
+              s."photoUrl" AS "studentPhotoUrl"
+       FROM "pedagogical_task_students" pts
+       LEFT JOIN "students" s ON s."id" = pts."studentId"
+       WHERE pts."tenantId" = $1 AND pts."homeworkEntryId" = $2
+       ORDER BY s."lastName" ASC, s."firstName" ASC`,
+      tenantId, homeworkEntryId,
+    );
 
-    return tasks;
+    // Reformater pour correspondre à la structure attendue par le frontend
+    return (tasks || []).map((t: any) => ({
+      id: t.id,
+      tenantId: t.tenantId,
+      academicYearId: t.academicYearId,
+      homeworkEntryId: t.homeworkEntryId,
+      studentId: t.studentId,
+      teacherId: t.teacherId,
+      status: t.status,
+      score: t.score,
+      appreciation: t.appreciation,
+      observation: t.observation,
+      submittedAt: t.submittedAt,
+      evaluatedAt: t.evaluatedAt,
+      parentNotified: t.parentNotified,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      student: {
+        id: t.studentId,
+        firstName: t.studentFirstName,
+        lastName: t.studentLastName,
+        gender: t.studentGender,
+        matricule: t.studentMatricule,
+        photoUrl: t.studentPhotoUrl,
+      },
+    }));
   }
 
   // ===========================================================================
@@ -2329,30 +2366,30 @@ export class PedagogicalSpaceService {
 
     if (homeworks.length === 0) return [];
 
-    // Récupérer tous les PedagogicalTaskStudent pour ces homeworks
-    const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
-      where: {
-        tenantId,
-        homeworkEntryId: { in: homeworks.map(h => h.id) },
-      },
-      include: {
-        student: {
-          select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true, gender: true },
-        },
-      },
-    });
+    // ⭐ FIX : remplacer include: { student: ... } par raw SQL (PedagogicalTaskStudent
+    //    n'a pas de relation `student` déclarée dans schema.prisma)
+    const hwIds = homeworks.map(h => h.id);
+    const tasks: any = await this.prisma.$queryRawUnsafe(
+      `SELECT pts.*, s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName",
+              s."matricule" AS "studentMatricule", s."photoUrl" AS "studentPhotoUrl",
+              s."gender" AS "studentGender"
+       FROM "pedagogical_task_students" pts
+       LEFT JOIN "students" s ON s."id" = pts."studentId"
+       WHERE pts."tenantId" = $1 AND pts."homeworkEntryId" = ANY($2::text[])`,
+      tenantId, hwIds,
+    );
 
     // Grouper par étudiant
     const byStudent = new Map<string, any>();
-    for (const t of tasks) {
+    for (const t of (tasks || [])) {
       if (!byStudent.has(t.studentId)) {
         byStudent.set(t.studentId, {
           studentId: t.studentId,
-          firstName: t.student?.firstName || '',
-          lastName: t.student?.lastName || '',
-          matricule: t.student?.matricule || '',
-          photoUrl: t.student?.photoUrl || null,
-          gender: t.student?.gender || null,
+          firstName: t.studentFirstName || '',
+          lastName: t.studentLastName || '',
+          matricule: t.studentMatricule || '',
+          photoUrl: t.studentPhotoUrl || null,
+          gender: t.studentGender || null,
           tasks: [],
         });
       }
@@ -2642,15 +2679,18 @@ export class PedagogicalSpaceService {
     // Pour chaque homework LESSON, récupérer les task students
     const result = [];
     for (const hw of homeworks) {
-      const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
-        where: { tenantId, homeworkEntryId: hw.id },
-        include: {
-          student: {
-            select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
-          },
-        },
-        orderBy: { student: { lastName: 'asc' } },
-      });
+      // ⭐ FIX : raw SQL au lieu de include: { student: ... } (pas de relation dans schema)
+      const tasks: any = await this.prisma.$queryRawUnsafe(
+        `SELECT pts."id", pts."studentId", pts."status", pts."observation",
+                pts."appreciation", pts."evaluatedAt",
+                s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName",
+                s."matricule" AS "studentMatricule", s."photoUrl" AS "studentPhotoUrl"
+         FROM "pedagogical_task_students" pts
+         LEFT JOIN "students" s ON s."id" = pts."studentId"
+         WHERE pts."tenantId" = $1 AND pts."homeworkEntryId" = $2
+         ORDER BY s."lastName" ASC`,
+        tenantId, hw.id,
+      );
 
       result.push({
         homework: {
@@ -2742,15 +2782,29 @@ export class PedagogicalSpaceService {
         presented: tasks.filter(t => t.status === 'PRESENTED').length,
         notPresented: tasks.filter(t => t.status === 'NOT_PRESENTED').length,
         // Liste détaillée par élève (pour le statut individuel)
-        students: await this.prisma.pedagogicalTaskStudent.findMany({
-          where: { homeworkEntryId: hw.id },
-          include: {
-            student: {
-              select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
-            },
-          },
-          orderBy: { student: { lastName: 'asc' } },
-        }),
+        // ⭐ FIX : raw SQL au lieu de include: { student: ... } (pas de relation dans schema)
+        students: await this.prisma.$queryRawUnsafe(
+          `SELECT pts."id", pts."studentId", pts."status", pts."score",
+                  pts."appreciation", pts."observation", pts."evaluatedAt",
+                  s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName",
+                  s."matricule" AS "studentMatricule", s."photoUrl" AS "studentPhotoUrl"
+           FROM "pedagogical_task_students" pts
+           LEFT JOIN "students" s ON s."id" = pts."studentId"
+           WHERE pts."homeworkEntryId" = $1
+           ORDER BY s."lastName" ASC`,
+          hw.id,
+        ).then((rows: any[]) => rows.map(t => ({
+          id: t.id,
+          studentId: t.studentId,
+          firstName: t.studentFirstName,
+          lastName: t.studentLastName,
+          matricule: t.studentMatricule,
+          photoUrl: t.studentPhotoUrl,
+          status: t.status,
+          score: t.score,
+          appreciation: t.appreciation,
+          observation: t.observation,
+        }))),
       });
     }
 

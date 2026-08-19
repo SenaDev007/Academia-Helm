@@ -306,7 +306,6 @@ export default function TeacherTasksWorkspace() {
             taskType="HOMEWORK"
             onEdit={openEdit}
             onCreate={() => openCreate('HOMEWORK')}
-            confirmDialog={confirmDialog}
           />
         )}
         {activeTab === 'research' && (
@@ -319,7 +318,6 @@ export default function TeacherTasksWorkspace() {
             taskType="RESEARCH"
             onEdit={openEdit}
             onCreate={() => openCreate('RESEARCH')}
-            confirmDialog={confirmDialog}
           />
         )}
         {activeTab === 'practical' && (
@@ -332,7 +330,6 @@ export default function TeacherTasksWorkspace() {
             taskType="PRACTICAL"
             onEdit={openEdit}
             onCreate={() => openCreate('PRACTICAL')}
-            confirmDialog={confirmDialog}
           />
         )}
         {activeTab === 'lessons' && (
@@ -1115,7 +1112,6 @@ interface HomeworkManagerProps {
   taskType: string;
   onEdit: (hw: any) => void;
   onCreate: () => void;
-  confirmDialog: ReturnType<typeof useConfirmDialog>;
 }
 
 function HomeworkManager({
@@ -1125,14 +1121,14 @@ function HomeworkManager({
   taskType,
   onEdit,
   onCreate,
-  confirmDialog,
 }: HomeworkManagerProps) {
   const [homeworks, setHomeworks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterClassId, setFilterClassId] = useState('');
   const [search, setSearch] = useState('');
   const [selectedHw, setSelectedHw] = useState<any | null>(null);
-
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -1158,20 +1154,24 @@ function HomeworkManager({
     load();
   }, [load]);
 
-  const handleDelete = async (hw: any) => {
-    const ok = await confirmDialog.danger(
-      `L'activité « ${hw.title} » sera définitivement supprimée ainsi que le suivi de tous les élèves associés.`,
-      'Supprimer cette activité ?',
-    );
-    if (!ok) return;
+  // ⭐ handleDelete — ouvre un modal de confirmation personnalisé (pas confirmDialog générique)
+  const handleDelete = (hw: any) => {
+    setDeleteTarget(hw);
+  };
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await apiFetch(`/api/pedagogy-space/homeworks/${hw.id}`, {
+      await apiFetch(`/api/pedagogy-space/homeworks/${deleteTarget.id}`, {
         method: 'DELETE',
       });
       toast.success('Activité supprimée.');
+      setDeleteTarget(null);
       load();
     } catch (e: any) {
       toast.error('Erreur lors de la suppression', { description: e.message });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1363,6 +1363,52 @@ function HomeworkManager({
           taskType={taskType}
           onClose={() => setSelectedHw(null)}
         />
+      )}
+
+      {/* ⭐ MODAL PERSONNALISÉ : Confirmation de suppression (pas de confirmDialog générique) */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-rose-50 border-rose-200">
+              <div className="flex items-center gap-3">
+                <Trash2 className="h-10 w-10 text-rose-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Supprimer l'activité</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{deleteTarget.title}</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-sm text-slate-700 font-medium">
+                Vous êtes sur le point de supprimer définitivement cette activité.
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                <p className="text-[10px] font-bold text-amber-700 uppercase">⚠ Conséquences :</p>
+                <p className="text-xs text-amber-900">
+                  Le devoir et tout le suivi des élèves associé (statuts, notes, appréciations) seront définitivement supprimés.
+                  Cette action est irréversible.
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Supprimer définitivement
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

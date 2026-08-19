@@ -1165,7 +1165,7 @@ function HomeworkManager({
             {taskTypeLabel}s
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
-            {filtered.length} activité(s) — CRUD complet
+            {filtered.length} activité(s)
           </p>
         </div>
         <div className="flex items-center gap-2">

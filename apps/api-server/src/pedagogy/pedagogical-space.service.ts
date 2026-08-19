@@ -1879,33 +1879,66 @@ export class PedagogicalSpaceService {
       description: string;
       dueDate: string;
       maxScore?: number;
-      taskType?: string; // HOMEWORK | RESEARCH | LESSON | RECITATION | PRACTICAL | PROJECT
-      status?: string; // DRAFT | ASSIGNED | COMPLETED | ARCHIVED
+      taskType?: string;
+      status?: string;
       presentationDate?: string;
       attachments?: any;
       observations?: string;
-      cahierJournalId?: string; // ⭐ Lien vers le cahier journal (maternelle + primaire)
+      cahierJournalId?: string;
     },
   ) {
+    // ⭐ FIX P2003 : résoudre schoolLevelId depuis la classe si vide ou invalide.
+    //    Le frontend peut envoyer un schoolLevelId vide ou incorrect (le contexte
+    //    useModuleContext() peut ne pas avoir le bon schoolLevel). On résout
+    //    depuis la table Class (classId → schoolLevelId) comme fallback.
+    //    Pattern identique à saveDailyAttendance (l. 694-714).
+    let resolvedSchoolLevelId = schoolLevelId;
+    if (!resolvedSchoolLevelId || resolvedSchoolLevelId.trim() === '') {
+      const cls = await this.prisma.class.findFirst({
+        where: { id: data.classId, tenantId },
+        select: { schoolLevelId: true },
+      });
+      if (cls?.schoolLevelId) {
+        resolvedSchoolLevelId = cls.schoolLevelId;
+      } else {
+        // Fallback : chercher dans AcademicClass
+        const ac = await this.prisma.academicClass.findFirst({
+          where: { id: data.classId, tenantId },
+          select: { schoolLevelId: true },
+        });
+        resolvedSchoolLevelId = ac?.schoolLevelId || '';
+      }
+      if (!resolvedSchoolLevelId) {
+        throw new BadRequestException(
+          `Impossible de résoudre le niveau scolaire pour la classe ${data.classId}.`,
+        );
+      }
+      this.logger.log(`✅ schoolLevelId résolu depuis la classe : ${resolvedSchoolLevelId}`);
+    }
+
+    // ⭐ FIX : résoudre teacherId depuis User → Teacher (par email).
+    //    Le frontend envoie user.id (qui est un User ID), pas un Teacher ID.
+    //    Le backend doit résoudre vers un vrai Teacher ID via resolveTeacherId.
+    const { teacherId: resolvedTeacherId } = await this.resolveTeacherId(tenantId, teacherId);
+    const finalTeacherId = resolvedTeacherId || teacherId; // fallback si pas trouvé
+
     // Créer le HomeworkEntry
     const homework = await this.prisma.homeworkEntry.create({
       data: {
         tenantId,
         academicYearId,
-        schoolLevelId,
+        schoolLevelId: resolvedSchoolLevelId,
         classId: data.classId,
         subjectId: data.subjectId || null,
         title: data.title,
         description: data.description,
         dueDate: new Date(data.dueDate),
         maxScore: data.maxScore || null,
-        // ⭐ Nouveaux champs (Phase 2) : taskType, status, presentationDate, attachments, observations
         taskType: data.taskType || 'HOMEWORK',
         status: data.status || 'ASSIGNED',
         presentationDate: data.presentationDate ? new Date(data.presentationDate) : null,
         attachments: data.attachments || undefined,
         observations: data.observations || null,
-        // ⭐ Lien vers le cahier journal (maternelle + primaire) — Phase 4
         cahierJournalId: data.cahierJournalId || null,
       },
     });
@@ -1928,7 +1961,7 @@ export class PedagogicalSpaceService {
           academicYearId,
           homeworkEntryId: homework.id,
           studentId: e.studentId,
-          teacherId,
+          teacherId: finalTeacherId,
           status: 'PENDING',
         })),
       });

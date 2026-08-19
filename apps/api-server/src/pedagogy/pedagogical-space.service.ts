@@ -2682,13 +2682,13 @@ export class PedagogicalSpaceService {
       // ⭐ FIX : raw SQL au lieu de include: { student: ... } (pas de relation dans schema)
       const tasks: any = await this.prisma.$queryRawUnsafe(
         `SELECT pts."id", pts."studentId", pts."status", pts."observation",
-                pts."appreciation", pts."evaluatedAt",
+                pts."appreciation", pts."score", pts."evaluatedAt",
                 s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName",
                 s."matricule" AS "studentMatricule", s."photoUrl" AS "studentPhotoUrl"
          FROM "pedagogical_task_students" pts
          LEFT JOIN "students" s ON s."id" = pts."studentId"
          WHERE pts."tenantId" = $1 AND pts."homeworkEntryId" = $2
-         ORDER BY s."lastName" ASC`,
+         ORDER BY s."lastName" ASC, s."firstName" ASC`,
         tenantId, hw.id,
       );
 
@@ -2701,17 +2701,23 @@ export class PedagogicalSpaceService {
           class: hw.class,
           subject: hw.subject,
           observations: hw.observations,
+          taskType: hw.taskType,
+          maxScore: hw.maxScore,
         },
+        // ⭐ FIX : la requête raw SQL retourne des champs plats
+        //    (studentFirstName, studentLastName, studentMatricule, studentPhotoUrl)
+        //    — pas une relation imbriquée. On mappe donc directement.
         students: tasks.map(t => ({
           id: t.id,
           studentId: t.studentId,
-          firstName: t.student?.firstName,
-          lastName: t.student?.lastName,
-          matricule: t.student?.matricule,
-          photoUrl: t.student?.photoUrl,
-          status: t.status, // DONE | NOT_DONE | TO_REDO | INCOMPLETE
+          firstName: t.studentFirstName,
+          lastName: t.studentLastName,
+          matricule: t.studentMatricule,
+          photoUrl: t.studentPhotoUrl,
+          status: t.status, // DONE | NOT_DONE | TO_REDO | INCOMPLETE | PENDING
           observation: t.observation,
           appreciation: t.appreciation,
+          score: t.score,
           evaluatedAt: t.evaluatedAt,
         })),
       });

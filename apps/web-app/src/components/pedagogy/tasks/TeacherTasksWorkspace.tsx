@@ -54,8 +54,8 @@ const TABS = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
   { id: 'homework', label: 'Devoirs & Exercices', icon: ClipboardList },
   { id: 'research', label: 'Recherches & Exposés', icon: Search },
-  { id: 'lessons', label: 'Leçons & Récitations', icon: BookOpen },
   { id: 'notebooks', label: 'Cahiers & Copies', icon: NotebookPen },
+  { id: 'lessons', label: 'Leçons & Récitations', icon: BookOpen },
   { id: 'practical', label: 'Activités pratiques', icon: Palette },
   { id: 'student-followup', label: 'Suivi par élève', icon: Users },
   { id: 'feedback', label: 'Corrections & Retours', icon: CheckCircle2 },
@@ -1361,7 +1361,7 @@ function HomeworkManager({
         <TaskStudentsModal
           homework={selectedHw}
           taskType={taskType}
-          onClose={() => setSelectedHw(null)}
+          onClose={() => { setSelectedHw(null); load(); }}
         />
       )}
 

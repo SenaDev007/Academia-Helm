@@ -7764,6 +7764,11 @@ model HomeworkEntry {
   schoolLevelId   String
   academicTrackId String?
   lessonPlanId    String?
+  /// ⭐ Lien vers le CahierJournal (cahier_journal_entries) — pour rattacher un devoir
+  ///    à une case spécifique du cahier journal (jour + matière). Permet d'afficher
+  ///    "par rapport à la leçon X du jour Y, voici les exercices donnés" + le statut
+  ///    de chaque élève (récitation réussie/échouée, leçon copiée/non copiée).
+  cahierJournalId String?
   classId         String?
   subjectId       String?
   /// ⭐ Type de tâche pédagogique pour discriminer les sous-onglets de Travaux & Suivi :
@@ -16244,6 +16249,11 @@ model CahierJournal {
   //    Permet de rattacher chaque fiche à un cahier journal précis (au lieu de
   //    calculer le lien par date à la volée).
   fiches          PrimaryPedagogicalFiche[]
+
+  // ⭐ Relation vers les HomeworkEntry (devoirs, leçons, récitations, etc.)
+  //    rattaches à ce cahier journal — pour le sous-onglet "Travaux & Suivi"
+  //    du cahier journal enseignant (maternelle + primaire).
+  homeworkEntries HomeworkEntry[]
 
   @@unique([tenantId, academicYearId, classId, weekStartDate])
   @@index([tenantId, academicYearId, teacherId])

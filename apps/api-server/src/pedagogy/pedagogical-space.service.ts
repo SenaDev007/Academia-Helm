@@ -24,6 +24,7 @@ import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service'
 import { EmailService } from '../communication/services/email.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class PedagogicalSpaceService {
@@ -35,6 +36,7 @@ export class PedagogicalSpaceService {
     private readonly emailService: EmailService,
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // ===========================================================================
@@ -1882,6 +1884,7 @@ export class PedagogicalSpaceService {
       presentationDate?: string;
       attachments?: any;
       observations?: string;
+      cahierJournalId?: string; // ⭐ Lien vers le cahier journal (maternelle + primaire)
     },
   ) {
     // Créer le HomeworkEntry
@@ -1902,6 +1905,8 @@ export class PedagogicalSpaceService {
         presentationDate: data.presentationDate ? new Date(data.presentationDate) : null,
         attachments: data.attachments || undefined,
         observations: data.observations || null,
+        // ⭐ Lien vers le cahier journal (maternelle + primaire) — Phase 4
+        cahierJournalId: data.cahierJournalId || null,
       },
     });
 
@@ -1927,9 +1932,44 @@ export class PedagogicalSpaceService {
           status: 'PENDING',
         })),
       });
+
+      // ⭐ Notifier les parents de la création du devoir (in-app + push web)
+      //    Personnaliser le titre selon le taskType :
+      //      HOMEWORK → "Nouveau devoir", RESEARCH → "Nouvelle recherche/exposé",
+      //      LESSON → "Leçon à recopier", RECITATION → "Nouvelle récitation",
+      //      PRACTICAL → "Nouvelle activité pratique", PROJECT → "Nouveau projet"
+      const taskTypeLabel: Record<string, string> = {
+        HOMEWORK: 'Nouveau devoir',
+        RESEARCH: 'Nouvelle recherche / exposé',
+        LESSON: 'Leçon à recopier',
+        RECITATION: 'Nouvelle récitation',
+        PRACTICAL: 'Nouvelle activité pratique',
+        PROJECT: 'Nouveau projet',
+      };
+      const label = taskTypeLabel[data.taskType || 'HOMEWORK'] || 'Nouveau devoir';
+      const subjectLabel = `${label} — ${homework.title}`;
+
+      // Appel non bloquant (catch errors silencieusement pour ne pas faire échouer la création)
+      this.notificationService.notifyParentsNewHomework(
+        data.classId,
+        tenantId,
+        subjectLabel,
+        homework.description || '',
+      ).catch((err) => {
+        this.logger.warn(`notifyParentsNewHomework failed (non-blocking): ${err.message}`);
+      });
+
+      // ⭐ Marquer les PedagogicalTaskStudent créés comme "parent notifié"
+      //    (le flag parentNotified existe déjà dans le schéma mais n'était jamais setté à true)
+      await this.prisma.pedagogicalTaskStudent.updateMany({
+        where: { homeworkEntryId: homework.id },
+        data: { parentNotified: true },
+      }).catch((err) => {
+        this.logger.warn(`Failed to set parentNotified=true: ${err.message}`);
+      });
     }
 
-    this.logger.log(`✅ Devoir créé: ${homework.title} (taskType=${data.taskType || 'HOMEWORK'}) — ${enrollments.length} élèves initialisés`);
+    this.logger.log(`✅ Devoir créé: ${homework.title} (taskType=${data.taskType || 'HOMEWORK'}) — ${enrollments.length} élèves initialisés + parents notifiés`);
 
     return {
       ...homework,
@@ -2594,6 +2634,83 @@ export class PedagogicalSpaceService {
           appreciation: t.appreciation,
           evaluatedAt: t.evaluatedAt,
         })),
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * ⭐ Cahier journal → Travaux & Suivi : récupère tous les HomeworkEntry liés
+   *    à un cahier journal donné (cahierJournalId). Utilisé pour afficher dans
+   *    le cahier journal enseignant (maternelle + primaire) les devoirs/leçons/
+   *    récitations/exposés attachés à chaque case du cahier journal.
+   *
+   *    Permet d'afficher "par rapport à la leçon X du jour Y, voici les exercices
+   *    donnés" + le statut de chaque élève (récitation réussie/échouée, leçon
+   *    copiée/non copiée).
+   *
+   *    Retourne : [{ id, title, description, taskType, dueDate, presentationDate,
+   *                  maxScore, observations, subjectName, className,
+   *                  totalStudents, done, notDone, pending, late, incomplete,
+   *                  toRedo, recited, notRecited, presented, notPresented }]
+   */
+  async getHomeworksByCahierJournal(
+    tenantId: string,
+    cahierJournalId: string,
+  ) {
+    const homeworks = await this.prisma.homeworkEntry.findMany({
+      where: { tenantId, cahierJournalId },
+      include: {
+        class: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    // Pour chaque devoir, compter les statuts par élève
+    const result = [];
+    for (const hw of homeworks) {
+      const tasks = await this.prisma.pedagogicalTaskStudent.findMany({
+        where: { homeworkEntryId: hw.id },
+        select: { status: true, score: true, appreciation: true, observation: true },
+      });
+
+      result.push({
+        id: hw.id,
+        title: hw.title,
+        description: hw.description,
+        taskType: hw.taskType,
+        status: hw.status,
+        dueDate: hw.dueDate,
+        presentationDate: hw.presentationDate,
+        maxScore: hw.maxScore,
+        observations: hw.observations,
+        attachments: hw.attachments,
+        class: hw.class,
+        subject: hw.subject,
+        // Stats agrégées par statut
+        totalStudents: tasks.length,
+        done: tasks.filter(t => t.status === 'DONE').length,
+        notDone: tasks.filter(t => t.status === 'NOT_DONE').length,
+        pending: tasks.filter(t => t.status === 'PENDING').length,
+        late: tasks.filter(t => t.status === 'LATE').length,
+        incomplete: tasks.filter(t => t.status === 'INCOMPLETE').length,
+        toRedo: tasks.filter(t => t.status === 'TO_REDO').length,
+        recited: tasks.filter(t => t.status === 'RECITED').length,
+        notRecited: tasks.filter(t => t.status === 'NOT_RECITED').length,
+        presented: tasks.filter(t => t.status === 'PRESENTED').length,
+        notPresented: tasks.filter(t => t.status === 'NOT_PRESENTED').length,
+        // Liste détaillée par élève (pour le statut individuel)
+        students: await this.prisma.pedagogicalTaskStudent.findMany({
+          where: { homeworkEntryId: hw.id },
+          include: {
+            student: {
+              select: { id: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
+            },
+          },
+          orderBy: { student: { lastName: 'asc' } },
+        }),
       });
     }
 

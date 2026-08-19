@@ -6810,3 +6810,88 @@ Stage Summary:
 - TypeScript check frontend : 0 erreur (erreurs pré-existantes useAutoSave.ts non liées)
 - TypeScript check backend : erreurs pré-existantes (Cannot find module @nestjs/common — contexte tsconfig isolé)
 - 1 migration SQL à appliquer au déploiement
+
+---
+Task ID: LINK-PARENT-TASKS-CAHIER-JOURNAL-1
+Agent: main + full-stack-developer subagent + Explore subagent
+Task: Lier l'UI "Travaux & Suivi" enseignant avec l'UI parent pour que le parent suive son enfant (devoirs, leçons, récitations, cahiers, corrections). + Lien cahier journal → Travaux & Suivi pour maternelle/primaire (telle leçon → tels exercices + statut élève).
+
+Work Log:
+
+=== Phase 1 — Exploration ===
+- Rapport d'exploration complet :
+  * UI parent : layout.tsx (8 modules), page.tsx (dashboard), parent-hooks.ts (5 hooks)
+  * Structure parent-enfant : table `student_guardians` (modèle StudentGuardian) — many-to-many
+  * Endpoints parentaux existants : /parent/homeworks/:studentId, /parent/today/:studentId, /parent/cahier-journal/:classId
+  * Service notifyParentsNewHomework() existe déjà (ligne 506 notification.service.ts) mais n'était JAMAIS appelé à la création d'un HomeworkEntry
+  * Flag parentNotified existe sur PedagogicalTaskStudent mais n'était jamais setté à true
+  * Pas de champ cahierJournalId sur HomeworkEntry (lien implicite par classId + date)
+
+=== Phase 2a — Étendre GET /parent/homeworks/:studentId ===
+- AVANT : SELECT basique (id, title, description, dueDate, maxScore, createdAt, subjectName)
+- APRÈS : SELECT étendu avec taskType, status, presentationDate, attachments, observations, lessonPlanId, subjectCode, className
+- Ajout filtres optionnels : ?taskType=T&from=YYYY-MM-DD&to=YYYY-MM-DD
+- Ajout parentNotified dans le SELECT du taskStatus
+
+=== Phase 2b — Brancher notifyParentsNewHomework() dans createHomework() ===
+- AVANT : aucune notification parentale lors de la création d'un devoir
+- APRÈS :
+  * Import NotificationService dans PedagogicalSpaceService (constructor injection)
+  * Appel notifyParentsNewHomework(classId, tenantId, subjectLabel, description) après createMany des PedagogicalTaskStudent
+  * Titre personnalisé selon taskType : "Nouveau devoir" / "Nouvelle recherche / exposé" / "Leçon à recopier" / "Nouvelle récitation" / "Nouvelle activité pratique" / "Nouveau projet"
+  * Appel non bloquant (catch errors silencieusement) pour ne pas faire échouer la création
+  * Setter parentNotified=true sur les PedagogicalTaskStudent créés (updateMany)
+
+=== Phase 3 — Frontend parent ===
+- Layout parent : ajout onglet "Travaux & Suivi" (path /app/parent/tasks, icône ClipboardList)
+- Création page route : /app/parent/tasks/page.tsx (wrapper minimal)
+- Réécriture complète ParentTasksView.tsx (757 lignes) :
+  * useAppSession() + useModuleContext() (PAS de props)
+  * useParentChildren(academicYear?.id) pour récupérer les enfants du parent
+  * Auto-sélection du 1er enfant si un seul
+  * Sélecteur d'enfants en cartes cliquables (avatar emerald + nom + classe)
+  * 5 sous-onglets miroir du teacher (read-only) : Tous / Devoirs / Recherches / Leçons & Récitations / Activités pratiques
+  * Fetch /api/parent/homeworks/:studentId?taskType=T (2 fetchs parallèles pour Leçons & Récitations + Activités pratiques)
+  * Carte de tâche avec : titre + badge taskType + matière + classe + dueDate + presentationDate + description + observations + attachments + statut élève (10 statuts colorés) + score + appréciation + observation + evaluatedAt
+  * Filtres statut (Tous / À faire / Faits / En retard) + tri (dueDate / matière / statut)
+  * Cloche + badge rouge si tâches PENDING ou LATE
+  * Couleurs emerald (layout parent) — PAS de framer-motion — PAS de FormModal
+  * TypeScript : 0 erreur
+
+=== Phase 4a — Migration cahierJournalId ===
+- Ajout champ cahierJournalId String? sur HomeworkEntry (schema.prisma)
+- Ajout relation homeworkEntries HomeworkEntry[] sur CahierJournal (relation inverse)
+- Migration SQL créée : 20260819110000_add_cahier_journal_id_to_homework_entries
+- Migration APPLIQUÉE sur DB Neon de prod :
+  * ALTER TABLE homework_entries ADD COLUMN cahierJournalId TEXT
+  * CREATE INDEX homework_entries_cahier_journal_id_idx
+
+=== Phase 4b — Backend cahier journal → Travaux & Suivi ===
+- createHomework() accepte maintenant cahierJournalId optionnel
+- Nouvelle méthode getHomeworksByCahierJournal(tenantId, cahierJournalId) :
+  * Récupère tous les HomeworkEntry liés à un cahier journal donné
+  * Pour chaque devoir : stats agrégées (totalStudents, done, notDone, pending, late, incomplete, toRedo, recited, notRecited, presented, notPresented)
+  * Liste détaillée par élève (statut individuel, score, appreciation, observation)
+- Nouvel endpoint GET /pedagogy-space/cahier-journal/:id/tasks
+  * Permet d'afficher dans le cahier journal enseignant (maternelle + primaire)
+    "par rapport à la leçon X du jour Y, voici les exercices donnés"
+    + le statut de chaque élève (récitation réussie/échouée, leçon copiée/non copiée)
+
+=== Phase 4c — Frontend cahier journal (À FAIRE) ===
+- Bouton "Travaux & Suivi" par jour/matière dans le cahier journal enseignant
+- Affiche les devoirs liés + statut des élèves (récitation, leçon copiée, etc.)
+- Permet à l'enseignant de rattacher un devoir à une case du cahier journal
+
+Stage Summary:
+- ✅ Phase 1 — Exploration complète (rapport détaillé)
+- ✅ Phase 2a — GET /parent/homeworks/:studentId étendu (taskType, presentationDate, attachments, observations, lessonPlanId + filtres taskType/from/to)
+- ✅ Phase 2b — notifyParentsNewHomework() branché dans createHomework() + parentNotified=true
+- ✅ Phase 3 — Onglet "Travaux & Suivi" dans sidebar parent + page /app/parent/tasks + ParentTasksView.tsx réécrit (757 lignes)
+- ✅ Phase 4a — Migration cahierJournalId appliquée sur DB Neon
+- ✅ Phase 4b — Endpoint GET /cahier-journal/:id/tasks + createHomework accepte cahierJournalId
+- ⏳ Phase 4c — Frontend cahier journal (bouton par jour/matière) — À FAIRE
+- Fichiers modifiés backend : parent-portal.controller.ts, pedagogical-space.service.ts, pedagogical-space.controller.ts, schema.prisma
+- Fichiers créés frontend : /app/parent/tasks/page.tsx, ParentTasksView.tsx réécrit (757 lignes)
+- Fichiers modifiés frontend : /app/parent/layout.tsx (onglet + icône ClipboardList)
+- Migration SQL créée + appliquée sur DB Neon
+- TypeScript check : 0 erreur frontend + 0 nouvelle erreur backend

@@ -29,7 +29,7 @@ import {
   LayoutDashboard, Users, CreditCard, FileText,
   CalendarCheck, MessageSquare, Folder, Loader2, Heart,
   Building2, Phone, Mail, MapPin, GraduationCap, LogOut, Menu, X,
-  BookOpen,
+  BookOpen, ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -40,6 +40,7 @@ import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
 const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
   { path: "/app/parent/children", label: "Mes Enfants", icon: Users },
+  { path: "/app/parent/tasks", label: "Travaux & Suivi", icon: ClipboardList },
   { path: "/app/parent/cahier-journal", label: "Cahier journal", icon: BookOpen },
   { path: "/app/parent/attendance", label: "Présences", icon: CalendarCheck },
   { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },

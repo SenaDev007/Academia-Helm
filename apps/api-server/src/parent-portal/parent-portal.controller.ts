@@ -802,6 +802,9 @@ export class ParentPortalController {
     @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('taskType') taskType?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
 
@@ -819,22 +822,47 @@ export class ParentPortalController {
     const classId = enrollment[0].classId;
     if (!classId) return [];
 
-    const homeworks: any = await this.prisma.$queryRawUnsafe(
-      `SELECT h."id", h."title", h."description", h."dueDate", h."maxScore",
-              h."createdAt", s."name" as "subjectName"
-       FROM "homework_entries" h
-       LEFT JOIN "subjects" s ON s."id" = h."subjectId"
-       WHERE h."tenantId" = $1 AND h."classId" = $2
-       AND h."academicYearId" = $3
-       ORDER BY h."dueDate" DESC LIMIT 50`,
-      tenantId, classId, academicYearId,
-    ).catch(() => []);
+    // ⭐ Étendre le SELECT pour inclure tous les champs ajoutés par la refonte Travaux & Suivi :
+    //    taskType, status, presentationDate, attachments, observations, lessonPlanId
+    //    + filtre optionnel par taskType (HOMEWORK | RESEARCH | LESSON | RECITATION | PRACTICAL | PROJECT)
+    //    + filtre optionnel par plage de dates (from / to — format YYYY-MM-DD)
+    let sql = `
+      SELECT h."id", h."title", h."description", h."dueDate", h."maxScore",
+             h."createdAt", h."taskType", h."status" AS "hwStatus",
+             h."presentationDate", h."attachments", h."observations",
+             h."lessonPlanId",
+             s."name" AS "subjectName", s."code" AS "subjectCode",
+             c."name" AS "className"
+      FROM "homework_entries" h
+      LEFT JOIN "subjects" s ON s."id" = h."subjectId"
+      LEFT JOIN "classes" c ON c."id" = h."classId"
+      WHERE h."tenantId" = $1 AND h."classId" = $2
+      AND h."academicYearId" = $3
+    `;
+    const params: any[] = [tenantId, classId, academicYearId];
+    let paramIdx = 4;
+
+    if (taskType) {
+      sql += ` AND h."taskType" = $${paramIdx++}`;
+      params.push(taskType);
+    }
+    if (from) {
+      sql += ` AND h."dueDate" >= $${paramIdx++}`;
+      params.push(new Date(from));
+    }
+    if (to) {
+      sql += ` AND h."dueDate" <= $${paramIdx++}`;
+      params.push(new Date(to));
+    }
+    sql += ` ORDER BY h."dueDate" DESC LIMIT 50`;
+
+    const homeworks: any = await this.prisma.$queryRawUnsafe(sql, ...params).catch(() => []);
 
     // Statut pour cet élève
     if (homeworks.length > 0) {
       const hwIds = homeworks.map((h: any) => h.id);
       const taskStatus: any = await this.prisma.$queryRawUnsafe(
-        `SELECT "homeworkEntryId", "status", "score", "appreciation", "observation", "evaluatedAt"
+        `SELECT "homeworkEntryId", "status", "score", "appreciation", "observation", "evaluatedAt", "parentNotified"
          FROM "pedagogical_task_students"
          WHERE "studentId" = $1 AND "homeworkEntryId" = ANY($2::text[])`,
         studentId, hwIds,

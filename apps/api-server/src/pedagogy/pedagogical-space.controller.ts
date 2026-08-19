@@ -335,6 +335,18 @@ export class PedagogicalSpaceController {
     return this.service.getNotebookChecks(tenantId, academicYearId, teacherId, classId);
   }
 
+  // ⭐ Cahier journal → Travaux & Suivi : récupère les HomeworkEntry liés à un cahier journal
+  //    Permet d'afficher dans le cahier journal enseignant (maternelle + primaire)
+  //    les devoirs/leçons/récitations/exposés attachés à chaque case du cahier journal
+  //    + le statut de chaque élève (récitation réussie/échouée, leçon copiée/non copiée).
+  @Get('cahier-journal/:id/tasks')
+  async getHomeworksByCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') cahierJournalId: string,
+  ) {
+    return this.service.getHomeworksByCahierJournal(tenantId, cahierJournalId);
+  }
+
   // ─── CONTRÔLE PÉDAGOGIQUE DIRECTION ──────────────────────────────────────
 
   @Get('director/dashboard')

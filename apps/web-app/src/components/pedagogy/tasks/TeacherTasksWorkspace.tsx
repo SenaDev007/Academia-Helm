@@ -238,8 +238,7 @@ export default function TeacherTasksWorkspace() {
           </div>
           {(activeTab === 'homework' ||
             activeTab === 'research' ||
-            activeTab === 'practical' ||
-            activeTab === 'lessons') && (
+            activeTab === 'practical') && (
             <button
               onClick={() =>
                 openCreate(
@@ -247,9 +246,7 @@ export default function TeacherTasksWorkspace() {
                     ? 'HOMEWORK'
                     : activeTab === 'research'
                     ? 'RESEARCH'
-                    : activeTab === 'practical'
-                    ? 'PRACTICAL'
-                    : 'LESSON',
+                    : 'PRACTICAL',
                 )
               }
               className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors"
@@ -339,8 +336,6 @@ export default function TeacherTasksWorkspace() {
             academicYearId={academicYearId}
             schoolLevelId={schoolLevelId}
             classes={classes}
-            onCreate={() => openCreate('LESSON')}
-            onEdit={openEdit}
           />
         )}
         {activeTab === 'notebooks' && (

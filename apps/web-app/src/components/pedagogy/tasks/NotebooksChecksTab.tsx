@@ -2,71 +2,82 @@
 
 /**
  * ============================================================================
- * CAHIERS & COPIES — Contrôle des cahiers (leçons à recopier)
+ * CAHIERS & COPIES — Workflow professionnel de contrôle des cahiers
  * ============================================================================
  *
- * L'enseignant peut :
- *   1. Sélectionner une classe + date du jour (par défaut aujourd'hui)
- *   2. Voir la liste des élèves de la classe sélectionnée
- *   3. Pour chaque élève :
- *      - Statut du cahier (DONE / NOT_DONE / INCOMPLETE / TO_REDO / PENDING)
- *      - Observation libre (texte)
- *   4. Enregistrer tous les statuts en une fois (batch update via Promise.all)
- *   5. Sous-onglet "Historique" pour consulter le suivi par
- *      Trimestre / Mois / Semaine / Jour
+ * Workflow attendu :
+ *   1. L'enseignant crée une leçon pour la journée (modal dédié avec
+ *      RichTextEditor pour le contenu « retenons »).
+ *   2. La leçon apparaît dans la liste du jour avec deux actions :
+ *        - « Voir le contenu » → affiche le contenu HTML riche (retenons)
+ *        - « Vérifier les copies » → déplie la liste des élèves de la classe
+ *   3. Pour chaque élève, l'enseignant saisit deux dimensions :
+ *        - Cahier propre : Oui / Non (toggle vert / rouge)
+ *        - Leçon copiée : Oui / Non / Partiel (toggle vert / rouge / orange)
+ *        - Observation libre (court texte)
+ *      Le couple (cahier, leçon) est mappé vers un statut unique backend :
+ *        (oui, oui) → DONE        (cahier propre + leçon copiée)
+ *        (oui, non) → NOT_DONE    (cahier propre mais leçon non copiée)
+ *        (oui, partiel) → INCOMPLETE
+ *        (non, *)    → TO_REDO    (cahier à refaire)
+ *        (null, null) → PENDING   (non évalué)
+ *   4. Enregistrer : batch update via PUT /api/pedagogy-space/task-students/:id
+ *   5. Historique : catalogue en dossiers imbriqués
+ *      Année > Trimestre > Mois > Semaine > Jour > Leçons + élèves
  *
  * Backend :
- *   GET  /api/pedagogy-space/notebook-checks?teacherId&academicYearId&classId?
- *        → [{ homework: {id,title,description,dueDate,class,subject,observations},
- *             students: [{id, studentId, firstName, lastName, matricule, photoUrl,
- *                          status, observation, appreciation, evaluatedAt}] }]
- *   PUT  /api/pedagogy-space/task-students/:id
- *        → body: { status, observation?, appreciation?, score? }
+ *   POST   /api/pedagogy-space/homeworks
+ *          body: { title, description (HTML), classId, subjectId?,
+ *                  dueDate, taskType: 'LESSON', academicYearId,
+ *                  schoolLevelId, teacherId }
+ *   GET    /api/pedagogy-space/homeworks?teacherId&academicYearId&classId&taskType=LESSON
+ *   GET    /api/pedagogy-space/homeworks/:id/students
+ *   PUT    /api/pedagogy-space/task-students/:id
+ *          body: { status, observation?, appreciation?, score? }
+ *   GET    /api/pedagogy-space/subjects/available?academicYearId&classId&teacherId
  * ============================================================================
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  Loader2, RefreshCw, NotebookPen, Check, X, AlertTriangle,
-  RotateCcw, Clock, Save, CalendarDays, History, ChevronDown, ChevronRight,
+  Loader2, RefreshCw, NotebookPen, Save, CalendarDays, History,
+  ChevronDown, ChevronRight, Plus, BookOpen, Eye, ClipboardCheck,
+  Check, X, AlertTriangle, Folder, FolderOpen, Inbox, FileText, Clock,
 } from 'lucide-react';
 import {
-  apiFetch, STATUS_CONFIG, formatDateFR, formatDateInput,
+  apiFetch, formatDateFR, formatDateInput,
 } from './TeacherTasksWorkspace';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import RichContent from '@/components/ui/RichContent';
 import { cn } from '@/lib/utils';
 
 // ============================================================================
-// CONSTANTES — statuts pertinents pour le contrôle des cahiers
+// CONSTANTES
 // ============================================================================
 
-const NOTEBOOK_STATUSES = ['PENDING', 'DONE', 'NOT_DONE', 'INCOMPLETE', 'TO_REDO'] as const;
+const MONTHS_FR = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+];
 
-// Mapping statut → {cahierPropre, leçonCopiée} pour les badges dérivés
-const NOTEBOOK_BADGES: Record<
-  string,
-  { cahier: { label: string; cls: string }; lecon: { label: string; cls: string } }
-> = {
-  DONE: {
-    cahier: { label: 'Propre', cls: 'bg-emerald-100 text-emerald-700' },
-    lecon: { label: 'Copiée', cls: 'bg-emerald-100 text-emerald-700' },
-  },
-  NOT_DONE: {
-    cahier: { label: 'À vérifier', cls: 'bg-slate-100 text-slate-600' },
-    lecon: { label: 'Non copiée', cls: 'bg-rose-100 text-rose-700' },
-  },
-  INCOMPLETE: {
-    cahier: { label: 'Propre', cls: 'bg-emerald-100 text-emerald-700' },
-    lecon: { label: 'Partielle', cls: 'bg-amber-100 text-amber-700' },
-  },
-  TO_REDO: {
-    cahier: { label: 'À refaire', cls: 'bg-rose-100 text-rose-700' },
-    lecon: { label: 'À refaire', cls: 'bg-rose-100 text-rose-700' },
-  },
-  PENDING: {
-    cahier: { label: 'À vérifier', cls: 'bg-slate-100 text-slate-500' },
-    lecon: { label: 'Non vérifiée', cls: 'bg-slate-100 text-slate-500' },
-  },
+/** Statut backend associé à chaque combinaison (cahier, leçon). */
+const STATUS_FROM_DRAFT = {
+  'oui-oui': 'DONE',
+  'oui-non': 'NOT_DONE',
+  'oui-partiel': 'INCOMPLETE',
+  'non-oui': 'TO_REDO',
+  'non-non': 'TO_REDO',
+  'non-partiel': 'TO_REDO',
+} as const;
+
+/** Mapping inverse (statut → couple cahier / leçon) pour l'affichage. */
+const DRAFT_FROM_STATUS: Record<string, { cahier: string | null; lecon: string | null }> = {
+  DONE: { cahier: 'oui', lecon: 'oui' },
+  NOT_DONE: { cahier: 'oui', lecon: 'non' },
+  INCOMPLETE: { cahier: 'oui', lecon: 'partiel' },
+  TO_REDO: { cahier: 'non', lecon: 'non' },
+  PENDING: { cahier: null, lecon: null },
 };
 
 // ============================================================================
@@ -81,7 +92,6 @@ interface NotebooksChecksTabProps {
 }
 
 type InnerTab = 'today' | 'history';
-type PeriodKind = 'trimestre' | 'mois' | 'semaine' | 'jour';
 
 // ============================================================================
 // COMPOSANT PRINCIPAL
@@ -90,30 +100,43 @@ type PeriodKind = 'trimestre' | 'mois' | 'semaine' | 'jour';
 export function NotebooksChecksTab({
   teacherId,
   academicYearId,
+  schoolLevelId,
   classes,
 }: NotebooksChecksTabProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>('today');
+  // Signal local de rafraîchissement (incrémenté après création de leçon)
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  // Modal de création de leçon
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   return (
     <div className="space-y-4">
-      {/* === En-tête === */}
+      {/* === En-tête + bouton créer === */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
         <div>
           <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
             <NotebookPen className="w-5 h-5 text-slate-700" />
-            Cahiers & Copies
+            Cahiers &amp; Copies
           </h3>
           <p className="text-sm text-slate-500 mt-0.5">
-            Vérifiez chaque jour que les élèves ont recopié leurs leçons et
-            tiennent correctement leur cahier.
+            Créez la leçon du jour, vérifiez la tenue du cahier et la copie de
+            chaque élève, puis enrichissez l'historique pédagogique.
           </p>
         </div>
+        <button
+          onClick={() => setCreateModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors"
+          type="button"
+        >
+          <Plus className="w-4 h-4" />
+          Créer une leçon
+        </button>
       </div>
 
       {/* === Sous-navigation interne === */}
       <div className="flex overflow-x-auto border-b border-slate-100">
         {([
-          { id: 'today', label: "Saisie du jour", icon: CalendarDays },
+          { id: 'today', label: 'Saisie du jour', icon: CalendarDays },
           { id: 'history', label: 'Historique', icon: History },
         ] as const).map((t) => {
           const Icon = t.icon;
@@ -136,12 +159,15 @@ export function NotebooksChecksTab({
         })}
       </div>
 
-      {/* === Contenu du sous-onglet === */}
+      {/* === Contenu === */}
       {innerTab === 'today' ? (
         <TodayNotebookCheck
+          key={`today-${refreshSignal}`}
           teacherId={teacherId}
           academicYearId={academicYearId}
+          schoolLevelId={schoolLevelId}
           classes={classes}
+          openCreateModal={() => setCreateModalOpen(true)}
         />
       ) : (
         <HistoryNotebookCheck
@@ -150,31 +176,343 @@ export function NotebooksChecksTab({
           classes={classes}
         />
       )}
+
+      {/* === Modal de création de leçon === */}
+      {createModalOpen && (
+        <CreateLessonModal
+          teacherId={teacherId}
+          academicYearId={academicYearId}
+          schoolLevelId={schoolLevelId}
+          classes={classes}
+          onClose={() => setCreateModalOpen(false)}
+          onSaved={() => {
+            setRefreshSignal((s) => s + 1);
+            setCreateModalOpen(false);
+            toast.success('Leçon créée. Elle apparaît maintenant dans la liste du jour.');
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ============================================================================
-// SAISIE DU JOUR
+// MODAL DE CRÉATION DE LEÇON — RichTextEditor pour le contenu
+// ============================================================================
+
+interface CreateLessonModalProps {
+  teacherId: string;
+  academicYearId: string;
+  schoolLevelId: string;
+  classes: any[];
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function CreateLessonModal({
+  teacherId,
+  academicYearId,
+  schoolLevelId,
+  classes,
+  onClose,
+  onSaved,
+}: CreateLessonModalProps) {
+  const [title, setTitle] = useState('');
+  const [classId, setClassId] = useState(classes[0]?.classId || '');
+  const [subjectId, setSubjectId] = useState('');
+  const [date, setDate] = useState(formatDateInput(new Date().toISOString()));
+  const [content, setContent] = useState('');
+  const [observations, setObservations] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // === Sujets disponibles : d'abord depuis classes[].subjects, fallback API ===
+  const selectedClass = useMemo(
+    () => classes.find((c) => c.classId === classId),
+    [classes, classId],
+  );
+  const [fetchedSubjects, setFetchedSubjects] = useState<any[]>([]);
+  const availableSubjects =
+    selectedClass?.subjects?.length > 0
+      ? selectedClass.subjects
+      : fetchedSubjects;
+
+  useEffect(() => {
+    if (!classId || !academicYearId) {
+      setFetchedSubjects([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({ academicYearId, classId, teacherId });
+        const data = await apiFetch<any[]>(
+          `/api/pedagogy-space/subjects/available?${params.toString()}`,
+        );
+        if (!cancelled) setFetchedSubjects(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setFetchedSubjects([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, academicYearId, teacherId]);
+
+  // Reset subjectId si la classe change et que le sujet n'existe plus
+  useEffect(() => {
+    if (subjectId && availableSubjects.length > 0) {
+      const exists = availableSubjects.some(
+        (s: any) => s.subjectId === subjectId || s.id === subjectId,
+      );
+      if (!exists) setSubjectId('');
+    }
+  }, [availableSubjects, subjectId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast.error('Le titre de la leçon est obligatoire.');
+      return;
+    }
+    if (!classId) {
+      toast.error('Veuillez sélectionner une classe.');
+      return;
+    }
+    if (!date) {
+      toast.error('Veuillez sélectionner une date.');
+      return;
+    }
+    if (!academicYearId || !schoolLevelId || !teacherId) {
+      toast.error("Contexte manquant (année académique, niveau ou enseignant).");
+      return;
+    }
+    // Strip HTML si le contenu n'est que du whitespace visible
+    const tmp = document.createElement('div');
+    tmp.innerHTML = content;
+    const plainText = (tmp.textContent || '').trim();
+    if (!plainText) {
+      toast.error('Le contenu de la leçon (le « retenons ») est obligatoire.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        title: title.trim(),
+        description: content, // HTML riche
+        classId,
+        subjectId: subjectId || undefined,
+        dueDate: new Date(date).toISOString(),
+        taskType: 'LESSON',
+        academicYearId,
+        schoolLevelId,
+        teacherId,
+        observations: observations.trim() || undefined,
+      };
+      await apiFetch('/api/pedagogy-space/homeworks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      onSaved();
+    } catch (e: any) {
+      toast.error('Erreur lors de la création de la leçon', {
+        description: e.message,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <NotebookPen className="w-5 h-5 text-slate-700" />
+              Créer une leçon
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Le contenu saisi sera le « retenons » que les élèves devront
+              recopier en classe.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body — form scrollable */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto px-6 py-5 space-y-4"
+        >
+          {/* Titre */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Titre de la leçon <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex: Les fractions simples — définition et exemples"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
+              required
+              autoFocus
+            />
+          </div>
+
+          {/* Classe + Matière + Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Classe <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={classId}
+                onChange={(e) => setClassId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
+                required
+              >
+                <option value="">— Sélectionner —</option>
+                {classes.map((c: any) => (
+                  <option key={c.classId} value={c.classId}>
+                    {c.className || c.classId}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Matière
+              </label>
+              <select
+                value={subjectId}
+                onChange={(e) => setSubjectId(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
+                disabled={availableSubjects.length === 0}
+              >
+                <option value="">— Aucune (générale) —</option>
+                {availableSubjects.map((s: any) => {
+                  const sid = s.subjectId || s.id;
+                  const sname = s.subjectName || s.name || s.subjectCode || s.code;
+                  return (
+                    <option key={sid} value={sid}>
+                      {sname}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Contenu de la leçon (RichTextEditor) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Contenu de la leçon — « Retenons » <span className="text-rose-500">*</span>
+            </label>
+            <div className="border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-slate-300">
+              <RichTextEditor
+                value={content}
+                onChange={setContent}
+                placeholder="Saisissez ici le texte que les élèves devront recopier (définition, propriété, exemples…). Vous pouvez mettre en forme avec les boutons ci-dessus."
+                minHeight="200px"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Astuce : utilisez <kbd className="px-1 bg-slate-100 rounded text-[10px]">Ctrl+B</kbd> pour
+              le gras, <kbd className="px-1 bg-slate-100 rounded text-[10px]">Ctrl+I</kbd> pour
+              l'italique.
+            </p>
+          </div>
+
+          {/* Observations pédagogiques (optionnel) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Observations pour le tableau (optionnel)
+            </label>
+            <textarea
+              value={observations}
+              onChange={(e) => setObservations(e.target.value)}
+              rows={2}
+              placeholder="Ex: Apporter le manuel page 42 ; prévoir le matériel de géométrie."
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium resize-y"
+            />
+          </div>
+        </form>
+
+        {/* Footer — actions */}
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            type="button"
+            className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            type="button"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
+          >
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Création…' : 'Créer la leçon'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SAISIE DU JOUR — Liste des leçons + vérification des copies
 // ============================================================================
 
 function TodayNotebookCheck({
   teacherId,
   academicYearId,
   classes,
+  openCreateModal,
 }: {
   teacherId: string;
   academicYearId: string;
+  schoolLevelId: string;
   classes: any[];
+  openCreateModal: () => void;
 }) {
   const todayStr = formatDateInput(new Date().toISOString());
   const [classId, setClassId] = useState('');
   const [date, setDate] = useState(todayStr);
-  const [checks, setChecks] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  // Pour chaque homeworkId, on stocke : { students, loading, expanded, drafts }
+  const [studentsByHw, setStudentsByHw] = useState<
+    Record<string, { students: any[]; loading: boolean; expanded: boolean; contentOpen: boolean }>
+  >({});
+  // drafts[studentId] = { cahier: 'oui'|'non'|null, lecon: 'oui'|'non'|'partiel'|null, observation: string }
+  const [drafts, setDrafts] = useState<
+    Record<string, { cahier: string | null; lecon: string | null; observation: string }>
+  >({});
   const [saving, setSaving] = useState(false);
-  // drafts[studentId] = { status, observation }
-  const [drafts, setDrafts] = useState<Record<string, { status: string; observation: string }>>({});
 
   // === Auto-sélection de la 1re classe ===
   useEffect(() => {
@@ -183,25 +521,31 @@ function TodayNotebookCheck({
     }
   }, [classes, classId]);
 
-  // === Chargement des notebook-checks pour la classe sélectionnée ===
+  // === Chargement des leçons (taskType=LESSON) pour la classe sélectionnée ===
   const load = useCallback(async () => {
     if (!teacherId || !academicYearId || !classId) {
-      setChecks([]);
+      setLessons([]);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ teacherId, academicYearId, classId });
+      const params = new URLSearchParams({
+        teacherId,
+        academicYearId,
+        classId,
+        taskType: 'LESSON',
+      });
       const data = await apiFetch<any[]>(
-        `/api/pedagogy-space/notebook-checks?${params.toString()}`,
+        `/api/pedagogy-space/homeworks?${params.toString()}`,
       );
-      setChecks(Array.isArray(data) ? data : []);
+      setLessons(Array.isArray(data) ? data : []);
+      setStudentsByHw({});
       setDrafts({});
     } catch (e: any) {
-      toast.error('Erreur lors du chargement des contrôles', {
+      toast.error('Erreur lors du chargement des leçons', {
         description: e.message,
       });
-      setChecks([]);
+      setLessons([]);
     } finally {
       setLoading(false);
     }
@@ -211,58 +555,136 @@ function TodayNotebookCheck({
     load();
   }, [load]);
 
-  // === Filtrer les checks pour la date sélectionnée ===
-  const checksForDate = useMemo(() => {
+  // === Filtrer par date du jour sélectionnée ===
+  const lessonsForDate = useMemo(() => {
     if (!date) return [];
     const target = new Date(date);
     target.setHours(0, 0, 0, 0);
-    return checks.filter((c) => {
-      if (!c?.homework?.dueDate) return false;
-      const d = new Date(c.homework.dueDate);
-      d.setHours(0, 0, 0, 0);
-      return d.getTime() === target.getTime();
-    });
-  }, [checks, date]);
+    return lessons
+      .filter((hw) => {
+        if (!hw.dueDate) return false;
+        const d = new Date(hw.dueDate);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() === target.getTime();
+      })
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+      );
+  }, [lessons, date]);
 
-  // === Stats summary ===
+  // === Stats globales (toutes les leçons du jour) ===
   const summary = useMemo(() => {
-    const all = checksForDate.flatMap((c) => c.students || []);
-    return {
-      total: all.length,
-      done: all.filter((s) => (drafts[s.id]?.status || s.status) === 'DONE').length,
-      notDone: all.filter((s) => (drafts[s.id]?.status || s.status) === 'NOT_DONE').length,
-      incomplete: all.filter((s) => (drafts[s.id]?.status || s.status) === 'INCOMPLETE').length,
-      toRedo: all.filter((s) => (drafts[s.id]?.status || s.status) === 'TO_REDO').length,
-      pending: all.filter((s) => (drafts[s.id]?.status || s.status) === 'PENDING').length,
-    };
-  }, [checksForDate, drafts]);
+    const allStudents = Object.values(studentsByHw).flatMap((s) => s.students);
+    const total = allStudents.length;
+    let done = 0, notDone = 0, incomplete = 0, toRedo = 0, pending = 0;
+    for (const s of allStudents) {
+      const d = drafts[s.id];
+      const status =
+        d && (d.cahier || d.lecon)
+          ? computeStatusFromDraft(d)
+          : s.status || 'PENDING';
+      if (status === 'DONE') done++;
+      else if (status === 'NOT_DONE') notDone++;
+      else if (status === 'INCOMPLETE') incomplete++;
+      else if (status === 'TO_REDO') toRedo++;
+      else pending++;
+    }
+    return { total, done, notDone, incomplete, toRedo, pending };
+  }, [studentsByHw, drafts]);
 
-  // === Set draft value ===
+  // === Toggle "Voir le contenu" (expand RichContent) ===
+  const toggleContent = (hwId: string) => {
+    setStudentsByHw((prev) => ({
+      ...prev,
+      [hwId]: {
+        ...(prev[hwId] || { students: [], loading: false, expanded: false, contentOpen: false }),
+        contentOpen: !prev[hwId]?.contentOpen,
+      },
+    }));
+  };
+
+  // === Toggle "Vérifier les copies" (expand student list) ===
+  const toggleStudents = async (hw: any) => {
+    const hwId = hw.id;
+    const existing = studentsByHw[hwId];
+    if (existing?.expanded) {
+      // Replier
+      setStudentsByHw((prev) => ({
+        ...prev,
+        [hwId]: { ...prev[hwId], expanded: false },
+      }));
+      return;
+    }
+    if (existing?.students?.length > 0) {
+      // Déjà chargé, juste déplier
+      setStudentsByHw((prev) => ({
+        ...prev,
+        [hwId]: { ...prev[hwId], expanded: true },
+      }));
+      return;
+    }
+    // Charger
+    setStudentsByHw((prev) => ({
+      ...prev,
+      [hwId]: { students: [], loading: true, expanded: true, contentOpen: false },
+    }));
+    try {
+      const data = await apiFetch<any[]>(
+        `/api/pedagogy-space/homeworks/${hwId}/students`,
+      );
+      setStudentsByHw((prev) => ({
+        ...prev,
+        [hwId]: {
+          ...(prev[hwId] || {}),
+          students: Array.isArray(data) ? data : [],
+          loading: false,
+          expanded: true,
+        },
+      }));
+    } catch (e: any) {
+      toast.error('Erreur lors du chargement des élèves', {
+        description: e.message,
+      });
+      setStudentsByHw((prev) => ({
+        ...prev,
+        [hwId]: { ...prev[hwId], students: [], loading: false, expanded: true },
+      }));
+    }
+  };
+
+  // === Set draft (cahier / leçon / observation) ===
   const setDraft = (
     studentId: string,
-    patch: Partial<{ status: string; observation: string }>,
+    patch: Partial<{
+      cahier: string | null;
+      lecon: string | null;
+      observation: string;
+    }>,
   ) => {
     setDrafts((prev) => {
-      const current = prev[studentId] || { status: '', observation: '' };
-      return {
-        ...prev,
-        [studentId]: { ...current, ...patch },
-      };
+      const current =
+        prev[studentId] || { cahier: null, lecon: null, observation: '' };
+      return { ...prev, [studentId]: { ...current, ...patch } };
     });
   };
 
   // === Batch save ===
-  const handleSave = async () => {
-    if (checksForDate.length === 0) return;
-    const allStudents = checksForDate.flatMap((c) => c.students || []);
-    const dirty = allStudents
+  const handleSave = async (hwId: string) => {
+    const state = studentsByHw[hwId];
+    if (!state || state.students.length === 0) return;
+    const dirty = state.students
       .map((s) => {
         const d = drafts[s.id];
         if (!d) return null;
+        // Si ni cahier ni leçon modifiés et pas d'observation → skip
+        const hasToggle = !!d.cahier || !!d.lecon;
+        const hasObs = d.observation !== '' && d.observation !== (s.observation ?? '');
+        if (!hasToggle && !hasObs) return null;
+        const status = computeStatusFromDraft(d);
         return {
           id: s.id,
-          status: d.status || s.status,
-          observation: d.observation ?? s.observation ?? '',
+          status,
+          observation: d.observation !== '' ? d.observation : s.observation ?? undefined,
           appreciation: s.appreciation ?? undefined,
           score: s.score ?? undefined,
         };
@@ -270,7 +692,7 @@ function TodayNotebookCheck({
       .filter(Boolean) as {
       id: string;
       status: string;
-      observation: string;
+      observation?: string;
       appreciation?: string;
       score?: number;
     }[];
@@ -289,7 +711,7 @@ function TodayNotebookCheck({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               status: d.status,
-              observation: d.observation || undefined,
+              observation: d.observation,
               appreciation: d.appreciation,
               score: d.score,
             }),
@@ -302,11 +724,32 @@ function TodayNotebookCheck({
         toast.success(`${ok} élève(s) mis à jour avec succès.`);
       } else {
         toast.warning(`${ok} mis à jour, ${ko} en échec.`, {
-          description: 'Vérifiez les logs et réessayez.',
+          description: 'Vérifiez la console et réessayez.',
         });
       }
-      setDrafts({});
-      await load();
+      // Clear drafts pour ce hw et recharger les élèves
+      setDrafts((prev) => {
+        const next = { ...prev };
+        for (const s of state.students) delete next[s.id];
+        return next;
+      });
+      // Recharger les étudiants
+      try {
+        const data = await apiFetch<any[]>(
+          `/api/pedagogy-space/homeworks/${hwId}/students`,
+        );
+        setStudentsByHw((prev) => ({
+          ...prev,
+          [hwId]: {
+            ...(prev[hwId] || {}),
+            students: Array.isArray(data) ? data : [],
+            loading: false,
+            expanded: true,
+          },
+        }));
+      } catch {
+        // silencieux
+      }
     } catch (e: any) {
       toast.error("Erreur lors de l'enregistrement", { description: e.message });
     } finally {
@@ -314,7 +757,11 @@ function TodayNotebookCheck({
     }
   };
 
-  const hasDirty = Object.keys(drafts).length > 0;
+  const hasDirtyFor = (hwId: string) => {
+    const state = studentsByHw[hwId];
+    if (!state) return false;
+    return state.students.some((s) => drafts[s.id]);
+  };
 
   return (
     <div className="space-y-4">
@@ -339,7 +786,7 @@ function TodayNotebookCheck({
         </div>
         <div className="flex-1 min-w-[180px]">
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-            Date du contrôle
+            Date du jour
           </label>
           <input
             type="date"
@@ -351,9 +798,9 @@ function TodayNotebookCheck({
         <button
           onClick={load}
           disabled={loading}
+          type="button"
           className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
           title="Rafraîchir"
-          type="button"
         >
           <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
         </button>
@@ -363,62 +810,70 @@ function TodayNotebookCheck({
       {loading ? (
         <div className="flex items-center justify-center py-20 text-slate-500">
           <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          Chargement des contrôles…
+          Chargement des leçons…
         </div>
       ) : !classId ? (
         <EmptyState
           icon={NotebookPen}
           title="Aucune classe sélectionnée"
-          subtitle="Sélectionnez une classe pour démarrer le contrôle."
+          subtitle="Sélectionnez une classe pour créer ou vérifier les leçons du jour."
         />
-      ) : checksForDate.length === 0 ? (
+      ) : lessonsForDate.length === 0 ? (
         <EmptyState
-          icon={NotebookPen}
-          title={`Aucune leçon à recopier pour le ${formatDateFR(date)}`}
-          subtitle="Créez une activité de type « Leçon à recopier » dans l'onglet Leçons & Récitations pour cette date."
+          icon={BookOpen}
+          title={`Aucune leçon pour le ${formatDateFR(date)}`}
+          subtitle="Créez une nouvelle leçon pour cette journée — son contenu sera recopié par les élèves."
+          actionLabel="Créer une leçon"
+          onAction={openCreateModal}
         />
       ) : (
         <>
           {/* === Stats summary === */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            <SummaryStat label="Total" value={summary.total} color="text-slate-700" bg="bg-slate-100" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            <SummaryStat label="Élèves" value={summary.total} color="text-slate-700" bg="bg-slate-100" />
             <SummaryStat label="Propres + copiées" value={summary.done} color="text-emerald-700" bg="bg-emerald-100" />
             <SummaryStat label="Partielles" value={summary.incomplete} color="text-amber-700" bg="bg-amber-100" />
             <SummaryStat label="Non copiées" value={summary.notDone} color="text-rose-700" bg="bg-rose-100" />
             <SummaryStat label="À refaire" value={summary.toRedo} color="text-purple-700" bg="bg-purple-100" />
+            <SummaryStat label="Non vérifiés" value={summary.pending} color="text-slate-600" bg="bg-slate-100" />
           </div>
 
-          {/* === Cartes par homework === */}
-          <div className="space-y-4">
-            {checksForDate.map((item) => (
-              <NotebookCheckCard
-                key={item.homework.id}
-                item={item}
-                drafts={drafts}
-                onDraft={(studentId, patch) => setDraft(studentId, patch)}
-              />
-            ))}
+          {/* === Liste des leçons du jour === */}
+          <div className="space-y-3">
+            {lessonsForDate.map((hw) => {
+              const state = studentsByHw[hw.id] || {
+                students: [],
+                loading: false,
+                expanded: false,
+                contentOpen: false,
+              };
+              const hasDirty = hasDirtyFor(hw.id);
+              return (
+                <LessonCheckCard
+                  key={hw.id}
+                  hw={hw}
+                  state={state}
+                  drafts={drafts}
+                  onToggleContent={() => toggleContent(hw.id)}
+                  onToggleStudents={() => toggleStudents(hw)}
+                  onDraft={(studentId, patch) => setDraft(studentId, patch)}
+                  onSave={() => handleSave(hw.id)}
+                  saving={saving}
+                  hasDirty={hasDirty}
+                />
+              );
+            })}
           </div>
 
-          {/* === Barre d'actions (sticky) === */}
-          <div className="sticky bottom-4 flex items-center justify-end gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
-            <span className="text-xs text-slate-500">
-              {hasDirty
-                ? `${Object.keys(drafts).length} modification(s) non enregistrée(s)`
-                : 'Toutes les modifications sont enregistrées'}
-            </span>
+          {/* === Bouton "Créer une autre leçon" === */}
+          <div className="flex justify-center pt-2">
             <button
-              onClick={handleSave}
-              disabled={saving || !hasDirty}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={openCreateModal}
               type="button"
+              className="inline-flex items-center gap-2 px-4 py-2 border border-dashed border-slate-300 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
             >
-              {saving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
+              <Plus className="w-4 h-4" />
+              Créer une autre leçon pour le {formatDateFR(date)}
             </button>
           </div>
         </>
@@ -428,7 +883,325 @@ function TodayNotebookCheck({
 }
 
 // ============================================================================
-// HISTORIQUE — vue par Trimestre / Mois / Semaine / Jour
+// CARTE LEÇON — header + boutons Voir le contenu / Vérifier les copies
+// ============================================================================
+
+function LessonCheckCard({
+  hw,
+  state,
+  drafts,
+  onToggleContent,
+  onToggleStudents,
+  onDraft,
+  onSave,
+  saving,
+  hasDirty,
+}: {
+  hw: any;
+  state: {
+    students: any[];
+    loading: boolean;
+    expanded: boolean;
+    contentOpen: boolean;
+  };
+  drafts: Record<string, { cahier: string | null; lecon: string | null; observation: string }>;
+  onToggleContent: () => void;
+  onToggleStudents: () => void;
+  onDraft: (studentId: string, patch: Partial<{
+    cahier: string | null;
+    lecon: string | null;
+    observation: string;
+  }>) => void;
+  onSave: () => void;
+  saving: boolean;
+  hasDirty: boolean;
+}) {
+  const students = state.students;
+  // Compteurs dérivés (drafts l'emportent)
+  const counters = useMemo(() => {
+    let done = 0, notDone = 0, incomplete = 0, toRedo = 0, pending = 0;
+    for (const s of students) {
+      const d = drafts[s.id];
+      const status = d && (d.cahier || d.lecon)
+        ? computeStatusFromDraft(d)
+        : s.status || 'PENDING';
+      if (status === 'DONE') done++;
+      else if (status === 'NOT_DONE') notDone++;
+      else if (status === 'INCOMPLETE') incomplete++;
+      else if (status === 'TO_REDO') toRedo++;
+      else pending++;
+    }
+    return { done, notDone, incomplete, toRedo, pending, total: students.length };
+  }, [students, drafts]);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      {/* === Header de la leçon === */}
+      <div className="px-5 py-4 bg-slate-50 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1.5 py-0.5 bg-slate-200 rounded">
+                Leçon
+              </span>
+              {hw.subject?.name && (
+                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest px-1.5 py-0.5 bg-emerald-100 rounded">
+                  {hw.subject.name}
+                </span>
+              )}
+            </div>
+            <h4 className="font-bold text-slate-900 text-sm mt-1.5">
+              {hw.title}
+            </h4>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {hw.class?.name || '—'} • {formatDateFR(hw.dueDate)}
+              {hw.observations ? ` • ${hw.observations}` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={onToggleContent}
+              type="button"
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border',
+                state.contentOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50',
+              )}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              {state.contentOpen ? 'Masquer' : 'Voir le contenu'}
+            </button>
+            <button
+              onClick={onToggleStudents}
+              type="button"
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border',
+                state.expanded
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100',
+              )}
+            >
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              Vérifier les copies
+              {counters.total > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-[10px]">
+                  {counters.done + counters.incomplete}/{counters.total}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* === Mini badges récapitulatifs === */}
+        {counters.total > 0 && (
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            <MiniBadge label="Propres + copiées" value={counters.done} color="bg-emerald-100 text-emerald-700" />
+            <MiniBadge label="Partielles" value={counters.incomplete} color="bg-amber-100 text-amber-700" />
+            <MiniBadge label="Non copiées" value={counters.notDone} color="bg-rose-100 text-rose-700" />
+            <MiniBadge label="À refaire" value={counters.toRedo} color="bg-purple-100 text-purple-700" />
+            <MiniBadge label="Non vérifiés" value={counters.pending} color="bg-slate-100 text-slate-600" />
+          </div>
+        )}
+      </div>
+
+      {/* === Affichage du contenu (RichContent) === */}
+      {state.contentOpen && (
+        <div className="px-5 py-4 bg-white border-b border-slate-100">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              Retenons
+            </span>
+          </div>
+          {hw.description ? (
+            <RichContent
+              html={hw.description}
+              className="bg-slate-50/50 p-4 rounded-lg border border-slate-100"
+            />
+          ) : (
+            <p className="text-sm text-slate-400 italic px-4 py-3 bg-slate-50 rounded-lg">
+              Aucun contenu riche défini pour cette leçon.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* === Table des élèves (Vérifier les copies) === */}
+      {state.expanded && (
+        <div>
+          {state.loading ? (
+            <div className="px-5 py-8 flex items-center justify-center text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              Chargement des élèves…
+            </div>
+          ) : students.length === 0 ? (
+            <p className="px-5 py-6 text-xs text-slate-400 text-center">
+              Aucun élève inscrit dans cette classe.
+            </p>
+          ) : (
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+              <table className="w-full text-left">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    <th className="px-4 py-3">Élève</th>
+                    <th className="px-4 py-3 min-w-[180px]">Cahier propre</th>
+                    <th className="px-4 py-3 min-w-[220px]">Leçon copiée</th>
+                    <th className="px-4 py-3 min-w-[260px]">Observation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {students.map((s) => {
+                    const draft = drafts[s.id];
+                    const initial = DRAFT_FROM_STATUS[s.status || 'PENDING'] ||
+                      { cahier: null, lecon: null };
+                    const currentCahier = draft?.cahier !== undefined ? draft.cahier : initial.cahier;
+                    const currentLecon = draft?.lecon !== undefined ? draft.lecon : initial.lecon;
+                    const currentObs = draft?.observation ?? s.observation ?? '';
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors align-top">
+                        {/* Élève */}
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {s.student?.lastName || s.lastName || '—'}{' '}
+                            {s.student?.firstName || s.firstName || ''}
+                          </p>
+                          {(s.student?.matricule || s.matricule) && (
+                            <p className="text-xs text-slate-400">
+                              Mat: {s.student?.matricule || s.matricule}
+                            </p>
+                          )}
+                        </td>
+
+                        {/* Cahier propre — toggle Oui / Non */}
+                        <td className="px-4 py-3">
+                          <ToggleGroup
+                            value={currentCahier}
+                            options={[
+                              { value: 'oui', label: 'Oui', color: 'emerald' },
+                              { value: 'non', label: 'Non', color: 'rose' },
+                            ]}
+                            onChange={(v) => onDraft(s.id, { cahier: v })}
+                          />
+                        </td>
+
+                        {/* Leçon copiée — toggle Oui / Non / Partiel */}
+                        <td className="px-4 py-3">
+                          <ToggleGroup
+                            value={currentLecon}
+                            options={[
+                              { value: 'oui', label: 'Oui', color: 'emerald' },
+                              { value: 'partiel', label: 'Partiel', color: 'amber' },
+                              { value: 'non', label: 'Non', color: 'rose' },
+                            ]}
+                            onChange={(v) => onDraft(s.id, { lecon: v })}
+                          />
+                        </td>
+
+                        {/* Observation */}
+                        <td className="px-4 py-3">
+                          <textarea
+                            value={currentObs}
+                            onChange={(e) => onDraft(s.id, { observation: e.target.value })}
+                            rows={1}
+                            placeholder="Ex: Cahier très bien tenu — leçon 3 manquante"
+                            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs font-medium resize-y min-h-[36px]"
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* === Barre d'actions (sticky) === */}
+          {students.length > 0 && (
+            <div className="sticky bottom-0 flex items-center justify-end gap-3 p-3 bg-white border-t border-slate-100">
+              <span className="text-xs text-slate-500">
+                {hasDirty
+                  ? `${Object.keys(drafts).length} modification(s) non enregistrée(s)`
+                  : 'Toutes les modifications sont enregistrées'}
+              </span>
+              <button
+                onClick={onSave}
+                disabled={saving || !hasDirty}
+                type="button"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                {saving ? 'Enregistrement…' : 'Enregistrer les contrôles'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// TOGGLE GROUP — boutons colorés (emerald / rose / amber / slate)
+// ============================================================================
+
+const COLOR_CLASSES: Record<string, { active: string; idle: string }> = {
+  emerald: {
+    active: 'bg-emerald-500 text-white border-emerald-500',
+    idle: 'text-emerald-700 hover:bg-emerald-50 border-slate-200',
+  },
+  rose: {
+    active: 'bg-rose-500 text-white border-rose-500',
+    idle: 'text-rose-700 hover:bg-rose-50 border-slate-200',
+  },
+  amber: {
+    active: 'bg-amber-500 text-white border-amber-500',
+    idle: 'text-amber-700 hover:bg-amber-50 border-slate-200',
+  },
+  slate: {
+    active: 'bg-slate-700 text-white border-slate-700',
+    idle: 'text-slate-700 hover:bg-slate-50 border-slate-200',
+  },
+};
+
+function ToggleGroup({
+  value,
+  options,
+  onChange,
+}: {
+  value: string | null;
+  options: { value: string; label: string; color: 'emerald' | 'rose' | 'amber' | 'slate' }[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-0.5 bg-slate-50 rounded-lg p-0.5 border border-slate-200">
+      {options.map((opt) => {
+        const isActive = value === opt.value;
+        const cls = COLOR_CLASSES[opt.color] || COLOR_CLASSES.slate;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(isActive ? null : opt.value)}
+            className={cn(
+              'px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide rounded-md border transition-all',
+              isActive ? cls.active : cls.idle,
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================================
+// HISTORIQUE — vue arborescente Année > Trimestre > Mois > Semaine > Jour
 // ============================================================================
 
 function HistoryNotebookCheck({
@@ -441,12 +1214,11 @@ function HistoryNotebookCheck({
   classes: any[];
 }) {
   const [classId, setClassId] = useState('');
-  const [periodKind, setPeriodKind] = useState<PeriodKind>('mois');
-  const [anchorDate, setAnchorDate] = useState(formatDateInput(new Date().toISOString()));
-  const [trimestre, setTrimestre] = useState<1 | 2 | 3>(currentTrimestre(new Date()));
-  const [checks, setChecks] = useState<any[]>([]);
+  const [lessons, setLessons] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedHwId, setExpandedHwId] = useState<string | null>(null);
+  // Cache : studentsByHw[hwId] = any[]
+  const [studentsByHw, setStudentsByHw] = useState<Record<string, any[]>>({});
+  const [loadingStudents, setLoadingStudents] = useState<string | null>(null);
 
   // Auto-sélection de la 1re classe
   useEffect(() => {
@@ -457,19 +1229,25 @@ function HistoryNotebookCheck({
 
   const load = useCallback(async () => {
     if (!teacherId || !academicYearId || !classId) {
-      setChecks([]);
+      setLessons([]);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ teacherId, academicYearId, classId });
+      const params = new URLSearchParams({
+        teacherId,
+        academicYearId,
+        classId,
+        taskType: 'LESSON',
+      });
       const data = await apiFetch<any[]>(
-        `/api/pedagogy-space/notebook-checks?${params.toString()}`,
+        `/api/pedagogy-space/homeworks?${params.toString()}`,
       );
-      setChecks(Array.isArray(data) ? data : []);
+      setLessons(Array.isArray(data) ? data : []);
+      setStudentsByHw({});
     } catch (e: any) {
       toast.error('Erreur lors du chargement', { description: e.message });
-      setChecks([]);
+      setLessons([]);
     } finally {
       setLoading(false);
     }
@@ -479,27 +1257,30 @@ function HistoryNotebookCheck({
     load();
   }, [load]);
 
-  // === Calcul de la plage de dates ===
-  const range = useMemo(() => {
-    return computeRange(periodKind, periodKind === 'trimestre' ? undefined : anchorDate, trimestre);
-  }, [periodKind, anchorDate, trimestre]);
+  // Construction de l'arbre Année > Trimestre > Mois > Semaine > Jour > Leçons
+  const tree = useMemo(() => buildHistoryTree(lessons), [lessons]);
 
-  // === Filtrer les checks par plage ===
-  const filtered = useMemo(() => {
-    if (!range) return [];
-    return checks
-      .filter((c) => {
-        if (!c?.homework?.dueDate) return false;
-        const d = new Date(c.homework.dueDate);
-        d.setHours(0, 0, 0, 0);
-        const from = new Date(range.from);
-        from.setHours(0, 0, 0, 0);
-        const to = new Date(range.to);
-        to.setHours(0, 0, 0, 0);
-        return d >= from && d <= to;
-      })
-      .sort((a, b) => new Date(b.homework.dueDate).getTime() - new Date(a.homework.dueDate).getTime());
-  }, [checks, range]);
+  // Charger les élèves d'un lesson (lors de l'expand)
+  const loadStudents = async (hwId: string) => {
+    if (studentsByHw[hwId]) return;
+    setLoadingStudents(hwId);
+    try {
+      const data = await apiFetch<any[]>(
+        `/api/pedagogy-space/homeworks/${hwId}/students`,
+      );
+      setStudentsByHw((prev) => ({
+        ...prev,
+        [hwId]: Array.isArray(data) ? data : [],
+      }));
+    } catch (e: any) {
+      toast.error('Erreur lors du chargement des élèves', {
+        description: e.message,
+      });
+      setStudentsByHw((prev) => ({ ...prev, [hwId]: [] }));
+    } finally {
+      setLoadingStudents(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -522,73 +1303,16 @@ function HistoryNotebookCheck({
             ))}
           </select>
         </div>
-
-        <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-            Période
-          </label>
-          <select
-            value={periodKind}
-            onChange={(e) => setPeriodKind(e.target.value as PeriodKind)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
-          >
-            <option value="trimestre">Trimestre</option>
-            <option value="mois">Mois</option>
-            <option value="semaine">Semaine</option>
-            <option value="jour">Jour</option>
-          </select>
-        </div>
-
-        {periodKind === 'trimestre' ? (
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              Trimestre
-            </label>
-            <select
-              value={trimestre}
-              onChange={(e) => setTrimestre(Number(e.target.value) as 1 | 2 | 3)}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
-            >
-              <option value={1}>T1</option>
-              <option value={2}>T2</option>
-              <option value={3}>T3</option>
-            </select>
-          </div>
-        ) : (
-          <div>
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-              Date repère
-            </label>
-            <input
-              type="date"
-              value={anchorDate}
-              onChange={(e) => setAnchorDate(e.target.value)}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
-            />
-          </div>
-        )}
-
         <button
           onClick={load}
           disabled={loading}
+          type="button"
           className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors disabled:opacity-50"
           title="Rafraîchir"
-          type="button"
         >
           <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
         </button>
       </div>
-
-      {/* === Plage affichée === */}
-      {range && (
-        <div className="px-4 py-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
-          <span className="font-bold uppercase tracking-widest text-slate-500 mr-2">
-            Période :
-          </span>
-          {formatDateFR(range.from)} → {formatDateFR(range.to)}
-          <span className="ml-2 text-slate-400">({filtered.length} contrôle(s))</span>
-        </div>
-      )}
 
       {/* === États === */}
       {loading ? (
@@ -600,114 +1324,40 @@ function HistoryNotebookCheck({
         <EmptyState
           icon={History}
           title="Aucune classe sélectionnée"
-          subtitle="Sélectionnez une classe pour consulter l'historique."
+          subtitle="Sélectionnez une classe pour consulter l'historique des contrôles."
         />
-      ) : filtered.length === 0 ? (
+      ) : tree.length === 0 ? (
         <EmptyState
-          icon={History}
-          title="Aucun contrôle sur cette période"
-          subtitle="Aucune leçon à recopier n'a été enregistrée pour la période sélectionnée."
+          icon={Inbox}
+          title="Aucun contrôle enregistré"
+          subtitle="Dès que vous créerez et vérifierez des leçons, l'historique apparaîtra ici, organisé par année, trimestre, mois, semaine et jour."
         />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((item) => {
-            const isExpanded = expandedHwId === item.homework.id;
-            const students = item.students || [];
-            const done = students.filter((s: any) => s.status === 'DONE').length;
-            const total = students.length;
-            return (
-              <div
-                key={item.homework.id}
-                className="bg-white rounded-xl border border-slate-200 overflow-hidden"
-              >
-                {/* Header */}
-                <button
-                  type="button"
-                  onClick={() => setExpandedHwId(isExpanded ? null : item.homework.id)}
-                  className="w-full px-5 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-slate-900 text-sm truncate">
-                        {item.homework.title}
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {item.homework.class?.name || '—'} •{' '}
-                        {item.homework.subject?.name || '—'} •{' '}
-                        {formatDateFR(item.homework.dueDate)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold">
-                      {done}/{total} faits
-                    </span>
-                  </div>
-                </button>
-
-                {/* Expanded: table */}
-                {isExpanded && (
-                  <div className="border-t border-slate-100 overflow-x-auto">
-                    {students.length === 0 ? (
-                      <p className="px-5 py-4 text-xs text-slate-400 text-center">
-                        Aucun élève inscrit dans cette classe.
-                      </p>
-                    ) : (
-                      <table className="w-full text-left">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                            <th className="px-4 py-3">Élève</th>
-                            <th className="px-4 py-3">Statut</th>
-                            <th className="px-4 py-3">Observation</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {students.map((s: any) => {
-                            const cfg = STATUS_CONFIG[s.status] || STATUS_CONFIG.PENDING;
-                            return (
-                              <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="px-4 py-3">
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {s.lastName || '—'} {s.firstName || ''}
-                                  </p>
-                                  {s.matricule && (
-                                    <p className="text-xs text-slate-400">Mat: {s.matricule}</p>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span
-                                    className={cn(
-                                      'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase',
-                                      cfg.color,
-                                    )}
-                                  >
-                                    <cfg.icon className="w-3 h-3" />
-                                    {cfg.label}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-slate-600">
-                                  {s.observation || (
-                                    <span className="text-xs text-slate-400 italic">
-                                      — Aucune —
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+            <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+              <History className="w-4 h-4 text-slate-500" />
+              Catalogue des contrôles
+              <span className="text-xs text-slate-400 font-normal">
+                ({lessons.length} leçon(s))
+              </span>
+            </h4>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Naviguez dans l'arborescence : Année → Trimestre → Mois → Semaine → Jour.
+            </p>
+          </div>
+          <div className="p-2 max-h-[70vh] overflow-y-auto">
+            {tree.map((yearNode) => (
+              <TreeFolder
+                key={yearNode.key}
+                node={yearNode}
+                level={0}
+                studentsByHw={studentsByHw}
+                loadingStudents={loadingStudents}
+                onLoadStudents={loadStudents}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -715,160 +1365,274 @@ function HistoryNotebookCheck({
 }
 
 // ============================================================================
-// CARTE NOTEBOOK CHECK — affiche les élèves d'un homework avec édition inline
+// TREE FOLDER — composant récursif (explorateur de fichiers)
 // ============================================================================
 
-function NotebookCheckCard({
-  item,
-  drafts,
-  onDraft,
+interface TreeNode {
+  key: string;
+  label: string;
+  meta?: string;
+  level: 'year' | 'trimestre' | 'month' | 'week' | 'day' | 'lesson';
+  children?: TreeNode[];
+  lessons?: any[]; // pour level=day : liste des leçons du jour
+}
+
+function TreeFolder({
+  node,
+  level,
+  studentsByHw,
+  loadingStudents,
+  onLoadStudents,
 }: {
-  item: any;
-  drafts: Record<string, { status: string; observation: string }>;
-  onDraft: (studentId: string, patch: { status?: string; observation?: string }) => void;
+  node: TreeNode;
+  level: number;
+  studentsByHw: Record<string, any[]>;
+  loadingStudents: string | null;
+  onLoadStudents: (hwId: string) => void | Promise<void>;
 }) {
-  const students: any[] = item.students || [];
+  const [open, setOpen] = useState(level < 2); // year + trimestre ouverts par défaut
+  const [openHwId, setOpenHwId] = useState<string | null>(null);
+
+  const isLessonLevel = node.level === 'day';
+  const childCount = node.children?.length || 0;
+  const lessonCount = node.lessons?.length || 0;
+  const hasChildren = childCount > 0 || lessonCount > 0;
+
+  const iconColorByLevel: Record<string, string> = {
+    year: 'text-slate-700',
+    trimestre: 'text-slate-600',
+    month: 'text-slate-600',
+    week: 'text-slate-500',
+    day: 'text-emerald-600',
+  };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      {/* Header de la leçon */}
-      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h4 className="font-bold text-slate-900 text-sm truncate">
-              {item.homework.title}
-            </h4>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {item.homework.class?.name || '—'} •{' '}
-              {item.homework.subject?.name || '—'} •{' '}
-              {formatDateFR(item.homework.dueDate)}
-            </p>
-          </div>
-          <span className="text-xs font-semibold text-slate-400 flex-shrink-0">
-            {students.length} élève(s)
-          </span>
-        </div>
-        {item.homework.observations && (
-          <p className="text-xs text-slate-600 mt-1 italic">
-            {item.homework.observations}
-          </p>
+    <div className="select-none">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors text-left',
+          level === 0 && 'font-bold',
         )}
-      </div>
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+      >
+        {hasChildren ? (
+          open ? (
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          )
+        ) : (
+          <span className="w-3.5 flex-shrink-0" />
+        )}
+        {open && hasChildren ? (
+          <FolderOpen className={cn('w-4 h-4 flex-shrink-0', iconColorByLevel[node.level])} />
+        ) : (
+          <Folder className={cn('w-4 h-4 flex-shrink-0', iconColorByLevel[node.level])} />
+        )}
+        <span className={cn(
+          'text-sm',
+          node.level === 'year' && 'font-bold text-slate-900',
+          node.level === 'trimestre' && 'font-semibold text-slate-800',
+          node.level === 'month' && 'font-medium text-slate-700',
+          node.level === 'week' && 'text-slate-600',
+          node.level === 'day' && 'font-semibold text-slate-800',
+        )}>
+          {node.label}
+        </span>
+        {node.meta && (
+          <span className="text-[10px] text-slate-400 ml-1">{node.meta}</span>
+        )}
+        {childCount > 0 && (
+          <span className="ml-auto text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+            {childCount}
+          </span>
+        )}
+      </button>
 
-      {/* Table des élèves */}
-      {students.length === 0 ? (
-        <p className="px-5 py-6 text-xs text-slate-400 text-center">
-          Aucun élève inscrit dans cette classe.
-        </p>
-      ) : (
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                <th className="px-4 py-3">Élève</th>
-                <th className="px-4 py-3">Cahier</th>
-                <th className="px-4 py-3">Leçon copiée</th>
-                <th className="px-4 py-3">Statut</th>
-                <th className="px-4 py-3">Observation</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {students.map((s) => {
-                const draft = drafts[s.id];
-                const currentStatus = draft?.status || s.status || 'PENDING';
-                const currentObs = draft?.observation ?? s.observation ?? '';
-                const badges = NOTEBOOK_BADGES[currentStatus] || NOTEBOOK_BADGES.PENDING;
+      {open && hasChildren && (
+        <div className="mt-0.5">
+          {node.children?.map((child) => (
+            <TreeFolder
+              key={child.key}
+              node={child}
+              level={level + 1}
+              studentsByHw={studentsByHw}
+              loadingStudents={loadingStudents}
+              onLoadStudents={onLoadStudents}
+            />
+          ))}
+
+          {/* Leçons du jour (uniquement pour level=day) */}
+          {isLessonLevel && node.lessons && node.lessons.length > 0 && (
+            <div className="mt-1 space-y-1.5" style={{ paddingLeft: `${(level + 1) * 16}px` }}>
+              {node.lessons.map((hw) => {
+                const isOpenHw = openHwId === hw.id;
+                const students = studentsByHw[hw.id] || [];
+                const isLoading = loadingStudents === hw.id;
                 return (
-                  <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                    {/* Élève */}
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {s.lastName || '—'} {s.firstName || ''}
-                      </p>
-                      {s.matricule && (
-                        <p className="text-xs text-slate-400">Mat: {s.matricule}</p>
-                      )}
-                    </td>
-
-                    {/* Badge cahier propre (dérivé) */}
-                    <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase',
-                          badges.cahier.cls,
-                        )}
-                      >
-                        {badges.cahier.label === 'Propre' ? (
-                          <Check className="w-3 h-3" />
-                        ) : badges.cahier.label === 'À refaire' ? (
-                          <RotateCcw className="w-3 h-3" />
-                        ) : (
-                          <Clock className="w-3 h-3" />
-                        )}
-                        {badges.cahier.label}
-                      </span>
-                    </td>
-
-                    {/* Badge leçon copiée (dérivé) */}
-                    <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase',
-                          badges.lecon.cls,
-                        )}
-                      >
-                        {badges.lecon.label === 'Copiée' ? (
-                          <Check className="w-3 h-3" />
-                        ) : badges.lecon.label === 'Non copiée' ? (
-                          <X className="w-3 h-3" />
-                        ) : badges.lecon.label === 'Partielle' ? (
-                          <AlertTriangle className="w-3 h-3" />
-                        ) : badges.lecon.label === 'À refaire' ? (
-                          <RotateCcw className="w-3 h-3" />
-                        ) : (
-                          <Clock className="w-3 h-3" />
-                        )}
-                        {badges.lecon.label}
-                      </span>
-                    </td>
-
-                    {/* Sélecteur de statut */}
-                    <td className="px-4 py-3">
-                      <select
-                        value={currentStatus}
-                        onChange={(e) =>
-                          onDraft(s.id, { status: e.target.value })
+                  <div
+                    key={hw.id}
+                    className="bg-white rounded-lg border border-slate-200 overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (isOpenHw) {
+                          setOpenHwId(null);
+                        } else {
+                          setOpenHwId(hw.id);
+                          if (!studentsByHw[hw.id]) {
+                            await onLoadStudents(hw.id);
+                          }
                         }
-                        className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold min-w-[140px]"
-                      >
-                        {NOTEBOOK_STATUSES.map((st) => (
-                          <option key={st} value={st}>
-                            {STATUS_CONFIG[st]?.label || st}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isOpenHw ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        )}
+                        <BookOpen className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">
+                            {hw.title}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {hw.subject?.name || 'Matière générale'}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
 
-                    {/* Observation */}
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        value={currentObs}
-                        onChange={(e) =>
-                          onDraft(s.id, { observation: e.target.value })
-                        }
-                        placeholder="Ex: Cahier très bien tenu"
-                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs font-medium min-w-[200px]"
-                      />
-                    </td>
-                  </tr>
+                    {isOpenHw && (
+                      <div className="border-t border-slate-100">
+                        {isLoading ? (
+                          <div className="px-4 py-4 flex items-center justify-center text-slate-500 text-xs">
+                            <Loader2 className="w-3 h-3 animate-spin mr-2" />
+                            Chargement…
+                          </div>
+                        ) : students.length === 0 ? (
+                          <p className="px-4 py-3 text-xs text-slate-400 text-center">
+                            Aucun élève dans cette classe.
+                          </p>
+                        ) : (
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                <th className="px-3 py-2">Élève</th>
+                                <th className="px-3 py-2">Cahier</th>
+                                <th className="px-3 py-2">Leçon</th>
+                                <th className="px-3 py-2">Observation</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {students.map((s: any) => {
+                                const cfg = DRAFT_FROM_STATUS[s.status || 'PENDING'];
+                                return (
+                                  <tr key={s.id} className="hover:bg-slate-50/50">
+                                    <td className="px-3 py-2">
+                                      <p className="text-xs font-semibold text-slate-900">
+                                        {s.student?.lastName || s.lastName || '—'}{' '}
+                                        {s.student?.firstName || s.firstName || ''}
+                                      </p>
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <CahierBadge cahier={cfg?.cahier || null} />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <LeconBadge lecon={cfg?.lecon || null} />
+                                    </td>
+                                    <td className="px-3 py-2 text-xs text-slate-600">
+                                      {s.observation || (
+                                        <span className="text-slate-400 italic">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================================================
+// BADGES — cahier propre + leçon copiée
+// ============================================================================
+
+function CahierBadge({ cahier }: { cahier: string | null }) {
+  if (cahier === 'oui') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700">
+        <Check className="w-2.5 h-2.5" /> Propre
+      </span>
+    );
+  }
+  if (cahier === 'non') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-700">
+        <X className="w-2.5 h-2.5" /> À refaire
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+      <Clock className="w-2.5 h-2.5" /> À vérifier
+    </span>
+  );
+}
+
+function LeconBadge({ lecon }: { lecon: string | null }) {
+  if (lecon === 'oui') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700">
+        <Check className="w-2.5 h-2.5" /> Copiée
+      </span>
+    );
+  }
+  if (lecon === 'partiel') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700">
+        <AlertTriangle className="w-2.5 h-2.5" /> Partielle
+      </span>
+    );
+  }
+  if (lecon === 'non') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-700">
+        <X className="w-2.5 h-2.5" /> Non copiée
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+      <Clock className="w-2.5 h-2.5" /> Non vérifiée
+    </span>
+  );
+}
+
+function MiniBadge({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase',
+      color,
+    )}>
+      {label} : <span className="font-extrabold">{value}</span>
+    </span>
   );
 }
 
@@ -901,98 +1665,181 @@ function EmptyState({
   icon: Icon,
   title,
   subtitle,
+  actionLabel,
+  onAction,
 }: {
   icon: any;
   title: string;
   subtitle: string;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="p-12 flex flex-col items-center justify-center text-center gap-3 bg-white rounded-xl border border-slate-200 border-dashed">
       <Icon className="w-10 h-10 text-slate-200" />
       <div>
         <p className="text-sm font-semibold text-slate-500">{title}</p>
-        <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-md">{subtitle}</p>
       </div>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          type="button"
+          className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }
 
 // ============================================================================
-// HELPERS — calcul de plages de dates
+// HELPERS — calcul de statut depuis le draft
 // ============================================================================
 
-function currentTrimestre(d: Date): 1 | 2 | 3 {
-  const m = d.getMonth(); // 0-11
-  // T1: Sep-Dec (8-11), T2: Jan-Mar (0-2), T3: Apr-Jun (3-5)
-  // Juillet-Août (6-7) → on rattache à T3
-  if (m >= 8 || m === 0 || m === 1 || m === 2) {
-    // Sep-Dec → T1 ; Jan-Mar → T2
-    if (m >= 8) return 1;
-    return 2;
+function computeStatusFromDraft(d: {
+  cahier: string | null;
+  lecon: string | null;
+}): string {
+  const cahier = d.cahier;
+  const lecon = d.lecon;
+  if (!cahier && !lecon) return 'PENDING';
+  // Si cahier non → TO_REDO
+  if (cahier === 'non') return 'TO_REDO';
+  // cahier oui ou null
+  if (cahier === 'oui') {
+    if (lecon === 'oui') return 'DONE';
+    if (lecon === 'partiel') return 'INCOMPLETE';
+    if (lecon === 'non') return 'NOT_DONE';
   }
-  if (m >= 3 && m <= 5) return 3;
-  // Juillet-Août
+  // cahier null mais leçon renseignée
+  if (lecon === 'oui') return 'DONE';
+  if (lecon === 'partiel') return 'INCOMPLETE';
+  if (lecon === 'non') return 'NOT_DONE';
+  return 'PENDING';
+}
+
+// ============================================================================
+// HELPERS — construction de l'arbre historique
+// ============================================================================
+
+function getTrimestre(month: number): 1 | 2 | 3 {
+  // T1: Sep–Dec (8–11) ; T2: Jan–Mar (0–2) ; T3: Apr–Jun (3–5) + Jul–Aug (6–7)
+  if (month >= 8) return 1;
+  if (month <= 2) return 2;
   return 3;
 }
 
-function computeRange(
-  kind: PeriodKind,
-  anchor?: string,
-  trimestre?: 1 | 2 | 3,
-): { from: string; to: string } | null {
-  const today = anchor ? new Date(anchor) : new Date();
-  if (isNaN(today.getTime())) return null;
-
-  if (kind === 'trimestre') {
-    const year = today.getFullYear();
-    const t = trimestre || 1;
-    if (t === 1) {
-      // T1 = Sep 1 → Dec 31 (de l'année en cours)
-      return {
-        from: new Date(year, 8, 1).toISOString(),
-        to: new Date(year, 11, 31, 23, 59, 59).toISOString(),
-      };
-    }
-    if (t === 2) {
-      // T2 = Jan 1 → Mar 31
-      return {
-        from: new Date(year, 0, 1).toISOString(),
-        to: new Date(year, 2, 31, 23, 59, 59).toISOString(),
-      };
-    }
-    // T3 = Apr 1 → Jun 30 (+ Jul-Aug rattachés)
-    return {
-      from: new Date(year, 3, 1).toISOString(),
-      to: new Date(year, 7, 31, 23, 59, 59).toISOString(),
-    };
-  }
-
-  if (kind === 'mois') {
-    const y = today.getFullYear();
-    const m = today.getMonth();
-    return {
-      from: new Date(y, m, 1).toISOString(),
-      to: new Date(y, m + 1, 0, 23, 59, 59).toISOString(),
-    };
-  }
-
-  if (kind === 'semaine') {
-    // Semaine = Lundi → Dimanche contenant la date anchor
-    const day = today.getDay(); // 0=Dim, 1=Lun, ..., 6=Sam
-    const offsetToMonday = (day + 6) % 7; // 0 si Lundi, 6 si Dim
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - offsetToMonday);
-    monday.setHours(0, 0, 0, 0);
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    sunday.setHours(23, 59, 59, 999);
-    return { from: monday.toISOString(), to: sunday.toISOString() };
-  }
-
-  // jour
-  const d = new Date(today);
-  d.setHours(0, 0, 0, 0);
-  const end = new Date(d);
-  end.setHours(23, 59, 59, 999);
-  return { from: d.toISOString(), to: end.toISOString() };
+function getWeekStart(date: Date): Date {
+  const day = date.getDay();
+  const offsetToMonday = (day + 6) % 7;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - offsetToMonday);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
 }
+
+function buildHistoryTree(homeworks: any[]): TreeNode[] {
+  // Map : year (number) → trimestre (1|2|3) → month (0-11) → weekKey (ISO) → dayKey (YYYY-MM-DD) → lessons[]
+  const byYear = new Map<
+    number,
+    Map<number, Map<number, Map<string, Map<string, any[]>>>>
+  >();
+
+  for (const hw of homeworks) {
+    if (!hw.dueDate) continue;
+    const d = new Date(hw.dueDate);
+    if (isNaN(d.getTime())) continue;
+    const year = d.getFullYear();
+    const trim = getTrimestre(d.getMonth());
+    const month = d.getMonth();
+    const weekStart = getWeekStart(d);
+    const weekKey = weekStart.toISOString().slice(0, 10);
+    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    if (!byYear.has(year)) byYear.set(year, new Map());
+    const yMap = byYear.get(year)!;
+    if (!yMap.has(trim)) yMap.set(trim, new Map());
+    const tMap = yMap.get(trim)!;
+    if (!tMap.has(month)) tMap.set(month, new Map());
+    const mMap = tMap.get(month)!;
+    if (!mMap.has(weekKey)) mMap.set(weekKey, new Map());
+    const wMap = mMap.get(weekKey)!;
+    if (!wMap.has(dayKey)) wMap.set(dayKey, []);
+    wMap.get(dayKey)!.push(hw);
+  }
+
+  // Construction de l'arbre
+  const tree: TreeNode[] = [];
+  for (const [year, tMap] of byYear) {
+    const tChildren: TreeNode[] = [];
+    for (const [trim, mMap] of tMap) {
+      const mChildren: TreeNode[] = [];
+      for (const [month, wMap] of mMap) {
+        const wChildren: TreeNode[] = [];
+        for (const [weekKey, dMap] of wMap) {
+          const dChildren: TreeNode[] = [];
+          for (const [dayKey, lessons] of dMap) {
+            dChildren.push({
+              key: `${year}-${trim}-${month}-${weekKey}-${dayKey}`,
+              label: formatDateFR(dayKey),
+              level: 'day',
+              children: [],
+              lessons: lessons.sort(
+                (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+              ),
+            });
+          }
+          // Tri des jours : plus récent en premier
+          dChildren.sort((a, b) => (a.key < b.key ? 1 : -1));
+          const ws = new Date(weekKey);
+          const we = new Date(ws);
+          we.setDate(ws.getDate() + 6);
+          wChildren.push({
+            key: `${year}-${trim}-${month}-${weekKey}`,
+            label: `Semaine du ${formatDateFR(weekKey)} au ${formatDateFR(we.toISOString())}`,
+            level: 'week',
+            children: dChildren,
+          });
+        }
+        // Tri semaines : plus récent en premier
+        wChildren.sort((a, b) => (a.key < b.key ? 1 : -1));
+        mChildren.push({
+          key: `${year}-${trim}-${month}`,
+          label: MONTHS_FR[month],
+          level: 'month',
+          children: wChildren,
+        });
+      }
+      // Tri mois : ordre chronologique inverse
+      mChildren.sort((a, b) => (a.key < b.key ? 1 : -1));
+      tChildren.push({
+        key: `${year}-${trim}`,
+        label: `Trimestre ${trim}`,
+        level: 'trimestre',
+        children: mChildren,
+      });
+    }
+    // Tri trimestres : ordre croissant (T1 < T2 < T3) au sein d'une année
+    tChildren.sort((a, b) => {
+      const at = parseInt(a.key.split('-')[1]);
+      const bt = parseInt(b.key.split('-')[1]);
+      return at - bt;
+    });
+    tree.push({
+      key: String(year),
+      label: `Année ${year}`,
+      level: 'year',
+      children: tChildren,
+    });
+  }
+
+  // Tri années : plus récente en premier
+  tree.sort((a, b) => Number(b.key) - Number(a.key));
+  return tree;
+}
+
+// Imported for type completeness (avoids unused import warnings in some setups)
+// (intentionally left empty)

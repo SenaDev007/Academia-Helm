@@ -1887,32 +1887,39 @@ export class PedagogicalSpaceService {
       cahierJournalId?: string;
     },
   ) {
-    // ⭐ FIX P2003 : résoudre schoolLevelId depuis la classe si vide ou invalide.
-    //    Le frontend peut envoyer un schoolLevelId vide ou incorrect (le contexte
-    //    useModuleContext() peut ne pas avoir le bon schoolLevel). On résout
-    //    depuis la table Class (classId → schoolLevelId) comme fallback.
-    //    Pattern identique à saveDailyAttendance (l. 694-714).
-    let resolvedSchoolLevelId = schoolLevelId;
-    if (!resolvedSchoolLevelId || resolvedSchoolLevelId.trim() === '') {
-      const cls = await this.prisma.class.findFirst({
+    // ⭐ FIX P2003 ROBUSTE : TOUJOURS résoudre schoolLevelId depuis la table Class.
+    //    Le frontend peut envoyer un schoolLevelId vide, incorrect, ou non vide mais
+    //    invalide (le contexte useModuleContext() peut ne pas avoir le bon schoolLevel
+    //    ou un ID qui n'existe pas dans la DB Neon de prod).
+    //    On résout TOUJOURS depuis la classe (classId → schoolLevelId) car la classe
+    //    a un schoolLevelId garanti valide (FK en base).
+    //    Pattern identique à saveDailyAttendance (l. 694-714) mais appliqué systématiquement.
+    let resolvedSchoolLevelId: string | undefined;
+    const cls = await this.prisma.class.findFirst({
+      where: { id: data.classId, tenantId },
+      select: { schoolLevelId: true },
+    });
+    if (cls?.schoolLevelId) {
+      resolvedSchoolLevelId = cls.schoolLevelId;
+    } else {
+      // Fallback : chercher dans AcademicClass
+      const ac = await this.prisma.academicClass.findFirst({
         where: { id: data.classId, tenantId },
         select: { schoolLevelId: true },
       });
-      if (cls?.schoolLevelId) {
-        resolvedSchoolLevelId = cls.schoolLevelId;
-      } else {
-        // Fallback : chercher dans AcademicClass
-        const ac = await this.prisma.academicClass.findFirst({
-          where: { id: data.classId, tenantId },
-          select: { schoolLevelId: true },
-        });
-        resolvedSchoolLevelId = ac?.schoolLevelId || '';
-      }
-      if (!resolvedSchoolLevelId) {
+      resolvedSchoolLevelId = ac?.schoolLevelId || undefined;
+    }
+    // Si toujours pas résolu, utiliser la valeur fournie par le frontend comme dernier recours
+    if (!resolvedSchoolLevelId) {
+      resolvedSchoolLevelId = schoolLevelId;
+      if (!resolvedSchoolLevelId || resolvedSchoolLevelId.trim() === '') {
         throw new BadRequestException(
-          `Impossible de résoudre le niveau scolaire pour la classe ${data.classId}.`,
+          `Impossible de résoudre le niveau scolaire pour la classe ${data.classId}. ` +
+          `Vérifiez que la classe existe et a un niveau scolaire assigné.`,
         );
       }
+      this.logger.warn(`⚠ schoolLevelId non résolu depuis la classe — utilisation de la valeur frontend: ${resolvedSchoolLevelId}`);
+    } else {
       this.logger.log(`✅ schoolLevelId résolu depuis la classe : ${resolvedSchoolLevelId}`);
     }
 

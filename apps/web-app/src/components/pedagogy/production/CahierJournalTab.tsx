@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   NotebookPen, Loader2, Save, RefreshCw, Send, Lock, Calendar,
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock, X, AlertCircle,
-  FileSpreadsheet, FileText,
+  FileSpreadsheet, FileText, ClipboardList, Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -143,6 +143,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   // ⭐ Modal de sélection des jours (cahier journal + fiches pédagogiques)
   const [showDaySelectionModal, setShowDaySelectionModal] = useState(false);
   const [selectedDays, setSelectedDays] = useState<string[]>(['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi']);
+
+  // ⭐ Travaux & Suivi liés au cahier journal (Phase 4c)
+  //    Fetch les HomeworkEntry liés à ce cahier journal (devoirs, leçons, récitations, exposés)
+  //    + statut de chaque élève (récitation réussie/échouée, leçon copiée/non copiée)
+  const [linkedTasks, setLinkedTasks] = useState<any[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  // ⭐ Modal de création d'un devoir lié au cahier journal
+  const [showTaskFormModal, setShowTaskFormModal] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    title: '',
+    description: '',
+    dueDate: '',
+    taskType: 'HOMEWORK',
+    maxScore: 20,
+    presentationDate: '',
+    observations: '',
+  });
+  const [creatingTask, setCreatingTask] = useState(false);
   // Matières dynamiques chargées depuis la base de données
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
 
@@ -314,6 +333,80 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   useEffect(() => {
     if (selectedClassId) loadJournal();
   }, [loadJournal, selectedClassId]);
+
+  // ⭐ Fetch les HomeworkEntry liés au cahier journal courant (Phase 4c)
+  //    Quand un journal est chargé (journal.id existe), on récupère les
+  //    devoirs/leçons/récitations/exposés qui y sont rattachés via cahierJournalId.
+  useEffect(() => {
+    if (!journal?.id) {
+      setLinkedTasks([]);
+      return;
+    }
+    (async () => {
+      setLoadingTasks(true);
+      try {
+        const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/tasks`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setLinkedTasks(Array.isArray(data) ? data : []);
+        } else {
+          setLinkedTasks([]);
+        }
+      } catch {
+        setLinkedTasks([]);
+      } finally {
+        setLoadingTasks(false);
+      }
+    })();
+  }, [journal?.id]);
+
+  // ⭐ Handler pour créer un devoir lié au cahier journal courant
+  //    Le devoir créé aura cahierJournalId = journal.id (lien explicite)
+  const handleCreateLinkedTask = async () => {
+    if (!journal?.id || !taskForm.title || !taskForm.dueDate) {
+      toast.error("Titre et date d'échéance sont obligatoires");
+      return;
+    }
+    setCreatingTask(true);
+    try {
+      const res = await fetch('/api/pedagogy-space/homeworks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          academicYearId,
+          schoolLevelId: journal.schoolLevelId,
+          teacherId,
+          classId: selectedClassId,
+          title: taskForm.title,
+          description: taskForm.description || '',
+          dueDate: taskForm.dueDate,
+          taskType: taskForm.taskType,
+          maxScore: Number(taskForm.maxScore) || undefined,
+          presentationDate: taskForm.presentationDate || undefined,
+          observations: taskForm.observations || undefined,
+          cahierJournalId: journal.id,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Erreur création');
+      }
+      toast.success('✅ Devoir créé et lié au cahier journal');
+      setShowTaskFormModal(false);
+      setTaskForm({ title: '', description: '', dueDate: '', taskType: 'HOMEWORK', maxScore: 20, presentationDate: '', observations: '' });
+      // Re-fetch les tâches liées
+      const tasksRes = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/tasks`, { credentials: 'include' });
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        setLinkedTasks(Array.isArray(data) ? data : []);
+      }
+    } catch (e: any) {
+      toast.error('Erreur création devoir', { description: e.message });
+    } finally {
+      setCreatingTask(false);
+    }
+  };
 
   // ⭐ Charger le nom + signature du directeur depuis school_directors (RH → Directeurs)
   //    Résolu par niveau scolaire de la classe + piste linguistique (FR par défaut).
@@ -834,6 +927,246 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               )}
             />
           </div>
+
+          {/* === TRAVAUX & SUIVI LIÉS AU CAHIER JOURNAL (Phase 4c) === */}
+          {/*    Affiche les HomeworkEntry rattachés à ce cahier journal (devoirs, leçons,
+                  récitations, exposés) + le statut de chaque élève.
+                  Permet à l'enseignant de rattacher un devoir à une case du cahier journal
+                  lors de la création (cahierJournalId = journal.id). */}
+          {journal?.id && (
+            <div className="mb-6 p-4 rounded-xl border-2 border-blue-200 bg-blue-50/30">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900 uppercase">Travaux & Suivi de la semaine</h3>
+                </div>
+                {!isReadOnly && (
+                  <button
+                    onClick={() => {
+                      // Pré-remplir la date d'échéance avec la date de fin de semaine
+                      setTaskForm(prev => ({
+                        ...prev,
+                        dueDate: prev.dueDate || (journal.weekEndDate ? new Date(journal.weekEndDate).toISOString().split('T')[0] : ''),
+                      }));
+                      setShowTaskFormModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Créer un devoir lié
+                  </button>
+                )}
+              </div>
+
+              {loadingTasks ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+                </div>
+              ) : linkedTasks.length === 0 ? (
+                <div className="text-center py-6 text-slate-400">
+                  <ClipboardList className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs">Aucun devoir/exercice/leçon lié à cette semaine.</p>
+                  <p className="text-[10px] mt-1">Cliquez sur "Créer un devoir lié" pour rattacher un travail à ce cahier journal.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {linkedTasks.map((task) => {
+                    const isExpanded = expandedTaskId === task.id;
+                    const TASK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+                      HOMEWORK: { label: 'Devoir', color: 'bg-blue-100 text-blue-700' },
+                      RESEARCH: { label: 'Recherche/Exposé', color: 'bg-purple-100 text-purple-700' },
+                      LESSON: { label: 'Leçon à recopier', color: 'bg-amber-100 text-amber-700' },
+                      RECITATION: { label: 'Récitation', color: 'bg-cyan-100 text-cyan-700' },
+                      PRACTICAL: { label: 'Activité pratique', color: 'bg-emerald-100 text-emerald-700' },
+                      PROJECT: { label: 'Projet', color: 'bg-rose-100 text-rose-700' },
+                    };
+                    const typeConfig = TASK_TYPE_LABELS[task.taskType] || TASK_TYPE_LABELS.HOMEWORK;
+                    return (
+                      <div key={task.id} className="border border-slate-200 rounded-lg bg-white overflow-hidden">
+                        {/* En-tête cliquable */}
+                        <button
+                          onClick={() => setExpandedTaskId(isExpanded ? null : task.id)}
+                          className="w-full flex items-center justify-between p-3 hover:bg-slate-50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold", typeConfig.color)}>
+                              {typeConfig.label}
+                            </span>
+                            <span className="text-sm font-semibold text-slate-900">{task.title}</span>
+                            {task.subject?.name && (
+                              <span className="text-xs text-slate-500">• {task.subject.name}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-[10px]">
+                            {/* Mini stats */}
+                            <span className="text-emerald-600 font-bold">✓ {task.done + task.recited + task.presented}</span>
+                            <span className="text-rose-600 font-bold">✗ {task.notDone + task.notRecited + task.notPresented}</span>
+                            <span className="text-amber-600 font-bold">⏳ {task.pending}</span>
+                            <span className="text-slate-400">/ {task.totalStudents}</span>
+                            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />}
+                          </div>
+                        </button>
+
+                        {/* Détails expand */}
+                        {isExpanded && (
+                          <div className="p-3 border-t border-slate-100 space-y-3">
+                            {/* Description + dates */}
+                            <div className="text-xs text-slate-600">
+                              {task.description && <p className="mb-1">{task.description}</p>}
+                              <div className="flex gap-4">
+                                <span>📅 Échéance : <strong>{new Date(task.dueDate).toLocaleDateString('fr-FR')}</strong></span>
+                                {task.presentationDate && (
+                                  <span>🎤 Présentation : <strong>{new Date(task.presentationDate).toLocaleDateString('fr-FR')}</strong></span>
+                                )}
+                                {task.maxScore && <span>📊 Note max : <strong>{task.maxScore}/20</strong></span>}
+                              </div>
+                              {task.observations && <p className="mt-1 italic text-slate-500">📝 {task.observations}</p>}
+                            </div>
+
+                            {/* Tableau des élèves */}
+                            {task.students && task.students.length > 0 && (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs border-collapse">
+                                  <thead>
+                                    <tr className="bg-slate-50">
+                                      <th className="border border-slate-200 px-2 py-1.5 text-left font-bold">Élève</th>
+                                      <th className="border border-slate-200 px-2 py-1.5 text-center font-bold">Statut</th>
+                                      <th className="border border-slate-200 px-2 py-1.5 text-center font-bold">Note</th>
+                                      <th className="border border-slate-200 px-2 py-1.5 text-left font-bold">Appréciation</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {task.students.map((ts: any) => {
+                                      const STATUS_COLORS: Record<string, string> = {
+                                        DONE: 'bg-emerald-100 text-emerald-700',
+                                        NOT_DONE: 'bg-rose-100 text-rose-700',
+                                        PENDING: 'bg-slate-100 text-slate-600',
+                                        LATE: 'bg-red-100 text-red-700',
+                                        INCOMPLETE: 'bg-amber-100 text-amber-700',
+                                        TO_REDO: 'bg-rose-100 text-rose-700',
+                                        RECITED: 'bg-emerald-100 text-emerald-700',
+                                        NOT_RECITED: 'bg-rose-100 text-rose-700',
+                                        PRESENTED: 'bg-emerald-100 text-emerald-700',
+                                        NOT_PRESENTED: 'bg-rose-100 text-rose-700',
+                                      };
+                                      const STATUS_LABELS: Record<string, string> = {
+                                        DONE: 'Fait', NOT_DONE: 'Non fait', PENDING: 'En attente',
+                                        LATE: 'En retard', INCOMPLETE: 'Incomplet', TO_REDO: 'À refaire',
+                                        RECITED: 'Récit. réussie', NOT_RECITED: 'Récit. échouée',
+                                        PRESENTED: 'Exposé présenté', NOT_PRESENTED: 'Exposé non présenté',
+                                      };
+                                      return (
+                                        <tr key={ts.id || ts.studentId}>
+                                          <td className="border border-slate-200 px-2 py-1 font-medium">
+                                            {ts.student?.firstName} {ts.student?.lastName}
+                                          </td>
+                                          <td className="border border-slate-200 px-2 py-1 text-center">
+                                            <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", STATUS_COLORS[ts.status] || 'bg-slate-100')}>
+                                              {STATUS_LABELS[ts.status] || ts.status}
+                                            </span>
+                                          </td>
+                                          <td className="border border-slate-200 px-2 py-1 text-center font-bold">
+                                            {ts.score != null ? `${ts.score}/${task.maxScore || 20}` : '—'}
+                                          </td>
+                                          <td className="border border-slate-200 px-2 py-1 text-slate-600">
+                                            {ts.appreciation || '—'}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* === MODAL : Créer un devoir lié au cahier journal (Phase 4c) === */}
+          {showTaskFormModal && journal?.id && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                <div className="px-6 py-4 border-b bg-blue-50 border-blue-200">
+                  <div className="flex items-center gap-3">
+                    <Plus className="h-10 w-10 text-blue-600" />
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">Créer un devoir lié à la semaine</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Ce devoir sera rattaché au cahier journal de la semaine du {journal.weekStartDate ? new Date(journal.weekStartDate).toLocaleDateString('fr-FR') : '—'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Titre *</label>
+                    <input type="text" value={taskForm.title} onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+                      placeholder="Ex: Exercices page 45, Leçon à recopier, Récitation table de 7..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Description</label>
+                    <textarea value={taskForm.description} onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                      rows={2} placeholder="Détails du devoir..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Type</label>
+                      <select value={taskForm.taskType} onChange={(e) => setTaskForm({ ...taskForm, taskType: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                        <option value="HOMEWORK">Devoir / Exercices</option>
+                        <option value="LESSON">Leçon à recopier</option>
+                        <option value="RECITATION">Récitation</option>
+                        <option value="RESEARCH">Recherche / Exposé</option>
+                        <option value="PRACTICAL">Activité pratique</option>
+                        <option value="PROJECT">Projet</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Note max</label>
+                      <input type="number" value={taskForm.maxScore} onChange={(e) => setTaskForm({ ...taskForm, maxScore: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Date d'échéance *</label>
+                      <input type="date" value={taskForm.dueDate} onChange={(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Date de présentation (optionnel)</label>
+                      <input type="date" value={taskForm.presentationDate} onChange={(e) => setTaskForm({ ...taskForm, presentationDate: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Observations</label>
+                    <textarea value={taskForm.observations} onChange={(e) => setTaskForm({ ...taskForm, observations: e.target.value })}
+                      rows={2} placeholder="Observations pour les parents..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                  <button onClick={() => setShowTaskFormModal(false)} disabled={creatingTask}
+                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50">
+                    Annuler
+                  </button>
+                  <button onClick={handleCreateLinkedTask} disabled={creatingTask || !taskForm.title || !taskForm.dueDate}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                    {creatingTask ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    Créer le devoir
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* === PIED DE PAGE — Signatures (comme Registre d'appel) === */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">

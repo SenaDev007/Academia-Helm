@@ -6895,3 +6895,65 @@ Stage Summary:
 - Fichiers modifiés frontend : /app/parent/layout.tsx (onglet + icône ClipboardList)
 - Migration SQL créée + appliquée sur DB Neon
 - TypeScript check : 0 erreur frontend + 0 nouvelle erreur backend
+
+---
+Task ID: PHASE-4C-CAHIER-JOURNAL-TASKS
+Agent: main
+Task: Phase 4c — Frontend cahier journal : bouton "Travaux & Suivi" par jour/matière qui affiche les devoirs liés + statut des élèves + rattacher un devoir à une case du cahier journal lors de la création.
+
+Work Log:
+
+=== Phase 4c — Cahier journal → Travaux & Suivi (frontend) ===
+
+Modifié : `apps/web-app/src/components/pedagogy/production/CahierJournalTab.tsx` (+~240 lignes)
+
+1. **États ajoutés** :
+   - `linkedTasks` : tableau des HomeworkEntry liés au cahier journal courant
+   - `loadingTasks` : état de chargement du fetch
+   - `expandedTaskId` : ID de la tâche expandée (pour voir le détail des élèves)
+   - `showTaskFormModal` : affichage du modal de création d'un devoir lié
+   - `taskForm` : formulaire (title, description, dueDate, taskType, maxScore, presentationDate, observations)
+   - `creatingTask` : état de création
+
+2. **useEffect de fetch** :
+   - Quand `journal.id` change → fetch `GET /api/pedagogy-space/cahier-journal/${journal.id}/tasks`
+   - Récupère les HomeworkEntry liés avec stats agrégées (done/notDone/recited/notRecited/presented/notPresented) + liste détaillée par élève
+
+3. **Handler `handleCreateLinkedTask`** :
+   - POST `/api/pedagogy-space/homeworks` avec `cahierJournalId: journal.id`
+   - Le devoir créé est automatiquement lié au cahier journal courant
+   - Après création : re-fetch des tâches liées + toast succès
+   - Parents notifiés automatiquement (via `notifyParentsNewHomework` déjà branché dans `createHomework`)
+
+4. **Panel "Travaux & Suivi de la semaine"** (inséré entre Observations et Signatures) :
+   - En-tête avec icône ClipboardList + titre "TRAVAUX & SUIVI DE LA SEMAINE"
+   - Bouton "Créer un devoir lié" (bleu, icône Plus) — seulement si pas read-only
+   - Pré-remplit la date d'échéance avec la date de fin de semaine du cahier journal
+   - Liste des tâches liées avec :
+     * Badge taskType coloré (Devoir/Leçon/Récitation/Recherche/Activité/Projet)
+     * Titre + matière
+     * Mini stats : ✓ faits / ✗ non faits / ⏳ en attente / total élèves
+     * Expand/collapse pour voir le détail :
+       - Description + dates (échéance + présentation) + note max + observations
+       - Tableau des élèves : nom | statut (10 statuts colorés) | note | appréciation
+       - Statuts : Fait, Non fait, En attente, En retard, Incomplet, À refaire,
+         Récit. réussie, Récit. échouée, Exposé présenté, Exposé non présenté
+
+5. **Modal de création** (inline, pas de FormModal blueprint) :
+   - Champs : Titre*, Description, Type (select 6 options), Note max,
+     Date d'échéance*, Date de présentation (optionnel), Observations
+   - En-tête bleu "Créer un devoir lié à la semaine"
+   - Info : "Ce devoir sera rattaché au cahier journal de la semaine du {date}"
+   - Boutons Annuler / Créer le devoir (Loader2 pendant création)
+
+6. **Imports ajoutés** : `ClipboardList`, `Plus` (lucide-react)
+
+Stage Summary:
+- ✅ Bouton "Travaux & Suivi" intégré dans le cahier journal enseignant (maternelle + primaire)
+- ✅ Affiche les HomeworkEntry liés avec stats agrégées + détail par élève (statut individuel)
+- ✅ Permet de rattacher un devoir à une case du cahier journal lors de la création (cahierJournalId)
+- ✅ Parents notifiés automatiquement quand l'enseignant crée un devoir depuis le cahier journal
+- ✅ Le parent voit le devoir dans son onglet "Travaux & Suivi" du portail parent
+- ✅ TypeScript check : 0 erreur
+- 1 fichier modifié : CahierJournalTab.tsx (+~240 lignes)
+- Aucune migration nécessaire (cahierJournalId déjà appliqué en Phase 4a)

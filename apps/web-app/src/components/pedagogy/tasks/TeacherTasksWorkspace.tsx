@@ -450,17 +450,44 @@ function HomeworkFormModal({
   const [observations, setObservations] = useState(homework?.observations || '');
   const [saving, setSaving] = useState(false);
 
-  // Sujets disponibles pour la classe sélectionnée
+  // ⭐ Sujets disponibles pour la classe sélectionnée
+  //    On utilise D'ABORD les subjects inclus dans `classes` (via getMyClasses).
+  //    Si la liste est vide, on fetch depuis l'API subjects/available (fallback).
   const selectedClass = useMemo(
     () => classes.find((c) => c.classId === classId),
     [classes, classId],
   );
-  const availableSubjects = selectedClass?.subjects || [];
+  const [fetchedSubjects, setFetchedSubjects] = useState<any[]>([]);
+  const availableSubjects = selectedClass?.subjects?.length > 0
+    ? selectedClass.subjects
+    : fetchedSubjects;
+
+  // ⭐ Fallback : fetch les matières de la classe si classes[].subjects est vide
+  useEffect(() => {
+    if (!classId || !academicYearId) {
+      setFetchedSubjects([]);
+      return;
+    }
+    (async () => {
+      try {
+        const params = new URLSearchParams({ academicYearId, classId, teacherId });
+        const data = await apiFetch<any[]>(
+          `/api/pedagogy-space/subjects/available?${params.toString()}`,
+        );
+        setFetchedSubjects(Array.isArray(data) ? data : []);
+      } catch {
+        // Silencieux — les subjects sont optionnels
+        setFetchedSubjects([]);
+      }
+    })();
+  }, [classId, academicYearId, teacherId]);
 
   // Reset subjectId if classId changes & subject not in new list
   useEffect(() => {
     if (subjectId && availableSubjects.length > 0) {
-      const exists = availableSubjects.some((s: any) => s.subjectId === subjectId);
+      const exists = availableSubjects.some((s: any) =>
+        s.subjectId === subjectId || s.id === subjectId,
+      );
       if (!exists) setSubjectId('');
     }
   }, [availableSubjects, subjectId]);
@@ -640,11 +667,15 @@ function HomeworkFormModal({
                 disabled={availableSubjects.length === 0}
               >
                 <option value="">— Aucune (générale) —</option>
-                {availableSubjects.map((s: any) => (
-                  <option key={s.subjectId} value={s.subjectId}>
-                    {s.subjectName || s.subjectCode}
-                  </option>
-                ))}
+                {availableSubjects.map((s: any) => {
+                  const sid = s.subjectId || s.id;
+                  const sname = s.subjectName || s.name || s.subjectCode || s.code;
+                  return (
+                    <option key={sid} value={sid}>
+                      {sname}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -1355,6 +1386,13 @@ function TaskStudentsModal({
   const [updating, setUpdating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    // ⭐ Vérifier que homework.id existe avant de faire l'appel API
+    if (!homework?.id) {
+      toast.error('Données invalides : ID du devoir manquant');
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await apiFetch<any[]>(
@@ -1362,13 +1400,15 @@ function TaskStudentsModal({
       );
       setStudents(Array.isArray(data) ? data : []);
     } catch (e: any) {
+      // ⭐ Améliorer le message d'erreur pour inclure l'ID et le détails
       toast.error('Erreur lors du chargement du suivi', {
-        description: e.message,
+        description: `Devoir ID: ${homework.id} — ${e.message}`,
       });
+      setStudents([]);
     } finally {
       setLoading(false);
     }
-  }, [homework.id]);
+  }, [homework?.id]);
 
   useEffect(() => {
     load();

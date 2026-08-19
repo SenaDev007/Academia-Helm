@@ -7796,6 +7796,8 @@ model HomeworkEntry {
   updatedAt       DateTime             @updatedAt
   academicTrack   AcademicTrack?       @relation(fields: [academicTrackId], references: [id])
   academicYear    AcademicYear         @relation(fields: [academicYearId], references: [id])
+  /// ⭐ Relation vers le CahierJournal (relation inverse de CahierJournal.homeworkEntries)
+  cahierJournal   CahierJournal?      @relation(fields: [cahierJournalId], references: [id])
   class           Class?               @relation(fields: [classId], references: [id])
   lessonPlan      LessonPlan?          @relation(fields: [lessonPlanId], references: [id])
   schoolLevel     SchoolLevel          @relation(fields: [schoolLevelId], references: [id])
@@ -7805,6 +7807,7 @@ model HomeworkEntry {
 
   @@index([tenantId, academicYearId, schoolLevelId])
   @@index([tenantId, academicYearId, taskType])
+  @@index([cahierJournalId])
   @@index([dueDate])
   @@map("homework_entries")
 }

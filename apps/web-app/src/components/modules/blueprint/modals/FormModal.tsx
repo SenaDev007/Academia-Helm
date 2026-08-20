@@ -44,6 +44,12 @@ export interface FormModalProps {
   onConfirm?: () => Promise<void>;
   /** Données initiales pour le formulaire */
   initialData?: any;
+  /** ⭐ État de chargement : désactive le bouton Confirmer + affiche un spinner.
+   *    Empêche la double-soumission quand l'utilisateur clique plusieurs fois
+   *    pendant un cold start Vercel (10s+). */
+  loading?: boolean;
+  /** ⭐ Libellé du bouton de confirmation (défaut: "Confirmer") */
+  confirmLabel?: string;
 }
 
 export default function FormModal({
@@ -59,11 +65,15 @@ export default function FormModal({
   onSave,
   onConfirm,
   initialData,
+  loading = false,
+  confirmLabel = 'Confirmer',
 }: FormModalProps) {
   const modalSize = size === 'large' ? 'lg' : size;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ⭐ Guard anti-double-soumission au niveau du formulaire
+    if (loading) return;
     if (onConfirm) await onConfirm();
     if (onSave) {
       const formData = new FormData(e.target as HTMLFormElement);
@@ -85,16 +95,24 @@ export default function FormModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Annuler
           </button>
           <button
             type="submit"
             form="modal-form"
-            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait inline-flex items-center gap-2"
           >
-            Confirmer
+            {loading && (
+              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            )}
+            {loading ? 'Enregistrement…' : confirmLabel}
           </button>
         </div>
       ) : null)}

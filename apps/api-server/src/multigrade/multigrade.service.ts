@@ -133,19 +133,34 @@ export class MultigradeService {
       throw new BadRequestException('Enseignant introuvable.');
     }
 
-    // Vérifier l'unicité : pas de groupe multigrade existant pour ce teacher+année
-    const existing = await this.prisma.multigradeAssignment.findFirst({
+    // ⭐ Vérifier l'unicité : un enseignant peut avoir PLUSIEURS groupes multigrade
+    //    par an, à condition que les classIds soient différents (ex: un teacher
+    //    qui enseigne à [CI-A, CP-B] ET à [CM1-C, CM2-D] pour des matières
+    //    différentes). Avant ce fix, le service bloquait TOUT 2e groupe pour le
+    //    même teacher → impossible d'affecter un enseignant multi-grade à des
+    //    classes supplémentaires.
+    //    On ne bloque QUE si un groupe EXISTANT a exactement le même set de classIds
+    //    (ce qui serait un vrai doublon, déjà couvert par @@unique au niveau DB).
+    const newClassIdsSorted = [...(data.classIds || [])].sort();
+    const existingGroups = await this.prisma.multigradeAssignment.findMany({
       where: {
         tenantId,
         academicYearId: data.academicYearId,
         teacherId: data.teacherId,
         isActive: true,
       },
+      select: { id: true, classIds: true },
     });
-    if (existing) {
+    const duplicate = existingGroups.find((g: any) => {
+      const existing = Array.isArray(g.classIds) ? g.classIds : [];
+      const existingSorted = [...existing].sort();
+      return existingSorted.length === newClassIdsSorted.length &&
+        existingSorted.every((c: any, i: number) => c === newClassIdsSorted[i]);
+    });
+    if (duplicate) {
       throw new BadRequestException(
-        'Cet enseignant a déjà un groupe multigrade actif pour cette année. ' +
-        'Supprimez le groupe existant avant d\'en créer un nouveau.',
+        'Un groupe multigrade identique existe déjà pour cet enseignant ' +
+        '(mêmes classes). Modifiez le groupe existant au lieu d\'en créer un nouveau.',
       );
     }
 

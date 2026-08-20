@@ -205,12 +205,16 @@ export default function SubjectsWorkspace() {
     name: '',
     abbreviation: '',
     coefficient: 1,
-    weeklyHours: 4,
+    weeklyHours: 120, // ⭐ en minutes (2h par défaut) — avant c'était 4 (heures, trop grand)
     schoolLevelId: '',
     description: '',
     language: '' as string,
     seriesId: '' as string,
   });
+  // ⭐ Prévient la double-soumission (bug "toast erreur + succès" + lenteur 10s Vercel cold start)
+  //    Sans ce guard, l'utilisateur impatient clique 2× → 2 POST partent → 1 réussit (201, toast succès),
+  //    l'autre échoue (400 duplicate code, toast erreur) → l'utilisateur voit les deux toasts.
+  const [subjectSaving, setSubjectSaving] = useState(false);
 
   // Mass Assignment State
   const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
@@ -671,6 +675,23 @@ export default function SubjectsWorkspace() {
   };
 
   const handleSaveSubject = async () => {
+    // ⭐ Guard anti-double-soumission : si une sauvegarde est en cours, on ignore le clic.
+    //    Avant ce fix, l'utilisateur pouvait cliquer plusieurs fois pendant les 10s de
+    //    Vercel cold start → 2 requêtes POST partaient → la 1ère réussissait (201),
+    //    la 2nde échouait (400 duplicate code) → toast succès ET toast erreur simultanés.
+    if (subjectSaving) {
+      console.warn('[Subjects] Sauvegarde déjà en cours, clic ignoré');
+      return;
+    }
+    setSubjectSaving(true);
+    try {
+      await _handleSaveSubjectInternal();
+    } finally {
+      setSubjectSaving(false);
+    }
+  };
+
+  const _handleSaveSubjectInternal = async () => {
     // Si des suggestions sont sélectionnées, on fait une création multiple
     if (modal === 'create-subject' && selectedSuggestions.size > 0) {
       await handleBulkCreateSuggestions();
@@ -1052,7 +1073,7 @@ export default function SubjectsWorkspace() {
                 name: '',
                 abbreviation: '',
                 coefficient: 1,
-                weeklyHours: 4,
+                weeklyHours: 120, // ⭐ 2h en minutes (standard MEMP par défaut, ajustable)
                 schoolLevelId: schoolLevels[0]?.id || '',
                 description: '',
                 language: bilingualEnabled ? currentTrack : '',
@@ -1747,13 +1768,17 @@ export default function SubjectsWorkspace() {
         isOpen={modal === 'create-subject' || modal === 'edit-subject'}
         onClose={() => setModal('none')}
         onConfirm={selectedSuggestions.size > 0 ? undefined : handleSaveSubject}
+        // ⭐ Désactive le bouton "Confirmer" pendant la sauvegarde (anti-double-soumission)
+        loading={subjectSaving}
+        confirmLabel={modal === 'edit-subject' ? 'Enregistrer' : 'Créer la matière'}
         actions={
           selectedSuggestions.size > 0 ? (
             <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setModal('none')}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={subjectSaving}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Fermer
               </button>
@@ -2058,38 +2083,50 @@ export default function SubjectsWorkspace() {
                   onChange={(e) => setSubjectForm({ ...subjectForm, abbreviation: e.target.value })}
                 />
               </div>
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
+              {/* ⭐ Coefficient masqué pour Maternelle/Primaire/6e/5e (toujours 1 par défaut) */}
+              {/*    Avant ce fix, le champ était juste désactivé mais restait visible — surchargeait le modal */}
+              {/*    pour rien. Maintenant on ne l'affiche que pour 4e/3e/Secondaire où il est réellement éditable. */}
+              {(!isPrimaryOrMaternelle && !is6e5e) && (
+                <div className="space-y-1">
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient</label>
-                  {isPrimaryOrMaternelle && (
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 mb-1">
-                      Par défaut 1 (Mat/Pri)
-                    </span>
-                  )}
-                  {is6e5e && (
-                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
-                      6e-5e: coef=1 forcé
-                    </span>
-                  )}
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                    placeholder="2"
+                    value={subjectForm.coefficient}
+                    onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
+                  />
                 </div>
-                <input
-                  type="number"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
-                  placeholder="2"
-                  value={subjectForm.coefficient}
-                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
-                  disabled={isPrimaryOrMaternelle || is6e5e}
-                />
-              </div>
+              )}
               <div className="space-y-1">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Volume Hebdo (minutes)
+                </label>
                 <input
                   type="number"
+                  min="0"
+                  step="15"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
-                  placeholder="4"
+                  placeholder="120 (2h)"
                   value={subjectForm.weeklyHours}
                   onChange={(e) => setSubjectForm({ ...subjectForm, weeklyHours: Number(e.target.value) })}
                 />
+                {/* ⭐ Conversion automatique minutes → heures si > 60 min */}
+                {/*    Ex: 120 → "≈ 2h00" / 90 → "≈ 1h30" / 450 → "≈ 7h30" */}
+                {subjectForm.weeklyHours > 0 && (
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    ≈ {(() => {
+                      const mins = Number(subjectForm.weeklyHours) || 0;
+                      const h = Math.floor(mins / 60);
+                      const m = mins % 60;
+                      if (h === 0) return `${m} min`;
+                      return `${h}h${m.toString().padStart(2, '0')}`;
+                    })()}
+                    {' '}({subjectForm.weeklyHours} min)
+                  </p>
+                )}
               </div>
             </div>
           </div>}

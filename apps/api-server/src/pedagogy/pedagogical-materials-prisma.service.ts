@@ -108,6 +108,20 @@ export class PedagogicalMaterialsPrismaService {
           subject: {
             select: { id: true, name: true, code: true },
           },
+          // ⭐ Inclure les stocks pour que le frontend puisse afficher
+          //    quantityTotal et quantityAvailable par année scolaire.
+          //    Avant ce fix, le tableau Inventaire affichait toujours 0/0
+          //    même après avoir ajouté du stock via un mouvement PURCHASE.
+          stocks: {
+            include: {
+              academicYear: {
+                select: { id: true, name: true, label: true },
+              },
+              class: {
+                select: { id: true, name: true, code: true },
+              },
+            },
+          },
         },
         orderBy: [{ code: 'asc' }, { name: 'asc' }],
         skip: pagination.skip,

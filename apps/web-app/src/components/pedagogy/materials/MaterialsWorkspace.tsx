@@ -33,7 +33,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, Plus, RefreshCw, Search, Filter, Package,
   BookOpen, FlaskConical, Monitor, FileText, Edit, Trash2,
-  CheckCircle2, XCircle, AlertCircle, X, Save, ArrowUp,
+  CheckCircle2, XCircle, AlertCircle, X, Save, ArrowUp, FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -88,6 +88,7 @@ export default function MaterialsWorkspace() {
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [stockTarget, setStockTarget] = useState<Material | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [formData, setFormData] = useState({
     code: "",
     name: "",
@@ -313,6 +314,39 @@ export default function MaterialsWorkspace() {
     }
   };
 
+  // === Export PDF inventaire complet ===
+  const exportInventoryPdf = async () => {
+    if (!academicYear?.id) {
+      toast.error("Aucune année scolaire active");
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/material-returns/inventory-pdf?academicYearId=${encodeURIComponent(academicYear.id)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erreur génération PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inventaire_materiel_pedagogique.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF inventaire généré");
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   // === Statistiques globales ===
   const totalMaterials = materials.length;
   const totalStock = materials.reduce((sum, m) => {
@@ -346,6 +380,15 @@ export default function MaterialsWorkspace() {
             title="Rafraîchir"
           >
             <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={exportInventoryPdf}
+            disabled={exportingPdf || !academicYear?.id}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Générer le PDF inventaire complet"
+          >
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            PDF Inventaire
           </button>
           <button
             onClick={openCreateModal}

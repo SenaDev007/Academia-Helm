@@ -26,7 +26,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, RefreshCw, Package, BookOpen, FlaskConical, FileText,
-  Monitor, Send, CheckCircle2, XCircle, AlertCircle, PenTool,
+  Monitor, Send, CheckCircle2, XCircle, AlertCircle, PenTool, FileDown, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -76,6 +76,11 @@ export function TeacherMaterialsWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [signingReceipt, setSigningReceipt] = useState<string | null>(null);
+  const [showReceiptSignModal, setShowReceiptSignModal] = useState(false);
+  const [receiptSignTarget, setReceiptSignTarget] = useState<any | null>(null);
+  const [receiptSignature, setReceiptSignature] = useState<string | null>(null);
 
   // === Charger mes attributions ===
   const loadMyAssignments = useCallback(async () => {
@@ -118,6 +123,70 @@ export function TeacherMaterialsWorkspace({
       toast.error("Erreur", { description: e.message });
       // Revert optimistic update
       loadMyAssignments();
+    }
+  };
+
+  // === Export PDF : Bon de réception du matériel reçu ===
+  const exportReceiptPdf = async () => {
+    if (!user?.id || !academicYearId) return;
+    setExportingPdf(true);
+    try {
+      const params = new URLSearchParams({ userId: user.id, academicYearId });
+      const res = await fetch(
+        `/api/pedagogy/material-returns/my-receipt-pdf?${params.toString()}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erreur génération PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bon_reception_materiel.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF bon de réception généré");
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  // === Signer la réception d'une attribution ===
+  const handleSignReceipt = async () => {
+    if (!receiptSignTarget || !receiptSignature) {
+      toast.error("Veuillez dessiner votre signature");
+      return;
+    }
+    setSigningReceipt(receiptSignTarget.id);
+    try {
+      const res = await fetch(`/api/pedagogy/material-returns/${receiptSignTarget.id}/sign-receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          userId: user?.id,
+          signatureUrl: receiptSignature,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur");
+      }
+      toast.success("✅ Réception signée");
+      setShowReceiptSignModal(false);
+      setReceiptSignTarget(null);
+      setReceiptSignature(null);
+      loadMyAssignments();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSigningReceipt(null);
     }
   };
 
@@ -213,6 +282,15 @@ export function TeacherMaterialsWorkspace({
           >
             <RefreshCw className="h-4 w-4" />
           </button>
+          <button
+            onClick={exportReceiptPdf}
+            disabled={exportingPdf || assignments.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Générer le PDF du matériel reçu"
+          >
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            PDF Matériau reçu
+          </button>
           {pendingCount > 0 && (
             <button
               onClick={() => setShowSubmitModal(true)}
@@ -288,6 +366,7 @@ export function TeacherMaterialsWorkspace({
                       <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Qté retournée</th>
                       <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">État</th>
                       <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Notes</th>
+                      <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Réception</th>
                       <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Statut</th>
                     </tr>
                   </thead>
@@ -362,6 +441,34 @@ export function TeacherMaterialsWorkspace({
                               </div>
                             )}
                           </td>
+                          {/* ⭐ Réception : signer + date de réception */}
+                          <td className="px-3 py-2 text-center">
+                            {item.signed ? (
+                              <div className="flex flex-col items-center gap-1">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                                {item.signedAt && (
+                                  <span className="text-[9px] text-slate-500 font-medium">
+                                    {new Date(item.signedAt).toLocaleDateString('fr-FR')}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setReceiptSignTarget(item);
+                                  setReceiptSignature(null);
+                                  setShowReceiptSignModal(true);
+                                }}
+                                disabled={signingReceipt === item.id}
+                                className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-semibold disabled:opacity-50 mx-auto"
+                              >
+                                {signingReceipt === item.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <PenTool className="h-3 w-3" />}
+                                Signer
+                              </button>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-center">
                             <span className={cn2("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", statusCfg.color)}>
                               <StatusIcon className="h-3 w-3" />
@@ -398,6 +505,67 @@ export function TeacherMaterialsWorkspace({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* === MODAL : Signature de RÉCEPTION (par item) === */}
+      {showReceiptSignModal && receiptSignTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b bg-indigo-50 border-indigo-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <PenTool className="h-8 w-8 text-indigo-600" />
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Signer la réception</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {receiptSignTarget.materialName || "—"} — {receiptSignTarget.quantity} unité(s)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setShowReceiptSignModal(false); setReceiptSignTarget(null); setReceiptSignature(null); }}
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-800">
+                En signant, vous confirmez avoir <strong>reçu ce matériel</strong> de la part de la direction.
+                La date de réception sera enregistrée automatiquement.
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-2 block">
+                  Ma signature *
+                </label>
+                <SignatureCanvas
+                  width={500}
+                  height={180}
+                  placeholder="Signez ici avec votre souris ou doigt"
+                  onSignatureChange={(data) => setReceiptSignature(data)}
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setShowReceiptSignModal(false); setReceiptSignTarget(null); setReceiptSignature(null); }}
+                disabled={!!signingReceipt}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSignReceipt}
+                disabled={!!signingReceipt || !receiptSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {signingReceipt ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenTool className="h-4 w-4" />}
+                Confirmer la réception
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

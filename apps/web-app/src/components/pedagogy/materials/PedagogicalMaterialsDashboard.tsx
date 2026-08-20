@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Package, ClipboardList, Undo2, History, Loader2, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, Search, Filter, Send,
+  Plus, X, Layers, FileText, FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -132,168 +133,502 @@ interface DistributionViewProps {
 
 function DistributionView({ academicYearId, user }: DistributionViewProps) {
   const [assignments, setAssignments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filterTeacher, setFilterTeacher] = useState("");
-  const [filterClass, setFilterClass] = useState("");
+  const [teacherGroups, setTeacherGroups] = useState<any[]>([]);
+  const [materials, setMaterials] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
+  // Filtres
+  const [searchTeacher, setSearchTeacher] = useState("");
+  const [filterLevelId, setFilterLevelId] = useState("");
+
+  // Modal de distribution
+  const [showDistributeModal, setShowDistributeModal] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
+  const [distributeData, setDistributeData] = useState({
+    materialId: "",
+    classId: "",
+    quantity: 1,
+    conditionAtIssue: "NEW",
+    notes: "",
+  });
+
+  // === Charger les enseignants groupés par niveau scolaire ===
+  const loadTeachers = useCallback(async () => {
+    if (!academicYearId) return;
+    try {
+      const res = await fetch(
+        `/api/pedagogy/material-returns/teachers-by-level?academicYearId=${encodeURIComponent(academicYearId)}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      setTeacherGroups(Array.isArray(data) ? data : []);
+    } catch { setTeacherGroups([]); }
+  }, [academicYearId]);
+
+  // === Charger les affectations existantes ===
   const loadAssignments = useCallback(async () => {
     if (!academicYearId) return;
     setLoading(true);
     try {
       const params = new URLSearchParams({ academicYearId });
-      if (filterTeacher) params.append("teacherId", filterTeacher);
-      if (filterClass) params.append("classId", filterClass);
       params.append("page", "1");
       params.append("limit", "1000");
-
       const res = await fetch(
         `/api/pedagogy/teacher-material-assignments?${params.toString()}`,
         { credentials: "include" },
       );
       const data = await res.json();
       setAssignments(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error(e);
-      setAssignments([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [academicYearId, filterTeacher, filterClass]);
-
-  useEffect(() => { loadAssignments(); }, [loadAssignments]);
-
-  // Charger les classes pour le filtre
-  useEffect(() => {
-    if (!academicYearId) return;
-    (async () => {
-      try {
-        const res = await fetch(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        setClasses(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
-      } catch { setClasses([]); }
-    })();
+    } catch { setAssignments([]); }
+    finally { setLoading(false); }
   }, [academicYearId]);
 
-  // Groupé par enseignant
-  const byTeacher = assignments.reduce((acc, a) => {
-    const key = a.teacherId || "_unknown";
-    if (!acc[key]) acc[key] = { teacherId: a.teacherId, teacherName: `${a.teacher?.firstName ?? ""} ${a.teacher?.lastName ?? ""}`.trim() || "—", items: [] };
-    acc[key].items.push(a);
-    return acc;
-  }, {} as Record<string, any>);
+  // === Charger les matériels (pour le select du formulaire) ===
+  const loadMaterials = useCallback(async () => {
+    if (!academicYearId) return;
+    try {
+      const res = await fetch(
+        `/api/pedagogy/pedagogical-materials?academicYearId=${encodeURIComponent(academicYearId)}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      setMaterials(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
+    } catch { setMaterials([]); }
+  }, [academicYearId]);
 
-  const teacherGroups = Object.values(byTeacher);
+  // === Charger les classes pour le select ===
+  const loadClasses = useCallback(async () => {
+    if (!academicYearId) return;
+    try {
+      const res = await fetch(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`, {
+        credentials: "include",
+      });
+      const data = await res.json();
+      setClasses(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
+    } catch { setClasses([]); }
+  }, [academicYearId]);
+
+  useEffect(() => {
+    loadTeachers();
+    loadAssignments();
+    loadMaterials();
+    loadClasses();
+  }, [loadTeachers, loadAssignments, loadMaterials, loadClasses]);
+
+  // === Ouvrir le modal de distribution ===
+  const openDistributeModal = (teacher: any) => {
+    setSelectedTeacher(teacher);
+    setDistributeData({
+      materialId: "",
+      classId: "",
+      quantity: 1,
+      conditionAtIssue: "NEW",
+      notes: "",
+    });
+    setShowDistributeModal(true);
+  };
+
+  // === Soumettre la distribution (POST affectation) ===
+  const handleDistribute = async () => {
+    if (!selectedTeacher || !distributeData.materialId || !distributeData.quantity) {
+      toast.error("Veuillez sélectionner un matériel et une quantité");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy/teacher-material-assignments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          teacherId: selectedTeacher.id,
+          materialId: distributeData.materialId,
+          classId: distributeData.classId || undefined,
+          quantity: distributeData.quantity,
+          conditionAtIssue: distributeData.conditionAtIssue,
+          notes: distributeData.notes || undefined,
+          academicYearId,
+          schoolLevelId: selectedTeacher.schoolLevelId || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur");
+      }
+      toast.success(`✅ Matériel distribué à ${selectedTeacher.fullName}`);
+      setShowDistributeModal(false);
+      setSelectedTeacher(null);
+      loadAssignments();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // === Export PDF État des distributions ===
+  const exportDistributionPdf = async () => {
+    if (!academicYearId) return;
+    setExportingPdf(true);
+    try {
+      const params = new URLSearchParams({ academicYearId });
+      const res = await fetch(
+        `/api/pedagogy/material-returns/distribution-pdf?${params.toString()}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erreur génération PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `etat_distributions_materiel.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF distributions généré");
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  // Filtrer les enseignants par recherche + niveau
+  const filteredGroups = teacherGroups
+    .filter((g: any) => !filterLevelId || g.schoolLevelId === filterLevelId)
+    .map((g: any) => ({
+      ...g,
+      teachers: (g.teachers || []).filter((t: any) =>
+        !searchTeacher ||
+        t.fullName?.toLowerCase().includes(searchTeacher.toLowerCase()) ||
+        t.email?.toLowerCase().includes(searchTeacher.toLowerCase()) ||
+        t.matricule?.toLowerCase().includes(searchTeacher.toLowerCase())
+      ),
+    }))
+    .filter((g: any) => g.teachers.length > 0);
+
+  // Calculer le nombre d'affectations par enseignant
+  const getAssignmentsForTeacher = (teacherId: string) => {
+    return assignments.filter((a) => a.teacherId === teacherId);
+  };
+
+  // Filtrer les matériels par niveau scolaire du teacher sélectionné
+  const filteredMaterials = selectedTeacher
+    ? materials.filter((m) => !selectedTeacher.schoolLevelId || m.schoolLevelId === selectedTeacher.schoolLevelId)
+    : materials;
 
   return (
     <div className="space-y-4">
-      {/* === Filtres === */}
-      <div className="flex flex-wrap items-center gap-3 p-4 bg-white rounded-xl border border-slate-200">
-        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-          <Filter className="h-4 w-4" />
-          Filtrer par
+      {/* === En-tête + actions === */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <ClipboardList className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-slate-900">Distribution aux enseignants</div>
+            <div className="text-xs text-slate-500">
+              {assignments.length} affectation(s) — {teacherGroups.reduce((s: number, g: any) => s + g.teachers.length, 0)} enseignant(s)
+            </div>
+          </div>
         </div>
-        <input
-          type="text"
-          placeholder="ID enseignant (UUID)"
-          value={filterTeacher}
-          onChange={(e) => setFilterTeacher(e.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[200px]"
-        />
-        <select
-          value={filterClass}
-          onChange={(e) => setFilterClass(e.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[200px]"
-        >
-          <option value="">Toutes les classes</option>
-          {classes.map((c: any) => (
-            <option key={c.id} value={c.id}>{c.name || c.code}</option>
-          ))}
-        </select>
-        <button
-          onClick={loadAssignments}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Actualiser
-        </button>
-        <div className="ml-auto text-sm text-slate-500">
-          {assignments.length} affectation(s)
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { loadTeachers(); loadAssignments(); }}
+            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
+            title="Rafraîchir"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={exportDistributionPdf}
+            disabled={exportingPdf || !academicYearId}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+            title="PDF État des distributions"
+          >
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            PDF Distributions
+          </button>
         </div>
       </div>
 
+      {/* === Filtres === */}
+      <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+          <Filter className="h-4 w-4" />
+          Filtrer
+        </div>
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Rechercher un enseignant par nom, email, matricule..."
+            value={searchTeacher}
+            onChange={(e) => setSearchTeacher(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm"
+          />
+        </div>
+        <select
+          value={filterLevelId}
+          onChange={(e) => setFilterLevelId(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[150px]"
+        >
+          <option value="">Tous les niveaux</option>
+          {teacherGroups.map((g: any) => (
+            <option key={g.schoolLevelId || "_no_level"} value={g.schoolLevelId || ""}>
+              {g.schoolLevelName}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* === Contenu === */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
         </div>
-      ) : teacherGroups.length === 0 ? (
+      ) : filteredGroups.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <ClipboardList className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Aucune affectation trouvée</p>
+          <p className="text-sm text-slate-500">
+            {teacherGroups.length === 0 ? "Aucun enseignant trouvé" : "Aucun enseignant ne correspond aux filtres"}
+          </p>
           <p className="text-xs text-slate-400 mt-1">
-            Distribuez du matériel aux enseignants depuis l'onglet Inventaire.
+            Les enseignants apparaîtront ici dès qu'ils auront un profil Teacher avec un niveau scolaire.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {teacherGroups.map((group: any) => (
-            <div key={group.teacherId} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <div className="space-y-4">
+          {filteredGroups.map((group: any) => (
+            <div key={group.schoolLevelId || "_no_level"} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              {/* En-tête niveau */}
+              <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-slate-500" />
-                  <span className="font-bold text-slate-900 text-sm">{group.teacherName}</span>
+                  <Layers className="h-4 w-4 text-indigo-600" />
+                  <span className="font-bold text-indigo-900 text-sm">{group.schoolLevelName}</span>
                 </div>
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded-full">
-                  {group.items.length} matériel(s)
+                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">
+                  {group.teachers.length} enseignant(s)
                 </span>
               </div>
+              {/* Liste des enseignants */}
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200">
-                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Matériel</th>
-                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Catégorie</th>
-                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Classe</th>
-                    <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Quantité</th>
-                    <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">État</th>
-                    <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Signé</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Enseignant</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Matricule</th>
+                    <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Email</th>
+                    <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Affectations</th>
+                    <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {group.items.map((item: any) => (
-                    <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-3 py-2 text-sm font-medium text-slate-900">
-                        {item.material?.name || "—"}
-                        {item.material?.code && (
-                          <span className="text-[10px] text-slate-400 ml-1">[{item.material.code}]</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">
-                        {CATEGORY_LABELS[item.material?.category] || item.material?.category || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-600">
-                        {item.class?.name || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-center text-sm font-bold text-slate-900">
-                        {item.quantity}
-                      </td>
-                      <td className="px-3 py-2 text-center text-xs text-slate-600">
-                        {CONDITION_LABELS[item.conditionAtIssue] || item.conditionAtIssue || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        {item.signed ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-slate-300 mx-auto" />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {group.teachers.map((t: any) => {
+                    const teacherAssignments = getAssignmentsForTeacher(t.id);
+                    return (
+                      <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-3 py-2 text-sm font-medium text-slate-900">
+                          {t.fullName}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-600 font-mono">
+                          {t.matricule || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-slate-600">
+                          {t.email || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={cn2(
+                            "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold",
+                            teacherAssignments.length > 0
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-500"
+                          )}>
+                            {teacherAssignments.length} matériel(s)
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            onClick={() => openDistributeModal({ ...t, schoolLevelId: group.schoolLevelId })}
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold mx-auto"
+                          >
+                            <Plus className="h-3 w-3" />
+                            Distribuer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              {/* Affectations existantes pour ce groupe (si search vide) */}
+              {!searchTeacher && assignments.filter((a) => {
+                const teacher = group.teachers.find((t: any) => t.id === a.teacherId);
+                return !!teacher;
+              }).length > 0 && (
+                <div className="p-3 bg-slate-50/30 border-t border-slate-200">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">
+                    Affectations existantes — {group.schoolLevelName}
+                  </div>
+                  <div className="space-y-1">
+                    {assignments
+                      .filter((a) => group.teachers.some((t: any) => t.id === a.teacherId))
+                      .map((a: any) => {
+                        const teacher = group.teachers.find((t: any) => t.id === a.teacherId);
+                        return (
+                          <div key={a.id} className="flex items-center justify-between text-xs px-2 py-1 bg-white rounded border border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-slate-900">
+                                {a.material?.name || "—"}
+                              </span>
+                              <span className="text-slate-400">·</span>
+                              <span className="text-slate-600">{teacher?.fullName}</span>
+                              <span className="text-slate-400">·</span>
+                              <span className="text-slate-600">{a.quantity} unité(s)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {a.signed ? (
+                                <span className="text-emerald-600 font-semibold text-[10px]">✓ Signé</span>
+                              ) : (
+                                <span className="text-amber-600 text-[10px]">En attente signature</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* === MODAL : Distribuer du matériel === */}
+      {showDistributeModal && selectedTeacher && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b bg-blue-50 border-blue-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ClipboardList className="h-8 w-8 text-blue-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Distribuer du matériel</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    À : <strong>{selectedTeacher.fullName}</strong>
+                    {selectedTeacher.schoolLevelName && ` (${selectedTeacher.schoolLevelName})`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">
+                  Matériel à distribuer *
+                </label>
+                <select
+                  value={distributeData.materialId}
+                  onChange={(e) => setDistributeData({ ...distributeData, materialId: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                >
+                  <option value="">— Sélectionner —</option>
+                  {filteredMaterials.map((m: any) => {
+                    const stock = m.stocks?.find((s: any) => s.academicYearId === academicYearId);
+                    return (
+                      <option key={m.id} value={m.id} disabled={stock?.quantityAvailable <= 0}>
+                        {m.name} ({m.code}) — dispo: {stock?.quantityAvailable ?? 0}
+                      </option>
+                    );
+                  })}
+                </select>
+                {filteredMaterials.length === 0 && (
+                  <p className="text-[10px] text-amber-600 mt-1">
+                    Aucun matériel disponible pour ce niveau scolaire. Créez-en depuis l'onglet Inventaire.
+                  </p>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Quantité *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={distributeData.quantity}
+                    onChange={(e) => setDistributeData({ ...distributeData, quantity: parseInt(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">État au dépot</label>
+                  <select
+                    value={distributeData.conditionAtIssue}
+                    onChange={(e) => setDistributeData({ ...distributeData, conditionAtIssue: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  >
+                    <option value="NEW">Neuf</option>
+                    <option value="GOOD">Bon état</option>
+                    <option value="USED">Usé</option>
+                    <option value="DAMAGED">Endommagé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Classe (optionnel)</label>
+                  <select
+                    value={distributeData.classId}
+                    onChange={(e) => setDistributeData({ ...distributeData, classId: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  >
+                    <option value="">— Aucune —</option>
+                    {classes.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.name || c.code}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Notes (optionnel)</label>
+                <textarea
+                  value={distributeData.notes}
+                  onChange={(e) => setDistributeData({ ...distributeData, notes: e.target.value })}
+                  rows={3}
+                  placeholder="Ex: Remis en main propre le..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                <strong>ℹ️ Après validation :</strong> l'enseignant verra ce matériel dans son Espace Pédagogique
+                → onglet Matériel. Il pourra signer la réception et générer un PDF.
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDistribute}
+                disabled={saving || !distributeData.materialId}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Valider la distribution
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

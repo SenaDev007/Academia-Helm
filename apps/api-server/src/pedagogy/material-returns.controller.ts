@@ -28,7 +28,7 @@
 
 import {
   Controller, Get, Post, Patch, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException,
+  UseGuards, HttpCode, HttpStatus, BadRequestException, NotFoundException, Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -54,8 +54,16 @@ export class MaterialReturnsController {
     return this.service.getMyAssignments(tenantId, userId, academicYearId);
   }
 
+  /// Liste les enseignants groupés par niveau scolaire (pour le select Distribution)
+  @Get('teachers-by-level')
+  async getTeachersByLevel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getTeachersByLevel(tenantId, academicYearId);
+  }
+
   /// Met à jour les informations de retour pour UNE attribution.
-  ///    L'enseignant appelle ça au fur et à mesure qu'il coche les items.
   @Patch(':id/return')
   @HttpCode(HttpStatus.OK)
   async updateReturnInfo(
@@ -63,11 +71,26 @@ export class MaterialReturnsController {
     @Param('id') id: string,
     @Body() body: {
       returnQuantity?: number;
-      returnCondition?: string; // NEW | GOOD | USED | DAMAGED | LOST
+      returnCondition?: string;
       returnNotes?: string;
     },
   ) {
     return this.service.updateReturnInfo(tenantId, id, body);
+  }
+
+  /// ⭐ Signe la RÉCEPTION d'une attribution (l'enseignant confirme avoir reçu le matériel)
+  ///    Sépare de la soumission de retour (qui se fait en fin d'année).
+  @Post(':id/sign-receipt')
+  @HttpCode(HttpStatus.OK)
+  async signReceipt(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { userId: string; signatureUrl: string },
+  ) {
+    if (!body.userId || !body.signatureUrl) {
+      throw new BadRequestException('userId et signatureUrl sont requis');
+    }
+    return this.service.signReceipt(tenantId, id, body.userId, body.signatureUrl);
   }
 
   /// Soumet TOUTES les attributions PENDING de l'enseignant pour l'année
@@ -148,5 +171,72 @@ export class MaterialReturnsController {
     return this.service.rejectReturn(
       tenantId, id, body.validatedBy, body.rejectionReason,
     );
+  }
+
+  // ===========================================================================
+  // EXPORTS PDF
+  // ===========================================================================
+
+  /// ⭐ PDF — Bon de réception de matériel pédagogique pour un enseignant
+  ///    Généré côté backend avec en-tête école (logo + nom + acronyme),
+  ///    titre du document, liste des matériels reçus, signature enseignant.
+  @Get('my-receipt-pdf')
+  async exportMyReceiptPdf(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: any,
+  ) {
+    if (!userId || !academicYearId) {
+      throw new BadRequestException('userId et academicYearId sont requis');
+    }
+    const buffer = await this.service.exportMyReceiptPdf(tenantId, userId, academicYearId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="bon_reception_materiel_${userId.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  /// ⭐ PDF — État complet des distributions (vue direction)
+  ///    Liste tous les matériels distribués à tous les enseignants pour l'année.
+  @Get('distribution-pdf')
+  async exportDistributionPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId: string,
+    @Res() res: any,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    const buffer = await this.service.exportDistributionPdf(tenantId, academicYearId, schoolLevelId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="etat_distributions_materiel_${academicYearId.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  /// ⭐ PDF — Inventaire complet du matériel pédagogique (vue direction)
+  ///    Liste tous les matériels + stock total + stock disponible par année.
+  @Get('inventory-pdf')
+  async exportInventoryPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: any,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    const buffer = await this.service.exportInventoryPdf(tenantId, academicYearId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="inventaire_materiel_pedagogique_${academicYearId.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 }

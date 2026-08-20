@@ -8,6 +8,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Body,
   Param,
@@ -110,6 +111,18 @@ export class PedagogyPrismaController {
     @TenantId() tenantId: string,
   ) {
     return this.pedagogyService.removeClassSubject(id, tenantId);
+  }
+
+  /// ⭐ PUT /class-subjects/:id — met à jour le coefficient et/ou weeklyHours
+  ///    Avant ce fix, le frontend appelait PUT mais le backend n'avait que POST/GET/DELETE
+  ///    → 404 "Cannot PUT /api/pedagogy/class-subjects/:id" à chaque modif de coefficient.
+  @Put('class-subjects/:id')
+  async updateClassSubject(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() body: { coefficient?: number; weeklyHours?: number },
+  ) {
+    return this.pedagogyService.updateClassSubject(id, tenantId, body);
   }
 
   @Post('teacher-class-assignments')

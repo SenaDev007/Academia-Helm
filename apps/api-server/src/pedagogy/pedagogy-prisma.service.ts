@@ -360,6 +360,46 @@ export class PedagogyPrismaService {
     return { success: true };
   }
 
+  /// ⭐ Met à jour un ClassSubject (coefficient et/ou weeklyHours).
+  ///    Avant ce fix, le frontend appelait PUT /api/pedagogy/class-subjects/:id
+  ///    mais AUCUNE route @Put n'existait sur le controller → 404 Cannot PUT.
+  ///    Maintenant le controller a @Put('class-subjects/:id') qui appelle cette méthode.
+  async updateClassSubject(
+    id: string,
+    tenantId: string,
+    data: { coefficient?: number; weeklyHours?: number },
+  ) {
+    const classSubject = await this.prisma.classSubject.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!classSubject) {
+      throw new NotFoundException(`ClassSubject with ID ${id} not found`);
+    }
+
+    const updateData: any = {};
+    if (data.coefficient !== undefined) {
+      updateData.coefficient = Number(data.coefficient) || 1.0;
+    }
+    if (data.weeklyHours !== undefined) {
+      updateData.weeklyHours = Number(data.weeklyHours) || 0;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return classSubject; // rien à mettre à jour
+    }
+
+    return this.prisma.classSubject.update({
+      where: { id },
+      data: updateData,
+      include: {
+        subject: {
+          select: { id: true, name: true, code: true },
+        },
+      },
+    });
+  }
+
   /**
    * Supprime une affectation enseignant/classe/matière
    */

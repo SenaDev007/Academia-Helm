@@ -46,6 +46,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { useToast } from '@/components/ui/use-toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 
 const PRIMARY = '#1A2BA6';
@@ -184,6 +185,8 @@ export default function SubjectsWorkspace() {
   const { user } = useAuth();
   const { isEnabled: bilingualEnabled, currentTrack, setCurrentTrack } = useBilingual();
   const { toast } = useToast();
+  // ⭐ Modal de confirmation professionnel (remplace window.confirm() natif)
+  const confirmDialog = useConfirmDialog();
   const [tab, setTab] = useState<SubTab>('catalogue');
   const [loading, setLoading] = useState(false);
 
@@ -1022,6 +1025,9 @@ export default function SubjectsWorkspace() {
 
   return (
     <div className="space-y-6">
+      {/* ⭐ Modal de confirmation professionnel (remplace window.confirm) */}
+      {confirmDialog.dialog}
+
       {/* Banner / Connection Paramètres */}
       <div
         className="flex flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -1499,6 +1505,31 @@ export default function SubjectsWorkspace() {
                         links={links}
                         cycleLabel={cycleLabel}
                         onDeleteLink={handleRemoveClassSubject}
+                        onDeleteMultiple={async (ids: string[]) => {
+                          // ⭐ Suppression multiple : utilise le modal pro de confirmation
+                          //    + supprime en parallèle via Promise.allSettled
+                          const ok = await confirmDialog.danger(
+                            `Supprimer ${ids.length} matière(s) de ${cls.name} ?`,
+                            'Suppression multiple',
+                            `Cette action est irréversible. Les ${ids.length} matière(s) sélectionnée(s) seront retirées de la classe « ${cls.name} » et ne pourront plus être restaurées. Les enseignants affectés perdront automatiquement ces affectations.`,
+                          );
+                          if (!ok) return;
+                          // Supprimer en parallèle
+                          const results = await Promise.allSettled(
+                            ids.map(id =>
+                              pedagogyFetch(`/api/pedagogy/class-subjects/${id}`, { method: 'DELETE' })
+                            )
+                          );
+                          const success = results.filter(r => r.status === 'fulfilled').length;
+                          const failed = results.length - success;
+                          if (failed === 0) {
+                            toast({ title: "Succès", description: `${success} matière(s) supprimée(s).` });
+                          } else {
+                            toast({ title: "Partiel", description: `${success} réussie(s), ${failed} échec(s).`, variant: "destructive" });
+                          }
+                          loadClassSubjects();
+                        }}
+                        confirmDanger={confirmDialog.danger}
                         onUpdateLink={async (linkId: string, newCoef: number) => {
                           try {
                             await pedagogyFetch(`/api/pedagogy/class-subjects/${linkId}`, { method: 'PUT', body: { coefficient: newCoef } });
@@ -2588,15 +2619,54 @@ export default function SubjectsWorkspace() {
   );
 }
 
-function CollapsibleClassSection({ cls, links, cycleLabel, onDeleteLink, onUpdateLink }: {
+function CollapsibleClassSection({ cls, links, cycleLabel, onDeleteLink, onDeleteMultiple, onUpdateLink, confirmDanger }: {
   cls: any; links: any[]; cycleLabel: string;
   onDeleteLink: (id: string) => void;
+  onDeleteMultiple: (ids: string[]) => Promise<void>;
   onUpdateLink: (linkId: string, newCoef: number) => Promise<void>;
+  confirmDanger: (description: string, title?: string, details?: string) => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCoef, setEditCoef] = useState(1);
   const [saving, setSaving] = useState(false);
+  // ⭐ État de sélection multiple pour la suppression par lot
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds(prev =>
+      prev.size === links.length ? new Set() : new Set(links.map((l: any) => l.id))
+    );
+  };
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      await onDeleteMultiple(Array.from(selectedIds));
+      setSelectedIds(new Set());
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+  const handleSingleDelete = async (link: any) => {
+    // ⭐ Modal de confirmation professionnel (remplace window.confirm natif)
+    const ok = await confirmDanger(
+      `Supprimer ${link.subject?.name || 'cette matière'} de ${cls.name} ?`,
+      'Supprimer la matière',
+      `Cette action est irréversible. La matière « ${link.subject?.name || '—'} » sera retirée de la classe « ${cls.name} ». Les enseignants affectés perdront automatiquement cette affectation.`,
+    );
+    if (ok) onDeleteLink(link.id);
+  };
+
   const handleSaveCoef = async () => {
     if (!editingId) return;
     setSaving(true);
@@ -2611,47 +2681,95 @@ function CollapsibleClassSection({ cls, links, cycleLabel, onDeleteLink, onUpdat
           <span className="font-bold text-sm text-indigo-900">{cls.name}</span>
           {cls.series?.name && <span className="text-xs text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">{cls.series.name}</span>}
           {cycleLabel && <span className="text-[10px] font-bold text-slate-500 uppercase">{cycleLabel}</span>}
+          {selectedIds.size > 0 && (
+            <span className="ml-2 text-[10px] font-bold text-white bg-rose-600 px-1.5 py-0.5 rounded-full">
+              {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+            </span>
+          )}
         </div>
         <span className="text-xs font-semibold text-indigo-600">{links.length} matière(s)</span>
       </button>
       {expanded && (
         <div className="overflow-x-auto">
+          {/* ⭐ Barre d'actions multi-sélection (visible uniquement si items sélectionnés) */}
+          {selectedIds.size > 0 && (
+            <div className="bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-between">
+              <div className="text-xs font-bold text-rose-700">
+                {selectedIds.size} matière(s) sélectionnée(s) sur {links.length}
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setSelectedIds(new Set())}
+                  className="px-2.5 py-1 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded hover:bg-slate-50">
+                  Annuler
+                </button>
+                <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-rose-600 rounded hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                  {bulkDeleting ? (
+                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  Supprimer ({selectedIds.size})
+                </button>
+              </div>
+            </div>
+          )}
           <table className="min-w-full text-sm">
             <thead><tr className="border-b border-slate-100 bg-slate-50/50 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
-              <th className="px-4 py-2">Matière</th><th className="px-4 py-2 w-32 text-center">Coefficient</th>
-              <th className="px-4 py-2 w-24 text-center">Volume Hebdo</th><th className="px-4 py-2 w-24 text-center">Actions</th>
+              <th className="px-4 py-2 w-10">
+                <input type="checkbox"
+                  checked={selectedIds.size === links.length && links.length > 0}
+                  ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < links.length; }}
+                  onChange={toggleSelectAll}
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+              </th>
+              <th className="px-4 py-2">Matière</th>
+              <th className="px-4 py-2 w-32 text-center">Coefficient</th>
+              <th className="px-4 py-2 w-24 text-center">Volume Hebdo</th>
+              <th className="px-4 py-2 w-24 text-center">Actions</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-50">
-              {links.map((link: any) => (
-                <tr key={link.id} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-2"><div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-700">{link.subject?.name || '—'}</span>
-                    {link.subject?.code && <span className="text-[10px] text-slate-400">({link.subject.code})</span>}
-                  </div></td>
-                  <td className="px-4 py-2 text-center">
-                    {editingId === link.id ? (
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min="1" max="10" step="0.5" value={editCoef}
-                          onChange={(e) => setEditCoef(Number(e.target.value))}
-                          className="w-16 px-2 py-1 text-sm border border-slate-300 rounded text-center font-semibold" />
-                        <button type="button" onClick={handleSaveCoef} disabled={saving}
-                          className="px-2 py-1 text-xs font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">✓</button>
-                        <button type="button" onClick={() => setEditingId(null)}
-                          className="px-2 py-1 text-xs font-bold text-slate-600 bg-slate-100 rounded hover:bg-slate-200">✕</button>
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center justify-center w-8 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">{link.coefficient || 1}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-center text-slate-600">{link.weeklyHours ? `${link.weeklyHours}h` : '—'}</td>
-                  <td className="px-4 py-2 text-center"><div className="flex items-center justify-center gap-1">
-                    <button type="button" onClick={() => { setEditingId(link.id); setEditCoef(link.coefficient || 1); }}
-                      className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50" title="Modifier"><Pencil className="w-3.5 h-3.5" /></button>
-                    <button type="button" onClick={() => { if (confirm(`Supprimer ${link.subject?.name || 'cette matière'} de ${cls.name} ?`)) onDeleteLink(link.id); }}
-                      className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 className="w-3.5 h-3.5" /></button>
-                  </div></td>
-                </tr>
-              ))}
+              {links.map((link: any) => {
+                const isSelected = selectedIds.has(link.id);
+                return (
+                  <tr key={link.id} className={`hover:bg-slate-50/50 ${isSelected ? 'bg-rose-50/40' : ''}`}>
+                    <td className="px-4 py-2">
+                      <input type="checkbox" checked={isSelected}
+                        onChange={() => toggleSelect(link.id)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
+                    </td>
+                    <td className="px-4 py-2"><div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-700">{link.subject?.name || '—'}</span>
+                      {link.subject?.code && <span className="text-[10px] text-slate-400">({link.subject.code})</span>}
+                    </div></td>
+                    <td className="px-4 py-2 text-center">
+                      {editingId === link.id ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <input type="number" min="1" max="10" step="0.5" value={editCoef}
+                            onChange={(e) => setEditCoef(Number(e.target.value))}
+                            className="w-16 px-2 py-1 text-sm border border-slate-300 rounded text-center font-semibold" />
+                          <button type="button" onClick={handleSaveCoef} disabled={saving}
+                            className="px-2 py-1 text-xs font-bold text-white bg-emerald-600 rounded hover:bg-emerald-700 disabled:opacity-50">✓</button>
+                          <button type="button" onClick={() => setEditingId(null)}
+                            className="px-2 py-1 text-xs font-bold text-slate-600 bg-slate-100 rounded hover:bg-slate-200">✕</button>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center justify-center w-8 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">{link.coefficient || 1}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-center text-slate-600">{link.weeklyHours ? `${link.weeklyHours}h` : '—'}</td>
+                    <td className="px-4 py-2 text-center"><div className="flex items-center justify-center gap-1">
+                      <button type="button" onClick={() => { setEditingId(link.id); setEditCoef(link.coefficient || 1); }}
+                        className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50" title="Modifier le coefficient"><Pencil className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => handleSingleDelete(link)} disabled={bulkDeleting}
+                        className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-50" title="Supprimer cette matière"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

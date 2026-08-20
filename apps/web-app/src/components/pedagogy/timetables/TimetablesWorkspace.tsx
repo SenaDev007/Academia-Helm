@@ -47,21 +47,17 @@ const DEFAULT_TIME_BLOCKS = [
   { start: '16:15', end: '18:00', type: 'BLOCK' },
 ];
 
-type TabId = 'config' | 'constraints' | 'timetable';
-// ⭐ Onglet 'generate' (Génération) SUPPRIMÉ — l'utilisateur a demandé de masquer
-//    la génération automatique pour la version actuelle. Les écoles saisissent
-//    leur emploi du temps manuellement (elles ont déjà un EDT standard).
-//    { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
+type TabId = 'config' | 'timetable';
+// ⭐ Onglets 'generate' ET 'constraints' SUPPRIMÉS — l'utilisateur a demandé :
+//    1. Masquer la génération automatique (les écoles saisissent manuellement)
+//    2. Supprimer le sous-onglet "Contraintes" (non nécessaire pour la version actuelle)
+//    Seuls restent : 'config' (Jours & créneaux) + 'timetable' (Édition manuelle)
 
 const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   { id: 'config', label: 'Configuration', icon: Settings, description: 'Jours & créneaux' },
-  // ⚠️ L'onglet 'Disponibilités' a été SUPPRIMÉ de l'EDT (fusion Option A).
-  // La configuration des disponibilités se fait désormais UNIQUEMENT dans
-  // l'onglet « Enseignants & Affectations > Profils & Disponibilités »,
-  // qui supporte maintenant 3 états (Disponible / Préféré / Indisponible).
-  // Le moteur STE lit directement la table pedagogy_teacher_availabilities.
-  { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'Obligatoires & préférées' },
-  // ⭐ 'generate' tab COMMENTÉ — génération auto désactivée (voir note ci-dessus)
+  // ⭐ 'constraints' tab SUPPRIMÉ (utilisateur : "on n'a plus besoin du sous-onglet contrainte")
+  // { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'Obligatoires & préférées' },
+  // ⭐ 'generate' tab SUPPRIMÉ (utilisateur : "laisser la partie génération automatique")
   // { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
   { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Édition manuelle' },
 ];
@@ -113,16 +109,19 @@ export default function TimetablesWorkspace() {
     } catch { /* first load creates default */ } finally { setConfigLoading(false); }
   }, [schoolLevelId, academicYearId]);
 
-  const loadSolutions = useCallback(async () => {
-    if (!schoolLevelId || !academicYearId) return;
-    try {
-      const data = await steFetch<any[]>(`/api/timetable-engine/solutions?schoolLevelId=${schoolLevelId}&academicYearId=${academicYearId}`);
-      setSolutions(Array.isArray(data) ? data : []);
-    } catch { /* silent */ }
-  }, [schoolLevelId, academicYearId]);
+  // ⭐ loadSolutions COMMENTÉ — les solutions auto-générées ne sont plus affichées.
+  //    La génération automatique est désactivée, on n'a plus besoin de charger les solutions.
+  // const loadSolutions = useCallback(async () => {
+  //   if (!schoolLevelId || !academicYearId) return;
+  //   try {
+  //     const data = await steFetch<any[]>(`/api/timetable-engine/solutions?schoolLevelId=${schoolLevelId}&academicYearId=${academicYearId}`);
+  //     setSolutions(Array.isArray(data) ? data : []);
+  //   } catch { /* silent */ }
+  // }, [schoolLevelId, academicYearId]);
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
-  useEffect(() => { loadSolutions(); }, [loadSolutions]);
+  // ⭐ loadSolutions() COMMENTÉ — voir ci-dessus
+  // useEffect(() => { loadSolutions(); }, [loadSolutions]);
 
   if (!schoolLevelId || !academicYearId) {
     return (
@@ -170,29 +169,23 @@ export default function TimetablesWorkspace() {
           <AnimatePresence mode="wait">
             <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.15 }}>
               {tab === 'config' && <ConfigTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} />}
-              {/* Onglet 'Disponibilités' supprimé (fusion Option A) — voir Enseignants & Affectations */}
+              {/* ⭐ Onglet 'constraints' SUPPRIMÉ (utilisateur : "on n'a plus besoin du sous-onglet contrainte")
               {tab === 'constraints' && <ConstraintsTab schoolLevelId={schoolLevelId} />}
-              {/* ⭐ Onglet 'generate' COMMENTÉ — génération automatique désactivée.
-                  L'utilisateur a demandé de masquer l'auto-génération pour cette version.
-                  Les écoles saisissent leur EDT manuellement.
-              {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('timetable'); }} />}
               */}
+              {/* ⭐ Onglet 'generate' SUPPRIMÉ (génération auto désactivée)
+              {tab === 'generate' && <GenerateTab ... />}
+              */}
+              {/* ⭐ TimetableTab SIMPLIFIÉ — on affiche DIRECTEMENT le ManualEditor
+                  sans passer par SolutionsList (qui montrait les solutions auto-générées).
+                  L'utilisateur a dit : "dans le sous-onglet emploi du temps, il y a encore
+                  solution générée automatiquement qui est toujours présent" → on supprime ça. */}
               {tab === 'timetable' && (
                 <TimetableTab
-                  solutions={solutions}
+                  solutions={[]}
                   schoolLevelId={schoolLevelId}
                   academicYearId={academicYearId}
-                  onAccept={async (id: string) => {
-                    try {
-                      await steFetch(`/api/timetable-engine/solutions/${id}/accept`, { method: 'POST' });
-                      toast({ title: '✅ Solution acceptée', description: 'L\'EDT est maintenant publié.' });
-                      await loadSolutions();
-                    } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); }
-                  }}
-                  onView={setSelectedSolution}
-                  // ⭐ 'onRegenerate' COMMENTÉ — la génération auto est désactivée.
-                  //    Le bouton "Régénérer" naviguait vers l'onglet 'generate' qui est masqué.
-                  // onRegenerate={() => setTab('generate')}
+                  onAccept={async () => {}}
+                  onView={() => {}}
                 />
               )}
             </motion.div>
@@ -996,40 +989,14 @@ function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerate
 // ═══ TAB 5: EMPLOI DU TEMPS (unifié — Solutions + Édition manuelle) ═══
 
 function TimetableTab({ solutions, schoolLevelId, academicYearId, onAccept, onView, onRegenerate }: any) {
-  const [mode, setMode] = useState<'solutions' | 'manual'>('solutions');
-
+  // ⭐ SIMPLIFICATION : on affiche DIRECTEMENT le ManualEditor.
+  //    Avant, il y avait un toggle "Solutions générées" / "Édition manuelle"
+  //    qui par défaut montrait "Aucune solution générée" + bouton "Générer"
+  //    → l'utilisateur voyait encore la génération auto malgré nos commentaires.
+  //    Maintenant : pas de toggle, pas de SolutionsList → ManualEditor uniquement.
   return (
     <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="inline-flex p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setMode('solutions')}
-            className={cn('px-4 py-2 rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5',
-              mode === 'solutions' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50')}
-          >
-            <Sparkles className="w-3.5 h-3.5" /> Solutions générées {solutions.length > 0 && `(${solutions.length})`}
-          </button>
-          <button
-            onClick={() => setMode('manual')}
-            className={cn('px-4 py-2 rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5',
-              mode === 'manual' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50')}
-          >
-            <Pencil className="w-3.5 h-3.5" /> Édition manuelle
-          </button>
-        </div>
-        {mode === 'solutions' && solutions.length > 0 && (
-          <button onClick={onRegenerate} className="text-xs text-blue-600 hover:underline font-bold">
-            ↻ Régénérer
-          </button>
-        )}
-      </div>
-
-      {mode === 'solutions' ? (
-        <SolutionsList solutions={solutions} onAccept={onAccept} onView={onView} onRegenerate={onRegenerate} />
-      ) : (
-        <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} />
-      )}
+      <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} />
     </div>
   );
 }

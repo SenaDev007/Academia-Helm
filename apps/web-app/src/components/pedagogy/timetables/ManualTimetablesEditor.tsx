@@ -900,7 +900,9 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
               <Clock className="w-4 h-4 text-blue-600" />
               Pauses & Plages
             </button>
-            {(viewMode === 'class' || viewMode === 'teacher') && (
+            {/* ⭐ Bouton "Auto-générer" COMMENTÉ — l'utilisateur a demandé de masquer
+                la génération automatique. Les écoles saisissent leur EDT manuellement.
+                {(viewMode === 'class' || viewMode === 'teacher') && (
               <button
                 onClick={handleAutoGenerate}
                 disabled={generating}
@@ -917,6 +919,7 @@ ${DAYS.map(d => `<th>${d.label}</th>`).join('')}
                 {generating ? "Génération..." : "Auto-générer"}
               </button>
             )}
+            */}
             <button
               onClick={handleDownloadTimetable}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-50 transition-all"

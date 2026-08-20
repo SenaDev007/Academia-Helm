@@ -47,7 +47,11 @@ const DEFAULT_TIME_BLOCKS = [
   { start: '16:15', end: '18:00', type: 'BLOCK' },
 ];
 
-type TabId = 'config' | 'constraints' | 'generate' | 'timetable';
+type TabId = 'config' | 'constraints' | 'timetable';
+// ⭐ Onglet 'generate' (Génération) SUPPRIMÉ — l'utilisateur a demandé de masquer
+//    la génération automatique pour la version actuelle. Les écoles saisissent
+//    leur emploi du temps manuellement (elles ont déjà un EDT standard).
+//    { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
 
 const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   { id: 'config', label: 'Configuration', icon: Settings, description: 'Jours & créneaux' },
@@ -57,8 +61,9 @@ const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   // qui supporte maintenant 3 états (Disponible / Préféré / Indisponible).
   // Le moteur STE lit directement la table pedagogy_teacher_availabilities.
   { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'Obligatoires & préférées' },
-  { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
-  { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Solutions + édition' },
+  // ⭐ 'generate' tab COMMENTÉ — génération auto désactivée (voir note ci-dessus)
+  // { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
+  { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Édition manuelle' },
 ];
 
 async function steFetch<T>(path: string, options?: { method?: string; body?: any }): Promise<T> {
@@ -167,7 +172,11 @@ export default function TimetablesWorkspace() {
               {tab === 'config' && <ConfigTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} />}
               {/* Onglet 'Disponibilités' supprimé (fusion Option A) — voir Enseignants & Affectations */}
               {tab === 'constraints' && <ConstraintsTab schoolLevelId={schoolLevelId} />}
+              {/* ⭐ Onglet 'generate' COMMENTÉ — génération automatique désactivée.
+                  L'utilisateur a demandé de masquer l'auto-génération pour cette version.
+                  Les écoles saisissent leur EDT manuellement.
               {tab === 'generate' && <GenerateTab schoolLevelId={schoolLevelId} academicYearId={academicYearId} solutionsCount={solutions.length} onGenerated={() => { loadSolutions(); setTab('timetable'); }} />}
+              */}
               {tab === 'timetable' && (
                 <TimetableTab
                   solutions={solutions}
@@ -181,7 +190,9 @@ export default function TimetablesWorkspace() {
                     } catch (e: any) { toast({ title: 'Erreur', description: e?.message, variant: 'destructive' }); }
                   }}
                   onView={setSelectedSolution}
-                  onRegenerate={() => setTab('generate')}
+                  // ⭐ 'onRegenerate' COMMENTÉ — la génération auto est désactivée.
+                  //    Le bouton "Régénérer" naviguait vers l'onglet 'generate' qui est masqué.
+                  // onRegenerate={() => setTab('generate')}
                 />
               )}
             </motion.div>

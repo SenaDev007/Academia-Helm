@@ -106,7 +106,7 @@ export default function MaterialsWorkspace() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/pedagogy/academic-structure/school-levels`, {
+        const res = await fetch(`/api/pedagogy/academic-structure/levels`, {
           credentials: "include",
         });
         const data = await res.json();
@@ -115,16 +115,20 @@ export default function MaterialsWorkspace() {
     })();
   }, []);
 
-  // === Charger les matières ===
+  // === Charger les matières (avec academicYearId obligatoire) ===
   useEffect(() => {
+    if (!academicYear?.id) return;
     (async () => {
       try {
-        const res = await fetch(`/api/pedagogy/subjects`, { credentials: "include" });
+        const res = await fetch(
+          `/api/pedagogy/subjects?academicYearId=${encodeURIComponent(academicYear.id)}`,
+          { credentials: "include" },
+        );
         const data = await res.json();
         setSubjects(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
       } catch { setSubjects([]); }
     })();
-  }, []);
+  }, [academicYear?.id]);
 
   // === Charger les matériaux ===
   const loadMaterials = useCallback(async () => {

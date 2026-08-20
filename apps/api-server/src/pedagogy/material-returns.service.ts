@@ -372,6 +372,20 @@ export class MaterialReturnsService {
   // NOUVEAU : LISTE DES ENSEIGNANTS PAR NIVEAU SCOLAIRE (pour Distribution)
   // ===========================================================================
 
+  /// Renvoie les SCHOOL LEVELS (table school_levels) — référencés par subjects.schoolLevelId.
+  ///    À ne pas confondre avec AcademicLevel (table pedagogy_academic_levels)
+  ///    qui a des IDs différents et qui est par année scolaire.
+  async getSchoolLevels(tenantId: string) {
+    const rows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id", "name", "label", "code", "order", "isActive"
+       FROM "school_levels"
+       WHERE "tenantId" = $1
+       ORDER BY "order" ASC NULLS LAST, "name" ASC`,
+      tenantId,
+    );
+    return Array.isArray(rows) ? rows : [];
+  }
+
   /// Liste les enseignants groupés par niveau scolaire pour l'année donnée.
   ///    Utilisé par le sous-onglet Distribution (selector enseignant dynamique).
   async getTeachersByLevel(tenantId: string, academicYearId: string) {

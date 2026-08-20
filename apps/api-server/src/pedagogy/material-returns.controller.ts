@@ -63,6 +63,20 @@ export class MaterialReturnsController {
     return this.service.getTeachersByLevel(tenantId, academicYearId);
   }
 
+  /// ⭐ Renvoie les SCHOOL LEVELS (table school_levels — référencés par subjects.schoolLevelId).
+  ///    IMPORTANT : à ne pas confondre avec /academic-structure/levels qui retourne
+  ///    des `academic_levels` (table pedagogy_academic_levels, IDs différents !).
+  ///    Le bug "matière affiche Aucune" venait de cette confusion : on filtrait
+  ///    subjects par un academic_level ID (1403dd00-...) alors que subjects.schoolLevelId
+  ///    référence school_levels (ea2e2f8a-... ou bc434610-... etc.).
+  @Get('school-levels')
+  async getSchoolLevels(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') _academicYearId: string,
+  ) {
+    return this.service.getSchoolLevels(tenantId);
+  }
+
   /// Met à jour les informations de retour pour UNE attribution.
   @Patch(':id/return')
   @HttpCode(HttpStatus.OK)

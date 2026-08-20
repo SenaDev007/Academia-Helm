@@ -104,12 +104,17 @@ export default function MaterialsWorkspace() {
   });
 
   // === Charger les niveaux scolaires (REQUIERT academicYearId) ===
+  // ⭐ FIX : on utilise /api/pedagogy/material-returns/school-levels qui renvoie
+  //    la table `school_levels` (IDs ea2e2f8a-... etc.) — c'est CE schoolLevelId
+  //    qui est référencé par subjects.schoolLevelId. Avant ce fix, on utilisait
+  //    /academic-structure/levels qui renvoie `academic_levels` (IDs 1403dd00-...)
+  //    — du coup subjects WHERE schoolLevelId = 1403dd00... renvoyait 0 matière.
   useEffect(() => {
     if (!academicYear?.id) return;
     (async () => {
       try {
         const res = await fetch(
-          `/api/pedagogy/academic-structure/levels?academicYearId=${encodeURIComponent(academicYear.id)}`,
+          `/api/pedagogy/material-returns/school-levels?academicYearId=${encodeURIComponent(academicYear.id)}`,
           { credentials: "include" },
         );
         const data = await res.json();

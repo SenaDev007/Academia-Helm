@@ -80,7 +80,8 @@ async function proxy(request: NextRequest, method: string) {
       path.startsWith('/task-students') ||
       path.startsWith('/student-engagement') ||
       path.startsWith('/activity-stats') ||
-      path.startsWith('/notebook-checks');
+      path.startsWith('/notebook-checks') ||
+      path.startsWith('/cahier-textes');
     const cacheControl = isVolatilePath
       ? 'no-store, max-age=0'
       : 'public, s-maxage=60, stale-while-revalidate=300';

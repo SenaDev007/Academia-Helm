@@ -7645,6 +7645,12 @@ export class PedagogicalSpaceService {
       { key: 'teacherSignature', type: 'string' },
       { key: 'pedagogicalObservations', type: 'string' },
       { key: 'recommandations', type: 'string' },
+      // ⭐ Nouveaux champs (refonte cahier de texte — journal de cours)
+      { key: 'courseTitle', type: 'string' },
+      { key: 'startTime', type: 'string' },
+      { key: 'endTime', type: 'string' },
+      { key: 'content', type: 'string' },
+      { key: 'lessonDate', type: 'date' },
     ];
 
     for (const { key, type } of optionalFields) {
@@ -7709,6 +7715,9 @@ export class PedagogicalSpaceService {
       teacherSignature: 'string', directorSignature: 'string',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
+      // ⭐ Nouveaux champs (refonte cahier de texte — journal de cours)
+      courseTitle: 'string', startTime: 'string', endTime: 'string',
+      content: 'string', lessonDate: 'date',
     };
 
     for (const [key, type] of Object.entries(allowedFields)) {

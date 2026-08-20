@@ -432,9 +432,6 @@ export default function ParentCahierJournalPage() {
                           </th>
                         );
                       })}
-                      <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
-                        OBSERVATIONS
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -468,17 +465,6 @@ export default function ParentCahierJournalPage() {
                               </td>
                             );
                           })}
-                          <td className="border border-slate-300 p-2 align-top" style={{ minHeight: "96px" }}>
-                            {(() => {
-                              const obs = getEntry(entries, day.key, "observations");
-                              return obs ? (
-                                <p className="text-xs text-slate-600 italic whitespace-pre-wrap">{obs}</p>
-                              ) : (
-                                <span className="text-slate-300 text-xs">—</span>
-                              );
-                            })()}
-                            {/* ⭐ PAS d'observation du directeur dans l'UI parent */}
-                          </td>
                         </tr>
                       );
                     })}
@@ -560,29 +546,8 @@ export default function ParentCahierJournalPage() {
             </>
           )}
 
+          {/* ⭐ PAS de section signatures dans l'UI parent — retirée */}
           {/* ⭐ PAS d'observations du directeur — retirées pour le parent */}
-
-          {/* === SIGNATURES (read-only) === */}
-          {data.status === "VALIDATED" && (data.teacherSignature || data.directorSignature) && (
-            <div className="grid grid-cols-2 gap-6 pt-4 border-t-2 border-slate-300">
-              {data.teacherSignature && (
-                <div className="text-center">
-                  <p className="text-xs font-bold text-slate-700 uppercase">Signature du Titulaire</p>
-                  <div className="mt-2 border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={data.teacherSignature} alt="Signature enseignant" className="max-h-20 mx-auto" />
-                  </div>
-                </div>
-              )}
-              {data.directorSignature && (
-                <div className="text-center">
-                  <p className="text-xs font-bold text-slate-700 uppercase">Visa de la Direction</p>
-                  <div className="mt-2 border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={data.directorSignature} alt="Signature directeur" className="max-h-20 mx-auto" />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

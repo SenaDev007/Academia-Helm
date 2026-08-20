@@ -2649,6 +2649,10 @@ model Teacher {
   emergencyContact           String?
   qualifications             String?
   notes                      String?
+  /// ⭐ Signature de l'enseignant (base64 data URL) — utilisée pour auto-signer
+  ///    les entrées du cahier de texte (secondaire) sans avoir à signer à chaque fois.
+  ///    Remplie via le bouton "Ma signature" dans l'onglet Cahier de Texte.
+  signatureUrl               String?
   createdBy                  String?
   createdAt                  DateTime                    @default(now())
   updatedAt                  DateTime                    @updatedAt

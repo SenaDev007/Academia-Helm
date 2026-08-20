@@ -7556,18 +7556,26 @@ export class PedagogicalSpaceService {
     let query: string;
 
     if (filter.mode === 'teacher') {
-      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode",
+                  t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+                  t."signatureUrl" as "teacherSignatureUrl",
+                  COALESCE(ct."teacherName", CONCAT(t."firstName", ' ', t."lastName")) as "teacherFullName"
                FROM "cahier_de_textes" ct
                LEFT JOIN "classes" c ON c."id" = ct."classId"
                LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+               LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
                WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."teacherId" = $3`;
       params.push(tenantId, academicYearId, filter.teacherId);
     } else {
       // Mode direction : toutes les entrées du tenant/année
-      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode",
+                  t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+                  t."signatureUrl" as "teacherSignatureUrl",
+                  COALESCE(ct."teacherName", CONCAT(t."firstName", ' ', t."lastName")) as "teacherFullName"
                FROM "cahier_de_textes" ct
                LEFT JOIN "classes" c ON c."id" = ct."classId"
                LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+               LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
                WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2`;
       params.push(tenantId, academicYearId);
     }
@@ -7587,6 +7595,146 @@ export class PedagogicalSpaceService {
     }
     query += ` ORDER BY ct."testDate" DESC NULLS LAST, ct."createdAt" DESC`;
     return this.prisma.$queryRawUnsafe(query, ...params);
+  }
+
+  /// ⭐ Catalogue des cahiers de texte — vue multi-niveau (année/trimestre/mois/semaine/jour)
+  ///    Utilisé par le sous-onglet Catalogue. Inclut le nom de l'enseignant,
+  ///    la classe et la signature auto-attachées.
+  async getCahierDeTextesCatalogue(
+    tenantId: string,
+    teacherId: string | null,
+    academicYearId: string,
+    classId?: string,
+    trimester?: number,
+    month?: number,        // 1-12
+    weekStart?: string,    // YYYY-MM-DD (lundi)
+    dayDate?: string,      // YYYY-MM-DD
+  ) {
+    // ⭐ Mode direction : si teacherId est null/empty, on renvoie TOUTES les
+    //    entrées du tenant/année (vue superviseur). Sinon, on filtre par
+    //    teacherId résolu.
+    let effectiveTeacherId: string | null = teacherId ?? null;
+    if (teacherId) {
+      const { teacherId: resolved, userRole } = await this.resolveTeacherId(tenantId, teacherId);
+      if (resolved) {
+        effectiveTeacherId = resolved;
+      } else if (userRole && PedagogicalSpaceService.GLOBAL_ACCESS_ROLES.has(userRole)) {
+        // Vue superviseur : tout voir
+        effectiveTeacherId = null;
+      } else if (userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole)) {
+        // Directeur/censeur : vue globale aussi (mais doit avoir un profil Teacher
+        // ou une accréditation ; sinon accès refusé).
+        effectiveTeacherId = null;
+      } else {
+        return [];
+      }
+    }
+
+    const params: any[] = [];
+    let where = `WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."testType" = 'JOURNAL'`;
+    params.push(tenantId, academicYearId);
+
+    if (effectiveTeacherId) {
+      where += ` AND ct."teacherId" = $${params.length + 1}`;
+      params.push(effectiveTeacherId);
+    }
+    if (classId) {
+      where += ` AND ct."classId" = $${params.length + 1}`;
+      params.push(classId);
+    }
+    if (trimester !== undefined && trimester !== null) {
+      where += ` AND ct."trimester" = $${params.length + 1}`;
+      params.push(trimester);
+    }
+    if (month !== undefined && month !== null) {
+      // Filtrer par mois (1-12) en utilisant EXTRACT sur lessonDate
+      where += ` AND EXTRACT(MONTH FROM ct."lessonDate") = $${params.length + 1}`;
+      params.push(month);
+    }
+    if (weekStart) {
+      // Semaine = lundi → dimanche
+      where += ` AND ct."lessonDate" >= $${params.length + 1}::date`;
+      params.push(weekStart);
+      where += ` AND ct."lessonDate" < ($${params.length}::date + INTERVAL '7 days')`;
+    }
+    if (dayDate) {
+      where += ` AND ct."lessonDate" = $${params.length + 1}::date`;
+      params.push(dayDate);
+    }
+
+    const query = `
+      SELECT ct.*,
+             c."name" as "classNameResolved",
+             s."name" as "subjectName",
+             s."code" as "subjectCode",
+             t."firstName" as "teacherFirstName",
+             t."lastName" as "teacherLastName",
+             COALESCE(ct."teacherName", CONCAT(t."firstName", ' ', t."lastName")) as "teacherFullName"
+      FROM "cahier_de_textes" ct
+      LEFT JOIN "classes" c ON c."id" = ct."classId"
+      LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+      LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
+      ${where}
+      ORDER BY ct."lessonDate" DESC NULLS LAST, ct."startTime" ASC, ct."createdAt" DESC
+    `;
+    return this.prisma.$queryRawUnsafe(query, ...params);
+  }
+
+  // ===========================================================================
+  // SIGNATURE DE L'ENSEIGNANT (auto-attach cahier de texte)
+  // ===========================================================================
+
+  /// Récupère la signature enregistrée par l'enseignant (base64 data URL).
+  ///    Le frontend passe user.id ; on résout en Teacher.id puis on lit
+  ///    la colonne `signatureUrl` de la table teachers.
+  async getTeacherSignature(tenantId: string, userId: string) {
+    const { teacherId } = await this.resolveTeacherId(tenantId, userId);
+    if (!teacherId) {
+      return { signatureUrl: null, hasTeacherProfile: false };
+    }
+    const teacher: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "signatureUrl" FROM "teachers" WHERE "id" = $1 AND "tenantId" = $2`,
+      teacherId, tenantId,
+    );
+    return {
+      signatureUrl: teacher?.[0]?.signatureUrl ?? null,
+      hasTeacherProfile: true,
+      teacherId,
+    };
+  }
+
+  /// Enregistre (ou met à jour) la signature de l'enseignant.
+  async saveTeacherSignature(
+    tenantId: string,
+    userId: string,
+    signatureUrl: string,
+  ) {
+    const { teacherId } = await this.resolveTeacherId(tenantId, userId);
+    if (!teacherId) {
+      throw new BadRequestException(
+        'Aucun profil Teacher trouvé pour cet utilisateur — impossible d\'enregistrer la signature',
+      );
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "teachers" SET "signatureUrl" = $1, "updatedAt" = NOW()
+       WHERE "id" = $2 AND "tenantId" = $3`,
+      signatureUrl, teacherId, tenantId,
+    );
+    return { success: true, signatureUrl };
+  }
+
+  /// Supprime la signature de l'enseignant.
+  async deleteTeacherSignature(tenantId: string, userId: string) {
+    const { teacherId } = await this.resolveTeacherId(tenantId, userId);
+    if (!teacherId) {
+      return { success: false };
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "teachers" SET "signatureUrl" = NULL, "updatedAt" = NOW()
+       WHERE "id" = $1 AND "tenantId" = $2`,
+      teacherId, tenantId,
+    );
+    return { success: true };
   }
 
   /// Récupère un cahier de test par ID.
@@ -7616,6 +7764,46 @@ export class PedagogicalSpaceService {
       throw new BadRequestException('classId, testType, testTitle, trimester sont requis');
     }
 
+    // ⭐ BUGFIX : résoudre le VRAI teacherId (table teachers) à partir du user.id
+    //    passé par le frontend. Sinon, l'INSERT stocke user.id dans la colonne
+    //    teacherId, mais getCahierDeTextes filtre par teacher.id (via resolveTeacherFilter),
+    //    ce qui fait que l'enregistrement réussit mais n'apparaît jamais dans l'interface.
+    const { teacherId: resolvedTeacherId, userRole } = await this.resolveTeacherId(
+      tenantId,
+      teacherId,
+    );
+    // Si l'utilisateur n'a pas de profil Teacher mais a un rôle global (promoteur/direction),
+    // on garde le user.id tel quel pour ne pas bloquer la création.
+    const effectiveTeacherId = resolvedTeacherId
+      ?? (userRole && PedagogicalSpaceService.GLOBAL_ACCESS_ROLES.has(userRole) ? teacherId : null);
+    if (!effectiveTeacherId) {
+      throw new BadRequestException(
+        'Aucun profil Teacher trouvé pour cet utilisateur — impossible de créer un cahier de texte',
+      );
+    }
+
+    // ⭐ AUTO-ATTACH : récupérer le nom de l'enseignant + sa signature enregistrée
+    //    depuis la table teachers (colonne signatureUrl). Le frontend n'a plus
+    //    besoin de les envoyer manuellement — le backend les joint automatiquement.
+    let autoTeacherName = data.teacherName ?? null;
+    let autoTeacherSignature = data.teacherSignature ?? null;
+    if (resolvedTeacherId) {
+      const teacherRow: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "firstName", "lastName", "signatureUrl"
+         FROM "teachers" WHERE "id" = $1 AND "tenantId" = $2`,
+        resolvedTeacherId, tenantId,
+      );
+      if (teacherRow && teacherRow.length > 0) {
+        const t = teacherRow[0];
+        const fullName = `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim();
+        if (fullName) autoTeacherName = autoTeacherName ?? fullName;
+        if (t.signatureUrl) autoTeacherSignature = autoTeacherSignature ?? t.signatureUrl;
+      }
+    }
+    // Pré-valider data avec les valeurs auto-remplies
+    data.teacherName = autoTeacherName ?? data.teacherName;
+    data.teacherSignature = autoTeacherSignature ?? data.teacherSignature;
+
     const id = crypto.randomUUID();
     const fields: string[] = ['"id"', '"tenantId"', '"academicYearId"', '"teacherId"',
                               '"createdAt"', '"updatedAt"',
@@ -7627,7 +7815,7 @@ export class PedagogicalSpaceService {
                                     "'[]'::jsonb", '$9', '$10', '$11',
                                     "'DRAFT'", '$12'];
     const params: any[] = [
-      id, tenantId, academicYearId, teacherId,
+      id, tenantId, academicYearId, effectiveTeacherId,
       data.classId, data.testType, data.testTitle, data.trimester,
       data.maxScore ?? 20.0, data.passingScore ?? 10.0, data.coefficient ?? 1.0,
       data.testNumber ?? 1,

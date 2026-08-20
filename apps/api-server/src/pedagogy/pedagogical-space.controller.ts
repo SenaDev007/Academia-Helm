@@ -1221,12 +1221,74 @@ export class PedagogicalSpaceController {
     );
   }
 
+  // ⭐ Catalogue des cahiers de texte — filtres par année/trimestre/mois/semaine/jour
+  //    Utilisé par le sous-onglet Catalogue du Cahier de Texte (Secondaire)
+  @Get('cahier-textes-catalogue')
+  async getCahierDeTextesCatalogue(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+    @Query('trimester') trimester?: string,
+    @Query('month') month?: string,        // 1-12
+    @Query('weekStart') weekStart?: string, // YYYY-MM-DD
+    @Query('dayDate') dayDate?: string,     // YYYY-MM-DD
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.service.getCahierDeTextesCatalogue(
+      tenantId, teacherId, academicYearId,
+      classId,
+      trimester ? parseInt(trimester) : undefined,
+      month ? parseInt(month) : undefined,
+      weekStart,
+      dayDate,
+    );
+  }
+
   @Get('cahier-textes/:id')
   async getCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
     return this.service.getCahierDeTexte(tenantId, id);
+  }
+
+  // ⭐ Signature de l'enseignant (pour auto-attach dans le cahier de texte)
+  //    Le teacher enregistre sa signature une fois via le bouton "Ma signature"
+  //    dans l'UI Cahier de Texte. Elle est ensuite automatiquement jointe à
+  //    chaque entrée créée (avec son nom + sa classe).
+
+  @Get('teacher-signature')
+  async getTeacherSignature(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId est requis');
+    return this.service.getTeacherSignature(tenantId, userId);
+  }
+
+  @Post('teacher-signature')
+  async saveTeacherSignature(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; signatureUrl: string },
+  ) {
+    if (!body.userId || !body.signatureUrl) {
+      throw new BadRequestException('userId et signatureUrl sont requis');
+    }
+    return this.service.saveTeacherSignature(
+      tenantId, body.userId, body.signatureUrl,
+    );
+  }
+
+  @Delete('teacher-signature')
+  async deleteTeacherSignature(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId est requis');
+    return this.service.deleteTeacherSignature(tenantId, userId);
   }
 
   @Post('cahier-textes')

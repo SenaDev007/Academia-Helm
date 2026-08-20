@@ -6957,3 +6957,36 @@ Stage Summary:
 - ✅ TypeScript check : 0 erreur
 - 1 fichier modifié : CahierJournalTab.tsx (+~240 lignes)
 - Aucune migration nécessaire (cahierJournalId déjà appliqué en Phase 4a)
+
+---
+Task ID: Phase-5-CahierTexte-Catalogue-Signature
+Agent: main
+Task: Refonte Cahier de Texte — fix bug enregistrement + sous-onglet Catalogue + auto-attach signature + retraits UI parent
+
+Work Log:
+- LECTURE : CahierDeTexteTab.tsx (616 lignes), parent/cahier-journal/page.tsx, backend pedagogical-space.{controller,service}.ts
+- DIAGNOSTIC BUG : createCahierDeTexte stockait `user.id` dans la colonne `teacherId` (sans résolution), tandis que getCahierDeTextes filtre par `teacher.id` (résolu via resolveTeacherFilter). → L'INSERT réussissait mais le SELECT retournait 0 ligne.
+- CORRECTION UI PARENT (cahier journal) : Supprimé la section signatures (lignes 565-585) + la colonne OBSERVATIONS (header + cellule td par jour) → uniquement les matières restent, plus de signatures visibles pour les parents
+- CORRECTION BUG backend : Ajouté `resolveTeacherId()` dans createCahierDeTexte pour résoudre user.id → teacher.id AVANT l'INSERT. Si pas de Teacher mais rôle global (promoteur) → garde user.id (compat ascendante). Si ni l'un ni l'autre → BadRequestException claire.
+- NOUVEAU : Ajouté auto-attach teacherName + teacherSignature dans createCahierDeTexte : lit `firstName`, `lastName`, `signatureUrl` depuis teachers et pré-remplit `data.teacherName`/`data.teacherSignature` si non fournis.
+- NOUVEAU ENDPOINT : GET /pedagogy-space/cahier-textes-catalogue — filtres par année/trimestre/mois/semaine/jour. JOIN teachers + classes + subjects. Inclut `teacherFullName`, `teacherSignatureUrl`, `classNameResolved`. Vue superviseur (toutes entrées) si rôle direction.
+- NOUVEAU ENDPOINT : GET/POST/DELETE /pedagogy-space/teacher-signature — l'enseignant enregistre UNE FOIS sa signature (base64 data URL) dans `teachers.signatureUrl`. Auto-attach à chaque entrée de cahier de texte.
+- MIGRATION : 20260820120000_add_teacher_signature_url.sql — ALTER TABLE teachers ADD COLUMN signatureUrl TEXT
+- SCHEMA PRISMA : Ajouté `signatureUrl String?` sur model Teacher avec commentaire de documentation
+- FRONTEND REFOUVE : CahierDeTexteTab.tsx entièrement réécrit (~1100 lignes) avec :
+  * Sous-onglets : "Journal hebdomadaire" + "Catalogue"
+  * Bouton "Ma signature" (SignatureCanvas) → enregistrer/remplacer/supprimer signature
+  * Journal : grille 5 jours + modal création avec RichTextEditor + aperçu auto-attach signature
+  * Catalogue : filtres (classe/trimestre/mois/semaine/jour) + cartes groupées par jour avec nom enseignant + classe + signature auto-joints
+  * Modal détail entrée avec section signature formelle
+- BFF : `cahier-textes` (startsWith) couvre déjà `/cahier-textes-catalogue` et `/teacher-signature` → no-store automatique
+- TypeScript check : 0 erreur sur les fichiers modifiés (CahierDeTexteTab, parent/cahier-journal, controller, service)
+
+Stage Summary:
+- Bug "enregistrement réussit mais rien ne s'affiche" : RÉSOLU (resolveTeacherId dans createCahierDeTexte)
+- UI parent cahier journal : signatures + colonne observations retirées (uniquement les matières + jours)
+- Sous-onglet Catalogue : opérationnel avec filtres année/trimestre/mois/semaine/jour
+- Auto-attach signature : enseignant enregistre 1× via "Ma signature" → jointe automatiquement à chaque entrée
+- Migration à appliquer sur Neon prod DB : 20260820120000_add_teacher_signature_url/migration.sql
+- 5 fichiers modifiés : parent/cahier-journal/page.tsx, CahierDeTexteTab.tsx, pedagogical-space.controller.ts, pedagogical-space.service.ts, schema.prisma
+- 1 nouvelle migration : 20260820120000_add_teacher_signature_url/migration.sql

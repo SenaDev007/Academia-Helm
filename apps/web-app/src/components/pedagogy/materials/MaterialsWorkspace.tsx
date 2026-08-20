@@ -1,608 +1,716 @@
+"use client";
+
 /**
  * ============================================================================
- * MATERIALS WORKSPACE - MODULE 2 (Matériel Pédagogique)
+ * MATERIALS WORKSPACE — Inventaire du Matériel Pédagogique (Refonte 2026-08-20)
  * ============================================================================
- * 
- * Gestion des ressources institutionnelles :
- * 1. Catalogue du matériel (Livres, Kits, Tablettes, Labo)
- * 2. Suivi des stocks par année académique
- * 3. Affectations aux enseignants et aux classes
- * 4. Historique des mouvements et maintenance
+ *
+ * Refonte : design uniformisé avec les autres onglets (table-based, modales
+ * simples), CRUD fonctionnel via fetch direct au BFF (PLUS de pedagogyService
+ * offline mode qui cassait les opérations sur web).
+ *
+ * Champs affichés :
+ *   - Code, Nom, Catégorie, Niveau scolaire, Matière, Description
+ *   - Stock total, Stock disponible (par année scolaire)
+ *   - Statut actif/inactif
+ *
+ * CRUD :
+ *   - Créer un matériel (modal FormModal)
+ *   - Modifier un matériel
+ *   - Supprimer un matériel (confirm dialog)
+ *   - Ajouter du stock (crée un mouvement PURCHASE)
+ *
+ * Backend :
+ *   GET    /api/pedagogy/pedagogical-materials?academicYearId=
+ *   POST   /api/pedagogy/pedagogical-materials
+ *   PUT    /api/pedagogy/pedagogical-materials/:id
+ *   DELETE /api/pedagogy/pedagogical-materials/:id
+ *   POST   /api/pedagogy/material-movements (movementType=PURCHASE pour ajouter stock)
+ * ============================================================================
  */
 
-'use client';
+import { useState, useEffect, useCallback } from "react";
+import {
+  Loader2, Plus, RefreshCw, Search, Filter, Package,
+  BookOpen, FlaskConical, Monitor, FileText, Edit, Trash2,
+  CheckCircle2, XCircle, AlertCircle, X, Save, ArrowUp,
+} from "lucide-react";
+import { toast } from "sonner";
+import { useAppSession } from "@/contexts/AppSessionContext";
+import { useModuleContext } from "@/hooks/useModuleContext";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { 
-  Package, 
-  Search, 
-  Plus, 
-  Filter, 
-  ArrowUpRight, 
-  ArrowDownLeft, 
-  BookOpen, 
-  Monitor, 
-  FlaskConical, 
-  CheckCircle2, 
-  AlertCircle,
-  Clock,
-  User,
-  Layers,
-  MoreVertical,
-  History,
-  Trash2,
-  Edit,
-  ClipboardCheck,
-  ChevronRight,
-  FileText,
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FormModal, 
-  ConfirmModal 
-} from '@/components/modules/blueprint';
-import { useModuleContext } from '@/hooks/useModuleContext';
-import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { pedagogyService } from '@/services/pedagogy.service';
-import { useToast } from '@/components/ui/use-toast';
-import { cn } from '@/lib/utils';
+const cn = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" ");
 
-// --- Types ---
+const CATEGORIES = [
+  { id: "BOOK", label: "Manuel scolaire", icon: BookOpen, color: "text-indigo-700 bg-indigo-50" },
+  { id: "TEACHER_GUIDE", label: "Guide pédagogique", icon: BookOpen, color: "text-rose-700 bg-rose-50" },
+  { id: "OFFICIAL_DOCUMENT", label: "Document officiel", icon: FileText, color: "text-blue-700 bg-blue-50" },
+  { id: "DIDACTIC_SUPPORT", label: "Support didactique", icon: Monitor, color: "text-emerald-700 bg-emerald-50" },
+  { id: "LAB_MATERIAL", label: "Matériel de laboratoire", icon: FlaskConical, color: "text-amber-700 bg-amber-50" },
+  { id: "OTHER", label: "Autre", icon: Package, color: "text-slate-700 bg-slate-50" },
+];
+
+function getCategoryConfig(cat: string) {
+  return CATEGORIES.find((c) => c.id === cat) || CATEGORIES.find((c) => c.id === "OTHER")!;
+}
 
 interface Material {
   id: string;
-  name: string;
   code: string;
-  category: 'BOOK' | 'TEACHER_GUIDE' | 'OFFICIAL_DOCUMENT' | 'DIDACTIC_SUPPORT' | 'LAB_MATERIAL' | 'OTHER';
+  name: string;
+  category: string;
   description?: string;
+  schoolLevelId: string;
+  subjectId?: string;
   isActive: boolean;
-  subject?: { name: string };
-  stocks: any[];
-  assignments?: any[];
-  movements?: any[];
+  schoolLevel?: { id: string; name: string; code: string };
+  subject?: { id: string; name: string; code: string };
+  stocks?: Array<{
+    id: string;
+    quantityTotal: number;
+    quantityAvailable: number;
+    academicYearId: string;
+  }>;
 }
-
-interface MaterialStock {
-  id: string;
-  quantity: number;
-  location?: string;
-  condition: 'NEW' | 'GOOD' | 'DAMAGED' | 'LOST';
-}
-
-const CATEGORIES = [
-  { id: 'BOOK', label: 'Manuels Scolaires', icon: BookOpen, color: 'text-indigo-600 bg-indigo-50' },
-  { id: 'TEACHER_GUIDE', label: 'Guides Pédagogiques', icon: BookOpen, color: 'text-rose-600 bg-rose-50' },
-  { id: 'OFFICIAL_DOCUMENT', label: 'Documents Officiels', icon: FileText, color: 'text-blue-600 bg-blue-50' },
-  { id: 'DIDACTIC_SUPPORT', label: 'Supports Didactiques', icon: Monitor, color: 'text-emerald-600 bg-emerald-50' },
-  { id: 'LAB_MATERIAL', label: 'Matériel de Labo', icon: FlaskConical, color: 'text-amber-600 bg-amber-50' },
-];
 
 export default function MaterialsWorkspace() {
-  const confirmDialog = useConfirmDialog();
+  const { user } = useAppSession();
   const { academicYear, schoolLevel } = useModuleContext();
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-  
-  // Data
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
-  
-  // Search
-  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterLevel, setFilterLevel] = useState("");
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
+  const [stockTarget, setStockTarget] = useState<Material | null>(null);
+  const [formData, setFormData] = useState({
+    code: "",
+    name: "",
+    category: "BOOK",
+    description: "",
+    schoolLevelId: "",
+    subjectId: "",
+    isActive: true,
+  });
+  const [stockData, setStockData] = useState({
+    quantity: 10,
+    notes: "",
+  });
 
-  // Extra Data for modals
-  const [teachers, setTeachers] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-
-  // Modals
-  const [modal, setModal] = useState<'none' | 'create-material' | 'edit-material' | 'add-stock' | 'assign'>('none');
-
-  // Load Extra Data (Teachers and Classes)
+  // === Charger les niveaux scolaires ===
   useEffect(() => {
-    const loadExtraData = async () => {
-      if (!academicYear?.id) return;
+    (async () => {
       try {
-        const [teachersData, classesData] = await Promise.all([
-          pedagogyService.getTeachers(),
-          pedagogyService.getAcademicClasses(academicYear.id)
-        ]);
-        setTeachers(teachersData || []);
-        setClasses(classesData || []);
-      } catch (e) {
-        console.error("Error loading extra data for materials:", e);
-      }
-    };
-    loadExtraData();
-  }, [academicYear?.id]);
+        const res = await fetch(`/api/pedagogy/academic-structure/school-levels`, {
+          credentials: "include",
+        });
+        const data = await res.json();
+        setSchoolLevels(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
+      } catch { setSchoolLevels([]); }
+    })();
+  }, []);
 
-  // --- Loaders ---
+  // === Charger les matières ===
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/pedagogy/subjects`, { credentials: "include" });
+        const data = await res.json();
+        setSubjects(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
+      } catch { setSubjects([]); }
+    })();
+  }, []);
 
+  // === Charger les matériaux ===
   const loadMaterials = useCallback(async () => {
-    if (!academicYear?.id) return;
+    if (!academicYear?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const data = await pedagogyService.getPedagogicalMaterials(academicYear.id);
-      setMaterials(Array.isArray(data) ? data : data.data || []);
-      if (data.length > 0 && !selectedMaterialId) setSelectedMaterialId(data[0].id);
+      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      const res = await fetch(
+        `/api/pedagogy/pedagogical-materials?${params.toString()}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      // Accepter les 2 formats : array direct OU { data: [...] }
+      const arr = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      setMaterials(arr);
     } catch (e) {
       console.error(e);
+      setMaterials([]);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedMaterialId]);
+  }, [academicYear?.id]);
 
   useEffect(() => { loadMaterials(); }, [loadMaterials]);
 
-  // --- Actions ---
-
-  const handleCreateMaterial = async (data: any) => {
-    try {
-      await pedagogyService.createPedagogicalMaterial({
-        ...data,
-        academicYearId: academicYear?.id,
-        schoolLevelId: schoolLevel?.id || undefined,
-        isActive: true
-      });
-      toast({
-        title: "Succès",
-        description: "La ressource a été ajoutée au catalogue.",
-      });
-      loadMaterials();
-      setModal('none');
-    } catch (e: any) {
-      console.error(e);
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible d'ajouter la ressource.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleEditMaterial = async (data: any) => {
-    if (!selectedMaterialId) return;
-    try {
-      await pedagogyService.updatePedagogicalMaterial(selectedMaterialId, data);
-      toast({
-        title: "Succès",
-        description: "La ressource a été mise à jour.",
-      });
-      loadMaterials();
-      setModal('none');
-    } catch (e: any) {
-      console.error(e);
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de modifier la ressource.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleDeleteMaterial = async (id: string) => {
-    const ok = await confirmDialog.danger('Cette ressource sera définitivement supprimée du catalogue.', 'Supprimer la ressource');
-    if (!ok) return;
-    try {
-      await pedagogyService.deletePedagogicalMaterial(id);
-      toast({
-        title: "Succès",
-        description: "La ressource a été supprimée.",
-      });
-      setSelectedMaterialId(null);
-      loadMaterials();
-    } catch (e: any) {
-      console.error(e);
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de supprimer la ressource.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleAddStock = async (data: any) => {
-    if (!selectedMaterialId || !academicYear?.id) return;
-    try {
-      await pedagogyService.addMaterialStock({
-        ...data,
-        materialId: selectedMaterialId,
-        academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || undefined,
-        quantity: parseInt(data.quantity)
-      });
-      toast({
-        title: "Succès",
-        description: "Le stock a été mis à jour.",
-      });
-      loadMaterials();
-      setModal('none');
-    } catch (e: any) {
-      console.error(e);
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de mettre à jour le stock.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleCreateAssignment = async (data: any) => {
-    if (!selectedMaterialId || !academicYear?.id) return;
-    try {
-      const selectedClass = classes.find(c => c.id === data.classId);
-      const schoolLevelId = selectedClass?.schoolLevelId || schoolLevel?.id || undefined;
-      
-      await pedagogyService.createMaterialAssignment({
-        ...data,
-        materialId: selectedMaterialId,
-        academicYearId: academicYear.id,
-        schoolLevelId,
-        quantity: parseInt(data.quantity)
-      });
-      toast({
-        title: "Succès",
-        description: "L'affectation a été enregistrée.",
-      });
-      loadMaterials();
-      setModal('none');
-    } catch (e: any) {
-      console.error(e);
-      toast({
-        title: "Erreur",
-        description: e.message || "Impossible de réaliser l'affectation.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const selectedMaterial = materials.find(m => m.id === selectedMaterialId);
-  const filteredMaterials = materials.filter(m => {
-    const matchCat = activeCategory === 'ALL' || m.category === activeCategory;
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase()) || m.code.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+  // === Filtrer les matériaux ===
+  const filteredMaterials = materials.filter((m) => {
+    const matchSearch = !search ||
+      m.name.toLowerCase().includes(search.toLowerCase()) ||
+      m.code.toLowerCase().includes(search.toLowerCase());
+    const matchCat = !filterCategory || m.category === filterCategory;
+    const matchLevel = !filterLevel || m.schoolLevelId === filterLevel;
+    return matchSearch && matchCat && matchLevel;
   });
 
+  // === Ouvrir modal création ===
+  const openCreateModal = () => {
+    setEditingMaterial(null);
+    setFormData({
+      code: "",
+      name: "",
+      category: "BOOK",
+      description: "",
+      schoolLevelId: schoolLevel?.id || schoolLevels[0]?.id || "",
+      subjectId: "",
+      isActive: true,
+    });
+    setShowFormModal(true);
+  };
+
+  // === Ouvrir modal édition ===
+  const openEditModal = (m: Material) => {
+    setEditingMaterial(m);
+    setFormData({
+      code: m.code || "",
+      name: m.name || "",
+      category: m.category || "BOOK",
+      description: m.description || "",
+      schoolLevelId: m.schoolLevelId || "",
+      subjectId: m.subjectId || "",
+      isActive: m.isActive,
+    });
+    setShowFormModal(true);
+  };
+
+  // === Soumettre formulaire (création ou édition) ===
+  const handleSubmit = async () => {
+    if (!formData.code.trim() || !formData.name.trim() || !formData.schoolLevelId) {
+      toast.error("Code, nom et niveau scolaire sont obligatoires");
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload: any = {
+        code: formData.code.trim(),
+        name: formData.name.trim(),
+        category: formData.category,
+        description: formData.description || undefined,
+        schoolLevelId: formData.schoolLevelId,
+        subjectId: formData.subjectId || undefined,
+        isActive: formData.isActive,
+      };
+      const url = editingMaterial
+        ? `/api/pedagogy/pedagogical-materials/${editingMaterial.id}`
+        : `/api/pedagogy/pedagogical-materials`;
+      const method = editingMaterial ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur");
+      }
+      toast.success(editingMaterial ? "Matériel modifié" : "Matériel créé");
+      setShowFormModal(false);
+      setEditingMaterial(null);
+      loadMaterials();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // === Supprimer ===
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/pedagogy/pedagogical-materials/${deleteTarget.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      toast.success("Matériel supprimé");
+      setDeleteTarget(null);
+      loadMaterials();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // === Ajouter du stock (crée un mouvement PURCHASE) ===
+  const handleAddStock = async () => {
+    if (!stockTarget || !academicYear?.id) return;
+    if (!stockData.quantity || stockData.quantity <= 0) {
+      toast.error("La quantité doit être supérieure à 0");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy/material-movements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          materialId: stockTarget.id,
+          academicYearId: academicYear.id,
+          movementType: "PURCHASE",
+          quantity: stockData.quantity,
+          notes: stockData.notes || undefined,
+          schoolLevelId: stockTarget.schoolLevelId,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur");
+      }
+      toast.success(`+${stockData.quantity} ajouté au stock`);
+      setStockTarget(null);
+      setStockData({ quantity: 10, notes: "" });
+      loadMaterials();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // === Statistiques globales ===
+  const totalMaterials = materials.length;
+  const totalStock = materials.reduce((sum, m) => {
+    const stock = m.stocks?.find((s) => s.academicYearId === academicYear?.id);
+    return sum + (stock?.quantityTotal ?? 0);
+  }, 0);
+  const totalAvailable = materials.reduce((sum, m) => {
+    const stock = m.stocks?.find((s) => s.academicYearId === academicYear?.id);
+    return sum + (stock?.quantityAvailable ?? 0);
+  }, 0);
+
   return (
-    <>
-    {confirmDialog.dialog}
-    <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
-      {/* Catalogue & Filtres (Gauche) */}
-      <div className="w-1/3 bg-white rounded-3xl border border-gray-100 flex flex-col shadow-sm">
-        <div className="p-6 border-b border-gray-50 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Package className="w-6 h-6 text-indigo-600" />
-              Catalogue Ressources
-            </h2>
-            <button 
-              onClick={() => setModal('create-material')}
-              className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+    <div className="space-y-4">
+      {/* === En-tête + actions === */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Package className="h-5 w-5 text-blue-600" />
           </div>
-          
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Chercher une ressource..."
-              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            <button 
-              onClick={() => setActiveCategory('ALL')}
-              className={cn("px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all", activeCategory === 'ALL' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "bg-gray-50 text-gray-400 hover:bg-gray-100")}
-            >Tout</button>
-            {CATEGORIES.map(cat => (
-              <button 
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={cn("px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap", activeCategory === cat.id ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "bg-gray-50 text-gray-400 hover:bg-gray-100")}
-              >{cat.label}</button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {filteredMaterials.map(m => {
-            const cat = CATEGORIES.find(c => c.id === m.category);
-            const Icon = cat?.icon || Package;
-            
-            return (
-              <button
-                key={m.id}
-                onClick={() => setSelectedMaterialId(m.id)}
-                className={cn(
-                  "w-full text-left p-4 rounded-3xl transition-all group border",
-                  selectedMaterialId === m.id ? "bg-white border-indigo-100 shadow-xl shadow-indigo-50 scale-[1.02] z-10" : "hover:bg-gray-50 border-transparent text-gray-700"
-                )}
-              >
-                <div className="flex items-center gap-4">
-                   <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-all", selectedMaterialId === m.id ? "bg-indigo-600 text-white" : cat?.color || "bg-gray-100 text-gray-400")}>
-                      <Icon className="w-6 h-6" />
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className={cn("font-bold text-sm truncate", selectedMaterialId === m.id ? "text-indigo-900" : "text-gray-900")}>
-                          {m.name}
-                        </p>
-                        <ChevronRight className={cn("w-4 h-4 transition-transform", selectedMaterialId === m.id ? "text-indigo-600 translate-x-1" : "text-gray-200")} />
-                      </div>
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-0.5">
-                        Code: {m.code}
-                      </p>
-                   </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Détails & Mouvements (Droite) */}
-      <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-        <AnimatePresence mode="wait">
-          {selectedMaterial ? (
-            <motion.div 
-              key={selectedMaterial.id}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex-1 flex flex-col gap-6"
-            >
-              {/* Header Détails */}
-              <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 opacity-5">
-                   <Package className="w-40 h-40" />
-                </div>
-                <div className="relative flex items-start justify-between">
-                   <div className="flex gap-6">
-                      <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-600">
-                         {(() => {
-                           const Icon = CATEGORIES.find(c => c.id === selectedMaterial.category)?.icon || Package;
-                           return <Icon className="w-10 h-10" />;
-                         })()}
-                      </div>
-                      <div>
-                         <h3 className="text-3xl font-black text-gray-900 tracking-tight">{selectedMaterial.name}</h3>
-                         <div className="flex items-center gap-4 mt-2">
-                            <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-black uppercase tracking-widest">
-                              {CATEGORIES.find(c => c.id === selectedMaterial.category)?.label}
-                            </span>
-                            <div className="w-1 h-1 rounded-full bg-gray-300" />
-                            <span className="text-xs font-bold text-gray-400">ID: {selectedMaterial.code}</span>
-                         </div>
-                      </div>
-                   </div>
-                   <div className="flex gap-2">
-                      <button 
-                        onClick={() => setModal('edit-material')}
-                        className="p-3 bg-white border border-gray-100 text-gray-400 hover:text-indigo-600 rounded-2xl transition-all shadow-sm"
-                      >
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteMaterial(selectedMaterial.id)}
-                        className="p-3 bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white rounded-2xl transition-all shadow-sm"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-6 mt-10">
-                   <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 text-center">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Stock</p>
-                      <p className="text-2xl font-black text-gray-900">
-                        {selectedMaterial.stocks?.reduce((acc: number, s: any) => acc + (s.quantityTotal || 0), 0) || 0}
-                      </p>
-                   </div>
-                   <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 text-center">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Affectés</p>
-                      <p className="text-2xl font-black text-indigo-600">
-                        {selectedMaterial.assignments?.reduce((acc: number, a: any) => acc + (a.quantity || 0), 0) || 0}
-                      </p>
-                   </div>
-                   <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 text-center">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Disponible</p>
-                      <p className="text-2xl font-black text-emerald-600">
-                        {selectedMaterial.stocks?.reduce((acc: number, s: any) => acc + (s.quantityAvailable || 0), 0) || 
-                         ((selectedMaterial.stocks?.reduce((acc: number, s: any) => acc + (s.quantityTotal || 0), 0) || 0) - 
-                          (selectedMaterial.assignments?.reduce((acc: number, a: any) => acc + (a.quantity || 0), 0) || 0))}
-                      </p>
-                   </div>
-                   <div className="p-4 bg-gray-50 rounded-3xl border border-gray-100 text-center">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">État Moyen</p>
-                      <p className="text-sm font-black text-amber-600 flex items-center justify-center gap-1 mt-2">
-                        <AlertCircle className="w-4 h-4" /> BON
-                      </p>
-                   </div>
-                </div>
-              </div>
-
-              {/* Mouvements & Affectations */}
-              <div className="flex-1 grid grid-cols-2 gap-6 min-h-0">
-                 <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm flex flex-col">
-                    <div className="flex items-center justify-between mb-6">
-                       <h4 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                         <History className="w-5 h-5 text-indigo-600" />
-                         Derniers Mouvements
-                       </h4>
-                       <button 
-                         onClick={() => setModal('add-stock')}
-                         className="bg-indigo-50 text-indigo-600 p-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-                       >
-                         <Plus className="w-4 h-4" />
-                       </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                       {selectedMaterial.movements && selectedMaterial.movements.length > 0 ? (
-                         selectedMaterial.movements.map((m: any, i: number) => (
-                           <div key={m.id || i} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100">
-                              <div className="flex items-center gap-3">
-                                 <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", m.movementType === 'IN' ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600")}>
-                                    {m.movementType === 'IN' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                                 </div>
-                                 <div>
-                                    <p className="text-xs font-black text-gray-900">{m.notes || m.reference || (m.movementType === 'IN' ? 'Entrée de stock' : 'Sortie de stock')}</p>
-                                    <p className="text-[10px] text-gray-400 font-bold">Effectué le {new Date(m.createdAt).toLocaleDateString()}</p>
-                                 </div>
-                              </div>
-                              <span className={cn("font-black text-sm", m.movementType === 'IN' ? "text-emerald-600" : "text-amber-600")}>
-                                 {m.movementType === 'IN' ? '+' : '-'}{m.quantity}
-                              </span>
-                           </div>
-                         ))
-                       ) : (
-                         <div className="flex flex-col items-center justify-center h-full text-gray-300 py-6">
-                           <History className="w-8 h-8 mb-2 opacity-20" />
-                           <p className="text-xs font-bold">Aucun mouvement enregistré</p>
-                         </div>
-                       )}
-                    </div>
-                 </div>
-
-                 <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm flex flex-col">
-                    <div className="flex items-center justify-between mb-6">
-                       <h4 className="text-lg font-black text-gray-900 flex items-center gap-2">
-                         <ClipboardCheck className="w-5 h-5 text-indigo-600" />
-                         Affectations Actives
-                       </h4>
-                       <button 
-                        onClick={() => setModal('assign')}
-                        className="bg-indigo-50 text-indigo-600 p-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
-                       >
-                          <Plus className="w-4 h-4" />
-                       </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                       {selectedMaterial.assignments && selectedMaterial.assignments.length > 0 ? (
-                         selectedMaterial.assignments.map((a: any, i: number) => {
-                           const targetName = a.class ? a.class.name : a.teacher ? `${a.teacher.firstName} ${a.teacher.lastName}` : "Inconnu";
-                           return (
-                             <div key={a.id || i} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100">
-                                <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 border border-gray-100">
-                                      {a.classId ? <Layers className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                                   </div>
-                                   <div>
-                                      <p className="text-xs font-black text-gray-900">{targetName}</p>
-                                      <p className="text-[10px] text-gray-400 font-bold">Affecté le {new Date(a.createdAt).toLocaleDateString()}</p>
-                                   </div>
-                                </div>
-                                <span className="font-black text-sm text-indigo-600">x{a.quantity}</span>
-                             </div>
-                           );
-                         })
-                       ) : (
-                         <div className="flex flex-col items-center justify-center h-full text-gray-300 py-6">
-                           <ClipboardCheck className="w-8 h-8 mb-2 opacity-20" />
-                           <p className="text-xs font-bold">Aucune affectation active</p>
-                         </div>
-                       )}
-                    </div>
-                 </div>
-              </div>
-            </motion.div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-[2.5rem] border border-gray-100 border-dashed text-gray-300">
-               <Package className="w-20 h-20 mb-4 opacity-20" />
-               <p className="font-bold">Sélectionnez une ressource pour voir les détails</p>
+          <div>
+            <div className="text-sm font-bold text-slate-900">Inventaire du matériel pédagogique</div>
+            <div className="text-xs text-slate-500">
+              {totalMaterials} type(s) · {totalStock} en stock · {totalAvailable} disponible(s)
             </div>
-          )}
-        </AnimatePresence>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadMaterials}
+            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
+            title="Rafraîchir"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+          >
+            <Plus className="h-4 w-4" />
+            Nouveau matériel
+          </button>
+        </div>
       </div>
 
-      {/* Modal New Material */}
-      <FormModal
-        isOpen={modal === 'create-material'}
-        onClose={() => setModal('none')}
-        title="Ajouter une Ressource"
-        onSave={handleCreateMaterial}
-        fields={[
-          { name: 'name', label: 'Nom de la ressource', type: 'text', placeholder: 'Ex: Tablettes Samsung Galaxy' },
-          { name: 'code', label: 'Code Inventaire', type: 'text', placeholder: 'Ex: TAB-001' },
-          { 
-            name: 'category', 
-            label: 'Catégorie', 
-            type: 'select', 
-            options: CATEGORIES.map(c => ({ value: c.id, label: c.label })) 
-          },
-          { name: 'description', label: 'Description / Spécifications', type: 'textarea' }
-        ]}
-      />
+      {/* === Filtres === */}
+      <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+          <Filter className="h-4 w-4" />
+          Filtrer
+        </div>
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Rechercher par nom ou code..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm"
+          />
+        </div>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[180px]"
+        >
+          <option value="">Toutes catégories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>{c.label}</option>
+          ))}
+        </select>
+        <select
+          value={filterLevel}
+          onChange={(e) => setFilterLevel(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[150px]"
+        >
+          <option value="">Tous niveaux</option>
+          {schoolLevels.map((l: any) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+      </div>
 
-      {/* Modal Edit Material */}
-      <FormModal
-        isOpen={modal === 'edit-material'}
-        onClose={() => setModal('none')}
-        title="Modifier la Ressource"
-        initialData={selectedMaterial}
-        onSave={handleEditMaterial}
-        fields={[
-          { name: 'name', label: 'Nom de la ressource', type: 'text', placeholder: 'Ex: Tablettes Samsung Galaxy' },
-          { name: 'code', label: 'Code Inventaire', type: 'text', placeholder: 'Ex: TAB-001' },
-          { 
-            name: 'category', 
-            label: 'Catégorie', 
-            type: 'select', 
-            options: CATEGORIES.map(c => ({ value: c.id, label: c.label })) 
-          },
-          { name: 'description', label: 'Description / Spécifications', type: 'textarea' }
-        ]}
-      />
+      {/* === Table des matériaux === */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
+        </div>
+      ) : filteredMaterials.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+          <Package className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">
+            {materials.length === 0 ? "Aucun matériel enregistré" : "Aucun matériel ne correspond aux filtres"}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            {materials.length === 0
+              ? "Cliquez sur \"Nouveau matériel\" pour commencer l'inventaire."
+              : "Modifiez vos filtres ou réinitialisez-les."}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Code</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Nom</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Catégorie</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Niveau</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Matière</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Stock total</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Dispo.</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Actif</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMaterials.map((m) => {
+                const cat = getCategoryConfig(m.category);
+                const CatIcon = cat.icon;
+                const stock = m.stocks?.find((s) => s.academicYearId === academicYear?.id);
+                const totalStock = stock?.quantityTotal ?? 0;
+                const available = stock?.quantityAvailable ?? 0;
+                return (
+                  <tr key={m.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 text-xs font-mono text-slate-700">{m.code}</td>
+                    <td className="px-3 py-2 text-sm font-medium text-slate-900">
+                      {m.name}
+                      {m.description && (
+                        <div className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{m.description}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", cat.color)}>
+                        <CatIcon className="h-3 w-3" />
+                        {cat.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {m.schoolLevel?.name || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {m.subject?.name || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-slate-900">{totalStock}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-emerald-700">{available}</td>
+                    <td className="px-3 py-2 text-center">
+                      {m.isActive ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-slate-300 mx-auto" />
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setStockTarget(m)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                          title="Ajouter du stock"
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(m)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          title="Modifier"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(m)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {/* Modal Add Stock */}
-      <FormModal
-        isOpen={modal === 'add-stock'}
-        onClose={() => setModal('none')}
-        title="Ajouter du Stock"
-        onSave={handleAddStock}
-        fields={[
-          { name: 'quantity', label: 'Quantité', type: 'number', placeholder: 'Ex: 10' },
-          { name: 'location', label: 'Emplacement / Salle', type: 'text', placeholder: 'Ex: Bibliothèque, Armoire B' },
-          { 
-            name: 'condition', 
-            label: 'État', 
-            type: 'select', 
-            options: [
-              { value: 'NEW', label: 'Neuf' },
-              { value: 'GOOD', label: 'Bon' },
-              { value: 'DAMAGED', label: 'Endommagé' },
-              { value: 'LOST', label: 'Perdu' }
-            ] 
-          }
-        ]}
-      />
+      {/* === MODAL : Formulaire création/édition === */}
+      {showFormModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b bg-blue-50 border-blue-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Package className="h-8 w-8 text-blue-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {editingMaterial ? "Modifier le matériel" : "Nouveau matériel pédagogique"}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {editingMaterial ? `Code : ${editingMaterial.code}` : "Renseignez les informations du matériel"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowFormModal(false); setEditingMaterial(null); }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Code *</label>
+                  <input
+                    type="text"
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    placeholder="Ex: MANuel-FR-6A"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Catégorie</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Nom *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ex: Manuel de Français 6e — Collection Édicef"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Niveau scolaire *</label>
+                  <select
+                    value={formData.schoolLevelId}
+                    onChange={(e) => setFormData({ ...formData, schoolLevelId: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  >
+                    <option value="">— Sélectionner —</option>
+                    {schoolLevels.map((l: any) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Matière (optionnel)</label>
+                  <select
+                    value={formData.subjectId}
+                    onChange={(e) => setFormData({ ...formData, subjectId: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  >
+                    <option value="">— Aucune —</option>
+                    {subjects.map((s: any) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Description</label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                  placeholder="Ex: Manuel de 152 pages, illustré, conforme au programme officiel..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                Matériel actif (visible dans les distributions)
+              </label>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setShowFormModal(false); setEditingMaterial(null); }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={saving || !formData.code.trim() || !formData.name.trim() || !formData.schoolLevelId}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {editingMaterial ? "Enregistrer" : "Créer le matériel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Modal Assign Material */}
-      <FormModal
-        isOpen={modal === 'assign'}
-        onClose={() => setModal('none')}
-        title="Affecter une Ressource"
-        onSave={handleCreateAssignment}
-        fields={[
-          { name: 'teacherId', label: 'Enseignant', type: 'select', options: teachers.map(t => ({ value: t.id, label: `${t.firstName} ${t.lastName}` })) },
-          { name: 'classId', label: 'Classe (Optionnel)', type: 'select', options: [{ value: '', label: 'Aucune' }, ...classes.map(c => ({ value: c.id, label: c.name }))] },
-          { name: 'quantity', label: 'Quantité', type: 'number', placeholder: 'Ex: 1' },
-          { name: 'conditionAtIssue', label: 'État à la remise', type: 'select', options: [
-              { value: 'NEW', label: 'Neuf' },
-              { value: 'GOOD', label: 'Bon état' },
-              { value: 'DAMAGED', label: 'Endommagé' },
-              { value: 'LOST', label: 'Perdu' }
-            ]
-          },
-          { name: 'notes', label: 'Notes / Remarques', type: 'textarea' }
-        ]}
-      />
+      {/* === MODAL : Ajouter du stock === */}
+      {stockTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-emerald-50 border-emerald-200">
+              <div className="flex items-center gap-3">
+                <ArrowUp className="h-8 w-8 text-emerald-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Ajouter du stock</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{stockTarget.name} ({stockTarget.code})</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-700">
+                Cette opération crée un mouvement de type <strong>PURCHASE</strong> (achat/réapprovisionnement)
+                qui augmentera le stock total et disponible pour l'année en cours.
+              </p>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Quantité à ajouter *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={stockData.quantity}
+                  onChange={(e) => setStockData({ ...stockData, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Notes (optionnel)</label>
+                <textarea
+                  value={stockData.notes}
+                  onChange={(e) => setStockData({ ...stockData, notes: e.target.value })}
+                  rows={3}
+                  placeholder="Ex: Achat effectué le... — Fournisseur:..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => { setStockTarget(null); setStockData({ quantity: 10, notes: "" }); }}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAddStock}
+                disabled={saving || !stockData.quantity}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                Ajouter au stock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === MODAL : Confirmation suppression === */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b bg-rose-50 border-rose-200">
+              <div className="flex items-center gap-3">
+                <Trash2 className="h-8 w-8 text-rose-600" />
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Supprimer le matériel</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{deleteTarget.name} ({deleteTarget.code})</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-700">
+                Vous êtes sur le point de supprimer définitivement ce matériel pédagogique.
+                Cette action est irréversible.
+              </p>
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  Si du stock existe pour ce matériel, il sera également supprimé. Les affectations
+                  aux enseignants ne seront pas supprimées (conservées pour l'historique).
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={saving}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-    </>
   );
 }

@@ -43,6 +43,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
+import { formatWeeklyDuration, minutesToHours } from '@/lib/utils/duration';
 import { useToast } from '@/components/ui/use-toast';
 
 // --- Types ---
@@ -382,10 +383,14 @@ export default function ManualTimetablesEditor() {
             hoursScheduled++;
           }
 
-          if (hoursScheduled < weeklyHours) {
+          // ⭐ hoursScheduled compte le nombre de slots placés (chaque slot ≈ 1h en général).
+          //    weeklyHours est en MINUTES depuis la refonte 2026-08-20 → on convertit en heures
+          //    pour la comparaison et l'affichage (avant : on affichait "5/120h" pour 5 slots / 2h).
+          const weeklyHoursH = Math.max(1, Math.round(minutesToHours(weeklyHours)));
+          if (hoursScheduled < weeklyHoursH) {
             toast({
               title: "Planification Partielle",
-              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHours}h).`,
+              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHoursH}h — soit ${formatWeeklyDuration(weeklyHours)}).`,
               variant: "warning" as any,
             });
           }
@@ -455,10 +460,12 @@ export default function ManualTimetablesEditor() {
             hoursScheduled++;
           }
 
-          if (hoursScheduled < weeklyHours) {
+          // ⭐ Même conversion minutes → heures que le mode titulaire ci-dessus.
+          const weeklyHoursH2 = Math.max(1, Math.round(minutesToHours(weeklyHours)));
+          if (hoursScheduled < weeklyHoursH2) {
             toast({
               title: "Planification Partielle",
-              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHours}h) en raison de contraintes trop strictes.`,
+              description: `Impossible de placer toutes les heures de ${cs.subject.name} (${hoursScheduled}/${weeklyHoursH2}h — soit ${formatWeeklyDuration(weeklyHours)}) en raison de contraintes trop strictes.`,
               variant: "warning" as any,
             });
           }

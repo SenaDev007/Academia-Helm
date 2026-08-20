@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Users, BookOpen, ChevronRight, Loader2, RefreshCw, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { offlineFetch } from "@/lib/offline/offline-fetch";
+import { formatWeeklyDuration } from "@/lib/utils/duration";
 
 interface MyClassesTabProps {
   tenantId: string;
@@ -103,7 +104,7 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
               <span key={s.subjectId} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
                 <BookOpen className="h-3 w-3" />
                 {s.subjectName}
-                {s.weeklyHours ? ` (${s.weeklyHours}h)` : ""}
+                {s.weeklyHours ? ` (${formatWeeklyDuration(s.weeklyHours)})` : ""}
               </span>
             ))}
           </div>

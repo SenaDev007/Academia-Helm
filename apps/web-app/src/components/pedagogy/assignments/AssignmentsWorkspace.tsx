@@ -31,6 +31,7 @@ import { useBilingual } from '@/contexts/BilingualContext';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { formatWeeklyDurationWithSuffix } from '@/lib/utils/duration';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -697,7 +698,7 @@ export default function AssignmentsWorkspace() {
                         <div>
                           <p className="font-bold text-slate-800 text-sm">{cs.subject.name}</p>
                           <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
-                            Coeff. {cs.coefficient} · {cs.weeklyHours}h/sem
+                            Coeff. {cs.coefficient} · {formatWeeklyDurationWithSuffix(cs.weeklyHours)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">

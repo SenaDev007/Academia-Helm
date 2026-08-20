@@ -54,6 +54,7 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { formatWeeklyDuration, minutesToHours } from '@/lib/utils/duration';
 import AssignmentsWorkspace from '../assignments/AssignmentsWorkspace';
 import { MultigradeTab } from './MultigradeTab';
 
@@ -2029,7 +2030,7 @@ export default function TeachersAcademicWorkspace() {
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Heures Totales Affectées</p>
                   <p className="text-lg font-bold text-slate-900 mt-0.5">
-                    {Object.values(globalWorkloads).reduce((sum, w) => sum + w.assigned, 0)}h
+                    {formatWeeklyDuration(Object.values(globalWorkloads).reduce((sum, w) => sum + w.assigned, 0))}
                   </p>
                 </div>
               </div>
@@ -2085,7 +2086,13 @@ export default function TeachersAcademicWorkspace() {
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {teachers.map(t => {
                           const profile = profiles.find(p => p.teacherId === t.id);
-                          const assigned = globalWorkloads[t.id]?.assigned || 0;
+                          // ⭐ assigned est en MINUTES (somme des weeklyHours des class_subjects
+                          //    qui sont stockés en minutes depuis la refonte 2026-08-20).
+                          //    capacity (maxWeeklyHours) est en HEURES (entré par l'utilisateur
+                          //    dans le profil enseignant). On convertit les minutes en heures
+                          //    pour la comparaison et le pourcentage.
+                          const assignedMinutes = globalWorkloads[t.id]?.assigned || 0;
+                          const assigned = minutesToHours(assignedMinutes); // ← en heures maintenant
                           const capacity = profile?.maxWeeklyHours || 18;
                           const percent = Math.min(Math.round((assigned / capacity) * 100), 100);
 
@@ -2184,7 +2191,9 @@ export default function TeachersAcademicWorkspace() {
                               <td className="px-3 py-3">
                                 <div className="space-y-1">
                                   <div className="flex justify-between items-baseline">
-                                    <span className="text-xs font-bold text-slate-900">{assigned}h <span className="text-slate-400 font-normal">/ {capacity}h</span></span>
+                                    <span className="text-xs font-bold text-slate-900">
+                                      {Number.isInteger(assigned) ? `${assigned}h` : `${assigned.toFixed(1)}h`} <span className="text-slate-400 font-normal">/ {capacity}h</span>
+                                    </span>
                                     <span className="text-[9px] font-bold text-slate-400">{percent}%</span>
                                   </div>
                                   <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
@@ -2265,7 +2274,7 @@ export default function TeachersAcademicWorkspace() {
                                           >
                                             <span>{d.label}</span>
                                             <span className={cn('font-black', d.color === 'amber' ? 'text-amber-700' : 'text-indigo-600')}>
-                                              {d.hours}h
+                                              {formatWeeklyDuration(d.hours)}
                                             </span>
                                           </span>
                                         ))}

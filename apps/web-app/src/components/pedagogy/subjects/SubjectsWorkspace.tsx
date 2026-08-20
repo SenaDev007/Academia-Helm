@@ -48,6 +48,7 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { useToast } from '@/components/ui/use-toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
+import { formatWeeklyDuration } from '@/lib/utils/duration';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -59,23 +60,35 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
   Array<{ name: string; code: string; abbreviation: string }>
 > = {
   MATERNELLE: [
-    { name: 'Éducation pour la santé',              abbreviation: 'ES',   code: 'ES-01'   },
-    { name: 'Éducation à des réflexions de santé',  abbreviation: 'ERS',  code: 'ERS-02'  },
-    { name: 'Éducation du mouvement',               abbreviation: 'EM',   code: 'EM-03'   },
-    { name: 'Gestuelle',                            abbreviation: 'GEST', code: 'GEST-04' },
-    { name: 'Rythmique',                            abbreviation: 'RYTH', code: 'RYTH-05' },
-    { name: 'Observation',                          abbreviation: 'OBS',  code: 'OBS-06'  },
-    { name: 'Éducation sensorielle',                abbreviation: 'ESENS',code: 'ESENS-07'},
-    { name: 'Pré-lecture',                          abbreviation: 'PLEC', code: 'PLEC-08' },
-    { name: 'Pré-écriture',                         abbreviation: 'PECR', code: 'PECR-09' },
-    { name: 'Pré-mathématique',                     abbreviation: 'PMAT', code: 'PMAT-10' },
-    { name: 'Expression plastique',                 abbreviation: 'EP',   code: 'EP-11'   },
-    { name: 'Expression émotionnelle',              abbreviation: 'EE',   code: 'EE-12'   },
-    { name: 'Langage',                              abbreviation: 'LANG', code: 'LANG-13' },
-    { name: 'Conte',                                abbreviation: 'CONT', code: 'CONT-14' },
-    { name: 'Comptine',                             abbreviation: 'COMP', code: 'COMP-15' },
-    { name: 'Poésie',                               abbreviation: 'POES', code: 'POES-16' },
-    { name: 'Chant',                                abbreviation: 'CHAN', code: 'CHAN-17' },
+    // ⭐ Refonte 2026-08-21 (catalogue officiel Maternelle Bénin)
+    //    - Renommé 'Éducation pour la santé' → 'Éducation pour la santé et l'environnement'
+    //    - Conservé 'Éducation à des réflexions de santé' (ERS-02)
+    //    - Fusionné Langage + Conte + Comptine + Poésie + Chant → 'Expression orale (...)'
+    //    - Ajouté 'Expression corporelle' (ECORP-18)
+    //    - Renommé 'Expression plastique' → 'Expression plastique (dessin, peinture, coloriage, etc.)'
+    //    - Ajouté 'Éveil scientifique et technologique' (ESTM-19)
+    //    - Conservé Pré-lecture / Pré-mathématique / Pré-écriture
+    { name: 'Éducation pour la santé et l\'environnement',       abbreviation: 'ESE',   code: 'ES-01'    },
+    { name: 'Éducation à des réflexions de santé',               abbreviation: 'ERS',   code: 'ERS-02'  },
+    { name: 'Éducation du mouvement',                            abbreviation: 'EM',    code: 'EM-03'   },
+    { name: 'Gestuelle',                                        abbreviation: 'GEST', code: 'GEST-04' },
+    { name: 'Rythmique',                                        abbreviation: 'RYTH', code: 'RYTH-05' },
+    { name: 'Observation',                                      abbreviation: 'OBS',  code: 'OBS-06'  },
+    { name: 'Éducation sensorielle',                            abbreviation: 'ESENS',code: 'ESENS-07'},
+    { name: 'Pré-lecture',                                      abbreviation: 'PLEC', code: 'PLEC-08' },
+    { name: 'Pré-écriture',                                     abbreviation: 'PECR', code: 'PECR-09' },
+    { name: 'Pré-mathématique',                                 abbreviation: 'PMAT', code: 'PMAT-10' },
+    { name: 'Expression plastique (dessin, peinture, coloriage, etc.)', abbreviation: 'EP',    code: 'EP-11'   },
+    { name: 'Expression émotionnelle',                          abbreviation: 'EE',   code: 'EE-12'   },
+    // ⭐ NOUVEAU : "Expression orale" regroupe Langage, Conte, Comptine, Poésie, Chant
+    //    Avant : 5 matières séparées (LANG-13, CONT-14, COMP-15, POES-16, CHAN-17) qui surchargeaient
+    //    la grille. Maintenant : une seule matière "Expression orale" avec la liste intégrée au nom.
+    { name: 'Expression orale (langage, comptine, poésie, chant, etc.)', abbreviation: 'EO', code: 'EO-18' },
+    // ⭐ NOUVEAU : "Expression corporelle" (n'existait pas avant)
+    { name: 'Expression corporelle',                            abbreviation: 'ECORP', code: 'ECORP-18' },
+    // ⭐ NOUVEAU : "Éveil scientifique et technologique" pour la Maternelle
+    //    (ne pas confondre avec l'EST-05 du Primaire — code distinct)
+    { name: 'Éveil scientifique et technologique',              abbreviation: 'ESTM', code: 'ESTM-19' },
   ],
   PRIMAIRE: [
     { name: 'Expression Écrite',                         abbreviation: 'EE',   code: 'EE-01'   },
@@ -1689,7 +1702,7 @@ export default function SubjectsWorkspace() {
                                )}
                              </td>
                              <td className="px-4 py-3 text-center font-bold text-slate-700 whitespace-nowrap">
-                               {weeklyHoursTotal > 0 ? `${weeklyHoursTotal}h` : <span className="text-slate-400">—</span>}
+                               {weeklyHoursTotal > 0 ? formatWeeklyDuration(weeklyHoursTotal) : <span className="text-slate-400">—</span>}
                              </td>
                              <td className="px-4 py-3 text-right whitespace-nowrap">
                                <div className="flex items-center justify-end gap-1">
@@ -2760,7 +2773,7 @@ function CollapsibleClassSection({ cls, links, cycleLabel, onDeleteLink, onDelet
                         <span className="inline-flex items-center justify-center w-8 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">{link.coefficient || 1}</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-center text-slate-600">{link.weeklyHours ? `${link.weeklyHours}h` : '—'}</td>
+                    <td className="px-4 py-2 text-center text-slate-600">{formatWeeklyDuration(link.weeklyHours)}</td>
                     <td className="px-4 py-2 text-center"><div className="flex items-center justify-center gap-1">
                       <button type="button" onClick={() => { setEditingId(link.id); setEditCoef(link.coefficient || 1); }}
                         className="p-1 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50" title="Modifier le coefficient"><Pencil className="w-3.5 h-3.5" /></button>

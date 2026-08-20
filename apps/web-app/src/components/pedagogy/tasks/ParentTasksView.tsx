@@ -30,7 +30,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
-  ClipboardList, Search, BookOpen, Palette, Users,
+  ClipboardList, Search, BookOpen, Palette, Users, NotebookPen,
   Clock, AlertTriangle, RotateCcw, XCircle, CheckCircle,
   Mic, Presentation, Loader2, Download, Bell, RefreshCw,
   FileText, Calendar, GraduationCap, Inbox,
@@ -65,7 +65,8 @@ const TABS: TabDef[] = [
   { id: 'all',       label: 'Tous',                    icon: ClipboardList, taskTypes: null },
   { id: 'homework',  label: 'Devoirs & Exercices',     icon: ClipboardList, taskTypes: ['HOMEWORK'] },
   { id: 'research',  label: 'Recherches & Exposés',     icon: Search,        taskTypes: ['RESEARCH'] },
-  { id: 'lessons',   label: 'Leçons & Récitations',    icon: BookOpen,     taskTypes: ['LESSON', 'RECITATION'] },
+  { id: 'notebooks', label: 'Cahiers & Copies',        icon: NotebookPen,   taskTypes: ['LESSON'] },
+  { id: 'lessons',   label: 'Récitations',              icon: BookOpen,      taskTypes: ['RECITATION'] },
   { id: 'practical', label: 'Activités pratiques',     icon: Palette,       taskTypes: ['PRACTICAL', 'PROJECT'] },
 ];
 
@@ -636,15 +637,24 @@ function TaskCard({ task }: TaskCardProps) {
           )}
         </div>
 
-        {/* Description / consigne */}
+        {/* Description / consigne / contenu de la leçon */}
         {task.description && (
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Consigne
+              {task.taskType === 'LESSON' ? 'Leçon / Retenons' : 'Consigne'}
             </p>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {task.description}
-            </p>
+            {task.taskType === 'LESSON' ? (
+              <div
+                className="text-sm text-slate-700 leading-relaxed prose prose-sm max-w-none
+                  prose-headings:text-slate-800 prose-strong:text-slate-800
+                  prose-em:text-slate-600 prose-ul:list-disc prose-ol:list-decimal"
+                dangerouslySetInnerHTML={{ __html: task.description }}
+              />
+            ) : (
+              <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                {task.description}
+              </p>
+            )}
           </div>
         )}
 
@@ -701,8 +711,62 @@ function TaskCard({ task }: TaskCardProps) {
           <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-lg space-y-1.5">
             <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
               <CheckCircle className="h-3 w-3" />
-              Évaluation
+              {task.taskType === 'LESSON' ? 'Contrôle du cahier' : 'Évaluation'}
             </p>
+
+            {/* ⭐ Pour les LESSON : afficher "Cahier propre" + "Leçon copiée" en badges */}
+            {task.taskType === 'LESSON' && status !== 'PENDING' && (
+              <div className="flex flex-wrap gap-2">
+                {/* Cahier propre = dérivé du statut */}
+                {status !== 'TO_REDO' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                    <CheckCircle className="h-3 w-3" /> Cahier propre
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+                    <XCircle className="h-3 w-3" /> Cahier à refaire
+                  </span>
+                )}
+                {/* Leçon copiée = dérivé du statut */}
+                {status === 'DONE' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                    <CheckCircle className="h-3 w-3" /> Leçon copiée
+                  </span>
+                )}
+                {status === 'INCOMPLETE' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                    <Clock className="h-3 w-3" /> Copie partielle
+                  </span>
+                )}
+                {status === 'NOT_DONE' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+                    <XCircle className="h-3 w-3" /> Leçon non copiée
+                  </span>
+                )}
+                {status === 'TO_REDO' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+                    <XCircle className="h-3 w-3" /> À refaire
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* ⭐ Pour les RECITATION : afficher "Récitation réussie/échouée" */}
+            {task.taskType === 'RECITATION' && status !== 'PENDING' && (
+              <div className="flex flex-wrap gap-2">
+                {status === 'RECITED' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                    <CheckCircle className="h-3 w-3" /> Récitation réussie
+                  </span>
+                )}
+                {status === 'NOT_RECITED' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+                    <XCircle className="h-3 w-3" /> Récitation échouée
+                  </span>
+                )}
+              </div>
+            )}
+
             {score != null && maxScore != null && (
               <p className="text-sm font-bold text-emerald-800">
                 Note : {score}/{maxScore}

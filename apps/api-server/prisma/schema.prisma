@@ -12714,11 +12714,25 @@ model TeacherMaterialAssignment {
   notes            String?
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+  // ⭐ Suivi des retours en fin d'année (refonte 2026-08-20)
+  //    Workflow : PENDING → SUBMITTED (enseignant clique Envoyer) → VALIDATED / REJECTED (direction)
+  returnQuantity       Int?
+  returnCondition      String?
+  returnStatus         String              @default("PENDING")
+  returnNotes          String?
+  returnSignatureUrl   String?
+  returnSentAt         DateTime?
+  returnValidatedAt    DateTime?
+  returnValidatedBy    String?
+  returnRejectionReason String?
+  lostQuantity         Int                 @default(0)
+  lostNotes            String?
   academicYear     AcademicYear        @relation(fields: [academicYearId], references: [id])
   class            Class?              @relation("TeacherMaterialAssignmentClass", fields: [classId], references: [id])
   material         PedagogicalMaterial @relation(fields: [materialId], references: [id])
   schoolLevel      SchoolLevel         @relation(fields: [schoolLevelId], references: [id])
   signer           User?               @relation("TeacherMaterialAssignmentSigner", fields: [signedBy], references: [id])
+  returnValidator User?               @relation("TeacherMaterialAssignmentReturnValidator", fields: [returnValidatedBy], references: [id])
   teacher          Teacher             @relation(fields: [teacherId], references: [id])
   tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12726,6 +12740,7 @@ model TeacherMaterialAssignment {
   @@index([materialId])
   @@index([schoolLevelId])
   @@index([signed])
+  @@index([returnStatus])
   @@map("teacher_material_assignments")
 }
 

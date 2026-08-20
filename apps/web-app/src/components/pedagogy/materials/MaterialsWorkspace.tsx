@@ -102,33 +102,46 @@ export default function MaterialsWorkspace() {
     notes: "",
   });
 
-  // === Charger les niveaux scolaires ===
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/pedagogy/academic-structure/levels`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        setSchoolLevels(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
-      } catch { setSchoolLevels([]); }
-    })();
-  }, []);
-
-  // === Charger les matières (avec academicYearId obligatoire) ===
+  // === Charger les niveaux scolaires (REQUIERT academicYearId) ===
   useEffect(() => {
     if (!academicYear?.id) return;
     (async () => {
       try {
         const res = await fetch(
-          `/api/pedagogy/subjects?academicYearId=${encodeURIComponent(academicYear.id)}`,
+          `/api/pedagogy/academic-structure/levels?academicYearId=${encodeURIComponent(academicYear.id)}`,
           { credentials: "include" },
         );
         const data = await res.json();
-        setSubjects(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
-      } catch { setSubjects([]); }
+        setSchoolLevels(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
+      } catch { setSchoolLevels([]); }
     })();
   }, [academicYear?.id]);
+
+  // === Charger les matières (filtrées par niveau scolaire si sélectionné) ===
+  // ⭐ Le select "Niveau scolaire" filtre dynamiquement la liste des matières
+  //    pour n'afficher que celles du niveau choisi (cohérence pédagogique).
+  const loadSubjects = useCallback(async (levelId?: string) => {
+    if (!academicYear?.id) return;
+    try {
+      const params = new URLSearchParams({ academicYearId: academicYear.id });
+      if (levelId) params.append("schoolLevelId", levelId);
+      const res = await fetch(
+        `/api/pedagogy/subjects?${params.toString()}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      setSubjects(Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []));
+    } catch { setSubjects([]); }
+  }, [academicYear?.id]);
+
+  // Charge toutes les matières au montage (sans filtre niveau)
+  useEffect(() => { loadSubjects(); }, [loadSubjects]);
+
+  // Re-charge les matières quand le filtre niveau change dans le formulaire
+  const handleSchoolLevelChange = useCallback((levelId: string) => {
+    setFormData((prev) => ({ ...prev, schoolLevelId: levelId, subjectId: "" }));
+    loadSubjects(levelId);
+  }, [loadSubjects]);
 
   // === Charger les matériaux ===
   const loadMaterials = useCallback(async () => {
@@ -170,15 +183,18 @@ export default function MaterialsWorkspace() {
   // === Ouvrir modal création ===
   const openCreateModal = () => {
     setEditingMaterial(null);
+    const defaultLevelId = schoolLevel?.id || schoolLevels[0]?.id || "";
     setFormData({
       code: "",
       name: "",
       category: "BOOK",
       description: "",
-      schoolLevelId: schoolLevel?.id || schoolLevels[0]?.id || "",
+      schoolLevelId: defaultLevelId,
       subjectId: "",
       isActive: true,
     });
+    // Charger les matières du niveau par défaut
+    loadSubjects(defaultLevelId);
     setShowFormModal(true);
   };
 
@@ -194,6 +210,8 @@ export default function MaterialsWorkspace() {
       subjectId: m.subjectId || "",
       isActive: m.isActive,
     });
+    // Charger les matières du niveau du matériel en cours d'édition
+    loadSubjects(m.schoolLevelId);
     setShowFormModal(true);
   };
 
@@ -544,14 +562,17 @@ export default function MaterialsWorkspace() {
                   <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Niveau scolaire *</label>
                   <select
                     value={formData.schoolLevelId}
-                    onChange={(e) => setFormData({ ...formData, schoolLevelId: e.target.value })}
+                    onChange={(e) => handleSchoolLevelChange(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   >
                     <option value="">— Sélectionner —</option>
                     {schoolLevels.map((l: any) => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
+                      <option key={l.id} value={l.id}>{l.name || l.label || l.code}</option>
                     ))}
                   </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Sélectionner un niveau filtre la liste des matières ci-contre.
+                  </p>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Matière (optionnel)</label>
@@ -559,10 +580,11 @@ export default function MaterialsWorkspace() {
                     value={formData.subjectId}
                     onChange={(e) => setFormData({ ...formData, subjectId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    disabled={!formData.schoolLevelId}
                   >
                     <option value="">— Aucune —</option>
                     {subjects.map((s: any) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                      <option key={s.id} value={s.id}>{s.name}{s.code ? ` [${s.code}]` : ""}</option>
                     ))}
                   </select>
                 </div>

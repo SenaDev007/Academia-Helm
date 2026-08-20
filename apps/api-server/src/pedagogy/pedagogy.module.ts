@@ -77,6 +77,10 @@ import { StorageService } from '../common/services/storage.service';
 import { PedagogicalSpaceService } from './pedagogical-space.service';
 import { PedagogicalSpaceController } from './pedagogical-space.controller';
 
+// Module 2 - Suivi des retours de matériel pédagogique (refonte 2026-08-20)
+import { MaterialReturnsService } from './material-returns.service';
+import { MaterialReturnsController } from './material-returns.controller';
+
 // Module 2 - SaisieMaster Evaluations (notes/évaluations)
 import { SaisieMasterService } from './saisiemaster.service';
 import { SaisieMasterController } from './saisiemaster.controller';
@@ -115,6 +119,8 @@ import { SaisieMasterController } from './saisiemaster.controller';
     PedagogyNotificationController,
     // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
     PedagogicalSpaceController,
+    // Module 2 - Suivi des retours de matériel pédagogique
+    MaterialReturnsController,
     // Module 2 - SaisieMaster Evaluations
     SaisieMasterController,
   ],
@@ -159,6 +165,8 @@ import { SaisieMasterController } from './saisiemaster.controller';
     PedagogyPdfDocumentService,
     // Module 2 - SaisieMaster Evaluations
     SaisieMasterService,
+    // Module 2 - Suivi des retours de matériel pédagogique
+    MaterialReturnsService,
     // ⭐ PuppeteerPoolService pour les exports PDF (registre d'appel, cahier journal)
     PuppeteerPoolService,
   ],

@@ -1,0 +1,56 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
+
+/**
+ * BFF proxy for /api/pedagogy/material-returns/*
+ *
+ * Forwards to backend NestJS controller:
+ *   /pedagogy/material-returns/*
+ *
+ * All responses are no-store (volatile — teachers submit returns at any time,
+ * directors validate at any time, must reflect changes immediately).
+ */
+
+function buildBackendUrl(pathSegments: string[]): string {
+  const path = pathSegments.length ? pathSegments.join('/') : '';
+  return nestControllerUrl(
+    `pedagogy/material-returns${path ? `/${path}` : ''}`,
+  );
+}
+
+async function forward(request: NextRequest, pathSegments: string[], method: string) {
+  const url = new URL(buildBackendUrl(pathSegments));
+  request.nextUrl.searchParams.forEach((value, key) => {
+    url.searchParams.append(key, value);
+  });
+  const headers = await getProxyAuthHeaders(request);
+  try {
+    const options: RequestInit = { method, headers, cache: 'no-store' };
+    const bodyText = await readProxyBodyText(request, method);
+    if (bodyText !== undefined) options.body = bodyText;
+    const res = await fetch(normalizeApiUrl(url.toString()), options);
+    const data = await res.json().catch(() => ({}));
+    return NextResponse.json(data, { status: res.status });
+  } catch (e) {
+    console.error('Material returns API error:', e);
+    return NextResponse.json({ error: 'Service indisponible' }, { status: 502 });
+  }
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+  const { path } = await params;
+  return forward(request, path ?? [], 'GET');
+}
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+  const { path } = await params;
+  return forward(request, path ?? [], 'POST');
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path?: string[] }> }) {
+  const { path } = await params;
+  return forward(request, path ?? [], 'PATCH');
+}

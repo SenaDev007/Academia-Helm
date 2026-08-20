@@ -12,6 +12,7 @@ import {
   BarChart3,
   CalendarDays,
   NotebookPen,
+  Package,
 } from 'lucide-react';
 
 /**
@@ -216,6 +217,20 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     roles: [
       'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
       'director', 'admin', 'TEACHER', 'TEACHER_RESP',
+      'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
+      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
+    ],
+  },
+  {
+    id: 'pedagogical-materials',
+    label: 'Matériel Pédagogique',
+    path: '/app/pedagogy/pedagogical-materials',
+    icon: Package,
+    roles: [
+      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+      'director', 'admin',
       'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
       'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
       'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',

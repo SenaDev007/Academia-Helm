@@ -1939,6 +1939,7 @@ model User {
   generatedStudentIdentifiers               StudentIdentifier[]               @relation("StudentIdentifierGenerator")
   studentTransferMessages                   StudentTransferMessage[]
   teacherMaterialAssignmentSigners          TeacherMaterialAssignment[]       @relation("TeacherMaterialAssignmentSigner")
+  teacherMaterialAssignmentReturnValidators TeacherMaterialAssignment[]       @relation("TeacherMaterialAssignmentReturnValidator")
   createdTeachers                           Teacher[]
   disabledFeatures                          TenantFeature[]                   @relation("TenantFeatureDisabledBy")
   enabledFeatures                           TenantFeature[]                   @relation("TenantFeatureEnabledBy")

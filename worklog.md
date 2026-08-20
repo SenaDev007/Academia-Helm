@@ -6990,3 +6990,62 @@ Stage Summary:
 - Migration à appliquer sur Neon prod DB : 20260820120000_add_teacher_signature_url/migration.sql
 - 5 fichiers modifiés : parent/cahier-journal/page.tsx, CahierDeTexteTab.tsx, pedagogical-space.controller.ts, pedagogical-space.service.ts, schema.prisma
 - 1 nouvelle migration : 20260820120000_add_teacher_signature_url/migration.sql
+
+---
+Task ID: Phase-6-MaterielPedagogique
+Agent: main
+Task: Création onglet Matériel Pédagogique dans Organisation Pédagogique + sous-onglet enseignant dans Espace Pédagogique
+
+Work Log:
+- EXPLORATION : Identifié PEDAGOGY_SUBMODULE_TABS dans pedagogy-tabs.tsx (position de 'timetables' = index 4)
+- EXPLORATION : Composants existants : MaterialsWorkspace.tsx (608 lignes), schema-material-pedagogique.prisma (148 lignes, 5 modèles), teacher-material-assignments-prisma.controller/service
+- MIGRATION : Ajouté colonne signatureUrl à teachers (appliquée sur Neon prod DB via pg Node)
+- MIGRATION : Ajouté colonnes de suivi des retours à teacher_material_assignments :
+  * returnQuantity, returnCondition, returnStatus (PENDING|SUBMITTED|VALIDATED|REJECTED)
+  * returnNotes, returnSignatureUrl, returnSentAt, returnValidatedAt, returnValidatedBy
+  * returnRejectionReason, lostQuantity, lostNotes
+  * Index sur returnStatus + index partiel WHERE returnStatus = 'SUBMITTED'
+  * Appliquée sur Neon prod DB via pg Node
+- SCHEMA PRISMA : Mis à jour schema-material-pedagogique.prisma (champs return* sur TeacherMaterialAssignment)
+- SCHEMA PRISMA : Mis à jour schema.prisma (relation inverse User.teacherMaterialAssignmentReturnValidators)
+- BACKEND NOUVEAU : MaterialReturnsService + MaterialReturnsController
+  * GET /pedagogy/material-returns/my-assignments (résolution user.id → teacher.id)
+  * PATCH /pedagogy/material-returns/:id/return (update returnQuantity/returnCondition/returnNotes)
+  * POST /pedagogy/material-returns/submit (bulk submit avec signature)
+  * GET /pedagogy/material-returns/pending (vue direction)
+  * GET /pedagogy/material-returns/history (vue historique filtrable)
+  * POST /pedagogy/material-returns/:id/validate (direction valide avec lostQuantity/lostNotes)
+  * POST /pedagogy/material-returns/:id/reject (direction refuse avec motif)
+  * Utilise $queryRawUnsafe / $executeRawUnsafe (indépendant du client Prisma régénéré)
+- BFF : Créé route /api/pedagogy/material-returns/[[...path]]/route.ts (no-store)
+- PEDAGOGY MODULE : Enregistré MaterialReturnsService + MaterialReturnsController dans pedagogy.module.ts
+- TAB CONFIG : Ajouté onglet 'pedagogical-materials' (id, label 'Matériel Pédagogique', icon Package) dans PEDAGOGY_SUBMODULE_TABS juste après 'timetables'
+- FRONTEND ADMIN : Créé PedagogicalMaterialsDashboard.tsx avec 4 sous-onglets :
+  * Inventaire — réutilise MaterialsWorkspace existant
+  * Distribution — liste groupée par enseignant avec filtres teacherId/classId
+  * Retour — soumissions SUBMITTED avec validation/refus + lostQuantity/lostNotes
+  * Historique — vue annuelle filtrable par enseignant + classe + statut
+- FRONTEND ENSEIGNANT : Créé TeacherMaterialsWorkspace.tsx
+  * Charge automatiquement toutes les attributions de l'enseignant (via user.id résolu)
+  * Groupé par catégorie (Manuels, Guides, Labo, etc.) avec icônes/colors
+  * Stats globales (à compléter / soumis / validés / total)
+  * Édition inline : returnQuantity (input number), returnCondition (select), returnNotes (input text)
+  * Verrouillage si SUBMITTED/VALIDATED (read-only)
+  * Highlight rose si REJECTED + motif visible
+  * Bouton "Signer et envoyer" → modal avec récapitulatif + SignatureCanvas + bulk submit
+- BRANCHAGE : PedagogicalSpaceWorkspace.tsx importe maintenant TeacherMaterialsWorkspace pour l'onglet 'materiel' (au lieu de MaterialsWorkspace admin)
+- PAGE UPDATE : /app/pedagogy/pedagogical-materials/page.tsx utilise PedagogicalMaterialsDashboard
+- TypeScript check : 0 erreur sur les fichiers modifiés/nouveaux
+
+Stage Summary:
+- Migration teachers.signatureUrl appliquée sur Neon prod DB ✅
+- Migration teacher_material_assignments return-tracking appliquée sur Neon prod DB ✅
+- Onglet "Matériel Pédagogique" visible dans Organisation Pédagogique juste après "Emploi du temps" ✅
+- 4 sous-onglets admin (Inventaire / Distribution / Retour / Historique) opérationnels ✅
+- Sous-onglet "Matériel" dans Espace Pédagogique enseignant ✅ :
+  * Vue auto des attributions par catégorie
+  * Saisie retour (qté + état + notes) inline
+  * Signature pad + bouton "Envoyer" → notifie la direction
+- Workflow complet : PENDING → SUBMITTED (enseignant) → VALIDATED/REJECTED (direction) ✅
+- 6 fichiers créés : MaterialReturnsService, MaterialReturnsController, PedagogicalMaterialsDashboard, TeacherMaterialsWorkspace, BFF route, 2 migrations
+- 4 fichiers modifiés : pedagogy-tabs.tsx, pedagogy.module.ts, PedagogicalSpaceWorkspace.tsx, page.tsx, schema-material-pedagogique.prisma, schema.prisma

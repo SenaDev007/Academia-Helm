@@ -45,7 +45,7 @@ import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
-import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
+import { TeacherMaterialsWorkspace } from "@/components/pedagogy/materials/TeacherMaterialsWorkspace";
 import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
@@ -246,7 +246,7 @@ export function PedagogicalSpaceWorkspace({
             <TeacherTasksWorkspace />
           )}
           {tab === 'materiel' && (
-            <MaterialsWorkspace />
+            <TeacherMaterialsWorkspace teacherId={teacherId} academicYearId={resolvedAcademicYearId} />
           )}
         </div>
       </div>

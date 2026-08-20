@@ -106,6 +106,21 @@ model TeacherMaterialAssignment {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // ⭐ Suivi des retours en fin d'année (refonte 2026-08-20)
+  //    Workflow : PENDING → SUBMITTED (enseignant clique Envoyer) → VALIDATED / REJECTED (direction)
+  //    lostQuantity = quantity - returnQuantity  (matériel non retourné / perdu)
+  returnQuantity       Int?      // combien d'items retournés
+  returnCondition      String?   // NEW | GOOD | USED | DAMAGED | LOST
+  returnStatus         String    @default("PENDING") // PENDING | SUBMITTED | VALIDATED | REJECTED
+  returnNotes          String?  @db.Text
+  returnSignatureUrl   String?   // base64 de la signature de l'enseignant
+  returnSentAt         DateTime?
+  returnValidatedAt    DateTime?
+  returnValidatedBy    String?
+  returnRejectionReason String? @db.Text
+  lostQuantity         Int       @default(0)
+  lostNotes            String?  @db.Text
+
   tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear  AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   teacher       Teacher             @relation(fields: [teacherId], references: [id], onDelete: Restrict)
@@ -113,11 +128,13 @@ model TeacherMaterialAssignment {
   schoolLevel   SchoolLevel         @relation(fields: [schoolLevelId], references: [id], onDelete: Restrict)
   class         Class?              @relation("TeacherMaterialAssignmentClass", fields: [classId], references: [id], onDelete: SetNull)
   signer        User?               @relation("TeacherMaterialAssignmentSigner", fields: [signedBy], references: [id], onDelete: SetNull)
+  returnValidator User?             @relation("TeacherMaterialAssignmentReturnValidator", fields: [returnValidatedBy], references: [id], onDelete: SetNull)
 
   @@index([tenantId, academicYearId, teacherId])
   @@index([materialId])
   @@index([schoolLevelId])
   @@index([signed])
+  @@index([returnStatus])
   @@map("teacher_material_assignments")
 }
 

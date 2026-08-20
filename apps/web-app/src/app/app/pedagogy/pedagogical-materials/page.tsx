@@ -2,6 +2,12 @@
  * ============================================================================
  * MODULE 2 : ORGANISATION PÉDAGOGIQUE - MATÉRIEL PÉDAGOGIQUE
  * ============================================================================
+ *
+ * Refonte 2026-08-20 — 4 sous-onglets :
+ *   1. Inventaire (catalogue + stocks)
+ *   2. Distribution aux enseignants (affectations)
+ *   3. Retour (soumissions à valider par la direction)
+ *   4. Historique (vue annuelle filtrable)
  */
 
 'use client';
@@ -9,7 +15,7 @@
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import { useAppSession } from '@/contexts/AppSessionContext';
-import MaterialsWorkspace from '@/components/pedagogy/materials/MaterialsWorkspace';
+import { PedagogicalMaterialsDashboard } from '@/components/pedagogy/materials/PedagogicalMaterialsDashboard';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function MaterialsPage() {
@@ -23,8 +29,8 @@ export default function MaterialsPage() {
       header={{
         title: 'Matériel pédagogique',
         description: academicYear
-          ? `Gestion de l'inventaire et des ressources physiques — année ${academicYear.label}`
-          : 'Suivi des stocks, des affectations et de la maintenance du matériel',
+          ? `Inventaire, distribution aux enseignants, retours et historique — année ${academicYear.label}`
+          : 'Gestion de l\'inventaire et des ressources physiques',
         icon: 'package'
       }}
       subModules={{
@@ -41,7 +47,7 @@ export default function MaterialsPage() {
       }}
       content={{
         layout: 'custom',
-        children: <MaterialsWorkspace />,
+        children: <PedagogicalMaterialsDashboard />,
       }}
     />
   );

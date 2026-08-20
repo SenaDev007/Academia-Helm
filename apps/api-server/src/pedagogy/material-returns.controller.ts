@@ -253,4 +253,40 @@ export class MaterialReturnsController {
     });
     res.end(buffer);
   }
+
+  /// ⭐ Comparaison automatique : reçu vs rendu (vue direction)
+  ///    Calcule pour chaque enseignant : total reçu, total rendu, total perdu,
+  ///    écart, statut (COMPLET / PARTIEL / PERTE / NON_RETOURNE).
+  @Get('return-comparison')
+  async getReturnComparison(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.service.getReturnComparison(tenantId, academicYearId, schoolLevelId);
+  }
+
+  /// ⭐ PDF — Rapport de comparaison reçu vs rendu (vue direction)
+  ///    Pour chaque enseignant : total reçu, rendu, perdu, écart, statut.
+  @Get('comparison-pdf')
+  async exportComparisonPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Res() res: any,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    const buffer = await this.service.exportComparisonPdf(tenantId, academicYearId, schoolLevelId);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="comparaison_retours_materiel_${academicYearId.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
 }

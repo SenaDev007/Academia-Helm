@@ -36,6 +36,7 @@ const SUB_TABS = [
   { id: "inventaire", label: "Inventaire", icon: Package },
   { id: "distribution", label: "Distribution aux enseignants", icon: ClipboardList },
   { id: "retour", label: "Retour", icon: Undo2 },
+  { id: "suivi", label: "Suivi des retours", icon: CheckCircle2 },
   { id: "historique", label: "Historique", icon: History },
 ] as const;
 
@@ -109,6 +110,12 @@ export function PedagogicalMaterialsDashboard() {
         <ReturnsView
           academicYearId={academicYear?.id ?? ""}
           user={user}
+        />
+      )}
+
+      {activeTab === "suivi" && (
+        <SuiviRetoursView
+          academicYearId={academicYear?.id ?? ""}
         />
       )}
 
@@ -1239,6 +1246,231 @@ function HistoryView({ academicYearId }: HistoryViewProps) {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// SOUS-ONGLET 4 (NOUVEAU) : SUIVI DES RETOURS — comparaison reçu vs rendu
+// ============================================================================
+
+interface SuiviRetoursViewProps {
+  academicYearId: string;
+}
+
+const SUIVI_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  COMPLET: { label: "Complet", color: "bg-emerald-100 text-emerald-700" },
+  PARTIEL: { label: "Partiel", color: "bg-amber-100 text-amber-700" },
+  PERTE: { label: "Perte", color: "bg-rose-100 text-rose-700" },
+  NON_RETOURNE: { label: "Non retourné", color: "bg-rose-100 text-rose-700" },
+  EN_ATTENTE: { label: "En attente", color: "bg-amber-100 text-amber-700" },
+  AUCUN: { label: "Aucun matériel", color: "bg-slate-100 text-slate-700" },
+};
+
+function SuiviRetoursView({ academicYearId }: SuiviRetoursViewProps) {
+  const [comparisons, setComparisons] = useState<any[]>([]);
+  const [totals, setTotals] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [filterLevelId, setFilterLevelId] = useState("");
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
+
+  const loadComparison = useCallback(async () => {
+    if (!academicYearId) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ academicYearId });
+      if (filterLevelId) params.append("schoolLevelId", filterLevelId);
+      const res = await fetch(
+        `/api/pedagogy/material-returns/return-comparison?${params.toString()}`,
+        { credentials: "include" },
+      );
+      const data = await res.json();
+      setComparisons(Array.isArray(data?.comparisons) ? data.comparisons : []);
+      setTotals(data?.totals || null);
+    } catch {
+      setComparisons([]);
+      setTotals(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId, filterLevelId]);
+
+  useEffect(() => { loadComparison(); }, [loadComparison]);
+
+  useEffect(() => {
+    if (!academicYearId) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pedagogy/material-returns/school-levels?academicYearId=${encodeURIComponent(academicYearId)}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+        setSchoolLevels(Array.isArray(data) ? data : []);
+      } catch { setSchoolLevels([]); }
+    })();
+  }, [academicYearId]);
+
+  const exportComparisonPdf = async () => {
+    if (!academicYearId) return;
+    setExportingPdf(true);
+    try {
+      const params = new URLSearchParams({ academicYearId });
+      if (filterLevelId) params.append("schoolLevelId", filterLevelId);
+      const res = await fetch(
+        `/api/pedagogy/material-returns/comparison-pdf?${params.toString()}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erreur génération PDF");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `comparaison_retours_materiel.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF comparaison généré");
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-50 rounded-lg">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-slate-900">Suivi des retours</div>
+            <div className="text-xs text-slate-500">
+              Comparaison automatique reçu vs rendu — identifie les pertes
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadComparison}
+            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
+            title="Rafraîchir"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          <button
+            onClick={exportComparisonPdf}
+            disabled={exportingPdf || !academicYearId}
+            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+            title="PDF rapport de comparaison"
+          >
+            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            PDF Comparaison
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+          <Filter className="h-4 w-4" />
+          Niveau
+        </div>
+        <select
+          value={filterLevelId}
+          onChange={(e) => setFilterLevelId(e.target.value)}
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[150px]"
+        >
+          <option value="">Tous les niveaux</option>
+          {schoolLevels.map((l: any) => (
+            <option key={l.id} value={l.id}>{l.name || l.label || l.code}</option>
+          ))}
+        </select>
+      </div>
+
+      {totals && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          <StatCard label="Enseignants" value={totals.teachersCount} color="text-slate-900" />
+          <StatCard label="Total reçu" value={totals.totalReceived} color="text-slate-900" />
+          <StatCard label="Total rendu" value={totals.totalReturned} color="text-emerald-700" />
+          <StatCard label="Total perdu" value={totals.totalLost} color="text-rose-700" />
+          <StatCard label="Complets" value={totals.completeCount} color="text-emerald-700" />
+          <StatCard label="Partiels" value={totals.partialCount} color="text-amber-700" />
+          <StatCard label="Pertes" value={totals.lostCount} color="text-rose-700" />
+          <StatCard label="En attente" value={totals.pendingCount} color="text-amber-700" />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-300" />
+        </div>
+      ) : comparisons.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+          <CheckCircle2 className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">Aucune distribution à comparer</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Les enseignants apparaîtront ici dès qu'ils recevront du matériel.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Enseignant</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Matricule</th>
+                <th className="text-left px-3 py-2 text-xs font-bold text-slate-500 uppercase">Niveau</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Items</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Reçu</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Rendu</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Perdu</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Écart</th>
+                <th className="text-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparisons.map((c: any) => {
+                const cfg = SUIVI_STATUS_CONFIG[c.status] || SUIVI_STATUS_CONFIG.AUCUN;
+                return (
+                  <tr key={c.teacherId} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 text-sm font-medium text-slate-900">{c.teacherName}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600 font-mono">{c.teacherMatricule || "—"}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{c.schoolLevelName || "—"}</td>
+                    <td className="px-3 py-2 text-center text-sm text-slate-600">{c.itemsCount}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-slate-900">{c.totalReceived}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-emerald-700">{c.totalReturned}</td>
+                    <td className="px-3 py-2 text-center text-sm font-bold text-rose-700">{c.totalLost}</td>
+                    <td className="px-3 py-2 text-center text-sm text-slate-700">
+                      {c.difference === 0 ? "0" : `+${c.difference}`}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={cn2("inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold", cfg.color)}>
+                        {cfg.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
+  return (
+    <div className="p-3 bg-white rounded-xl border border-slate-200">
+      <div className="text-[10px] text-slate-500 uppercase font-bold">{label}</div>
+      <div className={cn2("text-2xl font-bold", color)}>{value}</div>
     </div>
   );
 }

@@ -494,9 +494,17 @@ export class MaterialReturnsService {
     );
 
     const teacherInfo: any = await this.prisma.$queryRawUnsafe(
-      `SELECT t."firstName", t."lastName", t."matricule", t."email"
-       FROM "teachers" t WHERE t."id" = $1`,
-      data.teacherId,
+      `SELECT t."firstName", t."lastName", t."matricule", t."email", t."signatureUrl",
+              c."name" as "mainClassName"
+       FROM "teachers" t
+       LEFT JOIN "teacher_class_assignments" tca
+         ON tca."teacherId" = t."id"
+         AND tca."tenantId" = $2
+         AND tca."academicYearId" = $3
+         AND tca."isMainTitular" = true
+       LEFT JOIN "classes" c ON c."id" = tca."classId"
+       WHERE t."id" = $1`,
+      data.teacherId, tenantId, academicYearId,
     );
 
     const html = this.buildReceiptPdfHtml({
@@ -614,6 +622,8 @@ export class MaterialReturnsService {
   }
 
   /// Construit l'en-tête HTML commun à tous les PDF (logo + nom école + watermark)
+  ///    ⭐ Sans le bloc "Academia Helm — Système Pédagogique" à droite
+  ///    (supprimé à la demande de l'utilisateur pour alléger l'en-tête).
   private buildSchoolHeader(school: any): string {
     const logoUrl = this.resolveLogoUrl(school.logoUrl);
     const logoHtml = logoUrl
@@ -626,7 +636,7 @@ export class MaterialReturnsService {
       : '';
 
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1e3a8a;padding-bottom:10px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;border-bottom:3px solid #1e3a8a;padding-bottom:10px;margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:15px;">
           ${logoHtml}
           <div>
@@ -634,12 +644,50 @@ export class MaterialReturnsService {
             ${schoolAcronym ? `<div style="font-size:11px;color:#64748b;">${schoolAcronym}</div>` : ''}
           </div>
         </div>
-        <div style="text-align:right;font-size:9px;color:#64748b;">
-          Academia Helm — Système Pédagogique
-        </div>
       </div>
       ${watermark}
     `;
+  }
+
+  /// ⭐ Traduit une catégorie de matériel en français lisible.
+  ///    Avant ce fix : le PDF affichait "BOOK" brut au lieu de "Manuel scolaire".
+  private translateCategory(category: string | null | undefined): string {
+    const map: Record<string, string> = {
+      BOOK: 'Manuel scolaire',
+      TEACHER_GUIDE: 'Guide pédagogique',
+      OFFICIAL_DOCUMENT: 'Document officiel',
+      DIDACTIC_SUPPORT: 'Support didactique',
+      LAB_MATERIAL: 'Matériel de laboratoire',
+      OTHER: 'Autre',
+    };
+    if (!category) return '—';
+    return map[category] || category;
+  }
+
+  /// ⭐ Traduit un état (condition) en français lisible avec capitale.
+  ///    Avant ce fix : "NEW" s'affichait tel quel, ou en minuscule "neuf".
+  private translateCondition(condition: string | null | undefined): string {
+    const map: Record<string, string> = {
+      NEW: 'Neuf',
+      GOOD: 'Bon état',
+      USED: 'Usé',
+      DAMAGED: 'Endommagé',
+      LOST: 'Perdu',
+    };
+    if (!condition) return '—';
+    return map[condition] || condition;
+  }
+
+  /// ⭐ Normalise l'année scolaire pour éviter les doublons type
+  ///    "Année scolaire Année scolaire 2026-2027".
+  ///    L'utilisateur a reporté ce doublon à cause de h2: "Année scolaire ${label}"
+  ///    où label = "Année scolaire 2026-2027" → doublon.
+  private normalizeAcademicYearLabel(ay: any): string {
+    if (!ay) return '—';
+    const label = ay.label || ay.name || '';
+    if (!label) return '—';
+    // Si le label commence déjà par "Année scolaire", ne pas re-préfixer
+    return label;
   }
 
   /// HTML du bon de réception enseignant
@@ -653,23 +701,38 @@ export class MaterialReturnsService {
     const teacherName = `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() || '—';
     const teacherMatricule = teacher.matricule || '—';
     const teacherEmail = teacher.email || '—';
-    const academicYearLabel = academicYear.label || academicYear.name || '—';
+    const academicYearLabel = this.normalizeAcademicYearLabel(academicYear);
+
+    // ⭐ Récupérer la signature de l'enseignant depuis la table teachers
+    //    (champ signatureUrl) OU depuis la première attribution signée
+    //    (champ returnSignatureUrl — signature apposée lors du retour).
+    //    Avant ce fix : le PDF affichait juste "✓ Signé" sans l'image de signature.
+    const teacherSignatureUrl = (teacher as any).signatureUrl
+      || assignments.find(a => a.returnSignatureUrl)?.returnSignatureUrl
+      || null;
 
     const rowsHtml = assignments.map((a: any, idx: number) => {
-      const condition = a.conditionAtIssue || '—';
+      // ⭐ Traduire la catégorie (BOOK → "Manuel scolaire") et l'état (NEW → "Neuf")
+      const categoryLabel = this.translateCategory(a.materialCategory);
+      const conditionLabel = this.translateCondition(a.conditionAtIssue);
+      // ⭐ Afficher la classe : si l'attribution n'a pas de classId, fallback sur
+      //    la classe principale du teacher (issue de la jointure).
+      const className = a.className || a.teacherMainClassName || '—';
+      // ⭐ Colonne Réception : trait de validation ✓ vert au lieu de case à cocher ☐
+      const receptionMark = a.signed
+        ? '<span style="color:#059669;font-size:14px;font-weight:bold;">✓</span>'
+          + (a.signedAt ? `<br/><span style="font-size:8px;color:#64748b;">${new Date(a.signedAt).toLocaleDateString('fr-FR')}</span>` : '')
+        : '<span style="color:#94a3b8;font-size:14px;">—</span>';
       return `
         <tr>
           <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${idx + 1}</td>
           <td style="border:1px solid #cbd5e1;padding:6px;font-family:monospace;font-size:9px;">${a.materialCode || '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:6px;font-weight:bold;">${a.materialName || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;">${a.materialCategory || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${a.className || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;">${categoryLabel}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${className}</td>
           <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-weight:bold;font-size:14px;">${a.quantity || 0}</td>
-          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;">${condition}</td>
-          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">
-            ${a.signed ? '✓ Signé' : '☐ En attente'}
-            ${a.signedAt ? `<br/><span style="font-size:8px;color:#64748b;">${new Date(a.signedAt).toLocaleDateString('fr-FR')}</span>` : ''}
-          </td>
+          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;">${conditionLabel}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${receptionMark}</td>
         </tr>`;
     }).join('');
 
@@ -688,7 +751,7 @@ export class MaterialReturnsService {
     table { width: 100%; border-collapse: collapse; }
     th { background: #1e3a8a; color: white; padding: 6px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
     .signature-section { margin-top: 40px; display: flex; justify-content: space-between; gap: 40px; }
-    .signature-block { flex: 1; text-align: center; }
+    .signature-block { flex: 1; text-align: center; min-height: 90px; }
     .signature-block .label { font-size: 9px; font-weight: bold; text-transform: uppercase; color: #475569; margin-bottom: 30px; border-top: 1px solid #475569; padding-top: 4px; }
     .signature-block .name { font-weight: bold; font-size: 12px; }
     .signature-block img { max-height: 60px; }
@@ -700,7 +763,7 @@ export class MaterialReturnsService {
   ${this.buildSchoolHeader(school)}
 
   <h1>BON DE RÉCEPTION DE MATÉRIEL PÉDAGOGIQUE</h1>
-  <h2>Année scolaire ${academicYearLabel}</h2>
+  <h2>${academicYearLabel}</h2>
 
   <div class="info-box">
     <strong>Enseignant :</strong> ${teacherName} &nbsp;|&nbsp;
@@ -730,10 +793,14 @@ export class MaterialReturnsService {
   <div class="signature-section">
     <div class="signature-block">
       <div class="label">Signature de l'enseignant</div>
-      ${assignments[0]?.signed && assignments[0]?.signedBy
-        ? `<div class="name">${teacherName}</div>
-           <div style="font-size:9px;color:#64748b;margin-top:4px;">Réception signée le ${assignments[0]?.signedAt ? new Date(assignments[0].signedAt).toLocaleDateString('fr-FR') : '—'}</div>`
-        : `<div style="font-size:10px;color:#94a3b8;font-style:italic;">(En attente de signature)</div>`}
+      ${teacherSignatureUrl
+        ? `<img src="${teacherSignatureUrl}" alt="Signature enseignant" style="max-height:55px;" />
+           <div class="name" style="margin-top:6px;">${teacherName}</div>
+           <div style="font-size:9px;color:#64748b;margin-top:2px;">Réception signée le ${assignments[0]?.signedAt ? new Date(assignments[0].signedAt).toLocaleDateString('fr-FR') : '—'}</div>`
+        : assignments[0]?.signed
+          ? `<div class="name">${teacherName}</div>
+             <div style="font-size:9px;color:#64748b;margin-top:4px;">Réception signée le ${assignments[0]?.signedAt ? new Date(assignments[0].signedAt).toLocaleDateString('fr-FR') : '—'}</div>`
+          : `<div style="font-size:10px;color:#94a3b8;font-style:italic;">(En attente de signature)</div>`}
     </div>
     <div class="signature-block">
       <div class="label">Visa de la Direction</div>
@@ -756,7 +823,7 @@ export class MaterialReturnsService {
     schoolLevelId?: string;
   }): string {
     const { assignments, school, academicYear } = params;
-    const academicYearLabel = academicYear.label || academicYear.name || '—';
+    const academicYearLabel = this.normalizeAcademicYearLabel(academicYear);
     const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
     // Grouper par enseignant
@@ -775,18 +842,28 @@ export class MaterialReturnsService {
     const teacherGroups = Object.values(byTeacher);
 
     const teacherSectionsHtml = teacherGroups.map((g: any) => {
-      const rowsHtml = g.items.map((a: any, idx: number) => `
+      const rowsHtml = g.items.map((a: any, idx: number) => {
+        // ⭐ Traduire catégorie + état
+        const categoryLabel = this.translateCategory(a.materialCategory);
+        const conditionLabel = this.translateCondition(a.conditionAtIssue);
+        const className = a.className || '—';
+        // ⭐ Colonne Signé : trait ✓ vert au lieu de case à cocher/rectangle
+        const signedMark = a.signed
+          ? '<span style="color:#059669;font-weight:bold;font-size:13px;">✓</span>'
+          : '<span style="color:#94a3b8;font-size:13px;">—</span>';
+        return `
         <tr>
           <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${idx + 1}</td>
           <td style="border:1px solid #cbd5e1;padding:4px;font-family:monospace;font-size:9px;">${a.materialCode || '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:4px;">${a.materialName || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${a.materialCategory || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${a.className || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${categoryLabel}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${className}</td>
           <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-weight:bold;">${a.quantity || 0}</td>
           <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${a.returnQuantity ?? 0}</td>
           <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${a.lostQuantity ?? 0}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${a.signed ? '✓' : '—'}</td>
-        </tr>`).join('');
+          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;">${signedMark}</td>
+        </tr>`;
+      }).join('');
 
       return `
         <div style="margin-top:14px;">
@@ -830,7 +907,7 @@ export class MaterialReturnsService {
   ${this.buildSchoolHeader(school)}
 
   <h1>ÉTAT DES DISTRIBUTIONS DE MATÉRIEL PÉDAGOGIQUE</h1>
-  <h2>Année scolaire ${academicYearLabel} — ${assignments.length} attribution(s) au total</h2>
+  <h2>${academicYearLabel} — ${assignments.length} attribution(s) au total</h2>
 
   ${teacherGroups.length === 0 ? '<p style="text-align:center;color:#94a3b8;">Aucune distribution enregistrée pour cette année.</p>' : teacherSectionsHtml}
 
@@ -848,7 +925,7 @@ export class MaterialReturnsService {
     academicYear: any;
   }): string {
     const { materials, school, academicYear } = params;
-    const academicYearLabel = academicYear.label || academicYear.name || '—';
+    const academicYearLabel = this.normalizeAcademicYearLabel(academicYear);
     const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
     const rowsHtml = materials.map((m: any, idx: number) => `
@@ -856,7 +933,7 @@ export class MaterialReturnsService {
         <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;">${idx + 1}</td>
         <td style="border:1px solid #cbd5e1;padding:5px;font-family:monospace;font-size:9px;">${m.code || '—'}</td>
         <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;">${m.name || '—'}</td>
-        <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${m.category || '—'}</td>
+        <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${this.translateCategory(m.category)}</td>
         <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${m.schoolLevelName || '—'}</td>
         <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${m.subjectName || '—'}</td>
         <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-weight:bold;font-size:13px;">${m.stockTotal || 0}</td>
@@ -890,7 +967,7 @@ export class MaterialReturnsService {
   ${this.buildSchoolHeader(school)}
 
   <h1>INVENTAIRE DU MATÉRIEL PÉDAGOGIQUE</h1>
-  <h2>Année scolaire ${academicYearLabel} — ${materials.length} référence(s)</h2>
+  <h2>${academicYearLabel} — ${materials.length} référence(s)</h2>
 
   <div class="stats">
     <div class="stat-card"><div class="label">Stock total</div><div class="value">${totalStock}</div></div>
@@ -913,6 +990,258 @@ export class MaterialReturnsService {
             <th style="width:8%;">Dispo.</th>
             <th style="width:8%;">Distrib.</th>
             <th style="width:5%;">État</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`}
+
+  <div style="margin-top:30px;font-size:8px;color:#94a3b8;text-align:center;border-top:1px solid #e2e8f0;padding-top:6px;">
+    Document généré automatiquement par Academia Helm le ${today}
+  </div>
+</body>
+</html>`;
+  }
+
+  // ===========================================================================
+  // COMPARAISON REÇU vs RENDU (suivi des retours)
+  // ===========================================================================
+
+  /// ⭐ Comparaison automatique : pour chaque enseignant, calcule :
+  ///    - totalReceived : somme des quantités attribuées
+  ///    - totalReturned : somme des returnQuantity
+  ///    - totalLost : somme des lostQuantity (matériel non rendu)
+  ///    - difference : totalReceived - totalReturned - totalLost (devrait = 0 si OK)
+  ///    - status : COMPLET (tout rendu) / PARTIEL (partiellement rendu) /
+  ///               PERTE (matériel perdu) / NON_RETOURNE (rien rendu) /
+  ///               EN_ATTENTE (aucun retour soumis)
+  ///    - returnStatus : PENDING/SUBMITTED/VALIDATED (statut global)
+  async getReturnComparison(
+    tenantId: string,
+    academicYearId: string,
+    schoolLevelId?: string,
+  ) {
+    const params: any[] = [tenantId, academicYearId];
+    let levelFilter = '';
+    if (schoolLevelId) {
+      params.push(schoolLevelId);
+      levelFilter = ` AND tma."schoolLevelId" = $${params.length}`;
+    }
+
+    const rows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT
+         tma."teacherId",
+         t."firstName" AS "teacherFirstName",
+         t."lastName" AS "teacherLastName",
+         t."matricule" AS "teacherMatricule",
+         t."email" AS "teacherEmail",
+         sl."name" AS "schoolLevelName",
+         COUNT(*) AS "itemsCount",
+         COALESCE(SUM(tma."quantity"), 0) AS "totalReceived",
+         COALESCE(SUM(tma."returnQuantity"), 0) AS "totalReturned",
+         COALESCE(SUM(tma."lostQuantity"), 0) AS "totalLost",
+         COUNT(*) FILTER (WHERE tma."signed" = true) AS "signedCount",
+         COUNT(*) FILTER (WHERE tma."returnStatus" = 'SUBMITTED') AS "submittedCount",
+         COUNT(*) FILTER (WHERE tma."returnStatus" = 'VALIDATED') AS "validatedCount",
+         COUNT(*) FILTER (WHERE tma."returnStatus" = 'PENDING') AS "pendingCount"
+       FROM "teacher_material_assignments" tma
+       LEFT JOIN "teachers" t ON t."id" = tma."teacherId"
+       LEFT JOIN "school_levels" sl ON sl."id" = tma."schoolLevelId"
+       WHERE tma."tenantId" = $1
+         AND tma."academicYearId" = $2
+         ${levelFilter}
+       GROUP BY tma."teacherId", t."firstName", t."lastName", t."matricule", t."email", sl."name"
+       ORDER BY t."lastName" ASC, t."firstName" ASC`,
+      ...params,
+    );
+
+    const result = (Array.isArray(rows) ? rows : []).map((r: any) => {
+      const totalReceived = Number(r.totalReceived) || 0;
+      const totalReturned = Number(r.totalReturned) || 0;
+      const totalLost = Number(r.totalLost) || 0;
+      const difference = totalReceived - totalReturned - totalLost;
+
+      // Déterminer le statut
+      let status: string;
+      let statusColor: string;
+      if (totalReceived === 0) {
+        status = 'AUCUN';
+        statusColor = 'bg-slate-100 text-slate-700';
+      } else if (r.pendingCount > 0 && r.submittedCount === 0 && r.validatedCount === 0) {
+        // Tout est PENDING → l'enseignant n'a pas encore soumis de retour
+        status = 'EN_ATTENTE';
+        statusColor = 'bg-amber-100 text-amber-700';
+      } else if (totalReturned === 0 && totalLost === 0) {
+        // Rien rendu, mais des soumissions ont été faites (et peut-être rejetées)
+        status = 'NON_RETOURNE';
+        statusColor = 'bg-rose-100 text-rose-700';
+      } else if (totalLost > 0) {
+        // Matériel perdu
+        status = 'PERTE';
+        statusColor = 'bg-rose-100 text-rose-700';
+      } else if (totalReturned >= totalReceived) {
+        // Tout rendu
+        status = 'COMPLET';
+        statusColor = 'bg-emerald-100 text-emerald-700';
+      } else {
+        // Partiellement rendu
+        status = 'PARTIEL';
+        statusColor = 'bg-amber-100 text-amber-700';
+      }
+
+      return {
+        teacherId: r.teacherId,
+        teacherName: `${r.teacherFirstName || ''} ${r.teacherLastName || ''}`.trim() || '—',
+        teacherMatricule: r.teacherMatricule,
+        teacherEmail: r.teacherEmail,
+        schoolLevelName: r.schoolLevelName,
+        itemsCount: Number(r.itemsCount) || 0,
+        totalReceived,
+        totalReturned,
+        totalLost,
+        difference,
+        signedCount: Number(r.signedCount) || 0,
+        submittedCount: Number(r.submittedCount) || 0,
+        validatedCount: Number(r.validatedCount) || 0,
+        pendingCount: Number(r.pendingCount) || 0,
+        status,
+        statusColor,
+      };
+    });
+
+    // Statistiques globales
+    const totals = {
+      teachersCount: result.length,
+      totalReceived: result.reduce((s: number, r: any) => s + r.totalReceived, 0),
+      totalReturned: result.reduce((s: number, r: any) => s + r.totalReturned, 0),
+      totalLost: result.reduce((s: number, r: any) => s + r.totalLost, 0),
+      completeCount: result.filter((r: any) => r.status === 'COMPLET').length,
+      partialCount: result.filter((r: any) => r.status === 'PARTIEL').length,
+      lostCount: result.filter((r: any) => r.status === 'PERTE').length,
+      notReturnedCount: result.filter((r: any) => r.status === 'NON_RETOURNE').length,
+      pendingCount: result.filter((r: any) => r.status === 'EN_ATTENTE').length,
+    };
+
+    return { comparisons: result, totals };
+  }
+
+  /// ⭐ PDF — Rapport de comparaison reçu vs rendu
+  async exportComparisonPdf(
+    tenantId: string,
+    academicYearId: string,
+    schoolLevelId?: string,
+  ): Promise<Buffer> {
+    const { comparisons, totals } = await this.getReturnComparison(tenantId, academicYearId, schoolLevelId);
+
+    const schoolInfo: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "schoolName", "schoolAcronym", "logoUrl"
+       FROM "tenant_identity_profiles"
+       WHERE "tenantId" = $1 AND "isActive" = true
+       ORDER BY "version" DESC LIMIT 1`,
+      tenantId,
+    );
+
+    const ayInfo: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "name", "label" FROM "academic_years" WHERE "id" = $1`,
+      academicYearId,
+    );
+
+    const html = this.buildComparisonPdfHtml({
+      comparisons,
+      totals,
+      school: schoolInfo?.[0] || {},
+      academicYear: ayInfo?.[0] || {},
+    });
+
+    return this.renderPdf(html);
+  }
+
+  /// HTML du rapport de comparaison
+  private buildComparisonPdfHtml(params: {
+    comparisons: any[];
+    totals: any;
+    school: any;
+    academicYear: any;
+  }): string {
+    const { comparisons, totals, school, academicYear } = params;
+    const academicYearLabel = this.normalizeAcademicYearLabel(academicYear);
+    const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // Map statut → label français + couleur
+    const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+      COMPLET: { label: 'Complet', color: '#059669' },
+      PARTIEL: { label: 'Partiel', color: '#d97706' },
+      PERTE: { label: 'Perte', color: '#dc2626' },
+      NON_RETOURNE: { label: 'Non retourné', color: '#dc2626' },
+      EN_ATTENTE: { label: 'En attente', color: '#d97706' },
+      AUCUN: { label: 'Aucun matériel', color: '#64748b' },
+    };
+
+    const rowsHtml = comparisons.map((c: any, idx: number) => {
+      const cfg = STATUS_CONFIG[c.status] || STATUS_CONFIG.AUCUN;
+      return `
+        <tr>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;">${idx + 1}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;">${c.teacherName}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${c.teacherMatricule || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:9px;">${c.schoolLevelName || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-weight:bold;">${c.totalReceived}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-weight:bold;color:#059669;">${c.totalReturned}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-weight:bold;color:#dc2626;">${c.totalLost}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;">${c.difference}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;">
+            <span style="color:${cfg.color};font-weight:bold;font-size:10px;">${cfg.label}</span>
+          </td>
+        </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Comparaison des retours — ${academicYearLabel}</title>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 18px; color: #1e293b; font-size: 11px; }
+    h1 { font-size: 18px; color: #1e3a8a; text-align: center; margin: 0 0 4px; }
+    h2 { font-size: 13px; color: #475569; text-align: center; margin: 0 0 18px; font-weight: normal; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #1e3a8a; color: white; padding: 5px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
+    .stats { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .stat-card { flex: 1; min-width: 100px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; text-align: center; }
+    .stat-card .label { font-size: 8px; color: #475569; text-transform: uppercase; font-weight: bold; }
+    .stat-card .value { font-size: 16px; font-weight: bold; color: #1e3a8a; }
+  </style>
+</head>
+<body>
+  ${this.buildSchoolHeader(school)}
+
+  <h1>COMPARAISON DES RETOURS DE MATÉRIEL PÉDAGOGIQUE</h1>
+  <h2>${academicYearLabel} — ${totals.teachersCount} enseignant(s) au total</h2>
+
+  <div class="stats">
+    <div class="stat-card"><div class="label">Total reçu</div><div class="value">${totals.totalReceived}</div></div>
+    <div class="stat-card"><div class="label">Total rendu</div><div class="value" style="color:#059669;">${totals.totalReturned}</div></div>
+    <div class="stat-card"><div class="label">Total perdu</div><div class="value" style="color:#dc2626;">${totals.totalLost}</div></div>
+    <div class="stat-card"><div class="label">Complets</div><div class="value" style="color:#059669;">${totals.completeCount}</div></div>
+    <div class="stat-card"><div class="label">Partiels</div><div class="value" style="color:#d97706;">${totals.partialCount}</div></div>
+    <div class="stat-card"><div class="label">Pertes</div><div class="value" style="color:#dc2626;">${totals.lostCount}</div></div>
+    <div class="stat-card"><div class="label">Non rendus</div><div class="value" style="color:#dc2626;">${totals.notReturnedCount}</div></div>
+    <div class="stat-card"><div class="label">En attente</div><div class="value" style="color:#d97706;">${totals.pendingCount}</div></div>
+  </div>
+
+  ${comparisons.length === 0
+    ? '<p style="text-align:center;color:#94a3b8;">Aucune distribution enregistrée pour cette année.</p>'
+    : `<table>
+        <thead>
+          <tr>
+            <th style="width:4%;">#</th>
+            <th style="width:22%;">Enseignant</th>
+            <th style="width:10%;">Matricule</th>
+            <th style="width:10%;">Niveau</th>
+            <th style="width:10%;">Reçu</th>
+            <th style="width:10%;">Rendu</th>
+            <th style="width:10%;">Perdu</th>
+            <th style="width:8%;">Écart</th>
+            <th style="width:16%;">Statut</th>
           </tr>
         </thead>
         <tbody>${rowsHtml}</tbody>

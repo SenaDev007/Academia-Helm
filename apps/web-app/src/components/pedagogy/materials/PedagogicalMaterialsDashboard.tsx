@@ -144,16 +144,14 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
   const [searchTeacher, setSearchTeacher] = useState("");
   const [filterLevelId, setFilterLevelId] = useState("");
 
-  // Modal de distribution
+  // Modal de distribution (multi-sélection par checkboxes)
   const [showDistributeModal, setShowDistributeModal] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<any | null>(null);
-  const [distributeData, setDistributeData] = useState({
-    materialId: "",
-    classId: "",
-    quantity: 1,
-    conditionAtIssue: "NEW",
-    notes: "",
-  });
+  // ⭐ Liste des items sélectionnés : { materialId, quantity, conditionAtIssue }
+  //    Chaque case cochée crée une entrée → soumission en lot à la validation
+  const [selectedItems, setSelectedItems] = useState<Record<string, { quantity: number; conditionAtIssue: string }>>({});
+  const [distributeClassId, setDistributeClassId] = useState("");
+  const [distributeNotes, setDistributeNotes] = useState("");
 
   // === Charger les enseignants groupés par niveau scolaire ===
   const loadTeachers = useCallback(async () => {
@@ -221,46 +219,84 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
   // === Ouvrir le modal de distribution ===
   const openDistributeModal = (teacher: any) => {
     setSelectedTeacher(teacher);
-    setDistributeData({
-      materialId: "",
-      classId: "",
-      quantity: 1,
-      conditionAtIssue: "NEW",
-      notes: "",
-    });
+    setSelectedItems({});
+    setDistributeClassId("");
+    setDistributeNotes("");
     setShowDistributeModal(true);
   };
 
-  // === Soumettre la distribution (POST affectation) ===
+  // === Bascule la sélection d'un matériel (checkbox) ===
+  const toggleMaterial = (materialId: string) => {
+    setSelectedItems(prev => {
+      const next = { ...prev };
+      if (next[materialId]) {
+        delete next[materialId];
+      } else {
+        next[materialId] = { quantity: 1, conditionAtIssue: "NEW" };
+      }
+      return next;
+    });
+  };
+
+  // === Met à jour la quantité d'un matériel sélectionné ===
+  const updateItemQuantity = (materialId: string, quantity: number) => {
+    setSelectedItems(prev => ({
+      ...prev,
+      [materialId]: { ...prev[materialId], quantity: Math.max(1, quantity) },
+    }));
+  };
+
+  // === Met à jour l'état d'un matériel sélectionné ===
+  const updateItemCondition = (materialId: string, conditionAtIssue: string) => {
+    setSelectedItems(prev => ({
+      ...prev,
+      [materialId]: { ...prev[materialId], conditionAtIssue },
+    }));
+  };
+
+  // === Soumettre la distribution (POST affectations en lot) ===
   const handleDistribute = async () => {
-    if (!selectedTeacher || !distributeData.materialId || !distributeData.quantity) {
-      toast.error("Veuillez sélectionner un matériel et une quantité");
+    if (!selectedTeacher) {
+      toast.error("Aucun enseignant sélectionné");
+      return;
+    }
+    const entries = Object.entries(selectedItems);
+    if (entries.length === 0) {
+      toast.error("Veuillez cocher au moins un matériel à distribuer");
       return;
     }
     setSaving(true);
     try {
-      const res = await fetch(`/api/pedagogy/teacher-material-assignments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          teacherId: selectedTeacher.id,
-          materialId: distributeData.materialId,
-          classId: distributeData.classId || undefined,
-          quantity: distributeData.quantity,
-          conditionAtIssue: distributeData.conditionAtIssue,
-          notes: distributeData.notes || undefined,
-          academicYearId,
-          schoolLevelId: selectedTeacher.schoolLevelId || undefined,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Erreur");
+      // Soumettre chaque affectation séquentiellement (POST × N)
+      const results = await Promise.allSettled(
+        entries.map(([materialId, data]) =>
+          fetch(`/api/pedagogy/teacher-material-assignments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              teacherId: selectedTeacher.id,
+              materialId,
+              classId: distributeClassId || undefined,
+              quantity: data.quantity,
+              conditionAtIssue: data.conditionAtIssue,
+              notes: distributeNotes || undefined,
+              academicYearId,
+              schoolLevelId: selectedTeacher.schoolLevelId || undefined,
+            }),
+          })
+        )
+      );
+      const successCount = results.filter(r => r.status === "fulfilled" && (r.value as Response).ok).length;
+      const failedCount = results.length - successCount;
+      if (failedCount === 0) {
+        toast.success(`✅ ${successCount} matériel(s) distribué(s) à ${selectedTeacher.fullName}`);
+      } else {
+        toast.warning(`${successCount} réussi(s), ${failedCount} échec(s)`);
       }
-      toast.success(`✅ Matériel distribué à ${selectedTeacher.fullName}`);
       setShowDistributeModal(false);
       setSelectedTeacher(null);
+      setSelectedItems({});
       loadAssignments();
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
@@ -319,10 +355,11 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
     return assignments.filter((a) => a.teacherId === teacherId);
   };
 
-  // Filtrer les matériels par niveau scolaire du teacher sélectionné
-  const filteredMaterials = selectedTeacher
-    ? materials.filter((m) => !selectedTeacher.schoolLevelId || m.schoolLevelId === selectedTeacher.schoolLevelId)
-    : materials;
+  // ⭐ Afficher TOUS les matériels du tenant (sans filtrer par niveau scolaire
+  //    du teacher), avec badge indiquant le niveau de chaque matériel.
+  //    L'utilisateur peut ainsi distribuer n'importe quel matériel à n'importe
+  //    quel enseignant (cas d'usage : prof de remplacement multi-niveaux).
+  const allMaterials = materials;
 
   return (
     <div className="space-y-4">
@@ -526,67 +563,126 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                 </div>
               </div>
               <button
-                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); }}
+                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); setSelectedItems({}); }}
                 className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">
-                  Matériel à distribuer *
-                </label>
-                <select
-                  value={distributeData.materialId}
-                  onChange={(e) => setDistributeData({ ...distributeData, materialId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                >
-                  <option value="">— Sélectionner —</option>
-                  {filteredMaterials.map((m: any) => {
-                    const stock = m.stocks?.find((s: any) => s.academicYearId === academicYearId);
-                    return (
-                      <option key={m.id} value={m.id} disabled={stock?.quantityAvailable <= 0}>
-                        {m.name} ({m.code}) — dispo: {stock?.quantityAvailable ?? 0}
-                      </option>
-                    );
-                  })}
-                </select>
-                {filteredMaterials.length === 0 && (
-                  <p className="text-[10px] text-amber-600 mt-1">
-                    Aucun matériel disponible pour ce niveau scolaire. Créez-en depuis l'onglet Inventaire.
-                  </p>
-                )}
+              {/* Résumé sélection */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center justify-between">
+                <div>
+                  <strong>ℹ️ Après validation :</strong> l'enseignant verra ce matériel dans son Espace Pédagogique
+                  → onglet Matériel. Il pourra signer la réception et générer un PDF.
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-sm">{Object.keys(selectedItems).length}</div>
+                  <div className="text-[10px]">sélectionné(s)</div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Quantité *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={distributeData.quantity}
-                    onChange={(e) => setDistributeData({ ...distributeData, quantity: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  />
+
+              {/* Liste des matériels avec checkboxes */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-2 block">
+                  Cochez les matériels à distribuer *
+                </label>
+                <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
+                  {allMaterials.length === 0 ? (
+                    <div className="p-6 text-center text-slate-500">
+                      <Package className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+                      Aucun matériel dans l'inventaire.
+                      <br />
+                      Créez-en depuis l'onglet Inventaire d'abord.
+                    </div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-slate-50 z-10">
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-500 uppercase w-12">✓</th>
+                          <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-500 uppercase">Matériel</th>
+                          <th className="text-center px-3 py-2 text-[10px] font-bold text-slate-500 uppercase w-20">Dispo.</th>
+                          <th className="text-center px-3 py-2 text-[10px] font-bold text-slate-500 uppercase w-20">Qté</th>
+                          <th className="text-center px-3 py-2 text-[10px] font-bold text-slate-500 uppercase w-32">État</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allMaterials.map((m: any) => {
+                          const stock = m.stocks?.find((s: any) => s.academicYearId === academicYearId);
+                          const available = stock?.quantityAvailable ?? 0;
+                          const isChecked = !!selectedItems[m.id];
+                          const isOutOfStock = available <= 0;
+                          return (
+                            <tr key={m.id} className={cn2(
+                              "border-b border-slate-100",
+                              isChecked ? "bg-blue-50/50" : "hover:bg-slate-50",
+                              isOutOfStock && "opacity-50"
+                            )}>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleMaterial(m.id)}
+                                  disabled={isOutOfStock}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-sm">
+                                <div className="font-medium text-slate-900">{m.name}</div>
+                                <div className="text-[10px] text-slate-500">
+                                  [{m.code}] · {m.category}
+                                  {m.schoolLevel?.name && ` · ${m.schoolLevel.name}`}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-center text-sm font-bold text-slate-700">
+                                {available}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={available}
+                                  value={selectedItems[m.id]?.quantity ?? 1}
+                                  onChange={(e) => updateItemQuantity(m.id, parseInt(e.target.value) || 1)}
+                                  disabled={!isChecked}
+                                  className={cn2(
+                                    "w-14 px-2 py-1 border border-slate-200 rounded text-center text-sm font-bold",
+                                    !isChecked && "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  )}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <select
+                                  value={selectedItems[m.id]?.conditionAtIssue ?? "NEW"}
+                                  onChange={(e) => updateItemCondition(m.id, e.target.value)}
+                                  disabled={!isChecked}
+                                  className={cn2(
+                                    "px-2 py-1 border border-slate-200 rounded text-[10px]",
+                                    !isChecked && "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  )}
+                                >
+                                  <option value="NEW">Neuf</option>
+                                  <option value="GOOD">Bon état</option>
+                                  <option value="USED">Usé</option>
+                                  <option value="DAMAGED">Endommagé</option>
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
+              </div>
+
+              {/* Classe commune + Notes */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">État au dépot</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Classe commune (optionnel)</label>
                   <select
-                    value={distributeData.conditionAtIssue}
-                    onChange={(e) => setDistributeData({ ...distributeData, conditionAtIssue: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                  >
-                    <option value="NEW">Neuf</option>
-                    <option value="GOOD">Bon état</option>
-                    <option value="USED">Usé</option>
-                    <option value="DAMAGED">Endommagé</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Classe (optionnel)</label>
-                  <select
-                    value={distributeData.classId}
-                    onChange={(e) => setDistributeData({ ...distributeData, classId: e.target.value })}
+                    value={distributeClassId}
+                    onChange={(e) => setDistributeClassId(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   >
                     <option value="">— Aucune —</option>
@@ -595,25 +691,21 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                     ))}
                   </select>
                 </div>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Notes (optionnel)</label>
-                <textarea
-                  value={distributeData.notes}
-                  onChange={(e) => setDistributeData({ ...distributeData, notes: e.target.value })}
-                  rows={3}
-                  placeholder="Ex: Remis en main propre le..."
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-                <strong>ℹ️ Après validation :</strong> l'enseignant verra ce matériel dans son Espace Pédagogique
-                → onglet Matériel. Il pourra signer la réception et générer un PDF.
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Notes (optionnel)</label>
+                  <input
+                    type="text"
+                    value={distributeNotes}
+                    onChange={(e) => setDistributeNotes(e.target.value)}
+                    placeholder="Ex: Remis en main propre le..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
               <button
-                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); }}
+                onClick={() => { setShowDistributeModal(false); setSelectedTeacher(null); setSelectedItems({}); }}
                 disabled={saving}
                 className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
               >
@@ -621,11 +713,11 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
               </button>
               <button
                 onClick={handleDistribute}
-                disabled={saving || !distributeData.materialId}
+                disabled={saving || Object.keys(selectedItems).length === 0}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                Valider la distribution
+                Valider la distribution ({Object.keys(selectedItems).length})
               </button>
             </div>
           </div>

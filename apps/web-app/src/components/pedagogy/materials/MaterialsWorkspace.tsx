@@ -222,6 +222,10 @@ export default function MaterialsWorkspace() {
       toast.error("Code, nom et niveau scolaire sont obligatoires");
       return;
     }
+    if (!academicYear?.id) {
+      toast.error("Aucune année scolaire active — contactez la direction");
+      return;
+    }
     setSaving(true);
     try {
       const payload: any = {
@@ -232,6 +236,10 @@ export default function MaterialsWorkspace() {
         schoolLevelId: formData.schoolLevelId,
         subjectId: formData.subjectId || undefined,
         isActive: formData.isActive,
+        // ⭐ OBLIGATOIRE — le MaterialContextGuard backend rejette les opérations
+        //    d'écriture (POST/PUT/DELETE) sans academicYearId. Sans ça, erreur
+        //    'academic_year_id is required for write operations' au clic Enregistrer.
+        academicYearId: academicYear.id,
       };
       const url = editingMaterial
         ? `/api/pedagogy/pedagogical-materials/${editingMaterial.id}`

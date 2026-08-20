@@ -173,7 +173,9 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
     try {
       const params = new URLSearchParams({ academicYearId });
       params.append("page", "1");
-      params.append("limit", "1000");
+      // ⭐ Backend PaginationDto limite à 100 max (sinon 400 Bad Request).
+      //    Si > 100 affectations, paginer ou implémenter scroll infini.
+      params.append("limit", "100");
       const res = await fetch(
         `/api/pedagogy/teacher-material-assignments?${params.toString()}`,
         { credentials: "include" },

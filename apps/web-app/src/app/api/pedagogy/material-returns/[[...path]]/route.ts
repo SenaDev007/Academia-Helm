@@ -32,6 +32,27 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
     const bodyText = await readProxyBodyText(request, method);
     if (bodyText !== undefined) options.body = bodyText;
     const res = await fetch(normalizeApiUrl(url.toString()), options);
+
+    // ⭐ Handle binary responses (PDF exports: inventory-pdf, distribution-pdf, my-receipt-pdf)
+    //    Sans cette branche, le BFF essaie de JSON.parse le buffer PDF → échec → body "{}"
+    //    → frontend affiche "Échec de chargement du document PDF".
+    const contentType = res.headers.get('content-type') || '';
+    if (
+      contentType.includes('application/pdf') ||
+      contentType.includes('spreadsheet') ||
+      contentType.includes('application/octet-stream') ||
+      contentType.includes('text/csv')
+    ) {
+      const buffer = await res.arrayBuffer();
+      return new NextResponse(buffer, {
+        status: res.status,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': res.headers.get('content-disposition') || '',
+        },
+      });
+    }
+
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch (e) {

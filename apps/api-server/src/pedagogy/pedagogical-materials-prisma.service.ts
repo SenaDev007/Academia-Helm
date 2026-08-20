@@ -190,9 +190,16 @@ export class PedagogicalMaterialsPrismaService {
       }
     }
 
+    // ⭐ academicYearId est requis par MaterialContextGuard (validation write context)
+    //    mais N'EXISTE PAS dans le modèle Prisma PedagogicalMaterial. Si on le passe
+    //    à prisma.update, Prisma lève une PrismaClientValidationError :
+    //    "Unknown field `academicYearId`" (avec un underline trompeur sur schoolLevelId).
+    //    On le strip donc avant l'appel Prisma — comme déjà fait dans create().
+    const { academicYearId: _ignored1, tenantId: _ignored2, ...prismaData } = data as any;
+
     return this.prisma.pedagogicalMaterial.update({
       where: { id },
-      data: { ...prismaUpdateDefaults(), ...data },
+      data: { ...prismaUpdateDefaults(), ...prismaData },
       include: {
         schoolLevel: {
           select: { id: true, name: true, code: true },

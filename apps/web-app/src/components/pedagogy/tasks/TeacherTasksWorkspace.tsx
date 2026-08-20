@@ -43,13 +43,16 @@ import { cn } from '@/lib/utils';
 import { LessonsTrackingTab } from './LessonsTrackingTab';
 import { NotebooksChecksTab } from './NotebooksChecksTab';
 import { StudentEngagementTab } from './StudentEngagementTab';
-import { CorrectionsFeedbackTab } from './CorrectionsFeedbackTab';
+// ⭐ Supprimé : import CorrectionsFeedbackTab (fusionné avec TaskStudentsModal)
+// import { CorrectionsFeedbackTab } from './CorrectionsFeedbackTab';
 import { ActivityStatsTab } from './ActivityStatsTab';
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
 
+// ⭐ Supprimé : 'feedback' (Corrections & Retours) — fusionné avec TaskStudentsModal
+// ⭐ Supprimé : 'activity-library' (Bibliothèque d'activités) — supprimé par décision produit
 const TABS = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
   { id: 'homework', label: 'Devoirs & Exercices', icon: ClipboardList },
@@ -58,8 +61,6 @@ const TABS = [
   { id: 'lessons', label: 'Leçons & Récitations', icon: BookOpen },
   { id: 'practical', label: 'Activités pratiques', icon: Palette },
   { id: 'student-followup', label: 'Suivi par élève', icon: Users },
-  { id: 'feedback', label: 'Corrections & Retours', icon: CheckCircle2 },
-  { id: 'activity-library', label: "Bibliothèque d'activités", icon: Library },
   { id: 'stats', label: 'Statistiques & Alertes', icon: BarChart3 },
 ] as const;
 
@@ -355,18 +356,8 @@ export default function TeacherTasksWorkspace() {
             classes={classes}
           />
         )}
-        {activeTab === 'feedback' && (
-          <CorrectionsFeedbackTab
-            key={`feedback-${refreshSignal}`}
-            teacherId={teacherId}
-            academicYearId={academicYearId}
-            schoolLevelId={schoolLevelId}
-            classes={classes}
-          />
-        )}
-        {activeTab === 'activity-library' && (
-          <ActivityLibraryTab key={`library-${refreshSignal}`} />
-        )}
+        {/* ⭐ Supprimé : feedback (Corrections & Retours) — fusionné avec TaskStudentsModal */}
+        {/* ⭐ Supprimé : activity-library (Bibliothèque d'activités) — supprimé par décision produit */}
         {activeTab === 'stats' && (
           <ActivityStatsTab
             key={`stats-${refreshSignal}`}
@@ -1008,14 +999,6 @@ function TasksDashboard({
           onClick={() => onSwitchTab('homework')}
         />
         <QuickCard
-          title="Corrections & Retours"
-          description="Saisissez les notes et feedbacks pour chaque élève."
-          icon={CheckCircle2}
-          color="text-emerald-700"
-          bg="bg-emerald-100"
-          onClick={() => onSwitchTab('feedback')}
-        />
-        <QuickCard
           title="Suivi par élève"
           description="Visualisez l'engagement et les performances de chaque élève."
           icon={Users}
@@ -1598,114 +1581,3 @@ function TaskStudentsModal({
   );
 }
 
-// ============================================================================
-// ACTIVITY LIBRARY — Bibliothèque d'activités (utilise /api/pedagogy/global-library)
-// ============================================================================
-
-function ActivityLibraryTab() {
-  const [resources, setResources] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await apiFetch<any[]>(`/api/pedagogy/global-library`);
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray((data as any)?.items)
-        ? (data as any).items
-        : [];
-      setResources(list);
-    } catch (e: any) {
-      setResources([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return resources;
-    const q = search.trim().toLowerCase();
-    return resources.filter((r) =>
-      (r.title || r.name || '').toLowerCase().includes(q),
-    );
-  }, [resources, search]);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
-        <div>
-          <h3 className="font-bold text-slate-900 text-lg">
-            Bibliothèque d'activités
-          </h3>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Ressources pédagogiques réutilisables (modèles, fiches, grilles).
-          </p>
-        </div>
-        <input
-          type="text"
-          placeholder="Rechercher…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium min-w-[200px]"
-        />
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-slate-500">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          Chargement de la bibliothèque…
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="p-12 flex flex-col items-center justify-center text-center gap-3">
-          <Library className="w-10 h-10 text-slate-200" />
-          <p className="text-sm font-semibold text-slate-400">
-            Aucune ressource dans la bibliothèque
-          </p>
-          <p className="text-xs text-slate-300">
-            Les ressources ajoutées par les administrateurs apparaîtront ici.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((r) => (
-            <div
-              key={r.id}
-              className="p-4 bg-white border border-slate-200 rounded-xl hover:border-slate-300 hover:shadow-sm transition-all"
-            >
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-slate-50 rounded-lg">
-                  <FileText className="w-5 h-5 text-slate-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-bold text-sm text-slate-900 truncate">
-                    {r.title || r.name}
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
-                    {r.description || r.summary || ''}
-                  </p>
-                </div>
-              </div>
-              {r.fileUrl && (
-                <a
-                  href={r.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Télécharger
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

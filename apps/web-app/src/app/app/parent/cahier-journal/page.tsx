@@ -272,13 +272,15 @@ export default function ParentCahierJournalPage() {
             })}
           </div>
 
-          {/* Observations générales */}
+          {/* ⭐ Observations générales — retirées pour le parent
+              Les observations du directeur ne doivent PAS figurer dans l'UI du parent.
+              Seuls les cours (matières par jour) sont affichés.
           {data.observations && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
               <h3 className="text-sm font-bold text-amber-900 mb-2">Observations de la semaine</h3>
               <p className="text-sm text-amber-800 whitespace-pre-wrap">{data.observations}</p>
             </div>
-          )}
+          )} */}
         </div>
       )}
     </div>
@@ -309,10 +311,13 @@ function renderDayEntries(dayEntries: any) {
     return <p className="text-xs text-slate-400">Aucune séance programmée</p>;
   }
 
+  // ⭐ Afficher le contenu en HTML riche (comme l'UI enseignant) si c'est du HTML
+  const isHTML = (str: string) => /<[a-z][\s\S]*>/i.test(str);
+
   return (
     <div className="space-y-2">
       {subjects.map((s, i) => (
-        <div key={s._key || i} className="text-xs">
+        <div key={s._key || i} className="text-xs border-l-2 border-blue-200 pl-2 py-1">
           <div className="font-semibold text-slate-900">
             {s.subjectName || s.label || s.matiere || "Matière"}
           </div>
@@ -326,7 +331,15 @@ function renderDayEntries(dayEntries: any) {
           )}
           {s.content && (
             <div className="text-slate-600 mt-0.5">
-              <span className="font-medium">Contenu :</span> {s.content}
+              <span className="font-medium">Contenu :</span>{' '}
+              {isHTML(s.content) ? (
+                <span
+                  className="prose prose-sm max-w-none inline"
+                  dangerouslySetInnerHTML={{ __html: s.content }}
+                />
+              ) : (
+                <span>{s.content}</span>
+              )}
             </div>
           )}
           {s.homework && (

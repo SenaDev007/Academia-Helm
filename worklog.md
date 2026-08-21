@@ -7614,3 +7614,82 @@ Stage Summary:
 - Teacher UI : ne voit QUE les entries de SES classes (via officialClassId)
 - Parent UI : ne voit QUE les entries de la classe de SON enfant (via officialClassId)
 - Step (1-9) affiché inline sous le nom matière dans les 2 UIs
+
+---
+Task ID: Phase-16-PDF-Header-Redesign
+Agent: main
+Task: Refonte de la structure du PDF EDT — en-tête école seul + titre séparé + classe officielle + durée
+
+Work Log:
+
+- PROBLÈMES RAPPORTÉS :
+  1. En-tête : nom complet école + acronyme ensemble (pas bien)
+  2. 'EMPLOI DU TEMPS' au-dessus du nom école dans l'en-tête (incorrect)
+  3. Badge classe à droite dans l'en-tête (à supprimer)
+  4. Classe affichée comme 'CI + CI/A' (classe physique + classe officielle)
+  5. Durée absente du PDF (seulement plages horaires)
+
+- FIX 1 — EN-TÊTE (seulement nom école + infos contact) :
+  * SQL étendue pour récupérer : address, city, department, phonePrimary,
+    phoneSecondary, whatsapp, email, website (en plus de schoolName,
+    schoolAcronym, logoUrl)
+  * schoolDisplayName = schoolName || schoolAcronym || 'École' (PAS les deux)
+  * Ligne contact construite dynamiquement :
+    - 'Adresse, City (Dept)' si address présent (sinon juste 'City (Dept)')
+    - 'Tél: phone' si phonePrimary présent
+    - email si présent
+    Séparateur ' · ' entre éléments
+    Affichée uniquement si au moins un champ contact est présent
+  * Badge classe SUPPRIMÉ de l'en-tête (était à droite)
+
+- FIX 2 — TITRE 'EMPLOI DU TEMPS' SOUS L'EN-TÊTE :
+  * Nouvelle section .title-row entre l'en-tête et le tableau
+  * border-bottom: 1px solid #cbd5e1 (ligne séparatrice légère)
+  * Flex justify-between, padding 6px 0 4px 0
+  * Gauche : 'Emploi du temps' (uppercase, 16px, dark blue #1a2a6b, font-weight 800)
+  * Droite : 'Classe : CI' (12px, bold, avec className en strong #1a2a6b)
+  * Le titre N'EST PLUS dans l'en-tête (résout le problème principal)
+
+- FIX 3 — CLASSE OFFICIELLE UNIQUEMENT (pas 'CI + CI/A') :
+  * AVANT : allNames = AcademicClass.names + physicalClass.names → 'CI + CI/A'
+  * APRÈS : allNames = AcademicClass.names UNIQUEMENT
+  * Résolution :
+    1. academicClassIdsToResolve = Set<string>()
+    2. Ajoute tous les IDs du param classIds (direct AcademicClass IDs)
+    3. Pour chaque physicalClass (récupérée via OR id/officialClassId),
+       ajoute son officialClassId au Set
+    4. Fetch academicClasses WHERE id IN (academicClassIdsToResolve)
+    5. Prend leurs .name
+  * Déduplication : Set<string> sur les noms → 'CI' affiché 1 fois même
+    si on a sélectionné CI/A + CI/B + CI/C (toutes héritent du même EDT)
+
+- FIX 4 — DURÉE AJOUTÉE DANS LES ENTRIES :
+  * AVANT : <span>8h00-8h45</span> (juste plage horaire)
+  * APRÈS : <span>45min (8h00-8h45)</span> (durée + plage entre parenthèses)
+  * Calcul : dur = (eh*60 + em) - (sh*60 + sm) depuis startTime/endTime
+  * Couleur : #475569 (dark slate, font-weight 600) — meilleur contraste
+    que le #999 précédent (était trop clair)
+  * Format cohérent avec l'UI ('30min (8h15-8h45)')
+
+- SYNTAX CHECK : ✅
+- TypeScript check : 0 erreur
+- 1 fichier modifié (+87 lignes, -34 lignes) :
+  * apps/api-server/src/pedagogy/timetables-prisma.controller.ts
+- Commit + push : 27fac096 sur origin/main
+
+Stage Summary:
+- Structure PDF maintenant :
+  ┌──────────────────────────────────────────────────┐
+  │ [Logo] School Name                               │ ← En-tête (école + contact)
+  │        address, city — Tél: phone · email        │
+  ├──────────────────────────────────────────────────┤ ← séparateur dark blue
+  │ Emploi du temps            Classe : CI           │ ← Titre + classe alignés
+  ├──────────────────────────────────────────────────┤ ← séparateur gris léger
+  │ Horaire | LUNDI | MARDI | MERCREDI | ...        │ ← Tableau
+  │ 8h00-10h15 | Entry | Entry | ...                │
+  │  45min (8h00-8h45)                              │ ← durée ajoutée
+  │  ...                                            │
+  ├──────────────────────────────────────────────────┤
+  │ Document généré par Academia Helm — date        │ ← Footer
+  └──────────────────────────────────────────────────┘
+- Pas de doublon 'CI + CI/A' — seulement 'CI' (classe officielle)

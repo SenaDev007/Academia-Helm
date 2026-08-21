@@ -1162,8 +1162,12 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Édition INLINE : au lieu d'un modal, on édite directement dans la cellule
   //    editingCell = { dayOfWeek, blockStart, blockEnd } identifie la cellule en cours d'édition
   const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
-  const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', teacherId: '', roomId: '', duration: 30 });
+  const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', duration: 30 });
   const [saving, setSaving] = useState(false);
+  // ⭐ Ref pour empêcher les appels parallèles à handleInlineSave (race condition
+  //    entre auto-save et clic manuel). Le state `saving` ne suffit pas car il est
+  //    async — deux appels simultanés verraient `saving=false` tous les deux.
+  const savingRef = useRef(false);
   // ⭐ Auto-sauvegarde : toutes les 10 secondes, si le formulaire inline est ouvert
   //    avec une matière valide, on déclenche handleInlineSave automatiquement.
   //    L'utilisateur n'a plus besoin de cliquer "Ajouter" — la séance est sauvegardée
@@ -1233,7 +1237,17 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   const filteredEntries = useMemo(() => {
     if (selectedClassIds.length === 0) return entries;
-    return entries.filter(e => { if (!e.classId) return true; return selectedClassIds.includes(e.classId) || selectedClassIds.includes(e.class?.id); });
+    // ⭐ Filtrage par AcademicClass — on accepte les entries dont :
+    //    - classId correspond directement à un ID sélectionné (cas section physique)
+    //    - class.id correspond (même chose)
+    //    - class.officialClassId correspond (l'entry a été créée pour la 1ère section physique
+    //      de l'AcademicClass, mais représente l'EDT pour toute la classe académique)
+    return entries.filter(e => {
+      if (!e.classId) return true;
+      return selectedClassIds.includes(e.classId)
+        || selectedClassIds.includes(e.class?.id)
+        || selectedClassIds.includes(e.class?.officialClassId);
+    });
   }, [entries, selectedClassIds]);
 
   const toggleClass = (classId: string) => setSelectedClassIds(prev => prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]);
@@ -1244,21 +1258,13 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   };
 
   // ⭐ Démarrer l'édition inline d'une cellule
+  //    Plus de sélecteur enseignant ni salle (supprimé pour maternelle/primaire).
+  //    L'EDT est commun à toutes les sections de l'AcademicClass — chaque enseignant
+  //    verra automatiquement l'EDT de sa classe dans son UI, et chaque parent
+  //    verra celui de son enfant.
   const startInlineEdit = (dayOfWeek: number, block: any) => {
     setEditingCell({ dayOfWeek, blockStart: block.start, blockEnd: block.end });
-    // ⭐ Auto-détection de l'enseignant titulaire de la classe sélectionnée
-    //    Si 1 classe sélectionnée → chercher son titulaire dans teacherAssignments
-    //    Si multi-classes → on ne pré-remplit pas (l'utilisateur choisira)
-    let autoTeacherId = '';
-    if (selectedClassIds.length === 1) {
-      const assignment = teacherAssignments.find((a: any) =>
-        a.classId === selectedClassIds[0] || a.class?.id === selectedClassIds[0]
-      );
-      if (assignment) {
-        autoTeacherId = assignment.teacherId || assignment.teacher?.id || '';
-      }
-    }
-    setInlineForm({ subjectId: '', teacherId: autoTeacherId, roomId: '', duration: 30 });
+    setInlineForm({ subjectId: '', duration: 30 });
   };
 
   // ⭐ Calculer l'heure de début pour la nouvelle séance = fin de la dernière séance
@@ -1327,7 +1333,17 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   // ⭐ Sauvegarder l'entry inline
   const handleInlineSave = async () => {
-    if (!editingCell || !academicYearId || selectedClassIds.length === 0) return;
+    if (savingRef.current) {
+      console.log('[handleInlineSave] Skipped — save already in flight (auto-save + manual click race)');
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    if (!editingCell || !academicYearId || selectedClassIds.length === 0) {
+      savingRef.current = false;
+      setSaving(false);
+      return;
+    }
 
     // ⭐ Résoudre le subjectId selon le type de sélection :
     //    - ID normal (ex: "abc-123") → utiliser tel quel
@@ -1388,6 +1404,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         variant: 'destructive',
       });
       setSaving(false);
+      savingRef.current = false;
       return;
     }
     const currentTimetableId = activeTimetableId;
@@ -1399,7 +1416,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         // ⭐ La réponse peut être une entry simple OU { count: N, entries: [...] }
         //    si le backend a résolu l'AcademicClass en plusieurs sections physiques.
         const result = await pedagogyFetch<any>(`/api/timetables/${currentTimetableId}/entries`, {
-          method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
+          method: 'POST', body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
         });
         // ⭐ Si le backend a créé plusieurs entries (multi-section), on compte le total
         //    sinon on compte 1 entry par POST réussi.
@@ -1408,10 +1425,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         failed++;
         lastErrorMessage = e.message || 'Erreur inconnue';
         // ⭐ Console.error pour faciliter le debug depuis la console navigateur
-        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } });
+        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } });
       }
     }
     await loadEntries();
+    savingRef.current = false;
     setSaving(false);
     setLastAutoSaveAt(new Date());
     if (failed === 0) {
@@ -1782,26 +1800,34 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                               </div>
                             );
                           })}
-                          {/* ⭐ Chaque entry = une "ligne" dans la cellule (aligned with other days via min-height) */}
+                          {/* ⭐ Chaque entry = une "ligne" compacte dans la cellule
+                              Layout optimisé pour utiliser l'espace parcimonieusement :
+                              - Ligne 1 : Nom de la matière + bouton supprimer (X)
+                              - Ligne 2 : Durée + plage horaire au format "30min (8h15-8h45)"
+                              Plus de ligne teacher/room (sélecteurs supprimés pour maternelle/primaire) */}
                           {cellEntries.map(entry => {
                             const colorClass = getSubjectColor(entry.subjectId);
+                            // ⭐ Formatage de l'heure "08:15" → "8h15" (plus naturel en français)
+                            const fmtTime = (t: string): string => {
+                              if (!t) return '';
+                              const [h, m] = t.split(':');
+                              return `${parseInt(h, 10)}h${m}`;
+                            };
+                            const [sh, sm] = (entry.startTime || '').split(':').map(Number);
+                            const [eh, em] = (entry.endTime || '').split(':').map(Number);
+                            const dur = (eh * 60 + em) - (sh * 60 + sm);
                             return (
-                              <div key={entry.id} className={cn('rounded-lg p-1.5 mb-1 border group relative hover:shadow-sm transition', colorClass)} style={{ minHeight: '40px' }}>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold">{(() => {
-                                    // ⭐ Afficher la durée en minutes au lieu de startTime-endTime
-                                    const [sh, sm] = (entry.startTime || '').split(':').map(Number);
-                                    const [eh, em] = (entry.endTime || '').split(':').map(Number);
-                                    const dur = (eh * 60 + em) - (sh * 60 + sm);
-                                    return `${dur} min`;
-                                  })()}</span>
-                                  <button onClick={() => handleDeleteEntry(entry.id)} className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 text-white rounded transition" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
+                              <div key={entry.id} className={cn('rounded-md px-1.5 py-0.5 mb-0.5 border group relative hover:shadow-sm transition', colorClass)} style={{ minHeight: '24px' }}>
+                                {/* Ligne 1 : matière + bouton supprimer */}
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-[11px] font-bold leading-tight truncate flex-1">
+                                    {entry.subject?.name || '—'}
+                                  </span>
+                                  <button onClick={() => handleDeleteEntry(entry.id)} className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 text-white rounded transition shrink-0" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
                                 </div>
-                                <div className="text-xs font-bold leading-tight">{entry.subject?.name || '—'}</div>
-                                <div className="text-[9px] text-slate-400">{entry.startTime}–{entry.endTime}</div>
-                                <div className="flex items-center gap-1 text-[9px] text-slate-500">
-                                  {entry.teacher && <span>{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</span>}
-                                  {entry.room && <span>· 📍 {entry.room.code}</span>}
+                                {/* Ligne 2 : "30min (8h15-8h45)" — durée + plage horaire entre parenthèses */}
+                                <div className="text-[9px] font-semibold text-slate-600 leading-tight">
+                                  {dur}min ({fmtTime(entry.startTime)}-{fmtTime(entry.endTime)})
                                 </div>
                               </div>
                             );
@@ -1889,16 +1915,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                   </div>
                                 );
                               })()}
-                              <select value={inlineForm.teacherId} onChange={e => setInlineForm({...inlineForm, teacherId: e.target.value})}
-                                className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
-                                <option value="">— Enseignant —</option>
-                                {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
-                              </select>
-                              <select value={inlineForm.roomId} onChange={e => setInlineForm({...inlineForm, roomId: e.target.value})}
-                                className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
-                                <option value="">— Salle —</option>
-                                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
-                              </select>
+                              {/* ⭐ Sélecteurs enseignant + salle SUPPRIMÉS pour maternelle/primaire.
+                                  L'EDT est commun à toutes les sections de l'AcademicClass — chaque
+                                  enseignant verra l'EDT de sa classe dans son UI, et chaque parent
+                                  verra celui de son enfant. La réservation de salle se fera via un
+                                  autre workflow si nécessaire. */}
                               {/* ⭐ Auto-sauvegarde : compte à rebours de 10 secondes
                                   Affiché uniquement quand le formulaire a une matière valide + un EDT actif.
                                   Indique à l'utilisateur que la séance sera sauvegardée automatiquement. */}

@@ -311,7 +311,14 @@ export class TimetablesPrismaService {
           },
         });
         if (academicClass && academicClass.physicalClasses.length > 0) {
-          targetClassIds = academicClass.physicalClasses.map((pc: any) => pc.id);
+          // ⭐ NE CRÉER QU'UNE SEULE entry par AcademicClass — pas une par section physique.
+          //    L'EDT appartient à la classe académique (ex: "CI"), pas à chaque section
+          //    (CI/A, CI/B, CI/C). Les enseignants verront l'EDT via leur classe dans
+          //    leur UI, et les parents verront celui de leur enfant.
+          //    On utilise le premier Class.id (section physique) comme proxy pour
+          //    satisfaire la FK sur classes.id. Le frontend affiche l'entry via
+          //    Class.officialClassId quand l'utilisateur sélectionne l'AcademicClass.
+          targetClassIds = [academicClass.physicalClasses[0].id];
           resolvedAcademicClassName = academicClass.name;
         } else if (academicClass) {
           // AcademicClass existe mais n'a aucune section physique

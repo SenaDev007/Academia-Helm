@@ -1096,16 +1096,22 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ManualEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  // ⭐ Config chargée depuis le sous-onglet Configuration
   const [configSchoolDays, setConfigSchoolDays] = useState<number[]>([1,2,3,4,5]);
   const [configTimeBlocks, setConfigTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
-  // ⭐ Multi-classes
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [entryForm, setEntryForm] = useState<any>({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00', subjectId: '' });
+  const [subjects, setSubjects] = useState<any[]>([]);
+  // ⭐ Édition INLINE : au lieu d'un modal, on édite directement dans la cellule
+  //    editingCell = { dayOfWeek, blockStart, blockEnd } identifie la cellule en cours d'édition
+  const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
+  const [inlineForm, setInlineForm] = useState({ subjectId: '', teacherId: '', roomId: '', startTime: '', endTime: '' });
+  const [saving, setSaving] = useState(false);
+  // ⭐ Export PDF
+  const [exportingPdf, setExportingPdf] = useState(false);
+  // ≉ School identity pour le PDF
+  const [schoolIdentity, setSchoolIdentity] = useState<any>(null);
 
   const configuredDays = DAYS.filter(d => configSchoolDays.includes(d.value));
 
@@ -1127,13 +1133,16 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     if (!academicYearId) return;
     setLoading(true);
     try {
-      const [tts, cls, rms, tchs] = await Promise.all([
+      const [tts, cls, rms, tchs, subs, si] = await Promise.all([
         pedagogyFetch<ManualTimetable[]>(`/api/timetables?academicYearId=${academicYearId}`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`).catch(() => []),
         pedagogyFetch<any[]>(`/api/rooms`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYearId}`).catch(() => []),
+        pedagogyFetch<any[]>(`/api/pedagogy/subjects?academicYearId=${academicYearId}`).catch(() => []),
+        fetch('/api/pedagogy-space/school-identity', { credentials: 'include' }).then(r => r.json()).catch(() => null),
       ]);
-      setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []);
+      setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []); setSubjects(subs || []);
+      setSchoolIdentity(si);
       if (tts && tts.length > 0) { setActiveTimetableId(tts[0].id); setTimetables(tts); }
       if (cls && cls.length > 0) setSelectedClassIds([cls[0].id]);
     } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -1154,23 +1163,41 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   const toggleClass = (classId: string) => setSelectedClassIds(prev => prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]);
 
-  const handleAddEntry = async () => {
-    if (!academicYearId || selectedClassIds.length === 0) return;
+  // ⭐ Récupérer les entries d'une cellule (jour + block)
+  const getCellEntries = (dayOfWeek: number, block: any) => {
+    return filteredEntries.filter(e => e.dayOfWeek === dayOfWeek && e.startTime >= block.start && e.endTime <= block.end);
+  };
+
+  // ⭐ Démarrer l'édition inline d'une cellule
+  const startInlineEdit = (dayOfWeek: number, block: any) => {
+    setEditingCell({ dayOfWeek, blockStart: block.start, blockEnd: block.end });
+    setInlineForm({ subjectId: '', teacherId: '', roomId: '', startTime: block.start, endTime: block.end });
+  };
+
+  // ⭐ Sauvegarder l'entry inline
+  const handleInlineSave = async () => {
+    if (!editingCell || !academicYearId || selectedClassIds.length === 0) return;
+    if (!inlineForm.subjectId) { toast({ title: 'Erreur', description: 'Sélectionnez une matière.', variant: 'destructive' }); return; }
+    setSaving(true);
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
       try {
         const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date() } });
         if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); currentTimetableId = newTt.id; } else throw new Error('Création EDT échouée');
-      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
+      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); setSaving(false); return; }
     }
     const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
     let success = 0, failed = 0;
     for (const classId of selectedClassIds) {
-      try { await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, { method: 'POST', body: { ...entryForm, classId, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } }); success++; }
-      catch { failed++; }
+      try {
+        await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
+          method: 'POST', body: { classId, subjectId: inlineForm.subjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: inlineForm.startTime, endTime: inlineForm.endTime, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
+        });
+        success++;
+      } catch { failed++; }
     }
-    await loadEntries(); setShowAddModal(false);
-    setEntryForm({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00', subjectId: '' });
+    await loadEntries();
+    setEditingCell(null); setSaving(false);
     if (failed === 0) toast({ title: `✅ ${success} séance(s) ajoutée(s)` });
     else toast({ title: 'Partiel', description: `${success} réussie(s), ${failed} échec(s)`, variant: 'destructive' });
   };
@@ -1180,14 +1207,62 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
+  // ⭐ Export PDF A4 paysage
+  const handleExportPdf = async () => {
+    if (filteredEntries.length === 0 && selectedClassIds.length === 0) return;
+    setExportingPdf(true);
+    try {
+      const className = selectedClassIds.length === 1
+        ? (classes.find(c => c.id === selectedClassIds[0])?.name || '')
+        : selectedClassIds.map(id => classes.find(c => c.id === id)?.name).filter(Boolean).join(' + ');
+      const schoolName = schoolIdentity?.schoolName || '';
+      const logoUrl = schoolIdentity?.logoUrl || '';
+      const logoHtml = logoUrl ? `<img src="${logoUrl}" alt="logo" style="max-height:60px;max-width:180px;object-fit:contain;" />` : '';
+      const daysHeader = configuredDays.map(d => `<th style="border:1px solid #333;padding:6px;font-size:10px;background:#1a2a6b;color:white;">${d.label}</th>`).join('');
+      const rows = configTimeBlocks.map(block => {
+        const isBreak = block.type !== 'BLOCK';
+        const breakLabel = block.type === 'LUNCH' ? '🍽 Déjeuner' : block.type === 'BREAK' ? '☕ Récréation' : '';
+        if (isBreak) {
+          return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#fef3c7;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td><td colspan="${configuredDays.length}" style="border:1px solid #333;padding:4px;background:#fef3c7;text-align:center;font-size:10px;font-weight:bold;color:#92400e;">${breakLabel} (${block.start}–${block.end})</td></tr>`;
+        }
+        const cells = configuredDays.map(day => {
+          const cellEntries = getCellEntries(day.value, block);
+          if (cellEntries.length === 0) return '<td style="border:1px solid #333;padding:4px;min-height:40px;"></td>';
+          return '<td style="border:1px solid #333;padding:4px;background:#eff6ff;">' + cellEntries.map(e => {
+            const subj = e.subject?.name || '—';
+            const teacher = e.teacher ? `${e.teacher.firstName?.[0]}. ${e.teacher.lastName}` : '';
+            const room = e.room?.code || '';
+            return `<div style="margin-bottom:3px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}</strong><br/><span style="font-size:8px;color:#666;">${teacher}${room ? ' · ' + room : ''}</span><br/><span style="font-size:7px;color:#999;">${e.startTime}–${e.endTime}</span></div>`;
+          }).join('') + '</td>';
+        }).join('');
+        return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td>${cells}</tr>`;
+      }).join('');
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>EDT ${className}</title><style>@page{size:A4 landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px}.header{display:flex;align-items:center;gap:15px;border-bottom:3px solid #1a2a6b;padding-bottom:8px;margin-bottom:10px}h1{font-size:14px;color:#1a2a6b}h2{font-size:11px;color:#666;margin-top:2px}table{width:100%;border-collapse:collapse}th{border:1px solid #333;padding:4px;font-size:9px}td{border:1px solid #333;padding:2px;font-size:9px;vertical-align:top}</style></head><body><div class="header">${logoHtml}<div><h1>EMPLOI DU TEMPS</h1><h2>${schoolName ? schoolName + ' — ' : ''}${className}</h2></div></div><table><thead><tr><th style="width:60px;background:#1a2a6b;color:white;">Horaire</th>${daysHeader}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
+      const w = window.open('', '_blank');
+      if (!w) { toast({ title: 'Erreur', description: 'Autorisez les popups pour générer le PDF.', variant: 'destructive' }); return; }
+      w.document.write(html); w.document.close();
+      setTimeout(() => { w.print(); }, 500);
+    } catch (e: any) {
+      toast({ title: 'Erreur PDF', description: e.message, variant: 'destructive' });
+    } finally { setExportingPdf(false); }
+  };
+
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
+
+  // ⭐ Couleurs pour les matières (cycle)
+  const SUBJECT_COLORS = ['bg-blue-50 border-blue-200 text-blue-700','bg-emerald-50 border-emerald-200 text-emerald-700','bg-amber-50 border-amber-200 text-amber-700','bg-rose-50 border-rose-200 text-rose-700','bg-indigo-50 border-indigo-200 text-indigo-700','bg-purple-50 border-purple-200 text-purple-700','bg-cyan-50 border-cyan-200 text-cyan-700'];
+  const getSubjectColor = (subjectId?: string) => {
+    if (!subjectId) return SUBJECT_COLORS[0];
+    const idx = subjects.findIndex(s => s.id === subjectId);
+    return SUBJECT_COLORS[Math.abs(idx) % SUBJECT_COLORS.length];
+  };
 
   return (
     <div className="space-y-4">
-      {/* Toolbar : multi-classes */}
+      {/* Toolbar */}
       <div className="flex flex-wrap items-start gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
         <div className="flex-1 min-w-[250px]">
-          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) — sélection multiple (CI+CP partagent le même EDT)</label>
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) — sélection multiple possible</label>
           <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
             {classes.length === 0 ? <span className="text-xs text-slate-400 italic">Aucune classe</span> :
               classes.map(c => {
@@ -1201,29 +1276,29 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
               })
             }
           </div>
-          {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique pour toutes</span>}
+          {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique</span>}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowAddModal(true)} disabled={selectedClassIds.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold"><Plus className="w-3.5 h-3.5" /> Ajouter séance</button>
-          <button onClick={() => { const w = window.open('', '_blank'); if (!w) return; w.document.write('<html><body><p>Impression à venir</p></body></html>'); w.document.close(); w.print(); }} disabled={filteredEntries.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold"><Printer className="w-3.5 h-3.5" /> Imprimer</button>
+          <button onClick={handleExportPdf} disabled={exportingPdf || filteredEntries.length === 0 || selectedClassIds.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />} PDF A4
+          </button>
         </div>
       </div>
 
-      {/* Grille DYNAMIQUE basée sur la config */}
+      {/* Grille DYNAMIQUE */}
       {selectedClassIds.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-medium text-slate-700">Sélectionnez une ou plusieurs classes</p>
-          <p className="text-xs text-slate-400 mt-1">Cliquez sur une classe ci-dessus. Vous pouvez en sélectionner plusieurs (ex: CI+CP).</p>
+          <p className="text-xs text-slate-400 mt-1">Cliquez sur les badges ci-dessus. Multi-sélection possible (CI+CP).</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
           <table className="w-full text-sm border-collapse min-w-[700px]">
             <thead><tr className="bg-slate-100">
-              <th className="p-2 text-left text-xs font-bold text-slate-700 border border-slate-200 w-24">Horaire</th>
-              {configuredDays.map(d => <th key={d.value} className="p-2 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[120px]">{d.label.toUpperCase()}</th>)}
+              <th className="p-2 text-left text-xs font-bold text-slate-700 border border-slate-200 w-20">Horaire</th>
+              {configuredDays.map(d => <th key={d.value} className="p-2 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[140px]">{d.label.toUpperCase()}</th>)}
             </tr></thead>
             <tbody>
               {configTimeBlocks.map((block, blockIdx) => {
@@ -1238,26 +1313,68 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                   );
                 }
                 return (
-                  <tr key={blockIdx} className="hover:bg-slate-50/30">
+                  <tr key={blockIdx}>
                     <td className="p-2 border border-slate-200 bg-slate-50 text-center"><div className="text-xs font-bold text-slate-700">{block.start}</div><div className="text-[10px] text-slate-400">{block.end}</div></td>
                     {configuredDays.map(day => {
-                      const cellEntries = filteredEntries.filter(e => e.dayOfWeek === day.value && e.startTime >= block.start && e.endTime <= block.end);
+                      const cellEntries = getCellEntries(day.value, block);
+                      const isEditing = editingCell?.dayOfWeek === day.value && editingCell?.blockStart === block.start;
                       return (
-                        <td key={day.value} className="p-1 border border-slate-200 align-top min-h-[60px]">
-                          {cellEntries.length > 0 ? (
-                            <div className="space-y-1">{cellEntries.map(entry => (
-                              <div key={entry.id} className="bg-blue-50 border border-blue-200 rounded-lg p-1.5 group relative hover:shadow-sm transition">
-                                <div className="text-[10px] font-bold text-blue-700">{entry.startTime}–{entry.endTime}</div>
-                                <div className="text-xs font-bold text-slate-800 leading-tight">{entry.subject?.name || '—'}</div>
-                                {entry.teacher && <div className="text-[10px] text-slate-500">{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</div>}
-                                {selectedClassIds.length > 1 && entry.class?.name && <div className="text-[9px] text-slate-400">{entry.class.name}</div>}
-                                <button onClick={() => handleDeleteEntry(entry.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-red-500 text-white rounded transition" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
+                        <td key={day.value} className="p-1 border border-slate-200 align-top" style={{ minHeight: '60px' }}>
+                          {/* ⭐ Chaque entry = une "ligne" dans la cellule (aligned with other days via min-height) */}
+                          {cellEntries.map(entry => {
+                            const colorClass = getSubjectColor(entry.subjectId);
+                            return (
+                              <div key={entry.id} className={cn('rounded-lg p-1.5 mb-1 border group relative hover:shadow-sm transition', colorClass)} style={{ minHeight: '40px' }}>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold">{entry.startTime}–{entry.endTime}</span>
+                                  <button onClick={() => handleDeleteEntry(entry.id)} className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 text-white rounded transition" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
+                                </div>
+                                <div className="text-xs font-bold leading-tight">{entry.subject?.name || '—'}</div>
+                                <div className="flex items-center gap-1 text-[9px] text-slate-500">
+                                  {entry.teacher && <span>{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</span>}
+                                  {entry.room && <span>· 📍 {entry.room.code}</span>}
+                                </div>
                               </div>
-                            ))}</div>
+                            );
+                          })}
+                          {/* ⭐ Formulaire INLINE (remplace le modal) */}
+                          {isEditing ? (
+                            <div className="bg-blue-50 border border-blue-300 rounded-lg p-1.5 space-y-1">
+                              <select value={inlineForm.subjectId} onChange={e => setInlineForm({...inlineForm, subjectId: e.target.value})}
+                                className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] font-medium" autoFocus>
+                                <option value="">— Matière —</option>
+                                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                              </select>
+                              <div className="flex gap-1">
+                                <input type="time" value={inlineForm.startTime} onChange={e => setInlineForm({...inlineForm, startTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
+                                <input type="time" value={inlineForm.endTime} onChange={e => setInlineForm({...inlineForm, endTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
+                              </div>
+                              <select value={inlineForm.teacherId} onChange={e => setInlineForm({...inlineForm, teacherId: e.target.value})}
+                                className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
+                                <option value="">— Enseignant —</option>
+                                {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
+                              </select>
+                              <select value={inlineForm.roomId} onChange={e => setInlineForm({...inlineForm, roomId: e.target.value})}
+                                className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
+                                <option value="">— Salle —</option>
+                                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
+                              </select>
+                              <div className="flex gap-1">
+                                <button onClick={handleInlineSave} disabled={saving || !inlineForm.subjectId}
+                                  className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-[10px] font-bold">
+                                  {saving ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : '✓ Ajouter'}
+                                </button>
+                                <button onClick={() => setEditingCell(null)}
+                                  className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded text-[10px] font-bold">✕</button>
+                              </div>
+                            </div>
                           ) : (
-                            <div className="h-full min-h-[48px] flex items-center justify-center cursor-pointer hover:bg-blue-50/50 rounded transition"
-                              onClick={() => { setEntryForm({ classId: selectedClassIds[0], teacherId: '', roomId: null, subjectId: '', dayOfWeek: day.value, startTime: block.start, endTime: block.end }); setShowAddModal(true); }}
-                              title="Cliquez pour ajouter une séance"><Plus className="w-3 h-3 text-slate-300 hover:text-blue-500" /></div>
+                            /* ≉ Bouton + pour ajouter une matière dans cette cellule */
+                            <button onClick={() => startInlineEdit(day.value, block)}
+                              className="w-full py-1 flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50/50 rounded transition border border-dashed border-slate-200 hover:border-blue-300"
+                              style={{ minHeight: '28px' }}>
+                              <Plus className="w-3 h-3" />
+                            </button>
                           )}
                         </td>
                       );
@@ -1267,21 +1384,6 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
               })}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* Modal d'ajout */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-slate-100"><h3 className="font-bold text-sm text-slate-900">Ajouter une séance</h3><button onClick={() => setShowAddModal(false)} className="p-1 text-slate-400 hover:text-slate-700"><X className="w-4 h-4" /></button></div>
-            <div className="p-4 space-y-3">
-              <div className="p-2 bg-blue-50 rounded-lg text-xs text-blue-800"><strong>{selectedClassIds.length} classe(s)</strong> sélectionnée(s) — la séance sera créée pour chacune.<br/>Jour: <strong>{configuredDays.find(d => d.value === entryForm.dayOfWeek)?.label || '—'}</strong>{' · '}Horaire: <strong>{entryForm.startTime} – {entryForm.endTime}</strong></div>
-              <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Enseignant</label><select value={entryForm.teacherId || ''} onChange={e => setEntryForm({...entryForm, teacherId: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm"><option value="">— Aucun —</option>{teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}</select></div>
-              <div className="grid grid-cols-2 gap-2"><div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Début</label><input type="time" value={entryForm.startTime} onChange={e => setEntryForm({...entryForm, startTime: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Fin</label><input type="time" value={entryForm.endTime} onChange={e => setEntryForm({...entryForm, endTime: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" /></div></div>
-            </div>
-            <div className="flex justify-end gap-2 p-4 border-t border-slate-100"><button onClick={() => setShowAddModal(false)} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Annuler</button><button onClick={handleAddEntry} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold"><Plus className="w-3.5 h-3.5" /> Ajouter pour {selectedClassIds.length} classe(s)</button></div>
-          </div>
         </div>
       )}
     </div>

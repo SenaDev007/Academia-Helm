@@ -1125,13 +1125,27 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const { schoolLevel } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   // ⭐ Niveaux réels (sans l'option virtuelle 'ALL')
+  //    IMPORTANT : availableLevels vient de /api/school-levels qui retourne des objets
+  //    avec `id` = UUID de education_structure (PAS school_levels) et
+  //    `schoolLevelId` = UUID de school_levels (la VRAIE FK utilisée par Timetable).
+  //    On doit utiliser schoolLevelId pour les requêtes backend qui ont une FK vers school_levels.
   const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
   // ⭐ Sélecteur de niveau LOCAL — indépendant du header
-  //    Avant ce fix, le ManualEditor utilisait schoolLevel?.id du header qui
-  //    pouvait être 'ALL' (Tous les niveaux) → la config n'était pas trouvée
-  //    → fallback aux DEFAULT_TIME_BLOCKS → la grille ne respectait pas la config.
+  //    On utilise schoolLevelId (UUID de school_levels) comme valeur du select.
+  //    Avant ce fix, on utilisait l.id (UUID de education_structure) → FK invalide →
+  //    'Référence invalide : l'entité liée n'existe pas'.
   const [localLevelId, setLocalLevelId] = useState<string | null>(
-    (schoolLevelId && schoolLevelId !== 'ALL') ? schoolLevelId : (realLevels[0]?.id ?? null)
+    (() => {
+      const headerLvl = realLevels.find((l: any) => l.id === schoolLevelId || l.schoolLevelId === schoolLevelId);
+      if (headerLvl?.schoolLevelId) return headerLvl.schoolLevelId;
+      if (schoolLevelId && schoolLevelId !== 'ALL') {
+        const match = realLevels.find((l: any) => l.schoolLevelId === schoolLevelId);
+        if (match?.schoolLevelId) return match.schoolLevelId;
+      }
+      // Fallback: premier niveau réel avec schoolLevelId non null
+      const first = realLevels.find((l: any) => l.schoolLevelId);
+      return first?.schoolLevelId ?? realLevels[0]?.schoolLevelId ?? null;
+    })()
   );
   const [timetables, setTimetables] = useState<ManualTimetable[]>([]);
   const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
@@ -1500,7 +1514,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white"
           >
             {realLevels.map((l: any) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
+              <option key={l.schoolLevelId || l.id} value={l.schoolLevelId || l.id}>{l.label || l.name || l.code}</option>
             ))}
           </select>
         </div>

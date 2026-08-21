@@ -1187,7 +1187,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Édition INLINE : au lieu d'un modal, on édite directement dans la cellule
   //    editingCell = { dayOfWeek, blockStart, blockEnd } identifie la cellule en cours d'édition
   const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
-  const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', duration: 30 });
+  const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', duration: 30, step: '' });
+  // ⭐ ID de l'entry en cours d'édition (vs création nouvelle).
+  //    Si editingEntryId est défini → handleInlineSave fait un PUT (update)
+  //    Sinon → POST (create) comme avant.
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // ⭐ Ref pour empêcher les appels parallèles à handleInlineSave (race condition
   //    entre auto-save et clic manuel). Le state `saving` ne suffit pas car il est
@@ -1282,14 +1286,40 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     return filteredEntries.filter(e => e.dayOfWeek === dayOfWeek && e.startTime >= block.start && e.endTime <= block.end);
   };
 
-  // ⭐ Démarrer l'édition inline d'une cellule
+  // ⭐ Démarrer l'édition inline d'une cellule (NOUVELLE séance)
   //    Plus de sélecteur enseignant ni salle (supprimé pour maternelle/primaire).
   //    L'EDT est commun à toutes les sections de l'AcademicClass — chaque enseignant
   //    verra automatiquement l'EDT de sa classe dans son UI, et chaque parent
   //    verra celui de son enfant.
   const startInlineEdit = (dayOfWeek: number, block: any) => {
     setEditingCell({ dayOfWeek, blockStart: block.start, blockEnd: block.end });
-    setInlineForm({ subjectId: '', duration: 30 });
+    setEditingEntryId(null); // ⭐ mode création
+    setInlineForm({ subjectId: '', duration: 30, step: '' });
+  };
+
+  // ⭐ Démarrer l'édition inline d'une séance EXISTANTE (modification)
+  //    Pré-remplit le formulaire avec les valeurs actuelles de l'entry.
+  //    L'utilisateur peut corriger matière / durée / étape, puis sauvegarder.
+  const startInlineEditEntry = (entry: any) => {
+    // Trouver le block qui contient cette entry (par startTime/endTime)
+    const block = configTimeBlocks.find(b =>
+      b.type === 'BLOCK' && b.start <= entry.startTime && b.end >= entry.endTime
+    );
+    if (!block) {
+      toast({ title: 'Erreur', description: 'Impossible de retrouver le créneau horaire de cette séance.', variant: 'destructive' });
+      return;
+    }
+    setEditingCell({ dayOfWeek: entry.dayOfWeek, blockStart: block.start, blockEnd: block.end });
+    setEditingEntryId(entry.id); // ⭐ mode édition
+    // Calculer la durée depuis startTime/endTime
+    const [sh, sm] = (entry.startTime || '').split(':').map(Number);
+    const [eh, em] = (entry.endTime || '').split(':').map(Number);
+    const duration = (eh * 60 + em) - (sh * 60 + sm) || 30;
+    setInlineForm({
+      subjectId: entry.subjectId || '',
+      duration,
+      step: entry.step || '',
+    });
   };
 
   // ⭐ Calculer l'heure de début pour la nouvelle séance = fin de la dernière séance
@@ -1428,8 +1458,24 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     // ⭐ Calculer startTime et endTime depuis la durée
     //    startTime = fin de la dernière séance (ou début du block, ou fin du cérémonial)
     //    endTime = startTime + duration minutes
-    const calcStart = calcStartTime(editingCell.dayOfWeek, { start: editingCell.blockStart, end: editingCell.blockEnd });
-    const calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
+    //    EN MODE ÉDITION : on garde le startTime original (l'entry ne change pas de position)
+    //    et on recalcule endTime = startTime + nouvelle durée.
+    let calcStart: string, calcEnd: string;
+    if (editingEntryId) {
+      // ⭐ Mode édition — récupérer le startTime actuel de l'entry
+      const existingEntry = entries.find(e => e.id === editingEntryId);
+      if (existingEntry) {
+        calcStart = existingEntry.startTime;
+      } else {
+        // Fallback : utiliser le calcul normal
+        calcStart = calcStartTime(editingCell.dayOfWeek, { start: editingCell.blockStart, end: editingCell.blockEnd });
+      }
+      calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
+    } else {
+      // ⭐ Mode création — calculer depuis le block
+      calcStart = calcStartTime(editingCell.dayOfWeek, { start: editingCell.blockStart, end: editingCell.blockEnd });
+      calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
+    }
 
     // ⭐ NE PAS auto-créer un EDT silencieusement — c'est ce qui causait la confusion :
     //    l'utilisateur cliquait "Ajouter une matière", un EDT était créé en silence,
@@ -1447,6 +1493,43 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     }
     const currentTimetableId = activeTimetableId;
     const resolvedSchoolLevelId = localLevelId || schoolLevelId;
+
+    // ⭐ MODE ÉDITION : PUT /api/timetables/entries/:id avec les champs modifiés
+    //    On ne met à jour qu'une seule entry (pas de boucle sur selectedClassIds).
+    if (editingEntryId) {
+      try {
+        await pedagogyFetch<any>(`/api/timetables/entries/${editingEntryId}`, {
+          method: 'PUT',
+          body: {
+            subjectId: resolvedSubjectId,
+            dayOfWeek: editingCell.dayOfWeek,
+            startTime: calcStart,
+            endTime: calcEnd,
+            duration: Number(inlineForm.duration) || 30,
+            step: inlineForm.step || undefined,
+          },
+        });
+        await loadEntries();
+        savingRef.current = false;
+        setSaving(false);
+        setLastAutoSaveAt(new Date());
+        setEditingCell(null);
+        setEditingEntryId(null);
+        toast({ title: '✅ Séance modifiée' });
+      } catch (e: any) {
+        savingRef.current = false;
+        setSaving(false);
+        console.error('[handleInlineSave] PUT entries failed:', { entryId: editingEntryId, error: e.message });
+        toast({
+          title: 'Échec de la modification',
+          description: e.message || 'Erreur inconnue',
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
+
+    // ⭐ MODE CRÉATION : POST /api/timetables/:id/entries pour chaque classe sélectionnée
     let success = 0, failed = 0;
     let lastErrorMessage: string | null = null;
     for (const classId of selectedClassIds) {
@@ -1454,7 +1537,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         // ⭐ La réponse peut être une entry simple OU { count: N, entries: [...] }
         //    si le backend a résolu l'AcademicClass en plusieurs sections physiques.
         const result = await pedagogyFetch<any>(`/api/timetables/${currentTimetableId}/entries`, {
-          method: 'POST', body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
+          method: 'POST', body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined }
         });
         // ⭐ Si le backend a créé plusieurs entries (multi-section), on compte le total
         //    sinon on compte 1 entry par POST réussi.
@@ -1463,7 +1546,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         failed++;
         lastErrorMessage = e.message || 'Erreur inconnue';
         // ⭐ Console.error pour faciliter le debug depuis la console navigateur
-        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } });
+        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId, step: inlineForm.step || undefined } });
       }
     }
     await loadEntries();
@@ -1526,7 +1609,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     return () => clearInterval(interval);
     // ⚠️ Ne pas inclure handleInlineSave dans les deps — il change à chaque render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingCell, inlineForm.subjectId, inlineForm.customSubjectName, saving, activeTimetableId, selectedClassIds]);
+  }, [editingCell, editingEntryId, inlineForm.subjectId, inlineForm.customSubjectName, inlineForm.step, saving, activeTimetableId, selectedClassIds]);
 
   const handleDeleteEntry = async (id: string) => {
     try { await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }); await loadEntries(); toast({ title: '✅ Séance supprimée' }); }
@@ -1856,12 +1939,31 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                             const dur = (eh * 60 + em) - (sh * 60 + sm);
                             return (
                               <div key={entry.id} className={cn('rounded-md px-1.5 py-0.5 mb-0.5 border group relative hover:shadow-sm transition', colorClass)} style={{ minHeight: '24px' }}>
-                                {/* Ligne 1 : matière + bouton supprimer */}
+                                {/* Ligne 1 : matière + boutons (modifier + supprimer) */}
                                 <div className="flex items-center justify-between gap-1">
                                   <span className="text-[11px] font-bold leading-tight truncate flex-1">
                                     {entry.subject?.name || '—'}
+                                    {/* ⭐ Afficher l'étape si elle est renseignée (ex: "Étape 3" ou "Étapes 1-2") */}
+                                    {entry.step && (
+                                      <span className="text-[9px] font-semibold text-slate-500 ml-1">· {entry.step}</span>
+                                    )}
                                   </span>
-                                  <button onClick={() => handleDeleteEntry(entry.id)} className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 text-white rounded transition shrink-0" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
+                                  {/* ⭐ Bouton MODIFIER (Pencil) — rouvre le formulaire pré-rempli pour édition */}
+                                  <button
+                                    onClick={() => startInlineEditEntry(entry)}
+                                    className="opacity-0 group-hover:opacity-100 p-0.5 bg-blue-500 hover:bg-blue-600 text-white rounded transition shrink-0"
+                                    title="Modifier cette séance"
+                                  >
+                                    <Pencil className="w-2.5 h-2.5" />
+                                  </button>
+                                  {/* Bouton SUPPRIMER (X) */}
+                                  <button
+                                    onClick={() => handleDeleteEntry(entry.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 hover:bg-red-600 text-white rounded transition shrink-0 ml-0.5"
+                                    title="Supprimer cette séance"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
                                 </div>
                                 {/* Ligne 2 : "30min (8h15-8h45)" — durée + plage horaire entre parenthèses */}
                                 <div className="text-[9px] font-semibold text-slate-600 leading-tight">
@@ -2017,6 +2119,63 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                   enseignant verra l'EDT de sa classe dans son UI, et chaque parent
                                   verra celui de son enfant. La réservation de salle se fera via un
                                   autre workflow si nécessaire. */}
+                              {/* ⭐ Sélecteur d'ÉTAPE (1-8) — affiché uniquement pour Lecture-Écriture
+                                  au CI/CP. L'utilisateur peut préciser quelle(s) étape(s) la séance
+                                  couvre : "Étape 1", "Étapes 1-2", "Étape 3", etc.
+                                  Détection : on vérifie si le nom de la matière sélectionnée
+                                  contient "lecture" ou "ecriture" (normalisé). */}
+                              {(() => {
+                                // Déterminer le nom de la matière sélectionnée
+                                let selectedSubjectName = '';
+                                if (inlineForm.subjectId && !inlineForm.subjectId.startsWith('__')) {
+                                  const s = subjects.find(s => s.id === inlineForm.subjectId);
+                                  selectedSubjectName = s?.name || '';
+                                } else if (inlineForm.subjectId?.startsWith('__CAT__')) {
+                                  selectedSubjectName = inlineForm.subjectId.replace('__CAT__', '');
+                                } else if (inlineForm.subjectId === '__CUSTOM__') {
+                                  selectedSubjectName = (inlineForm as any).customSubjectName || '';
+                                }
+                                const normalizedSubject = normalizeSubjectName(selectedSubjectName);
+                                // Afficher le sélecteur si la matière est liée à Lecture/Écriture
+                                const showStepSelector = normalizedSubject.includes('lecture') || normalizedSubject.includes('ecriture');
+                                if (!showStepSelector) return null;
+                                // ⭐ Liste des options d'étapes (1-8 + plages combinées courantes)
+                                const stepOptions = [
+                                  { value: '', label: '(Aucune étape)' },
+                                  { value: 'Étape 1', label: 'Étape 1' },
+                                  { value: 'Étape 2', label: 'Étape 2' },
+                                  { value: 'Étape 3', label: 'Étape 3' },
+                                  { value: 'Étape 4', label: 'Étape 4' },
+                                  { value: 'Étape 5', label: 'Étape 5' },
+                                  { value: 'Étape 6', label: 'Étape 6' },
+                                  { value: 'Étape 7', label: 'Étape 7' },
+                                  { value: 'Étape 8', label: 'Étape 8' },
+                                  { value: 'Étapes 1-2', label: 'Étapes 1-2' },
+                                  { value: 'Étapes 2-3', label: 'Étapes 2-3' },
+                                  { value: 'Étapes 3-4', label: 'Étapes 3-4' },
+                                  { value: 'Étapes 4-5', label: 'Étapes 4-5' },
+                                  { value: 'Étapes 5-6', label: 'Étapes 5-6' },
+                                  { value: 'Étapes 6-7', label: 'Étapes 6-7' },
+                                  { value: 'Étapes 7-8', label: 'Étapes 7-8' },
+                                  { value: 'Étapes 1-3', label: 'Étapes 1-3' },
+                                  { value: 'Étapes 3-5', label: 'Étapes 3-5' },
+                                  { value: 'Étapes 5-8', label: 'Étapes 5-8' },
+                                ];
+                                return (
+                                  <div className="flex items-center gap-1">
+                                    <label className="text-[9px] font-bold text-slate-500 whitespace-nowrap">Étape</label>
+                                    <select
+                                      value={inlineForm.step || ''}
+                                      onChange={e => setInlineForm({ ...inlineForm, step: e.target.value })}
+                                      className="flex-1 px-1 py-0.5 border border-blue-300 rounded text-[10px] bg-blue-50 font-semibold"
+                                    >
+                                      {stepOptions.map(opt => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })()}
                               {/* ⭐ Auto-sauvegarde : compte à rebours de 10 secondes
                                   Affiché uniquement quand le formulaire a une matière valide + un EDT actif.
                                   Indique à l'utilisateur que la séance sera sauvegardée automatiquement. */}
@@ -2041,9 +2200,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                               <div className="flex gap-1">
                                 <button onClick={handleInlineSave} disabled={saving || !inlineForm.subjectId || (inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim())}
                                   className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-[10px] font-bold">
-                                  {saving ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : '✓ Ajouter'}
+                                  {saving ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : (editingEntryId ? '✓ Modifier' : '✓ Ajouter')}
                                 </button>
-                                <button onClick={() => setEditingCell(null)}
+                                <button onClick={() => { setEditingCell(null); setEditingEntryId(null); }}
                                   className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded text-[10px] font-bold">✕</button>
                               </div>
                             </div>

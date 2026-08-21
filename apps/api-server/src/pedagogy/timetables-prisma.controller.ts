@@ -23,7 +23,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CreateTimetableDto } from './dto/create-timetable.dto';
 import { UpdateTimetableDto } from './dto/update-timetable.dto';
-import { CreateTimetableEntryDto } from './dto/create-timetable-entry.dto';
+import { CreateTimetableEntryDto, UpdateTimetableEntryDto } from './dto/create-timetable-entry.dto';
 import { CreateTimeSlotDto } from './dto/supplementary-dtos';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { PrismaService } from '../database/prisma.service';
@@ -163,6 +163,23 @@ export class TimetablesPrismaController {
     @TenantId() tenantId: string,
   ) {
     return this.timetablesService.deleteTimetableEntry(id, tenantId);
+  }
+
+  /**
+   * ⭐ PUT /timetables/entries/:id — Met à jour une séance existante
+   *    Permet à l'utilisateur de modifier une séance sans la supprimer/recréer :
+   *    - Changer la matière (subjectId)
+   *    - Changer la durée (et donc startTime/endTime recalculés côté frontend)
+   *    - Mettre à jour l'étape (step) — "Étape 1" → "Étapes 2-3"
+   *    Body: UpdateTimetableEntryDto (tous les champs optionnels)
+   */
+  @Put('entries/:id')
+  async updateEntry(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() updateDto: UpdateTimetableEntryDto,
+  ) {
+    return this.timetablesService.updateTimetableEntry(id, tenantId, updateDto as any);
   }
 
   /// ⭐ Supprime un timetable complet (entries + timetable)

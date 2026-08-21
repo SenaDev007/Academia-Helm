@@ -275,6 +275,7 @@ export class TimetablesPrismaService {
     startTime: string;
     endTime: string;
     duration?: number;
+    step?: string;
   }) {
     // Vérifier que l'emploi du temps existe
     const timetable = await this.prisma.timetable.findFirst({
@@ -406,6 +407,7 @@ export class TimetablesPrismaService {
       startTime: data.startTime,
       endTime: data.endTime,
       duration: data.duration,
+      step: data.step,
     };
 
     const createdEntries: any[] = [];
@@ -558,6 +560,80 @@ export class TimetablesPrismaService {
    */
   async deleteTimetableEntry(id: string, tenantId: string) {
     return this.deleteTimetableSlot(id, tenantId);
+  }
+
+  /**
+   * ⭐ Met à jour une entrée d'emploi du temps (pour édition inline)
+   *    Utilisé par PUT /timetables/entries/:id
+   *    Permet à l'utilisateur de modifier une séance existante :
+   *    - Changer la matière (subjectId)
+   *    - Changer la durée (et donc startTime/endTime)
+   *    - Mettre à jour l'étape (step) — ex: "Étape 1" → "Étapes 2-3"
+   *    Tous les champs sont optionnels — on ne met à jour que ce qui est envoyé.
+   */
+  async updateTimetableEntry(
+    id: string,
+    tenantId: string,
+    updates: {
+      subjectId?: string;
+      teacherId?: string;
+      roomId?: string;
+      dayOfWeek?: number;
+      startTime?: string;
+      endTime?: string;
+      duration?: number;
+      step?: string;
+    },
+  ) {
+    // Vérifier que l'entry existe et appartient au tenant
+    const existing = await this.prisma.timetableEntry.findFirst({
+      where: { id, tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`TimetableEntry with ID ${id} not found`);
+    }
+
+    // Construire le payload Prisma — ne mettre à jour que les champs fournis
+    // (undefined = ne pas changer)
+    const updateData: any = { ...prismaUpdateDefaults() };
+    if (updates.subjectId !== undefined) updateData.subjectId = updates.subjectId || null;
+    if (updates.teacherId !== undefined) updateData.teacherId = updates.teacherId || null;
+    if (updates.roomId !== undefined) updateData.roomId = updates.roomId || null;
+    if (updates.dayOfWeek !== undefined) updateData.dayOfWeek = updates.dayOfWeek;
+    if (updates.startTime !== undefined) updateData.startTime = updates.startTime;
+    if (updates.endTime !== undefined) updateData.endTime = updates.endTime;
+    if (updates.duration !== undefined) updateData.duration = updates.duration;
+    if (updates.step !== undefined) updateData.step = updates.step || null;
+
+    const updated = await this.prisma.timetableEntry.update({
+      where: { id },
+      data: updateData,
+      include: {
+        class: true,
+        subject: true,
+        teacher: true,
+        room: true,
+        timeSlot: true,
+      },
+    });
+
+    // Log action (non-blocking)
+    try {
+      await this.audit.log({
+        tenantId,
+        entityType: 'TIMETABLE_SLOT',
+        entityId: id,
+        action: 'UPDATE',
+        performedBy: 'SYSTEM',
+        oldData: JSON.parse(JSON.stringify(existing)),
+        newData: JSON.parse(JSON.stringify(updated)),
+      });
+    } catch (auditError) {
+      // Audit logging failure should not block the operation
+    }
+
+    return updated;
   }
 
   /**

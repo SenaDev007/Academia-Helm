@@ -2033,29 +2033,50 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                               }}
                                 className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] font-medium" autoFocus>
                                 <option value="">— Sélectionner une matière —</option>
-                                {/* ⭐ Groupes de sous-matières (catalogue Bénin) */}
+                                {/* ⭐ Groupes de sous-matières (catalogue Bénin — francophone + anglophone) */}
                                 {SUB_SUBJECT_CATALOG.map(group => (
                                   <optgroup key={group.group} label={group.label}>
-                                    {/* D'abord les sous-matières du catalogue qui existent en DB */}
-                                    {group.items.filter(name => subjects.some(s => s.name === name)).map(name => {
-                                      const s = subjects.find(s => s.name === name)!;
+                                    {/* D'abord les sous-matières du catalogue qui existent en DB
+                                        → comparaison par nom normalisé (case + accent insensitive)
+                                        pour matcher "Lecture-Écriture" même si stocké comme "lecture ecriture" */}
+                                    {group.items.filter(name => subjects.some(s => normalizeSubjectName(s.name) === normalizeSubjectName(name))).map(name => {
+                                      const s = subjects.find(s => normalizeSubjectName(s.name) === normalizeSubjectName(name))!;
                                       return <option key={s.id} value={s.id}>{s.name}</option>;
                                     })}
                                     {/* Puis les sous-matières du catalogue qui n'existent PAS encore en DB
                                         → on les propose avec value = nom (sera créée à la volée) */}
-                                    {group.items.filter(name => !subjects.some(s => s.name === name)).map(name => (
+                                    {group.items.filter(name => !subjects.some(s => normalizeSubjectName(s.name) === normalizeSubjectName(name))).map(name => (
                                       <option key={`cat-${name}`} value={`__CAT__${name}`}>{name}</option>
                                     ))}
                                   </optgroup>
                                 ))}
-                                {/* ⭐ Matières en DB qui ne sont dans aucun groupe du catalogue */}
-                                {subjects.filter(s => !SUB_SUBJECT_CATALOG.some(g => g.items.includes(s.name))).length > 0 && (
-                                  <optgroup label="Autres (DB)">
-                                    {subjects.filter(s => !SUB_SUBJECT_CATALOG.some(g => g.items.includes(s.name))).map(s => (
-                                      <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                  </optgroup>
-                                )}
+                                {/* ⭐ Matières en DB qui ne sont dans aucun groupe du catalogue
+                                    → DÉDUPLICATION par nom normalisé : si plusieurs Subject records ont
+                                    le même nom (doublons créés avant le fix Phase 10), on n'en affiche
+                                    qu'un seul. On prend le premier trouvé. */}
+                                {(() => {
+                                  const uncatalogued = subjects.filter(s =>
+                                    !SUB_SUBJECT_CATALOG.some(g => g.items.some(item => normalizeSubjectName(item) === normalizeSubjectName(s.name)))
+                                  );
+                                  if (uncatalogued.length === 0) return null;
+                                  // ⭐ Déduquer par nom normalisé — afficher uniquement 1 occurrence par nom unique
+                                  const seen = new Set<string>();
+                                  const uniqueByName: any[] = [];
+                                  for (const s of uncatalogued) {
+                                    const norm = normalizeSubjectName(s.name);
+                                    if (!seen.has(norm)) {
+                                      seen.add(norm);
+                                      uniqueByName.push(s);
+                                    }
+                                  }
+                                  return (
+                                    <optgroup label="📋 Autres (non cataloguées)">
+                                      {uniqueByName.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                      ))}
+                                    </optgroup>
+                                  );
+                                })()}
                                 {/* ⭐ Option personnalisée */}
                                 <option value="__CUSTOM__">✏️ Autre (saisir…) </option>
                               </select>
@@ -2182,9 +2203,12 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                 }
                                 const normalizedSubject = normalizeSubjectName(selectedSubjectName);
                                 // Afficher le sélecteur si la matière est liée à Lecture/Écriture
-                                const showStepSelector = normalizedSubject.includes('lecture') || normalizedSubject.includes('ecriture');
+                                // (FR : lecture/ecriture | EN : reading/writing — l'équivalent anglophone)
+                                const showStepSelector = normalizedSubject.includes('lecture') || normalizedSubject.includes('ecriture')
+                                  || normalizedSubject.includes('reading') || normalizedSubject.includes('writing');
                                 if (!showStepSelector) return null;
-                                // ⭐ Liste des options d'étapes (1-8 + plages combinées courantes)
+                                // ⭐ Liste des options d'étapes (1-9 + plages combinées courantes)
+                                //    Lecture-Écriture au CI/CP comporte jusqu'à 9 étapes.
                                 const stepOptions = [
                                   { value: '', label: '(Aucune étape)' },
                                   { value: 'Étape 1', label: 'Étape 1' },
@@ -2195,6 +2219,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                   { value: 'Étape 6', label: 'Étape 6' },
                                   { value: 'Étape 7', label: 'Étape 7' },
                                   { value: 'Étape 8', label: 'Étape 8' },
+                                  { value: 'Étape 9', label: 'Étape 9' },
                                   { value: 'Étapes 1-2', label: 'Étapes 1-2' },
                                   { value: 'Étapes 2-3', label: 'Étapes 2-3' },
                                   { value: 'Étapes 3-4', label: 'Étapes 3-4' },
@@ -2202,9 +2227,14 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                   { value: 'Étapes 5-6', label: 'Étapes 5-6' },
                                   { value: 'Étapes 6-7', label: 'Étapes 6-7' },
                                   { value: 'Étapes 7-8', label: 'Étapes 7-8' },
+                                  { value: 'Étapes 8-9', label: 'Étapes 8-9' },
                                   { value: 'Étapes 1-3', label: 'Étapes 1-3' },
                                   { value: 'Étapes 3-5', label: 'Étapes 3-5' },
-                                  { value: 'Étapes 5-8', label: 'Étapes 5-8' },
+                                  { value: 'Étapes 5-7', label: 'Étapes 5-7' },
+                                  { value: 'Étapes 7-9', label: 'Étapes 7-9' },
+                                  { value: 'Étapes 1-4', label: 'Étapes 1-4' },
+                                  { value: 'Étapes 5-9', label: 'Étapes 5-9' },
+                                  { value: 'Étapes 1-9', label: 'Étapes 1-9 (toutes)' },
                                 ];
                                 return (
                                   <div className="flex items-center gap-1">

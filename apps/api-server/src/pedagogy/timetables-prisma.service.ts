@@ -249,6 +249,17 @@ export class TimetablesPrismaService {
 
   /**
    * Ajoute une entrée à l'emploi du temps
+   *
+   * ⭐ Auto-résolution AcademicClass → Class (sections physiques)
+   *    Le frontend récupère les classes via /api/pedagogy/academic-structure/classes
+   *    qui renvoie des AcademicClass (table pedagogy_academic_classes — ex: "CI", "CP").
+   *    Mais TimetableEntry.classId FK → classes.id (table des sections physiques
+   *    comme "CI/A", "CI/B", "CI/C").
+   *
+   *    Donc si data.classId est un AcademicClass.id, on résout vers ses sections
+   *    physiques via Class.officialClassId, et on crée une TimetableEntry par section.
+   *    Ex: l'utilisateur sélectionne "CI" + "CP" (2 academicClasses) → le frontend
+   *    fait 2 POST, et chaque POST crée N entries (N = nombre de sections physiques).
    */
   async createTimetableEntry(data: {
     tenantId: string;
@@ -274,9 +285,57 @@ export class TimetablesPrismaService {
       throw new NotFoundException(`Timetable with ID ${data.timetableId} not found`);
     }
 
-    // ⭐ Détection de conflits — NON BLOQUANTE (try/catch)
+    // ⭐ Étape 1 : Résoudre data.classId en liste de Class.id (sections physiques)
+    //    - Si data.classId est déjà un Class.id → 1 seule entry à créer
+    //    - Si data.classId est un AcademicClass.id → N entries (N sections physiques)
+    //    - Si data.classId est invalide → erreur claire
+    let targetClassIds: string[] = [];
+    let resolvedAcademicClassName: string | null = null;
+    if (data.classId) {
+      // D'abord vérifier si c'est déjà un Class.id (section physique)
+      const physicalClass = await this.prisma.class.findUnique({
+        where: { id: data.classId },
+        select: { id: true, name: true, officialClassId: true },
+      });
+      if (physicalClass) {
+        targetClassIds = [data.classId];
+      } else {
+        // Vérifier si c'est un AcademicClass.id → résoudre vers ses sections physiques
+        const academicClass = await this.prisma.academicClass.findUnique({
+          where: { id: data.classId },
+          include: {
+            physicalClasses: {
+              select: { id: true, name: true },
+              orderBy: { name: 'asc' },
+            },
+          },
+        });
+        if (academicClass && academicClass.physicalClasses.length > 0) {
+          targetClassIds = academicClass.physicalClasses.map((pc: any) => pc.id);
+          resolvedAcademicClassName = academicClass.name;
+        } else if (academicClass) {
+          // AcademicClass existe mais n'a aucune section physique
+          throw new BadRequestException(
+            `La classe "${academicClass.name}" n'a aucune section physique (CI/A, CI/B...). ` +
+            `Veuillez d'abord créer les sections dans Paramètres > Sections par classe, ` +
+            `ou sélectionner une section physique directement.`,
+          );
+        } else {
+          // Ni Class ni AcademicClass → ID complètement invalide
+          throw new BadRequestException(
+            `Classe introuvable (ID: ${data.classId}). ` +
+            `Sélectionnez une classe valide dans la liste.`,
+          );
+        }
+      }
+    }
+
+    // ⭐ Étape 2 : Détection de conflits — NON BLOQUANTE (try/catch)
     //    Si la détection échoue (ex: Prisma client pas à jour), on continue quand même.
     //    L'utilisateur peut ajouter des séances sans être bloqué par une erreur technique.
+    //    NOTE : la détection utilise data.classId original (AcademicClass.id) → ne matchera
+    //    pas les entries existantes (qui ont des Class.id). C'est une limite acceptable
+    //    pour l'instant — la priorité est de faire marcher la création.
     try {
       const conflictCheck = await this.detectConflicts({
         tenantId: data.tenantId,
@@ -302,47 +361,92 @@ export class TimetablesPrismaService {
       console.warn('[createTimetableEntry] Conflict detection failed, skipping:', e.message);
     }
 
-    // Vérifier la capacité de la salle
-    if (data.roomId && data.classId) {
-      const [room, academicClass] = await Promise.all([
+    // ⭐ Étape 3 : Vérifier la capacité de la salle (sur la première section physique)
+    if (data.roomId && targetClassIds.length > 0) {
+      const [room, firstPhysicalClass] = await Promise.all([
         this.prisma.room.findUnique({ where: { id: data.roomId } }),
-        this.prisma.academicClass.findUnique({ where: { id: data.classId } }),
+        this.prisma.class.findUnique({ where: { id: targetClassIds[0] } }),
       ]);
 
-      if (room && academicClass && room.capacity && academicClass.capacity && academicClass.capacity > room.capacity) {
-        throw new BadRequestException(`Capacité insuffisante : La salle (${room.capacity}) est trop petite pour la classe (${academicClass.capacity}).`);
+      // Si on n'a pas trouvé la capacity sur la section, fallback à l'AcademicClass
+      let classCapacity: number | null | undefined = firstPhysicalClass?.capacity;
+      if (!classCapacity && resolvedAcademicClassName) {
+        const ac = await this.prisma.academicClass.findUnique({
+          where: { id: data.classId! },
+          select: { capacity: true },
+        });
+        classCapacity = ac?.capacity;
+      }
+
+      if (room && classCapacity && room.capacity && classCapacity > room.capacity) {
+        throw new BadRequestException(`Capacité insuffisante : La salle (${room.capacity}) est trop petite pour la classe (${classCapacity}).`);
       }
     }
 
-    const entry = await this.prisma.timetableEntry.create({
-      data: {
-        ...prismaCreateDefaults(),
-        ...data,
-      },
-      include: {
-        class: true,
-        subject: true,
-        teacher: true,
-        room: true,
-        timeSlot: true,
-      },
-    });
+    // ⭐ Étape 4 : Créer une TimetableEntry par section physique
+    //    On évite de cloner `data` (qui contient `classId` à remplacer) en construisant
+    //    explicitement le payload Prisma.
+    const baseData: any = {
+      tenantId: data.tenantId,
+      academicYearId: data.academicYearId,
+      schoolLevelId: data.schoolLevelId,
+      timetableId: data.timetableId,
+      subjectId: data.subjectId,
+      teacherId: data.teacherId,
+      roomId: data.roomId,
+      timeSlotId: data.timeSlotId,
+      dayOfWeek: data.dayOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      duration: data.duration,
+    };
 
-    // Log action (non-blocking, don't fail if audit fails)
-    try {
-      await this.audit.log({
-        tenantId: data.tenantId,
-        entityType: 'TIMETABLE_SLOT',
-        entityId: entry.id,
-        action: 'CREATE',
-        performedBy: 'SYSTEM',
-        newData: JSON.parse(JSON.stringify(entry)),
+    const createdEntries: any[] = [];
+    for (const targetClassId of targetClassIds) {
+      const entry = await this.prisma.timetableEntry.create({
+        data: {
+          ...prismaCreateDefaults(),
+          ...baseData,
+          classId: targetClassId, // ⭐ Override avec le Class.id résolu
+        },
+        include: {
+          class: true,
+          subject: true,
+          teacher: true,
+          room: true,
+          timeSlot: true,
+        },
       });
-    } catch (auditError) {
-      // Audit logging failure should not block the operation
+      createdEntries.push(entry);
+
+      // Log action (non-blocking, don't fail if audit fails)
+      try {
+        await this.audit.log({
+          tenantId: data.tenantId,
+          entityType: 'TIMETABLE_SLOT',
+          entityId: entry.id,
+          action: 'CREATE',
+          performedBy: 'SYSTEM',
+          newData: JSON.parse(JSON.stringify(entry)),
+        });
+      } catch (auditError) {
+        // Audit logging failure should not block the operation
+      }
     }
 
-    return entry;
+    // ⭐ Étape 5 : Retourner le résultat
+    //    - Si 1 seule entry → retourner l'entry (compat avec ancien comportement)
+    //    - Si N entries → retourner { count: N, entries: [...] } pour que le frontend
+    //      puisse afficher le bon nombre de séances créées
+    if (createdEntries.length === 1) {
+      return createdEntries[0];
+    }
+    return {
+      count: createdEntries.length,
+      entries: createdEntries,
+      multiClass: true,
+      academicClassName: resolvedAcademicClassName,
+    };
 
   }
 

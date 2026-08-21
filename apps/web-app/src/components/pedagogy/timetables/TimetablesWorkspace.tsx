@@ -1396,10 +1396,14 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     let lastErrorMessage: string | null = null;
     for (const classId of selectedClassIds) {
       try {
-        await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
+        // ⭐ La réponse peut être une entry simple OU { count: N, entries: [...] }
+        //    si le backend a résolu l'AcademicClass en plusieurs sections physiques.
+        const result = await pedagogyFetch<any>(`/api/timetables/${currentTimetableId}/entries`, {
           method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
         });
-        success++;
+        // ⭐ Si le backend a créé plusieurs entries (multi-section), on compte le total
+        //    sinon on compte 1 entry par POST réussi.
+        success += (result?.count && typeof result.count === 'number') ? result.count : 1;
       } catch (e: any) {
         failed++;
         lastErrorMessage = e.message || 'Erreur inconnue';

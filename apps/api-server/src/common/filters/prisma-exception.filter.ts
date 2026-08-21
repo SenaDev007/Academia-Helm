@@ -87,8 +87,22 @@ export class PrismaExceptionFilter implements ExceptionFilter {
           break;
         case 'P2003':
           status = HttpStatus.BAD_REQUEST;
-          const fkDetail = (exception.meta as any)?.field_name || (exception.meta as any)?.constraint || '';
-          message = `Référence invalide : l'entité liée n'existe pas${fkDetail ? ` (${fkDetail})` : ''}`;
+          // ⭐ P2003 meta peut contenir plusieurs formes selon la version Prisma :
+          //    - target: ['classId'] (array, version récente)
+          //    - field_name: 'classId' (deprecated alias)
+          //    - constraint: 'TimetableEntry_classId_fkey' (nom de la contrainte DB)
+          //    - cause: texte long expliquant la cause
+          // On essaie d'extraire le champ FK responsable pour l'afficher dans le message.
+          const p2003Meta = exception.meta as any;
+          const fkTarget = Array.isArray(p2003Meta?.target) ? p2003Meta.target.join(', ') : '';
+          const fkConstraint = p2003Meta?.constraint || '';
+          // ⭐ Extraire le nom du champ depuis le nom de contrainte (ex: "TimetableEntry_classId_fkey" → "classId")
+          const fkFieldFromConstraint = fkConstraint.match(/_([a-zA-Z]+)_fkey/)?.[1] || '';
+          const fkCause = p2003Meta?.cause || '';
+          const fkDetail = fkTarget || p2003Meta?.field_name || fkFieldFromConstraint || fkConstraint || '';
+          // ⭐ Log complet pour debug serveur (le meta entier + le message Prisma complet)
+          this.logger.error(`P2003 FK violation — meta: ${JSON.stringify(p2003Meta)} | full: ${exception.message?.substring(0, 500)}`);
+          message = `Référence invalide : l'entité liée n'existe pas${fkDetail ? ` (champ: ${fkDetail})` : ''}${fkCause ? ` — ${fkCause.substring(0, 150)}` : ''}`;
           break;
         case 'P2014':
           status = HttpStatus.BAD_REQUEST;

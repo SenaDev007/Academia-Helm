@@ -67,3 +67,34 @@ export async function PUT(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(nestControllerUrl(`timetables/${id}`), {
+      method: 'DELETE',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return NextResponse.json(
+        { error: 'Failed to delete timetable', detail: errorData?.message || `Backend returned ${response.status}` },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json().catch(() => ({ success: true }));
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Error deleting timetable:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}

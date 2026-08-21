@@ -1444,12 +1444,16 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     // Désélectionner les classes actuelles
     setSelectedClassIds([]);
     setEntries([]);
+    // ⭐ Nommer l'EDT de façon claire : niveau + compteur
+    const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label || realLevels.find((l: any) => l.id === configLevelId)?.label || 'Niveau';
+    const existingCount = timetables.length;
+    const edtName = `EDT ${levelLabel} #${existingCount + 1}`;
     // Créer un nouveau timetable
     try {
       const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
         method: 'POST', body: {
           academicYearId, schoolLevelId: levelId,
-          name: `EDT ${new Date().toLocaleDateString('fr-FR')}`,
+          name: edtName,
           startDate: new Date().toISOString(),
         },
       });

@@ -165,6 +165,15 @@ export class TimetablesPrismaController {
     return this.timetablesService.deleteTimetableEntry(id, tenantId);
   }
 
+  /// ⭐ Supprime un timetable complet (entries + timetable)
+  @Delete(':id')
+  async deleteTimetable(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.timetablesService.deleteTimetable(id, tenantId);
+  }
+
   /// ⭐ PDF A4 paysage — emploi du temps d'une ou plusieurs classes
   ///    Généré côté backend via Puppeteer avec en-tête école (logo + nom).
   @Get(':id/export-pdf')

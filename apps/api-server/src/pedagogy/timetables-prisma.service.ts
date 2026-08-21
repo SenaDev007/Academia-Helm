@@ -474,5 +474,23 @@ export class TimetablesPrismaService {
 
     return { success: true };
   }
+
+  /// ⭐ Supprime un timetable complet + toutes ses entries (cascade).
+  async deleteTimetable(id: string, tenantId: string) {
+    const timetable = await this.prisma.timetable.findFirst({
+      where: { id, tenantId },
+    });
+    if (!timetable) {
+      throw new NotFoundException(`Timetable with ID ${id} not found`);
+    }
+    // Supprimer d'abord les entries (pas de cascade auto sur cette relation)
+    await this.prisma.timetableEntry.deleteMany({
+      where: { timetableId: id },
+    });
+    await this.prisma.timetable.delete({
+      where: { id },
+    });
+    return { success: true };
+  }
 }
 

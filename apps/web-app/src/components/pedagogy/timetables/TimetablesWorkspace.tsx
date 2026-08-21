@@ -1357,7 +1357,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
       try {
-        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: localLevelId || schoolLevelId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date() } });
+        const lvlId = localLevelId || schoolLevelId;
+        if (!lvlId || lvlId === 'ALL') throw new Error('Sélectionnez un niveau scolaire');
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: lvlId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date().toISOString() } });
         if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); currentTimetableId = newTt.id; } else throw new Error('Création EDT échouée');
       } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); setSaving(false); return; }
     }
@@ -1401,6 +1403,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Créer un NOUVEL EDT pour d'autres classes
   const handleNewTimetable = async () => {
     if (!academicYearId) return;
+    const levelId = localLevelId || schoolLevelId;
+    if (!levelId || levelId === 'ALL') {
+      toast({ title: 'Erreur', description: 'Sélectionnez un niveau scolaire dans le sélecteur ci-dessus avant de créer un EDT.', variant: 'destructive' });
+      return;
+    }
     // Désélectionner les classes actuelles
     setSelectedClassIds([]);
     setEntries([]);
@@ -1408,9 +1415,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     try {
       const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
         method: 'POST', body: {
-          academicYearId, schoolLevelId: localLevelId || schoolLevelId,
+          academicYearId, schoolLevelId: levelId,
           name: `EDT ${new Date().toLocaleDateString('fr-FR')}`,
-          startDate: new Date(),
+          startDate: new Date().toISOString(),
         },
       });
       if (newTt) {

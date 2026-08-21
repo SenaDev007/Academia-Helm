@@ -54,8 +54,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
       return NextResponse.json(
-        { error: 'Failed to create timetable' },
+        { error: 'Failed to create timetable', detail: errorData?.message || errorData?.error || `Backend returned ${response.status}` },
         { status: response.status }
       );
     }

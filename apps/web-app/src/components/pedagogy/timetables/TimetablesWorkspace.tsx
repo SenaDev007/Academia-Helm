@@ -1093,6 +1093,16 @@ interface ManualEntry {
 function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string; academicYearId: string }) {
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
+  // ⭐ Niveaux réels (sans l'option virtuelle 'ALL')
+  const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
+  // ⭐ Sélecteur de niveau LOCAL — indépendant du header
+  //    Avant ce fix, le ManualEditor utilisait schoolLevel?.id du header qui
+  //    pouvait être 'ALL' (Tous les niveaux) → la config n'était pas trouvée
+  //    → fallback aux DEFAULT_TIME_BLOCKS → la grille ne respectait pas la config.
+  const [localLevelId, setLocalLevelId] = useState<string | null>(
+    (schoolLevelId && schoolLevelId !== 'ALL') ? schoolLevelId : (realLevels[0]?.id ?? null)
+  );
   const [timetables, setTimetables] = useState<ManualTimetable[]>([]);
   const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ManualEntry[]>([]);
@@ -1117,7 +1127,8 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const configuredDays = DAYS.filter(d => configSchoolDays.includes(d.value));
 
   const loadConfig = useCallback(async () => {
-    const levelId = schoolLevel?.id || schoolLevelId;
+    // ⭐ Utilise localLevelId (pas schoolLevel?.id du header qui peut être 'ALL')
+    const levelId = localLevelId;
     if (!levelId || !academicYearId) return;
     try {
       // ⭐ Cache-buster : ajoute un timestamp pour forcer le fetch d'une config fraîche.
@@ -1133,7 +1144,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         if (Array.isArray(blocks) && blocks.length > 0) setConfigTimeBlocks(blocks);
       }
     } catch {}
-  }, [schoolLevel?.id, schoolLevelId, academicYearId]);
+  }, [localLevelId, academicYearId]);
 
   const loadData = useCallback(async () => {
     if (!academicYearId) return;
@@ -1188,11 +1199,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
       try {
-        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date() } });
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: localLevelId || schoolLevelId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date() } });
         if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); currentTimetableId = newTt.id; } else throw new Error('Création EDT échouée');
       } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); setSaving(false); return; }
     }
-    const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
+    const resolvedSchoolLevelId = localLevelId || schoolLevelId;
     let success = 0, failed = 0;
     for (const classId of selectedClassIds) {
       try {
@@ -1239,7 +1250,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     try {
       const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
         method: 'POST', body: {
-          academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
+          academicYearId, schoolLevelId: localLevelId || schoolLevelId,
           name: `EDT ${new Date().toLocaleDateString('fr-FR')}`,
           startDate: new Date(),
         },
@@ -1313,9 +1324,23 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   return (
     <div className="space-y-4">
-      {/* ⭐ Liste des EDT sauvegardés + bouton Nouvel EDT */}
+      {/* ⭐ Sélecteur de niveau scolaire + Liste des EDT sauvegardés + boutons */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 p-3">
-        <div className="flex-1 min-w-[300px]">
+        {/* Sélecteur de niveau local */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold text-slate-500 uppercase">Niveau scolaire</label>
+          <select
+            value={localLevelId || ''}
+            onChange={e => { setLocalLevelId(e.target.value); }}
+            className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white"
+          >
+            {realLevels.map((l: any) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex-1 min-w-[250px]">
           <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Emplois du temps sauvegardés</label>
           {timetables.length === 0 ? (
             <span className="text-xs text-slate-400 italic">Aucun EDT sauvegardé. Cliquez sur "Nouvel EDT" pour commencer.</span>

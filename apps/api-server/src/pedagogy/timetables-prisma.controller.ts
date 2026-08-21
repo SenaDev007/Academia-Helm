@@ -29,6 +29,19 @@ import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service'
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
 
+/**
+ * ⭐ Formate une heure "08:15" → "8h15" (français naturel, sans zéro initial).
+ *    Utilisé dans le PDF pour afficher "8h00-10h15" sur une seule ligne (pas de <br/>).
+ */
+function fmtTimePdf(t: string | null | undefined): string {
+  if (!t || typeof t !== 'string') return '';
+  const parts = t.split(':');
+  if (parts.length < 2) return t;
+  const h = parts[0];
+  const m = parts[1];
+  return `${parseInt(h, 10)}h${m}`;
+}
+
 @Controller('timetables')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class TimetablesPrismaController {
@@ -207,10 +220,46 @@ export class TimetablesPrismaController {
     const entries = timetable?.entries || [];
 
     // 2. Filtrer par classIds si fournis
+    //    ⭐ Les classIds du frontend sont des IDs d'AcademicClass (ex: "CI", "CP").
+    //    Mais les entries ont un classId qui est un physical Class.id (ex: "CI/A").
+    //    On doit EXPANDRE les AcademicClass IDs → tous les physical Class IDs
+    //    via Class.officialClassId, puis filtrer les entries par ces IDs étendus.
     let filteredEntries = entries;
+    let pdfClassName = 'Toutes les classes';
     if (classIds) {
       const ids = classIds.split(',').filter(Boolean);
-      filteredEntries = entries.filter((e: any) => !e.classId || ids.includes(e.classId));
+      // Étendre : récupérer tous les physical Class dont l'ID OU l'officialClassId
+      // est dans les ids. Cela couvre les 2 cas :
+      //   - L'ID envoyé est un physical Class.id → match direct
+      //   - L'ID envoyé est un AcademicClass.id → match via officialClassId
+      const physicalClasses = await this.prisma.class.findMany({
+        where: {
+          OR: [
+            { id: { in: ids } },
+            { officialClassId: { in: ids } },
+          ],
+        },
+        select: { id: true, name: true, officialClassId: true },
+      }).catch(() => []);
+      const expandedIds = new Set<string>(ids);
+      (physicalClasses as any[]).forEach(pc => expandedIds.add(pc.id));
+      filteredEntries = entries.filter((e: any) =>
+        !e.classId || expandedIds.has(e.classId) || (e.class?.officialClassId && ids.includes(e.class.officialClassId))
+      );
+      // ⭐ Pour le titre du PDF, on utilise le nom de l'AcademicClass si possible
+      //    (plus compréhensible que "CI/A" quand l'utilisateur a sélectionné "CI")
+      const academicClassesForNames = await this.prisma.academicClass.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true },
+      }).catch(() => []);
+      const physicalForNames = (physicalClasses as any[]).filter(pc => !academicClassesForNames.some((ac: any) => ac.id === pc.id));
+      const allNames = [
+        ...(academicClassesForNames as any[]).map((ac: any) => ac.name),
+        ...physicalForNames.map(pc => pc.name),
+      ];
+      if (allNames.length > 0) {
+        pdfClassName = allNames.join(' + ');
+      }
     }
 
     // 3. Récupérer l'identité de l'école
@@ -251,16 +300,10 @@ export class TimetablesPrismaController {
       } catch {}
     }
 
-    // 5. Classes names
-    const classNames: any = classIds
-      ? await this.prisma.$queryRawUnsafe(
-          `SELECT "name" FROM "classes" WHERE "id" = ANY($1::text[])`,
-          classIds.split(',').filter(Boolean),
-        ).catch(() => [])
-      : [];
-    const className = Array.isArray(classNames) && classNames.length > 0
-      ? classNames.map((c: any) => c.name).join(' + ')
-      : 'Toutes les classes';
+    // 5. Classes names — utilise le nom déjà résolu à l'étape 2 (pdfClassName)
+    //    Évite la requête SQL redondante qui retournait des noms vides quand les IDs
+    //    étaient des AcademicClass IDs (table pedagogy_academic_classes, pas classes).
+    const className = pdfClassName;
 
     // 6. Build HTML
     const DAYS_MAP: Record<number, string> = {1:'Lundi',2:'Mardi',3:'Mercredi',4:'Jeudi',5:'Vendredi',6:'Samedi',7:'Dimanche'};
@@ -277,33 +320,44 @@ export class TimetablesPrismaController {
       `<th style="border:1px solid #333;padding:5px;font-size:10px;background:#1a2a6b;color:white;text-align:center;">${d.label}</th>`
     ).join('');
 
-    const rows = timeBlocks.map((block: any) => {
+    const rows = timeBlocks.filter((b: any) => b.type !== 'CEREMONY').map((block: any) => {
       const isBreak = block.type !== 'BLOCK';
       const breakLabel =
         block.type === 'LUNCH' ? 'Dejeuner' :
         block.type === 'BREAK' ? 'Recreation' :
         block.type === 'RECESS' ? 'Recreation' :
-        block.type === 'CEREMONY' ? 'Ceremonial des couleurs' :
         block.type === 'STUDY' ? 'Etude' :
         block.type === 'ACTIVITY' ? 'Activite' :
         block.type === 'ASSEMBLY' ? 'Assemblee' :
         block.type || '';
       if (isBreak) {
-        return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#fef3c7;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td><td colspan="${configuredDays.length}" style="border:1px solid #333;padding:4px;background:#fef3c7;text-align:center;font-size:10px;font-weight:bold;color:#92400e;">${breakLabel} (${block.start} - ${block.end})</td></tr>`;
+        // ⭐ Horaire en ligne : "8h00-10h15" au lieu de "08:00<br/>10:15"
+        return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#fef3c7;text-align:center;font-size:9px;white-space:nowrap;">${fmtTimePdf(block.start)}-${fmtTimePdf(block.end)}</td><td colspan="${configuredDays.length}" style="border:1px solid #333;padding:4px;background:#fef3c7;text-align:center;font-size:10px;font-weight:bold;color:#92400e;">${breakLabel}</td></tr>`;
       }
+      // ⭐ Récupérer les blocks CEREMONY qui tombent dans cet intervalle BLOCK
+      //    (le cérémonial est rendu À L'INTÉRIEUR de la cellule BLOCK, pas comme une ligne séparée)
+      const ceremonyInThisBlock = timeBlocks.filter((b: any) =>
+        b.type === 'CEREMONY' && b.start >= block.start && b.end <= block.end
+      );
       const cells = configuredDays.map((day: any) => {
         const cellEntries = filteredEntries.filter((e: any) =>
           e.dayOfWeek === day.value && e.startTime >= block.start && e.endTime <= block.end
         );
-        if (cellEntries.length === 0) return '<td style="border:1px solid #333;padding:4px;min-height:35px;"></td>';
-        return '<td style="border:1px solid #333;padding:4px;background:#eff6ff;">' + cellEntries.map((e: any) => {
+        // ⭐ HTML du cérémonial (si actif ce jour)
+        const ceremonyHtml = ceremonyInThisBlock.map((cer: any) => {
+          const cerDays = Array.isArray(cer.activeDays) ? cer.activeDays : schoolDays;
+          if (!cerDays.includes(day.value)) return '';
+          return `<div style="margin-bottom:2px;padding:2px 4px;background:#fff7ed;border:1px solid #fdba74;border-radius:3px;"><strong style="font-size:9px;color:#9a3412;">${fmtTimePdf(cer.start)}-${fmtTimePdf(cer.end)} · Ceremonial des couleurs</strong></div>`;
+        }).join('');
+        if (cellEntries.length === 0 && !ceremonyHtml) return '<td style="border:1px solid #333;padding:4px;min-height:35px;"></td>';
+        return '<td style="border:1px solid #333;padding:4px;background:#eff6ff;">' + ceremonyHtml + cellEntries.map((e: any) => {
           const subj = e.subject?.name || '\u2014';
-          const teacher = e.teacher ? `${e.teacher.firstName?.[0] || ''}. ${e.teacher.lastName || ''}` : '';
-          const room = e.room?.code || '';
-          return `<div style="margin-bottom:2px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}</strong><br/><span style="font-size:8px;color:#666;">${teacher}${room ? ' - ' + room : ''}</span><br/><span style="font-size:7px;color:#999;">${e.startTime}-${e.endTime}</span></div>`;
+          const stepInfo = e.step ? ` · ${e.step}` : '';
+          return `<div style="margin-bottom:2px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}${stepInfo}</strong><br/><span style="font-size:7px;color:#999;">${fmtTimePdf(e.startTime)}-${fmtTimePdf(e.endTime)}</span></div>`;
         }).join('') + '</td>';
       }).join('');
-      return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td>${cells}</tr>`;
+      // ⭐ Horaire en ligne : "8h00-10h15" au lieu de "08:00<br/>10:15"
+      return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;white-space:nowrap;">${fmtTimePdf(block.start)}-${fmtTimePdf(block.end)}</td>${cells}</tr>`;
     }).join('');
 
     // ⭐ Construction de l'HTML — design soigné : en-tête école (logo + nom + slogan),

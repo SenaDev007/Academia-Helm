@@ -67,6 +67,7 @@ interface TimetableEntry {
   roomId?: string;
   roomName?: string;
   notes?: string;
+  step?: string;
 }
 
 export default function TeacherTimetablePage() {
@@ -84,7 +85,54 @@ export default function TeacherTimetablePage() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Récupérer tous les EDT pour l'année
+      // ⭐ ÉTAPE 1 : Récupérer le profil enseignant (user.id → teacher.id)
+      //    Nécessaire pour fetch les assignments de classe du teacher
+      const profRes = await fetch(
+        `/api/pedagogy/teacher-profiles?academicYearId=${encodeURIComponent(academicYear.id)}`,
+        { credentials: "include" },
+      );
+      const profList = await profRes.json();
+      const profiles = Array.isArray(profList) ? profList : (profList?.data || []);
+      const myProfile = profiles.find((p: any) => p.userId === user.id || p.user?.id === user.id);
+      const myTeacherId = myProfile?.teacherId || myProfile?.id;
+
+      // ⭐ ÉTAPE 2 : Récupérer les assignments de classe du teacher
+      //    → liste des classId (physical Class) auxquels le teacher est titular/specialist
+      let teacherOfficialClassIds = new Set<string>(); // AcademicClass IDs (officialClassIds)
+      if (myTeacherId) {
+        try {
+          const assignRes = await fetch(
+            `/api/pedagogy/teacher-class-assignments?teacherId=${encodeURIComponent(myTeacherId)}&academicYearId=${encodeURIComponent(academicYear.id)}`,
+            { credentials: "include" },
+          );
+          const assignList = await assignRes.json();
+          const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
+          // ⭐ Récupérer les AcademicClasses pour résoudre physical Class.id → officialClassId
+          const classesRes = await fetch(
+            `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
+            { credentials: "include" },
+          );
+          const classList = await classesRes.json();
+          const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
+          // Construire la map : physicalClassId → AcademicClass.id
+          const physicalToAcademic = new Map<string, string>();
+          for (const ac of academicClasses) {
+            const phys = (ac.physicalClasses || []);
+            for (const pc of phys) {
+              physicalToAcademic.set(pc.id, ac.id);
+            }
+          }
+          // Pour chaque assignment, déterminer l'officialClassId
+          for (const a of assignments) {
+            const classId = a.classId || a.class?.id;
+            if (!classId) continue;
+            const officialId = physicalToAcademic.get(classId);
+            if (officialId) teacherOfficialClassIds.add(officialId);
+          }
+        } catch (e) { console.warn("Failed to load teacher assignments:", e); }
+      }
+
+      // ⭐ ÉTAPE 3 : Récupérer tous les EDT pour l'année
       const res = await fetch(
         `/api/timetables?academicYearId=${encodeURIComponent(academicYear.id)}`,
         { credentials: "include" },
@@ -98,7 +146,11 @@ export default function TeacherTimetablePage() {
         return;
       }
 
-      // 2. Pour chaque EDT, récupérer les entrées (findOne inclut les entries)
+      // ⭐ ÉTAPE 4 : Pour chaque EDT, récupérer les entries et filtrer par
+      //    officialClassId correspondant aux classes du teacher.
+      //    Avant ce fix, le teacher voyait TOUTES les entries de TOUS les EDTs mélangés
+      //    (effet "EDT fictif aléatoire"). Maintenant il ne voit QUE les entries
+      //    de SES classes (via la relation Class.officialClassId → AcademicClass.id).
       const allEntries: TimetableEntry[] = [];
       for (const t of tList) {
         try {
@@ -108,10 +160,14 @@ export default function TeacherTimetablePage() {
           );
           const data = await r2.json();
           const tEntries = data?.entries || [];
-          // Filtrer : entrées où teacherId = user.id OU classId dans les classes du teacher
-          // Pour simplifier, on prend toutes les entries de l'EDT (le teacher voit tout l'EDT de sa classe)
-          // sauf si on veut filtrer par teacherId uniquement
           for (const e of tEntries) {
+            // ⭐ Filtrage : l'entry appartient à une des classes du teacher si :
+            //    - teacherOfficialClassIds contient e.class.officialClassId (cas normal)
+            //    - OU l'entry n'a pas de classId (entry globale, ex: cérémonial)
+            const entryOfficialClassId = e.class?.officialClassId;
+            const isGlobal = !e.classId; // pas de classe = entry globale
+            const belongsToTeacher = isGlobal || (entryOfficialClassId && teacherOfficialClassIds.has(entryOfficialClassId));
+            if (!belongsToTeacher) continue;
             allEntries.push({
               id: e.id,
               dayOfWeek: e.dayOfWeek,
@@ -126,6 +182,7 @@ export default function TeacherTimetablePage() {
               className: e.class?.name,
               roomName: e.room?.name,
               notes: e.notes,
+              step: e.step,
             });
           }
         } catch (e) {
@@ -133,7 +190,7 @@ export default function TeacherTimetablePage() {
         }
       }
 
-      // 3. Trier par jour puis heure de début
+      // 5. Trier par jour puis heure de début
       allEntries.sort((a, b) => {
         if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
         return a.startTime.localeCompare(b.startTime);
@@ -267,6 +324,9 @@ export default function TeacherTimetablePage() {
                               <div>
                                 <p className={`text-sm font-bold ${isBreakEntry ? "text-slate-600" : "text-slate-900"}`}>
                                   {e.subjectName || "Créneau"}
+                                  {e.step && !isBreakEntry && (
+                                    <span className="text-[10px] font-semibold text-slate-500 ml-1">· {e.step}</span>
+                                  )}
                                 </p>
                                 {e.subjectCode && !isBreakEntry && (
                                   <p className="text-[10px] text-slate-400">[{e.subjectCode}]</p>

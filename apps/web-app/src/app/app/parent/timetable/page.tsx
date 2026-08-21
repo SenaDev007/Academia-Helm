@@ -64,6 +64,7 @@ interface TimetableEntry {
   teacherName?: string;
   roomName?: string;
   notes?: string;
+  step?: string;
 }
 
 export default function ParentTimetablePage() {
@@ -103,7 +104,31 @@ export default function ParentTimetablePage() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Récupérer tous les EDT pour l'année
+      // ⭐ ÉTAPE 1 : Récupérer les AcademicClasses pour résoudre le classId physique
+      //    de l'enfant → officialClassId (AcademicClass ID).
+      //    Sans cette résolution, le filter `e.classId === selectedChild.classId` ne matchait
+      //    que les entries stockées avec exactement le même physical Class.id que l'enfant.
+      //    Or, depuis Phase 8, les entries sont stockées avec le PREMIER physical Class.id
+      //    de l'AcademicClass (ex: CI/A), pas forcément celui de l'enfant (ex: CI/B).
+      const classesRes = await fetch(
+        `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
+        { credentials: "include" },
+      );
+      const classList = await classesRes.json();
+      const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
+      // Trouver l'officialClassId (AcademicClass) de la classe de l'enfant
+      let childOfficialClassId: string | undefined = undefined;
+      for (const ac of academicClasses) {
+        const phys = (ac.physicalClasses || []);
+        if (phys.some((pc: any) => pc.id === selectedChild.classId)) {
+          childOfficialClassId = ac.id;
+          break;
+        }
+      }
+      // Fallback : si on n'a pas trouvé via AcademicClass, on garde l'ancien filtre
+      // par classId physique direct (compatibilité)
+
+      // ⭐ ÉTAPE 2 : Récupérer tous les EDT pour l'année
       const res = await fetch(
         `/api/timetables?academicYearId=${encodeURIComponent(academicYear.id)}`,
         { credentials: "include" },
@@ -117,7 +142,10 @@ export default function ParentTimetablePage() {
         return;
       }
 
-      // 2. Pour chaque EDT, récupérer les entries et filtrer par classId
+      // ⭐ ÉTAPE 3 : Pour chaque EDT, récupérer les entries et filtrer par officialClassId
+      //    Avant ce fix, le parent ne voyait RIEN car le filter `e.classId === child.classId`
+      //    ne matchait jamais (entries ont le 1er physical Class.id, pas celui de l'enfant).
+      //    Maintenant on filtre via la relation Class.officialClassId → AcademicClass.id.
       const allEntries: TimetableEntry[] = [];
       for (const t of tList) {
         try {
@@ -125,24 +153,32 @@ export default function ParentTimetablePage() {
           const data = await r2.json();
           const tEntries = data?.entries || [];
           for (const e of tEntries) {
-            // Filtrer par la classe de l'enfant
-            if (e.classId === selectedChild.classId || !e.classId) {
-              allEntries.push({
-                id: e.id,
-                dayOfWeek: e.dayOfWeek,
-                startTime: e.startTime,
-                endTime: e.endTime,
-                duration: e.duration,
-                subjectId: e.subjectId,
-                subjectName: e.subject?.name,
-                subjectCode: e.subject?.code,
-                classId: e.classId,
-                className: e.class?.name,
-                teacherName: e.teacher ? `${e.teacher.firstName || ""} ${e.teacher.lastName || ""}`.trim() : undefined,
-                roomName: e.room?.name,
-                notes: e.notes,
-              });
-            }
+            // ⭐ Filtrage : l'entry appartient à la classe de l'enfant si :
+            //    - childOfficialClassId est défini ET e.class.officialClassId === childOfficialClassId
+            //    - OU fallback : e.classId === selectedChild.classId (compatibilité)
+            //    - OU l'entry n'a pas de classId (entry globale, ex: cérémonial)
+            const entryOfficialClassId = e.class?.officialClassId;
+            const isGlobal = !e.classId;
+            const belongsToChild = isGlobal
+              || (childOfficialClassId && entryOfficialClassId === childOfficialClassId)
+              || (e.classId === selectedChild.classId);
+            if (!belongsToChild) continue;
+            allEntries.push({
+              id: e.id,
+              dayOfWeek: e.dayOfWeek,
+              startTime: e.startTime,
+              endTime: e.endTime,
+              duration: e.duration,
+              subjectId: e.subjectId,
+              subjectName: e.subject?.name,
+              subjectCode: e.subject?.code,
+              classId: e.classId,
+              className: e.class?.name,
+              teacherName: e.teacher ? `${e.teacher.firstName || ""} ${e.teacher.lastName || ""}`.trim() : undefined,
+              roomName: e.room?.name,
+              notes: e.notes,
+              step: e.step,
+            });
           }
         } catch (e) { console.warn("Failed:", e); }
       }
@@ -288,6 +324,9 @@ export default function ParentTimetablePage() {
                               <div>
                                 <p className={`text-sm font-bold ${isBreakEntry ? "text-slate-600" : "text-slate-900"}`}>
                                   {e.subjectName || "Créneau"}
+                                  {e.step && !isBreakEntry && (
+                                    <span className="text-[10px] font-semibold text-slate-500 ml-1">· {e.step}</span>
+                                  )}
                                 </p>
                                 {e.subjectCode && !isBreakEntry && (
                                   <p className="text-[10px] text-slate-400">[{e.subjectCode}]</p>

@@ -63,6 +63,17 @@ function normalizeSubjectName(name: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * ⭐ Formate une heure "08:15" → "8h15" (français naturel, sans zéro initial)
+ *    Utilisé dans la colonne horaire de l'EDT pour afficher "8h00-10h15" sur une ligne.
+ */
+function fmtTime(t: string | null | undefined): string {
+  if (!t || typeof t !== 'string') return '';
+  const [h, m] = t.split(':');
+  if (!h || !m) return t;
+  return `${parseInt(h, 10)}h${m}`;
+}
+
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 to 18:00
 
 const DEFAULT_TIME_BLOCKS = [
@@ -1932,8 +1943,10 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                   // Ligne PAUSE standard — colSpan sur tous les jours (Déjeuner, Récréation, etc.)
                   return (
                     <tr key={blockIdx} className="bg-amber-50/50">
-                      <td className="p-2 border border-slate-200 text-center"><div className="text-[10px] font-bold text-slate-500">{block.start}</div><div className="text-[10px] font-bold text-slate-500">{block.end}</div></td>
-                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1"><BreakIcon className="w-3 h-3" />{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
+                      <td className="p-2 border border-slate-200 text-center whitespace-nowrap">
+                        <span className="text-[10px] font-bold text-slate-500">{fmtTime(block.start)}-{fmtTime(block.end)}</span>
+                      </td>
+                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1"><BreakIcon className="w-3 h-3" />{breakLabel}</span></td>
                     </tr>
                   );
                 }
@@ -1943,7 +1956,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                 );
                 return (
                   <tr key={blockIdx}>
-                    <td className="p-2 border border-slate-200 bg-slate-50 text-center"><div className="text-xs font-bold text-slate-700">{block.start}</div><div className="text-[10px] text-slate-400">{block.end}</div></td>
+                    <td className="p-2 border border-slate-200 bg-slate-50 text-center whitespace-nowrap">
+                      <span className="text-[11px] font-bold text-slate-700">{fmtTime(block.start)}-{fmtTime(block.end)}</span>
+                    </td>
                     {configuredDays.map(day => {
                       const cellEntries = getCellEntries(day.value, block);
                       const isEditing = editingCell?.dayOfWeek === day.value && editingCell?.blockStart === block.start;

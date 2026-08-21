@@ -306,13 +306,83 @@ export class TimetablesPrismaController {
       return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td>${cells}</tr>`;
     }).join('');
 
-    const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>EDT - ${className}</title><style>@page{size:A4 landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Helvetica,Arial,sans-serif;font-size:11px}.header{display:flex;align-items:center;gap:15px;border-bottom:3px solid #1a2a6b;padding-bottom:8px;margin-bottom:10px}h1{font-size:14px;color:#1a2a6b}h2{font-size:11px;color:#666;margin-top:2px}table{width:100%;border-collapse:collapse}th{border:1px solid #333;padding:4px;font-size:9px}td{border:1px solid #333;padding:2px;font-size:9px;vertical-align:top}.footer{margin-top:8px;font-size:8px;color:#999;text-align:center;border-top:1px solid #ddd;padding-top:4px}</style></head><body><div class="header">${logoHtml}<div><h1>EMPLOI DU TEMPS</h1><h2>${school.schoolName || ''}${school.schoolName ? ' - ' : ''}${className}</h2></div></div><table><thead><tr><th style="width:60px;background:#1a2a6b;color:white;">Horaire</th>${daysHeader}</tr></thead><tbody>${rows}</tbody></table><div class="footer">Document genere automatiquement par Academia Helm le ${new Date().toLocaleDateString('fr-FR')}</div></body></html>`;
+    // ⭐ Construction de l'HTML — design soigné : en-tête école (logo + nom + slogan),
+    //    titre "EMPLOI DU TEMPS — Classe X", tableau avec lignes propres,
+    //    jours en colonnes, horaires en lignes, pauses sur colSpan.
+    //    Format paysage A4 via @page CSS.
+    const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>EDT - ${className}</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 10px; }
+  .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #1a2a6b; padding-bottom: 8px; margin-bottom: 8px; }
+  .header .logo { width: 60px; height: 60px; object-fit: contain; flex-shrink: 0; }
+  .header .titles { flex: 1; }
+  .header h1 { font-size: 16px; color: #1a2a6b; font-weight: 800; letter-spacing: 0.5px; }
+  .header h2 { font-size: 11px; color: #475569; margin-top: 2px; font-weight: 600; }
+  .header h3 { font-size: 9px; color: #94a3b8; margin-top: 1px; font-weight: 500; }
+  .header .badge { background: #1a2a6b; color: white; padding: 4px 10px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  thead th { background: #1a2a6b; color: white; border: 1px solid #1a2a6b; padding: 6px 4px; font-size: 9px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 0.3px; }
+  thead th.horaire-col { width: 70px; background: #0f172a; }
+  tbody td { border: 1px solid #cbd5e1; padding: 3px; vertical-align: top; font-size: 9px; }
+  tbody td.horaire-cell { background: #f1f5f9; font-weight: 700; text-align: center; color: #1e293b; font-size: 9px; }
+  tbody td.break-cell { background: #fef3c7; color: #92400e; text-align: center; font-weight: 700; font-size: 10px; }
+  tbody td.empty-cell { background: #fafafa; }
+  tbody td.entry-cell { background: #eff6ff; }
+  .entry-item { background: white; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; }
+  .entry-item .subj { font-size: 9px; font-weight: 700; color: #1e40af; line-height: 1.2; }
+  .entry-item .meta { font-size: 7px; color: #64748b; line-height: 1.1; }
+  .entry-item .time { font-size: 7px; color: #94a3b8; }
+  .footer { margin-top: 6px; font-size: 8px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    ${logoHtml ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '<div class="logo"></div>'}
+    <div class="titles">
+      <h1>EMPLOI DU TEMPS</h1>
+      <h2>${school.schoolName || 'École'} ${school.schoolAcronym ? `— ${school.schoolAcronym}` : ''}</h2>
+      <h3>Classe(s) : ${className}</h3>
+    </div>
+    <div class="badge">${className}</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="horaire-col">Horaire</th>
+        ${daysHeader}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+  <div class="footer">Document généré automatiquement par Academia Helm — ${today}</div>
+</body>
+</html>`;
 
-    // 7. Render PDF
-    const { page } = await this.puppeteerPool.acquirePage();
+    // 7. Render PDF — try/catch explicite pour renvoyer une erreur claire au frontend
+    //    en cas de problème Puppeteer (browser indisponible, timeout, etc.)
+    let page: any;
+    try {
+      const acquired = await this.puppeteerPool.acquirePage();
+      page = acquired.page;
+    } catch (acquireErr: any) {
+      throw new BadRequestException(
+        `Impossible d'acquérir une page Puppeteer pour générer le PDF. ` +
+        `Cause probable : Chromium non installé ou pool saturé. ` +
+        `Détail : ${acquireErr?.message || acquireErr}`
+      );
+    }
     try {
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 300));
       const pdfBuffer = await page.pdf({
         format: 'A4',
         landscape: true,

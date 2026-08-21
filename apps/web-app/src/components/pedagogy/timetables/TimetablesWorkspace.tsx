@@ -1203,6 +1203,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   //    en arrière-plan. Le compte à rebours est affiché dans le formulaire.
   const [autoSaveCountdown, setAutoSaveCountdown] = useState<number>(10);
   const countdownRef = useRef<number>(10);
+  // ⭐ Timestamp de la dernière activité utilisateur (frappe, clic, sélection).
+  //    Si l'utilisateur est actif, on RESET le compte à rebours — pas d'auto-save
+  //    pendant que l'utilisateur remplit le formulaire. Le compteur ne décompte
+  //    que pendant les 10s de silence complet.
+  const lastActivityRef = useRef<number>(Date.now());
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<Date | null>(null);
   // ⭐ Export PDF
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -1572,15 +1577,24 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   //    avec une matière valide, on déclenche handleInlineSave automatiquement.
   //    Le compte à rebours est affiché dans le formulaire inline.
   //    Conditions pour déclencher :
+  // ⭐ Auto-sauvegarde : toutes les 10 secondes, si le formulaire inline est ouvert
+  //    avec une matière valide, on déclenche handleInlineSave automatiquement.
+  //    Le compte à rebours est affiché dans le formulaire inline.
+  //    Conditions pour déclencher :
   //    1. editingCell est défini (formulaire ouvert)
   //    2. !saving (pas déjà en cours de sauvegarde)
   //    3. inlineForm.subjectId est valide (matière sélectionnée)
   //    4. activeTimetableId existe (un EDT est actif)
+  //    5. ⭐ INACTIVITÉ de 10s — si l'utilisateur tape/clique, on reset le compteur
+  //       → évite de sauvegarder/fermer en pleine saisie
   useEffect(() => {
-    // ⭐ Si pas d'édition ou sauvegarde en cours → reset compteur, pas de timer
+    // ⭐ Reset lastActivityRef quand on ouvre le formulaire
+    lastActivityRef.current = Date.now();
+    countdownRef.current = 10;
+    setAutoSaveCountdown(10);
+
+    // ⭐ Si pas d'édition ou sauvegarde en cours → pas de timer
     if (!editingCell || saving) {
-      countdownRef.current = 10;
-      setAutoSaveCountdown(10);
       return;
     }
     // ⭐ Vérifier que le formulaire a une matière valide
@@ -1588,12 +1602,35 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
       !inlineForm.subjectId.startsWith('__') &&
       !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
     if (!isValidSubject || !activeTimetableId) {
-      countdownRef.current = 10;
-      setAutoSaveCountdown(10);
       return;
     }
+    // ⭐ Écouteurs d'activité globale — reset du compteur sur n'importe quelle
+    //    interaction utilisateur (frappe, clic, scroll). Sans ça, le compteur
+    //    continue même si l'utilisateur tape dans un champ, et finit par sauver
+    //    en pleine saisie.
+    const onActivity = () => {
+      lastActivityRef.current = Date.now();
+      countdownRef.current = 10;
+      setAutoSaveCountdown(10);
+    };
+    document.addEventListener('keydown', onActivity);
+    document.addEventListener('mousedown', onActivity);
+    document.addEventListener('input', onActivity);
+    document.addEventListener('change', onActivity);
+
     // ⭐ Démarrer le compte à rebours
     const interval = setInterval(() => {
+      // ⭐ Vérifier l'inactivité — si moins de 10s depuis la dernière activité,
+      //    on ne décrémente PAS le compteur (il reste à 10).
+      const idleMs = Date.now() - lastActivityRef.current;
+      if (idleMs < 10000) {
+        // Encore actif récemment → on s'assure que le compteur est à 10
+        if (countdownRef.current !== 10) {
+          countdownRef.current = 10;
+          setAutoSaveCountdown(10);
+        }
+        return;
+      }
       countdownRef.current -= 1;
       setAutoSaveCountdown(countdownRef.current);
       if (countdownRef.current <= 0) {
@@ -1606,10 +1643,18 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         setTimeout(() => handleInlineSave(), 0);
       }
     }, 1000);
-    return () => clearInterval(interval);
+
+    const cleanup = () => {
+      clearInterval(interval);
+      document.removeEventListener('keydown', onActivity);
+      document.removeEventListener('mousedown', onActivity);
+      document.removeEventListener('input', onActivity);
+      document.removeEventListener('change', onActivity);
+    };
+    return cleanup;
     // ⚠️ Ne pas inclure handleInlineSave dans les deps — il change à chaque render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingCell, editingEntryId, inlineForm.subjectId, inlineForm.customSubjectName, inlineForm.step, saving, activeTimetableId, selectedClassIds]);
+  }, [editingCell, editingEntryId, inlineForm.subjectId, inlineForm.customSubjectName, inlineForm.step, inlineForm.duration, saving, activeTimetableId, selectedClassIds]);
 
   const handleDeleteEntry = async (id: string) => {
     try { await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }); await loadEntries(); toast({ title: '✅ Séance supprimée' }); }
@@ -1803,7 +1848,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
               <CheckCircle className="w-3.5 h-3.5" /> Enregistrer
             </button>
             <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
               {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
             </button>
           </div>

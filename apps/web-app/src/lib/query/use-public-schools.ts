@@ -109,7 +109,11 @@ export function usePublicSchools(options: UsePublicSchoolsOptions = {}) {
     // ⭐ 5 minutes de cache — la liste des écoles change rarement
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    retry: 1,
+    // ⭐ 3 retry (was 1) — Neon cold start + Vercel cold start peuvent faire
+    //    échouer les 2 premières tentatives. 3 retry donne une meilleure
+    //    résilience sans être insupportable pour l'utilisateur.
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000), // 1s, 2s, 4s
     // Garder les données précédentes pendant le re-fetch (évite le flash)
     placeholderData: keepPreviousData,
     // Pas de refetch au focus — la liste change rarement et le user n'a pas

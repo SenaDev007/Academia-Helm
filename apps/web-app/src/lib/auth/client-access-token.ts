@@ -174,6 +174,11 @@ export function markFreshLogin(): void {
     // S'assurer que le flag de complétion du flow post-login est réinitialisé
     // pour que le loading screen puisse s'afficher
     localStorage.removeItem('academia_post_login_done');
+    // ⭐ Clear le flag 'just_logged_out' — un login réussi annule la grace period.
+    //    Sans ça, si l'utilisateur se déconnecte puis se reconnecte dans les 60s,
+    //    la prochaine visite sur /login (ex: par navigation manuelle) serait bloquée
+    //    en mode "no-redirect" même si la session est valide.
+    sessionStorage.removeItem('academia_just_logged_out');
   } catch { /* ignore */ }
 }
 
@@ -194,6 +199,55 @@ export function clearClientSessionSync(): void {
   // ⛔ OFFLINE-FIRST DÉSACTIVÉ — clearTokenFromCacheApi suspendu
   // tokenMirrorDone = false;
   // clearTokenFromCacheApi();
+
+  // ⭐ ANTI-BLINK LOOP : Marquer qu'on vient de se déconnecter.
+  //    La page /login a un useEffect au montage qui appelle hasLocalSessionHints()
+  //    et redirige vers /app si true. Problème : après logout, des données stale
+  //    peuvent persister (Cache API non nettoyée car suspendue, localStorage
+  //    partiellement réécrit par un service worker, etc.).
+  //    Solution : on pose un timestamp en sessionStorage. Le useEffect de /login
+  //    le vérifie — si < 60s, on SAUTE l'auto-redirect même si hasLocalSessionHints()
+  //    retourne true. Ça empêche la boucle infinie "login → redirect → login".
+  try {
+    sessionStorage.setItem('academia_just_logged_out', Date.now().toString());
+  } catch { /* sessionStorage peut être indisponible en mode privé */ }
+}
+
+/**
+ * ⭐ Vérifie si l'utilisateur vient de se déconnecter (≤ gracePeriodMs ms).
+ *    Utilisé par /login pour EMPÊCHER l'auto-redirect vers /app qui causerait
+ *    une boucle infinie si des données stale persistent en localStorage après logout.
+ *
+ * @param gracePeriodMs Durée en ms pendant laquelle on considère qu'on "vient" de
+ *                       se déconnecter. Défaut: 60s.
+ * @returns true si logout a eu lieu récemment (dans la période de grâce)
+ */
+export function isRecentlyLoggedOut(gracePeriodMs: number = 60000): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const ts = sessionStorage.getItem('academia_just_logged_out');
+    if (!ts) return false;
+    const elapsed = Date.now() - parseInt(ts, 10);
+    if (isNaN(elapsed)) return false;
+    if (elapsed < gracePeriodMs) return true;
+    // Plus de 60s → on purge le flag (la prochaine fois, pas considéré comme logout récent)
+    sessionStorage.removeItem('academia_just_logged_out');
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ⭐ Marque qu'un login vient d'avoir lieu (à appeler APRÈS un login réussi).
+ *    Clear le flag 'just_logged_out' pour que la prochaine visite sur /login
+ *    puisse déclencher l'auto-redirect vers /app si la session est toujours valide.
+ */
+export function clearRecentlyLoggedOutFlag(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem('academia_just_logged_out');
+  } catch { /* ignore */ }
 }
 
 /**

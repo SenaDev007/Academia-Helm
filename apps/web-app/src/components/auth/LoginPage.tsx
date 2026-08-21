@@ -58,7 +58,7 @@ import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession, markFreshLogin, hasLocalSessionHints } from '@/lib/auth/client-access-token';
+import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -376,7 +376,21 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   //    Avant : l'utilisateur sur un appareil déjà provisionné voyait la page de login
   //    même si sa session était valide → page blanche si réseau coupé.
   //    Maintenant : auto-redirect vers /app si session locale détectée.
+  //
+  // ⛔ ANTI-BLINK LOOP : on vérifie isRecentlyLoggedOut() AVANT hasLocalSessionHints().
+  //    Sans ça, après logout, des données stale persistent en localStorage (Cache API
+  //    non nettoyée car suspendue, etc.) → hasLocalSessionHints() retourne true →
+  //    redirect vers /app → AppGate détecte session invalide → redirect vers /login →
+  //    useEffect re-fire → hasLocalSessionHints() encore true → boucle infinie.
+  //    Solution : grace period de 60s après logout pendant laquelle on SAUTE
+  //    l'auto-redirect. Le user voit le formulaire de login normalement.
   useEffect(() => {
+    // ⭐ Si logout a eu lieu dans les 60 dernières secondes, NE PAS auto-redirect
+    //    même si hasLocalSessionHints() retourne true (données stale).
+    if (isRecentlyLoggedOut(60000)) {
+      console.log('[LoginPage] Skip auto-redirect — logout was recent (within 60s grace period)');
+      return;
+    }
     if (hasLocalSessionHints()) {
       // ⭐ FIX : si on n'a pas de tenantSlug dans l'URL ni dans le sous-domaine,
       //    on essaie de le récupérer depuis la session locale (localStorage).

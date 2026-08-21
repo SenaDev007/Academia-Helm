@@ -214,11 +214,18 @@ export default function AppLayoutClient({
       <SessionLockScreen />
       <CrispChat />
       {/* ⭐ Sarah Guide In-App — assistant de navigation flottant
-          Global (pas multi-tenant strict). Aide à la navigation, onboarding,
-          explication des modules. Redirige vers ORION (données) et ATLAS (actions). */}
-      <InAppSaraGuideWidget />
-      {/* ⭐ OnboardingTour — parcours guidé par Sarah au premier login */}
-      <OnboardingTour />
+          DÉSACTIVÉ pour tous les rôles sauf plateforme owner / super admin.
+          L'utilisateur a demandé de masquer Sarah pour la présentation.
+          Pour réactiver, retirer la condition ou passer SHOW_SARAH à true. */}
+      {(() => {
+        const SHOW_SARAH = false; // ⭐ Désactivé globalement pour la présentation
+        const PLATFORM_ROLES = ['PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
+        const isPlatformAdmin = SHOW_SARAH && user?.role && PLATFORM_ROLES.includes(user.role);
+        return isPlatformAdmin ? <InAppSaraGuideWidget /> : null;
+      })()}
+      {/* ⭐ OnboardingTour — parcours guidé par Sarah au premier login
+          Désactivé en même temps que le widget Sarah. */}
+      {/* <OnboardingTour /> */}
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />

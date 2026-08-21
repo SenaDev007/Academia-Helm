@@ -1147,7 +1147,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Édition INLINE : au lieu d'un modal, on édite directement dans la cellule
   //    editingCell = { dayOfWeek, blockStart, blockEnd } identifie la cellule en cours d'édition
   const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
-  const [inlineForm, setInlineForm] = useState({ subjectId: '', teacherId: '', roomId: '', startTime: '', endTime: '' });
+  const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', teacherId: '', roomId: '', duration: 30 });
   const [saving, setSaving] = useState(false);
   // ⭐ Export PDF
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -1218,7 +1218,72 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Démarrer l'édition inline d'une cellule
   const startInlineEdit = (dayOfWeek: number, block: any) => {
     setEditingCell({ dayOfWeek, blockStart: block.start, blockEnd: block.end });
-    setInlineForm({ subjectId: '', teacherId: '', roomId: '', startTime: block.start, endTime: block.end });
+    // ⭐ Durée par défaut = 30 min
+    setInlineForm({ subjectId: '', teacherId: '', roomId: '', duration: 30 });
+  };
+
+  // ⭐ Calculer l'heure de début pour la nouvelle séance = fin de la dernière séance
+  //    (ou début du block s'il n'y a pas encore de séance)
+  const calcStartTime = (dayOfWeek: number, block: any): string => {
+    const cellEntries = getCellEntries(dayOfWeek, block);
+    // ⭐ Tenir compte du cérémonial qui occupe du temps au début du block
+    const ceremonyInBlock = configTimeBlocks.filter(
+      b => b.type === 'CEREMONY' && b.start >= block.start && b.end <= block.end
+    );
+    let latestEnd = block.start;
+    // Si cérémonial ce jour-là, partir après sa fin
+    for (const cer of ceremonyInBlock) {
+      const cerDays = Array.isArray(cer.activeDays) ? cer.activeDays : configSchoolDays;
+      if (cerDays.includes(dayOfWeek) && cer.end > latestEnd) {
+        latestEnd = cer.end;
+      }
+    }
+    // Chercher la fin de la dernière séance
+    for (const e of cellEntries) {
+      if (e.endTime > latestEnd) latestEnd = e.endTime;
+    }
+    return latestEnd;
+  };
+
+  // ⭐ Calculer l'heure de fin = startTime + duration (minutes)
+  const calcEndTime = (startTime: string, durationMin: number): string => {
+    const [h, m] = startTime.split(':').map(Number);
+    const totalMin = h * 60 + m + durationMin;
+    const eh = Math.floor(totalMin / 60);
+    const em = totalMin % 60;
+    return `${eh.toString().padStart(2, '0')}:${em.toString().padStart(2, '0')}`;
+  };
+
+  // ⭐ Calculer la durée totale du block en minutes
+  const blockDurationMin = (block: any): number => {
+    const [sh, sm] = block.start.split(':').map(Number);
+    const [eh, em] = block.end.split(':').map(Number);
+    return (eh * 60 + em) - (sh * 60 + sm);
+  };
+
+  // ⭐ Calculer la durée déjà occupée dans une cellule (séances + cérémonial)
+  const usedDurationMin = (dayOfWeek: number, block: any): number => {
+    let total = 0;
+    // Séances existantes
+    const cellEntries = getCellEntries(dayOfWeek, block);
+    for (const e of cellEntries) {
+      const [sh, sm] = (e.startTime || '').split(':').map(Number);
+      const [eh, em] = (e.endTime || '').split(':').map(Number);
+      total += (eh * 60 + em) - (sh * 60 + sm);
+    }
+    // Cérémonial
+    const ceremonyInBlock = configTimeBlocks.filter(
+      b => b.type === 'CEREMONY' && b.start >= block.start && b.end <= block.end
+    );
+    for (const cer of ceremonyInBlock) {
+      const cerDays = Array.isArray(cer.activeDays) ? cer.activeDays : configSchoolDays;
+      if (cerDays.includes(dayOfWeek)) {
+        const [sh, sm] = cer.start.split(':').map(Number);
+        const [eh, em] = cer.end.split(':').map(Number);
+        total += (eh * 60 + em) - (sh * 60 + sm);
+      }
+    }
+    return total;
   };
 
   // ⭐ Sauvegarder l'entry inline
@@ -1264,6 +1329,13 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
       toast({ title: 'Erreur', description: 'Sélectionnez une matière.', variant: 'destructive' }); return;
     }
     setSaving(true);
+
+    // ⭐ Calculer startTime et endTime depuis la durée
+    //    startTime = fin de la dernière séance (ou début du block, ou fin du cérémonial)
+    //    endTime = startTime + duration minutes
+    const calcStart = calcStartTime(editingCell.dayOfWeek, { start: editingCell.blockStart, end: editingCell.blockEnd });
+    const calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
+
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
       try {
@@ -1276,7 +1348,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     for (const classId of selectedClassIds) {
       try {
         await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
-          method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: inlineForm.startTime, endTime: inlineForm.endTime, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
+          method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
         });
         success++;
       } catch { failed++; }
@@ -1552,10 +1624,17 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                             return (
                               <div key={entry.id} className={cn('rounded-lg p-1.5 mb-1 border group relative hover:shadow-sm transition', colorClass)} style={{ minHeight: '40px' }}>
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold">{entry.startTime}–{entry.endTime}</span>
+                                  <span className="text-[10px] font-bold">{(() => {
+                                    // ⭐ Afficher la durée en minutes au lieu de startTime-endTime
+                                    const [sh, sm] = (entry.startTime || '').split(':').map(Number);
+                                    const [eh, em] = (entry.endTime || '').split(':').map(Number);
+                                    const dur = (eh * 60 + em) - (sh * 60 + sm);
+                                    return `${dur} min`;
+                                  })()}</span>
                                   <button onClick={() => handleDeleteEntry(entry.id)} className="opacity-0 group-hover:opacity-100 p-0.5 bg-red-500 text-white rounded transition" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
                                 </div>
                                 <div className="text-xs font-bold leading-tight">{entry.subject?.name || '—'}</div>
+                                <div className="text-[9px] text-slate-400">{entry.startTime}–{entry.endTime}</div>
                                 <div className="flex items-center gap-1 text-[9px] text-slate-500">
                                   {entry.teacher && <span>{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</span>}
                                   {entry.room && <span>· 📍 {entry.room.code}</span>}
@@ -1612,10 +1691,40 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                   onChange={e => setInlineForm({...inlineForm, customSubjectName: e.target.value})}
                                   className="w-full px-1.5 py-1 border border-blue-300 rounded text-[10px] bg-blue-50" autoFocus />
                               )}
-                              <div className="flex gap-1">
-                                <input type="time" value={inlineForm.startTime} onChange={e => setInlineForm({...inlineForm, startTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
-                                <input type="time" value={inlineForm.endTime} onChange={e => setInlineForm({...inlineForm, endTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
-                              </div>
+                              {/* ⭐ DURÉE en minutes (au lieu de startTime/endTime)
+                                  L'utilisateur saisit juste la durée (15, 30, 45, etc.)
+                                  Le système calcule automatiquement startTime et endTime. */}
+                              {(() => {
+                                const dur = Number(inlineForm.duration) || 30;
+                                const blk = { start: editingCell!.blockStart, end: editingCell!.blockEnd };
+                                const st = calcStartTime(editingCell!.dayOfWeek, blk);
+                                const et = calcEndTime(st, dur);
+                                const total = blockDurationMin(blk);
+                                const used = usedDurationMin(editingCell!.dayOfWeek, blk);
+                                const remaining = total - used;
+                                const exceeds = dur > remaining;
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <label className="text-[9px] font-bold text-slate-500 whitespace-nowrap">Durée</label>
+                                      <input type="number" min="5" step="5" value={inlineForm.duration}
+                                        onChange={e => setInlineForm({...inlineForm, duration: Number(e.target.value) || 30})}
+                                        className="w-12 px-1 py-0.5 border border-slate-300 rounded text-[10px] text-center font-bold" />
+                                      <span className="text-[9px] text-slate-500">min</span>
+                                    </div>
+                                    {/* Affichage calculé : startTime → endTime */}
+                                    <div className="text-[9px] text-slate-500">
+                                      → <strong className="text-slate-700">{st}–{et}</strong>
+                                    </div>
+                                    {/* Durée restante dans le block */}
+                                    <div className={cn('text-[9px] font-bold', exceeds ? 'text-rose-600' : 'text-emerald-600')}>
+                                      {exceeds
+                                        ? `⚠ Dépassement de ${dur - remaining} min (reste ${remaining} min)`
+                                        : `Reste ${remaining - dur} min dans ce créneau`}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                               <select value={inlineForm.teacherId} onChange={e => setInlineForm({...inlineForm, teacherId: e.target.value})}
                                 className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
                                 <option value="">— Enseignant —</option>

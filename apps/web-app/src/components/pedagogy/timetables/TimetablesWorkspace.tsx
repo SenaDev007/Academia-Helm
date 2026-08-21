@@ -457,7 +457,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
                    block.type === 'STUDY' ? 'Étude' :
                    block.type === 'ACTIVITY' ? 'Activité' :
                    block.type === 'ASSEMBLY' ? 'Assemblée' :
-                   block.type === 'CEREMONY' ? 'Cérémonial des couleurs' :
+                   block.type === 'CEREMONY' ? 'Cérémonial des couleurs / Hymne national' :
                    block.type || '—'}
                 </span>
                 <button onClick={() => removeBlock(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -1450,7 +1450,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                   block.type === 'LUNCH' ? 'Déjeuner' :
                   block.type === 'BREAK' ? 'Récréation' :
                   block.type === 'RECESS' ? 'Récréation' :
-                  block.type === 'CEREMONY' ? 'Cérémonial des couleurs' :
+                  block.type === 'CEREMONY' ? 'Cérémonial des couleurs / Hymne national' :
                   block.type === 'STUDY' ? 'Étude' :
                   block.type === 'ACTIVITY' ? 'Activité' :
                   block.type === 'ASSEMBLY' ? 'Assemblée' :
@@ -1461,10 +1461,15 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                   block.type === 'STUDY' ? BookOpen :
                   block.type === 'ACTIVITY' || block.type === 'ASSEMBLY' ? Users :
                   Coffee; // défaut pour BREAK/RECESS
-                // ⭐ Jours actifs pour CEREMONY (par défaut tous les jours configurés)
-                const ceremonyDays = Array.isArray(block.activeDays) ? block.activeDays : configSchoolDays;
-                const isCeremonyPerDay = block.type === 'CEREMONY';
-                if (isBreak && !isCeremonyPerDay) {
+                // ⭐ CEREMONY n'est PAS rendu comme une ligne séparée.
+                //    Au lieu de ça, il est intégré DANS la cellule du BLOCK
+                //    dont l'intervalle horaire contient le cérémonial.
+                //    Ex: CEREMONY 08:00-08:15 → intégré dans BLOCK 08:00-10:15
+                if (isBreak && block.type === 'CEREMONY') {
+                  // ⭐ SKIP — le cérémonial sera rendu à l'intérieur des cellules BLOCK
+                  return null;
+                }
+                if (isBreak) {
                   // Ligne PAUSE standard — colSpan sur tous les jours (Déjeuner, Récréation, etc.)
                   return (
                     <tr key={blockIdx} className="bg-amber-50/50">
@@ -1473,34 +1478,10 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                     </tr>
                   );
                 }
-                if (isBreak && isCeremonyPerDay) {
-                  // ⭐ CÉRÉMONIAL DES COULEURS — par jour (PAS colSpan)
-                  //    L'école a choisi quels jours (activeDays). Les autres jours = cellule vide.
-                  return (
-                    <tr key={blockIdx} className="bg-orange-50/40">
-                      <td className="p-2 border border-slate-200 text-center bg-orange-50/60">
-                        <BeninFlag size={14} className="mx-auto mb-0.5" />
-                        <div className="text-[10px] font-bold text-orange-700">{block.start}</div>
-                        <div className="text-[10px] font-bold text-orange-700">{block.end}</div>
-                      </td>
-                      {configuredDays.map(day => {
-                        const hasCeremony = ceremonyDays.includes(day.value);
-                        return (
-                          <td key={day.value} className={cn('p-2 border border-slate-200 text-center', hasCeremony ? 'bg-orange-50/60' : '')}>
-                            {hasCeremony ? (
-                              <span className="text-xs font-bold text-orange-700 inline-flex items-center gap-1.5">
-                                <BeninFlag size={12} />
-                                {breakLabel}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-300">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                }
+                // ⭐ Récupérer les blocks CEREMONY qui tombent dans cet intervalle BLOCK
+                const ceremonyInThisBlock = configTimeBlocks.filter(
+                  b => b.type === 'CEREMONY' && b.start >= block.start && b.end <= block.end
+                );
                 return (
                   <tr key={blockIdx}>
                     <td className="p-2 border border-slate-200 bg-slate-50 text-center"><div className="text-xs font-bold text-slate-700">{block.start}</div><div className="text-[10px] text-slate-400">{block.end}</div></td>
@@ -1509,6 +1490,23 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                       const isEditing = editingCell?.dayOfWeek === day.value && editingCell?.blockStart === block.start;
                       return (
                         <td key={day.value} className="p-1 border border-slate-200 align-top" style={{ minHeight: '60px' }}>
+                          {/* ⭐ CÉRÉMONIAL DES COULEURS intégré dans la cellule BLOCK
+                              Si un CEREMONY tombe dans cet intervalle BLOCK et ce jour est actif,
+                              on l'affiche en HAUT de la cellule (avant les cours) avec le drapeau du Bénin.
+                              C'est une sous-ligne non-éditable, pas une ligne séparée. */}
+                          {ceremonyInThisBlock.map(cer => {
+                            const cerDays = Array.isArray(cer.activeDays) ? cer.activeDays : configSchoolDays;
+                            if (!cerDays.includes(day.value)) return null;
+                            return (
+                              <div key={`cer-${cer.start}`} className="bg-orange-50 border border-orange-300 rounded-lg p-1.5 mb-1 flex items-center gap-1.5" style={{ minHeight: '32px' }}>
+                                <BeninFlag size={14} />
+                                <div>
+                                  <div className="text-[10px] font-bold text-orange-700">{cer.start}–{cer.end}</div>
+                                  <div className="text-[10px] font-bold text-orange-700">Cérémonial des couleurs</div>
+                                </div>
+                              </div>
+                            );
+                          })}
                           {/* ⭐ Chaque entry = une "ligne" dans la cellule (aligned with other days via min-height) */}
                           {cellEntries.map(entry => {
                             const colorClass = getSubjectColor(entry.subjectId);

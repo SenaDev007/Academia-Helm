@@ -1092,28 +1092,37 @@ interface ManualEntry {
 function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string; academicYearId: string }) {
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
-
   const [timetables, setTimetables] = useState<ManualTimetable[]>([]);
   const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ManualEntry[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const [viewMode, setViewMode] = useState<'class' | 'teacher' | 'room'>('class');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
+  // ⭐ Config chargée depuis le sous-onglet Configuration
+  const [configSchoolDays, setConfigSchoolDays] = useState<number[]>([1,2,3,4,5]);
+  const [configTimeBlocks, setConfigTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
+  // ⭐ Multi-classes
   const [classes, setClasses] = useState<any[]>([]);
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
-
   const [showAddModal, setShowAddModal] = useState(false);
-  const [entryForm, setEntryForm] = useState<any>({
-    classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00',
-  });
-  // ⭐ État pour la détection de conflits en temps réel (UX préventive)
-  const [conflictCheck, setConflictCheck] = useState<{ hasConflict: boolean; conflicts: any[] } | null>(null);
-  const [checkingConflict, setCheckingConflict] = useState(false);
+  const [entryForm, setEntryForm] = useState<any>({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00', subjectId: '' });
 
-  // ─── Loaders ───
+  const configuredDays = DAYS.filter(d => configSchoolDays.includes(d.value));
+
+  const loadConfig = useCallback(async () => {
+    const levelId = schoolLevel?.id || schoolLevelId;
+    if (!levelId || !academicYearId) return;
+    try {
+      const data = await steFetch<any>(`/api/timetable-engine/config?schoolLevelId=${levelId}&academicYearId=${academicYearId}`);
+      if (data) {
+        const days = Array.isArray(data.schoolDays) ? data.schoolDays : safeParse(data.schoolDays);
+        if (Array.isArray(days) && days.length > 0) setConfigSchoolDays(days);
+        const blocks = Array.isArray(data.timeBlocks) ? data.timeBlocks : safeParse(data.timeBlocks);
+        if (Array.isArray(blocks) && blocks.length > 0) setConfigTimeBlocks(blocks);
+      }
+    } catch {}
+  }, [schoolLevel?.id, schoolLevelId, academicYearId]);
+
   const loadData = useCallback(async () => {
     if (!academicYearId) return;
     setLoading(true);
@@ -1125,420 +1134,159 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYearId}`).catch(() => []),
       ]);
       setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []);
-      if (tts && tts.length > 0) {
-        setActiveTimetableId(tts[0].id);
-        setTimetables(tts);
-      } else {
-        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
-          method: 'POST', body: {
-            academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
-            name: `EDT Principal ${new Date().getFullYear()}`, startDate: new Date(),
-          },
-        });
-        if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); }
-      }
-      if (cls && cls.length > 0) setSelectedId(cls[0].id);
-    } catch (e: any) {
-      console.error(e);
-    } finally { setLoading(false); }
-  }, [academicYearId, schoolLevelId, schoolLevel?.id]);
+      if (tts && tts.length > 0) { setActiveTimetableId(tts[0].id); setTimetables(tts); }
+      if (cls && cls.length > 0) setSelectedClassIds([cls[0].id]);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  }, [academicYearId]);
 
   const loadEntries = useCallback(async () => {
     if (!activeTimetableId) return;
-    try {
-      const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`);
-      setEntries(data?.entries || []);
-    } catch (e) { console.error(e); }
+    try { const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`); setEntries(data?.entries || []); } catch (e) { console.error(e); }
   }, [activeTimetableId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadConfig(); loadData(); }, [loadConfig, loadData]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // ⭐ Détection de conflits en temps réel (debounce 500ms)
-  //    Vérifie les conflits côté backend pendant que l'utilisateur remplit le formulaire.
-  //    Affiche une bande rouge avec les conflits détectés avant même qu'il clique sur Enregistrer.
-  useEffect(() => {
-    if (!showAddModal) {
-      setConflictCheck(null);
-      return;
-    }
-    // Ne pas checker si les champs obligatoires ne sont pas remplis
-    if (!entryForm.dayOfWeek || !entryForm.startTime || !entryForm.endTime) {
-      setConflictCheck(null);
-      return;
-    }
-    if (entryForm.startTime >= entryForm.endTime) {
-      setConflictCheck({
-        hasConflict: true,
-        conflicts: [{
-          type: 'CLASS',
-          message: "L'heure de fin doit être après l'heure de début",
-          conflictingEntry: { id: '', dayOfWeek: entryForm.dayOfWeek, startTime: entryForm.startTime, endTime: entryForm.endTime },
-        }],
-      });
-      return;
-    }
-
-    setCheckingConflict(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/timetables/check-conflict', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            timetableId: activeTimetableId,
-            classId: entryForm.classId || undefined,
-            teacherId: entryForm.teacherId || undefined,
-            roomId: entryForm.roomId || undefined,
-            dayOfWeek: entryForm.dayOfWeek,
-            startTime: entryForm.startTime,
-            endTime: entryForm.endTime,
-          }),
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setConflictCheck({
-            hasConflict: !!data.hasConflict,
-            conflicts: Array.isArray(data.conflicts) ? data.conflicts : [],
-          });
-        } else {
-          setConflictCheck(null);
-        }
-      } catch (err) {
-        setConflictCheck(null);
-      } finally {
-        setCheckingConflict(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [showAddModal, entryForm, activeTimetableId]);
-
   const filteredEntries = useMemo(() => {
-    if (!selectedId) return entries;
-    return entries.filter(e => {
-      if (viewMode === 'class') return e.class?.id === selectedId;
-      if (viewMode === 'teacher') return e.teacher?.id === selectedId;
-      if (viewMode === 'room') return e.room?.id === selectedId;
-      return true;
-    });
-  }, [entries, viewMode, selectedId]);
+    if (selectedClassIds.length === 0) return entries;
+    return entries.filter(e => { if (!e.classId) return true; return selectedClassIds.includes(e.classId) || selectedClassIds.includes(e.class?.id); });
+  }, [entries, selectedClassIds]);
 
-  // ─── Actions ───
+  const toggleClass = (classId: string) => setSelectedClassIds(prev => prev.includes(classId) ? prev.filter(id => id !== classId) : [...prev, classId]);
+
   const handleAddEntry = async () => {
-    if (!academicYearId) return;
-    if (!entryForm.classId) { toast({ title: 'Erreur', description: 'Sélectionnez une classe.', variant: 'destructive' }); return; }
-
-    // ⭐ Si pas d'EDT actif, en créer un à la volée avant d'ajouter la séance.
-    //    Avant ce fix, le bouton "Ajouter séance" était grisé si l'EDT n'existait pas.
+    if (!academicYearId || selectedClassIds.length === 0) return;
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
       try {
-        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
-          method: 'POST', body: {
-            academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
-            name: `EDT Principal ${new Date().getFullYear()}`, startDate: new Date(),
-          },
-        });
-        if (newTt) {
-          setTimetables([newTt]);
-          setActiveTimetableId(newTt.id);
-          currentTimetableId = newTt.id;
-        } else {
-          throw new Error('Impossible de créer l\'EDT');
-        }
-      } catch (e: any) {
-        toast({ title: 'Erreur', description: `Création de l'EDT échouée: ${e.message}`, variant: 'destructive' });
-        return;
-      }
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date() } });
+        if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); currentTimetableId = newTt.id; } else throw new Error('Création EDT échouée');
+      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
     }
-
-    try {
-      const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
-      await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
-        method: 'POST', body: {
-          ...entryForm, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId,
-        },
-      });
-      await loadEntries();
-      setShowAddModal(false);
-      setEntryForm({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00' });
-      toast({ title: '✅ Séance ajoutée' });
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors de l\'ajout. Vérifiez les conflits.', variant: 'destructive' });
+    const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
+    let success = 0, failed = 0;
+    for (const classId of selectedClassIds) {
+      try { await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, { method: 'POST', body: { ...entryForm, classId, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } }); success++; }
+      catch { failed++; }
     }
+    await loadEntries(); setShowAddModal(false);
+    setEntryForm({ classId: '', teacherId: '', roomId: null, dayOfWeek: 1, startTime: '08:00', endTime: '10:00', subjectId: '' });
+    if (failed === 0) toast({ title: `✅ ${success} séance(s) ajoutée(s)` });
+    else toast({ title: 'Partiel', description: `${success} réussie(s), ${failed} échec(s)`, variant: 'destructive' });
   };
 
   const handleDeleteEntry = async (id: string) => {
-    if (!confirm('Supprimer cette séance ?')) return;
-    try {
-      await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' });
-      await loadEntries();
-      toast({ title: '✅ Séance supprimée' });
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-    }
-  };
-
-  // ─── Print / Download ───
-  const getTimetableTitle = () => {
-    const entityName = viewMode === 'class' ? classes.find(c => c.id === selectedId)?.name :
-      viewMode === 'teacher' ? (() => { const t = teachers.find(t => t.teacherId === selectedId); return t ? `${t.teacher?.lastName} ${t.teacher?.firstName}` : ''; })() :
-      rooms.find(r => r.id === selectedId)?.name || '';
-    return `EDT — ${viewMode === 'class' ? 'Classe' : viewMode === 'teacher' ? 'Enseignant' : 'Salle'} ${entityName}`;
-  };
-
-  const buildPrintableHtml = () => {
-    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
-    const title = getTimetableTitle();
-    const rows = HOURS.map(hour => {
-      const cells = DAYS.slice(0, 6).map(day => {
-        const entry = filteredEntries.find(e => e.dayOfWeek === day.value && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
-        if (entry) {
-          const subjectName = entry.subject?.name || '—';
-          const teacherName = entry.teacher ? `${entry.teacher.firstName?.[0]}. ${entry.teacher.lastName}` : '';
-          const className = entry.class?.name || '';
-          const roomCode = entry.room?.code || '';
-          return `<td style="padding:6px;border:1px solid #ddd;text-align:center;background:#f0f7ff;"><strong style="font-size:11px;color:${N};">${subjectName}</strong><br/><span style="font-size:9px;color:#666;">${viewMode === 'teacher' ? className : teacherName}</span><br/><span style="font-size:8px;color:#999;">${roomCode}</span></td>`;
-        }
-        return `<td style="padding:6px;border:1px solid #ddd;text-align:center;"></td>`;
-      }).join('');
-      return `<tr><td style="padding:6px;font-weight:bold;background:${N};color:#fff;border:1px solid #ddd;text-align:center;">${hour.toString().padStart(2, '0')}:00</td>${cells}</tr>`;
-    }).join('');
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}.header{text-align:center;margin-bottom:15px;border-bottom:3px solid ${G};padding-bottom:10px}.header h1{color:${N};font-size:18px}.header h2{font-size:13px;color:${B};margin-top:3px}table{width:100%;border-collapse:collapse}th{background:${N};color:#fff;padding:8px;border:1px solid #ddd;font-size:11px}td{border:1px solid #ddd;padding:6px;font-size:11px}@media print{body{padding:10px}}</style></head><body><div class="header"><h1>EMPLOI DU TEMPS HEBDOMADAIRE</h1><h2>${title}</h2><p>Généré le ${new Date().toLocaleDateString('fr-FR')}</p></div><table><thead><tr><th style="width:80px">Horaire</th>${DAYS.slice(0,6).map(d => `<th>${d.label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
-  };
-
-  const handlePrint = () => {
-    const w = window.open('', '_blank'); if (!w) return;
-    w.document.write(buildPrintableHtml()); w.document.close();
-    setTimeout(() => w.print(), 500);
-  };
-
-  const handleDownload = () => {
-    const blob = new Blob([buildPrintableHtml()], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `edt_${viewMode}_${selectedId || 'all'}.html`; a.click();
-    URL.revokeObjectURL(url);
+    try { await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }); await loadEntries(); toast({ title: '✅ Séance supprimée' }); }
+    catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
   if (loading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /><span className="ml-2 text-sm text-slate-500">Chargement…</span></div>;
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
-        {/* View mode selector */}
-        <div className="flex p-1 bg-white rounded-lg border border-slate-200">
-          <button onClick={() => setViewMode('class')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'class' ? 'bg-blue-600 text-white' : 'text-slate-500')}>Classe</button>
-          <button onClick={() => setViewMode('teacher')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'teacher' ? 'bg-indigo-600 text-white' : 'text-slate-500')}>Prof</button>
-          <button onClick={() => setViewMode('room')} className={cn('px-3 py-1.5 rounded-md text-[10px] font-black uppercase', viewMode === 'room' ? 'bg-indigo-600 text-white' : 'text-slate-500')}>Salle</button>
+      {/* Toolbar : multi-classes */}
+      <div className="flex flex-wrap items-start gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
+        <div className="flex-1 min-w-[250px]">
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) — sélection multiple (CI+CP partagent le même EDT)</label>
+          <div className="flex flex-wrap gap-1.5 max-h-[80px] overflow-y-auto">
+            {classes.length === 0 ? <span className="text-xs text-slate-400 italic">Aucune classe</span> :
+              classes.map(c => {
+                const isSelected = selectedClassIds.includes(c.id);
+                return (
+                  <button key={c.id} onClick={() => toggleClass(c.id)}
+                    className={cn('px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all', isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300')}>
+                    {isSelected && '✓ '}{c.name || c.code}
+                  </button>
+                );
+              })
+            }
+          </div>
+          {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique pour toutes</span>}
         </div>
-
-        {/* Entity selector */}
-        <select
-          value={selectedId || ''}
-          onChange={e => setSelectedId(e.target.value)}
-          className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm bg-white"
-        >
-          <option value="">— Sélectionner —</option>
-          {viewMode === 'class' && classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          {viewMode === 'teacher' && teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
-          {viewMode === 'room' && rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
-        </select>
-
-        <div className="flex gap-2 ml-auto">
-          <button onClick={() => setShowAddModal(true)} disabled={!selectedId}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            <Plus className="w-3.5 h-3.5" /> Ajouter séance
-          </button>
-          <button onClick={handlePrint} disabled={filteredEntries.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            <Printer className="w-3.5 h-3.5" /> Imprimer
-          </button>
-          <button onClick={handleDownload} disabled={filteredEntries.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            <Download className="w-3.5 h-3.5" /> Export
-          </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowAddModal(true)} disabled={selectedClassIds.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold"><Plus className="w-3.5 h-3.5" /> Ajouter séance</button>
+          <button onClick={() => { const w = window.open('', '_blank'); if (!w) return; w.document.write('<html><body><p>Impression à venir</p></body></html>'); w.document.close(); w.print(); }} disabled={filteredEntries.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold"><Printer className="w-3.5 h-3.5" /> Imprimer</button>
         </div>
       </div>
 
-      {/* Grid — ⭐ TOUJOURS AFFICHÉ (avant : masqué si pas de selectedId) */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-        {!selectedId ? (
-          <div className="p-8 text-center">
-            <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-700">Sélectionnez une classe, un enseignant ou une salle</p>
-            <p className="text-xs text-slate-400 mt-1">Choisissez une entité dans le sélecteur ci-dessus pour afficher la grille.</p>
-          </div>
-        ) : (
+      {/* Grille DYNAMIQUE basée sur la config */}
+      {selectedClassIds.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+          <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm font-medium text-slate-700">Sélectionnez une ou plusieurs classes</p>
+          <p className="text-xs text-slate-400 mt-1">Cliquez sur une classe ci-dessus. Vous pouvez en sélectionner plusieurs (ex: CI+CP).</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
           <table className="w-full text-sm border-collapse min-w-[700px]">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="p-2 text-left text-xs font-bold text-slate-700 border border-slate-200 w-20">Horaire</th>
-                {DAYS.slice(0, 6).map(d => (
-                  <th key={d.value} className="p-2 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[120px]">{d.label}</th>
-                ))}
-              </tr>
-            </thead>
+            <thead><tr className="bg-slate-100">
+              <th className="p-2 text-left text-xs font-bold text-slate-700 border border-slate-200 w-24">Horaire</th>
+              {configuredDays.map(d => <th key={d.value} className="p-2 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[120px]">{d.label.toUpperCase()}</th>)}
+            </tr></thead>
             <tbody>
-              {HOURS.map(hour => (
-                <tr key={hour} className="hover:bg-slate-50/30">
-                  <td className="p-2 font-bold text-slate-700 border border-slate-200 bg-slate-50 text-xs">
-                    {hour.toString().padStart(2, '0')}:00
-                  </td>
-                  {DAYS.slice(0, 6).map(day => {
-                    const entry = filteredEntries.find(e => e.dayOfWeek === day.value && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
-                    return (
-                      <td key={day.value} className="p-1 border border-slate-200 align-top min-h-[60px]">
-                        {entry ? (
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-1.5 group relative">
-                            <div className="text-[10px] font-bold text-blue-700">{entry.startTime}–{entry.endTime}</div>
-                            <div className="text-xs font-bold text-slate-800 leading-tight">{entry.subject?.name || '—'}</div>
-                            {viewMode !== 'teacher' && entry.teacher && <div className="text-[10px] text-slate-500">{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</div>}
-                            {viewMode === 'teacher' && entry.class && <div className="text-[10px] text-slate-500">{entry.class.name}</div>}
-                            {entry.room && <div className="text-[10px] text-slate-400">📍 {entry.room.code}</div>}
-                            <button
-                              onClick={() => handleDeleteEntry(entry.id)}
-                              className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-red-500 text-white rounded transition"
-                              title="Supprimer"
-                            >
-                              <X className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div
-                            className="h-full min-h-[48px] flex items-center justify-center cursor-pointer hover:bg-blue-50/50 rounded transition"
-                            onClick={() => {
-                              if (!activeTimetableId) {
-                                toast({ title: 'Création de l\'EDT en cours...', description: 'Patientez, l\'emploi du temps est en cours d\'initialisation.' });
-                                return;
-                              }
-                              setEntryForm({ ...entryForm, classId: viewMode === 'class' ? selectedId : '', dayOfWeek: day.value, startTime: `${hour.toString().padStart(2, '0')}:00`, endTime: `${(hour + 1).toString().padStart(2, '0')}:00` });
-                              setShowAddModal(true);
-                            }}
-                            title="Cliquez pour ajouter une séance"
-                          >
-                            <Plus className="w-3 h-3 text-slate-300 hover:text-blue-500" />
-                          </div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {configTimeBlocks.map((block, blockIdx) => {
+                const isBreak = block.type !== 'BLOCK';
+                const breakLabel = block.type === 'LUNCH' ? '🍽 Déjeuner' : block.type === 'BREAK' ? '☕ Récréation' : '';
+                if (isBreak) {
+                  return (
+                    <tr key={blockIdx} className="bg-amber-50/50">
+                      <td className="p-2 border border-slate-200 text-center"><div className="text-[10px] font-bold text-slate-500">{block.start}</div><div className="text-[10px] font-bold text-slate-500">{block.end}</div></td>
+                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700">{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={blockIdx} className="hover:bg-slate-50/30">
+                    <td className="p-2 border border-slate-200 bg-slate-50 text-center"><div className="text-xs font-bold text-slate-700">{block.start}</div><div className="text-[10px] text-slate-400">{block.end}</div></td>
+                    {configuredDays.map(day => {
+                      const cellEntries = filteredEntries.filter(e => e.dayOfWeek === day.value && e.startTime >= block.start && e.endTime <= block.end);
+                      return (
+                        <td key={day.value} className="p-1 border border-slate-200 align-top min-h-[60px]">
+                          {cellEntries.length > 0 ? (
+                            <div className="space-y-1">{cellEntries.map(entry => (
+                              <div key={entry.id} className="bg-blue-50 border border-blue-200 rounded-lg p-1.5 group relative hover:shadow-sm transition">
+                                <div className="text-[10px] font-bold text-blue-700">{entry.startTime}–{entry.endTime}</div>
+                                <div className="text-xs font-bold text-slate-800 leading-tight">{entry.subject?.name || '—'}</div>
+                                {entry.teacher && <div className="text-[10px] text-slate-500">{entry.teacher.firstName?.[0]}. {entry.teacher.lastName}</div>}
+                                {selectedClassIds.length > 1 && entry.class?.name && <div className="text-[9px] text-slate-400">{entry.class.name}</div>}
+                                <button onClick={() => handleDeleteEntry(entry.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 bg-red-500 text-white rounded transition" title="Supprimer"><X className="w-2.5 h-2.5" /></button>
+                              </div>
+                            ))}</div>
+                          ) : (
+                            <div className="h-full min-h-[48px] flex items-center justify-center cursor-pointer hover:bg-blue-50/50 rounded transition"
+                              onClick={() => { setEntryForm({ classId: selectedClassIds[0], teacherId: '', roomId: null, subjectId: '', dayOfWeek: day.value, startTime: block.start, endTime: block.end }); setShowAddModal(true); }}
+                              title="Cliquez pour ajouter une séance"><Plus className="w-3 h-3 text-slate-300 hover:text-blue-500" /></div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Add entry modal */}
+      {/* Modal d'ajout */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900">Nouveau créneau</h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
-            </div>
+            <div className="flex items-center justify-between p-4 border-b border-slate-100"><h3 className="font-bold text-sm text-slate-900">Ajouter une séance</h3><button onClick={() => setShowAddModal(false)} className="p-1 text-slate-400 hover:text-slate-700"><X className="w-4 h-4" /></button></div>
             <div className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Classe *</label>
-                  <select value={entryForm.classId} onChange={e => setEntryForm({ ...entryForm, classId: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                    <option value="">—</option>
-                    {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Enseignant</label>
-                  <select value={entryForm.teacherId} onChange={e => setEntryForm({ ...entryForm, teacherId: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                    <option value="">—</option>
-                    {teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Salle</label>
-                  <select value={entryForm.roomId || ''} onChange={e => setEntryForm({ ...entryForm, roomId: e.target.value || null })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                    <option value="">— Aucune —</option>
-                    {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Jour *</label>
-                  <select value={entryForm.dayOfWeek} onChange={e => setEntryForm({ ...entryForm, dayOfWeek: parseInt(e.target.value) })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                    {DAYS.slice(0, 6).map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Heure début *</label>
-                  <input type="time" value={entryForm.startTime} onChange={e => setEntryForm({ ...entryForm, startTime: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1 block">Heure fin *</label>
-                  <input type="time" value={entryForm.endTime} onChange={e => setEntryForm({ ...entryForm, endTime: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
-                </div>
-              </div>
+              <div className="p-2 bg-blue-50 rounded-lg text-xs text-blue-800"><strong>{selectedClassIds.length} classe(s)</strong> sélectionnée(s) — la séance sera créée pour chacune.<br/>Jour: <strong>{configuredDays.find(d => d.value === entryForm.dayOfWeek)?.label || '—'}</strong>{' · '}Horaire: <strong>{entryForm.startTime} – {entryForm.endTime}</strong></div>
+              <div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Enseignant</label><select value={entryForm.teacherId || ''} onChange={e => setEntryForm({...entryForm, teacherId: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm"><option value="">— Aucun —</option>{teachers.map(t => <option key={t.teacherId} value={t.teacherId}>{t.teacher?.lastName} {t.teacher?.firstName}</option>)}</select></div>
+              <div className="grid grid-cols-2 gap-2"><div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Début</label><input type="time" value={entryForm.startTime} onChange={e => setEntryForm({...entryForm, startTime: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" /></div><div><label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Fin</label><input type="time" value={entryForm.endTime} onChange={e => setEntryForm({...entryForm, endTime: e.target.value})} className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" /></div></div>
             </div>
-
-            {/* ⭐ Bandeau de détection de conflits en temps réel */}
-            {checkingConflict && (
-              <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex items-center gap-2 text-xs text-blue-700">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Vérification des conflits…
-              </div>
-            )}
-            {!checkingConflict && conflictCheck?.hasConflict && (
-              <div className="px-4 py-3 bg-red-50 border-t border-red-200">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-red-700 mb-1">
-                      ⚠️ {conflictCheck.conflicts.length} conflit(s) détecté(s) — création impossible
-                    </p>
-                    <ul className="space-y-1">
-                      {conflictCheck.conflicts.slice(0, 5).map((c, i) => (
-                        <li key={i} className="text-[11px] text-red-700 flex items-start gap-1.5">
-                          <span className="font-bold uppercase">{
-                            c.type === 'CLASS' ? 'Classe' : c.type === 'TEACHER' ? 'Enseignant' : c.type === 'ROOM' ? 'Salle' : '?'
-                          }</span>
-                          <span className="flex-1">{c.message}</span>
-                        </li>
-                      ))}
-                      {conflictCheck.conflicts.length > 5 && (
-                        <li className="text-[11px] text-red-600 italic">
-                          +{conflictCheck.conflicts.length - 5} autre(s) conflit(s)
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-            {!checkingConflict && conflictCheck && !conflictCheck.hasConflict && (
-              <div className="px-4 py-2 bg-green-50 border-t border-green-100 flex items-center gap-2 text-xs text-green-700">
-                <span>✓ Aucun conflit — créneau disponible</span>
-              </div>
-            )}
-
-            <div className="p-4 border-t border-slate-100 flex justify-end gap-2">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-bold">Annuler</button>
-              <button
-                onClick={handleAddEntry}
-                disabled={conflictCheck?.hasConflict}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold"
-              >
-                Enregistrer
-              </button>
-            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-100"><button onClick={() => setShowAddModal(false)} className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Annuler</button><button onClick={handleAddEntry} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold"><Plus className="w-3.5 h-3.5" /> Ajouter pour {selectedClassIds.length} classe(s)</button></div>
           </div>
         </div>
       )}
     </div>
   );
 }
-
-// ═══ MODAL: Grille EDT ═══
 
 function SolutionGridModal({ solution, onClose }: { solution: any; onClose: () => void }) {
   const entries: any[] = Array.isArray(solution.entries) ? solution.entries : [];

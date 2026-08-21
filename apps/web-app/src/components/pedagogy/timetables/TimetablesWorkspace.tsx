@@ -1144,6 +1144,8 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const [rooms, setRooms] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
+  // ⭐ Assignations enseignant→classe pour auto-détection du titulaire
+  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   // ⭐ Édition INLINE : au lieu d'un modal, on édite directement dans la cellule
   //    editingCell = { dayOfWeek, blockStart, blockEnd } identifie la cellule en cours d'édition
   const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
@@ -1180,15 +1182,18 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     if (!academicYearId) return;
     setLoading(true);
     try {
-      const [tts, cls, rms, tchs, subs, si] = await Promise.all([
+      const [tts, cls, rms, tchs, subs, si, tca] = await Promise.all([
         pedagogyFetch<ManualTimetable[]>(`/api/timetables?academicYearId=${academicYearId}`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`).catch(() => []),
         pedagogyFetch<any[]>(`/api/rooms`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYearId}`).catch(() => []),
         pedagogyFetch<any[]>(`/api/pedagogy/subjects?academicYearId=${academicYearId}`).catch(() => []),
         fetch('/api/pedagogy-space/school-identity', { credentials: 'include' }).then(r => r.json()).catch(() => null),
+        // ⭐ Récupérer les affectations enseignant→classe pour auto-détection
+        pedagogyFetch<any[]>(`/api/pedagogy/teacher-class-assignments?academicYearId=${academicYearId}`).catch(() => []),
       ]);
       setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []); setSubjects(subs || []);
+      setTeacherAssignments(Array.isArray(tca) ? tca : (tca?.data || []));
       setSchoolIdentity(si);
       if (tts && tts.length > 0) { setActiveTimetableId(tts[0].id); setTimetables(tts); }
       if (cls && cls.length > 0) setSelectedClassIds([cls[0].id]);
@@ -1218,8 +1223,19 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Démarrer l'édition inline d'une cellule
   const startInlineEdit = (dayOfWeek: number, block: any) => {
     setEditingCell({ dayOfWeek, blockStart: block.start, blockEnd: block.end });
-    // ⭐ Durée par défaut = 30 min
-    setInlineForm({ subjectId: '', teacherId: '', roomId: '', duration: 30 });
+    // ⭐ Auto-détection de l'enseignant titulaire de la classe sélectionnée
+    //    Si 1 classe sélectionnée → chercher son titulaire dans teacherAssignments
+    //    Si multi-classes → on ne pré-remplit pas (l'utilisateur choisira)
+    let autoTeacherId = '';
+    if (selectedClassIds.length === 1) {
+      const assignment = teacherAssignments.find((a: any) =>
+        a.classId === selectedClassIds[0] || a.class?.id === selectedClassIds[0]
+      );
+      if (assignment) {
+        autoTeacherId = assignment.teacherId || assignment.teacher?.id || '';
+      }
+    }
+    setInlineForm({ subjectId: '', teacherId: autoTeacherId, roomId: '', duration: 30 });
   };
 
   // ⭐ Calculer l'heure de début pour la nouvelle séance = fin de la dernière séance

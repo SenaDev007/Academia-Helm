@@ -22,6 +22,7 @@ export const SUB_SUBJECT_CATALOG: { group: string; label: string; items: string[
     group: 'FRANCAIS',
     label: 'Français',
     items: [
+      'Français',
       'Vocabulaire thématique',
       'Communication orale',
       'Lecture',
@@ -39,8 +40,8 @@ export const SUB_SUBJECT_CATALOG: { group: string; label: string; items: string[
     group: 'MATHEMATIQUES',
     label: 'Mathématiques',
     items: [
-      'Numération',
-      'Calcul',
+      'Mathématiques',
+      'Arithmétique',
       'Géométrie',
       'Mesure',
       'Problèmes',
@@ -51,17 +52,18 @@ export const SUB_SUBJECT_CATALOG: { group: string; label: string; items: string[
     group: 'EDUCATION_SOCIALE',
     label: 'Éducation Sociale',
     items: [
+      'Éducation Sociale',
       'Morale',
       'Civisme',
       'Histoire',
       'Géographie',
-      'Histoire-Géographie',
     ],
   },
   {
     group: 'EDUCATION_ARTISTIQUE',
     label: 'Éducation Artistique',
     items: [
+      'Éducation Artistique',
       'Poésie',
       'Conte',
       'Chant',
@@ -72,8 +74,7 @@ export const SUB_SUBJECT_CATALOG: { group: string; label: string; items: string[
     group: 'EDUCATION_SCIENTIFIQUE',
     label: 'Éducation Scientifique et Technologique',
     items: [
-      'EST',
-      'Sciences',
+      'Éducation Scientifique et Technologique',
     ],
   },
   {

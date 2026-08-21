@@ -7777,3 +7777,82 @@ Stage Summary:
 - Cache navigateur : plus besoin de le nettoyer après chaque logout
 - Écoles : retry 3x avec backoff exponentiel pour résilience transient failures
 - Si backend réellement down, l'UI affichera 'Réessayer' (pas de boucle)
+
+---
+Task ID: Phase-19-Teacher-Parent-UI-No-EDT-Fix
+Agent: main
+Task: Fix teacher + parent UIs showing 'no EDT configured' when EDT exists
+
+Work Log:
+
+- PROBLÈME RAPPORTÉ :
+  * Teacher UI : 'Aucun emploi du temps configuré' même si EDT CE1 est configuré
+  * Saliou a CE1 + CE2 → devrait pouvoir switcher entre les EDTs
+  * Parent UI : aucun EDT affiché non plus
+
+- ROOT CAUSE FIX TEACHER UI :
+  * Phase 15 utilisait : const classId = a.classId || a.class?.id;
+  * MAIS la réponse teacher-class-assignments a :
+    - a.classId : physical Class.id (souvent NULL si assignment au niveau AcademicClass)
+    - a.physicalClass.id : physical Class.id (si classId set)
+    - a.classSubject.academicClass.id : AcademicClass.id DIRECTEMENT (fiable!)
+  * Le map physicalToAcademic ne marchait que si classId était un physical Class.id
+    ET que ce physical Class était dans la réponse academic-structure/classes
+  * Beaucoup de teachers sont assignés au niveau AcademicClass (pas de section
+    spécifique) → classId est NULL → map.get(null) = undefined → 0 classe trouvée
+    → 'no EDT configured'
+
+- SOLUTION TEACHER UI :
+  * Utiliser a.classSubject.academicClass.id DIRECTEMENT (pas besoin du map)
+  * Chaque TeacherClassAssignment a un classSubject → classSubject.academicClass
+    est peuplé par le backend (cf. getTeacherClassAssignments service)
+  * Supprimé le buggy physicalToAcademic map + fetch academic-structure/classes
+    (1 appel réseau de moins)
+  * Construit teacherClassesMap : { academicClassId → academicClassName }
+
+- NOUVELLE FEATURE : Switcher de classe pour teachers multi-classes
+  * Nouveaux states : teacherClasses [{id, name}] + selectedClassId (null = all)
+  * Dropdown affiché UNIQUEMENT si teacherClasses.length > 1
+  * Options : 'Toutes mes classes' + chaque nom de classe
+  * Filtre entries par selectedClassId si set, sinon montre tout
+  * Cas d'usage : Saliou enseigne CE1 + CE2 → peut switcher entre EDTs
+  * Auto-sélection : si teacher a 1 seule classe → on la sélectionne par défaut
+
+- ROOT CAUSE FIX PARENT UI :
+  * Phase 15 résolvait childOfficialClassId via map physicalToAcademic
+    en itérant academicClasses de /api/pedagogy/academic-structure/classes
+  * Problème : nécessite classId (physical) sur le child. Mais certains enfants
+    n'ont que academicClassId (pas encore affectés à une section physique,
+    juste admis à l'AcademicClass 'CI' par exemple)
+  * Si selectedChild.classId est null → loadTimetable return early → parent
+    voit 'no EDT configured'
+
+- SOLUTION PARENT UI :
+  * Préférer selectedChild.academicClassId directement quand dispo (fiable)
+  * Skip le fetch academic-structure/classes si academicClassId est set
+    (économie d'appel réseau)
+  * Fallback à résolution physicalToAcademic si academicClassId manquant
+  * Deps array mis à jour pour inclure selectedChild (objet entier, pas juste classId)
+
+- FIX BACKEND (parent-portal.controller.ts) :
+  * SQL query mise à jour pour aussi récupérer :
+    - se.academicClassId
+    - ac.name as academicClassName
+  * JOIN pedagogy_academic_classes ac ON ac.id = se.academicClassId
+  * Maintenant /api/parent/children retourne academicClassId pour chaque enfant
+  * C'est ce que le parent UI utilise pour trouver le bon EDT
+
+- SYNTAX CHECK : ✅ sur les 3 fichiers
+- TypeScript check : 0 erreur
+- 3 fichiers modifiés (+87 lignes, -46 lignes) :
+  * apps/api-server/src/parent-portal/parent-portal.controller.ts
+  * apps/web-app/src/app/app/teacher/timetable/page.tsx
+  * apps/web-app/src/app/app/parent/timetable/page.tsx
+- Commit + push : e115030a sur origin/main
+
+Stage Summary:
+- Teacher UI : utilise classSubject.academicClass.id directement (fiable à 100%)
+- Parent UI : utilise academicClassId directement quand dispo (échec plus rare)
+- Switcher de classe pour teachers multi-classes (Saliou CE1 + CE2)
+- Backend parent-portal : retourne academicClassId pour chaque enfant
+- Plus de bug 'no EDT configured' quand l'EDT existe réellement

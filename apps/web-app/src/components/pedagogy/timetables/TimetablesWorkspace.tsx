@@ -1125,26 +1125,25 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const { schoolLevel } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   // ⭐ Niveaux réels (sans l'option virtuelle 'ALL')
-  //    IMPORTANT : availableLevels vient de /api/school-levels qui retourne des objets
-  //    avec `id` = UUID de education_structure (PAS school_levels) et
-  //    `schoolLevelId` = UUID de school_levels (la VRAIE FK utilisée par Timetable).
-  //    On doit utiliser schoolLevelId pour les requêtes backend qui ont une FK vers school_levels.
   const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
-  // ⭐ Sélecteur de niveau LOCAL — indépendant du header
-  //    On utilise schoolLevelId (UUID de school_levels) comme valeur du select.
-  //    Avant ce fix, on utilisait l.id (UUID de education_structure) → FK invalide →
-  //    'Référence invalide : l'entité liée n'existe pas'.
+  // ⭐ DEUX IDs différents pour deux usages différents :
+  //    - configLevelId = l.id (UUID education_structure) → pour fetch la config
+  //      (le ConfigTab sauve avec cet ID, donc on doit l'utiliser pour retrouver)
+  //    - localLevelId = l.schoolLevelId (UUID school_levels) → pour créer un Timetable
+  //      (le Timetable model a une FK vers school_levels.id)
+  //    Avant ce fix, on utilisait le même ID pour les deux → soit la config ne
+  //    correspondait pas, soit la création de Timetable échouait (FK invalide).
+  const [configLevelId, setConfigLevelId] = useState<string | null>(
+    (schoolLevelId && schoolLevelId !== 'ALL') ? schoolLevelId : (realLevels[0]?.id ?? null)
+  );
   const [localLevelId, setLocalLevelId] = useState<string | null>(
     (() => {
-      const headerLvl = realLevels.find((l: any) => l.id === schoolLevelId || l.schoolLevelId === schoolLevelId);
-      if (headerLvl?.schoolLevelId) return headerLvl.schoolLevelId;
-      if (schoolLevelId && schoolLevelId !== 'ALL') {
-        const match = realLevels.find((l: any) => l.schoolLevelId === schoolLevelId);
-        if (match?.schoolLevelId) return match.schoolLevelId;
-      }
-      // Fallback: premier niveau réel avec schoolLevelId non null
+      // Chercher le schoolLevelId correspondant au configLevelId
+      const match = realLevels.find((l: any) => l.id === configLevelId);
+      if (match?.schoolLevelId) return match.schoolLevelId;
+      // Fallback: premier niveau avec schoolLevelId non null
       const first = realLevels.find((l: any) => l.schoolLevelId);
-      return first?.schoolLevelId ?? realLevels[0]?.schoolLevelId ?? null;
+      return first?.schoolLevelId ?? null;
     })()
   );
   const [timetables, setTimetables] = useState<ManualTimetable[]>([]);
@@ -1173,8 +1172,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const configuredDays = DAYS.filter(d => configSchoolDays.includes(d.value));
 
   const loadConfig = useCallback(async () => {
-    // ⭐ Utilise localLevelId (pas schoolLevel?.id du header qui peut être 'ALL')
-    const levelId = localLevelId;
+    // ⭐ Utilise configLevelId (UUID education_structure) — c'est l'ID que le
+    //    ConfigTab utilise pour sauver la config dans timetable_configs.
+    //    localLevelId (UUID school_levels) est utilisé uniquement pour créer
+    //    des Timetables (FK vers school_levels).
+    const levelId = configLevelId;
     if (!levelId || !academicYearId) return;
     try {
       // ⭐ Cache-buster : ajoute un timestamp pour forcer le fetch d'une config fraîche.
@@ -1190,7 +1192,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         if (Array.isArray(blocks) && blocks.length > 0) setConfigTimeBlocks(blocks);
       }
     } catch {}
-  }, [localLevelId, academicYearId]);
+  }, [configLevelId, academicYearId]);
 
   const loadData = useCallback(async () => {
     if (!academicYearId) return;
@@ -1398,6 +1400,23 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
+  // ⭐ Supprimer un EDT complet
+  const handleDeleteTimetable = async (ttId: string) => {
+    if (!ttId) return;
+    try {
+      await pedagogyFetch(`/api/timetables/${ttId}`, { method: 'DELETE' });
+      setTimetables(prev => prev.filter(t => t.id !== ttId));
+      if (activeTimetableId === ttId) {
+        setActiveTimetableId(null);
+        setEntries([]);
+        setSelectedClassIds([]);
+      }
+      toast({ title: '✅ EDT supprimé' });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  };
+
   // ⭐ Enregistrer l'EDT actuel (confirmation + rechargement)
   const handleSaveTimetable = async () => {
     if (!activeTimetableId) { toast({ title: 'Aucun EDT à enregistrer', variant: 'destructive' }); return; }
@@ -1509,12 +1528,17 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         <div className="flex flex-col gap-1">
           <label className="text-[10px] font-bold text-slate-500 uppercase">Niveau scolaire</label>
           <select
-            value={localLevelId || ''}
-            onChange={e => { setLocalLevelId(e.target.value); }}
+            value={configLevelId || ''}
+            onChange={e => {
+              setConfigLevelId(e.target.value);
+              // ⭐ Synchroniser localLevelId (schoolLevelId) avec configLevelId (education_structure)
+              const match = realLevels.find((l: any) => l.id === e.target.value);
+              setLocalLevelId(match?.schoolLevelId || null);
+            }}
             className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white"
           >
             {realLevels.map((l: any) => (
-              <option key={l.schoolLevelId || l.id} value={l.schoolLevelId || l.id}>{l.label || l.name || l.code}</option>
+              <option key={l.schoolLevelId || l.id} value={l.id}>{l.label || l.name || l.code}</option>
             ))}
           </select>
         </div>
@@ -1527,15 +1551,22 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             <div className="flex flex-wrap gap-1.5">
               {timetables.map(tt => {
                 const isActive = tt.id === activeTimetableId;
-                // Compter les entries par EDT
                 const entryCount = entries.filter(e => e.timetableId === tt.id).length;
                 return (
-                  <button key={tt.id} onClick={() => handleSwitchTimetable(tt.id)}
-                    className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
-                      isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300')}
-                    title={tt.name}>
-                    {isActive && '✓ '}{tt.name || 'EDT'}{entryCount > 0 && ` (${entryCount})`}
-                  </button>
+                  <div key={tt.id} className="inline-flex items-center gap-1">
+                    <button onClick={() => handleSwitchTimetable(tt.id)}
+                      className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                        isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300')}
+                      title={tt.name}>
+                      {isActive && '✓ '}{tt.name || 'EDT'}{entryCount > 0 && ` (${entryCount})`}
+                    </button>
+                    {/* ⭐ Bouton supprimer l'EDT */}
+                    <button onClick={() => handleDeleteTimetable(tt.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                      title="Supprimer cet EDT">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 );
               })}
             </div>

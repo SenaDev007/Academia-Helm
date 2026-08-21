@@ -7096,3 +7096,61 @@ Stage Summary:
 - Aucune migration DB nécessaire
 - Aucune modification backend (le service createTimetableEntry était déjà correct — le bug était purement frontend)
 - PROCHAINE ÉTAPE : si l'utilisateur signale toujours une erreur, le message exact du serveur s'affichera maintenant → on pourra l'examiner et cibler la cause racine
+
+---
+Task ID: Phase-8-Fix-Timetable-P2003-FK-Violation
+Agent: main
+Task: Fix P2003 FK violation "Référence invalide : l'entité liée n'existe pas" on POST /timetables/:id/entries
+
+Work Log:
+- DIAGNOSTIC : L'utilisateur a enfin vu le vrai message d'erreur grâce au fix Phase 7 :
+  "Échec — 0 réussie(s), 2 échec(s) — Référence invalide : l'entité liée n'existe pas"
+  C'est un code Prisma P2003 (Foreign key constraint violation).
+- INVESTIGATION ROOT CAUSE :
+  * Le frontend récupère les classes via /api/pedagogy/academic-structure/classes
+  * Cet endpoint renvoie des AcademicClass (table pedagogy_academic_classes — ex: "CI", "CP")
+  * MAIS TimetableEntry.classId FK → classes.id (table des sections physiques comme "CI/A", "CI/B")
+  * Donc AcademicClass.id envoyé par le frontend n'existe pas dans classes.id → P2003 FK violation
+  * Confirmation via Prisma schema : AcademicClass @@map("pedagogy_academic_classes") vs Class @@map("classes")
+- FIX 1 (prisma-exception.filter.ts) : Amélioration du handler P2003
+  * Extraction du nom du champ FK depuis meta.target (array, version récente Prisma)
+  * Fallback sur meta.field_name (deprecated alias)
+  * Fallback sur meta.constraint (extraction regex du champ depuis "TimetableEntry_classId_fkey")
+  * Fallback sur meta.cause (texte long)
+  * Log complet du meta + message Prisma entier pour debug serveur
+  * Message utilisateur maintenant : "Référence invalide : l'entité liée n'existe pas (champ: classId)"
+- FIX 2 (timetables-prisma.service.ts createTimetableEntry) : Auto-résolution AcademicClass → Class[]
+  * Étape 1 : Résoudre data.classId en targetClassIds[]
+    - D'abord findUnique sur Class (section physique) → si trouvé, 1 seule entry
+    - Sinon findUnique sur AcademicClass avec include physicalClasses → si trouvé, N entries
+    - Si AcademicClass existe mais sans sections physiques → BadRequestException claire :
+      "La classe 'CI' n'a aucune section physique (CI/A, CI/B...). Veuillez d'abord créer les sections..."
+    - Si ni Class ni AcademicClass → BadRequestException "Classe introuvable (ID: ...)"
+  * Étape 2 : Détection de conflits (non-bloquante, try/catch) — préservée
+  * Étape 3 : Vérification capacité salle (utilise la 1ère section physique, fallback AcademicClass.capacity)
+  * Étape 4 : Création d'une TimetableEntry par section physique
+    - Construction explicite du payload Prisma (baseData) sans spread de `data` pour éviter
+      l'override de classId par l'ID original (AcademicClass.id invalide)
+    - Audit log par entry créée (non-bloquant)
+  * Étape 5 : Retourne 1 entry si N=1, sinon { count, entries, multiClass, academicClassName }
+- FIX 3 (TimetablesWorkspace.tsx handleInlineSave) : Lecture de result.count
+  * success += result?.count si la réponse contient un count (multi-section)
+  * sinon success += 1 (entry unique)
+  * Affichage précis du nombre de séances créées (ex: "✅ 6 séance(s) ajoutée(s)" pour CI/A+B+C + CP/A+B+C)
+- SYNTAX CHECK : OK sur les 3 fichiers (transpile TS sans erreur)
+- TypeScript check backend : erreurs "Cannot find module @nestjs/common" préexistantes (node_modules non installé en local)
+- Aucune migration DB nécessaire (le schéma TimetableEntry était déjà correct — le bug était purement applicatif)
+- 3 fichiers modifiés (+158 lignes, -36 lignes) :
+  * apps/api-server/src/common/filters/prisma-exception.filter.ts
+  * apps/api-server/src/pedagogy/timetables-prisma.service.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+- Commit + push : 56adc0b5 sur origin/main
+
+Stage Summary:
+- Bug "Référence invalide : l'entité liée n'existe pas" : RÉSOLU
+- Cause racine identifiée et corrigée : confusion AcademicClass.id vs Class.id
+- Auto-résolution transparente pour l'utilisateur : il sélectionne "CI" et "CP" dans le sélecteur,
+  le backend crée automatiquement les entries pour toutes les sections physiques correspondantes
+- Messages d'erreur beaucoup plus clairs : "La classe X n'a aucune section physique..."
+- Backward compatible : si l'ID envoyé est déjà un Class.id, le comportement est identique à avant
+- Comptage précis des séances créées (multi-section) dans le toast de succès

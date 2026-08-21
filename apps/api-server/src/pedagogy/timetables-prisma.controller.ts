@@ -253,7 +253,15 @@ export class TimetablesPrismaController {
 
     const rows = timeBlocks.map((block: any) => {
       const isBreak = block.type !== 'BLOCK';
-      const breakLabel = block.type === 'LUNCH' ? 'Dejeuner' : block.type === 'BREAK' ? 'Recreation' : '';
+      const breakLabel =
+        block.type === 'LUNCH' ? 'Dejeuner' :
+        block.type === 'BREAK' ? 'Recreation' :
+        block.type === 'RECESS' ? 'Recreation' :
+        block.type === 'CEREMONY' ? 'Ceremonial des couleurs' :
+        block.type === 'STUDY' ? 'Etude' :
+        block.type === 'ACTIVITY' ? 'Activite' :
+        block.type === 'ASSEMBLY' ? 'Assemblee' :
+        block.type || '';
       if (isBreak) {
         return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#fef3c7;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td><td colspan="${configuredDays.length}" style="border:1px solid #333;padding:4px;background:#fef3c7;text-align:center;font-size:10px;font-weight:bold;color:#92400e;">${breakLabel} (${block.start} - ${block.end})</td></tr>`;
       }

@@ -21,7 +21,7 @@ import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
   Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus, Layers,
-  Coffee, Utensils, FileDown,
+  Coffee, Utensils, FileDown, Flag,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -401,6 +401,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
                   <option value="STUDY">Étude</option>
                   <option value="ACTIVITY">Activité</option>
                   <option value="ASSEMBLY">Assemblée</option>
+                  <option value="CEREMONY">Cérémonial des couleurs</option>
                   <option value="__CUSTOM__">Personnalisé…</option>
                 </select>
                 {isCustomType && (
@@ -421,6 +422,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
                   block.type === 'STUDY' ? 'bg-violet-50 text-violet-700' :
                   block.type === 'ACTIVITY' ? 'bg-pink-50 text-pink-700' :
                   block.type === 'ASSEMBLY' ? 'bg-cyan-50 text-cyan-700' :
+                  block.type === 'CEREMONY' ? 'bg-orange-50 text-orange-700' :
                   'bg-slate-100 text-slate-700')}>
                   {block.type === 'BLOCK' ? 'Cours' :
                    block.type === 'BREAK' ? 'Pause' :
@@ -429,6 +431,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
                    block.type === 'STUDY' ? 'Étude' :
                    block.type === 'ACTIVITY' ? 'Activité' :
                    block.type === 'ASSEMBLY' ? 'Assemblée' :
+                   block.type === 'CEREMONY' ? 'Cérémonial des couleurs' :
                    block.type || '—'}
                 </span>
                 <button onClick={() => removeBlock(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded ml-auto"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -1416,12 +1419,29 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             <tbody>
               {configTimeBlocks.map((block, blockIdx) => {
                 const isBreak = block.type !== 'BLOCK';
-                const breakLabel = block.type === 'LUNCH' ? 'Déjeuner' : block.type === 'BREAK' ? 'Récréation' : '';
+                // ⭐ Labels pour les types non-Cours (pauses, déjeuner, cérémonial, etc.)
+                const breakLabel =
+                  block.type === 'LUNCH' ? 'Déjeuner' :
+                  block.type === 'BREAK' ? 'Récréation' :
+                  block.type === 'RECESS' ? 'Récréation' :
+                  block.type === 'CEREMONY' ? 'Cérémonial des couleurs' :
+                  block.type === 'STUDY' ? 'Étude' :
+                  block.type === 'ACTIVITY' ? 'Activité' :
+                  block.type === 'ASSEMBLY' ? 'Assemblée' :
+                  block.type || '';
+                // ⭐ Icônes pour les types non-Cours
+                const BreakIcon =
+                  block.type === 'LUNCH' ? Utensils :
+                  block.type === 'CEREMONY' ? Flag :
+                  block.type === 'STUDY' ? BookOpen :
+                  block.type === 'ACTIVITY' ? Users :
+                  block.type === 'ASSEMBLY' ? Users :
+                  Coffee; // défaut pour BREAK/RECESS
                 if (isBreak) {
                   return (
                     <tr key={blockIdx} className="bg-amber-50/50">
                       <td className="p-2 border border-slate-200 text-center"><div className="text-[10px] font-bold text-slate-500">{block.start}</div><div className="text-[10px] font-bold text-slate-500">{block.end}</div></td>
-                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1">{block.type === 'LUNCH' ? <Utensils className="w-3 h-3" /> : <Coffee className="w-3 h-3" />}{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
+                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1"><BreakIcon className="w-3 h-3" />{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
                     </tr>
                   );
                 }

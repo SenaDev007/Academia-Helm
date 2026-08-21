@@ -1319,6 +1319,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
           method: 'POST', body: {
             academicYearId, schoolLevelId: localLevelId || schoolLevelId,
             code: customName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
+            abbreviation: customName.substring(0, 5).toUpperCase(),
             name: customName, coefficient: 1, weeklyHours: 120,
           },
         });
@@ -1333,6 +1334,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
           method: 'POST', body: {
             academicYearId, schoolLevelId: localLevelId || schoolLevelId,
             code: catName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
+            abbreviation: catName.substring(0, 5).toUpperCase(),
             name: catName, coefficient: 1, weeklyHours: 120,
           },
         });
@@ -1685,7 +1687,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                     {/* Puis les sous-matières du catalogue qui n'existent PAS encore en DB
                                         → on les propose avec value = nom (sera créée à la volée) */}
                                     {group.items.filter(name => !subjects.some(s => s.name === name)).map(name => (
-                                      <option key={`cat-${name}`} value={`__CAT__${name}`}>{name} (nouveau)</option>
+                                      <option key={`cat-${name}`} value={`__CAT__${name}`}>{name}</option>
                                     ))}
                                   </optgroup>
                                 ))}

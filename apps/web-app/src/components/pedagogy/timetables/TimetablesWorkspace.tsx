@@ -21,8 +21,9 @@ import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
   Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus, Layers,
-  Coffee, Utensils, FileDown, Flag,
+  Coffee, Utensils, FileDown,
 } from 'lucide-react';
+import { BeninFlag } from '@/components/ui/BeninFlag';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -413,6 +414,31 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
                     className="px-2 py-1.5 border border-blue-300 rounded text-sm bg-blue-50 w-32"
                     autoFocus
                   />
+                )}
+                {/* ⭐ Sélecteur de jours pour le Cérémonial des couleurs
+                    L'école choisit quels jours le cérémonial s'applique (Lundi seulement,
+                    Lundi+Vendredi, etc.). Par défaut = tous les jours configurés. */}
+                {block.type === 'CEREMONY' && (
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Jours :</span>
+                    {DAYS.filter(d => d.value <= 6).map(d => {
+                      const activeDays = Array.isArray(block.activeDays) ? block.activeDays : schoolDays;
+                      const isChecked = activeDays.includes(d.value);
+                      return (
+                        <button key={d.value} type="button"
+                          onClick={() => {
+                            const current = Array.isArray(block.activeDays) ? block.activeDays : schoolDays;
+                            const next = isChecked ? current.filter((x: number) => x !== d.value) : [...current, d.value].sort();
+                            updateBlock(i, 'activeDays', next);
+                          }}
+                          className={cn('px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all',
+                            isChecked ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-400 border-slate-200')}
+                        >
+                          {d.label.substring(0, 3)}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
                 <span className={cn('px-2 py-1 rounded text-[10px] font-bold uppercase',
                   block.type === 'BLOCK' ? 'bg-blue-50 text-blue-700' :
@@ -1432,16 +1458,46 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                 // ⭐ Icônes pour les types non-Cours
                 const BreakIcon =
                   block.type === 'LUNCH' ? Utensils :
-                  block.type === 'CEREMONY' ? Flag :
                   block.type === 'STUDY' ? BookOpen :
-                  block.type === 'ACTIVITY' ? Users :
-                  block.type === 'ASSEMBLY' ? Users :
+                  block.type === 'ACTIVITY' || block.type === 'ASSEMBLY' ? Users :
                   Coffee; // défaut pour BREAK/RECESS
-                if (isBreak) {
+                // ⭐ Jours actifs pour CEREMONY (par défaut tous les jours configurés)
+                const ceremonyDays = Array.isArray(block.activeDays) ? block.activeDays : configSchoolDays;
+                const isCeremonyPerDay = block.type === 'CEREMONY';
+                if (isBreak && !isCeremonyPerDay) {
+                  // Ligne PAUSE standard — colSpan sur tous les jours (Déjeuner, Récréation, etc.)
                   return (
                     <tr key={blockIdx} className="bg-amber-50/50">
                       <td className="p-2 border border-slate-200 text-center"><div className="text-[10px] font-bold text-slate-500">{block.start}</div><div className="text-[10px] font-bold text-slate-500">{block.end}</div></td>
                       <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1"><BreakIcon className="w-3 h-3" />{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
+                    </tr>
+                  );
+                }
+                if (isBreak && isCeremonyPerDay) {
+                  // ⭐ CÉRÉMONIAL DES COULEURS — par jour (PAS colSpan)
+                  //    L'école a choisi quels jours (activeDays). Les autres jours = cellule vide.
+                  return (
+                    <tr key={blockIdx} className="bg-orange-50/40">
+                      <td className="p-2 border border-slate-200 text-center bg-orange-50/60">
+                        <BeninFlag size={14} className="mx-auto mb-0.5" />
+                        <div className="text-[10px] font-bold text-orange-700">{block.start}</div>
+                        <div className="text-[10px] font-bold text-orange-700">{block.end}</div>
+                      </td>
+                      {configuredDays.map(day => {
+                        const hasCeremony = ceremonyDays.includes(day.value);
+                        return (
+                          <td key={day.value} className={cn('p-2 border border-slate-200 text-center', hasCeremony ? 'bg-orange-50/60' : '')}>
+                            {hasCeremony ? (
+                              <span className="text-xs font-bold text-orange-700 inline-flex items-center gap-1.5">
+                                <BeninFlag size={12} />
+                                {breakLabel}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 }

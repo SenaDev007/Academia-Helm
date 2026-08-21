@@ -246,25 +246,36 @@ export class TimetablesPrismaController {
       filteredEntries = entries.filter((e: any) =>
         !e.classId || expandedIds.has(e.classId) || (e.class?.officialClassId && ids.includes(e.class.officialClassId))
       );
-      // ⭐ Pour le titre du PDF, on utilise le nom de l'AcademicClass si possible
-      //    (plus compréhensible que "CI/A" quand l'utilisateur a sélectionné "CI")
-      const academicClassesForNames = await this.prisma.academicClass.findMany({
-        where: { id: { in: ids } },
+      // ⭐ Pour le titre du PDF, on affiche UNIQUEMENT le nom de la classe officielle (AcademicClass).
+      //    Les classes physiques (CI/A, CI/B, CI/C...) héritent toutes du même EDT → on ne
+      //    affiche pas leurs noms, juste le nom de la classe officielle (ex: "CI").
+      //    Résolution :
+      //    - Si ids contient des AcademicClass IDs directs → on les utilise
+      //    - Si ids contient des physical Class IDs → on récupère leur officialClassId
+      //      pour trouver l'AcademicClass correspondante
+      const academicClassIdsToResolve = new Set<string>();
+      ids.forEach(id => academicClassIdsToResolve.add(id));
+      (physicalClasses as any[]).forEach(pc => {
+        if (pc.officialClassId) academicClassIdsToResolve.add(pc.officialClassId);
+      });
+      const academicClasses = await this.prisma.academicClass.findMany({
+        where: { id: { in: Array.from(academicClassIdsToResolve) } },
         select: { id: true, name: true },
       }).catch(() => []);
-      const physicalForNames = (physicalClasses as any[]).filter(pc => !academicClassesForNames.some((ac: any) => ac.id === pc.id));
-      const allNames = [
-        ...(academicClassesForNames as any[]).map((ac: any) => ac.name),
-        ...physicalForNames.map(pc => pc.name),
-      ];
+      const allNames = (academicClasses as any[]).map((ac: any) => ac.name);
       if (allNames.length > 0) {
-        pdfClassName = allNames.join(' + ');
+        // Déduquer par nom au cas où (ex: si on a sélectionné CI/A + CI/B → on récupère
+        // 2 fois l'officialClassId "CI" → on veut juste "CI" une seule fois)
+        const uniqueNames = Array.from(new Set(allNames));
+        pdfClassName = uniqueNames.join(' + ');
       }
     }
 
-    // 3. Récupérer l'identité de l'école
+    // 3. Récupérer l'identité de l'école (avec infos contact)
     const schoolInfo: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "schoolName", "schoolAcronym", "logoUrl"
+      `SELECT "schoolName", "schoolAcronym", "logoUrl",
+              "address", "city", "department", "phonePrimary", "phoneSecondary",
+              "whatsapp", "email", "website"
        FROM "tenant_identity_profiles"
        WHERE "tenantId" = $1 AND "isActive" = true
        ORDER BY "version" DESC LIMIT 1`,
@@ -353,18 +364,58 @@ export class TimetablesPrismaController {
         return '<td style="border:1px solid #333;padding:4px;background:#eff6ff;">' + ceremonyHtml + cellEntries.map((e: any) => {
           const subj = e.subject?.name || '\u2014';
           const stepInfo = e.step ? ` · ${e.step}` : '';
-          return `<div style="margin-bottom:2px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}${stepInfo}</strong><br/><span style="font-size:7px;color:#999;">${fmtTimePdf(e.startTime)}-${fmtTimePdf(e.endTime)}</span></div>`;
+          // ⭐ Calcul de la durée en minutes depuis startTime/endTime
+          const [sh, sm] = (e.startTime || '').split(':').map(Number);
+          const [eh, em] = (e.endTime || '').split(':').map(Number);
+          const dur = (eh * 60 + em) - (sh * 60 + sm);
+          const durStr = dur > 0 ? `${dur}min` : '';
+          const timeStr = `${fmtTimePdf(e.startTime)}-${fmtTimePdf(e.endTime)}`;
+          // ⭐ Format : "Lecture-Écriture · Étape 3" puis "45min (8h00-8h45)"
+          return `<div style="margin-bottom:2px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}${stepInfo}</strong><br/><span style="font-size:8px;color:#475569;font-weight:600;">${durStr} (${timeStr})</span></div>`;
         }).join('') + '</td>';
       }).join('');
       // ⭐ Horaire en ligne : "8h00-10h15" au lieu de "08:00<br/>10:15"
       return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;white-space:nowrap;">${fmtTimePdf(block.start)}-${fmtTimePdf(block.end)}</td>${cells}</tr>`;
     }).join('');
 
-    // ⭐ Construction de l'HTML — design soigné : en-tête école (logo + nom + slogan),
-    //    titre "EMPLOI DU TEMPS — Classe X", tableau avec lignes propres,
-    //    jours en colonnes, horaires en lignes, pauses sur colSpan.
-    //    Format paysage A4 via @page CSS.
+    // ⭐ Construction de l'HTML — structure PROFESSIONNELLE conforme aux exigences :
+    //    ┌──────────────────────────────────────────────────────┐
+    //    │ EN-TÊTE : Logo + Nom école + Infos contact          │
+    //    ├──────────────────────────────────────────────────────┤  ← ligne séparatrice
+    //    │ TITRE : "EMPLOI DU TEMPS"              Classe : CI   │  ← titre SOUS l'en-tête
+    //    ├──────────────────────────────────────────────────────┤
+    //    │ TABLEAU : jours en colonnes, horaires en lignes      │
+    //    └──────────────────────────────────────────────────────┘
     const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const school = (schoolInfo?.[0]) || {};
+    // ⭐ Pour le nom école affiché : priorité au nom complet. Si vide, fallback sur acronyme.
+    //    On n'affiche PAS les deux (l'utilisateur l'a explicitement demandé).
+    const schoolDisplayName = school.schoolName || school.schoolAcronym || 'École';
+    // ⭐ Infos contact à afficher dans l'en-tête (sous le nom de l'école)
+    const contactParts: string[] = [];
+    if (school.address) {
+      const cityPart = school.city ? `, ${school.city}` : '';
+      const deptPart = school.department ? ` (${school.department})` : '';
+      contactParts.push(`${school.address}${cityPart}${deptPart}`);
+    } else if (school.city) {
+      contactParts.push(school.city + (school.department ? ` (${school.department})` : ''));
+    }
+    if (school.phonePrimary) {
+      contactParts.push(`Tél: ${school.phonePrimary}`);
+    }
+    if (school.email) {
+      contactParts.push(school.email);
+    }
+    const contactHtml = contactParts.length > 0
+      ? `<div class="contact">${contactParts.join(' · ')}</div>`
+      : '';
+    const logoUrl = school.logoUrl
+      ? (school.logoUrl.startsWith('data:') || school.logoUrl.startsWith('http')
+        ? school.logoUrl
+        : `${this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com'}${school.logoUrl.startsWith('/') ? '' : '/'}${school.logoUrl}`)
+      : '';
+    const logoHtml = logoUrl ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '';
+
     const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -374,13 +425,17 @@ export class TimetablesPrismaController {
   @page { size: A4 landscape; margin: 8mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 10px; }
-  .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #1a2a6b; padding-bottom: 8px; margin-bottom: 8px; }
-  .header .logo { width: 60px; height: 60px; object-fit: contain; flex-shrink: 0; }
-  .header .titles { flex: 1; }
-  .header h1 { font-size: 16px; color: #1a2a6b; font-weight: 800; letter-spacing: 0.5px; }
-  .header h2 { font-size: 11px; color: #475569; margin-top: 2px; font-weight: 600; }
-  .header h3 { font-size: 9px; color: #94a3b8; margin-top: 1px; font-weight: 500; }
-  .header .badge { background: #1a2a6b; color: white; padding: 4px 10px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+  /* ⭐ EN-TÊTE : logo + nom école + infos contact (PAS de titre EDT ici) */
+  .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #1a2a6b; padding-bottom: 6px; margin-bottom: 0; }
+  .header .logo { width: 55px; height: 55px; object-fit: contain; flex-shrink: 0; }
+  .header .school-info { flex: 1; }
+  .header .school-name { font-size: 14px; color: #1a2a6b; font-weight: 800; letter-spacing: 0.3px; }
+  .header .contact { font-size: 8px; color: #64748b; margin-top: 2px; }
+  /* ⭐ TITRE : "EMPLOI DU TEMPS" à gauche, classe à droite — SOUS l'en-tête */
+  .title-row { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 0 4px 0; margin-bottom: 6px; border-bottom: 1px solid #cbd5e1; }
+  .title-row .title { font-size: 16px; color: #1a2a6b; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+  .title-row .class-label { font-size: 12px; color: #1e293b; font-weight: 700; }
+  .title-row .class-label strong { color: #1a2a6b; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   thead th { background: #1a2a6b; color: white; border: 1px solid #1a2a6b; padding: 6px 4px; font-size: 9px; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 0.3px; }
   thead th.horaire-col { width: 70px; background: #0f172a; }
@@ -389,22 +444,20 @@ export class TimetablesPrismaController {
   tbody td.break-cell { background: #fef3c7; color: #92400e; text-align: center; font-weight: 700; font-size: 10px; }
   tbody td.empty-cell { background: #fafafa; }
   tbody td.entry-cell { background: #eff6ff; }
-  .entry-item { background: white; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 4px; margin-bottom: 2px; }
-  .entry-item .subj { font-size: 9px; font-weight: 700; color: #1e40af; line-height: 1.2; }
-  .entry-item .meta { font-size: 7px; color: #64748b; line-height: 1.1; }
-  .entry-item .time { font-size: 7px; color: #94a3b8; }
   .footer { margin-top: 6px; font-size: 8px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 4px; }
 </style>
 </head>
 <body>
   <div class="header">
-    ${logoHtml ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '<div class="logo"></div>'}
-    <div class="titles">
-      <h1>EMPLOI DU TEMPS</h1>
-      <h2>${school.schoolName || 'École'} ${school.schoolAcronym ? `— ${school.schoolAcronym}` : ''}</h2>
-      <h3>Classe(s) : ${className}</h3>
+    ${logoHtml || '<div class="logo"></div>'}
+    <div class="school-info">
+      <div class="school-name">${schoolDisplayName}</div>
+      ${contactHtml}
     </div>
-    <div class="badge">${className}</div>
+  </div>
+  <div class="title-row">
+    <span class="title">Emploi du temps</span>
+    <span class="class-label">Classe : <strong>${className}</strong></span>
   </div>
   <table>
     <thead>

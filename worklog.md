@@ -7455,3 +7455,71 @@ Stage Summary:
 - En-tête PDF : logo + nom école + acronyme + badge classe bleu marine
 - Tableau PDF : lignes nettes, couleurs distinctes (cours bleus, pauses ambres, horaires sombres)
 - Bouton PDF rouge (au lieu de vert) pour matcher la convention Adobe
+
+---
+Task ID: Phase-13-FR-EN-Separation-Dedupe-Etape9
+Agent: main
+Task: Séparer matières FR/EN + dédupliquer dropdown + ajouter Étape 9
+
+Work Log:
+
+- PROBLÈME RAPPORTÉ :
+  1. Matières anglophones dupliquées dans le dropdown
+  2. Mélanges FR/EN — Lecture-Écriture apparaît dans la liste anglophone
+  3. Lecture-Écriture va jusqu'à 9 étapes (pas 8)
+
+- FIX 1 — CATALOGUE ÉTENDU (sub-subject-catalog.ts) :
+  * Nouveau groupe 'ANGLOPHONE' avec 23 matières EN courantes :
+    - English Language, English, Reading, Writing, Reading-Writing
+    - Spelling, Grammar (English), Composition, Literature, Phonics, Handwriting
+    - Mathematics (English), Number Work, Numeracy
+    - Environmental Studies, Social Studies, Science
+    - Verbal Reasoning, Quantitative Reasoning, Creative Arts
+    - Physical Education (English), ICT, French (English stream)
+  * Labels enrichis avec drapeaux pour séparation visuelle :
+    - 🇫🇷 Français (FR), 🇫🇷 Mathématiques (FR), etc.
+    - 🇬🇧 Anglophone (EN)
+    - Langues (sans drapeau — transitionnel)
+  * Combinaisons FR courantes ajoutées au catalogue (prédéfinies) :
+    - Lecture-Écriture, Vocabulaire-Communication orale, Conjugaison-Grammaire
+    - Dictée-Orthographe, Histoire-Géographie, Morale-Civisme
+    - Poésie-Chant, Conte-Dessin, Chant-Dessin
+    - Arithmétique-Géométrie, Calcul mental-Problèmes, Mesure-Calcul mental
+  * Total catalogue : 7 groupes FR + 1 groupe EN (was 7 FR-only)
+
+- FIX 2 — DÉDUPLICATION DU DROPDOWN (TimetablesWorkspace.tsx) :
+  * Catalog matching utilise normalizeSubjectName() pour comparaison
+    case + accent insensitive — 'Lecture-Écriture' matche DB 'lecture ecriture'
+  * Section 'Autres (DB)' renommée '📋 Autres (non cataloguées)'
+  * Déduction par nom normalisé : Set<string> des noms déjà vus, n'affiche
+    que le premier Subject record par nom unique
+  * Effet : fini les doublons créés avant le fix Phase 10
+    (ex: 3 Subject records 'Anglais' → 1 seule option affichée)
+
+- FIX 3 — ÉTAPE 9 AJOUTÉE (Lecture-Écriture jusqu'à 9 étapes) :
+  * Ajouté Étape 9 dans stepOptions
+  * Ajouté plages combinées courantes avec 9 :
+    - Étapes 8-9 (adjacente)
+    - Étapes 5-7, Étapes 7-9 (mi/fin)
+    - Étapes 1-4, Étapes 5-9 (larges)
+    - Étapes 1-9 (toutes)
+  * Total options : 24 (was 19)
+
+- FIX 4 — DÉTECTION STEP SELECTOR ÉTENDUE À L'ANGLOPHONE :
+  * Avant : showStepSelector = nom normalisé contient 'lecture' OU 'ecriture'
+  * Maintenant : + 'reading' OU 'writing' (équivalents anglophones)
+  * Le sujet anglophone 'Reading-Writing' déclenche aussi le sélecteur d'étape
+
+- SYNTAX CHECK : ✅ sur les 2 fichiers (transpile TS sans erreur)
+- TypeScript check frontend : 0 erreur
+- 2 fichiers modifiés (+111 lignes, -22 lignes) :
+  * apps/web-app/src/lib/utils/sub-subject-catalog.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+- Commit + push : a39c9376 sur origin/main
+
+Stage Summary:
+- Dropdown maintenant structure claire : 🇫🇷 groupes FR | Langues | 🇬🇧 groupe EN | 📋 Autres
+- Anglophones dédupliquées (1 seule option par nom normalisé)
+- Lecture-Écriture FR et Reading-Writing EN déclenchent toutes les 2 le sélecteur d'étape
+- 9 étapes supportées (Étape 1 à Étape 9 + 14 plages combinées)
+- Aucune migration DB nécessaire

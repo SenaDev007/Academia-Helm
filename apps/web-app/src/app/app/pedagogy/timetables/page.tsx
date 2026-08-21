@@ -19,10 +19,10 @@ export default function TimetablesPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Emploi du Temps (EDT)',
+        title: 'Emploi du Temps',
         description: academicYear
-          ? `Générateur d'emploi du temps — multi-solutions, contraintes obligatoires et préférées — année ${academicYear.label}`
-          : "Génération automatique d'emploi du temps avec gestion des contraintes",
+          ? `Création manuelle d'emploi du temps par classe ou groupe de classes — année ${academicYear.label}`
+          : "Création manuelle d'emploi du temps par classe ou groupe de classes",
         icon: 'calendar',
       }}
       subModules={{

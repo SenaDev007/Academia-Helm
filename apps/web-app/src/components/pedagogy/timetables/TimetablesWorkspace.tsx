@@ -1213,6 +1213,64 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
+  // ⭐ Enregistrer l'EDT actuel (confirmation + rechargement)
+  const handleSaveTimetable = async () => {
+    if (!activeTimetableId) { toast({ title: 'Aucun EDT à enregistrer', variant: 'destructive' }); return; }
+    // Les séances sont déjà enregistrées individuellement (POST par entry).
+    // Ce bouton confirme que l'EDT est "terminé" et recharge la liste.
+    const className = selectedClassIds.length === 1
+      ? (classes.find(c => c.id === selectedClassIds[0])?.name || '')
+      : `${selectedClassIds.length} classes`;
+    toast({ title: '✅ EDT enregistré', description: `L'emploi du temps de ${className} est sauvegardé.` });
+    // Recharger la liste des timetables
+    try {
+      const tts = await pedagogyFetch<ManualTimetable[]>(`/api/timetables?academicYearId=${academicYearId}`);
+      if (tts) setTimetables(tts);
+    } catch {}
+  };
+
+  // ⭐ Créer un NOUVEL EDT pour d'autres classes
+  const handleNewTimetable = async () => {
+    if (!academicYearId) return;
+    // Désélectionner les classes actuelles
+    setSelectedClassIds([]);
+    setEntries([]);
+    // Créer un nouveau timetable
+    try {
+      const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
+        method: 'POST', body: {
+          academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
+          name: `EDT ${new Date().toLocaleDateString('fr-FR')}`,
+          startDate: new Date(),
+        },
+      });
+      if (newTt) {
+        setTimetables(prev => [...prev, newTt]);
+        setActiveTimetableId(newTt.id);
+        toast({ title: '✅ Nouvel EDT créé', description: 'Sélectionnez les classes pour ce nouvel emploi du temps.' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  // ⭐ Basculer vers un EDT existant
+  const handleSwitchTimetable = async (ttId: string) => {
+    setActiveTimetableId(ttId);
+    const tt = timetables.find(t => t.id === ttId);
+    if (tt) {
+      // Charger les entries de cet EDT
+      try {
+        const data = await pedagogyFetch<any>(`/api/timetables/${ttId}`);
+        setEntries(data?.entries || []);
+        // Déduire les classes depuis les entries
+        const entryClassIds = new Set<string>();
+        (data?.entries || []).forEach((e: any) => { if (e.classId) entryClassIds.add(e.classId); if (e.class?.id) entryClassIds.add(e.class.id); });
+        setSelectedClassIds(Array.from(entryClassIds));
+      } catch { setEntries([]); }
+    }
+  };
+
   // ⭐ Export PDF A4 paysage — généré depuis le BACKEND (Puppeteer)
   const handleExportPdf = async () => {
     if (!activeTimetableId || selectedClassIds.length === 0) {
@@ -1255,7 +1313,47 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* ⭐ Liste des EDT sauvegardés + bouton Nouvel EDT */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 p-3">
+        <div className="flex-1 min-w-[300px]">
+          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Emplois du temps sauvegardés</label>
+          {timetables.length === 0 ? (
+            <span className="text-xs text-slate-400 italic">Aucun EDT sauvegardé. Cliquez sur "Nouvel EDT" pour commencer.</span>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {timetables.map(tt => {
+                const isActive = tt.id === activeTimetableId;
+                // Compter les entries par EDT
+                const entryCount = entries.filter(e => e.timetableId === tt.id).length;
+                return (
+                  <button key={tt.id} onClick={() => handleSwitchTimetable(tt.id)}
+                    className={cn('px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all',
+                      isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300')}
+                    title={tt.name}>
+                    {isActive && '✓ '}{tt.name || 'EDT'}{entryCount > 0 && ` (${entryCount})`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleNewTimetable}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
+            <Plus className="w-3.5 h-3.5" /> Nouvel EDT
+          </button>
+          <button onClick={handleSaveTimetable} disabled={!activeTimetableId}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            <CheckCircle className="w-3.5 h-3.5" /> Enregistrer
+          </button>
+          <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
+          </button>
+        </div>
+      </div>
+
+      {/* ≹ Toolbar : sélecteur multi-classes */}
       <div className="flex flex-wrap items-start gap-3 bg-slate-50 rounded-xl border border-slate-200 p-3">
         <div className="flex-1 min-w-[250px]">
           <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Classe(s) — sélection multiple possible</label>
@@ -1273,12 +1371,6 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             }
           </div>
           {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique</span>}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
-          </button>
         </div>
       </div>
 

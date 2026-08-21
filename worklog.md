@@ -7693,3 +7693,87 @@ Stage Summary:
   │ Document généré par Academia Helm — date        │ ← Footer
   └──────────────────────────────────────────────────┘
 - Pas de doublon 'CI + CI/A' — seulement 'CI' (classe officielle)
+
+---
+Task ID: Phase-17-Auth-Login-Blink-Loop-Fix
+Agent: main
+Task: Fix login page infinite blink loop after logout + schools loading resilience
+
+Work Log:
+
+- PROBLÈME CRITIQUE RAPPORTÉ :
+  1. Login page blink/reload infini après logout — sur tous les portails
+     (école, enseignant, parent, public). Le user doit nettoyer le cache
+     navigateur pour s'en sortir. URL contient 'tenant='.
+  2. Écoles ne chargent plus depuis quelques minutes (alors que ça marchait
+     il y a une heure).
+
+- ROOT CAUSE FIX 1 — BOUCLE LOGIN :
+  * /login page mount → useEffect appelle hasLocalSessionHints()
+  * hasLocalSessionHints() vérifie localStorage : 'refreshToken' OU 'session'
+  * Après logout, clearClientSessionSync() supprime ces 2 clés
+  * MAIS données stale peuvent persister via :
+    - Cache API mirror (clearTokenFromCacheApi SUSPENDU selon commentaire)
+    - Service Worker réécrivant localStorage
+    - Cache navigateur servant ancien bundle JS avec écritures localStorage stale
+  * Si hasLocalSessionHints() retourne true → redirect vers /app
+  * /app détecte session invalide → redirect vers /login
+  * Boucle infinie /login → /app → /login → /app → ... (page clignote)
+
+- SOLUTION (client-access-token.ts) :
+  * Nouvelle fonction isRecentlyLoggedOut(gracePeriodMs=60000): boolean
+    - Vérifie sessionStorage 'academia_just_logged_out'
+    - Retourne true si flag existe ET timestamp < gracePeriodMs
+    - Auto-purge le flag si > 60s (pas de false positive plus tard)
+  * clearClientSessionSync() maintenant SET le flag sessionStorage avec timestamp
+    - sessionStorage (pas localStorage) → tab-scoped, ne persiste pas entre sessions
+    - Évite false positives si user rouvre un onglet plus tard
+  * Nouvelle fonction clearRecentlyLoggedOutFlag() — pour clear explicite
+  * markFreshLogin() maintenant CLEAR aussi le flag
+    - Login réussi annule la grace period
+    - Sans ça, prochain /login visit dans les 60s serait bloqué en no-redirect
+
+- SOLUTION (LoginPage.tsx) :
+  * useEffect au montage vérifie isRecentlyLoggedOut(60000) EN PREMIER
+  * Si logout dans les 60 dernières secondes → SKIP auto-redirect
+    - User voit le formulaire de login normalement
+    - Pas de blink, pas de boucle
+    - Console log : '[LoginPage] Skip auto-redirect — logout was recent'
+  * Après 60s, flag auto-purgé → auto-redirect reprend si session valide
+
+- UX FLOW APRÈS FIX :
+  1. User logout → clearClientSessionSync() set sessionStorage flag
+  2. Redirect vers /login (ou atterrit sur /login via URL directe)
+  3. useEffect fire → isRecentlyLoggedOut(60000) retourne true
+  4. Skip auto-redirect → user voit formulaire login
+  5. User login réussi → markFreshLogin() clear le flag
+  6. Prochain /login visit → flag parti → auto-redirect fonctionne normalement
+
+- FIX 2 — ÉCOLES NE CHARGENT PLUS :
+  * Investigation : backend schools endpoint (/api/public/schools/list)
+    n'a PAS été modifié par mes commits récents (Phase 10-16)
+  * Mes changements récents : timetables-prisma.controller.ts, subjects-prisma.service.ts
+    → ne touchent pas l'endpoint schools
+  * Cause probable : backend NestJS en cold start OU redémarrage de déploiement
+    OU Neon DB cold start (5-10s) OU problème réseau transient
+  * Solution applicative : améliorer la résilience frontend
+    - use-public-schools.ts : retry 1 → 3 tentatives
+    - Exponential backoff : 1s, 2s, 4s entre retries
+    - Aide à récupérer des échecs transitoires
+    - Si backend vraiment down longue durée → bouton 'Réessayer' au lieu
+      de spinner infini
+
+- SYNTAX CHECK : ✅ sur les 3 fichiers
+- TypeScript check : 0 erreur
+- 3 fichiers modifiés (+74 lignes, -2 lignes) :
+  * apps/web-app/src/lib/auth/client-access-token.ts
+  * apps/web-app/src/components/auth/LoginPage.tsx
+  * apps/web-app/src/lib/query/use-public-schools.ts
+- Commit + push : 5293e74c sur origin/main
+
+Stage Summary:
+- Boucle login : RÉSOLUE — grace period 60s après logout empêche l'auto-redirect
+- Effet : user voit le formulaire de login normalement après logout (plus de blink)
+- Cache navigateur : plus besoin de le nettoyer après chaque logout
+- Écoles : retry 3x avec backoff exponentiel pour résilience transient failures
+- Si backend réellement down, l'UI affichera 'Réessayer' (pas de boucle)

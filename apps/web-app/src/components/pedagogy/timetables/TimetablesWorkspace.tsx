@@ -21,6 +21,7 @@ import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
   Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus, Layers,
+  Coffee, Utensils, FileDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1207,41 +1208,31 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
   };
 
-  // ⭐ Export PDF A4 paysage
+  // ⭐ Export PDF A4 paysage — généré depuis le BACKEND (Puppeteer)
   const handleExportPdf = async () => {
-    if (filteredEntries.length === 0 && selectedClassIds.length === 0) return;
+    if (!activeTimetableId || selectedClassIds.length === 0) {
+      toast({ title: 'Erreur', description: 'Sélectionnez au moins une classe et ajoutez une séance.', variant: 'destructive' });
+      return;
+    }
     setExportingPdf(true);
     try {
-      const className = selectedClassIds.length === 1
-        ? (classes.find(c => c.id === selectedClassIds[0])?.name || '')
-        : selectedClassIds.map(id => classes.find(c => c.id === id)?.name).filter(Boolean).join(' + ');
-      const schoolName = schoolIdentity?.schoolName || '';
-      const logoUrl = schoolIdentity?.logoUrl || '';
-      const logoHtml = logoUrl ? `<img src="${logoUrl}" alt="logo" style="max-height:60px;max-width:180px;object-fit:contain;" />` : '';
-      const daysHeader = configuredDays.map(d => `<th style="border:1px solid #333;padding:6px;font-size:10px;background:#1a2a6b;color:white;">${d.label}</th>`).join('');
-      const rows = configTimeBlocks.map(block => {
-        const isBreak = block.type !== 'BLOCK';
-        const breakLabel = block.type === 'LUNCH' ? '🍽 Déjeuner' : block.type === 'BREAK' ? '☕ Récréation' : '';
-        if (isBreak) {
-          return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#fef3c7;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td><td colspan="${configuredDays.length}" style="border:1px solid #333;padding:4px;background:#fef3c7;text-align:center;font-size:10px;font-weight:bold;color:#92400e;">${breakLabel} (${block.start}–${block.end})</td></tr>`;
-        }
-        const cells = configuredDays.map(day => {
-          const cellEntries = getCellEntries(day.value, block);
-          if (cellEntries.length === 0) return '<td style="border:1px solid #333;padding:4px;min-height:40px;"></td>';
-          return '<td style="border:1px solid #333;padding:4px;background:#eff6ff;">' + cellEntries.map(e => {
-            const subj = e.subject?.name || '—';
-            const teacher = e.teacher ? `${e.teacher.firstName?.[0]}. ${e.teacher.lastName}` : '';
-            const room = e.room?.code || '';
-            return `<div style="margin-bottom:3px;padding:2px 4px;background:white;border-radius:3px;border:1px solid #bfdbfe;"><strong style="font-size:9px;color:#1e40af;">${subj}</strong><br/><span style="font-size:8px;color:#666;">${teacher}${room ? ' · ' + room : ''}</span><br/><span style="font-size:7px;color:#999;">${e.startTime}–${e.endTime}</span></div>`;
-          }).join('') + '</td>';
-        }).join('');
-        return `<tr><td style="border:1px solid #333;padding:4px;font-weight:bold;background:#e2e8f0;text-align:center;font-size:9px;">${block.start}<br/>${block.end}</td>${cells}</tr>`;
-      }).join('');
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>EDT ${className}</title><style>@page{size:A4 landscape;margin:10mm}*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:11px}.header{display:flex;align-items:center;gap:15px;border-bottom:3px solid #1a2a6b;padding-bottom:8px;margin-bottom:10px}h1{font-size:14px;color:#1a2a6b}h2{font-size:11px;color:#666;margin-top:2px}table{width:100%;border-collapse:collapse}th{border:1px solid #333;padding:4px;font-size:9px}td{border:1px solid #333;padding:2px;font-size:9px;vertical-align:top}</style></head><body><div class="header">${logoHtml}<div><h1>EMPLOI DU TEMPS</h1><h2>${schoolName ? schoolName + ' — ' : ''}${className}</h2></div></div><table><thead><tr><th style="width:60px;background:#1a2a6b;color:white;">Horaire</th>${daysHeader}</tr></thead><tbody>${rows}</tbody></table></body></html>`;
-      const w = window.open('', '_blank');
-      if (!w) { toast({ title: 'Erreur', description: 'Autorisez les popups pour générer le PDF.', variant: 'destructive' }); return; }
-      w.document.write(html); w.document.close();
-      setTimeout(() => { w.print(); }, 500);
+      const params = new URLSearchParams();
+      params.append('classIds', selectedClassIds.join(','));
+      const res = await fetch(`/api/timetables/${activeTimetableId}/export-pdf?${params.toString()}`, { credentials: 'include' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Erreur génération PDF');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `emploi_du_temps.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: '✅ PDF généré' });
     } catch (e: any) {
       toast({ title: 'Erreur PDF', description: e.message, variant: 'destructive' });
     } finally { setExportingPdf(false); }
@@ -1279,9 +1270,9 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
           {selectedClassIds.length > 1 && <span className="text-[10px] text-blue-600 font-semibold mt-1 inline-block">⭐ {selectedClassIds.length} classes — EDT identique</span>}
         </div>
         <div className="flex gap-2">
-          <button onClick={handleExportPdf} disabled={exportingPdf || filteredEntries.length === 0 || selectedClassIds.length === 0}
+          <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />} PDF A4
+            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
           </button>
         </div>
       </div>
@@ -1303,12 +1294,12 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             <tbody>
               {configTimeBlocks.map((block, blockIdx) => {
                 const isBreak = block.type !== 'BLOCK';
-                const breakLabel = block.type === 'LUNCH' ? '🍽 Déjeuner' : block.type === 'BREAK' ? '☕ Récréation' : '';
+                const breakLabel = block.type === 'LUNCH' ? 'Déjeuner' : block.type === 'BREAK' ? 'Récréation' : '';
                 if (isBreak) {
                   return (
                     <tr key={blockIdx} className="bg-amber-50/50">
                       <td className="p-2 border border-slate-200 text-center"><div className="text-[10px] font-bold text-slate-500">{block.start}</div><div className="text-[10px] font-bold text-slate-500">{block.end}</div></td>
-                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700">{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
+                      <td colSpan={configuredDays.length} className="p-2 border border-slate-200 text-center"><span className="text-xs font-bold text-amber-700 inline-flex items-center gap-1">{block.type === 'LUNCH' ? <Utensils className="w-3 h-3" /> : <Coffee className="w-3 h-3" />}{breakLabel}</span><span className="text-[10px] text-slate-400 ml-2">({block.start} – {block.end})</span></td>
                     </tr>
                   );
                 }

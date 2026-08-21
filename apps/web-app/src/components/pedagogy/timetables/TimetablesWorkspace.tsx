@@ -1956,13 +1956,20 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                           {ceremonyInThisBlock.map(cer => {
                             const cerDays = Array.isArray(cer.activeDays) ? cer.activeDays : configSchoolDays;
                             if (!cerDays.includes(day.value)) return null;
+                            // ⭐ Format compact : drapeau + plage horaire + texte SUR UNE LIGNE
+                            //    La hauteur correspond à celle d'une entry normale (24px) pour
+                            //    éviter que la ligne de cérémonial soit démesurée par rapport aux autres.
+                            const fmtTime = (t: string): string => {
+                              if (!t) return '';
+                              const [h, m] = t.split(':');
+                              return `${parseInt(h, 10)}h${m}`;
+                            };
                             return (
-                              <div key={`cer-${cer.start}`} className="bg-orange-50 border border-orange-300 rounded-lg p-1.5 mb-1 flex items-center gap-1.5" style={{ minHeight: '32px' }}>
-                                <BeninFlag size={14} />
-                                <div>
-                                  <div className="text-[10px] font-bold text-orange-700">{cer.start}–{cer.end}</div>
-                                  <div className="text-[10px] font-bold text-orange-700">Cérémonial des couleurs</div>
-                                </div>
+                              <div key={`cer-${cer.start}`} className="bg-orange-50 border border-orange-300 rounded-md px-1.5 py-0.5 mb-0.5 flex items-center gap-1" style={{ minHeight: '24px' }}>
+                                <BeninFlag size={12} />
+                                <span className="text-[10px] font-bold text-orange-700 truncate">
+                                  {fmtTime(cer.start)}-{fmtTime(cer.end)} · Cérémonial des couleurs
+                                </span>
                               </div>
                             );
                           })}

@@ -24,6 +24,7 @@ import {
   Coffee, Utensils, FileDown,
 } from 'lucide-react';
 import { BeninFlag } from '@/components/ui/BeninFlag';
+import { SUB_SUBJECT_CATALOG } from '@/lib/utils/sub-subject-catalog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -1223,7 +1224,45 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   // ⭐ Sauvegarder l'entry inline
   const handleInlineSave = async () => {
     if (!editingCell || !academicYearId || selectedClassIds.length === 0) return;
-    if (!inlineForm.subjectId) { toast({ title: 'Erreur', description: 'Sélectionnez une matière.', variant: 'destructive' }); return; }
+
+    // ⭐ Résoudre le subjectId selon le type de sélection :
+    //    - ID normal (ex: "abc-123") → utiliser tel quel
+    //    - "__CAT__Lecture" → créer la matière à la volée, puis utiliser son ID
+    //    - "__CUSTOM__" → créer la matière personnalisée à la volée
+    let resolvedSubjectId = inlineForm.subjectId;
+    if (inlineForm.subjectId === '__CUSTOM__') {
+      const customName = (inlineForm as any).customSubjectName?.trim();
+      if (!customName) { toast({ title: 'Erreur', description: 'Saisissez le nom de la matière.', variant: 'destructive' }); return; }
+      try {
+        const newSub = await pedagogyFetch<any>(`/api/subjects`, {
+          method: 'POST', body: {
+            academicYearId, schoolLevelId: localLevelId || schoolLevelId,
+            code: customName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
+            name: customName, coefficient: 1, weeklyHours: 120,
+          },
+        });
+        if (newSub?.id) { resolvedSubjectId = newSub.id; setSubjects(prev => [...prev, newSub]); }
+        else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
+      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
+    } else if (inlineForm.subjectId.startsWith('__CAT__')) {
+      // ⭐ Matière du catalogue qui n'existe pas encore en DB → créer à la volée
+      const catName = inlineForm.subjectId.replace('__CAT__', '');
+      try {
+        const newSub = await pedagogyFetch<any>(`/api/subjects`, {
+          method: 'POST', body: {
+            academicYearId, schoolLevelId: localLevelId || schoolLevelId,
+            code: catName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
+            name: catName, coefficient: 1, weeklyHours: 120,
+          },
+        });
+        if (newSub?.id) { resolvedSubjectId = newSub.id; setSubjects(prev => [...prev, newSub]); }
+        else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
+      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
+    }
+
+    if (!resolvedSubjectId || resolvedSubjectId.startsWith('__')) {
+      toast({ title: 'Erreur', description: 'Sélectionnez une matière.', variant: 'destructive' }); return;
+    }
     setSaving(true);
     let currentTimetableId = activeTimetableId;
     if (!currentTimetableId) {
@@ -1237,7 +1276,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     for (const classId of selectedClassIds) {
       try {
         await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
-          method: 'POST', body: { classId, subjectId: inlineForm.subjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: inlineForm.startTime, endTime: inlineForm.endTime, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
+          method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: inlineForm.startTime, endTime: inlineForm.endTime, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
         });
         success++;
       } catch { failed++; }
@@ -1527,11 +1566,52 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                           {/* ⭐ Formulaire INLINE (remplace le modal) */}
                           {isEditing ? (
                             <div className="bg-blue-50 border border-blue-300 rounded-lg p-1.5 space-y-1">
-                              <select value={inlineForm.subjectId} onChange={e => setInlineForm({...inlineForm, subjectId: e.target.value})}
+                              {/* ⭐ Sélecteur de matière par GROUPE (sous-matières)
+                                  Au lieu d'un select brut, on utilise optgroup pour organiser
+                                  les sous-matières par groupe (Français, Maths, ES, etc.)
+                                  + option "Autre…" qui révèle un champ texte personnalisé */}
+                              <select value={inlineForm.subjectId} onChange={e => {
+                                if (e.target.value === '__CUSTOM__') {
+                                  setInlineForm({...inlineForm, subjectId: '__CUSTOM__'});
+                                } else {
+                                  setInlineForm({...inlineForm, subjectId: e.target.value});
+                                }
+                              }}
                                 className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px] font-medium" autoFocus>
-                                <option value="">— Matière —</option>
-                                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                <option value="">— Sélectionner une matière —</option>
+                                {/* ⭐ Groupes de sous-matières (catalogue Bénin) */}
+                                {SUB_SUBJECT_CATALOG.map(group => (
+                                  <optgroup key={group.group} label={group.label}>
+                                    {/* D'abord les sous-matières du catalogue qui existent en DB */}
+                                    {group.items.filter(name => subjects.some(s => s.name === name)).map(name => {
+                                      const s = subjects.find(s => s.name === name)!;
+                                      return <option key={s.id} value={s.id}>{s.name}</option>;
+                                    })}
+                                    {/* Puis les sous-matières du catalogue qui n'existent PAS encore en DB
+                                        → on les propose avec value = nom (sera créée à la volée) */}
+                                    {group.items.filter(name => !subjects.some(s => s.name === name)).map(name => (
+                                      <option key={`cat-${name}`} value={`__CAT__${name}`}>{name} (nouveau)</option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                                {/* ⭐ Matières en DB qui ne sont dans aucun groupe du catalogue */}
+                                {subjects.filter(s => !SUB_SUBJECT_CATALOG.some(g => g.items.includes(s.name))).length > 0 && (
+                                  <optgroup label="Autres (DB)">
+                                    {subjects.filter(s => !SUB_SUBJECT_CATALOG.some(g => g.items.includes(s.name))).map(s => (
+                                      <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                {/* ⭐ Option personnalisée */}
+                                <option value="__CUSTOM__">✏️ Autre (saisir…) </option>
                               </select>
+                              {/* Champ texte si "Autre…" sélectionné */}
+                              {inlineForm.subjectId === '__CUSTOM__' && (
+                                <input type="text" placeholder="Nom de la matière…"
+                                  value={inlineForm.customSubjectName || ''}
+                                  onChange={e => setInlineForm({...inlineForm, customSubjectName: e.target.value})}
+                                  className="w-full px-1.5 py-1 border border-blue-300 rounded text-[10px] bg-blue-50" autoFocus />
+                              )}
                               <div className="flex gap-1">
                                 <input type="time" value={inlineForm.startTime} onChange={e => setInlineForm({...inlineForm, startTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
                                 <input type="time" value={inlineForm.endTime} onChange={e => setInlineForm({...inlineForm, endTime: e.target.value})} className="w-[45%] px-1 py-0.5 border border-slate-300 rounded text-[10px]" />
@@ -1547,7 +1627,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                 {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
                               </select>
                               <div className="flex gap-1">
-                                <button onClick={handleInlineSave} disabled={saving || !inlineForm.subjectId}
+                                <button onClick={handleInlineSave} disabled={saving || !inlineForm.subjectId || (inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim())}
                                   className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-[10px] font-bold">
                                   {saving ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : '✓ Ajouter'}
                                 </button>

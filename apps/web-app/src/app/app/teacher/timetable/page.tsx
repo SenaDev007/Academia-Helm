@@ -63,6 +63,7 @@ interface TimetableEntry {
   subjectCode?: string;
   teacherId?: string;
   classId?: string;
+  officialClassId?: string;
   className?: string;
   roomId?: string;
   roomName?: string;
@@ -76,6 +77,14 @@ export default function TeacherTimetablePage() {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // ⭐ Liste des classes du teacher (pour le sélecteur)
+  //    Chaque entrée : { officialClassId, name }
+  //    Sert à afficher le switcher de classe quand le teacher a plusieurs classes.
+  const [teacherClasses, setTeacherClasses] = useState<{id: string, name: string}[]>([]);
+  // ⭐ Classe sélectionnée dans le switcher (null = "toutes mes classes")
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  // ⭐ Toutes les entries du teacher (non filtrées par classe sélectionnée)
+  const [allTeacherEntries, setAllTeacherEntries] = useState<TimetableEntry[]>([]);
 
   const loadTimetable = useCallback(async () => {
     if (!academicYear?.id || !user?.id) {
@@ -97,8 +106,12 @@ export default function TeacherTimetablePage() {
       const myTeacherId = myProfile?.teacherId || myProfile?.id;
 
       // ⭐ ÉTAPE 2 : Récupérer les assignments de classe du teacher
-      //    → liste des classId (physical Class) auxquels le teacher est titular/specialist
-      let teacherOfficialClassIds = new Set<string>(); // AcademicClass IDs (officialClassIds)
+      //    → résoudre pour chaque assignment l'AcademicClass.id (=officialClassId)
+      //    Le backend renvoie l'assignment AVEC classSubject.academicClass déjà peuplé
+      //    (cf. pedagogy-prisma.service.ts → getTeacherClassAssignments).
+      //    Donc PAS BESOIN de fetch academic-structure/classes séparément.
+      const teacherOfficialClassIds = new Set<string>();
+      const teacherClassesMap = new Map<string, string>(); // id → name
       if (myTeacherId) {
         try {
           const assignRes = await fetch(
@@ -107,30 +120,21 @@ export default function TeacherTimetablePage() {
           );
           const assignList = await assignRes.json();
           const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
-          // ⭐ Récupérer les AcademicClasses pour résoudre physical Class.id → officialClassId
-          const classesRes = await fetch(
-            `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
-            { credentials: "include" },
-          );
-          const classList = await classesRes.json();
-          const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
-          // Construire la map : physicalClassId → AcademicClass.id
-          const physicalToAcademic = new Map<string, string>();
-          for (const ac of academicClasses) {
-            const phys = (ac.physicalClasses || []);
-            for (const pc of phys) {
-              physicalToAcademic.set(pc.id, ac.id);
-            }
-          }
-          // Pour chaque assignment, déterminer l'officialClassId
+          // ⭐ Pour chaque assignment, récupérer l'AcademicClass via classSubject.academicClass
+          //    (le physicalClass peut être null si le teacher est titular de toute l'AcademicClass)
           for (const a of assignments) {
-            const classId = a.classId || a.class?.id;
-            if (!classId) continue;
-            const officialId = physicalToAcademic.get(classId);
-            if (officialId) teacherOfficialClassIds.add(officialId);
+            // Cas 1 : assignment via classSubject → on a academicClass.id direct
+            const academicClassId = a.classSubject?.academicClass?.id;
+            const academicClassName = a.classSubject?.academicClass?.name;
+            if (academicClassId) {
+              teacherOfficialClassIds.add(academicClassId);
+              if (academicClassName) teacherClassesMap.set(academicClassId, academicClassName);
+            }
           }
         } catch (e) { console.warn("Failed to load teacher assignments:", e); }
       }
+      // Convertir la Map en array pour l'affichage du switcher
+      setTeacherClasses(Array.from(teacherClassesMap.entries()).map(([id, name]) => ({ id, name })));
 
       // ⭐ ÉTAPE 3 : Récupérer tous les EDT pour l'année
       const res = await fetch(
@@ -179,6 +183,7 @@ export default function TeacherTimetablePage() {
               subjectCode: e.subject?.code,
               teacherId: e.teacherId,
               classId: e.classId,
+              officialClassId: entryOfficialClassId,
               className: e.class?.name,
               roomName: e.room?.name,
               notes: e.notes,
@@ -196,7 +201,14 @@ export default function TeacherTimetablePage() {
         return a.startTime.localeCompare(b.startTime);
       });
 
-      setEntries(allEntries);
+      setAllTeacherEntries(allEntries);
+      // ⭐ Auto-sélection : si le teacher a 1 seule classe, on la sélectionne par défaut
+      //    S'il en a plusieurs, on laisse null (toutes) — il choisira via le switcher
+      if (teacherClassesMap.size === 1) {
+        setSelectedClassId(Array.from(teacherClassesMap.keys())[0]);
+      } else {
+        setSelectedClassId(null);
+      }
     } catch (e: any) {
       setError(e.message || "Erreur de chargement");
     } finally {
@@ -205,6 +217,15 @@ export default function TeacherTimetablePage() {
   }, [academicYear?.id, user?.id]);
 
   useEffect(() => { loadTimetable(); }, [loadTimetable]);
+
+  // ⭐ Filtrer les entries par classe sélectionnée (si le teacher a choisi une classe)
+  useEffect(() => {
+    if (selectedClassId) {
+      setEntries(allTeacherEntries.filter(e => !e.classId || e.officialClassId === selectedClassId));
+    } else {
+      setEntries(allTeacherEntries);
+    }
+  }, [selectedClassId, allTeacherEntries]);
 
   // Grouper par jour
   const byDay: Record<number, TimetableEntry[]> = {};
@@ -256,6 +277,21 @@ export default function TeacherTimetablePage() {
             </p>
           </div>
         </div>
+        {/* ⭐ Switcher de classe — affiché uniquement si le teacher a 2+ classes
+            Saliou (CE1 + CE2 par ex.) peut basculer entre ses classes. */}
+        {teacherClasses.length > 1 && (
+          <select
+            value={selectedClassId || ''}
+            onChange={(e) => setSelectedClassId(e.target.value || null)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium bg-white"
+            title="Changer de classe"
+          >
+            <option value="">Toutes mes classes</option>
+            {teacherClasses.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
         <button
           onClick={loadTimetable}
           className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"

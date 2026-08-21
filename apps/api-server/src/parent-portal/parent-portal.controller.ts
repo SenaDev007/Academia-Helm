@@ -211,6 +211,7 @@ export class ParentPortalController {
       `SELECT s."id", s."firstName", s."lastName", s."gender", s."matricule",
               s."dateOfBirth", s."photoUrl",
               se."classId", c."name" as "className",
+              se."academicClassId", ac."name" as "academicClassName",
               sl."name" as "levelName", sl."code" as "levelCode",
               se."status" as "enrollmentStatus",
               sg."relationship", sg."isPrimary"
@@ -218,6 +219,7 @@ export class ParentPortalController {
        INNER JOIN "student_enrollments" se ON se."studentId" = s."id"
        INNER JOIN "student_guardians" sg ON sg."studentId" = s."id"
        LEFT JOIN "classes" c ON c."id" = se."classId"
+       LEFT JOIN "pedagogy_academic_classes" ac ON ac."id" = se."academicClassId"
        LEFT JOIN "school_levels" sl ON sl."id" = se."schoolLevelId"
        WHERE s."tenantId" = $1
        AND se."academicYearId" = $2

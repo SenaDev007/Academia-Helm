@@ -97,36 +97,39 @@ export default function ParentTimetablePage() {
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
   const loadTimetable = useCallback(async () => {
-    if (!academicYear?.id || !selectedChild?.classId) {
+    // ⭐ ÉTAPE 0 : Déterminer le officialClassId (AcademicClass) de l'enfant.
+    //    Si selectedChild.academicClassId est défini → on l'utilise DIRECTEMENT
+    //    (c'est le cas le plus fiable — academicClassId est posé à l'admission).
+    //    Sinon, on tente de résoudre via le physical Class.id (classId).
+    const childAcademicClassId = (selectedChild as any)?.academicClassId as string | undefined;
+    if (!academicYear?.id || (!selectedChild?.classId && !childAcademicClassId)) {
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      // ⭐ ÉTAPE 1 : Récupérer les AcademicClasses pour résoudre le classId physique
-      //    de l'enfant → officialClassId (AcademicClass ID).
-      //    Sans cette résolution, le filter `e.classId === selectedChild.classId` ne matchait
-      //    que les entries stockées avec exactement le même physical Class.id que l'enfant.
-      //    Or, depuis Phase 8, les entries sont stockées avec le PREMIER physical Class.id
-      //    de l'AcademicClass (ex: CI/A), pas forcément celui de l'enfant (ex: CI/B).
-      const classesRes = await fetch(
-        `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
-        { credentials: "include" },
-      );
-      const classList = await classesRes.json();
-      const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
-      // Trouver l'officialClassId (AcademicClass) de la classe de l'enfant
-      let childOfficialClassId: string | undefined = undefined;
-      for (const ac of academicClasses) {
-        const phys = (ac.physicalClasses || []);
-        if (phys.some((pc: any) => pc.id === selectedChild.classId)) {
-          childOfficialClassId = ac.id;
-          break;
+      // ⭐ ÉTAPE 1 : Si on n'a pas academicClassId direct, on le résout via
+      //    academic-structure/classes. Sinon, on skip cette étape (gain de temps).
+      let childOfficialClassId: string | undefined = childAcademicClassId;
+
+      if (!childOfficialClassId && selectedChild?.classId) {
+        // Résolution physical Class.id → AcademicClass.id
+        const classesRes = await fetch(
+          `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
+          { credentials: "include" },
+        );
+        const classList = await classesRes.json();
+        const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
+        // Trouver l'officialClassId (AcademicClass) de la classe de l'enfant
+        for (const ac of academicClasses) {
+          const phys = (ac.physicalClasses || []);
+          if (phys.some((pc: any) => pc.id === selectedChild.classId)) {
+            childOfficialClassId = ac.id;
+            break;
+          }
         }
       }
-      // Fallback : si on n'a pas trouvé via AcademicClass, on garde l'ancien filtre
-      // par classId physique direct (compatibilité)
 
       // ⭐ ÉTAPE 2 : Récupérer tous les EDT pour l'année
       const res = await fetch(
@@ -194,7 +197,7 @@ export default function ParentTimetablePage() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedChild?.classId]);
+  }, [academicYear?.id, selectedChild]);
 
   useEffect(() => { loadTimetable(); }, [loadTimetable]);
 

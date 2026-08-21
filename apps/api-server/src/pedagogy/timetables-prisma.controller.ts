@@ -387,7 +387,8 @@ export class TimetablesPrismaController {
     //    │ TABLEAU : jours en colonnes, horaires en lignes      │
     //    └──────────────────────────────────────────────────────┘
     const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const school = (schoolInfo?.[0]) || {};
+    // ⭐ `school`, `logoUrl`, `logoHtml` sont déjà déclarés plus haut (ligne 322-328)
+    //    NE PAS les redéclarer — sinon SyntaxError: Identifier 'school' has already been declared
     // ⭐ Pour le nom école affiché : priorité au nom complet. Si vide, fallback sur acronyme.
     //    On n'affiche PAS les deux (l'utilisateur l'a explicitement demandé).
     const schoolDisplayName = school.schoolName || school.schoolAcronym || 'École';
@@ -409,12 +410,8 @@ export class TimetablesPrismaController {
     const contactHtml = contactParts.length > 0
       ? `<div class="contact">${contactParts.join(' · ')}</div>`
       : '';
-    const logoUrl = school.logoUrl
-      ? (school.logoUrl.startsWith('data:') || school.logoUrl.startsWith('http')
-        ? school.logoUrl
-        : `${this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com'}${school.logoUrl.startsWith('/') ? '' : '/'}${school.logoUrl}`)
-      : '';
-    const logoHtml = logoUrl ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '';
+    // ⭐ logoHtml et logoUrl déjà déclarés plus haut — on surcharge logoHtml avec le bon class CSS
+    const logoHtmlForTemplate = logoUrl ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '';
 
     const html = `<!DOCTYPE html>
 <html lang="fr">
@@ -449,7 +446,7 @@ export class TimetablesPrismaController {
 </head>
 <body>
   <div class="header">
-    ${logoHtml || '<div class="logo"></div>'}
+    ${logoHtmlForTemplate || '<div class="logo"></div>'}
     <div class="school-info">
       <div class="school-name">${schoolDisplayName}</div>
       ${contactHtml}

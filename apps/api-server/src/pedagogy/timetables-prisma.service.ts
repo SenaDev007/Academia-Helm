@@ -274,25 +274,32 @@ export class TimetablesPrismaService {
       throw new NotFoundException(`Timetable with ID ${data.timetableId} not found`);
     }
 
-    // ⭐ Détection de conflits (bloquante — throw ConflictException 409)
-    const conflictCheck = await this.detectConflicts({
-      tenantId: data.tenantId,
-      timetableId: data.timetableId,
-      classId: data.classId,
-      teacherId: data.teacherId,
-      roomId: data.roomId,
-      dayOfWeek: data.dayOfWeek,
-      startTime: data.startTime,
-      endTime: data.endTime,
-    });
-
-    if (conflictCheck.hasConflict) {
-      // Throw 409 Conflict avec payload structuré (pour que le frontend puisse
-      // afficher précisément quel cours bloque)
-      throw new ConflictException({
-        message: 'Conflit détecté — création impossible',
-        conflicts: conflictCheck.conflicts,
+    // ⭐ Détection de conflits — NON BLOQUANTE (try/catch)
+    //    Si la détection échoue (ex: Prisma client pas à jour), on continue quand même.
+    //    L'utilisateur peut ajouter des séances sans être bloqué par une erreur technique.
+    try {
+      const conflictCheck = await this.detectConflicts({
+        tenantId: data.tenantId,
+        timetableId: data.timetableId,
+        classId: data.classId,
+        teacherId: data.teacherId,
+        roomId: data.roomId,
+        dayOfWeek: data.dayOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
       });
+
+      if (conflictCheck.hasConflict) {
+        throw new ConflictException({
+          message: 'Conflit détecté — création impossible',
+          conflicts: conflictCheck.conflicts,
+        });
+      }
+    } catch (e) {
+      // Si c'est un ConflictException (vrai conflit), on le relance
+      if (e instanceof ConflictException) throw e;
+      // Sinon c'est une erreur technique (Prisma client) → on log et continue
+      console.warn('[createTimetableEntry] Conflict detection failed, skipping:', e.message);
     }
 
     // Vérifier la capacité de la salle

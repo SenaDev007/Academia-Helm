@@ -7374,3 +7374,84 @@ Stage Summary:
 - Migration à appliquer sur Neon prod DB : 20260822100000_add_step_to_timetable_entries
 - Auto-save fonctionne aussi en mode édition (deps mis à jour)
 - Compatibilité ascendante : séances existantes sans step → step=NULL → pas affiché
+
+---
+Task ID: Phase-12-Migration-AutoSave-PDF-Fixes
+Agent: main
+Task: 4 corrections — migration Neon + auto-save pause + PDF génération + bouton rouge
+
+Work Log:
+
+- TASK 0 — MIGRATION NEON APPLIQUÉE :
+  * Script créé : scripts/_apply_step_migration.mjs (utilise pg + sslmode=require)
+  * URL Neon : postgresql://neondb_owner:***@ep-curly-frost-agx7owra-pooler.c-2.eu-central-1.aws.neon.tech/AcademiaHelm
+  * SQL exécuté : ALTER TABLE timetable_entries ADD COLUMN step TEXT
+  * Vérification via information_schema : colonne 'step' existe, data_type=text, is_nullable=YES ✅
+
+- TASK 1 — AUTO-SAVE PAUSE PENDANT L'ACTIVITÉ UTILISATEUR :
+  * PROBLÈME : Le compteur 10s continuait même si l'utilisateur tapait ou changeait la durée
+    → sauvegarde + fermeture en pleine saisie → mauvaise UX
+  * SOLUTION : Détection d'activité globale
+    - Nouveau ref : lastActivityRef = useRef(Date.now())
+    - 4 écouteurs document : keydown, mousedown, input, change
+    - Chaque event reset countdownRef = 10 + update lastActivityRef
+    - Dans setInterval : si (Date.now() - lastActivityRef < 10000), ne décrémente PAS
+    - Cleanup : removeEventListener pour les 4 listeners sur unmount
+  * BONUS : Ajouté inlineForm.duration aux deps (était manquant — le compteur
+    ne resetait pas quand l'utilisateur changeait juste la durée)
+  * Effet : compte à rebours ne démarre qu'après 10s de SILENCE COMPLET
+    (aucune frappe, aucun clic, aucun changement de formulaire)
+
+- TASK 2 — FIX PDF 'ERREUR DE GÉNÉRATION PDF' :
+  * ROOT CAUSE : Le BFF Next.js n'avait PAS de route pour /api/timetables/[id]/export-pdf
+    - /api/timetables/[id]/route.ts ne matche QUE les chemins exacts
+    - /api/timetables/{id}/export-pdf retournait 404 → frontend catch → 'Erreur génération PDF'
+  * FIX BFF : Nouveau fichier apps/web-app/src/app/api/timetables/[id]/export-pdf/route.ts
+    - GET handler proxy vers NestJS avec timeout 60s (Puppeteer peut être lent)
+    - Utilise fetchWithTimeout(url, init, 60000) au lieu de 15s par défaut
+    - Stream le buffer binaire PDF avec headers :
+      * Content-Type: application/pdf
+      * Content-Disposition: attachment; filename=emploi_du_temps_{id}.pdf
+      * Content-Length + Cache-Control: no-store
+    - Sur erreur backend : parse le JSON et retourne le message réel
+
+  * FIX BACKEND — Design PDF amélioré (timetables-prisma.controller.ts) :
+    - Template HTML retravaillé :
+      * En-tête : logo 60x60px + titre 'EMPLOI DU TEMPS' + nom école + acronyme + badge classe
+      * Tableau : lignes propres (border 1px #cbd5e1), header bleu marine #1a2a6b
+      * Colonne Horaire : fond #0f172a (très sombre), texte blanc
+      * Lignes de pause (déjeuner/récré) : fond ambre #fef3c7, texte #92400e
+      * Cellules vides : fond #fafafa (légèrement grisé)
+      * Cellules avec entries : fond bleu très clair #eff6ff
+      * Chaque entry : carte blanche avec bordure #bfdbfe, padding 2px
+      * Subj en bleu #1e40af, meta en #64748b, time en #94a3b8
+    - Footer : 'Document généré automatiquement par Academia Helm — {date FR complète}'
+
+  * FIX BACKEND — Error handling :
+    - acquirePage() dans son propre try/catch
+    - Sur échec acquire : throw BadRequestException avec message clair
+      ('Impossible d acquérir une page Puppeteer. Cause probable: Chromium
+       non installé ou pool saturé. Détail: {message}')
+    - Avant : unhandled rejection → 500 générique → frontend voyait erreur sans détail
+
+- TASK 3 — BOUTON PDF EN ROUGE :
+  * Avant : bg-emerald-600 hover:bg-emerald-700 (vert)
+  * Maintenant : bg-red-600 hover:bg-red-700 (rouge)
+  * Convention : l'icône PDF est rouge (Adobe brand color), le bouton doit matcher
+
+- SYNTAX CHECK : ✅ sur tous les fichiers
+- TypeScript check : 0 erreur
+- 4 fichiers modifiés (+240 lignes, -12 lignes) :
+  * apps/api-server/src/pedagogy/timetables-prisma.controller.ts
+  * apps/web-app/src/app/api/timetables/[id]/export-pdf/route.ts (NEW)
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+  * scripts/_apply_step_migration.mjs (NEW)
+- Commit + push : 47cf21dd sur origin/main
+
+Stage Summary:
+- Migration 'step' appliquée sur Neon prod DB ✅ (vérifiée via information_schema)
+- Auto-save : ne se déclenche QUE après 10s de silence complet (plus de fermeture intempestive)
+- PDF : BFF route ajoutée — le bouton fonctionne maintenant, design paysage propre
+- En-tête PDF : logo + nom école + acronyme + badge classe bleu marine
+- Tableau PDF : lignes nettes, couleurs distinctes (cours bleus, pauses ambres, horaires sombres)
+- Bouton PDF rouge (au lieu de vert) pour matcher la convention Adobe

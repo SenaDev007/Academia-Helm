@@ -379,7 +379,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
         </div>
         <div className="space-y-2">
           {timeBlocks.map((block, i) => {
-            const isCustomType = !['BLOCK', 'BREAK', 'LUNCH', 'RECESS', 'STUDY', 'ACTIVITY', 'ASSEMBLY'].includes(block.type);
+            const isCustomType = !['BLOCK', 'BREAK', 'LUNCH', 'RECESS', 'STUDY', 'ACTIVITY', 'ASSEMBLY', 'CEREMONY'].includes(block.type);
             return (
               <div key={i} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-slate-200 flex-wrap">
                 <input type="time" value={block.start} onChange={e => updateBlock(i, 'start', e.target.value)} className="px-2 py-1.5 border border-slate-200 rounded text-sm" />

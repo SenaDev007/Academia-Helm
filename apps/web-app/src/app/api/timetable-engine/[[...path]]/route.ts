@@ -7,6 +7,12 @@ import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 
+// ⭐ force-dynamic : empêche Vercel de statically-optimize/cacher cette route.
+//    Sans ça, la config timetable peut être stale quand l'utilisateur modifie
+//    les jours dans l'onglet Configuration puis passe à l'onglet Emploi du temps.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function buildBackendUrl(pathSegments: string[]): string {
   const path = pathSegments.length ? pathSegments.join('/') : '';
   return nestControllerUrl(`timetable-engine${path ? `/${path}` : ''}`);
@@ -15,6 +21,9 @@ function buildBackendUrl(pathSegments: string[]): string {
 async function forward(request: NextRequest, pathSegments: string[], method: string) {
   const url = new URL(buildBackendUrl(pathSegments));
   request.nextUrl.searchParams.forEach((value, key) => { url.searchParams.append(key, value); });
+  // ⭐ Cache-buster : ajoute un timestamp pour forcer le backend à renvoyer des données fraîches
+  //    Sans ça, Vercel edge cache peut servir une config stale quand l'utilisateur
+  //    modifie les jours dans l'onglet Configuration puis passe à l'onglet Emploi du temps.
   const headers = await getProxyAuthHeaders(request);
   if (!headers['Authorization'] && !headers['Cookie']) return NextResponse.json({ message: 'Non authentifié' }, { status: 401 });
   try {
@@ -23,7 +32,11 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
     if (bodyText !== undefined) options.body = bodyText;
     const res = await fetch(normalizeApiUrl(url.toString()), options);
     const data = await res.json().catch(() => ({}));
-    return NextResponse.json(data, { status: res.status });
+    // ⭐ no-store sur la réponse aussi — empêche Vercel edge cache de servir une config stale
+    return NextResponse.json(data, {
+      status: res.status,
+      headers: { 'Cache-Control': 'no-store, max-age=0' },
+    });
   } catch (e) {
     console.error('[api/timetable-engine]', e);
     return NextResponse.json({ message: 'Service indisponible' }, { status: 502 });

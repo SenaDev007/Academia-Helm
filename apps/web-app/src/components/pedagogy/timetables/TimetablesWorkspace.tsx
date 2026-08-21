@@ -1120,7 +1120,12 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     const levelId = schoolLevel?.id || schoolLevelId;
     if (!levelId || !academicYearId) return;
     try {
-      const data = await steFetch<any>(`/api/timetable-engine/config?schoolLevelId=${levelId}&academicYearId=${academicYearId}`);
+      // ⭐ Cache-buster : ajoute un timestamp pour forcer le fetch d'une config fraîche.
+      //    Sans ça, si l'utilisateur modifie les jours dans l'onglet Configuration puis
+      //    passe à l'onglet Emploi du temps, le navigateur/Vercel peut servir une
+      //    version CACHÉE de la config (jours statiques, pas la nouvelle config).
+      const ts = Date.now();
+      const data = await steFetch<any>(`/api/timetable-engine/config?schoolLevelId=${levelId}&academicYearId=${academicYearId}&_t=${ts}`);
       if (data) {
         const days = Array.isArray(data.schoolDays) ? data.schoolDays : safeParse(data.schoolDays);
         if (Array.isArray(days) && days.length > 0) setConfigSchoolDays(days);

@@ -7293,3 +7293,84 @@ Stage Summary:
 - Indicateur "Nouvelle matière" quand aucune correspondance — l'utilisateur sait quand il crée
 - Code auto-généré normalisé : variantes orthographiques donnent le même code
 - Backward compatible : les matières existantes continuent de fonctionner
+
+---
+Task ID: Phase-11-Edit-Button-Step-Selector
+Agent: main
+Task: Bouton Modifier séance + sélecteur d'étapes 1-8 pour Lecture-Écriture
+
+Work Log:
+- 2 nouvelles fonctionnalités demandées :
+  1. Bouton Modifier pour éditer une séance existante (au lieu de supprimer/recréer)
+  2. Sélecteur d'étapes 1-8 pour Lecture-Écriture au CI/CP
+
+- FEATURE 1 — BOUTON MODIFIER (Pencil) :
+  * Backend :
+    - Nouveau DTO UpdateTimetableEntryDto (tous champs optionnels)
+    - Nouvelle méthode service.updateTimetableEntry(id, tenantId, updates)
+      + Vérifie entry existe + appartient au tenant
+      + Construit payload Prisma — ne met à jour QUE les champs fournis
+      + Empty string/0 = null/clear le champ
+      + Audit log action=UPDATE avec oldData + newData
+    - Nouveau endpoint controller @Put('entries/:id')
+    - BFF : nouveau handler PUT dans entries/[entryId]/route.ts
+  * Frontend :
+    - Nouveau state editingEntryId (string|null)
+    - Nouvelle fonction startInlineEditEntry(entry) :
+      + Trouve le block contenant l'entry (par startTime/endTime)
+      + Pré-remplit inlineForm avec subjectId, duration (calculée), step
+      + Set editingEntryId = entry.id (mode édition)
+    - handleInlineSave now branches :
+      + Si editingEntryId → PUT /api/timetables/entries/:id (single entry, no classId loop)
+      + Sinon → POST loop sur selectedClassIds (comportement existant)
+    - Calc startTime/endTime :
+      + Mode édition : garde startTime original, recalc endTime = startTime + nouvelle durée
+      + Mode création : calcStartTime = fin de dernière séance du block (comportement existant)
+    - Cellule : nouveau bouton Pencil (bleu) à côté du X (rouge)
+      + Apparaît au hover (opacity-0 group-hover:opacity-100)
+      + Title "Modifier cette séance"
+    - Label bouton dynamique : '✓ Ajouter' (création) → '✓ Modifier' (édition)
+    - Auto-save deps : ajouté editingEntryId + inlineForm.step
+    - Cancel button : setEditingCell(null) + setEditingEntryId(null)
+
+- FEATURE 2 — SÉLECTEUR D'ÉTAPE (1-8) POUR LECTURE-ÉCRITURE :
+  * Backend :
+    - Migration : 20260822100000_add_step_to_timetable_entries
+      + ALTER TABLE timetable_entries ADD COLUMN step TEXT
+    - Prisma schema : TimetableEntry.step String? (nullable)
+    - DTO : ajouté step?: string à CreateTimetableEntryDto
+    - Service createTimetableEntry : ajouté step dans baseData payload Prisma
+  * Frontend :
+    - State inlineForm : ajouté step: '' (chaîne vide par défaut)
+    - Sélecteur affiché CONDITIONNELLEMENT :
+      + Détection : normalizeSubjectName(selectedSubject).includes('lecture' | 'ecriture')
+      + Affiché pour "Lecture-Écriture", "Lecture", "Écriture", "Lecture/Ecriture" etc.
+      + Caché pour Math, Morale, Histoire, etc.
+    - 19 options disponibles :
+      + (Aucune étape) — défaut
+      + Étape 1 à Étape 8 (étapes uniques)
+      + Étapes 1-2, 2-3, 3-4, 4-5, 5-6, 6-7, 7-8 (paires adjacentes)
+      + Étapes 1-3, 3-5, 5-8 (plages larges)
+    - Affichage dans cellule : 'Lecture-Écriture · Étape 3' (inline, sous le nom matière)
+    - Envoyé dans POST (création) ET PUT (édition)
+    - Auto-save compte à rebours reset aussi quand step change
+
+- SYNTAX CHECK : ✅ sur tous les fichiers (transpile TS sans erreur)
+- TypeScript check frontend : 0 erreur sur TimetablesWorkspace.tsx
+- 7 fichiers modifiés (+360 lignes, -13 lignes) :
+  * apps/api-server/prisma/migrations/20260822100000_add_step_to_timetable_entries/migration.sql (NEW)
+  * apps/api-server/prisma/schema.prisma
+  * apps/api-server/src/pedagogy/dto/create-timetable-entry.dto.ts
+  * apps/api-server/src/pedagogy/timetables-prisma.controller.ts
+  * apps/api-server/src/pedagogy/timetables-prisma.service.ts
+  * apps/web-app/src/app/api/timetables/entries/[entryId]/route.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+- Commit + push : 4ba877c0 sur origin/main
+
+Stage Summary:
+- Bouton Modifier opérationnel : Pencil rouvre formulaire pré-rempli, PUT update en place
+- Sélecteur d'étape 1-8 : visible uniquement pour Lecture-Écriture (détection intelligente)
+- Affichage : étape inline sous nom matière (ex: 'Lecture-Écriture · Étape 3')
+- Migration à appliquer sur Neon prod DB : 20260822100000_add_step_to_timetable_entries
+- Auto-save fonctionne aussi en mode édition (deps mis à jour)
+- Compatibilité ascendante : séances existantes sans step → step=NULL → pas affiché

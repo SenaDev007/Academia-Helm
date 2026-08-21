@@ -7154,3 +7154,60 @@ Stage Summary:
 - Messages d'erreur beaucoup plus clairs : "La classe X n'a aucune section physique..."
 - Backward compatible : si l'ID envoyé est déjà un Class.id, le comportement est identique à avant
 - Comptage précis des séances créées (multi-section) dans le toast de succès
+
+---
+Task ID: Phase-9-Timetables-UX-Cleanup
+Agent: main
+Task: 4 corrections UX/EDT — doublons, suppressions sélecteurs, compaction lignes, format heure
+
+Work Log:
+- DIAGNOSTIC doublon : Mon fix Phase 8 créait 1 entry par section physique (CI/A + CI/B = 2 entries).
+  Quand l'utilisateur sélectionnait l'AcademicClass "CI" (qui a 2 sections), il voyait 2 lignes "Morale"
+  au lieu d'1. C'était dû à `targetClassIds = academicClass.physicalClasses.map(pc => pc.id)`.
+- FIX 1 (Backend timetables-prisma.service.ts) :
+  * Remplacé `targetClassIds = academicClass.physicalClasses.map(pc => pc.id)` par `targetClassIds = [academicClass.physicalClasses[0].id]`
+  * Maintenant : 1 seule entry par AcademicClass — utilise le premier Class.id comme proxy
+  * L'EDT appartient à la classe académique (CI), pas à chaque section
+  * Chaque enseignant verra l'EDT via sa classe automatiquement, chaque parent via la classe de son enfant
+- FIX 2 (Frontend filteredEntries) :
+  * Ajout de `selectedClassIds.includes(e.class?.officialClassId)` au filtre
+  * CRITIQUE : sans ça, l'entry stockée avec classId=CI/A.id ne s'afficherait pas quand l'utilisateur
+    sélectionne AcademicClass "CI" — l'entry a un classId physique, pas académique
+  * Maintenant, l'entry s'affiche via la relation Class.officialClassId → AcademicClass.id
+- FIX 3 (Frontend inline form) — Suppression sélecteurs enseignant + salle :
+  * Inline form simplifié : `{ subjectId: '', duration: 30 }` (au lieu de inclure teacherId, roomId)
+  * Suppression des 2 balises <select> pour enseignant et salle dans le rendu
+  * Suppression de l'auto-détection du titulaire dans startInlineEdit (autoTeacherId logic supprimé)
+  * POST body ne contient plus teacherId/roomId (laissés à undefined côté backend)
+- FIX 4 (Frontend cellule) — Compaction hauteur ligne :
+  * Padding réduit : p-1.5 → px-1.5 py-0.5 (6px×6px → 6px×2px)
+  * Margin réduit : mb-1 → mb-0.5 (4px → 2px)
+  * Min-height réduit : 40px → 24px
+  * 4 séances tiennent maintenant dans ~120px au lieu de ~208px (réduction ~45%)
+  * Suppression ligne teacher/room (n'est plus nécessaire)
+  * 4 lignes → 2 lignes par entry :
+    - Ligne 1 : Nom matière + bouton X supprimer
+    - Ligne 2 : Format "30min (8h15-8h45)" — durée + plage horaire entre parenthèses
+- FIX 5 (Frontend format heure) :
+  * Nouveau helper fmtTime() : "08:15" → "8h15" (suppression du zéro initial de l'heure)
+  * Format final : "30min (8h15-8h45)" — plus naturel en français
+- FIX 6 (Frontend race condition guard) — Prévenir les doublons par double-fire :
+  * Ajout de `const savingRef = useRef(false)` à côté du state `saving`
+  * Garde en début de handleInlineSave : `if (savingRef.current) return`
+  * savingRef.current = true avant le POST, = false après
+  * Cas d'usage : auto-save (setTimeout 0) + clic "Ajouter" synchrone → 1 seul POST au lieu de 2
+- SYNTAX CHECK : ✅ sur les 2 fichiers (transpile TS sans erreur)
+- TypeScript check frontend : 0 erreur sur TimetablesWorkspace.tsx
+- 2 fichiers modifiés (+73 lignes, -45 lignes) :
+  * apps/api-server/src/pedagogy/timetables-prisma.service.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+- Commit + push : 3795e48f sur origin/main
+
+Stage Summary:
+- Bug "séance Morale en doublon" : RÉSOLU — 1 entry par AcademicClass (plus N par section)
+- Sélecteurs enseignant + salle supprimés (maternelle/primaire) : inline form plus simple
+- Cellule compacte : 2 lignes par entry au lieu de 4 (~45% hauteur en moins)
+- Format heure : "30min (8h15-8h45)" — durée + plage horaire entre parenthèses
+- Garde anti-double-fire : savingRef empêche les doublons POST en cas de race auto-save + clic
+- 1 entry par AcademicClass = EDT partagé entre toutes les sections (CI/A, CI/B) automatiquement
+- Prochaine étape : tester l'ajout d'une séance "Morale" — ne devrait plus créer qu'une seule ligne

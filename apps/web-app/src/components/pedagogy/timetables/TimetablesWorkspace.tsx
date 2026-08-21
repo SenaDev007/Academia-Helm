@@ -38,6 +38,31 @@ const DAYS = [
   { value: 4, label: 'Jeudi' }, { value: 5, label: 'Vendredi' }, { value: 6, label: 'Samedi' }, { value: 7, label: 'Dimanche' },
 ];
 
+/**
+ * ⭐ Normalise un nom de matière (côté frontend) pour la déduplication visuelle.
+ *    DOIT être identique à SubjectsPrismaService.normalizeSubjectName côté backend.
+ *
+ * Variantes qui convergent vers le même nom normalisé :
+ *   "Lecture-Écriture"      → "lecture ecriture"
+ *   "lecture écriture"     → "lecture ecriture"
+ *   "Lecture/Ecriture"      → "lecture ecriture"
+ *   "Lecture + Écriture"    → "lecture ecriture"
+ *   "Lecture et Écriture"   → "lecture ecriture"
+ *   "Poésie-Chant"         → "poesie chant"
+ */
+function normalizeSubjectName(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s*[-/\\+&]\s*/g, ' ')
+    .replace(/\s+(?:et|and)\s+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 8:00 to 18:00
 
 const DEFAULT_TIME_BLOCKS = [
@@ -1353,31 +1378,44 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     if (inlineForm.subjectId === '__CUSTOM__') {
       const customName = (inlineForm as any).customSubjectName?.trim();
       if (!customName) { toast({ title: 'Erreur', description: 'Saisissez le nom de la matière.', variant: 'destructive' }); return; }
+      // ⭐ Code auto-généré normalisé — utiliser normalizeSubjectName pour cohérence
+      //    ex: "Lecture-Écriture" → "lecture ecriture" → "LECTURE-ECRITURE" (uppercase)
+      //    Les variantes orthographiques donnent le même code.
+      const normalizedCode = normalizeSubjectName(customName).replace(/\s/g, '-').substring(0, 30).toUpperCase() || 'CUSTOM-' + Date.now();
       try {
         const newSub = await pedagogyFetch<any>(`/api/subjects`, {
           method: 'POST', body: {
             academicYearId, schoolLevelId: localLevelId || schoolLevelId,
-            code: customName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
-            abbreviation: customName.substring(0, 5).toUpperCase(),
+            code: normalizedCode,
+            abbreviation: normalizeSubjectName(customName).replace(/\s/g, '').substring(0, 5).toUpperCase() || 'CUSTOM',
             name: customName, coefficient: 1, weeklyHours: 120,
           },
         });
-        if (newSub?.id) { resolvedSubjectId = newSub.id; setSubjects(prev => [...prev, newSub]); }
+        // ⭐ Si le backend a retourné une matière existante (dédup intelligente),
+        //    ne pas l'ajouter à la liste locale si elle y est déjà.
+        if (newSub?.id) {
+          resolvedSubjectId = newSub.id;
+          setSubjects(prev => prev.some(s => s.id === newSub.id) ? prev : [...prev, newSub]);
+        }
         else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
       } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
     } else if (inlineForm.subjectId.startsWith('__CAT__')) {
       // ⭐ Matière du catalogue qui n'existe pas encore en DB → créer à la volée
       const catName = inlineForm.subjectId.replace('__CAT__', '');
+      const normalizedCatCode = normalizeSubjectName(catName).replace(/\s/g, '-').substring(0, 30).toUpperCase() || 'CAT-' + Date.now();
       try {
         const newSub = await pedagogyFetch<any>(`/api/subjects`, {
           method: 'POST', body: {
             academicYearId, schoolLevelId: localLevelId || schoolLevelId,
-            code: catName.substring(0, 10).toUpperCase().replace(/\s/g, '-'),
-            abbreviation: catName.substring(0, 5).toUpperCase(),
+            code: normalizedCatCode,
+            abbreviation: normalizeSubjectName(catName).replace(/\s/g, '').substring(0, 5).toUpperCase() || 'CAT',
             name: catName, coefficient: 1, weeklyHours: 120,
           },
         });
-        if (newSub?.id) { resolvedSubjectId = newSub.id; setSubjects(prev => [...prev, newSub]); }
+        if (newSub?.id) {
+          resolvedSubjectId = newSub.id;
+          setSubjects(prev => prev.some(s => s.id === newSub.id) ? prev : [...prev, newSub]);
+        }
         else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
       } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
     }
@@ -1874,12 +1912,71 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                 {/* ⭐ Option personnalisée */}
                                 <option value="__CUSTOM__">✏️ Autre (saisir…) </option>
                               </select>
-                              {/* Champ texte si "Autre…" sélectionné */}
+                              {/* Champ texte si "Autre…" sélectionné — avec suggestions en temps réel
+                                  pour éviter les doublons : si l'utilisateur tape "Lecture-Écriture"
+                                  et qu'une matière "lecture écriture" existe déjà, on la suggère. */}
                               {inlineForm.subjectId === '__CUSTOM__' && (
-                                <input type="text" placeholder="Nom de la matière…"
-                                  value={inlineForm.customSubjectName || ''}
-                                  onChange={e => setInlineForm({...inlineForm, customSubjectName: e.target.value})}
-                                  className="w-full px-1.5 py-1 border border-blue-300 rounded text-[10px] bg-blue-50" autoFocus />
+                                <div className="relative">
+                                  <input type="text" placeholder="Ex: Lecture-Écriture, Poésie-Chant…"
+                                    value={inlineForm.customSubjectName || ''}
+                                    onChange={e => setInlineForm({...inlineForm, customSubjectName: e.target.value})}
+                                    className="w-full px-1.5 py-1 border border-blue-300 rounded text-[10px] bg-blue-50" autoFocus />
+                                  {/* ⭐ Suggestions : matières existantes dont le nom normalisé
+                                      commence par celui saisi. Permet à l'utilisateur de réutiliser
+                                      une matière existante au lieu d'en créer une doublon. */}
+                                  {(() => {
+                                    const typed = (inlineForm.customSubjectName || '').trim();
+                                    if (typed.length < 2) return null;
+                                    const normalized = normalizeSubjectName(typed);
+                                    if (!normalized) return null;
+                                    // Cherche les matières existantes (DB) qui matchent
+                                    const matches = subjects.filter(s =>
+                                      normalizeSubjectName(s.name).includes(normalized) &&
+                                      normalizeSubjectName(s.name) !== normalized // exclude exact match (shown separately)
+                                    ).slice(0, 4);
+                                    // Cherche aussi une matière qui normalise exactement comme l'input
+                                    const exactMatch = subjects.find(s => normalizeSubjectName(s.name) === normalized);
+                                    if (exactMatch) {
+                                      matches.unshift(exactMatch);
+                                    }
+                                    if (matches.length === 0) return null;
+                                    return (
+                                      <div className="absolute z-10 left-0 right-0 top-full mt-0.5 bg-white border border-blue-200 rounded shadow-lg max-h-[100px] overflow-y-auto">
+                                        {exactMatch && (
+                                          <button
+                                            onClick={() => setInlineForm({ ...inlineForm, subjectId: exactMatch.id, customSubjectName: '' })}
+                                            className="w-full text-left px-1.5 py-0.5 hover:bg-emerald-50 border-b border-emerald-100 text-[10px]">
+                                            <span className="text-emerald-700 font-bold">✓ Existant : </span>
+                                            <span className="text-slate-700">{exactMatch.name}</span>
+                                            <span className="text-[8px] text-slate-400 ml-1 italic">(cliquer pour réutiliser)</span>
+                                          </button>
+                                        )}
+                                        {matches.filter(m => m.id !== exactMatch?.id).map(s => (
+                                          <button
+                                            key={s.id}
+                                            onClick={() => setInlineForm({ ...inlineForm, subjectId: s.id, customSubjectName: '' })}
+                                            className="w-full text-left px-1.5 py-0.5 hover:bg-blue-50 text-[10px]">
+                                            <span className="text-slate-600">↳ </span>
+                                            <span className="text-slate-700">{s.name}</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
+                                  {/* ⭐ Indicateur "nouvelle matière" si aucune correspondance n'est trouvée */}
+                                  {(() => {
+                                    const typed = (inlineForm.customSubjectName || '').trim();
+                                    if (typed.length < 2) return null;
+                                    const normalized = normalizeSubjectName(typed);
+                                    const exists = subjects.some(s => normalizeSubjectName(s.name) === normalized);
+                                    if (exists) return null;
+                                    return (
+                                      <div className="text-[9px] text-blue-600 mt-0.5 italic">
+                                        ⚑ Nouvelle matière — sera créée (dédup auto activée)
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
                               )}
                               {/* ⭐ DURÉE en minutes (au lieu de startTime/endTime)
                                   L'utilisateur saisit juste la durée (15, 30, 45, etc.)

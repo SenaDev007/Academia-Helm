@@ -19,6 +19,44 @@ export class SubjectsPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * ⭐ Normalise un nom de matière pour la déduplication intelligente.
+   *
+   * Règles :
+   *  1. Trim
+   *  2. Lowercase
+   *  3. Suppression des accents (NFD + strip des combining marks)
+   *  4. Unification des séparateurs (-, /, \, +, &) en espace unique
+   *  5. Remplacement de " et " / " and " par un espace
+   *  6. Collapse des espaces multiples
+   *  7. Trim final
+   *
+   * Exemples de variantes qui convergent vers le même nom normalisé :
+   *   "Lecture-Écriture"      → "lecture ecriture"
+   *   "lecture écriture"     → "lecture ecriture"
+   *   "Lecture/Ecriture"      → "lecture ecriture"
+   *   "Lecture + Écriture"    → "lecture ecriture"
+   *   "Lecture et Écriture"   → "lecture ecriture"
+   *   "Histoire-Géographie"  → "histoire geographie"
+   *   "  Poésie  Chant  "    → "poesie chant"
+   *   "Poésie-Chant"         → "poesie chant"
+   *
+   * @param name Nom brut saisi par l'utilisateur
+   * @returns Nom normalisé (lowercase, no accents, separators unified)
+   */
+  static normalizeSubjectName(name: string | null | undefined): string {
+    if (!name || typeof name !== 'string') return '';
+    return name
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Strip combining marks (accents)
+      .replace(/\s*[-/\\+&]\s*/g, ' ') // Separators → space (kept 1 space)
+      .replace(/\s+(?:et|and)\s+/gi, ' ') // " et " / " and " → space
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .trim();
+  }
+
+  /**
    * Crée une matière
    */
   async createSubject(data: {
@@ -99,7 +137,51 @@ export class SubjectsPrismaService {
     // Utiliser l'ID résolu
     data.schoolLevelId = resolvedSchoolLevelId;
 
-    // Vérifier l'unicité du code
+    // ⭐ DÉDUPLICATION INTELLIGENTE PAR NOM NORMALISÉ
+    //    Quand l'utilisateur tape "Lecture-Écriture" via __CUSTOM__, on ne veut
+    //    PAS créer un doublon si une matière existe déjà sous une variante
+    //    orthographique : "lecture écriture", "Lecture/Ecriture", "Lecture + Écriture",
+    //    "Lecture et Écriture", etc.
+    //
+    //    Solution : normaliser le nom (minuscules, sans accents, séparateurs
+    //    unifiés en espace) et chercher une matière existante avec le même nom
+    //    normalisé. Si trouvée → on retourne l'existante (pas de création).
+    //
+    //    Scope : (tenantId, academicYearId, schoolLevelId) — une matière "Morale"
+    //    en maternelle et une en primaire restent séparées.
+    const normalizedInputName = SubjectsPrismaService.normalizeSubjectName(data.name);
+    if (normalizedInputName) {
+      const allLevelSubjects = await this.prisma.subject.findMany({
+        where: {
+          tenantId: data.tenantId,
+          academicYearId: data.academicYearId,
+          schoolLevelId: data.schoolLevelId,
+        },
+        select: { id: true, name: true, code: true },
+      });
+      const matchByName = allLevelSubjects.find(
+        s => SubjectsPrismaService.normalizeSubjectName(s.name) === normalizedInputName
+      );
+      if (matchByName) {
+        // ⭐ Matière existante trouvée (sous une variante orthographique) → retour
+        this.logger.log(
+          `createSubject: dedup intelligente — "${data.name}" matche la matière existante ` +
+          `"${matchByName.name}" (normalized: "${normalizedInputName}", id: ${matchByName.id}). ` +
+          `Aucune nouvelle matière créée.`
+        );
+        return this.prisma.subject.findUnique({
+          where: { id: matchByName.id },
+          include: {
+            schoolLevel: true,
+            academicYear: true,
+            academicTrack: true,
+          },
+        }) as any;
+      }
+    }
+
+    // Vérifier l'unicité du code (garde-fou supplémentaire au cas où la dédup
+    // par nom normalisé ne trouve pas — par ex. noms différents mais même code)
     const existing = await this.prisma.subject.findFirst({
       where: {
         tenantId: data.tenantId,

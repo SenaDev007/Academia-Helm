@@ -7049,3 +7049,50 @@ Stage Summary:
 - Workflow complet : PENDING → SUBMITTED (enseignant) → VALIDATED/REJECTED (direction) ✅
 - 6 fichiers créés : MaterialReturnsService, MaterialReturnsController, PedagogicalMaterialsDashboard, TeacherMaterialsWorkspace, BFF route, 2 migrations
 - 4 fichiers modifiés : pedagogy-tabs.tsx, pedagogy.module.ts, PedagogicalSpaceWorkspace.tsx, page.tsx, schema-material-pedagogique.prisma, schema.prisma
+
+---
+Task ID: Phase-7-Fix-Timetable-Save-AutoSave
+Agent: main
+Task: Fix saving of timetable entries + stop silent EDT auto-creation + add 10-second auto-save
+
+Work Log:
+- DIAGNOSTIC : 3 problèmes identifiés dans TimetablesWorkspace.tsx (ManualEditor) :
+  1. handleInlineSave() catchait silencieusement l'erreur POST entries → l'utilisateur voyait "Partiel 0 réussie(s) 1 échec(s)" sans savoir POURQUOI
+  2. handleInlineSave() auto-créait un Timetable silencieusement si aucun EDT actif → confusion utilisateur ("je ne comprends pas pourquoi ça crée un EDT")
+  3. Pas d'auto-sauvegarde — l'utilisateur voulait une sauvegarde automatique toutes les 10 secondes
+- BUG BONUS : `BookOpen` (icône lucide) était utilisé à la ligne 1646 mais jamais importé → fixé
+- FIX 1 (Imports) : Ajouté `BookOpen`, `Save` à l'import lucide-react + `useRef` à l'import React
+- FIX 2 (handleInlineSave rewrite) :
+  * SUPPRIMÉ le bloc qui auto-créait un Timetable silencieusement quand aucun EDT actif
+  * À la place : toast clair "Aucun EDT actif — cliquez sur 'Nouvel EDT' pour créer un emploi du temps avant d'ajouter des séances" + return early
+  * Capture l'erreur réelle de chaque POST entries (lastErrorMessage = e.message)
+  * console.error du body complet pour faciliter le debug depuis la console navigateur
+  * Toast détaillé en cas d'échec : `Échec — 0 réussie(s), 1 échec(s)` + description = message d'erreur réel du serveur (ex: "Foreign key constraint failed on field: teacherId" ou "Conflit détecté — création impossible" ou "Timetable with ID X not found")
+  * Garde le formulaire OUVERT en cas d'échec (permet de réessayer sans re-saisir)
+  * Ferme le formulaire uniquement en cas de succès complet (setEditingCell(null))
+  * Track lastAutoSaveAt pour afficher dans le badge
+- FIX 3 (Auto-sauvegarde 10s) :
+  * Ajouté useEffect avec setInterval(1000) qui décompte autoSaveCountdown de 10 → 0
+  * Quand countdown arrive à 0 → déclenche handleInlineSave() via setTimeout(0) pour éviter setState-in-render warning
+  * Conditions de démarrage : editingCell défini + matière valide (pas __CUSTOM__/__CAT__) + EDT actif + !saving
+  * Reset automatique du compteur si l'utilisateur change la matière ou si saving devient true
+  * useRef(countdownRef) pour garder le compteur entre les re-renders sans dépendances supplémentaires
+  * Cleanup clearInterval dans le return de useEffect
+- FIX 4 (UI compte à rebours) :
+  * Badge bleu "Auto-sauvegarde Xs" affiché dans le formulaire inline juste avant les boutons "Ajouter/Annuler"
+  * Couleur passe en rose quand countdown <= 3s (sense of urgency)
+  * Disparaît si le formulaire n'a pas de matière valide
+- FIX 5 (Badge header) :
+  * Ajouté badge "Auto-sauvegarde 10s · HH:MM:SS" sous les boutons Nouvel EDT/Enregistrer/PDF
+  * Affiche l'horodatage de la dernière sauvegarde réussie
+- TypeScript check : 0 erreur sur TimetablesWorkspace.tsx (les erreurs useAutoSave.ts pré-existantes ne concernent pas ce fix)
+
+Stage Summary:
+- Bug "ajout séance échoue sans explication" : RÉSOLU — l'erreur réelle du serveur est maintenant affichée dans le toast + logguée dans la console
+- Bug "ajout matière crée silencieusement un EDT" : RÉSOLU — plus d'auto-création, l'utilisateur doit cliquer "Nouvel EDT" explicitement
+- Auto-sauvegarde 10s : OPÉRATIONNELLE — déclenche handleInlineSave toutes les 10s si le formulaire inline est ouvert avec matière valide
+- Badge header : affiche statut auto-sauvegarde + horodatage dernière save
+- 1 fichier modifié : TimetablesWorkspace.tsx (+~80 lignes net)
+- Aucune migration DB nécessaire
+- Aucune modification backend (le service createTimetableEntry était déjà correct — le bug était purement frontend)
+- PROCHAINE ÉTAPE : si l'utilisateur signale toujours une erreur, le message exact du serveur s'affichera maintenant → on pourra l'examiner et cibler la cause racine

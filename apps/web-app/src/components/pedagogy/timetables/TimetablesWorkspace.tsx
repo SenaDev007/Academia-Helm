@@ -16,12 +16,12 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Settings, Calendar, Zap, CheckCircle, Loader2, Trash2,
   Clock, AlertCircle, Star, Eye, Pencil, X,
   Users, Info, Shield, GitCompare, Sparkles, Printer, Download, Plus, Layers,
-  Coffee, Utensils, FileDown,
+  Coffee, Utensils, FileDown, BookOpen, Save,
 } from 'lucide-react';
 import { BeninFlag } from '@/components/ui/BeninFlag';
 import { SUB_SUBJECT_CATALOG } from '@/lib/utils/sub-subject-catalog';
@@ -1164,6 +1164,13 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const [editingCell, setEditingCell] = useState<{ dayOfWeek: number; blockStart: string; blockEnd: string } | null>(null);
   const [inlineForm, setInlineForm] = useState<any>({ subjectId: '', teacherId: '', roomId: '', duration: 30 });
   const [saving, setSaving] = useState(false);
+  // ⭐ Auto-sauvegarde : toutes les 10 secondes, si le formulaire inline est ouvert
+  //    avec une matière valide, on déclenche handleInlineSave automatiquement.
+  //    L'utilisateur n'a plus besoin de cliquer "Ajouter" — la séance est sauvegardée
+  //    en arrière-plan. Le compte à rebours est affiché dans le formulaire.
+  const [autoSaveCountdown, setAutoSaveCountdown] = useState<number>(10);
+  const countdownRef = useRef<number>(10);
+  const [lastAutoSaveAt, setLastAutoSaveAt] = useState<Date | null>(null);
   // ⭐ Export PDF
   const [exportingPdf, setExportingPdf] = useState(false);
   // ≉ School identity pour le PDF
@@ -1370,30 +1377,96 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     const calcStart = calcStartTime(editingCell.dayOfWeek, { start: editingCell.blockStart, end: editingCell.blockEnd });
     const calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
 
-    let currentTimetableId = activeTimetableId;
-    if (!currentTimetableId) {
-      try {
-        const lvlId = localLevelId || schoolLevelId;
-        if (!lvlId || lvlId === 'ALL') throw new Error('Sélectionnez un niveau scolaire');
-        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', { method: 'POST', body: { academicYearId, schoolLevelId: lvlId, name: `EDT ${new Date().getFullYear()}`, startDate: new Date().toISOString() } });
-        if (newTt) { setTimetables([newTt]); setActiveTimetableId(newTt.id); currentTimetableId = newTt.id; } else throw new Error('Création EDT échouée');
-      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); setSaving(false); return; }
+    // ⭐ NE PAS auto-créer un EDT silencieusement — c'est ce qui causait la confusion :
+    //    l'utilisateur cliquait "Ajouter une matière", un EDT était créé en silence,
+    //    puis l'ajout échouait sans explication. Maintenant on demande explicitement
+    //    à l'utilisateur de créer un EDT d'abord via le bouton "Nouvel EDT".
+    if (!activeTimetableId) {
+      toast({
+        title: 'Aucun EDT actif',
+        description: 'Cliquez sur "Nouvel EDT" pour créer un emploi du temps avant d\'ajouter des séances.',
+        variant: 'destructive',
+      });
+      setSaving(false);
+      return;
     }
+    const currentTimetableId = activeTimetableId;
     const resolvedSchoolLevelId = localLevelId || schoolLevelId;
     let success = 0, failed = 0;
+    let lastErrorMessage: string | null = null;
     for (const classId of selectedClassIds) {
       try {
         await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
           method: 'POST', body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId }
         });
         success++;
-      } catch { failed++; }
+      } catch (e: any) {
+        failed++;
+        lastErrorMessage = e.message || 'Erreur inconnue';
+        // ⭐ Console.error pour faciliter le debug depuis la console navigateur
+        console.error('[handleInlineSave] POST entries failed:', { classId, subjectId: resolvedSubjectId, error: e.message, body: { classId, subjectId: resolvedSubjectId, teacherId: inlineForm.teacherId || undefined, roomId: inlineForm.roomId || undefined, dayOfWeek: editingCell.dayOfWeek, startTime: calcStart, endTime: calcEnd, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId } });
+      }
     }
     await loadEntries();
-    setEditingCell(null); setSaving(false);
-    if (failed === 0) toast({ title: `✅ ${success} séance(s) ajoutée(s)` });
-    else toast({ title: 'Partiel', description: `${success} réussie(s), ${failed} échec(s)`, variant: 'destructive' });
+    setSaving(false);
+    setLastAutoSaveAt(new Date());
+    if (failed === 0) {
+      toast({ title: `✅ ${success} séance(s) ajoutée(s)` });
+      // ⭐ Fermer le formulaire uniquement en cas de succès complet
+      setEditingCell(null);
+    } else {
+      // ⭐ En cas d'échec : garder le formulaire OUVERT pour permettre à l'utilisateur de réessayer,
+      //    ET afficher le message d'erreur réel (au lieu du simple "Partiel" silencieux)
+      toast({
+        title: `Échec — ${success} réussie(s), ${failed} échec(s)`,
+        description: lastErrorMessage || 'Erreur inconnue',
+        variant: 'destructive',
+      });
+    }
   };
+
+  // ⭐ Auto-sauvegarde : toutes les 10 secondes, si le formulaire inline est ouvert
+  //    avec une matière valide, on déclenche handleInlineSave automatiquement.
+  //    Le compte à rebours est affiché dans le formulaire inline.
+  //    Conditions pour déclencher :
+  //    1. editingCell est défini (formulaire ouvert)
+  //    2. !saving (pas déjà en cours de sauvegarde)
+  //    3. inlineForm.subjectId est valide (matière sélectionnée)
+  //    4. activeTimetableId existe (un EDT est actif)
+  useEffect(() => {
+    // ⭐ Si pas d'édition ou sauvegarde en cours → reset compteur, pas de timer
+    if (!editingCell || saving) {
+      countdownRef.current = 10;
+      setAutoSaveCountdown(10);
+      return;
+    }
+    // ⭐ Vérifier que le formulaire a une matière valide
+    const isValidSubject = inlineForm.subjectId &&
+      !inlineForm.subjectId.startsWith('__') &&
+      !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
+    if (!isValidSubject || !activeTimetableId) {
+      countdownRef.current = 10;
+      setAutoSaveCountdown(10);
+      return;
+    }
+    // ⭐ Démarrer le compte à rebours
+    const interval = setInterval(() => {
+      countdownRef.current -= 1;
+      setAutoSaveCountdown(countdownRef.current);
+      if (countdownRef.current <= 0) {
+        // ⭐ Reset le compteur AVANT d'appeler handleInlineSave pour éviter
+        //    que l'effet ne se redéclenche pendant la sauvegarde
+        countdownRef.current = 10;
+        setAutoSaveCountdown(10);
+        // ⭐ Appeler handleInlineSave dans le prochain tick pour éviter
+        //    le warning "setState in render"
+        setTimeout(() => handleInlineSave(), 0);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+    // ⚠️ Ne pas inclure handleInlineSave dans les deps — il change à chaque render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCell, inlineForm.subjectId, inlineForm.customSubjectName, saving, activeTimetableId, selectedClassIds]);
 
   const handleDeleteEntry = async (id: string) => {
     try { await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }); await loadEntries(); toast({ title: '✅ Séance supprimée' }); }
@@ -1576,19 +1649,32 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             </div>
           )}
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleNewTimetable}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
-            <Plus className="w-3.5 h-3.5" /> Nouvel EDT
-          </button>
-          <button onClick={handleSaveTimetable} disabled={!activeTimetableId}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            <CheckCircle className="w-3.5 h-3.5" /> Enregistrer
-          </button>
-          <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
-          </button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex gap-2">
+            <button onClick={handleNewTimetable}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
+              <Plus className="w-3.5 h-3.5" /> Nouvel EDT
+            </button>
+            <button onClick={handleSaveTimetable} disabled={!activeTimetableId}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+              <CheckCircle className="w-3.5 h-3.5" /> Enregistrer
+            </button>
+            <button onClick={handleExportPdf} disabled={exportingPdf || selectedClassIds.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+              {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />} PDF A4
+            </button>
+          </div>
+          {/* ⭐ Auto-sauvegarde badge — indique que les séances sont sauvegardées
+              automatiquement toutes les 10 secondes pendant l'édition inline */}
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-[9px] font-semibold text-blue-700">
+            <Save className="w-2.5 h-2.5" />
+            Auto-sauvegarde 10s
+            {lastAutoSaveAt && (
+              <span className="text-blue-500 ml-1">
+                · {lastAutoSaveAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 
@@ -1809,6 +1895,27 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                                 <option value="">— Salle —</option>
                                 {rooms.map(r => <option key={r.id} value={r.id}>{r.name} ({r.code})</option>)}
                               </select>
+                              {/* ⭐ Auto-sauvegarde : compte à rebours de 10 secondes
+                                  Affiché uniquement quand le formulaire a une matière valide + un EDT actif.
+                                  Indique à l'utilisateur que la séance sera sauvegardée automatiquement. */}
+                              {(() => {
+                                const isValidSubject = inlineForm.subjectId &&
+                                  !inlineForm.subjectId.startsWith('__') &&
+                                  !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
+                                const canAutoSave = isValidSubject && !!activeTimetableId && !saving;
+                                if (!canAutoSave) return null;
+                                return (
+                                  <div className="flex items-center justify-between gap-1 px-1.5 py-0.5 bg-blue-100/60 border border-blue-200 rounded text-[9px]">
+                                    <span className="inline-flex items-center gap-0.5 text-blue-700 font-semibold">
+                                      <Save className="w-2.5 h-2.5" />
+                                      Auto-sauvegarde
+                                    </span>
+                                    <span className={cn('font-bold tabular-nums', autoSaveCountdown <= 3 ? 'text-rose-600' : 'text-blue-700')}>
+                                      {autoSaveCountdown}s
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               <div className="flex gap-1">
                                 <button onClick={handleInlineSave} disabled={saving || !inlineForm.subjectId || (inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim())}
                                   className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-[10px] font-bold">

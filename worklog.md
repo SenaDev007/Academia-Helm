@@ -7523,3 +7523,94 @@ Stage Summary:
 - Lecture-Écriture FR et Reading-Writing EN déclenchent toutes les 2 le sélecteur d'étape
 - 9 étapes supportées (Étape 1 à Étape 9 + 14 plages combinées)
 - Aucune migration DB nécessaire
+
+---
+Task ID: Phase-15-HoraireInline-PDFEmpty-CeremonyFix-Teacher-Parent-UIs
+Agent: main
+Task: 5 fixes — horaire inline + PDF tableau vide + cérémonial + UIs teacher/parent
+
+Work Log:
+
+- PROBLÈMES RAPPORTÉS :
+  1. Colonne horaire UI : plage sur 2 lignes (8:00 / 10:15), veut 1 ligne '8h00-10h15'
+  2. PDF tableau vide : seulement récréation/déjeuner affichés
+  3. PDF : cérémonial des couleurs en ligne séparée EN DESSOUS du tableau
+  4. PDF horaire sur 2 lignes
+  5. UI teacher + parent : EDT fictif aléatoire, pas conforme à ce qui est paramétré
+
+- FIX 1 (UI horaire inline — TimetablesWorkspace.tsx) :
+  * Nouvelle fonction top-level fmtTime() : '08:15' → '8h15' (sans zéro initial)
+  * Cellule BLOCK horaire : <span>8h00-10h15</span> au lieu de <div>08:00</div><div>10:15</div>
+  * Cellule BREAK horaire : même format inline
+  * whitespace-nowrap ajouté pour empêcher le wrapping sur colonnes étroites
+  * Libellé BREAK simplifié : supprimé '(8:00 – 10:15)' redondant
+
+- FIX 2 (PDF classIds filter — timetables-prisma.controller.ts) :
+  * ROOT CAUSE : frontend envoie AcademicClass IDs ('CI') mais entries ont
+    physical Class IDs ('CI/A.id' depuis Phase 8). Filter `ids.includes(e.classId)`
+    ne matchait JAMAIS.
+  * NOUVEAU FILTRE :
+    1. Fetch physicalClasses where id IN ids OR officialClassId IN ids
+    2. Build expandedIds Set incluant direct matches + physical classes' IDs
+    3. Filter entries : !e.classId (global) OR expandedIds.has(e.classId)
+       OR ids.includes(e.class?.officialClassId)
+  * ClassName résolu via AcademicClass.name (pas physical Class.name)
+    → 'CI' affiché au lieu de 'CI/A' sur le titre du PDF
+  * Requête SQL redondante supprimée (retournait vide quand classIds étaient
+    des AcademicClass IDs)
+
+- FIX 3 (PDF CEREMONY row) :
+  * Avant : CEREMONY traité comme un BREAK → rendu en ligne séparée colSpan all days
+  * Maintenant : timeBlocks.filter(b => b.type !== 'CEREMONY') avant de générer les rows
+  * Cérémonial rendu À L'INTÉRIEUR des cellules BLOCK (comme dans l'UI)
+  * HTML : <div style="orange...">8h00-8h15 · Ceremonial des couleurs</div> prépendu
+  * Format compact correspondant à l'UI
+
+- FIX 4 (PDF horaire inline) :
+  * Nouvelle fonction fmtTimePdf() (mirroir frontend fmtTime)
+  * Cellule BLOCK : '8h00-10h15' inline (was '08:00<br/>10:15')
+  * Cellule BREAK : même format inline
+  * white-space:nowrap ajouté
+  * Libellé BREAK simplifié (supprimé '(start - end)' redondant)
+
+- FIX 5 (TEACHER UI — teacher/timetable/page.tsx) :
+  * AVANT : chargeait ALL entries de ALL EDTs sans filtre → 'fictif aléatoire'
+  * NOUVEAU workflow :
+    1. Fetch /api/pedagogy/teacher-profiles → resolve user.id → teacher.id
+    2. Fetch /api/pedagogy/teacher-class-assignments?teacherId=X → assignments
+    3. Fetch /api/pedagogy/academic-structure/classes → AcademicClasses with physicalClasses
+    4. Build map : physicalClassId → AcademicClass.id
+    5. Build teacherOfficialClassIds Set (AcademicClass IDs teacher is assigned to)
+    6. Fetch all EDTs → for each entry, check entry.class?.officialClassId in set
+       OR entry has no classId (global, ex: cérémonial)
+  * Affichage step inline : 'Lecture-Écriture · Étape 3'
+
+- FIX 6 (PARENT UI — parent/timetable/page.tsx) :
+  * AVANT : filter `e.classId === child.classId` ne matchait jamais (entries
+    ont le 1er physical Class.id de l'AcademicClass, pas celui de l'enfant)
+  * NOUVEAU workflow :
+    1. Fetch AcademicClasses → trouver childOfficialClassId (l'AcademicClass
+       dont les physicalClasses contiennent child.classId)
+    2. Fetch all EDTs → for each entry, check
+       entry.class?.officialClassId === childOfficialClassId
+       OR e.classId === child.classId (compat fallback)
+       OR entry has no classId (global)
+  * Affichage step inline
+
+- SYNTAX CHECK : ✅ sur les 4 fichiers
+- TypeScript check : 0 erreur
+- 4 fichiers modifiés (+217 lignes, -49 lignes) :
+  * apps/api-server/src/pedagogy/timetables-prisma.controller.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+  * apps/web-app/src/app/app/teacher/timetable/page.tsx
+  * apps/web-app/src/app/app/parent/timetable/page.tsx
+- Commit + push : 93ff0a67 sur origin/main
+
+Stage Summary:
+- UI horaire : '8h00-10h15' sur une seule ligne (pas de wrap)
+- PDF : tableau peuplé avec les entries de la classe sélectionnée (CI/A + CI/B + ...)
+- PDF : cérémonial rendu DANS les cellules BLOCK (pas en ligne séparée)
+- PDF : horaire sur une ligne (pas de <br/>)
+- Teacher UI : ne voit QUE les entries de SES classes (via officialClassId)
+- Parent UI : ne voit QUE les entries de la classe de SON enfant (via officialClassId)
+- Step (1-9) affiché inline sous le nom matière dans les 2 UIs

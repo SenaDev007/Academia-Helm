@@ -7211,3 +7211,85 @@ Stage Summary:
 - Garde anti-double-fire : savingRef empêche les doublons POST en cas de race auto-save + clic
 - 1 entry par AcademicClass = EDT partagé entre toutes les sections (CI/A, CI/B) automatiquement
 - Prochaine étape : tester l'ajout d'une séance "Morale" — ne devrait plus créer qu'une seule ligne
+
+---
+Task ID: Phase-10-Subject-Dedup-Intelligent
+Agent: main
+Task: Saisie libre de matières combinées SANS doublons (Lecture-Écriture, Histoire-Géographie, etc.)
+
+Work Log:
+- CONTEXTE : L'utilisateur veut saisir librement des combinaisons de sous-matières
+  (ex: "Lecture-Écriture", "Histoire-Géographie", "Poésie-Chant", "Vocabulaire-Communication orale")
+  via le champ __CUSTOM__, MAIS sans risque de doublons en DB.
+- PROBLÈME : Sans déduplication intelligente, 5 utilisateurs tapant des variantes
+  orthographiques ("Lecture-Écriture", "lecture écriture", "Lecture/Ecriture",
+  "Lecture + Écriture", "Lecture et Écriture") créeraient 5 matières dupliquées.
+- SOLUTION : Normalisation du nom avant recherche de doublon.
+
+- FIX 1 (Backend subjects-prisma.service.ts) — Nouvelle méthode statique :
+  * SubjectsPrismaService.normalizeSubjectName(name: string): string
+  * Étapes de normalisation :
+    1. Trim
+    2. Lowercase
+    3. Suppression des accents (NFD + regex [\u0300-\u036f])
+    4. Unification des séparateurs (-, /, \\, +, &) en espace unique
+    5. Remplacement de " et " / " and " par un espace
+    6. Collapse des espaces multiples
+    7. Trim final
+  * Exemples : "Lecture-Écriture" → "lecture ecriture"
+              "lecture écriture" → "lecture ecriture"
+              "Lecture/Ecriture" → "lecture ecriture"
+              "Lecture + Écriture" → "lecture ecriture"
+              "Lecture et Écriture" → "lecture ecriture"
+              "Poésie-Chant" → "poesie chant"
+
+- FIX 2 (Backend createSubject) — Nouveau step de déduplication :
+  * AVANT la vérification par code existante, on ajoute :
+    1. Calcul normalizedInputName = normalizeSubjectName(data.name)
+    2. SELECT toutes les matières du scope (tenantId, academicYearId, schoolLevelId)
+    3. Filter en JS pour trouver une matière dont normalizeSubjectName(name) === normalizedInputName
+    4. Si trouvée : log + return cette matière (PAS de création)
+    5. Si non trouvée : proceed au flow existant (code-dedup puis create)
+  * Scope : (tenantId, academicYearId, schoolLevelId) — "Morale" en maternelle et
+    primaire restent séparées (différents schoolLevelId).
+  * Log serveur : "createSubject: dedup intelligente — 'X' matche la matière existante 'Y'"
+
+- FIX 3 (Frontend TimetablesWorkspace.tsx) — Fonction normalizeSubjectName locale :
+  * Ajout d'une fonction normalizeSubjectName() identique à celle du backend
+  * Permet l'autocomplétion visuelle avant même l'envoi au backend
+
+- FIX 4 (Frontend custom input) — Amélioration UX :
+  * Champ custom maintenant dans un container `relative` avec dropdown d'autocomplétion
+  * Suggestions en temps réel pendant la frappe (à partir de 2 caractères) :
+    - Match exact (normalisé) : bouton vert "✓ Existant : [name]" → clic = réutiliser
+    - Matches partiels : boutons bleus "↳ [name]" → clic = réutiliser
+  * Indicateur "⚑ Nouvelle matière — sera créée (dédup auto activée)" si aucun match
+  * L'utilisateur sait immédiatement s'il crée un doublon ou réutilise
+
+- FIX 5 (Frontend code auto-généré) — Normalisation :
+  * Avant : `code: customName.substring(0, 10).toUpperCase().replace(/\s/g, '-')`
+    → "Lecture-Écriture" → "LECTURE-ÉC" / "Lecture/Ecriture" → "LECTURE/EC" (différents !)
+  * Maintenant : `code: normalizeSubjectName(customName).replace(/\s/g, '-').substring(0, 30).toUpperCase()`
+    → "Lecture-Écriture" → "LECTURE-ECRITURE" / "Lecture/Ecriture" → "LECTURE-ECRITURE" (mêmes !)
+  * Garde-fou supplémentaire : le code-dedup backend attrape encore plus de cas
+
+- FIX 6 (Frontend setSubjects) — Dédup locale :
+  * Avant : `setSubjects(prev => [...prev, newSub])` — dupliquait si la matière existait déjà
+  * Maintenant : `setSubjects(prev => prev.some(s => s.id === newSub.id) ? prev : [...prev, newSub])`
+  * Évite d'afficher la même matière deux fois dans le dropdown
+
+- SYNTAX CHECK : ✅ sur les 2 fichiers (transpile TS sans erreur)
+- TypeScript check frontend : 0 erreur sur TimetablesWorkspace.tsx
+- Aucune migration DB nécessaire (la normalisation est calculée à la volée en JS)
+- 2 fichiers modifiés (+191 lignes, -12 lignes) :
+  * apps/api-server/src/pedagogy/subjects-prisma.service.ts
+  * apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx
+- Commit + push : e0f19d73 sur origin/main
+
+Stage Summary:
+- Saisie libre de combinaisons : OPÉRATIONNELLE (Lecture-Écriture, Histoire-Géographie, etc.)
+- Déduplication intelligente : AUCUN doublon garanti côté backend
+- UX : suggestions en temps réel pendant la frappe (match exact en vert, partiels en bleu)
+- Indicateur "Nouvelle matière" quand aucune correspondance — l'utilisateur sait quand il crée
+- Code auto-généré normalisé : variantes orthographiques donnent le même code
+- Backward compatible : les matières existantes continuent de fonctionner

@@ -1227,13 +1227,38 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   // ─── Actions ───
   const handleAddEntry = async () => {
-    if (!activeTimetableId || !academicYearId) return;
+    if (!academicYearId) return;
     if (!entryForm.classId) { toast({ title: 'Erreur', description: 'Sélectionnez une classe.', variant: 'destructive' }); return; }
+
+    // ⭐ Si pas d'EDT actif, en créer un à la volée avant d'ajouter la séance.
+    //    Avant ce fix, le bouton "Ajouter séance" était grisé si l'EDT n'existait pas.
+    let currentTimetableId = activeTimetableId;
+    if (!currentTimetableId) {
+      try {
+        const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
+          method: 'POST', body: {
+            academicYearId, schoolLevelId: schoolLevel?.id || schoolLevelId,
+            name: `EDT Principal ${new Date().getFullYear()}`, startDate: new Date(),
+          },
+        });
+        if (newTt) {
+          setTimetables([newTt]);
+          setActiveTimetableId(newTt.id);
+          currentTimetableId = newTt.id;
+        } else {
+          throw new Error('Impossible de créer l\'EDT');
+        }
+      } catch (e: any) {
+        toast({ title: 'Erreur', description: `Création de l'EDT échouée: ${e.message}`, variant: 'destructive' });
+        return;
+      }
+    }
+
     try {
       const resolvedSchoolLevelId = schoolLevel?.id || schoolLevelId;
-      await pedagogyFetch(`/api/timetables/${activeTimetableId}/entries`, {
+      await pedagogyFetch(`/api/timetables/${currentTimetableId}/entries`, {
         method: 'POST', body: {
-          ...entryForm, timetableId: activeTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId,
+          ...entryForm, timetableId: currentTimetableId, academicYearId, schoolLevelId: resolvedSchoolLevelId,
         },
       });
       await loadEntries();
@@ -1324,7 +1349,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         </select>
 
         <div className="flex gap-2 ml-auto">
-          <button onClick={() => setShowAddModal(true)} disabled={!activeTimetableId}
+          <button onClick={() => setShowAddModal(true)} disabled={!selectedId}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
             <Plus className="w-3.5 h-3.5" /> Ajouter séance
           </button>
@@ -1339,9 +1364,15 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         </div>
       </div>
 
-      {/* Grid */}
-      {selectedId ? (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+      {/* Grid — ⭐ TOUJOURS AFFICHÉ (avant : masqué si pas de selectedId) */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+        {!selectedId ? (
+          <div className="p-8 text-center">
+            <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+            <p className="text-sm font-medium text-slate-700">Sélectionnez une classe, un enseignant ou une salle</p>
+            <p className="text-xs text-slate-400 mt-1">Choisissez une entité dans le sélecteur ci-dessus pour afficher la grille.</p>
+          </div>
+        ) : (
           <table className="w-full text-sm border-collapse min-w-[700px]">
             <thead>
               <tr className="bg-slate-100">
@@ -1353,15 +1384,15 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
             </thead>
             <tbody>
               {HOURS.map(hour => (
-                <tr key={hour}>
+                <tr key={hour} className="hover:bg-slate-50/30">
                   <td className="p-2 font-bold text-slate-700 border border-slate-200 bg-slate-50 text-xs">
                     {hour.toString().padStart(2, '0')}:00
                   </td>
                   {DAYS.slice(0, 6).map(day => {
                     const entry = filteredEntries.find(e => e.dayOfWeek === day.value && e.startTime === `${hour.toString().padStart(2, '0')}:00`);
                     return (
-                      <td key={day.value} className="p-1 border border-slate-200 align-top">
-                        {entry && (
+                      <td key={day.value} className="p-1 border border-slate-200 align-top min-h-[60px]">
+                        {entry ? (
                           <div className="bg-blue-50 border border-blue-200 rounded-lg p-1.5 group relative">
                             <div className="text-[10px] font-bold text-blue-700">{entry.startTime}–{entry.endTime}</div>
                             <div className="text-xs font-bold text-slate-800 leading-tight">{entry.subject?.name || '—'}</div>
@@ -1376,6 +1407,21 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                               <X className="w-2.5 h-2.5" />
                             </button>
                           </div>
+                        ) : (
+                          <div
+                            className="h-full min-h-[48px] flex items-center justify-center cursor-pointer hover:bg-blue-50/50 rounded transition"
+                            onClick={() => {
+                              if (!activeTimetableId) {
+                                toast({ title: 'Création de l\'EDT en cours...', description: 'Patientez, l\'emploi du temps est en cours d\'initialisation.' });
+                                return;
+                              }
+                              setEntryForm({ ...entryForm, classId: viewMode === 'class' ? selectedId : '', dayOfWeek: day.value, startTime: `${hour.toString().padStart(2, '0')}:00`, endTime: `${(hour + 1).toString().padStart(2, '0')}:00` });
+                              setShowAddModal(true);
+                            }}
+                            title="Cliquez pour ajouter une séance"
+                          >
+                            <Plus className="w-3 h-3 text-slate-300 hover:text-blue-500" />
+                          </div>
                         )}
                       </td>
                     );
@@ -1384,13 +1430,8 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
               ))}
             </tbody>
           </table>
-        </div>
-      ) : (
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-10 text-center">
-          <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Sélectionnez une classe, un enseignant ou une salle pour afficher la grille.</p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Add entry modal */}
       {showAddModal && (

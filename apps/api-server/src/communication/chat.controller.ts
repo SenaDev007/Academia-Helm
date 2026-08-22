@@ -30,7 +30,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { ChatService } from './services/chat.service';
-import { StorageService } from '../../common/services/storage.service';
+import { StorageService } from '../common/services/storage.service';
 import { PushNotificationService } from './services/push-notification.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")

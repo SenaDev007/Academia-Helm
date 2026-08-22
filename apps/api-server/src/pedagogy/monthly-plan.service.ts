@@ -46,6 +46,10 @@ export interface MonthlyPlanResponse {
   cells: MonthlyPlanCell[];
   isAutoProposed: boolean;
   hasExistingCustom: boolean;
+  status?: 'DRAFT' | 'SUBMITTED' | 'VALIDATED' | 'REJECTED';
+  teacherSignature?: string | null;
+  directorSignature?: string | null;
+  directorObservation?: string | null;
 }
 
 @Injectable()
@@ -98,10 +102,17 @@ export class MonthlyPlanService {
 
     const hasExistingCustom = cells.some(c => c.isCustom);
 
+    // ⭐ Récupérer le statut + signatures depuis la première ligne (toutes les lignes
+    //    d'une même planif partagent les mêmes colonnes status/signature/...)
+    const first = rows[0] || {};
     return {
       cells,
       isAutoProposed: cells.length > 0 && cells.every(c => c.isAutoProposed && !c.isCustom),
       hasExistingCustom,
+      status: first.status || 'DRAFT',
+      teacherSignature: first.teacherSignature || null,
+      directorSignature: first.directorSignature || null,
+      directorObservation: first.directorObservation || null,
     };
   }
 
@@ -452,5 +463,158 @@ export class MonthlyPlanService {
     `, id, tenantId);
 
     return updated[0];
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  SOUMISSION + VALIDATION (workflow comme Cahier Journal)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ SOUMETTRE la planification mensuelle au directeur.
+   *    - Marque toutes les cellules comme status=SUBMITTED
+   *    - Capture la signature du titulaire (data URL)
+   *    - Set submittedAt = NOW()
+   *    - La planification devient READ-ONLY pour l'enseignant
+   *
+   * ⭐ Note : à chaque début de mois, le système vérifiera (via une règle côté
+   *    Cahier Journal) si la planification mensuelle a été soumise+validée
+   *    avant d'autoriser la soumission du 1er cahier journal du mois.
+   *    Cette vérification sera implémentée dans le service Cahier Journal.
+   */
+  async submitMonthlyPlan(
+    tenantId: string,
+    academicYearId: string,
+    classLevel: string,
+    month: string,
+    teacherId: string,
+    teacherSignature: string,
+  ): Promise<{ success: boolean; submittedAt: Date }> {
+    if (!teacherSignature) {
+      throw new BadRequestException('Signature du titulaire requise');
+    }
+
+    // Vérifier qu'au moins une cellule existe
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, status FROM "monthly_plans"
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      LIMIT 1
+    `, tenantId, academicYearId, classLevel, month, teacherId);
+
+    if (existing.length === 0) {
+      throw new BadRequestException('Aucune planification à soumettre. Créez/enregistrez d\'abord le contenu.');
+    }
+
+    const currentStatus = existing[0].status;
+    if (currentStatus === 'SUBMITTED') {
+      throw new BadRequestException('Planification déjà soumise — en attente de validation');
+    }
+    if (currentStatus === 'VALIDATED') {
+      throw new BadRequestException('Planification déjà validée par le directeur');
+    }
+
+    // ⭐ Mettre à jour TOUTES les cellules de cette planification
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "monthly_plans"
+      SET "status" = 'SUBMITTED',
+          "teacherSignature" = $6,
+          "submittedAt" = NOW(),
+          "updatedAt" = NOW()
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+    `, tenantId, academicYearId, classLevel, month, teacherId, teacherSignature);
+
+    this.logger.log(`Monthly plan submitted: tenant=${tenantId}, class=${classLevel}, month=${month}, teacher=${teacherId}`);
+
+    return { success: true, submittedAt: new Date() };
+  }
+
+  /**
+   * ⭐ VALIDER ou REJETER une planification mensuelle (côté directeur).
+   *    - Si action=VALIDATE : status=VALIDATED, directorSignature capturée
+   *    - Si action=REJECT : status=REJECTED, directorObservation stockée
+   */
+  async validateMonthlyPlan(
+    tenantId: string,
+    academicYearId: string,
+    classLevel: string,
+    month: string,
+    teacherId: string,
+    options: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string },
+  ): Promise<{ success: boolean; validatedAt: Date }> {
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, status FROM "monthly_plans"
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      LIMIT 1
+    `, tenantId, academicYearId, classLevel, month, teacherId);
+
+    if (existing.length === 0) {
+      throw new NotFoundException('Planification introuvable');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException(`Planification non soumise (status=${existing[0].status})`);
+    }
+
+    if (options.action === 'VALIDATE') {
+      if (!options.directorSignature) {
+        throw new BadRequestException('Signature du directeur requise pour valider');
+      }
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE "monthly_plans"
+        SET "status" = 'VALIDATED',
+            "directorSignature" = $6,
+            "validatedAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "tenantId" = $1 AND "academicYearId" = $2
+          AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      `, tenantId, academicYearId, classLevel, month, teacherId, options.directorSignature);
+      this.logger.log(`Monthly plan VALIDATED: class=${classLevel}, month=${month}, teacher=${teacherId}`);
+    } else {
+      // REJECT
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE "monthly_plans"
+        SET "status" = 'REJECTED',
+            "directorObservation" = $6,
+            "validatedAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "tenantId" = $1 AND "academicYearId" = $2
+          AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      `, tenantId, academicYearId, classLevel, month, teacherId, options.directorObservation || null);
+      this.logger.log(`Monthly plan REJECTED: class=${classLevel}, month=${month}, teacher=${teacherId}`);
+    }
+
+    return { success: true, validatedAt: new Date() };
+  }
+
+  /**
+   * ⭐ Liste les planifications mensuelles en attente de validation (côté directeur).
+   *    Utilisé par l'espace "Validation Direction".
+   */
+  async getPendingMonthlyPlans(tenantId: string, academicYearId: string): Promise<any[]> {
+    // ⭐ On récupère les planifs SOUMISES (status=SUBMITTED) — une seule ligne par planif
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT
+        mp."classLevel",
+        mp."month",
+        mp."teacherId",
+        mp."submittedAt",
+        mp."teacherSignature",
+        COUNT(mp.id) AS "cellCount",
+        COUNT(CASE WHEN mp."isCustom" THEN 1 END) AS "customCount",
+        u."firstName" AS "teacherFirstName",
+        u."lastName" AS "teacherLastName",
+        ur."role" AS "teacherRole",
+        c."name" AS "className"
+      FROM "monthly_plans" mp
+      LEFT JOIN "users" u ON u.id = mp."teacherId"
+      LEFT JOIN "user_roles" ur ON ur."userId" = mp."teacherId"
+      LEFT JOIN "classes" c ON c."officialClassId" = mp."classLevel"
+      WHERE mp."tenantId" = $1 AND mp."academicYearId" = $2
+        AND mp."status" = 'SUBMITTED'
+      GROUP BY mp."classLevel", mp."month", mp."teacherId", mp."submittedAt", mp."teacherSignature",
+               u."firstName", u."lastName", ur."role", c."name"
+      ORDER BY mp."submittedAt" DESC
+    `, tenantId, academicYearId);
   }
 }

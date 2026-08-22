@@ -125,4 +125,70 @@ export class MonthlyPlanController {
   ) {
     return this.monthlyPlanService.updateCell(id, tenantId, body);
   }
+
+  /**
+   * ⭐ POST /pedagogy/monthly-plans/submit?academicYearId=Y&classLevel=CM2&month=Octobre&teacherId=T
+   *    body: { teacherSignature }
+   *    Soumet la planification mensuelle au directeur (workflow DRAFT → SUBMITTED).
+   *    La signature du titulaire est capturée à ce moment.
+   */
+  @Post('submit')
+  async submitPlan(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classLevel') classLevel: string,
+    @Query('month') month: string,
+    @Query('teacherId') teacherId: string,
+    @Body() body: { teacherSignature: string },
+  ) {
+    if (!academicYearId || !classLevel || !month || !teacherId) {
+      throw new BadRequestException('academicYearId, classLevel, month, teacherId requis (query params)');
+    }
+    if (!body.teacherSignature) {
+      throw new BadRequestException('teacherSignature requise (body)');
+    }
+    return this.monthlyPlanService.submitMonthlyPlan(
+      tenantId, academicYearId, classLevel, month, teacherId, body.teacherSignature
+    );
+  }
+
+  /**
+   * ⭐ POST /pedagogy/monthly-plans/validate?academicYearId=Y&classLevel=CM2&month=Octobre&teacherId=T
+   *    body: { action: 'VALIDATE' | 'REJECT', directorSignature?, directorObservation? }
+   *    Valide ou rejette la planification mensuelle (côté directeur).
+   */
+  @Post('validate')
+  async validatePlan(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classLevel') classLevel: string,
+    @Query('month') month: string,
+    @Query('teacherId') teacherId: string,
+    @Body() body: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string },
+  ) {
+    if (!academicYearId || !classLevel || !month || !teacherId) {
+      throw new BadRequestException('academicYearId, classLevel, month, teacherId requis (query params)');
+    }
+    if (!body.action || !['VALIDATE', 'REJECT'].includes(body.action)) {
+      throw new BadRequestException('action requis (VALIDATE ou REJECT)');
+    }
+    return this.monthlyPlanService.validateMonthlyPlan(
+      tenantId, academicYearId, classLevel, month, teacherId, body
+    );
+  }
+
+  /**
+   * ⭐ GET /pedagogy/monthly-plans/pending?academicYearId=Y
+   *    Liste les planifications mensuelles en attente de validation (côté directeur).
+   */
+  @Get('pending')
+  async getPendingPlans(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId requis');
+    }
+    return this.monthlyPlanService.getPendingMonthlyPlans(tenantId, academicYearId);
+  }
 }

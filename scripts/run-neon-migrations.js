@@ -83,12 +83,13 @@ async function runMigration(sqlFilePath) {
   }
 }
 
-// Run for both migrations: chat_messaging + annual_plans (if missing) + monthly_plans
+// Run for all migrations
 (async () => {
   const migrations = [
     '/home/z/my-project/apps/api-server/prisma/migrations/20260822200000_add_annual_plans/migration.sql',
     '/home/z/my-project/apps/api-server/prisma/migrations/20260823200000_add_monthly_plans/migration.sql',
     '/home/z/my-project/apps/api-server/prisma/migrations/20260823210000_add_chat_messaging/migration.sql',
+    '/home/z/my-project/apps/api-server/prisma/migrations/20260824000000_add_monthly_plans_status_signatures/migration.sql',
   ];
   for (const m of migrations) {
     if (fs.existsSync(m)) {

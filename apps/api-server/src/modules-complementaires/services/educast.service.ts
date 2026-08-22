@@ -624,4 +624,180 @@ export class EduCastService {
 
     return this.prisma.eduCastAnnouncement.update({ where: { id }, data: updateData });
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  PHASE 1: LIKES / FAVORITES + COMMENTS + PLAYLIST ITEMS + MODERATION
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ TOGGLE FAVORITE (like/unlike) — POST /educast/media/:id/favorite
+   */
+  async toggleFavorite(mediaItemId: string, userId: string) {
+    const existing = await this.prisma.eduCastFavorite.findUnique({
+      where: { userId_mediaItemId: { userId, mediaItemId } },
+    });
+    if (existing) {
+      await this.prisma.eduCastFavorite.delete({ where: { id: existing.id } });
+      // Decrement likeCount on media item
+      await this.prisma.eduCastMediaItem.update({
+        where: { id: mediaItemId },
+        data: { likeCount: { decrement: 1 } },
+      }).catch(() => {});
+      return { liked: false };
+    }
+    await this.prisma.eduCastFavorite.create({ data: { userId, mediaItemId } });
+    await this.prisma.eduCastMediaItem.update({
+      where: { id: mediaItemId },
+      data: { likeCount: { increment: 1 } },
+    }).catch(() => {});
+    return { liked: true };
+  }
+
+  /**
+   * ⭐ CHECK IF LIKED — GET /educast/media/:id/favorite-status?userId=X
+   */
+  async isFavorited(mediaItemId: string, userId: string) {
+    const fav = await this.prisma.eduCastFavorite.findUnique({
+      where: { userId_mediaItemId: { userId, mediaItemId } },
+    });
+    return { liked: !!fav };
+  }
+
+  /**
+   * ⭐ GET USER FAVORITES — GET /educast/favorites?userId=X
+   */
+  async getUserFavorites(userId: string, tenantId: string) {
+    return this.prisma.eduCastFavorite.findMany({
+      where: { userId, mediaItem: { tenantId } },
+      include: { mediaItem: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * ⭐ CREATE COMMENT — POST /educast/media/:id/comments
+   *    Uses EduCastEngagement with type='COMMENT' and content field.
+   */
+  async createComment(mediaItemId: string, userId: string, content: string) {
+    const comment = await this.prisma.eduCastEngagement.create({
+      data: { mediaItemId, userId, type: 'COMMENT', content },
+    });
+    // Increment commentCount on media item
+    await this.prisma.eduCastMediaItem.update({
+      where: { id: mediaItemId },
+      data: { commentCount: { increment: 1 } },
+    }).catch(() => {});
+    // Return with user info
+    const result = await this.prisma.eduCastEngagement.findUnique({
+      where: { id: comment.id },
+      include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+    });
+    return result;
+  }
+
+  /**
+   * ⭐ GET COMMENTS — GET /educast/media/:id/comments
+   */
+  async getComments(mediaItemId: string) {
+    return this.prisma.eduCastEngagement.findMany({
+      where: { mediaItemId, type: 'COMMENT' },
+      include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  /**
+   * ⭐ DELETE COMMENT — DELETE /educast/comments/:id
+   */
+  async deleteComment(commentId: string, userId: string) {
+    const comment = await this.prisma.eduCastEngagement.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Commentaire introuvable');
+    if (comment.userId !== userId) throw new ForbiddenException('Vous ne pouvez supprimer que vos propres commentaires');
+    await this.prisma.eduCastEngagement.delete({ where: { id: commentId } });
+    // Decrement commentCount
+    await this.prisma.eduCastMediaItem.update({
+      where: { id: comment.mediaItemId },
+      data: { commentCount: { decrement: 1 } },
+    }).catch(() => {});
+    return { success: true };
+  }
+
+  /**
+   * ⭐ ADD PLAYLIST ITEM — POST /educast/playlists/:id/items
+   */
+  async addPlaylistItem(playlistId: string, mediaItemId: string) {
+    const count = await this.prisma.eduCastPlaylistItem.count({ where: { playlistId } });
+    return this.prisma.eduCastPlaylistItem.create({
+      data: { playlistId, mediaItemId, order: count },
+    }).catch(() => {
+      // If unique constraint violation (already in playlist), ignore
+      return { success: true, alreadyExists: true };
+    });
+  }
+
+  /**
+   * ⭐ REMOVE PLAYLIST ITEM — DELETE /educast/playlists/:id/items/:mediaId
+   */
+  async removePlaylistItem(playlistId: string, mediaItemId: string) {
+    await this.prisma.eduCastPlaylistItem.deleteMany({ where: { playlistId, mediaItemId } });
+    return { success: true };
+  }
+
+  /**
+   * ⭐ GET PLAYLIST ITEMS — GET /educast/playlists/:id/items
+   */
+  async getPlaylistItems(playlistId: string) {
+    return this.prisma.eduCastPlaylistItem.findMany({
+      where: { playlistId },
+      include: { mediaItem: true },
+      orderBy: { order: 'asc' },
+    });
+  }
+
+  /**
+   * ⭐ MODERATE CONTENT — PATCH /educast/media/:id/moderate
+   *    status: 'PUBLISHED' (approve) | 'REJECTED' (reject)
+   */
+  async moderateContent(mediaItemId: string, tenantId: string, status: string, reason?: string) {
+    const item = await this.prisma.eduCastMediaItem.findFirst({ where: { id: mediaItemId, tenantId } });
+    if (!item) throw new NotFoundException('Contenu introuvable');
+    const updateData: any = { status };
+    if (reason) updateData.moderationNote = reason;
+    return this.prisma.eduCastMediaItem.update({ where: { id: mediaItemId }, data: updateData });
+  }
+
+  /**
+   * ⭐ GET STATS — extended to return all fields the frontend expects
+   */
+  async getEduCastStatsExtended(tenantId: string, academicYearId: string) {
+    const base = await this.getEduCastStats(tenantId, academicYearId);
+    // Add extended stats
+    const [recentContents, topChannels, totalSubscribers, totalLikes, totalComments] = await Promise.all([
+      this.prisma.eduCastMediaItem.findMany({
+        where: { tenantId, academicYearId, status: 'PUBLISHED' },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, title: true, type: true, thumbnailUrl: true, viewCount: true, createdAt: true, teacherChannel: { select: { id: true, channelName: true } } },
+      }),
+      this.prisma.eduCastTeacherChannel.findMany({
+        where: { tenantId },
+        take: 5,
+        orderBy: { subscriberCount: 'desc' },
+        select: { id: true, channelName: true, subscriberCount: true, avatarUrl: true },
+      }),
+      this.prisma.eduCastChannelSubscriber.count({ where: { tenantId } }),
+      this.prisma.eduCastMediaItem.aggregate({ where: { tenantId, academicYearId }, _sum: { likeCount: true } }),
+      this.prisma.eduCastMediaItem.aggregate({ where: { tenantId, academicYearId }, _sum: { commentCount: true } }),
+    ]);
+    return {
+      ...base,
+      recentContents,
+      topChannels,
+      totalSubscribers,
+      totalLikes: totalLikes._sum.likeCount || 0,
+      totalComments: totalComments._sum.commentCount || 0,
+      activeChannels: base.totalChannels,
+    };
+  }
 }

@@ -1852,6 +1852,80 @@ export class ModulesComplementairesController {
     return this.educastService.trackEngagement(id, user.id, data.type, data.durationSeen);
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  PHASE 1: LIKES + COMMENTS + PLAYLIST ITEMS + MODERATION
+  // ═════════════════════════════════════════════════════════════════
+
+  /** ⭐ POST /educast/media/:id/favorite — toggle like/unlike */
+  @Post('educast/media/:id/favorite')
+  async toggleEduCastFavorite(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.educastService.toggleFavorite(id, user.id);
+  }
+
+  /** ⭐ GET /educast/media/:id/favorite-status — check if user liked */
+  @Get('educast/media/:id/favorite-status')
+  async checkEduCastFavorite(@Param('id') id: string, @Query('userId') userId: string) {
+    return this.educastService.isFavorited(id, userId);
+  }
+
+  /** ⭐ GET /educast/favorites — list user's liked content */
+  @Get('educast/favorites')
+  async getEduCastFavorites(@TenantId() tenantId: string, @Query('userId') userId: string) {
+    return this.educastService.getUserFavorites(userId, tenantId);
+  }
+
+  /** ⭐ POST /educast/media/:id/comments — create a comment */
+  @Post('educast/media/:id/comments')
+  async createEduCastComment(@Param('id') id: string, @CurrentUser() user: any, @Body() data: { content: string }) {
+    return this.educastService.createComment(id, user.id, data.content);
+  }
+
+  /** ⭐ GET /educast/media/:id/comments — list comments */
+  @Get('educast/media/:id/comments')
+  async getEduCastComments(@Param('id') id: string) {
+    return this.educastService.getComments(id);
+  }
+
+  /** ⭐ DELETE /educast/comments/:id — delete own comment */
+  @Delete('educast/comments/:id')
+  async deleteEduCastComment(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.educastService.deleteComment(id, user.id);
+  }
+
+  /** ⭐ POST /educast/playlists/:id/items — add media to playlist */
+  @Post('educast/playlists/:id/items')
+  async addEduCastPlaylistItem(@Param('id') id: string, @Body() data: { mediaItemId: string }) {
+    return this.educastService.addPlaylistItem(id, data.mediaItemId);
+  }
+
+  /** ⭐ DELETE /educast/playlists/:id/items/:mediaId — remove from playlist */
+  @Delete('educast/playlists/:id/items/:mediaId')
+  async removeEduCastPlaylistItem(@Param('id') id: string, @Param('mediaId') mediaId: string) {
+    return this.educastService.removePlaylistItem(id, mediaId);
+  }
+
+  /** ⭐ GET /educast/playlists/:id/items — list playlist contents */
+  @Get('educast/playlists/:id/items')
+  async getEduCastPlaylistItems(@Param('id') id: string) {
+    return this.educastService.getPlaylistItems(id);
+  }
+
+  /** ⭐ PATCH /educast/media/:id/moderate — approve/reject content */
+  @Patch('educast/media/:id/moderate')
+  async moderateEduCastContent(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: { status: string; reason?: string },
+  ) {
+    return this.educastService.moderateContent(id, tenantId, data.status, data.reason);
+  }
+
+  /** ⭐ GET /educast/stats-extended — full stats with recentContents, topChannels, etc. */
+  @Get('educast/stats-extended')
+  async getEduCastStatsExtended(@TenantId() tenantId: string, @Query('academicYearId') academicYearId: string) {
+    return this.educastService.getEduCastStatsExtended(tenantId, academicYearId);
+  }
+
   // Content Packs
   @Get('educast/packs')
   async getEduCastPacks(@TenantId() tenantId: string, @Query('academicYearId') academicYearId: string) {

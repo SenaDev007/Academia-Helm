@@ -37,7 +37,7 @@ import {
   Home, Video, Headphones, Radio, Pill, ListMusic, Library,
   MonitorPlay, BarChart3, Zap, ShieldCheck, Search, Upload,
   Menu, X, Play, Eye, Clock, ChevronDown, Users, Film,
-  Plus, Settings, TrendingUp,
+  Plus, Settings, TrendingUp, Heart, MessageCircle, Share2, Send,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/contexts/AppSessionContext';
@@ -523,15 +523,93 @@ function WatchView({
   onBack: () => void;
   relatedContent: EduCastContent[];
 }) {
+  const { user } = useAppSession();
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
+
+  // ⭐ Load likes + comments on mount
+  useEffect(() => {
+    if (!content.id) return;
+    (async () => {
+      try {
+        // Check if liked
+        if (user?.id) {
+          const favRes = await fetch(`/api/modules-complementaires/educast/media/${content.id}/favorite-status?userId=${user.id}`, { credentials: 'include' });
+          if (favRes.ok) {
+            const favData = await favRes.json();
+            setLiked(favData.liked || false);
+          }
+        }
+        // Load comments
+        const cmtRes = await fetch(`/api/modules-complementaires/educast/media/${content.id}/comments`, { credentials: 'include' });
+        if (cmtRes.ok) {
+          const cmtData = await cmtRes.json();
+          setComments(Array.isArray(cmtData) ? cmtData : (cmtData?.data || []));
+        }
+        // Track view
+        await fetch(`/api/modules-complementaires/educast/media/${content.id}/engage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'VIEW' }),
+          credentials: 'include',
+        }).catch(() => {});
+      } catch {}
+    })();
+  }, [content.id, user?.id]);
+
+  const handleLike = async () => {
+    try {
+      const res = await fetch(`/api/modules-complementaires/educast/media/${content.id}/favorite`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setLiked(data.liked);
+      setLikeCount(prev => data.liked ? prev + 1 : Math.max(0, prev - 1));
+    } catch {}
+  };
+
+  const handlePostComment = async () => {
+    if (!newComment.trim() || !user?.id) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/modules-complementaires/educast/media/${content.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newComment.trim() }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to post comment');
+      const data = await res.json();
+      setComments(prev => [data, ...prev]);
+      setNewComment('');
+      toast.success('Commentaire publié');
+    } catch (e: any) {
+      toast.error('Échec: ' + e.message);
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const handleShare = () => {
+    const url = window.location.href.split('?')[0] + `?content=${content.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success('Lien copié dans le presse-papiers');
+    }).catch(() => {
+      toast.info(`Partagez: ${content.title}`);
+    });
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 p-4 sm:p-6 max-w-7xl mx-auto">
       {/* Main video area */}
       <div className="flex-1 min-w-0">
         {/* Back button */}
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-3"
-        >
+        <button onClick={onBack} className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-3">
           <ChevronDown className="w-4 h-4 rotate-90" /> Retour
         </button>
         {/* Player */}
@@ -546,14 +624,13 @@ function WatchView({
               </div>
             </div>
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-white text-sm">
-              Lecture non disponible
-            </div>
+            <div className="w-full h-full flex items-center justify-center text-white text-sm">Lecture non disponible</div>
           )}
         </div>
-        {/* Title + info */}
+        {/* Title */}
         <h1 className="text-lg font-bold text-slate-900 mt-3">{content.title}</h1>
-        <div className="flex items-center justify-between mt-2">
+        {/* Teacher info + action buttons (YouTube-style) */}
+        <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold', getAvatarColor(content.teacherName))}>
               {getInitials(content.teacherName)}
@@ -563,9 +640,31 @@ function WatchView({
               <p className="text-xs text-slate-500">{formatViews(content.views)} • {formatDate(content.createdAt)}</p>
             </div>
           </div>
+          {/* ⭐ Action buttons (like, comment, share — YouTube-style) */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleLike}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition',
+                liked ? 'bg-pink-100 text-pink-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              )}
+            >
+              <Heart className={cn('w-4 h-4', liked && 'fill-pink-600 text-pink-600')} />
+              {likeCount > 0 && <span>{likeCount}</span>}
+            </button>
+            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-full text-xs font-bold transition">
+              <MessageCircle className="w-4 h-4" />
+              {comments.length}
+            </button>
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-full text-xs font-bold transition"
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Partager</span>
+            </button>
             {content.subject && (
-              <span className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-semibold rounded-full">
+              <span className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-full">
                 {content.subject} {content.classLevel ? `• ${content.classLevel}` : ''}
               </span>
             )}
@@ -577,6 +676,79 @@ function WatchView({
             {content.description}
           </div>
         )}
+        {/* ⭐ COMMENTS SECTION (YouTube-style) */}
+        <div className="mt-6 space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <MessageCircle className="w-4 h-4" />
+            Commentaires ({comments.length})
+          </h3>
+          {/* Comment input */}
+          {user?.id && (
+            <div className="flex gap-3">
+              <div className={cn('w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold', getAvatarColor(`${user.firstName || ''} ${user.lastName || ''}`))}>
+                {getInitials(`${user.firstName || ''} ${user.lastName || ''}`)}
+              </div>
+              <div className="flex-1 space-y-2">
+                <textarea
+                  placeholder="Ajouter un commentaire..."
+                  className="w-full px-3 py-2 bg-transparent border-b border-slate-200 text-sm outline-none focus:border-pink-500 resize-none"
+                  rows={1}
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                />
+                {newComment.trim() && (
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setNewComment('')} className="px-3 py-1 text-xs text-slate-600 rounded-full hover:bg-slate-100">Annuler</button>
+                    <button
+                      onClick={handlePostComment}
+                      disabled={postingComment}
+                      className="px-3 py-1 bg-pink-600 text-white text-xs font-bold rounded-full hover:bg-pink-700 disabled:opacity-50"
+                    >
+                      {postingComment ? '...' : 'Commenter'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Comments list */}
+          {comments.length > 0 ? (
+            <div className="space-y-3">
+              {comments.map((cmt: any) => (
+                <div key={cmt.id} className="flex gap-3">
+                  <div className={cn('w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold', getAvatarColor(`${cmt.user?.firstName || ''} ${cmt.user?.lastName || ''}`))}>
+                    {getInitials(`${cmt.user?.firstName || ''} ${cmt.user?.lastName || ''}`)}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-900">
+                        {cmt.user?.firstName} {cmt.user?.lastName}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{formatDate(cmt.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-slate-700 mt-0.5">{cmt.content}</p>
+                  </div>
+                  {user?.id === cmt.userId && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`/api/modules-complementaires/educast/comments/${cmt.id}`, { method: 'DELETE', credentials: 'include' });
+                          setComments(prev => prev.filter((c: any) => c.id !== cmt.id));
+                          toast.success('Commentaire supprimé');
+                        } catch {}
+                      }}
+                      className="text-[10px] text-red-400 hover:text-red-600"
+                    >
+                      Supprimer
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">Aucun commentaire pour le moment</p>
+          )}
+        </div>
       </div>
 
       {/* Related content sidebar */}

@@ -135,27 +135,21 @@ export class MonthlyPlanService {
       return [];
     }
 
-    // 2. Déterminer le nombre de semaines pour ce mois
-    const MONTH_WEEKS: Record<string, number> = {
-      'Septembre': 2, 'Octobre': 5, 'Novembre': 4, 'Décembre': 1,
-      'Janvier': 4, 'Février': 4, 'Mars': 4, 'Avril': 4, 'Mai': 4, 'Juin': 4,
-    };
-    const numWeeks = MONTH_WEEKS[month] || 4;
+    // 2. ⭐ TOUJOURS 5 semaines (conforme au PDF officiel — Première à Cinquième Semaine)
+    const numWeeks = 5;
 
     // 3. Cas MATERNELLE — chaque (domain, subDomain, week) a son propre contenu
     if (classLevel === 'MATERNELLE_GRANDS') {
       const cells: MonthlyPlanCell[] = [];
       for (let weekNum = 1; weekNum <= numWeeks; weekNum++) {
-        // Les noms de semaines maternelle
         const WEEK_LABELS = ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine', '5ème semaine'];
         // Pour septembre, les semaines commencent à "3ème semaine"
         const weekLabel = month === 'Septembre'
-          ? (weekNum === 1 ? '3ème semaine' : '4ème semaine')
-          : (month === 'Décembre' ? 'Congés' : WEEK_LABELS[weekNum - 1]);
+          ? (weekNum === 1 ? '3ème semaine' : weekNum === 2 ? '4ème semaine' : WEEK_LABELS[weekNum - 1])
+          : (month === 'Décembre' && weekNum === 1 ? 'Congés' : WEEK_LABELS[weekNum - 1]);
 
         for (const plan of annualPlans) {
           if (plan.week !== weekLabel) continue;
-          // Parser le contenu pour détecter SA/U/D/séquence
           const parsed = this.parseActivityContent(plan.content);
           cells.push({
             weekNumber: weekNum,
@@ -174,31 +168,62 @@ export class MonthlyPlanService {
       return cells;
     }
 
-    // 4. Cas PRIMAIRE — étaler le contenu annuel sur les semaines du mois
-    //    Chaque matière (domain) a 1 entrée par mois. On la met dans la semaine 1
-    //    et on duplique sur les autres semaines (l'enseignant adaptera).
-    //    Alternative : on pourrait diviser en séquences, mais le contenu de
-    //    annual_plans contient déjà les références SA/U/D/séq.
+    // 4. ⭐ Cas PRIMAIRE (CI, CP, CE1, CE2, CM1, CM2) — mapping vers la nouvelle
+    //    structure des Champs de Formation (FRANÇAIS, MATH, EST, EA, ES, EPS, PETIT_PROJET)
+    //
+    //    Mapping des matières (annual_plans) → Champ de Formation (PDF officiel) :
+    //      - "Français"               → FRANÇAIS (subDomain "Lecture")
+    //      - "Mathématiques"          → MATH (subDomain "Arithmétique")
+    //      - "EST"                    → EST
+    //      - "Chant"                  → EA (subDomain "Chant")
+    //      - "Poésie"                 → EA (subDomain "Poésie")
+    //      - "Conte"                  → EA (subDomain "Contes")
+    //      - "Dessin"                 → EA (subDomain "Dessin")
+    //      - "Couture"                → EA (subDomain "Atelier")
+    //      - "Morale"                 → ES (subDomain "Morale")
+    //      - "Civisme"                → ES (subDomain "Civisme")
+    //      - "Histoire"               → ES (subDomain "Compétence 2 (Histoire)")
+    //      - "Géographie"             → ES (subDomain "Compétence 3 (Géographie)")
+    //      - "EPS"                    → EPS
+    const SUBJECT_TO_CHAMP: Record<string, { champ: string; subDomain: string }> = {
+      'Français':       { champ: 'FRANÇAIS', subDomain: 'Lecture' },
+      'Mathématiques':  { champ: 'MATH', subDomain: 'Arithmétique' },
+      'EST':            { champ: 'EST', subDomain: '' },
+      'Chant':          { champ: 'EA', subDomain: 'Chant' },
+      'Poésie':         { champ: 'EA', subDomain: 'Poésie' },
+      'Conte':          { champ: 'EA', subDomain: 'Contes' },
+      'Dessin':         { champ: 'EA', subDomain: 'Dessin' },
+      'Couture':        { champ: 'EA', subDomain: 'Atelier' },
+      'Morale':         { champ: 'ES', subDomain: 'Morale' },
+      'Civisme':        { champ: 'ES', subDomain: 'Civisme' },
+      'Histoire':       { champ: 'ES', subDomain: 'Compétence 2 (Histoire)' },
+      'Géographie':     { champ: 'ES', subDomain: 'Compétence 3 (Géographie)' },
+      'EPS':            { champ: 'EPS', subDomain: '' },
+    };
+
     const cells: MonthlyPlanCell[] = [];
-    const domainsSet = new Map<string, any[]>(); // domain → list of plans
+    // Grouper les plans par matière (annual_plans a 1 entrée par matière par mois)
+    const plansBySubject = new Map<string, any>();
     for (const plan of annualPlans) {
-      const key = plan.domain;
-      if (!domainsSet.has(key)) domainsSet.set(key, []);
-      domainsSet.get(key)!.push(plan);
+      // Pour le primaire, annual_plans stocke "Toutes" comme week — on l'utilise
+      if (!plansBySubject.has(plan.domain)) {
+        plansBySubject.set(plan.domain, plan);
+      }
     }
 
+    // Pour chaque semaine (1 à 5), on propose le contenu de annual_plans
     for (let weekNum = 1; weekNum <= numWeeks; weekNum++) {
-      for (const [domain, plansList] of domainsSet.entries()) {
-        // Le primaire n'a qu'1 entrée par (domain, month) — on l'utilise
-        const plan = plansList[0];
+      for (const [subject, plan] of plansBySubject.entries()) {
+        const mapping = SUBJECT_TO_CHAMP[subject];
+        if (!mapping) continue;  // Skip unknown subjects
         const parsed = this.parseActivityContent(plan.content);
         cells.push({
           weekNumber: weekNum,
-          domain: plan.domain,
-          subDomain: plan.subDomain || undefined,
+          domain: mapping.champ,
+          subDomain: mapping.subDomain || undefined,
           activityType: parsed.type,
           activityNumber: parsed.number,
-          sequenceNumber: weekNum === 1 ? 1 : null, // semaine 1 = séquence 1
+          sequenceNumber: null,
           content: plan.content,
           isAutoProposed: true,
           isCustom: false,

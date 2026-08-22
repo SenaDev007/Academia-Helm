@@ -224,6 +224,20 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     ],
   },
   {
+    id: 'annual-planning',
+    label: 'Planification annuelle',
+    path: '/app/pedagogy/annual-planning',
+    icon: ClipboardList,
+    roles: [
+      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+      'director', 'admin', 'TEACHER', 'TEACHER_RESP',
+      'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
+      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
+    ],
+  },
+  {
     id: 'pedagogical-materials',
     label: 'Matériel Pédagogique',
     path: '/app/pedagogy/pedagogical-materials',

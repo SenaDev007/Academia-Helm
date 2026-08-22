@@ -57,6 +57,7 @@ export default function TeacherDashboardPage() {
 
   const modules = [
     { href: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Consulter votre emploi du temps", color: "bg-purple-50 text-purple-700 border-purple-200" },
+    { href: "/app/teacher/annual-planning", label: "Planification annuelle", icon: ClipboardList, desc: "Planification pédagogique officielle de chaque niveau (CI à CM2 + Maternelle)", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
     { href: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", color: "bg-blue-50 text-blue-700 border-blue-200" },
     { href: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées, suivi pédagogique", color: "bg-amber-50 text-amber-700 border-amber-200" },
     { href: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations, saisie des notes, bulletins", color: "bg-rose-50 text-rose-700 border-rose-200" },

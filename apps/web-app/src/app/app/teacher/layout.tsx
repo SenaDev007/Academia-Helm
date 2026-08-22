@@ -40,6 +40,7 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
   { path: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Mon emploi du temps" },
+  { path: "/app/teacher/annual-planning", label: "Planification annuelle", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)" },
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs" },
   { path: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées et suivi" },
   { path: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations et saisie de notes" },

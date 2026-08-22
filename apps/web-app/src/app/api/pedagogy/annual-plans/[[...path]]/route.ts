@@ -27,6 +27,23 @@ export async function GET(
   if (!response.ok) {
     return NextResponse.json({ error: 'Failed to fetch annual plans' }, { status: response.status });
   }
+
+  // ⭐ Si la réponse est un PDF (binary), streamer tel quel au lieu de parser en JSON
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/pdf')) {
+    const pdfBuffer = await response.arrayBuffer();
+    const filename = `planification_${pathStr || 'export'}.pdf`;
+    return new NextResponse(pdfBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(pdfBuffer.byteLength),
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   return NextResponse.json(await response.json());
 }
 

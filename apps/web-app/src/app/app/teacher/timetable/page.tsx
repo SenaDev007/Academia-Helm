@@ -18,39 +18,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import {
-  CalendarDays, Clock, Loader2, RefreshCw, BookOpen,
-  Users, AlertCircle, Coffee,
+  CalendarDays, Loader2, RefreshCw, AlertCircle,
 } from "lucide-react";
-import { formatWeeklyDuration } from "@/lib/utils/duration";
-
-const DAYS = [
-  { id: 1, label: "LUNDI" },
-  { id: 2, label: "MARDI" },
-  { id: 3, label: "MERCREDI" },
-  { id: 4, label: "JEUDI" },
-  { id: 5, label: "VENDREDI" },
-  { id: 6, label: "SAMEDI" },
-];
-
-const SUBJECT_COLORS = [
-  "bg-blue-50 text-blue-700 border-blue-200",
-  "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "bg-amber-50 text-amber-700 border-amber-200",
-  "bg-rose-50 text-rose-700 border-rose-200",
-  "bg-indigo-50 text-indigo-700 border-indigo-200",
-  "bg-purple-50 text-purple-700 border-purple-200",
-  "bg-cyan-50 text-cyan-700 border-cyan-200",
-];
-
-function getSubjectColor(idx: number): string {
-  return SUBJECT_COLORS[idx % SUBJECT_COLORS.length];
-}
-
-function isBreak(subjectName: string | null | undefined): boolean {
-  if (!subjectName) return false;
-  const n = subjectName.toLowerCase();
-  return n.includes("récréation") || n.includes("recreation") || n.includes("pause") || n.includes("cérémonie");
-}
+import TimetableView from "@/components/pedagogy/timetables/TimetableView";
 
 interface TimetableEntry {
   id: string;
@@ -69,6 +39,8 @@ interface TimetableEntry {
   roomName?: string;
   notes?: string;
   step?: string;
+  // ⭐ Référence au timetable parent (pour passer schoolLevelId + academicYearId à TimetableView)
+  timetable?: { id: string; schoolLevelId: string; academicYearId: string; name?: string };
 }
 
 export default function TeacherTimetablePage() {
@@ -191,6 +163,15 @@ export default function TeacherTimetablePage() {
             const isGlobal = !e.classId; // pas de classe = entry globale
             const belongsToTeacher = isGlobal || (entryOfficialClassId && teacherOfficialClassIds.has(entryOfficialClassId));
             if (!belongsToTeacher) continue;
+            // ⭐ On attache le timetable parent à chaque entry pour que TimetableView
+            //    puisse récupérer la config (schoolLevelId + academicYearId) et afficher
+            //    la grille complète (jours + créneaux) — pas une simple liste par jour.
+            const ttMeta = {
+              id: t.id,
+              schoolLevelId: t.schoolLevelId,
+              academicYearId: t.academicYearId,
+              name: t.name,
+            };
             allEntries.push({
               id: e.id,
               dayOfWeek: e.dayOfWeek,
@@ -205,8 +186,10 @@ export default function TeacherTimetablePage() {
               officialClassId: entryOfficialClassId,
               className: e.class?.name,
               roomName: e.room?.name,
+              teacherName: e.teacher ? `${e.teacher.firstName || ""} ${e.teacher.lastName || ""}`.trim() : undefined,
               notes: e.notes,
               step: e.step,
+              timetable: ttMeta,
             });
           }
         } catch (e) {
@@ -245,31 +228,6 @@ export default function TeacherTimetablePage() {
       setEntries(allTeacherEntries);
     }
   }, [selectedClassId, allTeacherEntries]);
-
-  // Grouper par jour
-  const byDay: Record<number, TimetableEntry[]> = {};
-  for (const e of entries) {
-    const day = e.dayOfWeek || 0;
-    if (!byDay[day]) byDay[day] = [];
-    byDay[day].push(e);
-  }
-
-  // Collecter tous les créneaux horaires uniques (pour colonne dynamique)
-  const allTimeSlots = new Set<string>();
-  for (const e of entries) {
-    allTimeSlots.add(e.startTime);
-    allTimeSlots.add(e.endTime);
-  }
-  const sortedTimes = Array.from(allTimeSlots).sort();
-
-  // Map subject → color index
-  const subjectColorMap: Record<string, number> = {};
-  let colorIdx = 0;
-  for (const e of entries) {
-    if (e.subjectId && !(e.subjectId in subjectColorMap)) {
-      subjectColorMap[e.subjectId] = colorIdx++;
-    }
-  }
 
   if (loading) {
     return (
@@ -337,82 +295,19 @@ export default function TeacherTimetablePage() {
         </div>
       ) : (
         <>
-          {/* Vue par jour (cards verticaux) */}
-          <div className="space-y-4">
-            {DAYS.map((day) => {
-              const dayEntries = byDay[day.id] || [];
-              if (dayEntries.length === 0) return null;
-              return (
-                <div key={day.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  {/* En-tête du jour */}
-                  <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
-                    <span className="font-bold text-sm text-purple-900">{day.label}</span>
-                    <span className="text-xs text-purple-600">{dayEntries.length} créneau(x)</span>
-                  </div>
-                  {/* Liste des créneaux */}
-                  <div className="divide-y divide-slate-100">
-                    {dayEntries.map((e, idx) => {
-                      const isBreakEntry = isBreak(e.subjectName);
-                      const colorClass = isBreakEntry
-                        ? "bg-slate-50 border-slate-200 text-slate-600"
-                        : getSubjectColor(subjectColorMap[e.subjectId || ""] || 0);
-                      return (
-                        <div key={e.id || idx} className={`flex items-stretch border-l-4 ${isBreakEntry ? "border-slate-300" : "border-purple-400"}`}>
-                          {/* Colonne horaire dynamique */}
-                          <div className="w-24 flex-shrink-0 flex flex-col items-center justify-center px-3 py-3 bg-slate-50/50 border-r border-slate-100">
-                            <span className="text-sm font-bold text-slate-900">{e.startTime}</span>
-                            <span className="text-[10px] text-slate-400">{e.endTime}</span>
-                            {e.duration && (
-                              <span className="text-[9px] text-slate-400 mt-0.5">
-                                {formatWeeklyDuration(e.duration)}
-                              </span>
-                            )}
-                          </div>
-                          {/* Contenu du créneau */}
-                          <div className="flex-1 px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {isBreakEntry ? (
-                                <Coffee className="h-5 w-5 text-slate-400" />
-                              ) : (
-                                <BookOpen className="h-5 w-5 text-purple-600" />
-                              )}
-                              <div>
-                                <p className={`text-sm font-bold ${isBreakEntry ? "text-slate-600" : "text-slate-900"}`}>
-                                  {e.subjectName || "Créneau"}
-                                  {e.step && !isBreakEntry && (
-                                    <span className="text-[10px] font-semibold text-slate-500 ml-1">· {e.step}</span>
-                                  )}
-                                </p>
-                                {e.subjectCode && !isBreakEntry && (
-                                  <p className="text-[10px] text-slate-400">[{e.subjectCode}]</p>
-                                )}
-                                <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500">
-                                  {e.className && (
-                                    <span className="flex items-center gap-1">
-                                      <Users className="h-3 w-3" />
-                                      {e.className}
-                                    </span>
-                                  )}
-                                  {e.roomName && (
-                                    <span className="flex items-center gap-1">
-                                      <span className="text-slate-400">Salle:</span> {e.roomName}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${colorClass}`}>
-                              {isBreakEntry ? "PAUSE" : "COURS"}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {/* ⭐ Grille d'emploi du temps IDENTIQUE au director UI (TimetablesWorkspace).
+              On prend le timetable de la première entry (toutes les entries du teacher
+              viennent du même EDT pour une classe donnée — le filter selectedClassId
+              garantit qu'on n'a qu'un seul timetable dans le lot). */}
+          {(() => {
+            // ⭐ Trouver le timetable pertinent pour la classe sélectionnée
+            //    Si une classe est sélectionnée → entries filtrées par cette classe →
+            //    toutes viennent du même timetable (celui de la classe).
+            //    Si pas de classe sélectionnée → on prend le 1er timetable trouvé.
+            const tt = entries.find(e => e.timetable)?.timetable;
+            if (!tt) return null;
+            return <TimetableView entries={entries} timetable={tt} />;
+          })()}
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
             <strong>Note :</strong> L'emploi du temps est configuré par la direction de l'école.

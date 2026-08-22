@@ -30,16 +30,20 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { ChatService } from './services/chat.service';
-import * as multer from 'multer';
+// ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
+//    a CommonJS interop crash at runtime ("_multer is not a function")
+//    because multer's `module.exports` is a FUNCTION (not an object with named exports).
+//    Instead, we import only the named exports we need (`memoryStorage`) and pass
+//    the options INLINE to FileInterceptor below.
 import { memoryStorage } from 'multer';
 
-// ⭐ Configuration Multer pour les fichiers joints (audio, documents, images)
-//    - Limite : 50 MB (les fichiers audio peuvent être volumineux)
-//    - Stockage : mémoire (le StorageService gère l'upload vers R2/S3)
-const multerUpload = multer({
+// ⭐ Multer options — passed inline to FileInterceptor('file', options)
+//    - Storage: memory (the StorageService uploads to R2/S3 afterwards)
+//    - Limit: 50 MB (audio files can be large)
+const CHAT_FILE_UPLOAD_OPTIONS = {
   storage: memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
-});
+};
 
 @Controller('chat')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -121,7 +125,7 @@ export class ChatController {
   }
 
   @Post('conversations/:id/messages/attachment')
-  @UseInterceptors(FileInterceptor('file', multerUpload))
+  @UseInterceptors(FileInterceptor('file', CHAT_FILE_UPLOAD_OPTIONS))
   async sendAttachmentMessage(
     @TenantId() tenantId: string,
     @Param('id') conversationId: string,

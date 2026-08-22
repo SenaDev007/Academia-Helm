@@ -38,11 +38,13 @@ import {
   MonitorPlay, BarChart3, Zap, ShieldCheck, Search, Upload,
   Menu, X, Play, Eye, Clock, ChevronDown, Users, Film,
   Plus, Settings, TrendingUp, Heart, MessageCircle, Share2, Send,
+  CheckCircle2, XCircle, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from 'sonner';
+import { useToast } from '@/components/ui/use-toast';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -84,6 +86,8 @@ interface TeacherInfo {
 
 const SIDEBAR_ITEMS = [
   { id: 'home', label: 'Accueil', icon: Home },
+  { id: 'subscriptions', label: 'Abonnements', icon: Users },
+  { id: 'watchlater', label: 'À voir plus tard', icon: Clock },
   { id: 'videos', label: 'Vidéos', icon: Video },
   { id: 'podcasts', label: 'Podcasts', icon: Headphones },
   { id: 'webinars', label: 'Webinaires', icon: Radio },
@@ -339,6 +343,18 @@ export default function EduCastModulePage() {
               onBack={() => setSelectedContent(null)}
               relatedContent={contents.filter(c => c.id !== selectedContent.id && c.type === selectedContent.type).slice(0, 5)}
             />
+          ) : activeView === 'moderation' ? (
+            <ModerationView academicYearId={academicYear?.id || ''} onContentChange={loadContent} />
+          ) : activeView === 'watchlater' ? (
+            <WatchLaterView currentUserId={user?.id || ''} onContentClick={setSelectedContent} />
+          ) : activeView === 'subscriptions' ? (
+            <SubscriptionsView currentUserId={user?.id || ''} academicYearId={academicYear?.id || ''} onContentClick={setSelectedContent} />
+          ) : activeView === 'analytics' ? (
+            <AnalyticsView academicYearId={academicYear?.id || ''} />
+          ) : activeView === 'monetization' ? (
+            <MonetizationView currentUserId={user?.id || ''} />
+          ) : activeView === 'settings' ? (
+            <SettingsView />
           ) : (
             /* Feed view (grid of content cards) */
             <FeedView
@@ -921,6 +937,386 @@ function UploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded:
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2: MODERATION VIEW — Approve/reject pending content
+// ═════════════════════════════════════════════════════════════════
+
+function ModerationView({ academicYearId, onContentChange }: { academicYearId: string; onContentChange: () => void }) {
+  const [pending, setPending] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}&status=pending`, { credentials: 'include' });
+      if (res.ok) { const d = await res.json(); setPending(d?.data || d || []); }
+    } catch {} finally { setLoading(false); }
+  }, [academicYearId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const moderate = async (id: string, status: string) => {
+    try {
+      await fetch(`/api/modules-complementaires/educast/media/${id}/moderate`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }), credentials: 'include',
+      });
+      setPending(prev => prev.filter((p: any) => p.id !== id));
+      onContentChange();
+    } catch {}
+  };
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  return (
+    <div className="p-6 space-y-4">
+      <h2 className="text-lg font-bold text-slate-900">File de modération ({pending.length})</h2>
+      {pending.length === 0 ? (
+        <div className="text-center py-12"><ShieldCheck className="w-12 h-12 text-slate-300 mx-auto mb-2" /><p className="text-sm text-slate-500">Aucun contenu en attente</p></div>
+      ) : (
+        <div className="space-y-3">
+          {pending.map((item: any) => (
+            <div key={item.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center"><Film className="w-5 h-5 text-slate-400" /></div>
+                <div><p className="text-sm font-bold text-slate-900">{item.title}</p><p className="text-xs text-slate-500">{item.type} • {item.teacherFirstName || ''} {item.teacherLastName || ''}</p></div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => moderate(item.id, 'REJECTED')} className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-bold rounded-lg hover:bg-red-200"><XCircle className="w-3.5 h-3.5 inline mr-1" />Rejeter</button>
+                <button onClick={() => moderate(item.id, 'PUBLISHED')} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700"><CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />Approuver</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2: WATCH LATER VIEW — User's liked/saved content
+// ═════════════════════════════════════════════════════════════════
+
+function WatchLaterView({ currentUserId, onContentClick }: { currentUserId: string; onContentClick: (c: EduCastContent) => void }) {
+  const [favorites, setFavorites] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/favorites?userId=${currentUserId}`, { credentials: 'include' });
+        if (res.ok) { const d = await res.json(); setFavorites(d?.data || d || []); }
+      } catch {} finally { setLoading(false); }
+    })();
+  }, [currentUserId]);
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  return (
+    <div className="p-6">
+      <h2 className="text-lg font-bold text-slate-900 mb-4">À voir plus tard ({favorites.length})</h2>
+      {favorites.length === 0 ? (
+        <div className="text-center py-12"><Clock className="w-12 h-12 text-slate-300 mx-auto mb-2" /><p className="text-sm text-slate-500">Aucun contenu sauvegardé. Cliquez sur le cœur d'une vidéo pour l'ajouter ici.</p></div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {favorites.map((fav: any) => {
+            const content: EduCastContent = {
+              id: fav.mediaItem?.id || fav.id, title: fav.mediaItem?.title || '', type: fav.mediaItem?.type || 'VIDEO',
+              thumbnailUrl: fav.mediaItem?.thumbnailUrl, videoUrl: fav.mediaItem?.fileUrl, views: fav.mediaItem?.viewCount || 0,
+              teacherId: '', teacherName: fav.mediaItem?.teacherFirstName || 'Enseignant', createdAt: fav.createdAt,
+              isPublished: true,
+            };
+            return <ContentCard key={fav.id} content={content} onClick={() => onContentClick(content)} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2: SUBSCRIPTIONS VIEW — Latest from subscribed channels
+// ═════════════════════════════════════════════════════════════════
+
+function SubscriptionsView({ currentUserId, academicYearId, onContentClick }: { currentUserId: string; academicYearId: string; onContentClick: (c: EduCastContent) => void }) {
+  const [feed, setFeed] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Load all content, then the frontend filters to only show content from subscribed channels
+        const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}`, { credentials: 'include' });
+        if (res.ok) {
+          const d = await res.json();
+          const all = d?.data || d || [];
+          // TODO: Filter by subscribed channels (need subscriptions API)
+          // For now, show all content sorted by date (most recent first)
+          setFeed(all.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        }
+      } catch {} finally { setLoading(false); }
+    })();
+  }, [currentUserId, academicYearId]);
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  return (
+    <div className="p-6">
+      <h2 className="text-lg font-bold text-slate-900 mb-4">Abonnements</h2>
+      {feed.length === 0 ? (
+        <div className="text-center py-12"><Users className="w-12 h-12 text-slate-300 mx-auto mb-2" /><p className="text-sm text-slate-500">Aucun contenu de vos abonnements. Abonnez-vous à des chaînes enseignants pour voir leurs dernières vidéos ici.</p></div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {feed.map((item: any) => {
+            const content: EduCastContent = {
+              id: item.id, title: item.title || '', type: item.type || 'VIDEO',
+              thumbnailUrl: item.thumbnailUrl, videoUrl: item.fileUrl, views: item.viewCount || 0,
+              teacherId: item.teacherId || '', teacherName: `${item.teacherFirstName || ''} ${item.teacherLastName || ''}`.trim() || 'Enseignant',
+              createdAt: item.createdAt, subject: item.subject, classLevel: item.classLevel, isPublished: true,
+            };
+            return <ContentCard key={item.id} content={content} onClick={() => onContentClick(content)} />;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 3: ANALYTICS VIEW — Enhanced stats with charts
+// ═════════════════════════════════════════════════════════════════
+
+function AnalyticsView({ academicYearId }: { academicYearId: string }) {
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/stats-extended?academicYearId=${academicYearId}`, { credentials: 'include' });
+        if (res.ok) setStats(await res.json());
+      } catch {} finally { setLoading(false); }
+    })();
+  }, [academicYearId]);
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  const kpis = [
+    { label: 'Vues totales', value: stats?.totalViews || 0, icon: Eye, color: 'bg-blue-50 text-blue-700' },
+    { label: 'Contenus', value: stats?.totalContents || 0, icon: Film, color: 'bg-purple-50 text-purple-700' },
+    { label: 'Canaux actifs', value: stats?.activeChannels || stats?.totalChannels || 0, icon: Users, color: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Abonnés', value: stats?.totalSubscribers || 0, icon: Users, color: 'bg-amber-50 text-amber-700' },
+    { label: 'Likes', value: stats?.totalLikes || 0, icon: Heart, color: 'bg-pink-50 text-pink-700' },
+    { label: 'Commentaires', value: stats?.totalComments || 0, icon: MessageCircle, color: 'bg-indigo-50 text-indigo-700' },
+  ];
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-slate-900">Statistiques EduCast</h2>
+        <button onClick={() => { const csv = kpis.map(k => `${k.label},${k.value}`).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'educast-stats.csv'; a.click(); }} className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200"><Download className="w-3.5 h-3.5 inline mr-1" />Export CSV</button>
+      </div>
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {kpis.map(kpi => {
+          const Icon = kpi.icon;
+          return (
+            <div key={kpi.label} className={cn('rounded-xl p-3', kpi.color)}>
+              <Icon className="w-4 h-4 mb-1" />
+              <div className="text-2xl font-bold">{kpi.value}</div>
+              <div className="text-[10px] opacity-80">{kpi.label}</div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Top channels */}
+      {stats?.topChannels && stats.topChannels.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-700 mb-2">Top canaux</h3>
+          <div className="space-y-2">
+            {stats.topChannels.map((ch: any, i: number) => (
+              <div key={ch.id} className="flex items-center gap-3 bg-white rounded-lg p-3">
+                <span className="text-sm font-bold text-slate-400">#{i + 1}</span>
+                <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold', getAvatarColor(ch.channelName || 'C'))}>{getInitials(ch.channelName || 'C')}</div>
+                <div className="flex-1"><p className="text-sm font-bold text-slate-900">{ch.channelName}</p><p className="text-xs text-slate-500">{ch.subscriberCount || 0} abonnés</p></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Recent content */}
+      {stats?.recentContents && stats.recentContents.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-700 mb-2">Contenus récents</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {stats.recentContents.map((c: any) => (
+              <div key={c.id} className="bg-white rounded-lg overflow-hidden border border-slate-100">
+                <div className="aspect-video bg-slate-200 flex items-center justify-center"><Film className="w-6 h-6 text-slate-400" /></div>
+                <div className="p-2"><p className="text-xs font-bold text-slate-900 line-clamp-2">{c.title}</p><p className="text-[10px] text-slate-500 mt-0.5">{c.viewCount || 0} vues</p></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 3: MONETIZATION VIEW — Earnings + CSV export
+// ═════════════════════════════════════════════════════════════════
+
+function MonetizationView({ currentUserId }: { currentUserId: string }) {
+  const [earnings, setEarnings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/teacher-earnings?userId=${currentUserId}`, { credentials: 'include' });
+        if (res.ok) setEarnings(await res.json());
+      } catch {} finally { setLoading(false); }
+    })();
+  }, [currentUserId]);
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  const kpis = [
+    { label: 'Revenus totaux', value: `${(earnings?.totalEarned || 0).toLocaleString('fr-FR')} F CFA`, color: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Commission école', value: `${(earnings?.totalCommission || 0).toLocaleString('fr-FR')} F CFA`, color: 'bg-red-50 text-red-700' },
+    { label: 'Solde disponible', value: `${(earnings?.balance || 0).toLocaleString('fr-FR')} F CFA`, color: 'bg-blue-50 text-blue-700' },
+  ];
+
+  const payouts = earnings?.payouts || [];
+
+  const exportCSV = () => {
+    const rows = ['Date,Montant,Statut', ...payouts.map((p: any) => `${new Date(p.createdAt).toLocaleDateString('fr-FR')},${p.amount},${p.status}`)];
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'educast-earnings.csv'; a.click();
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-slate-900">Monétisation</h2>
+        <button onClick={exportCSV} className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200"><Download className="w-3.5 h-3.5 inline mr-1" />Export CSV</button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {kpis.map(kpi => (
+          <div key={kpi.label} className={cn('rounded-xl p-4', kpi.color)}>
+            <div className="text-xs opacity-80 mb-1">{kpi.label}</div>
+            <div className="text-2xl font-bold">{kpi.value}</div>
+          </div>
+        ))}
+      </div>
+      {payouts.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-slate-700 mb-2">Historique des paiements</h3>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3 text-left">Date</th><th className="p-3 text-right">Montant</th><th className="p-3 text-center">Statut</th></tr></thead>
+              <tbody>
+                {payouts.map((p: any) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="p-3">{new Date(p.createdAt).toLocaleDateString('fr-FR')}</td>
+                    <td className="p-3 text-right font-bold">{(p.amount || 0).toLocaleString('fr-FR')} F CFA</td>
+                    <td className="p-3 text-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold', p.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>{p.status === 'PAID' ? 'Payé' : 'En attente'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2: SETTINGS VIEW
+// ═════════════════════════════════════════════════════════════════
+
+function SettingsView() {
+  const [settings, setSettings] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/settings`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          // Convert array of {key, value} to object
+          const obj: any = {};
+          for (const item of (Array.isArray(data) ? data : (data?.data || []))) {
+            obj[item.key] = item.value;
+          }
+          setSettings(obj);
+        }
+      } catch {} finally { setLoading(false); }
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Save each key individually (backend expects {key, value} per call)
+      for (const [key, value] of Object.entries(settings)) {
+        await fetch(`/api/modules-complementaires/educast/settings`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, value: String(value) }), credentials: 'include',
+        });
+      }
+      toast.success('Configuration enregistrée');
+    } catch { toast.error('Échec de l\'enregistrement'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>;
+
+  const fields = [
+    { key: 'mandatoryModeration', label: 'Modération obligatoire', type: 'toggle' },
+    { key: 'publishNotifications', label: 'Notifications de publication', type: 'toggle' },
+    { key: 'maxVideoQuality', label: 'Qualité vidéo max', type: 'text' },
+    { key: 'maxCapsuleDuration', label: 'Durée capsule max (min)', type: 'number' },
+    { key: 'teacherQuotaGB', label: 'Quota enseignant (GB)', type: 'number' },
+    { key: 'autoArchiveMonths', label: 'Archivage auto (mois)', type: 'number' },
+    { key: 'schoolCommissionPct', label: 'Commission école (%)', type: 'number' },
+    { key: 'maxVideoPrice', label: 'Prix vidéo max (F CFA)', type: 'number' },
+  ];
+
+  return (
+    <div className="p-6 max-w-2xl space-y-4">
+      <h2 className="text-lg font-bold text-slate-900">Configuration EduCast</h2>
+      <div className="space-y-3">
+        {fields.map(field => (
+          <div key={field.key} className="flex items-center justify-between bg-white rounded-lg p-3 border border-slate-100">
+            <span className="text-sm font-medium text-slate-700">{field.label}</span>
+            {field.type === 'toggle' ? (
+              <button
+                onClick={() => setSettings(prev => ({ ...prev, [field.key]: !prev[field.key] }))}
+                className={cn('w-12 h-6 rounded-full transition', settings[field.key] ? 'bg-emerald-500' : 'bg-slate-300')}
+              >
+                <span className={cn('block w-5 h-5 bg-white rounded-full transition-transform', settings[field.key] ? 'translate-x-6' : 'translate-x-0.5')} />
+              </button>
+            ) : (
+              <input
+                type={field.type}
+                value={settings[field.key] || ''}
+                onChange={e => setSettings(prev => ({ ...prev, [field.key]: e.target.value }))}
+                className="w-32 px-2 py-1 border border-slate-200 rounded text-sm text-right"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-pink-600 text-white text-sm font-bold rounded-lg hover:bg-pink-700 disabled:opacity-50">{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
     </div>
   );
 }

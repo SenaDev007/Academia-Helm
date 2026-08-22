@@ -429,11 +429,11 @@ const PRIMAIRE_CLASS_DATA: Record<string, ClassData> = {
 //  Le contenu exact sera enrichi dans une itération suivante
 // ═══════════════════════════════════════════════════════════════════
 const MATERNELLE_DOMAINS = [
-  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'I', subDomains: ['Education pour la santé', 'Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'II', subDomains: ['Expression corporelle'] },
+  { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Comptine', 'Communication orale'] },
 ];
 
 const MATERNELLE_WEEKS = [
@@ -1027,7 +1027,15 @@ function generateMaternelleSeed(): AnnualPlanSeedItem[] {
   for (const dom of MATERNELLE_DOMAINS) {
     for (const sub of dom.subDomains) {
       for (const w of MATERNELLE_WEEKS) {
-        const content = (w as any).data?.[sub] || '—';
+        // ⭐ "Education pour la santé" sub-domain is a general header row for Domaine I.
+        //    Its content is the same as "Passage aux toilettes" (a related activity)
+        //    since the seed data doesn't have specific content for this row.
+        let content: string;
+        if (sub === 'Education pour la santé') {
+          content = (w as any).data?.['Passage aux toilettes'] || '—';
+        } else {
+          content = (w as any).data?.[sub] || '—';
+        }
         items.push({
           classLevel: 'MATERNELLE_GRANDS',
           trimester: w.trimester,

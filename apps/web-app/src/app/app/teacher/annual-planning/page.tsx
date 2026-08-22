@@ -50,12 +50,14 @@ const PRIMAIRE_ROWS = [
 ];
 
 // ⭐ Domaines SANS préfixe (doivent matcher le seed data)
+// Structure conforme au document officiel : 5 grands domaines (I-V),
+// chacun contenant des "périodes d'activités" (sous-domaines).
 const MATERNELLE_DOMAINS = [
-  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'I', subDomains: ['Education pour la santé', 'Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'II', subDomains: ['Expression corporelle'] },
+  { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Comptine', 'Communication orale'] },
 ];
 
 // ⭐ Mois maternelle en ordre (pour pagination)
@@ -258,49 +260,56 @@ function TeacherAnnualPlanningContent() {
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
             <table className="text-xs border-collapse w-full table-fixed">
               <colgroup>
-                <col style={{ width: '18%' }} />
-                <col style={{ width: '14%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '22%' }} />
                 {currentWeeks.map((wk, i) => (
                   <col key={i} style={{ width: `${68 / Math.max(currentWeeks.length, 1)}%` }} />
                 ))}
               </colgroup>
               <thead>
                 <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
-                  <th className="p-2 border border-blue-300 text-left">Domaines</th>
-                  <th className="p-2 border border-blue-300 text-left">Sous-domaine</th>
+                  <th className="p-2 border border-blue-300 text-center">Domaine</th>
+                  <th className="p-2 border border-blue-300 text-left">Période d'activité</th>
                   {currentWeeks.map(wk => (
                     <th key={wk} className="p-2 border border-blue-300 text-center">{wk}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {MATERNELLE_DOMAINS.map(dom => (
-                  <React.Fragment key={dom.domain}>
-                    <tr className="bg-slate-100">
-                      <td colSpan={2 + currentWeeks.length} className="p-2 font-bold text-slate-700 border border-slate-300">
-                        {dom.domain}
+                {MATERNELLE_DOMAINS.map(dom => {
+                  // ⭐ ROWSPAN : le Domaine (I-V) est affiché dans la 1ère ligne et
+                  //    s'étend sur toutes les lignes des sous-domaines de ce domaine.
+                  return dom.subDomains.map((sub, subIdx) => (
+                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
+                      {subIdx === 0 && (
+                        <td
+                          rowSpan={dom.subDomains.length}
+                          className={cn(
+                            'p-2 border border-blue-300 font-bold text-white text-center text-base align-middle',
+                            TRIMESTER_COLORS[currentMonthData.trimester]
+                          )}
+                        >
+                          {dom.domain}
+                        </td>
+                      )}
+                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white text-[10px]">
+                        {sub}
                       </td>
+                      {currentWeeks.map(wk => {
+                        const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
+                        return (
+                          <td key={wk} className="p-1 border border-slate-200 align-top">
+                            {plan ? (
+                              <div className={cn('text-[9px] leading-tight p-1 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
+                                {plan.content}
+                              </div>
+                            ) : <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      })}
                     </tr>
-                    {dom.subDomains.map(sub => (
-                      <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                        <td className="p-1 border border-slate-200 bg-slate-50">&nbsp;</td>
-                        <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
-                        {currentWeeks.map(wk => {
-                          const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
-                          return (
-                            <td key={wk} className="p-1 border border-slate-200 align-top">
-                              {plan ? (
-                                <div className={cn('text-[9px] leading-tight p-1 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
-                                  {plan.content}
-                                </div>
-                              ) : <span className="text-slate-300">—</span>}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                ))}
+                  ));
+                })}
               </tbody>
             </table>
           </div>

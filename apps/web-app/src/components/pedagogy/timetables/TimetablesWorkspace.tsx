@@ -223,6 +223,7 @@ export default function TimetablesWorkspace() {
                   solutions={[]}
                   schoolLevelId={schoolLevelId}
                   academicYearId={academicYearId}
+                  academicYearLabel={academicYear?.label}
                   onAccept={async () => {}}
                   onView={() => {}}
                 />
@@ -1055,7 +1056,7 @@ function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerate
 
 // ═══ TAB 5: EMPLOI DU TEMPS (unifié — Solutions + Édition manuelle) ═══
 
-function TimetableTab({ solutions, schoolLevelId, academicYearId, onAccept, onView, onRegenerate }: any) {
+function TimetableTab({ solutions, schoolLevelId, academicYearId, academicYearLabel, onAccept, onView, onRegenerate }: any) {
   // ⭐ SIMPLIFICATION : on affiche DIRECTEMENT le ManualEditor.
   //    Avant, il y avait un toggle "Solutions générées" / "Édition manuelle"
   //    qui par défaut montrait "Aucune solution générée" + bouton "Générer"
@@ -1063,7 +1064,7 @@ function TimetableTab({ solutions, schoolLevelId, academicYearId, onAccept, onVi
   //    Maintenant : pas de toggle, pas de SolutionsList → ManualEditor uniquement.
   return (
     <div className="space-y-4">
-      <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} academicYearLabel={academicYear?.label} />
+      <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} academicYearLabel={academicYearLabel} />
     </div>
   );
 }

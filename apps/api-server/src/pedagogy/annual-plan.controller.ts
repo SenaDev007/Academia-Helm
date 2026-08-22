@@ -16,6 +16,7 @@ import {
   Controller, Get, Post, Put, Body, Param, Query, Res,
   UseGuards, Logger, BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -74,11 +75,11 @@ const MATERNELLE_MONTH_WEEKS: Record<string, string[]> = {
 };
 
 const MATERNELLE_DOMAINS = [
-  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'I', subDomains: ['Education pour la santé', 'Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'II', subDomains: ['Expression corporelle'] },
+  { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Comptine', 'Communication orale'] },
 ];
 
 @Controller('pedagogy/annual-plans')
@@ -90,6 +91,7 @@ export class AnnualPlanController {
     private readonly annualPlanService: AnnualPlanService,
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get()
@@ -136,9 +138,18 @@ export class AnnualPlanController {
 
   /**
    * ⭐ GET /pedagogy/annual-plans/export-pdf?academicYearId=Y&classLevel=CM2
-   *    Génère un PDF paysage A4 avec le tableau de planification exact comme le PDF officiel.
-   *    Pour la MATERNELLE : génère 10 pages (1 page = 1 mois, table différente par mois).
-   *    Pour le PRIMAIRE : génère 1 page avec tous les mois en lignes.
+   *    Génère un PDF paysage A4 — STRUCTURE IDENTIQUE à l'emploi du temps :
+   *      - En-tête : logo + nom école + contact (séparateur 3px #1a2a6b)
+   *      - Titre : "Planification annuelle" + classe (sous l'en-tête)
+   *      - Tableau
+   *      - Pied de page : "Document généré par Academia Helm — [date]"
+   *
+   *    Pour la MATERNELLE : 10 pages (1 page = 1 mois, table différente par mois).
+   *      Pour les mois longs (Octobre = 5 semaines), le tableau est split :
+   *        - Page A : Domaines I + II + III
+   *        - Page B : Domaines IV + V
+   *      Pour les autres mois, tout tient sur 1 page.
+   *    Pour le PRIMAIRE : 1 page avec tous les mois en lignes.
    */
   @Get('export-pdf')
   async exportPdf(
@@ -154,13 +165,39 @@ export class AnnualPlanController {
     // 1. Récupérer les plans
     const plans: any[] = await this.annualPlanService.getPlans(tenantId, academicYearId, classLevel);
 
-    // 2. Récupérer l'identité de l'école
+    // 2. Récupérer l'identité de l'école (toutes les infos pour l'en-tête)
     const schoolInfo: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "schoolName", "schoolAcronym", "logoUrl" FROM "tenant_identity_profiles" WHERE "tenantId" = $1 AND "isActive" = true ORDER BY "version" DESC LIMIT 1`,
+      `SELECT "schoolName", "schoolAcronym", "logoUrl", "address", "city", "department", "phonePrimary", "email"
+       FROM "tenant_identity_profiles"
+       WHERE "tenantId" = $1 AND "isActive" = true
+       ORDER BY "version" DESC LIMIT 1`,
       tenantId,
     );
     const school = schoolInfo?.[0] || {};
     const schoolDisplayName = school.schoolName || school.schoolAcronym || 'École';
+
+    // ⭐ Infos contact (adresse + téléphone + email) — affiché sous le nom école
+    const contactParts: string[] = [];
+    if (school.address) {
+      const cityPart = school.city ? `, ${school.city}` : '';
+      const deptPart = school.department ? ` (${school.department})` : '';
+      contactParts.push(`${school.address}${cityPart}${deptPart}`);
+    } else if (school.city) {
+      contactParts.push(school.city + (school.department ? ` (${school.department})` : ''));
+    }
+    if (school.phonePrimary) contactParts.push(`Tél: ${school.phonePrimary}`);
+    if (school.email) contactParts.push(school.email);
+    const contactHtml = contactParts.length > 0
+      ? `<div class="contact">${contactParts.join(' · ')}</div>`
+      : '';
+
+    // ⭐ Logo — gère les URLs absolues (http/data:) et relatives (préfixées par l'API)
+    const logoUrl = school.logoUrl
+      ? (school.logoUrl.startsWith('data:') || school.logoUrl.startsWith('http')
+        ? school.logoUrl
+        : `${this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com'}${school.logoUrl.startsWith('/') ? '' : '/'}${school.logoUrl}`)
+      : '';
+    const logoHtml = logoUrl ? `<img src="${logoUrl}" alt="logo" class="logo" />` : '<div class="logo"></div>';
 
     // 3. Récupérer l'année scolaire
     const yearInfo: any = await this.prisma.$queryRawUnsafe(
@@ -169,13 +206,38 @@ export class AnnualPlanController {
     ).catch(() => []);
     const yearLabel = yearInfo?.[0]?.label || new Date().getFullYear().toString();
 
-    // 4. Construire le HTML
+    // 4. Date du jour pour le pied de page
+    const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    // 5. Construire le HTML
     const isMaternelle = classLevel === 'MATERNELLE_GRANDS';
     const classLabel = isMaternelle ? 'Maternelle (Grands)' : classLevel;
 
+    // ⭐ CSS commun — aligné sur le pattern du PDF d'emploi du temps
+    const commonCss = `
+      @page { size: A4 landscape; margin: 8mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #1f2937; font-size: 10px; }
+      /* ⭐ EN-TÊTE : logo + nom école + contact (PAS de titre ici) */
+      .header { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid #1a2a6b; padding-bottom: 6px; margin-bottom: 0; }
+      .header .logo { width: 55px; height: 55px; object-fit: contain; flex-shrink: 0; }
+      .header .school-info { flex: 1; }
+      .header .school-name { font-size: 14px; color: #1a2a6b; font-weight: 800; letter-spacing: 0.3px; }
+      .header .contact { font-size: 8px; color: #64748b; margin-top: 2px; }
+      /* ⭐ TITRE : sous l'en-tête */
+      .title-row { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 0 4px 0; margin-bottom: 6px; border-bottom: 1px solid #cbd5e1; }
+      .title-row .title { font-size: 16px; color: #1a2a6b; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+      .title-row .class-label { font-size: 12px; color: #1e293b; font-weight: 700; }
+      .title-row .class-label strong { color: #1a2a6b; font-size: 13px; }
+      /* ⭐ Tableau */
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { vertical-align: top; }
+      /* ⭐ Pied de page */
+      .footer { margin-top: 6px; font-size: 8px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+    `;
+
     // ─────────────────────────────────────────────────────────────────
-    // MATERNELLE — 10 pages, une par mois (chaque mois a un nombre différent
-    // de semaines — ex: Septembre=2, Octobre=5, Décembre=1)
+    // MATERNELLE — pages paginées par mois + page break pour mois longs
     // ─────────────────────────────────────────────────────────────────
     let html: string;
     if (isMaternelle) {
@@ -194,84 +256,105 @@ export class AnnualPlanController {
         3: '#f59e0b', // amber-500
       };
 
-      // Générer une page HTML par mois (10 pages au total)
-      const maternellePages = MATERNELLE_MONTHS.map((monthData, pageIdx) => {
-        const weeks = MATERNELLE_MONTH_WEEKS[monthData.month] || [];
+      // ⭐ Génère le HTML d'un "bloc domaines" (subset de MATERNELLE_DOMAINS)
+      //    utilisé pour split un mois long en 2 pages
+      const renderDomainBlocks = (domainSubset: typeof MATERNELLE_DOMAINS, weeks: string[], monthData: any) => {
         const triColorHex = triColor[monthData.trimester];
-        const triLabel = TRIMESTER_LABELS[monthData.trimester];
-
-        // Largeurs de colonnes : 18% Domaine, 14% Sous-domaine, le reste / semaines
         const weekWidth = weeks.length > 0 ? (68 / weeks.length) : 68;
 
         // Header du tableau (semaines)
         const weekHeaders = weeks.map(wk =>
-          `<th style="border:1px solid #${triColorHex.replace('#','')};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:center;width:${weekWidth}%;vertical-align:top;">${wk}</th>`
+          `<th style="border:1px solid ${triColorHex};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:center;width:${weekWidth}%;vertical-align:top;">${wk}</th>`
         ).join('');
 
-        // Lignes de domaines + sous-domaines
-        const domainRows = MATERNELLE_DOMAINS.map(dom => {
-          // Ligne titre du domaine (colspan total)
-          const totalCols = 2 + weeks.length;
-          const domainTitleRow = `<tr>
-            <td colspan="${totalCols}" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;font-weight:bold;background:#f1f5f9;color:#334155;">${dom.domain}</td>
-          </tr>`;
-
-          // Une ligne par sous-domaine
-          const subRows = dom.subDomains.map(sub => {
+        // ⭐ Lignes de domaines — utilisation de ROWSPAN pour la colonne Domaine
+        //    Au lieu d'une ligne "titre" qui spanne toutes les colonnes, on met
+        //    le Domaine (I, II, III, IV, V) dans la 1ère ligne de chaque groupe
+        //    avec rowspan = nombre de sous-domaines du domaine.
+        const rows: string[] = [];
+        for (const dom of domainSubset) {
+          const subCount = dom.subDomains.length;
+          for (let i = 0; i < subCount; i++) {
+            const sub = dom.subDomains[i];
             const weekCells = weeks.map(wk => {
               const content = getMaternelleCell(dom.domain, sub, monthData.month, wk);
               return `<td style="border:1px solid #cbd5e1;padding:3px;font-size:7px;vertical-align:top;width:${weekWidth}%;text-align:left;line-height:1.2;">${content}</td>`;
             }).join('');
-            return `<tr>
-              <td style="border:1px solid #cbd5e1;padding:3px;font-size:7px;background:#f8fafc;width:18%;">&nbsp;</td>
-              <td style="border:1px solid #cbd5e1;padding:3px;font-size:7px;font-weight:600;background:#ffffff;width:14%;color:#475569;">${sub}</td>
-              ${weekCells}
-            </tr>`;
-          }).join('');
+            if (i === 0) {
+              // Première ligne du domaine : afficher le numéro romain (rowspan)
+              rows.push(`<tr>
+                <td rowspan="${subCount}" style="border:1px solid ${triColorHex};padding:4px;font-size:11px;font-weight:800;background:${triColorHex};color:white;text-align:center;vertical-align:middle;width:10%;">${dom.domain}</td>
+                <td style="border:1px solid #cbd5e1;padding:3px;font-size:7px;font-weight:600;background:#ffffff;width:22%;color:#475569;">${sub}</td>
+                ${weekCells}
+              </tr>`);
+            } else {
+              // Lignes suivantes du même domaine : pas de cellule Domaine (rowspan s'occupe)
+              rows.push(`<tr>
+                <td style="border:1px solid #cbd5e1;padding:3px;font-size:7px;font-weight:600;background:#ffffff;width:22%;color:#475569;">${sub}</td>
+                ${weekCells}
+              </tr>`);
+            }
+          }
+        }
+        return { headerRow: weekHeaders, bodyRows: rows.join('') };
+      };
 
-          return domainTitleRow + subRows;
-        }).join('');
+      // ⭐ Pour chaque mois, on génère 1 ou 2 pages selon le nombre de semaines.
+      //    Règle : si le mois a 5 semaines (Octobre), on split en 2 pages :
+      //      - Page A : Domaines I + II + III (11 lignes)
+      //      - Page B : Domaines IV + V (6 lignes)
+      //    Pour les autres mois (≤ 4 semaines), tout tient sur 1 page.
+      const maternellePages: string[] = [];
+      for (let pageIdx = 0; pageIdx < MATERNELLE_MONTHS.length; pageIdx++) {
+        const monthData = MATERNELLE_MONTHS[pageIdx];
+        const weeks = MATERNELLE_MONTH_WEEKS[monthData.month] || [];
+        const triColorHex = triColor[monthData.trimester];
+        const triLabel = TRIMESTER_LABELS[monthData.trimester];
 
-        // Chaque mois = une page A4 paysage
-        return `<div style="page-break-after: always;${pageIdx === MATERNELLE_MONTHS.length - 1 ? 'page-break-after: avoid;' : ''}">
-          <div class="header">
-            <div>
-              <div class="school">${schoolDisplayName}</div>
-              <div class="year">Année scolaire ${yearLabel}</div>
+        // ⭐ Détermine si ce mois doit être split en 2 pages (long tableau)
+        const needsSplit = weeks.length >= 5;
+        const subsets = needsSplit
+          ? [MATERNELLE_DOMAINS.slice(0, 3), MATERNELLE_DOMAINS.slice(3)] // [I+II+III] et [IV+V]
+          : [MATERNELLE_DOMAINS]; // tous les domaines sur 1 page
+
+        for (let s = 0; s < subsets.length; s++) {
+          const subset = subsets[s];
+          const partLabel = needsSplit ? (s === 0 ? ' (1/2)' : ' (2/2)') : '';
+          const isLastPage = (pageIdx === MATERNELLE_MONTHS.length - 1) && (s === subsets.length - 1);
+          const rendered = renderDomainBlocks(subset, weeks, monthData);
+
+          maternellePages.push(`<div style="page-break-after: ${isLastPage ? 'avoid' : 'always'};">
+            <div class="header">
+              ${logoHtml}
+              <div class="school-info">
+                <div class="school-name">${schoolDisplayName}</div>
+                ${contactHtml}
+              </div>
             </div>
-          </div>
-          <div class="title-row">
-            <span class="title">Planification annuelle — Maternelle</span>
-            <span class="class">Cours : ${classLabel}</span>
-          </div>
-          <div class="month-banner" style="background:${triColorHex};color:white;padding:6px 10px;border-radius:4px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:11px;font-weight:800;">${monthData.month}</span>
-            <span style="font-size:9px;font-weight:600;opacity:0.9;">${triLabel} — Page ${pageIdx + 1} / ${MATERNELLE_MONTHS.length}</span>
-          </div>
-          <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-            <thead>
-              <tr>
-                <th style="border:1px solid ${triColorHex};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:left;width:18%;">Domaines</th>
-                <th style="border:1px solid ${triColorHex};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:left;width:14%;">Sous-domaine</th>
-                ${weekHeaders}
-              </tr>
-            </thead>
-            <tbody>${domainRows}</tbody>
-          </table>
-        </div>`;
-      }).join('');
+            <div class="title-row">
+              <span class="title">Planification annuelle — Maternelle</span>
+              <span class="class-label">Cours : <strong>${classLabel}</strong> · Année ${yearLabel}</span>
+            </div>
+            <div class="month-banner" style="background:${triColorHex};color:white;padding:6px 10px;border-radius:4px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;font-weight:800;">${monthData.month}${partLabel}</span>
+              <span style="font-size:9px;font-weight:600;opacity:0.9;">${triLabel} — Page ${pageIdx + 1}${needsSplit ? `.${s + 1}` : ''} / ${MATERNELLE_MONTHS.length}</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="border:1px solid ${triColorHex};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:center;width:10%;">Domaine</th>
+                  <th style="border:1px solid ${triColorHex};padding:4px;font-size:8px;background:${triColorHex};color:white;text-align:left;width:22%;">Période d'activité</th>
+                  ${rendered.headerRow}
+                </tr>
+              </thead>
+              <tbody>${rendered.bodyRows}</tbody>
+            </table>
+            <div class="footer">Document généré automatiquement par Academia Helm — ${today}</div>
+          </div>`);
+        }
+      }
 
-      html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
-        @page { size: A4 landscape; margin: 6mm; }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: Helvetica, Arial, sans-serif; }
-        .header { border-bottom: 3px solid #1a2a6b; padding-bottom: 6px; margin-bottom: 6px; display:flex; align-items:center; gap:10px; }
-        .header .school { font-size: 12px; color:#1a2a6b; font-weight: 800; }
-        .header .year { font-size: 10px; color:#475569; }
-        .title-row { display:flex; justify-content:space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #cbd5e1; }
-        .title-row .title { font-size: 13px; color:#1a2a6b; font-weight: 800; text-transform:uppercase; }
-        .title-row .class { font-size: 11px; color:#1e293b; font-weight: 700; }
-      </style></head><body>${maternellePages}</body></html>`;
+      html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>${commonCss}</style></head><body>${maternellePages.join('')}</body></html>`;
     } else {
       // ─────────────────────────────────────────────────────────────────
       // PRIMAIRE — 1 page avec tableau large (mois en lignes × matières en colonnes)
@@ -316,29 +399,19 @@ export class AnnualPlanController {
         `<th style="border:1px solid #1a2a6b;padding:4px;font-size:8px;background:${col.group === 'Éducation Sociale' ? '#4f46e5' : col.group === 'Éducation Artistique' ? '#9333ea' : '#1a2a6b'};color:white;text-align:center;">${col.label}</th>`
       ).join('');
 
-      html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
-        @page { size: A4 landscape; margin: 6mm; }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: Helvetica, Arial, sans-serif; }
-        .header { border-bottom: 3px solid #1a2a6b; padding-bottom: 6px; margin-bottom: 6px; display:flex; align-items:center; gap:10px; }
-        .header .school { font-size: 12px; color:#1a2a6b; font-weight: 800; }
-        .header .year { font-size: 10px; color:#475569; }
-        .title-row { display:flex; justify-content:space-between; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid #cbd5e1; }
-        .title-row .title { font-size: 14px; color:#1a2a6b; font-weight: 800; text-transform:uppercase; }
-        .title-row .class { font-size: 12px; color:#1e293b; font-weight: 700; }
-        table { width:100%; border-collapse:collapse; table-layout:fixed; }
+      html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>${commonCss}
         th, td { font-size: 7px; }
-        .footer { margin-top:6px; font-size:7px; color:#94a3b8; text-align:center; }
       </style></head><body>
         <div class="header">
-          <div>
-            <div class="school">${schoolDisplayName}</div>
-            <div class="year">Année scolaire ${yearLabel}</div>
+          ${logoHtml}
+          <div class="school-info">
+            <div class="school-name">${schoolDisplayName}</div>
+            ${contactHtml}
           </div>
         </div>
         <div class="title-row">
-          <span class="title">Planification annuelle des activités pédagogiques</span>
-          <span class="class">Cours : ${classLabel}</span>
+          <span class="title">Planification annuelle</span>
+          <span class="class-label">Cours : <strong>${classLabel}</strong> · Année ${yearLabel}</span>
         </div>
         <table>
           <thead>
@@ -351,11 +424,11 @@ export class AnnualPlanController {
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-        <div class="footer">Planification pédagogique officielle — Academia Helm</div>
+        <div class="footer">Document généré automatiquement par Academia Helm — ${today}</div>
       </body></html>`;
     }
 
-    // 5. Générer le PDF via Puppeteer
+    // 6. Générer le PDF via Puppeteer
     let page: any;
     try {
       const acquired = await this.puppeteerPool.acquirePage();
@@ -368,7 +441,9 @@ export class AnnualPlanController {
       await new Promise(r => setTimeout(r, 300));
       const pdfBuffer = await page.pdf({
         format: 'A4', landscape: true, printBackground: true,
-        margin: { top: '6mm', bottom: '6mm', left: '6mm', right: '6mm' },
+        margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
+        headerTemplate: '<div></div>',
+        footerTemplate: '<div></div>',
       });
       const buffer = Buffer.from(pdfBuffer);
       res.set({

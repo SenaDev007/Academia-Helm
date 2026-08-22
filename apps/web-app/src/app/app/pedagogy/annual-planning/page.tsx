@@ -65,13 +65,15 @@ const PRIMAIRE_ROWS = [
   { trimester: 3, month: 'Juin' },
 ];
 
-// Domaines pour MATERNELLE — DOIVENT correspondre exactement aux noms dans le seed data
+// Domaines pour MATERNELLE — Structure conforme au document officiel :
+// 5 grands domaines (I-V), chacun contenant des "périodes d'activités"
+// (sous-domaines). "Education pour la santé" est un sous-domaine de Domaine I.
 const MATERNELLE_DOMAINS = [
-  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'I', subDomains: ['Education pour la santé', 'Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'II', subDomains: ['Expression corporelle'] },
+  { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Comptine', 'Communication orale'] },
 ];
 
 // Colonnes semaines pour MATERNELLE — format {month, week} qui match le seed data
@@ -454,77 +456,85 @@ function AnnualPlanningContent() {
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
             <table className="text-xs border-collapse w-full table-fixed">
               <colgroup>
-                <col style={{ width: '18%' }} />
-                <col style={{ width: '14%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '22%' }} />
                 {currentWeeks.map((wk, i) => (
                   <col key={i} style={{ width: `${68 / Math.max(currentWeeks.length, 1)}%` }} />
                 ))}
               </colgroup>
               <thead>
                 <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
-                  <th className="p-2 border border-blue-300 text-left">Domaines</th>
-                  <th className="p-2 border border-blue-300 text-left">Sous-domaine</th>
+                  <th className="p-2 border border-blue-300 text-center">Domaine</th>
+                  <th className="p-2 border border-blue-300 text-left">Période d'activité</th>
                   {currentWeeks.map(wk => (
                     <th key={wk} className="p-2 border border-blue-300 text-center">{wk}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {MATERNELLE_DOMAINS.map(dom => (
-                  <React.Fragment key={dom.domain}>
-                    <tr className="bg-slate-100">
-                      <td colSpan={2 + currentWeeks.length} className="p-2 font-bold text-slate-700 border border-slate-300">
-                        {dom.domain}
+                {MATERNELLE_DOMAINS.map(dom => {
+                  // ⭐ ROWSPAN pour la colonne Domaine : le numéro romain (I-V) est
+                  //    affiché dans la 1ère ligne du domaine et s'étend sur toutes
+                  //    les lignes des sous-domaines de ce domaine.
+                  return dom.subDomains.map((sub, subIdx) => (
+                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
+                      {subIdx === 0 && (
+                        <td
+                          rowSpan={dom.subDomains.length}
+                          className={cn(
+                            'p-2 border border-blue-300 font-bold text-white text-center text-base align-middle',
+                            TRIMESTER_COLORS[currentMonthData.trimester]
+                          )}
+                        >
+                          {dom.domain}
+                        </td>
+                      )}
+                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white text-[10px]">
+                        {sub}
                       </td>
-                    </tr>
-                    {dom.subDomains.map(sub => (
-                      <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                        <td className="p-1 border border-slate-200 bg-slate-50">&nbsp;</td>
-                        <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
-                        {currentWeeks.map(wk => {
-                          const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
-                          return (
-                            <td key={wk} className="p-1 border border-slate-200 align-top">
-                              {plan ? (
-                                editingId === plan.id ? (
-                                  <div className="space-y-1">
-                                    <textarea
-                                      value={editContent}
-                                      onChange={e => setEditContent(e.target.value)}
-                                      className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
-                                      rows={3} autoFocus
-                                    />
-                                    <div className="flex gap-0.5">
-                                      <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
-                                        <Check className="w-2.5 h-2.5" />
-                                      </button>
-                                      <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
-                                        <X className="w-2.5 h-2.5" />
-                                      </button>
-                                    </div>
+                      {currentWeeks.map(wk => {
+                        const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
+                        return (
+                          <td key={wk} className="p-1 border border-slate-200 align-top">
+                            {plan ? (
+                              editingId === plan.id ? (
+                                <div className="space-y-1">
+                                  <textarea
+                                    value={editContent}
+                                    onChange={e => setEditContent(e.target.value)}
+                                    className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
+                                    rows={3} autoFocus
+                                  />
+                                  <div className="flex gap-0.5">
+                                    <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
+                                      <Check className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
                                   </div>
-                                ) : (
-                                  <div
-                                    className={cn(
-                                      'text-[9px] leading-tight cursor-pointer p-1 rounded',
-                                      plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
-                                    )}
-                                    onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
-                                    title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
-                                  >
-                                    {plan.content}
-                                  </div>
-                                )
+                                </div>
                               ) : (
-                                <span className="text-slate-300">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                ))}
+                                <div
+                                  className={cn(
+                                    'text-[9px] leading-tight cursor-pointer p-1 rounded',
+                                    plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
+                                  )}
+                                  onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
+                                  title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
+                                >
+                                  {plan.content}
+                                </div>
+                              )
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ));
+                })}
               </tbody>
             </table>
           </div>

@@ -165,11 +165,18 @@ function AnnualPlanningContent() {
   useEffect(() => { loadPlans(); }, [loadPlans]);
 
   // ⭐ Initialiser TOUTES les classes d'un seul clic (pas classe par classe)
+  //    Le backend résout le schoolLevelId depuis la DB si non fourni.
+  //    On ne bloque pas l'utilisateur si currentLevel?.schoolLevelId est null —
+  //    on passe currentLevel?.id (education_levels UUID) en fallback, ou null
+  //    et le backend fait SELECT FROM school_levels WHERE tenantId = $1.
   const handleSeedAll = useCallback(async () => {
-    if (!academicYear?.id || !currentLevel?.schoolLevelId) {
-      toast({ title: 'Erreur', description: 'Année scolaire ou niveau non sélectionné.', variant: 'destructive' });
+    if (!academicYear?.id) {
+      toast({ title: 'Erreur', description: 'Année scolaire non sélectionnée. Vérifiez le sélecteur d\'année dans l\'en-tête.', variant: 'destructive' });
       return;
     }
+    // ⭐ schoolLevelId : essayer schoolLevelId (UUID school_levels), puis id (UUID education_levels)
+    //    Le backend résoudra de toute façon via SELECT FROM school_levels
+    const slId = currentLevel?.schoolLevelId || currentLevel?.id || '';
     setSeeding(true);
     setSeedProgress(0);
     try {
@@ -179,7 +186,10 @@ function AnnualPlanningContent() {
       
       const result = await pedagogyFetch<any>('/api/pedagogy/annual-plans/seed', {
         method: 'POST',
-        body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
+        body: { 
+          academicYearId: academicYear.id, 
+          schoolLevelId: slId,
+        },
       });
       
       clearInterval(progressInterval);
@@ -196,7 +206,7 @@ function AnnualPlanningContent() {
       setSeedProgress(0);
       toast({ title: 'Erreur', description: e.message || 'Échec de l\'initialisation', variant: 'destructive' });
     }
-  }, [academicYear?.id, currentLevel?.schoolLevelId, loadPlans, toast]);
+  }, [academicYear?.id, currentLevel?.schoolLevelId, currentLevel?.id, loadPlans, toast]);
 
   // ⭐ Trouver le contenu d'une cellule (primaire) — par trimester + month + domain
   const getPrimaireContent = (trimester: number, month: string, domainKey: string): AnnualPlan | null => {

@@ -1274,8 +1274,35 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
 
   const loadEntries = useCallback(async () => {
     if (!activeTimetableId) return;
-    try { const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`); setEntries(data?.entries || []); } catch (e) { console.error(e); }
-  }, [activeTimetableId]);
+    try {
+      const data = await pedagogyFetch<any>(`/api/timetables/${activeTimetableId}`);
+      const tEntries = data?.entries || [];
+      setEntries(tEntries);
+      // ⭐ AUTO-RENAME : si le nom de l'EDT contient "#" (ancien format) ou ne mentionne
+      //    pas les classes, on le met à jour automatiquement avec les classes détectées.
+      //    Ex: "EDT Primaire #3" → "EDT CI 2026-2027" (basé sur les entries)
+      const currentTt = timetables.find(t => t.id === activeTimetableId);
+      if (currentTt && tEntries.length > 0) {
+        const yearLabel = academicYear?.label || new Date().getFullYear().toString();
+        const needsRename = currentTt.name.includes('#') || !currentTt.name.includes(yearLabel);
+        if (needsRename) {
+          // Extraire les noms de classes uniques depuis les entries
+          const classNames = Array.from(new Set(
+            tEntries.map((e: any) => e.class?.name).filter(Boolean)
+          )).sort();
+          if (classNames.length > 0) {
+            const newName = `EDT ${classNames.join(' + ')} ${yearLabel}`;
+            // Mettre à jour le nom côté backend + local
+            pedagogyFetch(`/api/timetables/${activeTimetableId}`, {
+              method: 'PUT', body: { name: newName }
+            }).then(() => {
+              setTimetables(prev => prev.map(t => t.id === activeTimetableId ? { ...t, name: newName } : t));
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) { console.error(e); }
+  }, [activeTimetableId, timetables, academicYear?.label]);
 
   useEffect(() => { loadConfig(); loadData(); }, [loadConfig, loadData]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -1716,10 +1743,11 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
     // Désélectionner les classes actuelles
     setSelectedClassIds([]);
     setEntries([]);
-    // ⭐ Nommer l'EDT de façon claire : niveau + compteur
+    // ⭐ Nommer l'EDT de façon professionnelle : niveau + année scolaire
+    //    Ex: "EDT Primaire 2026-2027" au lieu de "EDT Primaire #3"
     const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label || realLevels.find((l: any) => l.id === configLevelId)?.label || 'Niveau';
-    const existingCount = timetables.length;
-    const edtName = `EDT ${levelLabel} #${existingCount + 1}`;
+    const yearLabel = academicYear?.label || new Date().getFullYear().toString();
+    const edtName = `EDT ${levelLabel} ${yearLabel}`;
     // Créer un nouveau timetable
     try {
       const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
@@ -1835,6 +1863,26 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
                         isActive ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:border-blue-300')}
                       title={tt.name}>
                       {isActive && '✓ '}{tt.name || 'EDT'}{entryCount > 0 && ` (${entryCount})`}
+                    </button>
+                    {/* ⭐ Bouton RENOMMER l'EDT */}
+                    <button
+                      onClick={async () => {
+                        const newName = window.prompt('Renommer l\'emploi du temps :', tt.name);
+                        if (newName && newName.trim() && newName !== tt.name) {
+                          try {
+                            await pedagogyFetch(`/api/timetables/${tt.id}`, {
+                              method: 'PUT', body: { name: newName.trim() }
+                            });
+                            setTimetables(prev => prev.map(t => t.id === tt.id ? { ...t, name: newName.trim() } : t));
+                            toast({ title: '✅ EDT renommé', description: newName.trim() });
+                          } catch (e: any) {
+                            toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+                          }
+                        }
+                      }}
+                      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                      title="Renommer cet EDT">
+                      <Pencil className="w-3 h-3" />
                     </button>
                     {/* ⭐ Bouton supprimer l'EDT */}
                     <button onClick={() => handleDeleteTimetable(tt.id)}

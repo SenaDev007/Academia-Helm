@@ -423,6 +423,8 @@ model Tenant {
   timetableEntries                 TimetableEntry[]
   timetableVersions                TimetableVersion[]
   timetables                       Timetable[]
+  /// ⭐ Planification pédagogique annuelle (relation inverse)
+  annualPlans                      AnnualPlan[]
   trainingSessions                 TrainingSession[]
   transferRequests                 TransferRequest[]
   transportAssignments             TransportAssignment[]
@@ -780,6 +782,8 @@ model AcademicYear {
   timetableEntries                 TimetableEntry[]
   timetableVersions                TimetableVersion[]
   timetables                       Timetable[]
+  /// ⭐ Planification pédagogique annuelle (relation inverse)
+  annualPlans                      AnnualPlan[]
   trainingSessions                 TrainingSession[]
   transferRequests                 TransferRequest[]
   transportAssignments             TransportAssignment[]
@@ -1690,6 +1694,8 @@ model SchoolLevel {
   timetableEntries                 TimetableEntry[]
   timetableVersions                TimetableVersion[]
   timetables                       Timetable[]
+  /// ⭐ Planification pédagogique annuelle (relation inverse)
+  annualPlans                      AnnualPlan[]
   trainingSessions                 TrainingSession[]
   transferRequests                 TransferRequest[]
   transportRoutes                  Route[]
@@ -6465,6 +6471,44 @@ model TimetableEntry {
   @@index([timetableId])
   @@index([dayOfWeek])
   @@map("timetable_entries")
+}
+
+/// ⭐ Planification pédagogique annuelle officielle (Bénin)
+///    Stocke la planification ministérielle pour chaque niveau :
+///    Maternelle (Grands), CI, CP, CE1, CE2, CM1, CM2
+///    Permet aux enseignants de consulter la planification et à la direction
+///    de la personnaliser (isCustom = true).
+model AnnualPlan {
+  id              String        @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  schoolLevelId   String
+  /// Niveau de classe : "MATERNELLE_GRANDS" | "CI" | "CP" | "CE1" | "CE2" | "CM1" | "CM2"
+  classLevel      String
+  /// Trimestre : 1, 2, 3
+  trimester       Int
+  /// Mois : "Septembre", "Octobre", ..., "Juin"
+  month           String
+  /// Semaine : "1ère semaine", "2ème semaine", ..., "5ème semaine", "Congés"
+  week            String
+  /// Domaine pédagogique : "Education pour la santé", "Français", "Maths", etc.
+  domain          String
+  /// Sous-domaine : "Passage aux toilettes", "Morale", "Civisme", etc.
+  subDomain       String?
+  /// Contenu pédagogique (ex: "J'apprends à boire de l'eau potable" ou "U1 SA1 Séq 1-5")
+  content         String
+  /// false = contenu officiel ministériel, true = modifié par la direction
+  isCustom        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  academicYear    AcademicYear  @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  schoolLevel     SchoolLevel   @relation(fields: [schoolLevelId], references: [id], onDelete: Cascade)
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, classLevel, trimester])
+  @@index([tenantId, schoolLevelId, academicYearId])
+  @@map("annual_plans")
 }
 
 model PedagogicalSheet {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Loader2, RefreshCw, Calendar, BookOpen, FileDown,
+  Loader2, RefreshCw, Calendar, BookOpen, FileDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -46,28 +46,45 @@ const PRIMAIRE_ROWS = [
   { trimester: 3, month: 'Juin' },
 ];
 
+// ⭐ Domaines SANS préfixe (doivent matcher le seed data)
 const MATERNELLE_DOMAINS = [
-  { domain: 'I. Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'II. Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'III. Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'IV. Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'V. Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
+  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
 ];
 
-const MATERNELLE_WEEKS = [
-  'Septembre 3ème', 'Septembre 4ème',
-  'Octobre 1ère', 'Octobre 2ème', 'Octobre 3ème', 'Octobre 4ème', 'Octobre 5ème',
-  'Novembre 1ère', 'Novembre 2ème', 'Novembre 3ème', 'Novembre 4ème',
-  'Décembre Congés',
-  'Janvier 1ère', 'Janvier 2ème', 'Janvier 3ème', 'Janvier 4ème',
-  'Février 1ère', 'Février 2ème', 'Février 3ème', 'Février 4ème',
-  'Mars 1ère', 'Mars 2ème', 'Mars 3ème', 'Mars 4ème',
-  'Avril 1ère', 'Avril 2ème', 'Avril 3ème', 'Avril 4ème',
-  'Mai 1ère', 'Mai 2ème', 'Mai 3ème', 'Mai 4ème',
-  'Juin 1ère', 'Juin 2ème', 'Juin 3ème', 'Juin 4ème',
+// ⭐ Mois maternelle en ordre (pour pagination)
+const MATERNELLE_MONTHS = [
+  { month: 'Septembre', trimester: 1 },
+  { month: 'Octobre', trimester: 1 },
+  { month: 'Novembre', trimester: 1 },
+  { month: 'Décembre', trimester: 1 },
+  { month: 'Janvier', trimester: 2 },
+  { month: 'Février', trimester: 2 },
+  { month: 'Mars', trimester: 2 },
+  { month: 'Avril', trimester: 3 },
+  { month: 'Mai', trimester: 3 },
+  { month: 'Juin', trimester: 3 },
 ];
+
+// ⭐ Semaines pour chaque mois maternelle (variable selon le mois)
+const MATERNELLE_MONTH_WEEKS: Record<string, string[]> = {
+  'Septembre': ['3ème semaine', '4ème semaine'],
+  'Octobre': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine', '5ème semaine'],
+  'Novembre': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Décembre': ['Congés'],
+  'Janvier': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Février': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Mars': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Avril': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Mai': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Juin': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+};
 
 const TRIMESTER_LABELS: Record<number, string> = { 1: '1er Trim.', 2: '2e Trim.', 3: '3e Trim.' };
+const TRIMESTER_COLORS: Record<number, string> = { 1: 'bg-blue-500', 2: 'bg-emerald-500', 3: 'bg-amber-500' };
 
 interface AnnualPlan {
   id: string; classLevel: string; trimester: number; month: string; week: string;
@@ -79,10 +96,13 @@ export default function TeacherAnnualPlanningPage() {
   const { currentLevel } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<AnnualPlan[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('CM2');
+  const [selectedClass, setSelectedClass] = useState<string>('MATERNELLE_GRANDS');
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [maternellePage, setMaternellePage] = useState(0);
 
   const isMaternelle = selectedClass === 'MATERNELLE_GRANDS';
+  const currentMonthData = MATERNELLE_MONTHS[maternellePage] || MATERNELLE_MONTHS[0];
+  const currentWeeks = MATERNELLE_MONTH_WEEKS[currentMonthData.month] || [];
 
   const loadPlans = useCallback(async () => {
     if (!academicYear?.id) { setLoading(false); return; }
@@ -96,13 +116,13 @@ export default function TeacherAnnualPlanningPage() {
     finally { setLoading(false); }
   }, [academicYear?.id, selectedClass]);
 
-  useEffect(() => { loadPlans(); }, [loadPlans]);
+  useEffect(() => { loadPlans(); setMaternellePage(0); }, [loadPlans]);
 
   const getPrimaireContent = (tri: number, month: string, domainKey: string) =>
     plans.find(p => p.trimester === tri && p.month === month && (p.domain === domainKey || p.subDomain === domainKey));
 
-  const getMaternelleContent = (domain: string, subDomain: string, week: string) =>
-    plans.find(p => p.domain === domain && p.subDomain === subDomain && p.week === week);
+  const getMaternelleContent = (domain: string, subDomain: string, month: string, week: string) =>
+    plans.find(p => p.domain === domain && p.subDomain === subDomain && p.month === month && p.week === week);
 
   const groupHeaders = useMemo(() => {
     const groups: { group: string; colCount: number }[] = [];
@@ -131,7 +151,7 @@ export default function TeacherAnnualPlanningPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header + selectors — LECTURE SEULE pour enseignant */}
+      {/* Header + selectors */}
       <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-50 rounded-lg">
@@ -145,31 +165,23 @@ export default function TeacherAnnualPlanningPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium"
-          >
-            {CLASS_LEVELS.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
+          <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium">
+            {CLASS_LEVELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
-          <button
-            onClick={async () => {
-              setExportingPdf(true);
-              try {
-                const res = await fetch(`/api/pedagogy/annual-plans/export-pdf?academicYearId=${academicYear?.id}&classLevel=${selectedClass}`, { credentials: 'include' });
-                if (!res.ok) throw new Error('Erreur génération PDF');
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = `planification_${selectedClass}.pdf`; a.click();
-                URL.revokeObjectURL(url);
-              } catch (e: any) { console.error(e); }
-              finally { setExportingPdf(false); }
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold"
-          >
+          <button onClick={async () => {
+            setExportingPdf(true);
+            try {
+              const res = await fetch(`/api/pedagogy/annual-plans/export-pdf?academicYearId=${academicYear?.id}&classLevel=${selectedClass}`, { credentials: 'include' });
+              if (!res.ok) throw new Error('Erreur génération PDF');
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `planification_${selectedClass}.pdf`; a.click();
+              URL.revokeObjectURL(url);
+            } catch (e: any) { console.error(e); }
+            finally { setExportingPdf(false); }
+          }} className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">
             {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} PDF
           </button>
           <button onClick={loadPlans} className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title="Rafraîchir">
@@ -178,7 +190,7 @@ export default function TeacherAnnualPlanningPage() {
         </div>
       </div>
 
-      {/* TABLEAU — même structure que director UI mais SANS édition */}
+      {/* TABLEAU */}
       {plans.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-2" />
@@ -186,67 +198,90 @@ export default function TeacherAnnualPlanningPage() {
           <p className="text-xs text-slate-400 mt-1">La direction n'a pas encore initialisé la planification.</p>
         </div>
       ) : isMaternelle ? (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-          <table className="text-xs border-collapse" style={{ minWidth: '2400px' }}>
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-0 bg-slate-800 z-10 min-w-[180px]">Domaines</th>
-                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-[180px] bg-slate-800 z-10 min-w-[120px]">Sous-domaine</th>
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-blue-900">1er Trimestre</th>
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-emerald-900">2e Trimestre</th>
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-amber-900">3e Trimestre</th>
-              </tr>
-              <tr className="bg-slate-700 text-white">
-                {MATERNELLE_WEEKS.map((w, i) => (
-                  <th key={w} className={cn('p-1 border border-slate-600 text-center min-w-[80px] font-bold', i < 12 ? 'bg-blue-800' : i < 24 ? 'bg-emerald-800' : 'bg-amber-800')}>
-                    {w.replace('Septembre ', 'Sept ').replace('Octobre ', 'Oct ').replace('Novembre ', 'Nov ')
-                       .replace('Décembre ', 'Déc ').replace('Janvier ', 'Jan ').replace('Février ', 'Fév ')
-                       .replace('Mars ', 'Mars ').replace('Avril ', 'Avr ').replace('Mai ', 'Mai ').replace('Juin ', 'Juin ')}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {MATERNELLE_DOMAINS.map(dom => (
-                <>
-                  <tr key={dom.domain} className="bg-slate-100">
-                    <td colSpan={2 + MATERNELLE_WEEKS.length} className="p-2 font-bold text-slate-700 border border-slate-300">{dom.domain}</td>
-                  </tr>
-                  {dom.subDomains.map(sub => (
-                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                      <td className="p-1 border border-slate-200 bg-slate-50 sticky left-0 z-10"></td>
-                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 sticky left-[180px] z-10 bg-white">{sub}</td>
-                      {MATERNELLE_WEEKS.map(week => {
-                        const plan = getMaternelleContent(dom.domain, sub, week);
-                        return (
-                          <td key={week} className="p-1 border border-slate-200 align-top min-w-[80px]">
-                            {plan ? (
-                              <div className={cn('text-[8px] leading-tight p-0.5 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
-                                {plan.content}
-                              </div>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                        );
-                      })}
-                    </tr>
+        // ═══ TABLEAU MATERNELLE AVEC PAGINATION (un mois par page) ═══
+        <div className="space-y-3">
+          {/* Pagination header */}
+          <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-3">
+            <button
+              onClick={() => setMaternellePage(p => Math.max(0, p - 1))}
+              disabled={maternellePage === 0}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="text-center">
+              <span className={cn('inline-block px-3 py-1 rounded-full text-xs font-bold text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
+                {TRIMESTER_LABELS[currentMonthData.trimester]}
+              </span>
+              <span className="ml-2 text-sm font-bold text-slate-700">{currentMonthData.month}</span>
+              <span className="ml-2 text-xs text-slate-400">Page {maternellePage + 1}/{MATERNELLE_MONTHS.length}</span>
+            </div>
+            <button
+              onClick={() => setMaternellePage(p => Math.min(MATERNELLE_MONTHS.length - 1, p + 1))}
+              disabled={maternellePage === MATERNELLE_MONTHS.length - 1}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Table for current month */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+            <table className="text-xs border-collapse min-w-[600px]">
+              <thead>
+                <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
+                  <th className="p-2 border border-blue-300 text-left sticky left-0 z-10 min-w-[180px]">Domaines</th>
+                  <th className="p-2 border border-blue-300 text-left sticky left-[180px] z-10 min-w-[120px]">Sous-domaine</th>
+                  {currentWeeks.map(wk => (
+                    <th key={wk} className="p-2 border border-blue-300 text-center min-w-[120px]">{wk}</th>
                   ))}
-                </>
-              ))}
-            </tbody>
-          </table>
+                </tr>
+              </thead>
+              <tbody>
+                {MATERNELLE_DOMAINS.map(dom => (
+                  <React.Fragment key={dom.domain}>
+                    <tr className="bg-slate-100">
+                      <td colSpan={2 + currentWeeks.length} className="p-2 font-bold text-slate-700 border border-slate-300">
+                        {dom.domain}
+                      </td>
+                    </tr>
+                    {dom.subDomains.map(sub => (
+                      <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
+                        <td className="p-1 border border-slate-200 bg-slate-50"></td>
+                        <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
+                        {currentWeeks.map(wk => {
+                          const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
+                          return (
+                            <td key={wk} className="p-1 border border-slate-200 align-top min-w-[120px]">
+                              {plan ? (
+                                <div className={cn('text-[9px] leading-tight p-1 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
+                                  {plan.content}
+                                </div>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
+        // ═══ TABLEAU PRIMAIRE (tous trimestres en une seule table) ═══
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
           <table className="text-xs border-collapse" style={{ minWidth: '1800px' }}>
             <thead>
-              <tr className="bg-slate-800 text-white">
+              <tr className="bg-blue-600 text-white">
                 {groupHeaders.map((g, i) => (
-                  <th key={i} colSpan={g.colCount} className={cn('p-2 border border-slate-600 text-center font-bold', g.group === 'Éducation Sociale' ? 'bg-indigo-800' : g.group === 'Éducation Artistique' ? 'bg-purple-800' : 'bg-slate-800')}>{g.group || ''}</th>
+                  <th key={i} colSpan={g.colCount} className={cn('p-2 border border-blue-400 text-center font-bold', g.group === 'Éducation Sociale' ? 'bg-indigo-500' : g.group === 'Éducation Artistique' ? 'bg-purple-500' : 'bg-blue-600')}>{g.group || ''}</th>
                 ))}
               </tr>
-              <tr className="bg-slate-700 text-white">
+              <tr className="bg-blue-400 text-white">
                 {PRIMAIRE_COLUMNS.map(col => (
-                  <th key={col.key} className={cn('p-2 border border-slate-600 text-center font-bold', col.key === 'trimester' ? 'bg-blue-800 sticky left-0 z-10 min-w-[60px]' : col.key === 'month' ? 'bg-blue-800 sticky left-[60px] z-10 min-w-[80px]' : col.group === 'Éducation Sociale' ? 'bg-indigo-700' : col.group === 'Éducation Artistique' ? 'bg-purple-700' : 'bg-slate-700')}>{col.label}</th>
+                  <th key={col.key} className={cn('p-2 border border-blue-300 text-center font-bold', col.key === 'trimester' ? 'bg-blue-500 sticky left-0 z-10 min-w-[60px]' : col.key === 'month' ? 'bg-blue-500 sticky left-[60px] z-10 min-w-[80px]' : col.group === 'Éducation Sociale' ? 'bg-indigo-400' : col.group === 'Éducation Artistique' ? 'bg-purple-400' : 'bg-blue-400')}>{col.label}</th>
                 ))}
               </tr>
             </thead>
@@ -263,9 +298,7 @@ export default function TeacherAnnualPlanningPage() {
                       return (
                         <td key={col.key} className={cn('p-1 border border-slate-200 align-top min-w-[100px]', col.group === 'Éducation Sociale' ? 'bg-indigo-50/30' : col.group === 'Éducation Artistique' ? 'bg-purple-50/30' : '')}>
                           {plan ? (
-                            <div className={cn('text-[9px] leading-tight p-0.5 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
-                              {plan.content}
-                            </div>
+                            <div className={cn('text-[9px] leading-tight p-0.5 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>{plan.content}</div>
                           ) : <span className="text-slate-300 text-[9px]">—</span>}
                         </td>
                       );
@@ -280,9 +313,11 @@ export default function TeacherAnnualPlanningPage() {
 
       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-700">
         <strong>📖 Planification officielle :</strong> Consultez la planification pédagogique annuelle de chaque niveau.
-        Vous pouvez naviguer entre toutes les classes (Maternelle, CI, CP, CE1, CE2, CM1, CM2) via le sélecteur.
-        Le bouton PDF vous permet de télécharger la planification d'une classe.
+        Pour la Maternelle, naviguez entre les mois avec les flèches ← →.
       </div>
     </div>
   );
 }
+
+// ⭐ React.Fragment import needed for maternelle domain grouping
+import React from 'react';

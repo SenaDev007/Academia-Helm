@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Loader2, RefreshCw, Calendar, Pencil, Check, X, FileDown,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -130,6 +131,31 @@ interface AnnualPlan {
 }
 
 const TRIMESTER_LABELS: Record<number, string> = { 1: '1er Trim.', 2: '2e Trim.', 3: '3e Trim.' };
+const TRIMESTER_COLORS: Record<number, string> = { 1: 'bg-blue-500', 2: 'bg-emerald-500', 3: 'bg-amber-500' };
+
+// ⭐ Mois maternelle en ordre (pagination — 1 page = 1 mois)
+const MATERNELLE_MONTHS = [
+  { month: 'Septembre', trimester: 1 }, { month: 'Octobre', trimester: 1 },
+  { month: 'Novembre', trimester: 1 }, { month: 'Décembre', trimester: 1 },
+  { month: 'Janvier', trimester: 2 }, { month: 'Février', trimester: 2 },
+  { month: 'Mars', trimester: 2 },
+  { month: 'Avril', trimester: 3 }, { month: 'Mai', trimester: 3 },
+  { month: 'Juin', trimester: 3 },
+];
+
+// ⭐ Semaines par mois maternelle (variable selon le mois — comme le PDF)
+const MATERNELLE_MONTH_WEEKS: Record<string, string[]> = {
+  'Septembre': ['3ème semaine', '4ème semaine'],
+  'Octobre': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine', '5ème semaine'],
+  'Novembre': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Décembre': ['Congés'],
+  'Janvier': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Février': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Mars': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Avril': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Mai': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+  'Juin': ['1ère semaine', '2ème semaine', '3ème semaine', '4ème semaine'],
+};
 
 export default function AnnualPlanningPage() {
   const { user } = useAppSession();
@@ -169,8 +195,11 @@ function AnnualPlanningContent() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedProgress, setSeedProgress] = useState(0);
+  const [maternellePage, setMaternellePage] = useState(0);
 
   const isMaternelle = selectedClass === 'MATERNELLE_GRANDS';
+  const currentMonthData = MATERNELLE_MONTHS[maternellePage] || MATERNELLE_MONTHS[0];
+  const currentWeeks = MATERNELLE_MONTH_WEEKS[currentMonthData.month] || [];
 
   const loadPlans = useCallback(async () => {
     if (!academicYear?.id) { setLoading(false); return; }
@@ -379,93 +408,104 @@ function AnnualPlanningContent() {
           </button>
         </div>
       ) : isMaternelle ? (
-        // ═══ TABLEAU MATERNELLE — Domaines (lignes) × Semaines (colonnes) ═══
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-          <table className="text-xs border-collapse" style={{ minWidth: '2400px' }}>
-            <thead>
-              {/* Ligne 1 : Trimestre headers */}
-              <tr className="bg-blue-600 text-white">
-                <th rowSpan={2} className="p-2 border border-blue-400 text-left sticky left-0 bg-blue-600 z-10 min-w-[180px]">Domaines</th>
-                <th rowSpan={2} className="p-2 border border-blue-400 text-left sticky left-[180px] bg-blue-600 z-10 min-w-[120px]">Sous-domaine</th>
-                {/* Groupes par trimestre */}
-                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-blue-500">1er Trimestre</th>
-                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-emerald-500">2e Trimestre</th>
-                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-amber-500">3e Trimestre</th>
-              </tr>
-              {/* Ligne 2 : Semaines */}
-              <tr className="bg-blue-400 text-white">
-                {MATERNELLE_WEEKS.map((w, i) => (
-                  <th key={i} className={cn(
-                    'p-1 border border-blue-300 text-center min-w-[80px] font-bold',
-                    i < 12 ? 'bg-blue-300' : i < 24 ? 'bg-emerald-300' : 'bg-amber-300'
-                  )}>
-                    {w.month.substring(0, 4)} {w.week.replace(' semaine', '')}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {MATERNELLE_DOMAINS.map(dom => (
-                <>
-                  {/* Ligne de titre du domaine */}
-                  <tr key={dom.domain} className="bg-slate-100">
-                    <td colSpan={2 + MATERNELLE_WEEKS.length} className="p-2 font-bold text-slate-700 border border-slate-300">
-                      {dom.domain}
-                    </td>
-                  </tr>
-                  {/* Lignes des sous-domaines */}
-                  {dom.subDomains.map(sub => (
-                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                      <td className="p-1 border border-slate-200 bg-slate-50 sticky left-0 z-10"></td>
-                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 sticky left-[180px] z-10 bg-white">
-                        {sub}
-                      </td>
-                      {MATERNELLE_WEEKS.map((wk, wki) => {
-                        const plan = getMaternelleContent(dom.domain, sub, wk.month, wk.week);
-                        return (
-                          <td key={wki} className="p-1 border border-slate-200 align-top min-w-[80px]">
-                            {plan ? (
-                              editingId === plan.id ? (
-                                <div className="space-y-1">
-                                  <textarea
-                                    value={editContent}
-                                    onChange={e => setEditContent(e.target.value)}
-                                    className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
-                                    rows={3} autoFocus
-                                  />
-                                  <div className="flex gap-0.5">
-                                    <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
-                                      <Check className="w-2.5 h-2.5" />
-                                    </button>
-                                    <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
-                                      <X className="w-2.5 h-2.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div
-                                  className={cn(
-                                    'text-[8px] leading-tight cursor-pointer p-0.5 rounded',
-                                    plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
-                                  )}
-                                  onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
-                                  title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
-                                >
-                                  {plan.content}
-                                </div>
-                              )
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
+        // ═══ TABLEAU MATERNELLE AVEC PAGINATION (1 page = 1 mois, comme le PDF) ═══
+        <div className="space-y-3">
+          {/* Pagination header */}
+          <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-3">
+            <button
+              onClick={() => setMaternellePage(p => Math.max(0, p - 1))}
+              disabled={maternellePage === 0}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="text-center">
+              <span className={cn('inline-block px-3 py-1 rounded-full text-xs font-bold text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
+                {TRIMESTER_LABELS[currentMonthData.trimester]}
+              </span>
+              <span className="ml-2 text-sm font-bold text-slate-700">{currentMonthData.month}</span>
+              <span className="ml-2 text-xs text-slate-400">Page {maternellePage + 1}/{MATERNELLE_MONTHS.length}</span>
+            </div>
+            <button
+              onClick={() => setMaternellePage(p => Math.min(MATERNELLE_MONTHS.length - 1, p + 1))}
+              disabled={maternellePage === MATERNELLE_MONTHS.length - 1}
+              className="p-2 rounded-lg border border-slate-200 disabled:opacity-30 hover:bg-slate-50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Table for current month */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+            <table className="text-xs border-collapse min-w-[600px]">
+              <thead>
+                <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
+                  <th className="p-2 border border-blue-300 text-left sticky left-0 z-10 min-w-[180px]">Domaines</th>
+                  <th className="p-2 border border-blue-300 text-left sticky left-[180px] z-10 min-w-[120px]">Sous-domaine</th>
+                  {currentWeeks.map(wk => (
+                    <th key={wk} className="p-2 border border-blue-300 text-center min-w-[120px]">{wk}</th>
                   ))}
-                </>
-              ))}
-            </tbody>
-          </table>
+                </tr>
+              </thead>
+              <tbody>
+                {MATERNELLE_DOMAINS.map(dom => (
+                  <React.Fragment key={dom.domain}>
+                    <tr className="bg-slate-100">
+                      <td colSpan={2 + currentWeeks.length} className="p-2 font-bold text-slate-700 border border-slate-300">
+                        {dom.domain}
+                      </td>
+                    </tr>
+                    {dom.subDomains.map(sub => (
+                      <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
+                        <td className="p-1 border border-slate-200 bg-slate-50"></td>
+                        <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
+                        {currentWeeks.map(wk => {
+                          const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
+                          return (
+                            <td key={wk} className="p-1 border border-slate-200 align-top min-w-[120px]">
+                              {plan ? (
+                                editingId === plan.id ? (
+                                  <div className="space-y-1">
+                                    <textarea
+                                      value={editContent}
+                                      onChange={e => setEditContent(e.target.value)}
+                                      className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
+                                      rows={3} autoFocus
+                                    />
+                                    <div className="flex gap-0.5">
+                                      <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
+                                        <Check className="w-2.5 h-2.5" />
+                                      </button>
+                                      <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className={cn(
+                                      'text-[9px] leading-tight cursor-pointer p-1 rounded',
+                                      plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
+                                    )}
+                                    onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
+                                    title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
+                                  >
+                                    {plan.content}
+                                  </div>
+                                )
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
         // ═══ TABLEAU PRIMAIRE — Mois (lignes) × Matières (colonnes) ═══

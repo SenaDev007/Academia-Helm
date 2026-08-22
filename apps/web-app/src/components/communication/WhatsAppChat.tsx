@@ -363,13 +363,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
   return (
     <div className={cn('flex bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden', height)}>
-      {/* Hidden file input — audio + image only (videos in V2) */}
+      {/* Hidden file input — accept ALL file types (images, audio, documents, archives)
+          ⭐ Videos will be added in V2 (currently too large for the 50MB limit) */}
       <input
         ref={fileInputRef}
         type="file"
         className="hidden"
         onChange={handleFileSelect}
-        accept="image/*,audio/*"
+        accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,.xml"
       />
 
       {/* ═════ LEFT SIDEBAR — Conversation List ═════ */}

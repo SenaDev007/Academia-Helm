@@ -166,8 +166,10 @@ export function PedagogicalSpaceWorkspace({
     if (tab !== 'monthly-planning') return;
     if (!resolvedAcademicYearId || !teacherId) return;
     // ⭐ Si l'utilisateur a un accès global (direction/promoteur), on prend toutes les classes
+    //    INCLANT la Maternelle (qui affichera "pas encore disponible" quand sélectionnée)
     if (hasGlobalAccess) {
       setTeacherClasses([
+        { value: 'MATERNELLE_GRANDS', label: 'Maternelle' },
         { value: 'CI', label: 'CI' }, { value: 'CP', label: 'CP' },
         { value: 'CE1', label: 'CE1' }, { value: 'CE2', label: 'CE2' },
         { value: 'CM1', label: 'CM1' }, { value: 'CM2', label: 'CM2' },

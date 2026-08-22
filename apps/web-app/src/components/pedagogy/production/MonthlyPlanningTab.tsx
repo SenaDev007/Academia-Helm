@@ -94,8 +94,9 @@ const PRIMAIRE_DOMAINS = [
   "Chant", "Poésie", "Conte", "Dessin", "Couture",
 ];
 
-// ⭐ Toutes les classes PRIMAIRES (pas de maternelle pour la planif mensuelle)
-const ALL_PRIMAIRE_CLASSES: AvailableClass[] = [
+// ⭐ Toutes les classes PRIMAIRES + Maternelle (la maternelle affiche un message "pas encore disponible")
+const ALL_CLASSES: AvailableClass[] = [
+  { value: "MATERNELLE_GRANDS", label: "Maternelle" },
   { value: "CI", label: "CI" },
   { value: "CP", label: "CP" },
   { value: "CE1", label: "CE1" },
@@ -181,11 +182,11 @@ export function MonthlyPlanningTab({
   const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
 
-  // ⭐ Classes disponibles : si l'utilisateur est direction, on prend toutes les classes primaires.
+  // ⭐ Classes disponibles : si l'utilisateur est direction, on prend toutes les classes.
   //    Sinon (enseignant), on prend la liste fournie par le parent (ses classes assignées).
   const classesToShow = availableClasses && availableClasses.length > 0
     ? availableClasses
-    : ALL_PRIMAIRE_CLASSES;
+    : ALL_CLASSES;
 
   // ⭐ Sélection : classe (1ère de la liste) + mois (par défaut septembre)
   const [selectedClass, setSelectedClass] = useState<string>(classesToShow[0]?.value || "CI");
@@ -195,13 +196,17 @@ export function MonthlyPlanningTab({
   const trimester = MONTHS.find(m => m.value === selectedMonth)?.trimester || 1;
 
   // ⭐ Détection du type de fiche (immersion vs systématique pour CI/CP)
+  //    + Maternelle : pas encore de planification mensuelle disponible
+  const isMaternelle = selectedClass === "MATERNELLE_GRANDS";
   const showImmersionSheet = isImmersionClass(selectedClass) && isImmersionPeriod(selectedMonth);
   const showSystematicSheet = isImmersionClass(selectedClass) && !isImmersionPeriod(selectedMonth);
-  const sheetLabel = showImmersionSheet
-    ? "Fiche : Période d'immersion"
-    : showSystematicSheet
-      ? "Fiche : Période systématique"
-      : "Fiche standard";
+  const sheetLabel = isMaternelle
+    ? "Maternelle — Bientôt disponible"
+    : showImmersionSheet
+      ? "Fiche : Période d'immersion"
+      : showSystematicSheet
+        ? "Fiche : Période systématique"
+        : "Fiche standard";
 
   // ┭ Refs pour briser la dépendance circulaire loadPlan ↔ autoPropose
   const autoProposeRef = useRef<() => Promise<void>>(async () => {});
@@ -452,17 +457,29 @@ export function MonthlyPlanningTab({
       {/* ⭐ Bannière informative — type de fiche */}
       <div className={cn(
         "rounded-lg p-3 text-xs flex items-start gap-2",
-        showImmersionSheet
-          ? "bg-blue-50 border border-blue-200 text-blue-700"
-          : showSystematicSheet
-            ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-            : "bg-amber-50 border border-amber-200 text-amber-700"
+        isMaternelle
+          ? "bg-slate-100 border border-slate-300 text-slate-700"
+          : showImmersionSheet
+            ? "bg-blue-50 border border-blue-200 text-blue-700"
+            : showSystematicSheet
+              ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+              : "bg-amber-50 border border-amber-200 text-amber-700"
       )}>
-        {showImmersionSheet ? <Info className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
+        {isMaternelle ? <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
+         showImmersionSheet ? <Info className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
          showSystematicSheet ? <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
          <Calendar className="w-4 h-4 mt-0.5 flex-shrink-0" />}
         <div>
           <strong>{sheetLabel}</strong>
+          {isMaternelle && (
+            <span className="ml-2">
+              — La planification mensuelle pour la <strong>Maternelle</strong> n'est pas encore
+              disponible. Le document officiel est en cours d'élaboration et sera ajouté
+              dans une prochaine version. En attendant, vous pouvez consulter la
+              <strong> planification annuelle</strong> de la maternelle (qui elle est disponible)
+              dans le module « Planification annuelle ».
+            </span>
+          )}
           {showImmersionSheet && (
             <span className="ml-2">
               — Cette fiche couvre la <strong>période d'immersion</strong> du 1er trimestre
@@ -476,127 +493,154 @@ export function MonthlyPlanningTab({
               (Janvier → Juin). L'enseignant y planifie les leçons structurées (Leçon 1, 2, ...).
             </span>
           )}
-          {!showImmersionSheet && !showSystematicSheet && (
+          {!isMaternelle && !showImmersionSheet && !showSystematicSheet && (
             <span className="ml-2">
               — Fiche standard pour les classes de CE1 à CM2. 5 semaines × matières.
             </span>
           )}
-          <div className="mt-1 opacity-80">
-            <strong>Terminologie :</strong>
-            <span className="ml-1"><strong>SA</strong> = Situation d'Apprentissage</span>
-            <span className="ml-2"><strong>Séq</strong> = Séquence (séance)</span>
-            <span className="ml-2"><strong>U</strong> = Unité</span>
-            <span className="ml-2"><strong>D</strong> = Dossier</span>
-          </div>
+          {!isMaternelle && (
+            <div className="mt-1 opacity-80">
+              <strong>Terminologie :</strong>
+              <span className="ml-1"><strong>SA</strong> = Situation d'Apprentissage</span>
+              <span className="ml-2"><strong>Séq</strong> = Séquence (séance)</span>
+              <span className="ml-2"><strong>U</strong> = Unité</span>
+              <span className="ml-2"><strong>D</strong> = Dossier</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ⭐ TABLEAU — 5 semaines (lignes) × matières (colonnes) */}
-      {/* Structure commune pour immersion, systématique et standard */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-        <table className="text-xs border-collapse w-full table-fixed">
-          <colgroup>
-            <col style={{ width: "10%" }} />
-            {PRIMAIRE_DOMAINS.map((_, i) => (
-              <col key={i} style={{ width: `${90 / PRIMAIRE_DOMAINS.length}%` }} />
-            ))}
-          </colgroup>
-          <thead>
-            <tr className={cn("text-white", TRIMESTER_COLORS[trimester])}>
-              <th className="p-2 border border-purple-300 text-left">Semaine</th>
-              {PRIMAIRE_DOMAINS.map(d => (
-                <th key={d} className="p-2 border border-purple-300 text-center text-[10px]">{d}</th>
+      {/* ⭐ Si Maternelle — afficher un message "pas encore disponible" à la place du tableau */}
+      {isMaternelle ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+            <Calendar className="h-8 w-8 text-slate-400" />
+          </div>
+          <h3 className="text-base font-bold text-slate-800 mb-2">
+            Planification mensuelle — Maternelle
+          </h3>
+          <p className="text-sm text-slate-600 max-w-md mx-auto mb-4">
+            Cette fonctionnalité n'est pas encore disponible pour la Maternelle.
+            Le document officiel de planification mensuelle pour la Maternelle est
+            en cours d'élaboration par les équipes pédagogiques.
+          </p>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 max-w-md mx-auto">
+            <p className="text-xs text-blue-700">
+              <strong>En attendant,</strong> la <strong>planification annuelle</strong> de la
+              Maternelle est disponible dans le module « Planification annuelle ».
+              Elle contient les 10 mois (Septembre → Juin) avec les 5 domaines (I-V)
+              et leurs sous-domaines.
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* ⭐ TABLEAU — 5 semaines (lignes) × matières (colonnes) */
+        /* Structure commune pour immersion, systématique et standard */
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+          <table className="text-xs border-collapse w-full table-fixed">
+            <colgroup>
+              <col style={{ width: "10%" }} />
+              {PRIMAIRE_DOMAINS.map((_, i) => (
+                <col key={i} style={{ width: `${90 / PRIMAIRE_DOMAINS.length}%` }} />
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: numWeeks }).map((_, weekIdx) => {
-              const weekNum = weekIdx + 1;
-              return (
-                <tr key={weekNum} className="hover:bg-purple-50/30">
-                  <td className="p-2 border border-slate-200 font-bold text-slate-700 bg-slate-50">
-                    {WEEK_LABELS[weekIdx]}
-                  </td>
-                  {PRIMAIRE_DOMAINS.map(domain => {
-                    const cell = findCell(weekNum, domain);
-                    const cellKey = `${selectedClass}|${selectedMonth}|${domain}||${weekNum}`;
-                    const isEditing = editingCellKey === cellKey;
-                    return (
-                      <td key={domain} className="p-1 border border-slate-200 align-top">
-                        {cell && isEditing ? (
-                          <div className="space-y-1">
-                            <textarea
-                              value={editContent}
-                              onChange={e => setEditContent(e.target.value)}
-                              className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
-                              rows={3}
-                              autoFocus
-                            />
-                            <div className="flex gap-0.5">
-                              <button
-                                onClick={() => saveCellInline(cell)}
-                                className="p-0.5 bg-emerald-600 text-white rounded"
-                              >
-                                <Check className="w-2.5 h-2.5" />
-                              </button>
-                              <button
-                                onClick={() => setEditingCellKey(null)}
-                                className="p-0.5 bg-slate-200 rounded"
-                              >
-                                <X className="w-2.5 h-2.5" />
-                              </button>
+            </colgroup>
+            <thead>
+              <tr className={cn("text-white", TRIMESTER_COLORS[trimester])}>
+                <th className="p-2 border border-purple-300 text-left">Semaine</th>
+                {PRIMAIRE_DOMAINS.map(d => (
+                  <th key={d} className="p-2 border border-purple-300 text-center text-[10px]">{d}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: numWeeks }).map((_, weekIdx) => {
+                const weekNum = weekIdx + 1;
+                return (
+                  <tr key={weekNum} className="hover:bg-purple-50/30">
+                    <td className="p-2 border border-slate-200 font-bold text-slate-700 bg-slate-50">
+                      {WEEK_LABELS[weekIdx]}
+                    </td>
+                    {PRIMAIRE_DOMAINS.map(domain => {
+                      const cell = findCell(weekNum, domain);
+                      const cellKey = `${selectedClass}|${selectedMonth}|${domain}||${weekNum}`;
+                      const isEditing = editingCellKey === cellKey;
+                      return (
+                        <td key={domain} className="p-1 border border-slate-200 align-top">
+                          {cell && isEditing ? (
+                            <div className="space-y-1">
+                              <textarea
+                                value={editContent}
+                                onChange={e => setEditContent(e.target.value)}
+                                className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
+                                rows={3}
+                                autoFocus
+                              />
+                              <div className="flex gap-0.5">
+                                <button
+                                  onClick={() => saveCellInline(cell)}
+                                  className="p-0.5 bg-emerald-600 text-white rounded"
+                                >
+                                  <Check className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingCellKey(null)}
+                                  className="p-0.5 bg-slate-200 rounded"
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ) : cell ? (
-                          <div
-                            className={cn(
-                              "text-[9px] leading-tight cursor-pointer p-1 rounded",
-                              cell.isCustom
-                                ? "bg-amber-50 text-amber-900 border border-amber-200"
-                                : cell.isAutoProposed
-                                  ? "bg-purple-50 text-purple-900 border border-purple-100"
-                                  : "text-slate-700"
-                            )}
-                            onClick={() => {
-                              setEditingCellKey(cellKey);
-                              setEditContent(cell.content);
-                            }}
-                            title={
-                              cell.isCustom
-                                ? "Modifié par l'enseignant"
-                                : cell.isAutoProposed
-                                  ? "Auto-proposé depuis la planification annuelle"
-                                  : "Contenu"
-                            }
-                          >
-                            {cell.content}
-                            {cell.activityType && (
-                              <span className="block text-[7px] text-purple-600 font-bold mt-0.5">
-                                {cell.activityType}{cell.activityNumber || ""}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setEditingCellKey(cellKey);
-                              setEditContent("");
-                            }}
-                            className="text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1"
-                            title="Cliquer pour ajouter du contenu"
-                          >
-                            + ajouter
-                          </button>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                          ) : cell ? (
+                            <div
+                              className={cn(
+                                "text-[9px] leading-tight cursor-pointer p-1 rounded",
+                                cell.isCustom
+                                  ? "bg-amber-50 text-amber-900 border border-amber-200"
+                                  : cell.isAutoProposed
+                                    ? "bg-purple-50 text-purple-900 border border-purple-100"
+                                    : "text-slate-700"
+                              )}
+                              onClick={() => {
+                                setEditingCellKey(cellKey);
+                                setEditContent(cell.content);
+                              }}
+                              title={
+                                cell.isCustom
+                                  ? "Modifié par l'enseignant"
+                                  : cell.isAutoProposed
+                                    ? "Auto-proposé depuis la planification annuelle"
+                                    : "Contenu"
+                              }
+                            >
+                              {cell.content}
+                              {cell.activityType && (
+                                <span className="block text-[7px] text-purple-600 font-bold mt-0.5">
+                                  {cell.activityType}{cell.activityNumber || ""}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setEditingCellKey(cellKey);
+                                setEditContent("");
+                              }}
+                              className="text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1"
+                              title="Cliquer pour ajouter du contenu"
+                            >
+                              + ajouter
+                            </button>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Légende */}
       <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap items-center gap-4">

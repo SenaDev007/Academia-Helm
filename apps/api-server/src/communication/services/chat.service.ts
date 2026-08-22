@@ -22,8 +22,8 @@
  */
 
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
-import { StorageService } from '../common/services/storage.service';
+import { PrismaService } from '../../database/prisma.service';
+import { StorageService } from '../../common/services/storage.service';
 import { randomUUID } from 'crypto';
 
 export interface ChatConversation {

@@ -10,7 +10,8 @@
  */
 
 import { Module, OnModuleInit } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { EmailService } from './services/email.service';
 import { EmailLogService } from './services/email-log.service';
 import { InboundEmailService } from './services/inbound-email.service';
@@ -49,7 +50,18 @@ import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule],
+  imports: [
+    ConfigModule,
+    DatabaseModule,
+    // ⭐ JwtModule pour ChatGateway (vérification du JWT lors du handshake Socket.io)
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET', 'your-secret-key-change-in-production'),
+      }),
+      inject: [ConfigService],
+    }),
+  ],
   controllers: [
     CommunicationV2Controller,
     CommunicationPrismaController,

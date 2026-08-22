@@ -610,14 +610,17 @@ export class ChatService {
     const limit = Math.min(options.limit || 20, 50);
     const likeQuery = `%${query.trim().toLowerCase()}%`;
 
-    // ⭐ FIX: users table has NO avatarUrl column AND user_roles JOIN fails (user_roles
-    //    has roleId FK to roles table, not a "role" text column). The role is stored
-    //    DIRECTLY on users.role. So we skip the user_roles JOIN entirely and use u."role".
+    // ⭐ FIX: users table has NO avatarUrl column AND user_roles JOIN fails.
+    //    The role is stored DIRECTLY on users.role.
+    //    ⭐ ALSO search guardians table — parents may not have a users entry
+    //    (they exist only in guardians with userId=NULL).
+    //    We search both tables and merge results.
     const tenantFilter = options.includeOtherTenants === false
       ? `AND u."tenantId" = $1`
       : '';
 
-    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+    // Part 1: Search in users table (teachers, admin, etc.)
+    const userRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT u.id, u."firstName", u."lastName", u."email", u."role",
              t."name" AS "tenantName", u."tenantId",
              (u."tenantId" = $1) AS "isSameTenant"
@@ -635,31 +638,106 @@ export class ChatService {
       LIMIT $4
     `, currentTenantId, currentUserId, likeQuery, limit);
 
+    // Part 2: Search in guardians table (parents who may not have a users entry)
+    //    Only return guardians from the same tenant (parents belong to a specific school)
+    const guardianRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
+             g."tenantId", t."name" AS "tenantName",
+             (g."tenantId" = $1) AS "isSameTenant"
+      FROM "guardians" g
+      LEFT JOIN "tenants" t ON t.id = g."tenantId"
+      WHERE g."tenantId" = $1
+        AND (
+          LOWER(COALESCE(g."firstName", '')) LIKE $2
+          OR LOWER(COALESCE(g."lastName", '')) LIKE $2
+          OR LOWER(COALESCE(g."firstName", '') || ' ' || COALESCE(g."lastName", '')) LIKE $2
+          OR LOWER(COALESCE(g."email", '')) LIKE $2
+        )
+      ORDER BY g."lastName" ASC, g."firstName" ASC
+      LIMIT $3
+    `, currentTenantId, likeQuery, limit).catch(() => []);
+
+    // Merge: combine userRows + guardianRows (dedup by email if possible)
+    const seenEmails = new Set<string>();
+    const allRows: any[] = [];
+    for (const r of userRows) {
+      if (r.email && seenEmails.has(r.email.toLowerCase())) continue;
+      if (r.email) seenEmails.add(r.email.toLowerCase());
+      allRows.push({ ...r, source: 'users' });
+    }
+    for (const g of guardianRows) {
+      // Skip guardians that already have a linked user (already in userRows)
+      if (g.userId) continue;
+      // Add guardian as a pseudo-user (can't chat directly but shown in search)
+      allRows.push({
+        id: g.guardianId,
+        firstName: g.firstName,
+        lastName: g.lastName,
+        email: g.email,
+        role: 'PARENT',
+        tenantId: g.tenantId,
+        tenantName: g.tenantName,
+        isSameTenant: g.isSameTenant,
+        source: 'guardians',
+        userId: null, // No user account — can't chat directly
+      });
+    }
+
+    const rows = allRows.slice(0, limit);
+
     // ⭐ Enrichir avec les noms des enfants pour les PARENTS / GUARDIANS
-    //    guardians.userId → student_guardians.guardianId → students
+    //    Also search guardians by their guardianId (for guardian-only entries without userId)
+    const guardianIdsForChildren = rows.filter(r => r.source === 'guardians').map(r => r.id);
     const parentUserIds = rows.filter(r => {
       const role = (r.role || '').toUpperCase();
-      return role === 'PARENT' || role === 'GUARDIAN';
-    }).map(r => r.id);
+      return role === 'PARENT' || role === 'GUARDIAN' || r.source === 'guardians';
+    }).map(r => r.userId || r.id); // Use userId if available, else guardianId
     const childrenByParent: Map<string, string[]> = new Map();
-    if (parentUserIds.length > 0) {
+    if (guardianIdsForChildren.length > 0) {
+      // Search by guardianId (for guardians without userId)
       const childrenRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g.id AS "guardianId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
+        FROM "guardians" g
+        JOIN "student_guardians" sg ON sg."guardianId" = g.id
+        JOIN "students" s ON s.id = sg."studentId"
+        WHERE g.id = ANY($1::text[])
+      `, guardianIdsForChildren).catch(() => []);
+      for (const r of childrenRows) {
+        if (!childrenByParent.has(r.guardianId)) childrenByParent.set(r.guardianId, []);
+        childrenByParent.get(r.guardianId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
+      }
+    }
+    // Also search by userId for guardians who have a userId
+    const parentUserIdsWithAccount = rows.filter(r => r.userId && r.source !== 'guardians').map(r => r.userId);
+    if (parentUserIdsWithAccount.length > 0) {
+      const childrenRows2: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
         SELECT g."userId" AS "parentUserId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
         FROM "guardians" g
         JOIN "student_guardians" sg ON sg."guardianId" = g.id
         JOIN "students" s ON s.id = sg."studentId"
         WHERE g."userId" = ANY($1::text[])
-      `, parentUserIds);
-      for (const r of childrenRows) {
+      `, parentUserIdsWithAccount);
+      for (const r of childrenRows2) {
         if (!childrenByParent.has(r.parentUserId)) childrenByParent.set(r.parentUserId, []);
         childrenByParent.get(r.parentUserId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
       }
     }
 
-    // ⭐ Build role labels — handles French values (ENSEIGNANT, COMPTABLE, DIRECTEUR, etc.)
+    // ⭐ Get current user's role for contextual role labels
+    const currentUserRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "role" FROM "users" WHERE id = $1
+    `, currentUserId).catch(() => []);
+    const currentUserRole = (currentUserRow[0]?.role || '').toUpperCase();
+    const isCurrentUserTeacher = currentUserRole === 'ENSEIGNANT' || currentUserRole === 'TEACHER' || currentUserRole === 'TEACHER_RESP';
+
+    // ⭐ Build role labels — contextuel selon le rôle de l'utilisateur courant
+    //    - Si l'utilisateur courant est enseignant → "Collègue enseignant" pour les autres enseignants
+    //    - Si l'utilisateur courant est promoteur/directeur → "Enseignant" (pas "Collègue")
     const roleLabelFor = (role: string, children: string[] | undefined): string => {
       const upperRole = (role || '').toUpperCase();
-      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') {
+        return isCurrentUserTeacher ? 'Collègue enseignant' : 'Enseignant';
+      }
       if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
         if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
         return 'Parent d\'élève';
@@ -678,20 +756,24 @@ export class ChatService {
     };
 
     return rows.map(r => {
-      const children = childrenByParent.get(r.id);
+      // For guardian entries without userId, use guardianId as key
+      const keyId = r.userId || r.id;
+      const children = childrenByParent.get(r.id) || childrenByParent.get(keyId);
       const isSame = !!r.isSameTenant;
+      const isGuardianWithoutAccount = r.source === 'guardians' && !r.userId;
       return {
-        userId: r.id,
+        userId: keyId,
         firstName: r.firstName,
         lastName: r.lastName,
         email: r.email,
         // ⭐ FIX: users table has no avatarUrl — null for now (V2 will use staff_photos)
         avatarUrl: null,
-        role: r.role,
-        roleLabel: roleLabelFor(r.role, children),
+        role: r.role || 'PARENT',
+        roleLabel: roleLabelFor(r.role || 'PARENT', children),
         tenantName: r.tenantName,
         isSameTenant: isSame,
-        canStartDirectConversation: isSame,  // ⭐ intra-école = direct, cross-école = invitation
+        // ⭐ Guardians without a user account can't start a direct conversation
+        canStartDirectConversation: isSame && !isGuardianWithoutAccount,
         childrenNames: children,
       };
     });

@@ -189,7 +189,7 @@ export default function EduCastModulePage() {
         const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYear?.id || ''}`, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
-          const items = data?.data || data || [];
+          const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
           // Extract unique teachers
           const teacherMap = new Map<string, TeacherInfo>();
           for (const item of items) {
@@ -222,7 +222,9 @@ export default function EduCastModulePage() {
       const res = await fetch(`/api/modules-complementaires/educast/contents?${params}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setContents(data?.data || data || []);
+        // ⭐ FIX: ensure we always get an array (prevents 's.map is not a function')
+        const items = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        setContents(items);
       }
     } catch (e) { console.error('Failed to load content:', e); }
     finally { setLoading(false); }
@@ -999,7 +1001,7 @@ function ModerationView({ academicYearId, onContentChange }: { academicYearId: s
     setLoading(true);
     try {
       const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}&status=pending`, { credentials: 'include' });
-      if (res.ok) { const d = await res.json(); setPending(d?.data || d || []); }
+      if (res.ok) { const d = await res.json(); setPending(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []); }
     } catch {} finally { setLoading(false); }
   }, [academicYearId]);
 
@@ -1055,7 +1057,7 @@ function WatchLaterView({ currentUserId, onContentClick }: { currentUserId: stri
     (async () => {
       try {
         const res = await fetch(`/api/modules-complementaires/educast/favorites?userId=${currentUserId}`, { credentials: 'include' });
-        if (res.ok) { const d = await res.json(); setFavorites(d?.data || d || []); }
+        if (res.ok) { const d = await res.json(); setFavorites(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []); }
       } catch {} finally { setLoading(false); }
     })();
   }, [currentUserId]);
@@ -1099,7 +1101,7 @@ function SubscriptionsView({ currentUserId, academicYearId, onContentClick }: { 
         const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}`, { credentials: 'include' });
         if (res.ok) {
           const d = await res.json();
-          const all = d?.data || d || [];
+          const all = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
           // TODO: Filter by subscribed channels (need subscriptions API)
           // For now, show all content sorted by date (most recent first)
           setFeed(all.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
@@ -1512,7 +1514,7 @@ function ChannelView({ channel, academicYearId, onContentClick, onBack }: {
     (async () => {
       try {
         const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}&teacherId=${channel.id}`, { credentials: 'include' });
-        if (res.ok) { const d = await res.json(); setChannelContent(d?.data || d || []); }
+        if (res.ok) { const d = await res.json(); setChannelContent(Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : []); }
       } catch {} finally { setLoading(false); }
     })();
   }, [channel.id, academicYearId]);

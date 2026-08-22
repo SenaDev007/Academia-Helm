@@ -98,9 +98,13 @@ function formatDateFRShort(date: Date): string {
 
 /**
  * ⭐ Compute the 5 week ranges for a given month/year.
- *    Each week starts on Monday and ends on Sunday.
- *    Week 1 = the week containing the 1st day of the month (or starting from 1st if Monday).
- *    Returns array of { start: Date, end: Date } for 5 weeks (5th may extend into next month).
+ *    Each week starts on Monday and ends on Friday (NOT Sunday).
+ *    This matches the Cahier Journal + Fiche Pédagogique convention:
+ *      school week = Lundi → Vendredi (Monday → Friday).
+ *
+ *    Week 1 = the week containing the 1st day of the month
+ *      (if the 1st is not a Monday, the week starts from the Monday before/after).
+ *    Returns array of { start: Date, end: Date } for 5 weeks.
  */
 function computeWeekRangesForMonth(monthName: string, year: number): { start: Date; end: Date }[] {
   // Map month name → month index (0-based)
@@ -111,6 +115,11 @@ function computeWeekRangesForMonth(monthName: string, year: number): { start: Da
   // First day of the month
   const firstDay = new Date(year, monthIdx, 1);
   // Find the Monday of the week containing the 1st (or before the 1st if month starts mid-week)
+  // ⭐ Same logic as Cahier Journal's getMondayOfWeek():
+  //    day 0 = Sunday → offset -6 (go back to previous Monday)
+  //    day 1 = Monday → offset 0 (already Monday)
+  //    day 2 = Tuesday → offset -1
+  //    etc.
   const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, ...
   const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // reculer au lundi
 
@@ -119,11 +128,14 @@ function computeWeekRangesForMonth(monthName: string, year: number): { start: Da
 
   for (let i = 0; i < 5; i++) {
     const start = new Date(weekStart);
+    // ⭐ FIX: end = Monday + 4 days = Friday (NOT +6 = Sunday)
+    //    Aligned with Cahier Journal + Fiche Pédagogique (school week = Lundi→Vendredi)
     const end = new Date(weekStart);
-    end.setDate(end.getDate() + 6); // +6 days = Sunday
+    end.setDate(end.getDate() + 4); // +4 days = Friday
     weeks.push({ start, end });
+    // Next week starts on the following Monday (= this Friday + 3 days)
     weekStart = new Date(end);
-    weekStart.setDate(weekStart.getDate() + 1); // Next Monday
+    weekStart.setDate(weekStart.getDate() + 3); // Friday + 3 = next Monday
   }
   return weeks;
 }

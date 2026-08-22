@@ -7856,3 +7856,64 @@ Stage Summary:
 - Switcher de classe pour teachers multi-classes (Saliou CE1 + CE2)
 - Backend parent-portal : retourne academicClassId pour chaque enfant
 - Plus de bug 'no EDT configured' quand l'EDT existe réellement
+
+---
+Task ID: Phase-20-Login-Loop-Robust-Fix
+Agent: main
+Task: Fix persisting login blink loop despite Phase 17 fix
+
+Work Log:
+
+- PROBLÈME PERSISTANT :
+  * Phase 17 ajoutait grace period 60s après logout via sessionStorage flag
+  * Mais user rapporte encore blink loop après logout
+  * Causes possibles :
+    1. User navigue à /login APRÈS 60s → flag auto-purgé → hasLocalSessionHints
+       reprend → si stale localStorage → true → redirect /app → loop
+    2. Cache API mirror (suspendu) ou service worker réécrit localStorage
+    3. Bundle JS caché côté navigateur servant ancien code sans fix Phase 17
+
+- ROOT CAUSE DÉFINITIVE :
+  * L'auto-redirect vers /app basé sur hasLocalSessionHints() est FONDAMENTALEMENT
+    INSTABLE : on ne peut pas faire confiance à localStorage seul pour décider
+    si une session est valide. Il FAUT une validation réseau.
+
+- SOLUTION ROBUSTE — Remplacer auto-redirect par validation silencieuse :
+  * Si hasLocalSessionHints() retourne true, on NE REDIRIGE PAS directement
+  * À la place, on appelle /api/auth/me (server-side cookie validation)
+    - 200 OK → session valide → on n'affiche PAS de redirect (user clique bouton)
+    - 401 → session invalide → clearClientSessionSync() + set sessionStorage flag
+      (purge localStorage stale + grace period 60s)
+    - Network error → on ne fait rien, affiche le formulaire (offline-friendly)
+  * Plus AUCUN window.location.href dans le useEffect au montage → plus de boucle
+
+- POURQUOI C'EST PLUS ROBUSTE :
+  * Validation server-side = seule façon fiable de savoir si session valide
+  * localStorage hints peuvent être stale (Cache API, service worker, vieux bundles)
+  * Même si hasLocalSessionHints retourne true, on ne JAMAIS rediriger sans OK serveur
+  * Appel réseau rapide (~100ms) + safety net réel
+  * Si backend down, on affiche juste le formulaire (offline-friendly)
+
+- IMPACT UX :
+  * Users avec session valide voient le formulaire (pas d'auto-redirect vers /app)
+  * Ils peuvent quand même se logguer manuellement (re-saisir credentials)
+  * Comportement 'offline-first' préservé (formulaire affiché même si backend down)
+  * Plus de boucle blink infinie après logout
+
+- DÉTAILS TECHNIQUES :
+  * /api/auth/session n'existe pas — utilisé /api/auth/me à la place
+    (200 si session valide, 401 sinon)
+  * Ajouté clearClientSessionSync aux imports (était déjà exporté)
+
+- SYNTAX CHECK : ✅
+- TypeScript check : 0 erreur
+- 1 fichier modifié (+55 lignes, -42 lignes) :
+  * apps/web-app/src/components/auth/LoginPage.tsx
+- Commit + push : d159f72f sur origin/main
+
+Stage Summary:
+- Auto-redirect supprimé définitivement → plus de boucle possible
+- Validation silencieuse via /api/auth/me avant toute décision
+- localStorage purgé si session serveur invalide (évite faux positifs futurs)
+- Grace period 60s conservée comme safety net supplémentaire
+- Formulaire login affiché dans tous les cas (online/offline/session valide/invalide)

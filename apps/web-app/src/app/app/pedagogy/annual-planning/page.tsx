@@ -64,30 +64,57 @@ const PRIMAIRE_ROWS = [
   { trimester: 3, month: 'Juin' },
 ];
 
-// Domaines pour MATERNELLE — 5 domaines avec sous-domaines
+// Domaines pour MATERNELLE — DOIVENT correspondre exactement aux noms dans le seed data
 const MATERNELLE_DOMAINS = [
-  { domain: 'I. Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'II. Expression corporelle', subDomains: ['Expression corporelle'] },
-  { domain: 'III. Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'IV. Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'V. Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+  { domain: 'Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'Expression corporelle', subDomains: ['Expression corporelle'] },
+  { domain: 'Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
 ];
 
-// Colonnes semaines pour MATERNELLE — tous les mois/semaines en une seule ligne
-const MATERNELLE_WEEKS = [
+// Colonnes semaines pour MATERNELLE — format {month, week} qui match le seed data
+// Le seed stocke month='Septembre' et week='3ème semaine' séparément
+const MATERNELLE_WEEKS: { month: string; week: string; trimester: number }[] = [
   // 1er Trimestre
-  'Septembre 3ème', 'Septembre 4ème',
-  'Octobre 1ère', 'Octobre 2ème', 'Octobre 3ème', 'Octobre 4ème', 'Octobre 5ème',
-  'Novembre 1ère', 'Novembre 2ème', 'Novembre 3ème', 'Novembre 4ème',
-  'Décembre Congés',
+  { month: 'Septembre', week: '3ème semaine', trimester: 1 },
+  { month: 'Septembre', week: '4ème semaine', trimester: 1 },
+  { month: 'Octobre', week: '1ère semaine', trimester: 1 },
+  { month: 'Octobre', week: '2ème semaine', trimester: 1 },
+  { month: 'Octobre', week: '3ème semaine', trimester: 1 },
+  { month: 'Octobre', week: '4ème semaine', trimester: 1 },
+  { month: 'Octobre', week: '5ème semaine', trimester: 1 },
+  { month: 'Novembre', week: '1ère semaine', trimester: 1 },
+  { month: 'Novembre', week: '2ème semaine', trimester: 1 },
+  { month: 'Novembre', week: '3ème semaine', trimester: 1 },
+  { month: 'Novembre', week: '4ème semaine', trimester: 1 },
+  { month: 'Décembre', week: 'Congés', trimester: 1 },
   // 2e Trimestre
-  'Janvier 1ère', 'Janvier 2ème', 'Janvier 3ème', 'Janvier 4ème',
-  'Février 1ère', 'Février 2ème', 'Février 3ème', 'Février 4ème',
-  'Mars 1ère', 'Mars 2ème', 'Mars 3ème', 'Mars 4ème',
+  { month: 'Janvier', week: '1ère semaine', trimester: 2 },
+  { month: 'Janvier', week: '2ème semaine', trimester: 2 },
+  { month: 'Janvier', week: '3ème semaine', trimester: 2 },
+  { month: 'Janvier', week: '4ème semaine', trimester: 2 },
+  { month: 'Février', week: '1ère semaine', trimester: 2 },
+  { month: 'Février', week: '2ème semaine', trimester: 2 },
+  { month: 'Février', week: '3ème semaine', trimester: 2 },
+  { month: 'Février', week: '4ème semaine', trimester: 2 },
+  { month: 'Mars', week: '1ère semaine', trimester: 2 },
+  { month: 'Mars', week: '2ème semaine', trimester: 2 },
+  { month: 'Mars', week: '3ème semaine', trimester: 2 },
+  { month: 'Mars', week: '4ème semaine', trimester: 2 },
   // 3e Trimestre
-  'Avril 1ère', 'Avril 2ème', 'Avril 3ème', 'Avril 4ème',
-  'Mai 1ère', 'Mai 2ème', 'Mai 3ème', 'Mai 4ème',
-  'Juin 1ère', 'Juin 2ème', 'Juin 3ème', 'Juin 4ème',
+  { month: 'Avril', week: '1ère semaine', trimester: 3 },
+  { month: 'Avril', week: '2ème semaine', trimester: 3 },
+  { month: 'Avril', week: '3ème semaine', trimester: 3 },
+  { month: 'Avril', week: '4ème semaine', trimester: 3 },
+  { month: 'Mai', week: '1ère semaine', trimester: 3 },
+  { month: 'Mai', week: '2ème semaine', trimester: 3 },
+  { month: 'Mai', week: '3ème semaine', trimester: 3 },
+  { month: 'Mai', week: '4ème semaine', trimester: 3 },
+  { month: 'Juin', week: '1ère semaine', trimester: 3 },
+  { month: 'Juin', week: '2ème semaine', trimester: 3 },
+  { month: 'Juin', week: '3ème semaine', trimester: 3 },
+  { month: 'Juin', week: '4ème semaine', trimester: 3 },
 ];
 
 interface AnnualPlan {
@@ -136,7 +163,7 @@ function AnnualPlanningContent() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<AnnualPlan[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('CM2');
+  const [selectedClass, setSelectedClass] = useState<string>('MATERNELLE_GRANDS');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -217,11 +244,12 @@ function AnnualPlanningContent() {
     ) || null;
   };
 
-  // ⭐ Trouver le contenu d'une cellule (maternelle) — par subDomain + week
-  const getMaternelleContent = (domain: string, subDomain: string, week: string): AnnualPlan | null => {
+  // ⭐ Trouver le contenu d'une cellule (maternelle) — par domain + subDomain + month + week
+  const getMaternelleContent = (domain: string, subDomain: string, month: string, week: string): AnnualPlan | null => {
     return plans.find(p =>
       p.domain === domain &&
       p.subDomain === subDomain &&
+      p.month === month &&
       p.week === week
     ) || null;
   };
@@ -356,25 +384,22 @@ function AnnualPlanningContent() {
           <table className="text-xs border-collapse" style={{ minWidth: '2400px' }}>
             <thead>
               {/* Ligne 1 : Trimestre headers */}
-              <tr className="bg-slate-800 text-white">
-                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-0 bg-slate-800 z-10 min-w-[180px]">Domaines</th>
-                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-[180px] bg-slate-800 z-10 min-w-[120px]">Sous-domaine</th>
+              <tr className="bg-blue-600 text-white">
+                <th rowSpan={2} className="p-2 border border-blue-400 text-left sticky left-0 bg-blue-600 z-10 min-w-[180px]">Domaines</th>
+                <th rowSpan={2} className="p-2 border border-blue-400 text-left sticky left-[180px] bg-blue-600 z-10 min-w-[120px]">Sous-domaine</th>
                 {/* Groupes par trimestre */}
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-blue-900">1er Trimestre</th>
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-emerald-900">2e Trimestre</th>
-                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-amber-900">3e Trimestre</th>
+                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-blue-500">1er Trimestre</th>
+                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-emerald-500">2e Trimestre</th>
+                <th colSpan={12} className="p-2 border border-blue-400 text-center bg-amber-500">3e Trimestre</th>
               </tr>
               {/* Ligne 2 : Semaines */}
-              <tr className="bg-slate-700 text-white">
+              <tr className="bg-blue-400 text-white">
                 {MATERNELLE_WEEKS.map((w, i) => (
-                  <th key={w} className={cn(
-                    'p-1 border border-slate-600 text-center min-w-[80px] font-bold',
-                    i < 12 ? 'bg-blue-800' : i < 24 ? 'bg-emerald-800' : 'bg-amber-800'
+                  <th key={i} className={cn(
+                    'p-1 border border-blue-300 text-center min-w-[80px] font-bold',
+                    i < 12 ? 'bg-blue-300' : i < 24 ? 'bg-emerald-300' : 'bg-amber-300'
                   )}>
-                    {w.replace('Septembre ', 'Sept ').replace('Octobre ', 'Oct ').replace('Novembre ', 'Nov ')
-                       .replace('Décembre ', 'Déc ').replace('Janvier ', 'Jan ').replace('Février ', 'Fév ')
-                       .replace('Mars ', 'Mars ').replace('Avril ', 'Avr ').replace('Mai ', 'Mai ')
-                       .replace('Juin ', 'Juin ')}
+                    {w.month.substring(0, 4)} {w.week.replace(' semaine', '')}
                   </th>
                 ))}
               </tr>
@@ -395,10 +420,10 @@ function AnnualPlanningContent() {
                       <td className="p-1 border border-slate-200 font-semibold text-slate-600 sticky left-[180px] z-10 bg-white">
                         {sub}
                       </td>
-                      {MATERNELLE_WEEKS.map(week => {
-                        const plan = getMaternelleContent(dom.domain, sub, week);
+                      {MATERNELLE_WEEKS.map((wk, wki) => {
+                        const plan = getMaternelleContent(dom.domain, sub, wk.month, wk.week);
                         return (
-                          <td key={week} className="p-1 border border-slate-200 align-top min-w-[80px]">
+                          <td key={wki} className="p-1 border border-slate-200 align-top min-w-[80px]">
                             {plan ? (
                               editingId === plan.id ? (
                                 <div className="space-y-1">
@@ -448,15 +473,15 @@ function AnnualPlanningContent() {
           <table className="text-xs border-collapse" style={{ minWidth: '1800px' }}>
             <thead>
               {/* Ligne 1 : Group headers (Éducation Sociale, Éducation Artistique) */}
-              <tr className="bg-slate-800 text-white">
+              <tr className="bg-blue-600 text-white">
                 {groupHeaders.map((g, i) => (
                   <th
                     key={i}
                     colSpan={g.colCount}
                     className={cn(
-                      'p-2 border border-slate-600 text-center font-bold',
-                      g.group === 'Éducation Sociale' ? 'bg-indigo-800' :
-                      g.group === 'Éducation Artistique' ? 'bg-purple-800' : 'bg-slate-800'
+                      'p-2 border border-blue-400 text-center font-bold',
+                      g.group === 'Éducation Sociale' ? 'bg-indigo-500' :
+                      g.group === 'Éducation Artistique' ? 'bg-purple-500' : 'bg-blue-600'
                     )}
                   >
                     {g.group || ''}
@@ -464,16 +489,16 @@ function AnnualPlanningContent() {
                 ))}
               </tr>
               {/* Ligne 2 : Column headers */}
-              <tr className="bg-slate-700 text-white">
+              <tr className="bg-blue-400 text-white">
                 {PRIMAIRE_COLUMNS.map(col => (
                   <th
                     key={col.key}
                     className={cn(
-                      'p-2 border border-slate-600 text-center font-bold',
-                      col.key === 'trimester' ? 'bg-blue-800 sticky left-0 z-10 min-w-[60px]' :
-                      col.key === 'month' ? 'bg-blue-800 sticky left-[60px] z-10 min-w-[80px]' :
-                      col.group === 'Éducation Sociale' ? 'bg-indigo-700' :
-                      col.group === 'Éducation Artistique' ? 'bg-purple-700' : 'bg-slate-700'
+                      'p-2 border border-blue-300 text-center font-bold',
+                      col.key === 'trimester' ? 'bg-blue-500 sticky left-0 z-10 min-w-[60px]' :
+                      col.key === 'month' ? 'bg-blue-500 sticky left-[60px] z-10 min-w-[80px]' :
+                      col.group === 'Éducation Sociale' ? 'bg-indigo-400' :
+                      col.group === 'Éducation Artistique' ? 'bg-purple-400' : 'bg-blue-400'
                     )}
                   >
                     {col.label}

@@ -53,6 +53,9 @@ export interface ChatParticipant {
   email?: string;
   avatarUrl?: string;
   role_label?: string; // 'TEACHER', 'DIRECTOR', 'PARENT', 'PROMOTER'
+  // ⭐ Labels enrichis pour l'affichage (FR, lisible)
+  roleLabel?: string;          // ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur"
+  childrenNames?: string[];   // pour les parents : noms des enfants
 }
 
 export interface ChatMessage {
@@ -134,6 +137,46 @@ export class ChatService {
       ORDER BY p."joinedAt" ASC
     `, conversationIds);
 
+    // ⭐ Enrichir : pour les parents, fetch les noms des enfants
+    //    (garde la même logique que searchUsers — DRY serait mieux mais on garde simple)
+    const parentUserIds = allParticipants
+      .filter(p => (p.role_label || '').toUpperCase() === 'PARENT')
+      .map(p => p.userId);
+    const childrenByParent: Map<string, string[]> = new Map();
+    if (parentUserIds.length > 0) {
+      const uniqueParentIds = Array.from(new Set(parentUserIds));
+      const childrenRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g."userId" AS "parentUserId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
+        FROM "guardians" g
+        JOIN "student_guardians" sg ON sg."guardianId" = g.id
+        JOIN "students" s ON s.id = sg."studentId"
+        WHERE g."userId" = ANY($1::text[])
+      `, uniqueParentIds);
+      for (const r of childrenRows) {
+        if (!childrenByParent.has(r.parentUserId)) childrenByParent.set(r.parentUserId, []);
+        childrenByParent.get(r.parentUserId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
+      }
+    }
+
+    // ⭐ Build role label (same logic as searchUsers)
+    const roleLabelFor = (role: string, children: string[] | undefined): string => {
+      const upperRole = (role || '').toUpperCase();
+      if (upperRole === 'PARENT') {
+        if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
+        return 'Parent d\'élève';
+      }
+      if (upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER') return 'Promoteur';
+      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT') return 'Directeur';
+      if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
+      if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
+      if (upperRole === 'SCHOOL_ADMIN') return 'Administration école';
+      if (upperRole === 'CENSEUR') return 'Censeur';
+      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR') return 'Directeur pédagogique';
+      if (upperRole === 'STUDENT') return 'Élève';
+      return role || 'Utilisateur';
+    };
+
     // Group participants by conversationId
     const participantsByConv = new Map<string, any[]>();
     for (const p of allParticipants) {
@@ -155,18 +198,23 @@ export class ChatService {
       lastMessageAt: c.lastMessageAt,
       lastMessagePreview: c.lastMessagePreview,
       lastMessageSenderId: c.lastMessageSenderId,
-      participants: (participantsByConv.get(c.id) || []).map((p: any) => ({
-        userId: p.userId,
-        role: p.role,
-        joinedAt: p.joinedAt,
-        lastReadAt: p.lastReadAt,
-        muted: p.muted,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        email: p.email,
-        avatarUrl: p.avatarUrl,
-        role_label: p.role_label,
-      })),
+      participants: (participantsByConv.get(c.id) || []).map((p: any) => {
+        const children = childrenByParent.get(p.userId);
+        return {
+          userId: p.userId,
+          role: p.role,
+          joinedAt: p.joinedAt,
+          lastReadAt: p.lastReadAt,
+          muted: p.muted,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          email: p.email,
+          avatarUrl: p.avatarUrl,
+          role_label: p.role_label,
+          roleLabel: roleLabelFor(p.role_label, children),  // ⭐ label human-readable
+          childrenNames: children,
+        };
+      }),
     }));
   }
 
@@ -496,6 +544,19 @@ export class ChatService {
    * Recherche des utilisateurs par nom, prénom ou email.
    * Inclut le tenant courant + les autres tenants (pour l'écosystème cross-écoles).
    * Exclut l'utilisateur courant.
+   *
+   * ⭐ Rôle contextuel :
+   *   - Si l'utilisateur trouvé est PARENT → on enrichit avec le nom de ses enfants
+   *     (ex: "Parent de Awa Dupont, Kossi Dupont")
+   *   - Si l'utilisateur est TEACHER → on affiche "Collègue enseignant"
+   *   - Si l'utilisateur est DIRECTOR/PROMOTER → on affiche "Directeur" / "Promoteur"
+   *
+   * ⭐ Distinction intra-école vs cross-école :
+   *   - Si `isSameTenant=true` → l'utilisateur courant peut engager la conversation
+   *     DIRECTEMENT (pas d'invitation requise — c'est un collègue / un parent d'élève
+   *     de la même école).
+   *   - Si `isSameTenant=false` → invitation requise (l'utilisateur appartient à une
+   *     autre école sur Academia Helm).
    */
   async searchUsers(
     currentTenantId: string,
@@ -509,8 +570,11 @@ export class ChatService {
     email?: string;
     avatarUrl?: string;
     role?: string;
+    roleLabel?: string;          // ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur"
     tenantName?: string;
     isSameTenant: boolean;
+    canStartDirectConversation: boolean;  // true si même tenant (=pas d'invitation requise)
+    childrenNames?: string[];    // pour les parents : noms des enfants
   }[]> {
     if (!query || query.trim().length < 2) {
       throw new BadRequestException('Query must be at least 2 characters');
@@ -542,16 +606,62 @@ export class ChatService {
       LIMIT $4
     `, currentTenantId, currentUserId, likeQuery, limit);
 
-    return rows.map(r => ({
-      userId: r.id,
-      firstName: r.firstName,
-      lastName: r.lastName,
-      email: r.email,
-      avatarUrl: r.avatarUrl,
-      role: r.role,
-      tenantName: r.tenantName,
-      isSameTenant: r.isSameTenant,
-    }));
+    // ⭐ Enrichir avec les noms des enfants pour les PARENTS
+    //    guardians.userId → student_guardians.guardianId → students
+    const parentUserIds = rows.filter(r => (r.role || '').toUpperCase() === 'PARENT').map(r => r.id);
+    const childrenByParent: Map<string, string[]> = new Map();
+    if (parentUserIds.length > 0) {
+      const childrenRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g."userId" AS "parentUserId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
+        FROM "guardians" g
+        JOIN "student_guardians" sg ON sg."guardianId" = g.id
+        JOIN "students" s ON s.id = sg."studentId"
+        WHERE g."userId" = ANY($1::text[])
+      `, parentUserIds);
+      for (const r of childrenRows) {
+        if (!childrenByParent.has(r.parentUserId)) childrenByParent.set(r.parentUserId, []);
+        childrenByParent.get(r.parentUserId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
+      }
+    }
+
+    // ⭐ Build role labels
+    const roleLabelFor = (role: string, children: string[] | undefined): string => {
+      const upperRole = (role || '').toUpperCase();
+      if (upperRole === 'PARENT') {
+        if (children && children.length > 0) {
+          return `Parent de ${children.join(', ')}`;
+        }
+        return 'Parent d\'élève';
+      }
+      if (upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER') return 'Promoteur';
+      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT') return 'Directeur';
+      if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
+      if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
+      if (upperRole === 'SCHOOL_ADMIN') return 'Administration école';
+      if (upperRole === 'CENSEUR') return 'Censeur';
+      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR') return 'Directeur pédagogique';
+      if (upperRole === 'STUDENT') return 'Élève';
+      return role || 'Utilisateur';
+    };
+
+    return rows.map(r => {
+      const children = childrenByParent.get(r.id);
+      const isSame = !!r.isSameTenant;
+      return {
+        userId: r.id,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        email: r.email,
+        avatarUrl: r.avatarUrl,
+        role: r.role,
+        roleLabel: roleLabelFor(r.role, children),
+        tenantName: r.tenantName,
+        isSameTenant: isSame,
+        canStartDirectConversation: isSame,  // ⭐ intra-école = direct, cross-école = invitation
+        childrenNames: children,
+      };
+    });
   }
 
   /**

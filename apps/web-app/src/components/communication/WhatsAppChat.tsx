@@ -47,6 +47,8 @@ interface ChatParticipant {
   email?: string;
   avatarUrl?: string;
   role_label?: string;
+  roleLabel?: string;          // ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur"
+  childrenNames?: string[];   // pour les parents : noms des enfants
 }
 
 interface ChatConversation {
@@ -95,8 +97,11 @@ interface ChatUser {
   email?: string;
   avatarUrl?: string;
   role?: string;
+  roleLabel?: string;          // ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur"
   tenantName?: string;
   isSameTenant: boolean;
+  canStartDirectConversation: boolean;  // true = same tenant (no invitation required)
+  childrenNames?: string[];    // for parents: their children's names
 }
 
 interface WhatsAppChatProps {
@@ -129,6 +134,7 @@ function formatDateSeparator(dateStr: string): string {
 function getConversationDisplay(conv: ChatConversation, currentUserId: string): {
   name: string;
   subtitle?: string;
+  roleLabel?: string;  // ex: "Collègue enseignant", "Parent de Awa Dupont"
   avatarUrl?: string;
 } {
   if (conv.type === 'GROUP') {
@@ -137,9 +143,12 @@ function getConversationDisplay(conv: ChatConversation, currentUserId: string): 
   // DIRECT: l'autre participant
   const other = conv.participants.find(p => p.userId !== currentUserId);
   if (!other) return { name: 'Inconnu' };
+  // ⭐ Utiliser le roleLabel (ex: "Parent de Awa Dupont", "Collègue enseignant", "Directeur")
+  //    c'est plus informatif que juste le role brut
   return {
     name: `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Inconnu',
-    subtitle: other.role_label || other.email,
+    subtitle: other.email,
+    roleLabel: other.roleLabel,
     avatarUrl: other.avatarUrl,
   };
 }
@@ -354,13 +363,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
   return (
     <div className={cn('flex bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden', height)}>
-      {/* Hidden file input */}
+      {/* Hidden file input — audio + image only (videos in V2) */}
       <input
         ref={fileInputRef}
         type="file"
         className="hidden"
         onChange={handleFileSelect}
-        accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+        accept="image/*,audio/*"
       />
 
       {/* ═════ LEFT SIDEBAR — Conversation List ═════ */}
@@ -476,7 +485,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       {/* Badge non lus (placeholder) */}
                       <span className="text-[10px] text-emerald-600 font-bold">·</span>
                     </div>
-                    {display.subtitle && conv.type === 'DIRECT' && (
+                    {/* ⭐ Role label (ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur") */}
+                    {display.roleLabel && conv.type === 'DIRECT' && (
+                      <span className="text-[10px] text-emerald-700 font-semibold truncate">
+                        {display.roleLabel}
+                      </span>
+                    )}
+                    {conv.type === 'GROUP' && display.subtitle && (
                       <span className="text-[10px] text-slate-400">{display.subtitle}</span>
                     )}
                   </div>
@@ -514,7 +529,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 </p>
               ) : (
                 <p className="text-[10px] text-emerald-100">
-                  {getConversationDisplay(activeConv, currentUserId).subtitle || 'En ligne'}
+                  {getConversationDisplay(activeConv, currentUserId).roleLabel
+                    || getConversationDisplay(activeConv, currentUserId).subtitle
+                    || 'En ligne'}
                 </p>
               )}
             </div>
@@ -757,8 +774,9 @@ function NewChatModal({
   }, [query, currentUserId]);
 
   const startConversation = async (user: ChatUser) => {
-    if (user.isSameTenant) {
-      // Créer directement une conversation
+    if (user.canStartDirectConversation) {
+      // ⭐ INTRA-ÉCOLE : conversation directe, pas d'invitation requise
+      //    (collègue enseignant, parent d'élève de la même école, directeur, etc.)
       try {
         const res = await fetch('/api/chat/conversations/direct', {
           method: 'POST',
@@ -769,11 +787,12 @@ function NewChatModal({
         if (!res.ok) throw new Error('Failed to create conversation');
         const conv = await res.json();
         onConversationCreated(conv.id);
+        toast.success(`Conversation démarrée avec ${user.firstName} ${user.lastName}`);
       } catch (e: any) {
         toast.error("Échec: " + e.message);
       }
     } else {
-      // Envoyer une invitation (cross-tenant)
+      // ⭐ CROSS-ÉCOLE : envoi d'invitation (inter-écoles)
       try {
         const res = await fetch('/api/chat/invitations', {
           method: 'POST',
@@ -788,7 +807,7 @@ function NewChatModal({
         });
         if (!res.ok) throw new Error('Failed to send invitation');
         setSentInvites(prev => new Set(prev).add(user.userId));
-        toast.success(`Invitation envoyée à ${user.firstName} ${user.lastName}`);
+        toast.success(`Invitation envoyée à ${user.firstName} ${user.lastName} (autre école)`);
       } catch (e: any) {
         toast.error("Échec: " + e.message);
       }
@@ -847,20 +866,34 @@ function NewChatModal({
                   </div>
                   <div className="text-xs text-slate-500 truncate">
                     {user.email}
-                    {user.role && ` · ${user.role}`}
                   </div>
-                  {!user.isSameTenant && user.tenantName && (
-                    <div className="text-[10px] text-amber-600 font-semibold">
-                      Autre école : {user.tenantName}
+                  {/* ⭐ Role label (ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur") */}
+                  {user.roleLabel && (
+                    <div className="text-[11px] text-emerald-700 font-semibold truncate">
+                      {user.roleLabel}
+                    </div>
+                  )}
+                  {/* ⭐ Distinction intra-école vs cross-école */}
+                  {user.canStartDirectConversation ? (
+                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                      ✓ Même école — discussion directe
+                    </div>
+                  ) : user.tenantName ? (
+                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                      ⚠ Autre école : {user.tenantName} — invitation requise
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                      ⚠ Autre école — invitation requise
                     </div>
                   )}
                 </div>
                 {sentInvites.has(user.userId) ? (
-                  <span className="text-xs text-emerald-600 font-semibold">Invité</span>
-                ) : user.isSameTenant ? (
-                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs text-emerald-600 font-semibold flex-shrink-0">Invité</span>
+                ) : user.canStartDirectConversation ? (
+                  <MessageSquare className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                 ) : (
-                  <UserPlus className="w-4 h-4 text-amber-600" />
+                  <UserPlus className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 )}
               </button>
             ))

@@ -773,4 +773,79 @@ export class ChatService {
       WHERE id = $1 AND "recipientId" = $2 AND status = 'PENDING'
     `, invitationId, currentUserId);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  PRESENCE (online/offline) + TYPING INDICATOR
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ Met à jour le timestamp de dernière activité de l'utilisateur.
+   *    Appelé par le frontend toutes les 30 secondes via /chat/presence.
+   *    Un utilisateur est considéré "en ligne" si lastActiveAt < 2 minutes.
+   */
+  async updatePresence(userId: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "users" SET "lastActiveAt" = NOW() WHERE id = $1
+    `, userId);
+  }
+
+  /**
+   * ⭐ Récupère le statut de présence (en ligne/hors ligne) pour une liste d'utilisateurs.
+   *    Retourne { userId, isOnline, lastActiveAt } pour chaque user.
+   *    Un user est "en ligne" si lastActiveAt est dans les 2 dernières minutes.
+   */
+  async getPresence(userIds: string[]): Promise<{ userId: string; isOnline: boolean; lastActiveAt?: Date }[]> {
+    if (userIds.length === 0) return [];
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, "lastActiveAt",
+             CASE
+               WHEN "lastActiveAt" IS NOT NULL AND "lastActiveAt" > NOW() - INTERVAL '2 minutes'
+               THEN true
+               ELSE false
+             END AS "isOnline"
+      FROM "users"
+      WHERE id = ANY($1::text[])
+    `, userIds);
+    return rows.map(r => ({
+      userId: r.id,
+      isOnline: r.isOnline,
+      lastActiveAt: r.lastActiveAt || undefined,
+    }));
+  }
+
+  /**
+   * ⭐ Met à jour l'état de frappe ("typing") pour un utilisateur dans une conversation.
+   *    Appelé par le frontend quand l'utilisateur commence/arrête de taper.
+   *    L'état expire automatiquement après 10 secondes (le frontend doit re-ping).
+   */
+  async setTypingState(conversationId: string, userId: string, isTyping: boolean): Promise<void> {
+    const { randomUUID } = require('crypto');
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_typing_state" ("id", "conversationId", "userId", "isTyping", "updatedAt")
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT ("conversationId", "userId")
+      DO UPDATE SET "isTyping" = $4, "updatedAt" = NOW()
+    `, id, conversationId, userId, isTyping);
+  }
+
+  /**
+   * ⭐ Récupère les utilisateurs en train de taper dans une conversation.
+   *    Retourne les userIds qui ont isTyping=true ET updatedAt dans les 10 dernières secondes.
+   */
+  async getTypingUsers(conversationId: string): Promise<{ userId: string; firstName?: string; lastName?: string }[]> {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT ts."userId", u."firstName", u."lastName"
+      FROM "chat_typing_state" ts
+      JOIN "users" u ON u.id = ts."userId"
+      WHERE ts."conversationId" = $1
+        AND ts."isTyping" = true
+        AND ts."updatedAt" > NOW() - INTERVAL '10 seconds'
+    `, conversationId);
+    return rows.map(r => ({
+      userId: r.userId,
+      firstName: r.firstName,
+      lastName: r.lastName,
+    }));
+  }
 }

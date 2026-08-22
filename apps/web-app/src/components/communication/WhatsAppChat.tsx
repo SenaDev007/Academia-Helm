@@ -189,6 +189,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // ⭐ PRESENCE (online/offline) + TYPING + AUDIO RECORDING
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [typingUsers, setTypingUsers] = useState<{ userId: string; firstName?: string; lastName?: string }[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingPingRef = useRef<number>(0);
+
   // Modals
   const [showNewChat, setShowNewChat] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -282,6 +292,128 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => clearInterval(interval);
   }, [loadConversations]);
 
+  // ⭐ PRESENCE HEARTBEAT : met à jour lastActiveAt toutes les 30s
+  useEffect(() => {
+    if (!currentUserId) return;
+    // Envoyer le premier heartbeat immédiatement
+    fetch('/api/chat/presence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: currentUserId }),
+      credentials: 'include',
+    }).catch(() => {});
+    const interval = setInterval(() => {
+      fetch('/api/chat/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [currentUserId]);
+
+  // ⭐ PRESENCE POLLING : check online status of conversation participants every 30s
+  useEffect(() => {
+    if (conversations.length === 0) return;
+    const allParticipantIds = new Set<string>();
+    for (const conv of conversations) {
+      for (const p of conv.participants) {
+        if (p.userId !== currentUserId) allParticipantIds.add(p.userId);
+      }
+    }
+    const ids = Array.from(allParticipantIds);
+    if (ids.length === 0) return;
+    const checkPresence = async () => {
+      try {
+        const res = await fetch(`/api/chat/presence?userIds=${ids.join(',')}`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const onlineSet = new Set<string>();
+        for (const item of data) {
+          if (item.isOnline) onlineSet.add(item.userId);
+        }
+        setOnlineUsers(onlineSet);
+      } catch {}
+    };
+    checkPresence();
+    const interval = setInterval(checkPresence, 30000);
+    return () => clearInterval(interval);
+  }, [conversations, currentUserId]);
+
+  // ⭐ TYPING POLLING : check who is typing in the active conversation every 3s
+  useEffect(() => {
+    if (!activeConvId) return;
+    const checkTyping = async () => {
+      try {
+        const res = await fetch(`/api/chat/typing?conversationId=${activeConvId}`, { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        // Filter out current user
+        setTypingUsers((data || []).filter((t: any) => t.userId !== currentUserId));
+      } catch {}
+    };
+    checkTyping();
+    const interval = setInterval(checkTyping, 3000);
+    return () => clearInterval(interval);
+  }, [activeConvId, currentUserId]);
+
+  // ⭐ TYPING SEND : notify server when user starts/stops typing
+  const handleTyping = useCallback(() => {
+    if (!activeConvId || !currentUserId) return;
+    const now = Date.now();
+    // Throttle: only ping every 3 seconds
+    if (now - lastTypingPingRef.current < 3000) return;
+    lastTypingPingRef.current = now;
+    fetch('/api/chat/typing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: activeConvId, userId: currentUserId, isTyping: true }),
+      credentials: 'include',
+    }).catch(() => {});
+  }, [activeConvId, currentUserId]);
+
+  // ⭐ AUDIO RECORDING (MediaRecorder API)
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        // Create audio blob and send
+        const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        await handleSendAttachment(file, 'AUDIO');
+        // Stop all tracks
+        stream.getTracks().forEach(t => t.stop());
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordingDuration(0);
+      // Duration timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(d => d + 1);
+      }, 1000);
+    } catch (e: any) {
+      toast.error("Impossible d'accéder au microphone: " + e.message);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -363,6 +495,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const renderConversationItem = (conv: ChatConversation) => {
     const display = getConversationDisplay(conv, currentUserId);
     const isActive = conv.id === activeConvId;
+    // ⭐ Check if the other participant is online (DIRECT only)
+    const otherUser = conv.type === 'DIRECT' ? conv.participants.find(p => p.userId !== currentUserId) : null;
+    const isOnline = otherUser && onlineUsers.has(otherUser.userId);
     return (
       <button
         key={conv.id}
@@ -387,6 +522,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
               <Users className="w-2 h-2 text-white" />
             </span>
+          )}
+          {/* ⭐ Online dot (DIRECT only) */}
+          {isOnline && (
+            <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white" />
           )}
         </div>
         {/* Content */}
@@ -552,10 +691,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className={cn(
-              'w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0',
+              'w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative',
               getAvatarColor(getConversationDisplay(activeConv, currentUserId).name)
             )}>
               {getInitials(getConversationDisplay(activeConv, currentUserId).name)}
+              {/* ⭐ Online dot (DIRECT only) */}
+              {activeConv.type === 'DIRECT' && (() => {
+                const other = activeConv.participants.find(p => p.userId !== currentUserId);
+                return other && onlineUsers.has(other.userId) ? (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-emerald-700" />
+                ) : null;
+              })()}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-bold truncate">
@@ -565,11 +711,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <p className="text-[10px] text-emerald-100">
                   {activeConv.participants.map(p => `${p.firstName || ''} ${p.lastName || ''}`.trim()).join(', ')}
                 </p>
+              ) : typingUsers.length > 0 ? (
+                /* ⭐ Typing indicator (like WhatsApp 'typing...') */
+                <p className="text-[10px] text-emerald-100 italic">
+                  {typingUsers.map(t => `${t.firstName || ''} ${t.lastName || ''}`.trim()).join(', ')} tape…
+                </p>
               ) : (
                 <p className="text-[10px] text-emerald-100">
-                  {getConversationDisplay(activeConv, currentUserId).roleLabel
-                    || getConversationDisplay(activeConv, currentUserId).subtitle
-                    || 'En ligne'}
+                  {(() => {
+                    const other = activeConv.participants.find(p => p.userId !== currentUserId);
+                    const isOnline = other && onlineUsers.has(other.userId);
+                    const roleLabel = getConversationDisplay(activeConv, currentUserId).roleLabel;
+                    if (isOnline) return roleLabel ? `${roleLabel} — en ligne` : 'en ligne';
+                    return roleLabel || getConversationDisplay(activeConv, currentUserId).subtitle || 'hors ligne';
+                  })()}
                 </p>
               )}
             </div>
@@ -697,7 +852,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               placeholder="Tapez un message..."
               className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/30"
               value={text}
-              onChange={e => setText(e.target.value)}
+              onChange={e => { setText(e.target.value); handleTyping(); }}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -706,9 +861,34 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               }}
               disabled={readOnly}
             />
+            {/* ⭐ AUDIO RECORDING button (MediaRecorder) — shows mic icon or recording UI */}
+            {isRecording ? (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-300 rounded-full px-3 py-1">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-xs font-bold text-red-600">
+                  {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                </span>
+                <button
+                  onClick={stopRecording}
+                  className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
+                  title="Arrêter et envoyer"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startRecording}
+                disabled={readOnly || sending}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30"
+                title="Enregistrer un message vocal"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={handleSendText}
-              disabled={!text.trim() || sending}
+              disabled={!text.trim() || sending || isRecording}
               className="p-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 disabled:opacity-30"
             >
               {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}

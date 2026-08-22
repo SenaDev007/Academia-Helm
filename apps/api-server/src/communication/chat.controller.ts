@@ -234,4 +234,48 @@ export class ChatController {
     await this.chatService.declineInvitation(body.currentUserId, invitationId);
     return { success: true };
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  PRESENCE (online/offline) + TYPING INDICATOR
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ POST /chat/presence — heartbeat (updated every 30s by frontend)
+   *    body: { userId }
+   */
+  @Post('presence')
+  async updatePresence(@Body() body: { userId: string }) {
+    if (!body.userId) throw new BadRequestException('userId requis');
+    await this.chatService.updatePresence(body.userId);
+    return { success: true };
+  }
+
+  /**
+   * ⭐ GET /chat/presence?userIds=u1,u2,u3 — get online status
+   */
+  @Get('presence')
+  async getPresence(@Query('userIds') userIdsStr: string) {
+    if (!userIdsStr) return [];
+    return this.chatService.getPresence(userIdsStr.split(',').filter(Boolean));
+  }
+
+  /**
+   * ⭐ POST /chat/typing — set typing state
+   *    body: { conversationId, userId, isTyping }
+   */
+  @Post('typing')
+  async setTyping(@Body() body: { conversationId: string; userId: string; isTyping: boolean }) {
+    if (!body.conversationId || !body.userId) throw new BadRequestException('conversationId et userId requis');
+    await this.chatService.setTypingState(body.conversationId, body.userId, body.isTyping);
+    return { success: true };
+  }
+
+  /**
+   * ⭐ GET /chat/typing?conversationId=X — get who is typing
+   */
+  @Get('typing')
+  async getTyping(@Query('conversationId') conversationId: string) {
+    if (!conversationId) return [];
+    return this.chatService.getTypingUsers(conversationId);
+  }
 }

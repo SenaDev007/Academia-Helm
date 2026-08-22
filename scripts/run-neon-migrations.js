@@ -90,6 +90,7 @@ async function runMigration(sqlFilePath) {
     '/home/z/my-project/apps/api-server/prisma/migrations/20260823200000_add_monthly_plans/migration.sql',
     '/home/z/my-project/apps/api-server/prisma/migrations/20260823210000_add_chat_messaging/migration.sql',
     '/home/z/my-project/apps/api-server/prisma/migrations/20260824000000_add_monthly_plans_status_signatures/migration.sql',
+    '/home/z/my-project/apps/api-server/prisma/migrations/20260824010000_add_user_presence/migration.sql',
   ];
   for (const m of migrations) {
     if (fs.existsSync(m)) {

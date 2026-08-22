@@ -48,6 +48,7 @@ import { DatabaseModule } from '../database/database.module';
 import { ChatService } from './services/chat.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
+import { PushNotificationService } from './services/push-notification.service';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import { ChatGateway } from './chat.gateway';
     // ⭐ Chat (messagerie interne type WhatsApp)
     ChatService,
     ChatGateway,
+    PushNotificationService,
   ],
   exports: [
     EmailService,

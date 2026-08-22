@@ -31,6 +31,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { ChatService } from './services/chat.service';
 import { StorageService } from '../../common/services/storage.service';
+import { PushNotificationService } from './services/push-notification.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -52,6 +53,7 @@ export class ChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly storage: StorageService,
+    private readonly pushService: PushNotificationService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -354,5 +356,50 @@ export class ChatController {
   async getPublicKeys(@Query('userIds') userIdsStr: string) {
     if (!userIdsStr) return [];
     return this.chatService.getPublicKeys(userIdsStr.split(',').filter(Boolean));
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  PUSH NOTIFICATIONS (Web Push API + VAPID)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ GET /chat/push/vapid-public-key — returns the VAPID public key
+   *    The frontend uses this to create a push subscription via the browser
+   *    PushManager API.
+   */
+  @Get('push/vapid-public-key')
+  async getVapidPublicKey() {
+    return { publicKey: this.pushService.getPublicKey() };
+  }
+
+  /**
+   * ⭐ POST /chat/push/subscribe — store a browser push subscription
+   *    body: { userId, subscription }
+   *    subscription is the PushSubscription object from the browser.
+   */
+  @Post('push/subscribe')
+  async subscribeToPush(@Body() body: { userId: string; subscription: any }) {
+    if (!body.userId || !body.subscription) throw new BadRequestException('userId et subscription requis');
+    return this.pushService.subscribe(body.userId, body.subscription);
+  }
+
+  /**
+   * ⭐ POST /chat/push/unsubscribe — remove a push subscription
+   *    body: { userId, endpoint }
+   */
+  @Post('push/unsubscribe')
+  async unsubscribeFromPush(@Body() body: { userId: string; endpoint: string }) {
+    if (!body.userId || !body.endpoint) throw new BadRequestException('userId et endpoint requis');
+    return this.pushService.unsubscribe(body.userId, body.endpoint);
+  }
+
+  /**
+   * ⭐ POST /chat/push/send — manually send a push to a user (admin/testing)
+   *    body: { userId, title, body, conversationId? }
+   */
+  @Post('push/send')
+  async sendPush(@Body() body: { userId: string; title: string; body: string; conversationId?: string }) {
+    if (!body.userId) throw new BadRequestException('userId requis');
+    return this.pushService.sendPushToUser(body.userId, { title: body.title, body: body.body, conversationId: body.conversationId });
   }
 }

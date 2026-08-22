@@ -191,6 +191,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // ⭐ ROLE-BASED CATEGORY FILTER (Tout / Enseignants / Parents / Administration)
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
   // ⭐ PRESENCE (online/offline) + TYPING + AUDIO RECORDING
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [typingUsers, setTypingUsers] = useState<{ userId: string; firstName?: string; lastName?: string }[]>([]);
@@ -795,9 +798,49 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </div>
           ) : (
             <>
-              {/* ⭐ CATEGORIZE: Discussions + Canaux + Groupes (like Telegram) */}
+              {/* ⭐ ROLE-BASED CATEGORY FILTERS (Tout / Enseignants / Parents / Administration) */}
+              <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto">
+                {(['all', 'enseignants', 'parents', 'admin'] as const).map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
+                      categoryFilter === cat
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    )}
+                  >
+                    {cat === 'all' ? 'Tout' : cat === 'enseignants' ? 'Enseignants' : cat === 'parents' ? 'Parents' : 'Administration'}
+                  </button>
+                ))}
+              </div>
+
+              {/* ⭐ CATEGORIZE: Discussions (filtered by role) + Canaux + Groupes */}
               {(() => {
-                const directConvs = conversations.filter(c => c.type === 'DIRECT');
+                // ⭐ Filter DIRECT conversations by role category
+                const directConvs = conversations.filter(c => {
+                  if (c.type !== 'DIRECT') return false;
+                  if (categoryFilter === 'all') return true;
+                  // Find the other participant
+                  const other = c.participants.find(p => p.userId !== currentUserId);
+                  if (!other) return false;
+                  const role = (other.role_label || '').toUpperCase();
+                  if (categoryFilter === 'enseignants') {
+                    return role === 'ENSEIGNANT' || role === 'TEACHER' || role === 'TEACHER_RESP';
+                  }
+                  if (categoryFilter === 'parents') {
+                    return role === 'PARENT' || role === 'GUARDIAN';
+                  }
+                  if (categoryFilter === 'admin') {
+                    return role === 'PROMOTER' || role === 'SCHOOL_OWNER' || role === 'SCHOOL_ADMIN' ||
+                           role === 'DIRECTOR_GENERAL' || role === 'DIRECTEUR_GENERAL' ||
+                           role === 'SCHOOL_DIRECTOR' || role === 'DIRECTEUR_ETABLISSEMENT' ||
+                           role === 'ADMIN' || role === 'COMPTABLE' || role === 'CAISSIER' ||
+                           role === 'SUPER_ADMIN' || role === 'PLATFORM_OWNER';
+                  }
+                  return true;
+                });
                 const groupConvs = conversations.filter(c => c.type === 'GROUP');
                 return (
                   <>

@@ -238,6 +238,27 @@ export class ChatService {
       throw new BadRequestException('Cannot create a conversation with yourself');
     }
 
+    // ⭐ FIX: If tenantId is empty (e.g., PLATFORM_OWNER with no tenant),
+    //    resolve it from the other user's tenantId
+    let resolvedTenantId = tenantId;
+    if (!resolvedTenantId || resolvedTenantId.length === 0) {
+      const otherUser: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "tenantId" FROM "users" WHERE id = $1
+      `, otherUserId);
+      resolvedTenantId = otherUser[0]?.tenantId || '';
+      if (!resolvedTenantId) {
+        // Try current user's tenantId
+        const currentUser: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT "tenantId" FROM "users" WHERE id = $1
+        `, currentUserId);
+        resolvedTenantId = currentUser[0]?.tenantId || '';
+      }
+      if (!resolvedTenantId) {
+        throw new BadRequestException('Impossible de déterminer le tenant — aucun tenantId trouvé pour les deux utilisateurs');
+      }
+      this.logger.log(`Resolved tenantId for conversation: ${resolvedTenantId} (from user records)`);
+    }
+
     // Vérifier si une conversation DIRECT existe déjà entre ces deux utilisateurs
     const existing: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT c.* FROM chat_conversations c
@@ -251,10 +272,10 @@ export class ChatService {
           WHERE p2."userId" = $3 AND p2."leftAt" IS NULL
         )
       LIMIT 1
-    `, tenantId, currentUserId, otherUserId);
+    `, resolvedTenantId, currentUserId, otherUserId);
 
     if (existing.length > 0) {
-      return (await this.listConversations(tenantId, currentUserId))
+      return (await this.listConversations(resolvedTenantId, currentUserId))
         .find(c => c.id === existing[0].id)!;
     }
 
@@ -263,7 +284,7 @@ export class ChatService {
     await this.prisma.$executeRawUnsafe(`
       INSERT INTO "chat_conversations" ("id", "tenantId", "type", "createdBy", "createdAt", "updatedAt")
       VALUES ($1, $2, 'DIRECT', $3, NOW(), NOW())
-    `, convId, tenantId, currentUserId);
+    `, convId, resolvedTenantId, currentUserId);
 
     // Ajouter les deux participants
     await this.prisma.$executeRawUnsafe(`
@@ -271,9 +292,9 @@ export class ChatService {
       VALUES
         ($1, $4, $2, $5, 'ADMIN', NOW()),
         ($6, $4, $3, $5, 'MEMBER', NOW())
-    `, randomUUID(), currentUserId, otherUserId, convId, tenantId, randomUUID());
+    `, randomUUID(), currentUserId, otherUserId, convId, resolvedTenantId, randomUUID());
 
-    return (await this.listConversations(tenantId, currentUserId))
+    return (await this.listConversations(resolvedTenantId, currentUserId))
       .find(c => c.id === convId)!;
   }
 
@@ -605,10 +626,10 @@ export class ChatService {
       WHERE u.id != $2
         ${tenantFilter}
         AND (
-          LOWER(u."firstName") LIKE $3
-          OR LOWER(u."lastName") LIKE $3
-          OR LOWER(CONCAT(u."firstName", ' ', u."lastName")) LIKE $3
-          OR LOWER(u."email") LIKE $3
+          LOWER(COALESCE(u."firstName", '')) LIKE $3
+          OR LOWER(COALESCE(u."lastName", '')) LIKE $3
+          OR LOWER(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) LIKE $3
+          OR LOWER(COALESCE(u."email", '')) LIKE $3
         )
       ORDER BY "isSameTenant" DESC, u."lastName" ASC, u."firstName" ASC
       LIMIT $4

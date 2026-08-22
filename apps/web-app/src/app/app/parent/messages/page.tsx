@@ -21,7 +21,7 @@ import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import WhatsAppChat from "@/components/communication/WhatsAppChat";
 import {
   MessageSquare, Loader2, Bell, CheckCircle2, Phone, Mail,
-  MapPin, RefreshCw, Building2, Megaphone, ChatBubble,
+  MapPin, RefreshCw, Building2, Megaphone, Bubbles,
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -110,7 +110,7 @@ export default function ParentMessagesPage() {
       {/* Onglets */}
       <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 overflow-x-auto">
         {[
-          { id: "messagerie" as const, label: "Messagerie", icon: ChatBubble },
+          { id: "messagerie" as const, label: "Messagerie", icon: Bubbles },
           { id: "notifications" as const, label: "Notifications", icon: Bell },
           { id: "annonces" as const, label: "Annonces", icon: Megaphone },
           { id: "contact" as const, label: "Contacter l'école", icon: Phone },

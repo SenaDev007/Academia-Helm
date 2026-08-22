@@ -58,6 +58,7 @@ interface EduCastContent {
   thumbnailUrl?: string;
   videoUrl?: string;
   audioUrl?: string;
+  subtitleUrl?: string;  // ⭐ Phase 2.11: VTT subtitles URL
   duration?: number;
   views: number;
   teacherId: string;
@@ -69,6 +70,7 @@ interface EduCastContent {
   subject?: string;
   classLevel?: string;
   isPublished: boolean;
+  isPremium?: boolean;  // ⭐ Phase 3.15: premium/paid content
 }
 
 interface TeacherInfo {
@@ -170,6 +172,14 @@ export default function EduCastModulePage() {
   const [teachers, setTeachers] = useState<TeacherInfo[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+
+  // ⭐ PHASE 2-3: New state for channel view, live webinar, capsule mode, notifications
+  const [selectedChannel, setSelectedChannel] = useState<TeacherInfo | null>(null);
+  const [liveWebinar, setLiveWebinar] = useState<any | null>(null);
+  const [capsuleMode, setCapsuleMode] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [recommendations, setRecommendations] = useState<EduCastContent[]>([]);
 
   // ⭐ Load teachers (for director/promoter switcher)
   useEffect(() => {
@@ -278,6 +288,19 @@ export default function EduCastModulePage() {
           <Upload className="w-4 h-4" />
           <span className="hidden sm:block">Publier</span>
         </button>
+        {/* ⭐ PHASE 3.18: Notification bell */}
+        <button
+          onClick={() => setShowNotifPanel(!showNotifPanel)}
+          className="relative p-2 rounded-full hover:bg-slate-100"
+          title="Notifications"
+        >
+          <Bell className="w-5 h-5 text-slate-700" />
+          {notifCount > 0 && (
+            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
+        </button>
         {/* User avatar */}
         <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold', getAvatarColor(user?.firstName || user?.email || 'U'))}>
           {getInitials(`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.email || 'U')}
@@ -343,6 +366,10 @@ export default function EduCastModulePage() {
               onBack={() => setSelectedContent(null)}
               relatedContent={contents.filter(c => c.id !== selectedContent.id && c.type === selectedContent.type).slice(0, 5)}
             />
+          ) : liveWebinar ? (
+            <WebinarLiveView webinar={liveWebinar} onBack={() => setLiveWebinar(null)} currentUserId={user?.id || ''} />
+          ) : selectedChannel ? (
+            <ChannelView channel={selectedChannel} academicYearId={academicYear?.id || ''} onContentClick={setSelectedContent} onBack={() => setSelectedChannel(null)} />
           ) : activeView === 'moderation' ? (
             <ModerationView academicYearId={academicYear?.id || ''} onContentChange={loadContent} />
           ) : activeView === 'watchlater' ? (
@@ -355,6 +382,8 @@ export default function EduCastModulePage() {
             <MonetizationView currentUserId={user?.id || ''} />
           ) : activeView === 'settings' ? (
             <SettingsView />
+          ) : activeView === 'capsules' && capsuleMode ? (
+            <CapsuleVerticalView contents={contents.filter(c => c.type === 'CAPSULE')} onBack={() => setCapsuleMode(false)} />
           ) : (
             /* Feed view (grid of content cards) */
             <FeedView
@@ -362,7 +391,11 @@ export default function EduCastModulePage() {
               contents={contents}
               activeView={activeView}
               searchQuery={searchQuery}
-              onContentClick={setSelectedContent}
+              onContentClick={(c) => {
+                if (c.type === 'WEBINAR' && c.videoUrl) setLiveWebinar(c);
+                else setSelectedContent(c);
+              }}
+              onChannelClick={(teacher) => { setSelectedChannel(teacher); }}
             />
           )}
         </div>
@@ -384,13 +417,14 @@ export default function EduCastModulePage() {
 // ═════════════════════════════════════════════════════════════════
 
 function FeedView({
-  loading, contents, activeView, searchQuery, onContentClick,
+  loading, contents, activeView, searchQuery, onContentClick, onChannelClick,
 }: {
   loading: boolean;
   contents: EduCastContent[];
   activeView: string;
   searchQuery: string;
   onContentClick: (content: EduCastContent) => void;
+  onChannelClick?: (teacher: TeacherInfo) => void;
 }) {
   const viewTitle = SIDEBAR_ITEMS.find(i => i.id === activeView)?.label || 'Accueil';
 
@@ -490,6 +524,12 @@ function ContentCard({ content, onClick }: { content: EduCastContent; onClick: (
             {formatDuration(content.duration)}
           </span>
         )}
+        {/* Premium badge */}
+        {content.isPremium && (
+          <span className="absolute top-2 right-2 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded flex items-center gap-0.5">
+            <Zap className="w-2.5 h-2.5" /> Premium
+          </span>
+        )}
         {/* Play button on hover */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
           <div className="w-12 h-12 rounded-full bg-black/60 flex items-center justify-center">
@@ -499,7 +539,7 @@ function ContentCard({ content, onClick }: { content: EduCastContent; onClick: (
       </div>
       {/* Info */}
       <div className="p-3 flex gap-3">
-        {/* Teacher avatar */}
+        {/* Teacher avatar (clickable → opens channel) */}
         <div className={cn('w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold', getAvatarColor(content.teacherName))}>
           {getInitials(content.teacherName)}
         </div>
@@ -507,7 +547,7 @@ function ContentCard({ content, onClick }: { content: EduCastContent; onClick: (
           <h3 className="text-sm font-semibold text-slate-900 line-clamp-2 leading-tight">
             {content.title}
           </h3>
-          <p className="text-xs text-slate-500 mt-1 truncate">
+          <p className="text-xs text-slate-500 mt-1 truncate hover:text-pink-600 cursor-pointer">
             {content.teacherName}
           </p>
           <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
@@ -631,7 +671,12 @@ function WatchView({
         {/* Player */}
         <div className="aspect-video bg-black rounded-xl overflow-hidden">
           {content.videoUrl ? (
-            <video src={content.videoUrl} controls className="w-full h-full" autoPlay />
+            <video src={content.videoUrl} controls className="w-full h-full" autoPlay>
+              {/* ⭐ PHASE 2.11: VTT subtitles support */}
+              {content.subtitleUrl && (
+                <track src={content.subtitleUrl} kind="subtitles" srcLang="fr" label="Français" default />
+              )}
+            </video>
           ) : content.audioUrl ? (
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-center">
@@ -1317,6 +1362,338 @@ function SettingsView() {
         ))}
       </div>
       <button onClick={handleSave} disabled={saving} className="px-4 py-2 bg-pink-600 text-white text-sm font-bold rounded-lg hover:bg-pink-700 disabled:opacity-50">{saving ? 'Enregistrement...' : 'Enregistrer'}</button>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2.7: WEBINAR LIVE VIEW — Live stream + chat + viewer count
+// ═════════════════════════════════════════════════════════════════
+
+function WebinarLiveView({ webinar, onBack, currentUserId }: { webinar: any; onBack: () => void; currentUserId: string }) {
+  const [chatMessages, setChatMessages] = useState<{ userId: string; userName: string; content: string; createdAt: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [viewerCount, setViewerCount] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const { user } = useAppSession();
+
+  // ⭐ Simulate live viewer count (in production: WebSocket or polling)
+  useEffect(() => {
+    setViewerCount(Math.floor(Math.random() * 50) + 5);
+    const interval = setInterval(() => {
+      setViewerCount(prev => Math.max(1, prev + Math.floor(Math.random() * 5) - 2));
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ⭐ Load existing chat messages (stored as EduCastEngagement type='CHAT')
+  useEffect(() => {
+    if (!webinar.id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/media/${webinar.id}/comments`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const msgs = (Array.isArray(data) ? data : (data?.data || [])).map((c: any) => ({
+            userId: c.userId, userName: `${c.user?.firstName || ''} ${c.user?.lastName || ''}`.trim(),
+            content: c.content, createdAt: c.createdAt,
+          }));
+          setChatMessages(msgs);
+        }
+      } catch {}
+    })();
+  }, [webinar.id]);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages.length]);
+
+  const sendChat = async () => {
+    if (!chatInput.trim() || !user?.id) return;
+    const msg = { userId: user.id, userName: `${user.firstName || ''} ${user.lastName || ''}`.trim(), content: chatInput.trim(), createdAt: new Date().toISOString() };
+    setChatMessages(prev => [...prev, msg]);
+    setChatInput('');
+    // Save to backend (reuse comments endpoint)
+    try {
+      await fetch(`/api/modules-complementaires/educast/media/${webinar.id}/comments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: msg.content }), credentials: 'include',
+      });
+    } catch {}
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-4 p-4 max-w-7xl mx-auto h-full">
+      {/* Main stream area */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <button onClick={onBack} className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-3">
+          <ChevronDown className="w-4 h-4 rotate-90" /> Retour
+        </button>
+        {/* Stream player */}
+        <div className="aspect-video bg-black rounded-xl overflow-hidden relative">
+          {webinar.videoUrl || webinar.streamUrl ? (
+            <video src={webinar.videoUrl || webinar.streamUrl} controls autoPlay className="w-full h-full" />
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center text-white">
+              <div className="w-4 h-4 bg-red-500 rounded-full animate-pulse mb-2" />
+              <p className="text-sm font-bold">EN DIRECT</p>
+              <p className="text-xs text-white/60 mt-1">En attente du flux de streaming...</p>
+            </div>
+          )}
+          {/* Live badge */}
+          <div className="absolute top-3 left-3 flex items-center gap-2 px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded">
+            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            EN DIRECT
+          </div>
+          {/* Viewer count */}
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 bg-black/60 text-white text-[10px] font-bold rounded">
+            <Eye className="w-3 h-3" /> {viewerCount}
+          </div>
+        </div>
+        {/* Webinar info */}
+        <h1 className="text-lg font-bold text-slate-900 mt-3">{webinar.title}</h1>
+        {webinar.description && <p className="text-sm text-slate-600 mt-1">{webinar.description}</p>}
+      </div>
+
+      {/* Live chat sidebar (YouTube Live-style) */}
+      <div className="lg:w-80 flex-shrink-0 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden" style={{ maxHeight: '70vh' }}>
+        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+          <MessageCircle className="w-4 h-4 text-slate-500" />
+          <span className="text-sm font-bold text-slate-700">Chat en direct</span>
+          <span className="text-[10px] text-slate-400 ml-auto">{viewerCount} spectateurs</span>
+        </div>
+        {/* Chat messages */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {chatMessages.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-4">Soyez le premier à discuter !</p>
+          ) : (
+            chatMessages.map((msg, i) => (
+              <div key={i} className="text-xs">
+                <span className="font-bold text-blue-600">{msg.userName}: </span>
+                <span className="text-slate-700">{msg.content}</span>
+              </div>
+            ))
+          )}
+          <div ref={chatEndRef} />
+        </div>
+        {/* Chat input */}
+        <div className="p-3 border-t border-slate-100 flex gap-2">
+          <input
+            type="text"
+            placeholder="Discuter..."
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') sendChat(); }}
+            className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs outline-none focus:ring-2 focus:ring-pink-500/30"
+          />
+          <button onClick={sendChat} className="p-1.5 bg-pink-600 text-white rounded-full hover:bg-pink-700">
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 2.8: CHANNEL VIEW — Teacher channel page (YouTube channel)
+// ═════════════════════════════════════════════════════════════════
+
+function ChannelView({ channel, academicYearId, onContentClick, onBack }: {
+  channel: TeacherInfo; academicYearId: string; onContentClick: (c: EduCastContent) => void; onBack: () => void;
+}) {
+  const [channelContent, setChannelContent] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'videos' | 'playlists' | 'about'>('videos');
+  const [subscribed, setSubscribed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/modules-complementaires/educast/contents?academicYearId=${academicYearId}&teacherId=${channel.id}`, { credentials: 'include' });
+        if (res.ok) { const d = await res.json(); setChannelContent(d?.data || d || []); }
+      } catch {} finally { setLoading(false); }
+    })();
+  }, [channel.id, academicYearId]);
+
+  const channelName = `${channel.firstName} ${channel.lastName}`.trim() || channel.email;
+
+  return (
+    <div className="max-w-5xl mx-auto">
+      {/* Back button */}
+      <button onClick={onBack} className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 p-4">
+        <ChevronDown className="w-4 h-4 rotate-90" /> Retour
+      </button>
+      {/* Channel banner */}
+      <div className="h-32 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 mx-4 rounded-xl" />
+      {/* Channel header */}
+      <div className="px-6 py-4 flex items-center gap-4">
+        <div className={cn('w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold -mt-8 border-4 border-white', getAvatarColor(channelName))}>
+          {getInitials(channelName)}
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-slate-900">{channelName}</h1>
+          <p className="text-xs text-slate-500">{channelContent.length} vidéos • Enseignant</p>
+        </div>
+        <button
+          onClick={() => { setSubscribed(!subscribed); }}
+          className={cn('px-4 py-2 rounded-full text-xs font-bold transition', subscribed ? 'bg-slate-100 text-slate-700' : 'bg-pink-600 text-white hover:bg-pink-700')}
+        >
+          {subscribed ? '✓ Abonné' : 'S\'abonner'}
+        </button>
+      </div>
+      {/* Tabs (YouTube channel-style) */}
+      <div className="px-6 border-b border-slate-200 flex gap-6">
+        {(['videos', 'playlists', 'about'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn('pb-2 text-sm font-bold transition border-b-2', activeTab === tab ? 'border-pink-600 text-pink-600' : 'border-transparent text-slate-500 hover:text-slate-700')}
+          >
+            {tab === 'videos' ? 'Vidéos' : tab === 'playlists' ? 'Playlists' : 'À propos'}
+          </button>
+        ))}
+      </div>
+      {/* Tab content */}
+      <div className="p-6">
+        {activeTab === 'videos' && (
+          loading ? <div className="text-center py-8"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div> :
+          channelContent.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">Aucune vidéo publiée</p> :
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {channelContent.map((item: any) => {
+              const content: EduCastContent = {
+                id: item.id, title: item.title || '', type: item.type || 'VIDEO',
+                thumbnailUrl: item.thumbnailUrl, videoUrl: item.fileUrl, views: item.viewCount || 0,
+                teacherId: channel.id, teacherName: channelName, createdAt: item.createdAt,
+                subject: item.subject, classLevel: item.classLevel, isPublished: true,
+              };
+              return <ContentCard key={item.id} content={content} onClick={() => onContentClick(content)} />;
+            })}
+          </div>
+        )}
+        {activeTab === 'playlists' && (
+          <p className="text-sm text-slate-400 text-center py-8">Playlists — bientôt disponible</p>
+        )}
+        {activeTab === 'about' && (
+          <div className="space-y-2 text-sm text-slate-600">
+            <p><strong>Nom :</strong> {channelName}</p>
+            <p><strong>Email :</strong> {channel.email}</p>
+            <p><strong>Rôle :</strong> Enseignant</p>
+            <p><strong>Contenus :</strong> {channelContent.length} publication(s)</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 3.16: CAPSULE VERTICAL VIEW — TikTok-style swipe feed
+// ═════════════════════════════════════════════════════════════════
+
+function CapsuleVerticalView({ contents, onBack }: { contents: EduCastContent[]; onBack: () => void }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const current = contents[currentIdx];
+
+  const handleSwipeUp = () => {
+    if (currentIdx < contents.length - 1) setCurrentIdx(prev => prev + 1);
+  };
+  const handleSwipeDown = () => {
+    if (currentIdx > 0) setCurrentIdx(prev => prev - 1);
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (e.key === 'ArrowDown') handleSwipeUp();
+        else handleSwipeDown();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentIdx, contents.length]);
+
+  if (!current) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-black text-white" onClick={onBack}>
+        <Pill className="w-12 h-12 text-white/30 mb-4" />
+        <p className="text-sm">Aucune capsule disponible</p>
+        <button onClick={onBack} className="mt-4 text-pink-400 text-xs font-bold">Retour</button>
+      </div>
+    );
+  }
+
+  const badge = TYPE_BADGES.CAPSULE;
+
+  return (
+    <div className="relative h-full bg-black overflow-hidden" onWheel={(e) => { if (e.deltaY > 0) handleSwipeUp(); else handleSwipeDown(); }}>
+      {/* Vertical video player */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {current.videoUrl ? (
+          <video src={current.videoUrl} autoPlay loop controls className="max-h-full max-w-full" style={{ height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div className={cn('w-full h-full flex flex-col items-center justify-center text-white', badge.color)}>
+            <Pill className="w-16 h-16 text-white/30 mb-4" />
+            <p className="text-sm font-bold text-white">{current.title}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Swipe hint */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/60 text-xs animate-bounce">
+        ↑ Glissez pour suivant
+      </div>
+
+      {/* Content info overlay (bottom) */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
+        <div className="flex items-center gap-2 mb-2">
+          <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold', getAvatarColor(current.teacherName))}>
+            {getInitials(current.teacherName)}
+          </div>
+          <span className="text-xs font-bold">{current.teacherName}</span>
+        </div>
+        <p className="text-sm font-bold line-clamp-2">{current.title}</p>
+        {current.subject && <span className="text-[10px] text-white/60">{current.subject} {current.classLevel ? `• ${current.classLevel}` : ''}</span>}
+      </div>
+
+      {/* Navigation arrows */}
+      <button onClick={onBack} className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70">
+        <X className="w-4 h-4" />
+      </button>
+      {currentIdx > 0 && (
+        <button onClick={handleSwipeDown} className="absolute bottom-4 right-4 p-2 bg-black/50 text-white rounded-full hover:bg-black/70">
+          <ChevronDown className="w-4 h-4 rotate-180" />
+        </button>
+      )}
+
+      {/* Progress dots */}
+      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1">
+        {contents.map((_, i) => (
+          <span key={i} className={cn('w-1 rounded-full transition-all', i === currentIdx ? 'bg-white h-4' : 'bg-white/30 h-1.5')} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+//  PHASE 3.15: PREMIUM BANNER — Shows on premium content (paywall)
+// ═════════════════════════════════════════════════════════════════
+
+function PremiumBanner({ content, onPurchase }: { content: EduCastContent; onPurchase: () => void }) {
+  return (
+    <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white p-4">
+      <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center mb-3">
+        <Zap className="w-6 h-6 text-white" />
+      </div>
+      <p className="text-sm font-bold mb-1">Contenu Premium</p>
+      <p className="text-xs text-white/60 mb-3 text-center">Ce contenu est réservé aux abonnés. Souscrivez pour y accéder.</p>
+      <button onClick={onPurchase} className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-full hover:bg-amber-600">
+        S'abonner
+      </button>
     </div>
   );
 }

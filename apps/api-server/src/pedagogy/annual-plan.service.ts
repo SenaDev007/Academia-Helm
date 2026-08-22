@@ -135,25 +135,42 @@ export class AnnualPlanService {
     }
 
     // ⭐ Récupérer TOUS les schoolLevelIds du tenant (Maternelle + Primaire)
-    //    pour que les FK soient valides. On prend le schoolLevelId passé en param,
-    //    mais on pourrait aussi en résoudre d'autres si nécessaire.
     const allSchoolLevels = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT "id", "code" FROM "school_levels" WHERE "tenantId" = $1
     `, tenantId).catch(() => []);
     
-    // Utiliser le schoolLevelId passé, ou le premier trouvé
-    const resolvedSchoolLevelId = schoolLevelId || allSchoolLevels[0]?.id;
-    if (!resolvedSchoolLevelId) {
-      throw new BadRequestException('Aucun schoolLevelId trouvé pour ce tenant');
+    // ⭐ Vérifier que le schoolLevelId passé existe VRAIMENT dans school_levels
+    //    Le frontend peut envoyer un education_levels UUID (différent de school_levels UUID)
+    //    Si le schoolLevelId n'existe pas dans school_levels, on prend le premier du tenant
+    let resolvedSchoolLevelId: string | undefined = undefined;
+    if (schoolLevelId && schoolLevelId.length > 0) {
+      // Vérifier si cet ID existe dans school_levels
+      const checkExists = allSchoolLevels.find((sl: any) => sl.id === schoolLevelId);
+      if (checkExists) {
+        resolvedSchoolLevelId = schoolLevelId;
+        this.logger.log(`Using provided schoolLevelId: ${schoolLevelId} (${checkExists.code})`);
+      } else {
+        this.logger.warn(`Provided schoolLevelId ${schoolLevelId} not found in school_levels — using first available`);
+      }
     }
+    if (!resolvedSchoolLevelId) {
+      resolvedSchoolLevelId = allSchoolLevels[0]?.id;
+    }
+    if (!resolvedSchoolLevelId) {
+      throw new BadRequestException('Aucun schoolLevelId trouvé pour ce tenant — créez d\'abord les niveaux scolaires dans les paramètres.');
+    }
+
+    this.logger.log(`Seeding with schoolLevelId=${resolvedSchoolLevelId}, tenantId=${tenantId}, academicYearId=${academicYearId}`);
 
     // Insérer toutes les données du seed — TOUTES les classes d'un coup
     let inserted = 0;
     let failed = 0;
+    let firstError: string | null = null;
     for (const item of ANNUAL_PLAN_SEED_DATA) {
       try {
-        // ⭐ Générer un ID unique et déterministe
-        const planId = `${tenantId.substring(0, 8)}-${item.classLevel}-${item.trimester}-${item.month.substring(0, 3)}-${item.week.substring(0, 3)}-${item.domain.substring(0, 5)}-${item.subDomain?.substring(0, 5) || 'ns'}-${inserted}`;
+        // ⭐ Générer un ID unique — utiliser randomUUID pour éviter les collisions
+        const { randomUUID } = require('crypto');
+        const planId = randomUUID();
         await this.prisma.$executeRawUnsafe(`
           INSERT INTO "annual_plans" ("id", "tenantId", "academicYearId", "schoolLevelId",
             "classLevel", "trimester", "month", "week", "domain", "subDomain", "content",
@@ -169,14 +186,26 @@ export class AnnualPlanService {
         inserted++;
       } catch (e: any) {
         failed++;
-        // Log first few errors for debugging
-        if (failed <= 3) {
-          this.logger.warn(`Seed insert failed for ${item.classLevel}-${item.month}-${item.domain}: ${e.message?.substring(0, 100)}`);
+        if (!firstError) {
+          firstError = e.message?.substring(0, 200);
+          this.logger.error(`FIRST seed insert failure: ${firstError}`);
+          this.logger.error(`Item: classLevel=${item.classLevel}, trimester=${item.trimester}, month=${item.month}, domain=${item.domain}`);
         }
       }
     }
 
     this.logger.log(`Seeded ${inserted} annual plans for tenant ${tenantId} (${failed} failed)`);
+
+    // ⭐ Si TOUT a échoué, lancer une erreur claire
+    if (inserted === 0 && failed > 0) {
+      throw new BadRequestException(
+        `Échec total de l'initialisation: 0/${ANNUAL_PLAN_SEED_DATA.length} insérés. ` +
+        `Première erreur: ${firstError}. ` +
+        `schoolLevelId utilisé: ${resolvedSchoolLevelId}. ` +
+        `Vérifiez que les FK (tenantId, academicYearId, schoolLevelId) sont valides.`
+      );
+    }
+
     return { skipped: false, count: inserted, failed };
   }
 }

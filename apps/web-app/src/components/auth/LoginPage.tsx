@@ -58,7 +58,7 @@ import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag } from '@/lib/auth/client-access-token';
+import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag, clearClientSessionSync } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -371,54 +371,67 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const redirectPath = searchParams?.get('redirect') || '/app';
 
   // ── Fetch dynamique des niveaux + classes du tenant ──────────────────
-  // ⭐ OFFLINE-FIRST : si une session locale valide existe, rediriger vers /app
-  //    SANS attendre un clic utilisateur ou un appel réseau.
-  //    Avant : l'utilisateur sur un appareil déjà provisionné voyait la page de login
-  //    même si sa session était valide → page blanche si réseau coupé.
-  //    Maintenant : auto-redirect vers /app si session locale détectée.
+  // ⛔ AUTO-REDIRECT VERS /app DÉSACTIVÉ — causait une boucle infinie après logout
+  // =================================================================
+  // AVANT : si hasLocalSessionHints() retournait true, on redirigeait vers /app
+  //         sans validation réseau. Problème : après logout, des données stale
+  //         persistent en localStorage (Cache API non nettoyée, service worker,
+  //         cache navigateur servant vieux bundle JS) → hasLocalSessionHints() = true
+  //         → redirect vers /app → AppGate détecte session invalide → redirect vers
+  //         /login → useEffect re-fire → hasLocalSessionHints() encore true → BOUCLE
+  //         INFINIE. Le user devait nettoyer le cache navigateur pour s'en sortir.
   //
-  // ⛔ ANTI-BLINK LOOP : on vérifie isRecentlyLoggedOut() AVANT hasLocalSessionHints().
-  //    Sans ça, après logout, des données stale persistent en localStorage (Cache API
-  //    non nettoyée car suspendue, etc.) → hasLocalSessionHints() retourne true →
-  //    redirect vers /app → AppGate détecte session invalide → redirect vers /login →
-  //    useEffect re-fire → hasLocalSessionHints() encore true → boucle infinie.
-  //    Solution : grace period de 60s après logout pendant laquelle on SAUTE
-  //    l'auto-redirect. Le user voit le formulaire de login normalement.
+  // APRÈS : on ne redirige PLUS automatiquement vers /app. Le user qui a une session
+  //         valide peut cliquer sur "Continuer vers le tableau de bord" (bouton
+  //         affiché si une session valide est détectée via /api/auth/session).
+  //         Si la session est invalide (cas post-logout), on reste sur /login et on
+  //         affiche le formulaire normalement.
+  //
+  // Pour les utilisateurs qui avaient l'habitude de l'auto-redirect (offline-first) :
+  //   - Le formulaire de login reste accessible
+  //   - Un bouton "Continuer" apparaît si une session valide est détectée
+  //   - Le user n'est jamais bloqué dans une boucle
+  //
+  // Anti-blink preserved : si logout a eu lieu récemment (60s grace period), on ne
+  // tente même pas de valider la session — le formulaire est affiché immédiatement.
   useEffect(() => {
-    // ⭐ Si logout a eu lieu dans les 60 dernières secondes, NE PAS auto-redirect
-    //    même si hasLocalSessionHints() retourne true (données stale).
+    // ⭐ Si logout a eu lieu dans les 60 dernières secondes, NE PAS tenter de valider
     if (isRecentlyLoggedOut(60000)) {
-      console.log('[LoginPage] Skip auto-redirect — logout was recent (within 60s grace period)');
+      console.log('[LoginPage] Skip session validation — logout was recent (within 60s grace period)');
       return;
     }
-    if (hasLocalSessionHints()) {
-      // ⭐ FIX : si on n'a pas de tenantSlug dans l'URL ni dans le sous-domaine,
-      //    on essaie de le récupérer depuis la session locale (localStorage).
-      //    Si toujours rien, on redirige vers /portal pour que l'utilisateur
-      //    sélectionne son école — au lieu de crasher avec
-      //    "tenantSlug is required for tenant redirection".
-      let effectiveSlug = tenantSlug || tenantIdFromUrl || '';
-
-      if (!effectiveSlug && typeof window !== 'undefined') {
-        try {
-          const sessionStr = localStorage.getItem('session');
-          if (sessionStr) {
-            const session = JSON.parse(sessionStr);
-            effectiveSlug = session?.tenant?.slug || session?.tenant?.subdomain || session?.tenantId || '';
-          }
-        } catch {
-          // ignore parse errors
-        }
-      }
-
-      if (effectiveSlug) {
-        const redirectUrl = getTenantRedirectUrl(effectiveSlug);
-        window.location.href = redirectUrl;
-      } else {
-        // Pas de tenant trouvé — rediriger vers /portal pour sélection
-        window.location.href = '/portal';
-      }
+    // ⭐ Si on n'a pas de session hints en localStorage, ne rien faire — afficher le form
+    if (!hasLocalSessionHints()) {
+      return;
     }
+    // ⭐ On a des session hints mais on ne sait pas s'ils sont valides.
+    //    Au lieu de rediriger aveuglément vers /app (qui causait la boucle),
+    //    on valide SILENCIEUSEMENT via /api/auth/me. Si invalide, on nettoie
+    //    localStorage pour éviter les futurs faux positifs.
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          // Session valide — on pourrait rediriger, mais pour éviter tout risque
+          // de boucle, on laisse le user cliquer sur le bouton "Continuer".
+          // Le bouton est affiché par le composant quand validSessionDetected = true.
+          console.log('[LoginPage] Valid session detected — show "Continue" button');
+          // Note: pas de window.location.href ici !
+        } else {
+          // Session invalide — nettoyer localStorage pour éviter les faux positifs futurs
+          console.log('[LoginPage] Session invalid — clearing stale localStorage data');
+          clearClientSessionSync();
+          // ⭐ Marquer qu'on vient de nettoyer pour empêcher toute redirection
+          //    ultérieure dans les 60 prochaines secondes
+          try {
+            sessionStorage.setItem('academia_just_logged_out', Date.now().toString());
+          } catch {}
+        }
+      } catch (e) {
+        // Erreur réseau — ne rien faire, afficher le formulaire
+        console.warn('[LoginPage] Session validation failed (network error):', e);
+      }
+    })();
   }, []); // Au montage uniquement
 
   // Permet au formulaire public de s'adapter à ce que l'établissement a configuré

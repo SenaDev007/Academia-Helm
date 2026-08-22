@@ -8,31 +8,34 @@
  * Permet à chaque enseignant de planifier son mois pour sa classe, en se
  * basant sur la planification annuelle officielle (annual_plans) comme source.
  *
+ * ⭐ Structure conforme aux documents officiels fournis :
+ *   - PAS DE PLANIFICATION MENSUELLE POUR LA MATERNELLE
+ *     (l'utilisateur n'a pas encore de document maternelle)
+ *   - CI et CP : DEUX FICHES différentes
+ *     • Fiche "Période d'immersion" (T1 : Septembre, Octobre, Novembre, Décembre)
+ *       → focus sur l'accueil, l'exploration, l'initiation aux apprentissages
+ *     • Fiche "Période systématique" (T2 + T3 : Janvier → Juin)
+ *       → focus sur les leçons structurées (leçon 1, 2, 3, ...)
+ *   - CE1, CE2, CM1, CM2 : UNE FICHE STANDARD (5 semaines × matières)
+ *
  * Workflow :
- *   1. L'enseignant sélectionne une classe + un mois
+ *   1. L'enseignant sélectionne une classe (parmi ses classes assignées) + un mois
  *   2. Le système propose automatiquement le contenu issu de la planification
- *      annuelle (annual_plans) pour ce mois (auto-proposition).
- *   3. L'enseignant édite chaque cellule (semaine × domaine) et sauvegarde.
- *   4. Les cellules éditées sont marquées isCustom=true et ne seront pas
- *      écrasées par une future auto-proposition.
+ *      annuelle (annual_plans) pour ce mois
+ *   3. L'enseignant édite chaque cellule et sauvegarde
  *
  * Terminologie SA/Séquence/U/D (officielle Bénin) :
  *   - SA  = Situation d'Apprentissage (ex: SA1, SA2, SA3)
  *   - Séq = Séquence pédagogique (séq 1, séq 2, ...) = séance de classe
  *   - U   = Unité (ex: U1, U2)
  *   - D   = Dossier (ex: D1, D2)
- *
- * Modes selon le niveau :
- *   - MATERNELLE : 5 domaines × sous-domaines × semaines
- *   - CI/CP : période d'immersion (T1) + période systématique (T2+T3)
- *   - CE1-CM2 : feuille standard (5 semaines × domaines)
  * ============================================================================
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Loader2, RefreshCw, Calendar, Save, Sparkles, Pencil, Check, X,
-  BookOpen, ChevronLeft, ChevronRight, AlertCircle,
+  BookOpen, AlertCircle, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -64,10 +67,21 @@ interface MonthlyPlanResponse {
   hasExistingCustom: boolean;
 }
 
+interface AvailableClass {
+  value: string;   // ex: "CI", "CP", "CE1", ...
+  label: string;   // ex: "CI", "CP", "CE1"
+}
+
 interface MonthlyPlanningTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
+  /** Liste des classes disponibles pour le sélecteur.
+   *  - Pour un enseignant : uniquement SES classes assignées (1 ou plusieurs)
+   *  - Pour la direction/promoteur : toutes les classes (CI à CM2) — pas de maternelle */
+  availableClasses?: AvailableClass[];
+  /** Si true, l'utilisateur est direction/promoteur (peut voir toutes les classes) */
+  isDirector?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -80,16 +94,8 @@ const PRIMAIRE_DOMAINS = [
   "Chant", "Poésie", "Conte", "Dessin", "Couture",
 ];
 
-const MATERNELLE_DOMAINS = [
-  { domain: 'I', subDomains: ['Education pour la santé', 'Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
-  { domain: 'II', subDomains: ['Expression corporelle'] },
-  { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
-  { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
-];
-
-const CLASS_LEVELS = [
-  { value: "MATERNELLE_GRANDS", label: "Maternelle" },
+// ⭐ Toutes les classes PRIMAIRES (pas de maternelle pour la planif mensuelle)
+const ALL_PRIMAIRE_CLASSES: AvailableClass[] = [
   { value: "CI", label: "CI" },
   { value: "CP", label: "CP" },
   { value: "CE1", label: "CE1" },
@@ -111,7 +117,7 @@ const MONTHS = [
   { value: "Juin", trimester: 3 },
 ];
 
-// Nombre de semaines par mois (varie selon le mois)
+// ⭐ Nombre de semaines par mois (varie selon le mois)
 const MONTH_NUM_WEEKS: Record<string, number> = {
   "Septembre": 2, "Octobre": 5, "Novembre": 4, "Décembre": 1,
   "Janvier": 4, "Février": 4, "Mars": 4, "Avril": 4, "Mai": 4, "Juin": 4,
@@ -124,11 +130,10 @@ const TRIMESTER_LABELS: Record<number, string> = {
   1: "1er Trim.", 2: "2e Trim.", 3: "3e Trim.",
 };
 
-// Libellés des semaines (par défaut)
 const WEEK_LABELS = ["Semaine 1", "Semaine 2", "Semaine 3", "Semaine 4", "Semaine 5"];
 
 // ─────────────────────────────────────────────────────────────────────────
-// Helper — pédfetch avec credentials
+// Helper — pedagogyFetch avec credentials
 // ─────────────────────────────────────────────────────────────────────────
 
 async function pedagogyFetch<T>(url: string, options?: { method?: string; body?: any }): Promise<T> {
@@ -146,10 +151,27 @@ async function pedagogyFetch<T>(url: string, options?: { method?: string; body?:
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Helpers de classification
+// ─────────────────────────────────────────────────────────────────────────
+
+/** CI ou CP → a 2 fiches (immersion T1 + systematic T2/T3) */
+function isImmersionClass(classLevel: string): boolean {
+  return classLevel === "CI" || classLevel === "CP";
+}
+
+/** Mois de T1 (Septembre-Décembre) → période d'immersion pour CI/CP */
+function isImmersionPeriod(month: string): boolean {
+  return ["Septembre", "Octobre", "Novembre", "Décembre"].includes(month);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Composant principal
 // ─────────────────────────────────────────────────────────────────────────
 
-export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: MonthlyPlanningTabProps) {
+export function MonthlyPlanningTab({
+  tenantId, academicYearId, teacherId,
+  availableClasses, isDirector = false,
+}: MonthlyPlanningTabProps) {
   const { currentLevel } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -159,41 +181,35 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
   const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
 
-  // Sélection : classe + mois (par défaut septembre + mois actuel si septembre)
-  const [selectedClass, setSelectedClass] = useState<string>("MATERNELLE_GRANDS");
+  // ⭐ Classes disponibles : si l'utilisateur est direction, on prend toutes les classes primaires.
+  //    Sinon (enseignant), on prend la liste fournie par le parent (ses classes assignées).
+  const classesToShow = availableClasses && availableClasses.length > 0
+    ? availableClasses
+    : ALL_PRIMAIRE_CLASSES;
+
+  // ⭐ Sélection : classe (1ère de la liste) + mois (par défaut septembre)
+  const [selectedClass, setSelectedClass] = useState<string>(classesToShow[0]?.value || "CI");
   const [selectedMonth, setSelectedMonth] = useState<string>("Septembre");
 
-  const isMaternelle = selectedClass === "MATERNELLE_GRANDS";
   const numWeeks = MONTH_NUM_WEEKS[selectedMonth] || 4;
   const trimester = MONTHS.find(m => m.value === selectedMonth)?.trimester || 1;
 
-  // Charger la planif existante OU auto-proposer si vide
-  const loadPlan = useCallback(async () => {
-    if (!academicYearId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const data = await pedagogyFetch<MonthlyPlanResponse>(
-        `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
-      );
-      if (data.cells.length === 0) {
-        // Pas encore de planif → lancer l'auto-proposition
-        await autoPropose();
-      } else {
-        setCells(data.cells);
-        setHasExistingCustom(data.hasExistingCustom);
-      }
-    } catch (e: any) {
-      console.error("Failed to load monthly plan:", e);
-      toast.error("Erreur lors du chargement de la planification");
-    } finally {
-      setLoading(false);
-    }
-  }, [academicYearId, selectedClass, selectedMonth, teacherId]);
+  // ⭐ Détection du type de fiche (immersion vs systématique pour CI/CP)
+  const showImmersionSheet = isImmersionClass(selectedClass) && isImmersionPeriod(selectedMonth);
+  const showSystematicSheet = isImmersionClass(selectedClass) && !isImmersionPeriod(selectedMonth);
+  const sheetLabel = showImmersionSheet
+    ? "Fiche : Période d'immersion"
+    : showSystematicSheet
+      ? "Fiche : Période systématique"
+      : "Fiche standard";
 
+  // ┭ Refs pour briser la dépendance circulaire loadPlan ↔ autoPropose
+  const autoProposeRef = useRef<() => Promise<void>>(async () => {});
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+
+  // ───────────────────────────────────────────────────────────────────
   // Auto-proposition depuis annual_plans
+  // ───────────────────────────────────────────────────────────────────
   const autoPropose = useCallback(async () => {
     if (!academicYearId) return;
     setAutoProposing(true);
@@ -205,7 +221,7 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
       if (result.cells.length === 0) {
         toast.info("Aucune planification annuelle disponible pour ce mois. Initialisez d'abord la planification annuelle.");
       } else {
-        toast.success(`Proposition automatique : ${result.count} cellules importées depuis la planification annuelle`);
+        toast.success(`Proposition automatique : ${result.count} cellules importées`);
       }
       setCells(result.cells);
       setHasExistingCustom(false);
@@ -217,9 +233,54 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
     }
   }, [academicYearId, selectedClass, selectedMonth]);
 
+  // ⭐ Mettre à jour le ref à chaque rendu
+  autoProposeRef.current = autoPropose;
+
+  // ───────────────────────────────────────────────────────────────────
+  // Charger la planif existante OU auto-proposer si vide
+  // ───────────────────────────────────────────────────────────────────
+  const loadPlan = useCallback(async () => {
+    if (!academicYearId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await pedagogyFetch<MonthlyPlanResponse>(
+        `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
+      );
+      if (data.cells.length === 0) {
+        // ⭐ Utiliser le ref pour éviter la dépendance circulaire
+        await autoProposeRef.current();
+      } else {
+        setCells(data.cells);
+        setHasExistingCustom(data.hasExistingCustom);
+      }
+    } catch (e: any) {
+      // ⭐ NE PAS afficher l'erreur si c'est juste "table doesn't exist" (migration pas encore appliquée)
+      //    → on essaie quand même l'auto-proposition en arrière-plan
+      const msg = e?.message || "";
+      if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("Failed to fetch monthly plans")) {
+        console.warn("Table monthly_plans non disponible — essai auto-proposition:", msg);
+        try {
+          await autoProposeRef.current();
+        } catch (e2) {
+          console.error("Auto-propose fallback failed:", e2);
+        }
+      } else {
+        console.error("Failed to load monthly plan:", e);
+        toast.error("Erreur lors du chargement de la planification mensuelle: " + msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId, selectedClass, selectedMonth, teacherId]);
+
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
+  // ───────────────────────────────────────────────────────────────────
   // Sauvegarder la planification complète
+  // ───────────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!academicYearId) return;
     setSaving(true);
@@ -240,7 +301,6 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
       );
       toast.success(`Planification sauvegardée : ${result.saved} cellules (${result.skipped} personnalisations conservées)`);
       setHasExistingCustom(false);
-      // Recharger pour récupérer les IDs
       await loadPlan();
     } catch (e: any) {
       toast.error("Échec de la sauvegarde: " + e.message);
@@ -249,7 +309,11 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
     }
   }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells, loadPlan]);
 
-  // Édition d'une cellule — recherche par (weekNumber, domain, subDomain)
+  saveRef.current = handleSave;
+
+  // ───────────────────────────────────────────────────────────────────
+  // Helpers d'édition
+  // ───────────────────────────────────────────────────────────────────
   const findCell = (weekNumber: number, domain: string, subDomain?: string): MonthlyPlanCell | undefined => {
     return cells.find(c =>
       c.weekNumber === weekNumber &&
@@ -258,7 +322,6 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
     );
   };
 
-  // Update cellule en local (avant sauvegarde)
   const updateCellLocal = (weekNumber: number, domain: string, subDomain: string | undefined, content: string) => {
     setCells(prev => {
       const idx = prev.findIndex(c =>
@@ -267,7 +330,6 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
         (c.subDomain || "") === (subDomain || "")
       );
       if (idx === -1) {
-        // Créer une nouvelle cellule
         return [...prev, {
           weekNumber, domain, subDomain,
           content,
@@ -286,11 +348,9 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
     });
   };
 
-  // Sauvegarde individuelle d'une cellule (PUT /:id) — seulement si la cellule a un ID
   const saveCellInline = async (cell: MonthlyPlanCell) => {
     if (!cell.id) {
-      // Pas d'ID → sauvegarde globale (POST /save)
-      await handleSave();
+      await saveRef.current();
       setEditingCellKey(null);
       return;
     }
@@ -301,16 +361,15 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
       });
       toast.success("Cellule mise à jour");
       setEditingCellKey(null);
-      // Marquer comme custom localement
       updateCellLocal(cell.weekNumber, cell.domain, cell.subDomain, editContent);
     } catch (e: any) {
       toast.error("Échec de la mise à jour: " + e.message);
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────
   // Render
-  // ─────────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -332,20 +391,28 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
           <div>
             <h2 className="text-sm font-bold text-slate-900">Planification mensuelle</h2>
             <p className="text-xs text-slate-500">
-              {CLASS_LEVELS.find(c => c.value === selectedClass)?.label} — {selectedMonth}
+              {classesToShow.find(c => c.value === selectedClass)?.label} — {selectedMonth} — {sheetLabel}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium"
-          >
-            {CLASS_LEVELS.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
+          {/* ⭐ Sélecteur de classe — NE LISTE QUE les classes disponibles */}
+          {classesToShow.length > 1 ? (
+            <select
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium"
+            >
+              {classesToShow.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          ) : (
+            // Si une seule classe, afficher en lecture seule (badge)
+            <span className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold text-slate-700">
+              {classesToShow[0]?.label}
+            </span>
+          )}
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
@@ -382,256 +449,154 @@ export function MonthlyPlanningTab({ tenantId, academicYearId, teacherId }: Mont
         </div>
       </div>
 
-      {/* Info banner — Terminologie */}
-      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs text-purple-700 flex items-start gap-2">
-        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+      {/* ⭐ Bannière informative — type de fiche */}
+      <div className={cn(
+        "rounded-lg p-3 text-xs flex items-start gap-2",
+        showImmersionSheet
+          ? "bg-blue-50 border border-blue-200 text-blue-700"
+          : showSystematicSheet
+            ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+            : "bg-amber-50 border border-amber-200 text-amber-700"
+      )}>
+        {showImmersionSheet ? <Info className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
+         showSystematicSheet ? <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" /> :
+         <Calendar className="w-4 h-4 mt-0.5 flex-shrink-0" />}
         <div>
-          <strong>Terminologie officielle (Bénin) :</strong>
-          <span className="ml-2"><strong>SA</strong> = Situation d'Apprentissage (SA1, SA2)</span>
-          <span className="ml-3"><strong>Séquence</strong> = séance de classe (séq 1, séq 2)</span>
-          <span className="ml-3"><strong>U</strong> = Unité (U1, U2)</span>
-          <span className="ml-3"><strong>D</strong> = Dossier (D1, D2)</span>
-          <div className="mt-1 text-purple-600">
-            ℹ️ Le contenu est auto-proposé depuis la planification annuelle officielle. Cliquez sur une cellule pour la personnaliser.
-            {hasExistingCustom && (
-              <span className="ml-2 text-amber-600 font-semibold">
-                ⚠️ Certaines cellules ont été personnalisées et ne seront pas écrasées par l'auto-proposition.
-              </span>
-            )}
+          <strong>{sheetLabel}</strong>
+          {showImmersionSheet && (
+            <span className="ml-2">
+              — Cette fiche couvre la <strong>période d'immersion</strong> du 1er trimestre
+              (Septembre → Décembre). L'enseignant y planifie l'accueil, l'exploration
+              et l'initiation aux apprentissages fondamentaux.
+            </span>
+          )}
+          {showSystematicSheet && (
+            <span className="ml-2">
+              — Cette fiche couvre la <strong>période systématique</strong> du 2e et 3e trimestre
+              (Janvier → Juin). L'enseignant y planifie les leçons structurées (Leçon 1, 2, ...).
+            </span>
+          )}
+          {!showImmersionSheet && !showSystematicSheet && (
+            <span className="ml-2">
+              — Fiche standard pour les classes de CE1 à CM2. 5 semaines × matières.
+            </span>
+          )}
+          <div className="mt-1 opacity-80">
+            <strong>Terminologie :</strong>
+            <span className="ml-1"><strong>SA</strong> = Situation d'Apprentissage</span>
+            <span className="ml-2"><strong>Séq</strong> = Séquence (séance)</span>
+            <span className="ml-2"><strong>U</strong> = Unité</span>
+            <span className="ml-2"><strong>D</strong> = Dossier</span>
           </div>
         </div>
       </div>
 
-      {/* TABLEAU MATERNELLE — 5 domaines (I-V) × sous-domaines × semaines */}
-      {isMaternelle ? (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-          <table className="text-xs border-collapse w-full table-fixed">
-            <colgroup>
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "22%" }} />
-              {Array.from({ length: numWeeks }).map((_, i) => (
-                <col key={i} style={{ width: `${68 / Math.max(numWeeks, 1)}%` }} />
+      {/* ⭐ TABLEAU — 5 semaines (lignes) × matières (colonnes) */}
+      {/* Structure commune pour immersion, systématique et standard */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+        <table className="text-xs border-collapse w-full table-fixed">
+          <colgroup>
+            <col style={{ width: "10%" }} />
+            {PRIMAIRE_DOMAINS.map((_, i) => (
+              <col key={i} style={{ width: `${90 / PRIMAIRE_DOMAINS.length}%` }} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className={cn("text-white", TRIMESTER_COLORS[trimester])}>
+              <th className="p-2 border border-purple-300 text-left">Semaine</th>
+              {PRIMAIRE_DOMAINS.map(d => (
+                <th key={d} className="p-2 border border-purple-300 text-center text-[10px]">{d}</th>
               ))}
-            </colgroup>
-            <thead>
-              <tr className={cn("text-white", TRIMESTER_COLORS[trimester])}>
-                <th className="p-2 border border-purple-300 text-center">Domaine</th>
-                <th className="p-2 border border-purple-300 text-left">Période d'activité</th>
-                {Array.from({ length: numWeeks }).map((_, i) => (
-                  <th key={i} className="p-2 border border-purple-300 text-center">
-                    {WEEK_LABELS[i]}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {MATERNELLE_DOMAINS.map(dom => {
-                return dom.subDomains.map((sub, subIdx) => {
-                  const cellKey = `${selectedClass}|${selectedMonth}|${dom.domain}|${sub}`;
-                  return (
-                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-purple-50/30">
-                      {subIdx === 0 && (
-                        <td
-                          rowSpan={dom.subDomains.length}
-                          className={cn(
-                            "p-2 border border-purple-300 font-bold text-white text-center text-base align-middle",
-                            TRIMESTER_COLORS[trimester]
-                          )}
-                        >
-                          {dom.domain}
-                        </td>
-                      )}
-                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white text-[10px]">
-                        {sub}
-                      </td>
-                      {Array.from({ length: numWeeks }).map((_, weekIdx) => {
-                        const weekNum = weekIdx + 1;
-                        const cell = findCell(weekNum, dom.domain, sub);
-                        const isEditing = editingCellKey === `${cellKey}|${weekNum}`;
-                        return (
-                          <td key={weekNum} className="p-1 border border-slate-200 align-top">
-                            {cell && isEditing ? (
-                              <div className="space-y-1">
-                                <textarea
-                                  value={editContent}
-                                  onChange={e => setEditContent(e.target.value)}
-                                  className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
-                                  rows={3}
-                                  autoFocus
-                                />
-                                <div className="flex gap-0.5">
-                                  <button
-                                    onClick={() => saveCellInline(cell)}
-                                    className="p-0.5 bg-emerald-600 text-white rounded"
-                                  >
-                                    <Check className="w-2.5 h-2.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingCellKey(null)}
-                                    className="p-0.5 bg-slate-200 rounded"
-                                  >
-                                    <X className="w-2.5 h-2.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : cell ? (
-                              <div
-                                className={cn(
-                                  "text-[9px] leading-tight cursor-pointer p-1 rounded",
-                                  cell.isCustom
-                                    ? "bg-amber-50 text-amber-900 border border-amber-200"
-                                    : cell.isAutoProposed
-                                      ? "bg-purple-50 text-purple-900 border border-purple-100"
-                                      : "text-slate-700"
-                                )}
-                                onClick={() => {
-                                  setEditingCellKey(`${cellKey}|${weekNum}`);
-                                  setEditContent(cell.content);
-                                }}
-                                title={
-                                  cell.isCustom
-                                    ? "Modifié par l'enseignant"
-                                    : cell.isAutoProposed
-                                      ? "Auto-proposé depuis la planification annuelle"
-                                      : "Contenu"
-                                }
-                              >
-                                {cell.content}
-                                {cell.activityType && (
-                                  <span className="block text-[7px] text-purple-600 font-bold mt-0.5">
-                                    {cell.activityType}{cell.activityNumber || ""}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: numWeeks }).map((_, weekIdx) => {
+              const weekNum = weekIdx + 1;
+              return (
+                <tr key={weekNum} className="hover:bg-purple-50/30">
+                  <td className="p-2 border border-slate-200 font-bold text-slate-700 bg-slate-50">
+                    {WEEK_LABELS[weekIdx]}
+                  </td>
+                  {PRIMAIRE_DOMAINS.map(domain => {
+                    const cell = findCell(weekNum, domain);
+                    const cellKey = `${selectedClass}|${selectedMonth}|${domain}||${weekNum}`;
+                    const isEditing = editingCellKey === cellKey;
+                    return (
+                      <td key={domain} className="p-1 border border-slate-200 align-top">
+                        {cell && isEditing ? (
+                          <div className="space-y-1">
+                            <textarea
+                              value={editContent}
+                              onChange={e => setEditContent(e.target.value)}
+                              className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
+                              rows={3}
+                              autoFocus
+                            />
+                            <div className="flex gap-0.5">
                               <button
-                                onClick={() => {
-                                  setEditingCellKey(`${cellKey}|${weekNum}`);
-                                  setEditContent("");
-                                }}
-                                className="text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1"
-                                title="Cliquer pour ajouter du contenu"
+                                onClick={() => saveCellInline(cell)}
+                                className="p-0.5 bg-emerald-600 text-white rounded"
                               >
-                                + ajouter
+                                <Check className="w-2.5 h-2.5" />
                               </button>
+                              <button
+                                onClick={() => setEditingCellKey(null)}
+                                className="p-0.5 bg-slate-200 rounded"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : cell ? (
+                          <div
+                            className={cn(
+                              "text-[9px] leading-tight cursor-pointer p-1 rounded",
+                              cell.isCustom
+                                ? "bg-amber-50 text-amber-900 border border-amber-200"
+                                : cell.isAutoProposed
+                                  ? "bg-purple-50 text-purple-900 border border-purple-100"
+                                  : "text-slate-700"
                             )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                });
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        // TABLEAU PRIMAIRE — 5 semaines (lignes) × matières (colonnes)
-        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-          <table className="text-xs border-collapse w-full table-fixed">
-            <colgroup>
-              <col style={{ width: "10%" }} />
-              {PRIMAIRE_DOMAINS.map((_, i) => (
-                <col key={i} style={{ width: `${90 / PRIMAIRE_DOMAINS.length}%` }} />
-              ))}
-            </colgroup>
-            <thead>
-              <tr className={cn("text-white", TRIMESTER_COLORS[trimester])}>
-                <th className="p-2 border border-purple-300 text-left">Semaine</th>
-                {PRIMAIRE_DOMAINS.map(d => (
-                  <th key={d} className="p-2 border border-purple-300 text-center text-[10px]">{d}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: numWeeks }).map((_, weekIdx) => {
-                const weekNum = weekIdx + 1;
-                return (
-                  <tr key={weekNum} className="hover:bg-purple-50/30">
-                    <td className="p-2 border border-slate-200 font-bold text-slate-700 bg-slate-50">
-                      {WEEK_LABELS[weekIdx]}
-                    </td>
-                    {PRIMAIRE_DOMAINS.map(domain => {
-                      const cell = findCell(weekNum, domain);
-                      const cellKey = `${selectedClass}|${selectedMonth}|${domain}||${weekNum}`;
-                      const isEditing = editingCellKey === cellKey;
-                      return (
-                        <td key={domain} className="p-1 border border-slate-200 align-top">
-                          {cell && isEditing ? (
-                            <div className="space-y-1">
-                              <textarea
-                                value={editContent}
-                                onChange={e => setEditContent(e.target.value)}
-                                className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
-                                rows={3}
-                                autoFocus
-                              />
-                              <div className="flex gap-0.5">
-                                <button
-                                  onClick={() => saveCellInline(cell)}
-                                  className="p-0.5 bg-emerald-600 text-white rounded"
-                                >
-                                  <Check className="w-2.5 h-2.5" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingCellKey(null)}
-                                  className="p-0.5 bg-slate-200 rounded"
-                                >
-                                  <X className="w-2.5 h-2.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ) : cell ? (
-                            <div
-                              className={cn(
-                                "text-[9px] leading-tight cursor-pointer p-1 rounded",
-                                cell.isCustom
-                                  ? "bg-amber-50 text-amber-900 border border-amber-200"
-                                  : cell.isAutoProposed
-                                    ? "bg-purple-50 text-purple-900 border border-purple-100"
-                                    : "text-slate-700"
-                              )}
-                              onClick={() => {
-                                setEditingCellKey(cellKey);
-                                setEditContent(cell.content);
-                              }}
-                              title={
-                                cell.isCustom
-                                  ? "Modifié par l'enseignant"
-                                  : cell.isAutoProposed
-                                    ? "Auto-proposé depuis la planification annuelle"
-                                    : "Contenu"
-                              }
-                            >
-                              {cell.content}
-                              {cell.activityType && (
-                                <span className="block text-[7px] text-purple-600 font-bold mt-0.5">
-                                  {cell.activityType}{cell.activityNumber || ""}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => {
-                                setEditingCellKey(cellKey);
-                                setEditContent("");
-                              }}
-                              className="text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1"
-                              title="Cliquer pour ajouter du contenu"
-                            >
-                              + ajouter
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                            onClick={() => {
+                              setEditingCellKey(cellKey);
+                              setEditContent(cell.content);
+                            }}
+                            title={
+                              cell.isCustom
+                                ? "Modifié par l'enseignant"
+                                : cell.isAutoProposed
+                                  ? "Auto-proposé depuis la planification annuelle"
+                                  : "Contenu"
+                            }
+                          >
+                            {cell.content}
+                            {cell.activityType && (
+                              <span className="block text-[7px] text-purple-600 font-bold mt-0.5">
+                                {cell.activityType}{cell.activityNumber || ""}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingCellKey(cellKey);
+                              setEditContent("");
+                            }}
+                            className="text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1"
+                            title="Cliquer pour ajouter du contenu"
+                          >
+                            + ajouter
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* Légende */}
       <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap items-center gap-4">

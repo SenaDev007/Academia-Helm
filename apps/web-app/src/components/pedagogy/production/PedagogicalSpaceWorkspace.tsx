@@ -101,6 +101,11 @@ export function PedagogicalSpaceWorkspace({
   const { user } = useAppSession();
   const [tab, setTab] = useState<TabId>('classes');
 
+  // ⭐ Classes assignées à l'enseignant (pour la planification mensuelle)
+  //    - Pour un enseignant : SEULEMENT SES classes (1 ou plusieurs, via teacher-class-assignments)
+  //    - Pour la direction/promoteur : TOUTES les classes primaires (CI à CM2)
+  const [teacherClasses, setTeacherClasses] = useState<{ value: string; label: string }[]>([]);
+
   // Résoudre le teacherId depuis le user ou les props
   // Pour les enseignants, on utilise user.id (qui correspond au userId lié au teacher)
   // Pour les rôles non-enseignant (PROMOTER, DIRECTOR, ADMIN), on utilise aussi user.id
@@ -151,6 +156,73 @@ export function PedagogicalSpaceWorkspace({
       setTab('classes');
     }
   }, [tab, TABS]);
+
+  // ⭐ Fetch des classes assignées à l'enseignant — pour le sélecteur de la planification mensuelle.
+  //    Un enseignant ne doit voir QUE ses classes (pas toutes les classes de l'école).
+  //    On fetch via /api/pedagogy/teacher-profiles (pour résoudre user.id → teacher.id)
+  //    puis /api/pedagogy/teacher-class-assignments (pour avoir les AcademicClass).
+  //    Pour les rôles direction/promoteur, on prend TOUTES les classes CI-CM2.
+  useEffect(() => {
+    if (tab !== 'monthly-planning') return;
+    if (!resolvedAcademicYearId || !teacherId) return;
+    // ⭐ Si l'utilisateur a un accès global (direction/promoteur), on prend toutes les classes
+    if (hasGlobalAccess) {
+      setTeacherClasses([
+        { value: 'CI', label: 'CI' }, { value: 'CP', label: 'CP' },
+        { value: 'CE1', label: 'CE1' }, { value: 'CE2', label: 'CE2' },
+        { value: 'CM1', label: 'CM1' }, { value: 'CM2', label: 'CM2' },
+      ]);
+      return;
+    }
+    // ⭐ Enseignant : fetch de ses classes assignées
+    (async () => {
+      try {
+        // 1. Récupérer le profil enseignant (user.id → teacher.id)
+        const profRes = await fetch(
+          `/api/pedagogy/teacher-profiles?academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
+          { credentials: 'include' }
+        );
+        const profList = await profRes.json();
+        const profiles = Array.isArray(profList) ? profList : (profList?.data || []);
+        const myProfile = profiles.find((p: any) =>
+          p.userId === user?.id ||
+          p.user?.id === user?.id ||
+          (p.teacher?.email && user?.email && p.teacher.email.toLowerCase() === user.email.toLowerCase()) ||
+          (p.teacher?.matricule && user?.matricule && p.teacher.matricule === user.matricule)
+        );
+        const myTeacherId = myProfile?.teacherId || myProfile?.id;
+        if (!myTeacherId) return;
+
+        // 2. Récupérer les assignments du teacher
+        const assignRes = await fetch(
+          `/api/pedagogy/teacher-class-assignments?teacherId=${encodeURIComponent(myTeacherId)}&academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
+          { credentials: 'include' }
+        );
+        const assignList = await assignRes.json();
+        const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
+
+        // 3. Extraire les officialClassId uniques (ex: "CI", "CP", "CE1", ...)
+        const classSet = new Map<string, string>(); // value → label
+        for (const a of assignments) {
+          const officialClassId = a.classSubject?.academicClass?.officialClassId
+            || a.classSubject?.academicClass?.name
+            || a.academicClass?.officialClassId
+            || a.academicClass?.name;
+          if (officialClassId) {
+            // ⭐ On ne retient que les classes primaires (CI à CM2) — pas maternelle pour la planif mensuelle
+            const validClasses = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
+            const upperId = String(officialClassId).toUpperCase();
+            if (validClasses.includes(upperId) && !classSet.has(upperId)) {
+              classSet.set(upperId, upperId);
+            }
+          }
+        }
+        setTeacherClasses(Array.from(classSet.entries()).map(([value, label]) => ({ value, label })));
+      } catch (e) {
+        console.error('Failed to fetch teacher classes for monthly planning:', e);
+      }
+    })();
+  }, [tab, resolvedAcademicYearId, teacherId, hasGlobalAccess, user?.id, user?.email, user?.matricule]);
 
   if (!resolvedAcademicYearId) {
     return (
@@ -241,11 +313,25 @@ export function PedagogicalSpaceWorkspace({
           )}
           {/* ⭐ Planification mensuelle — auto-proposition depuis la planification annuelle */}
           {tab === 'monthly-planning' && (
-            <MonthlyPlanningTab
-              tenantId={resolvedTenantId}
-              academicYearId={resolvedAcademicYearId}
-              teacherId={teacherId}
-            />
+            teacherClasses.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+                <CalendarClock className="h-12 w-12 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-700">Aucune classe assignée</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Vous n'avez pas encore de classes assignées. La planification mensuelle
+                  n'est accessible qu'aux enseignants titulaires d'au moins une classe.
+                  Contactez la direction si vous pensez qu'il s'agit d'une erreur.
+                </p>
+              </div>
+            ) : (
+              <MonthlyPlanningTab
+                tenantId={resolvedTenantId}
+                academicYearId={resolvedAcademicYearId}
+                teacherId={teacherId}
+                availableClasses={teacherClasses}
+                isDirector={hasGlobalAccess}
+              />
+            )
           )}
           {tab === 'cahier-texte' && (
             <CahierDeTexteTab

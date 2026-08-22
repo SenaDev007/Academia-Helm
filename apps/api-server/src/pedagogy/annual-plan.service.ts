@@ -114,24 +114,43 @@ export class AnnualPlanService {
 
   /**
    * ⭐ SEED : Insère la planification officielle pour un tenant + année.
-   *    Idempotent : ne réinsère pas si les données existent déjà.
+   *    Idempotent : ne réinsère pas si les données existent déjà (sauf si force=true).
    *    Toutes les écoles ont ces données par défaut.
    *    Initialise TOUTES les classes (Maternelle + CI + CP + CE1 + CE2 + CM1 + CM2) en une seule fois.
+   *
+   *    ⭐ force=true : supprime les anciennes données et réinsère les nouvelles
+   *      (utile quand le contenu du seed a été mis à jour et qu'on veut rafraîchir
+   *      la base sans toucher aux personnalisations manuelles isCustom=true).
+   *      En mode force, on GARDE les personnalisations isCustom=true si elles existent
+   *      (on ne les écrase pas), mais on MET À JOUR le contenu des cellules officielles.
    */
   async seedForTenant(
     tenantId: string,
     academicYearId: string,
     schoolLevelId: string,
+    options?: { force?: boolean },
   ) {
+    const force = options?.force === true;
+
     // Vérifier si le seed a déjà été fait
     const existing = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT COUNT(*) as count FROM "annual_plans"
       WHERE "tenantId" = $1 AND "academicYearId" = $2
     `, tenantId, academicYearId);
 
-    if (existing[0]?.count > 0) {
-      this.logger.log(`Seed already done for tenant ${tenantId} — ${existing[0].count} plans exist`);
+    if (existing[0]?.count > 0 && !force) {
+      this.logger.log(`Seed already done for tenant ${tenantId} — ${existing[0].count} plans exist (use force=true to re-seed)`);
       return { skipped: true, count: existing[0].count };
+    }
+
+    // ⭐ Mode force : supprimer les cellules officielles (isCustom=false) pour réinsérer
+    //    On GARDE les personnalisations isCustom=true.
+    if (force) {
+      const deleted = await this.prisma.$executeRawUnsafe(`
+        DELETE FROM "annual_plans"
+        WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCustom" = false
+      `, tenantId, academicYearId);
+      this.logger.log(`Force mode: deleted ${deleted} non-custom plans for re-seeding`);
     }
 
     // ⭐ Récupérer TOUS les schoolLevelIds du tenant (Maternelle + Primaire)
@@ -160,13 +179,35 @@ export class AnnualPlanService {
       throw new BadRequestException('Aucun schoolLevelId trouvé pour ce tenant — créez d\'abord les niveaux scolaires dans les paramètres.');
     }
 
-    this.logger.log(`Seeding with schoolLevelId=${resolvedSchoolLevelId}, tenantId=${tenantId}, academicYearId=${academicYearId}`);
+    this.logger.log(`Seeding with schoolLevelId=${resolvedSchoolLevelId}, tenantId=${tenantId}, academicYearId=${academicYearId}, force=${force}`);
+
+    // ⭐ Indexer les personnalisations existantes (pour ne pas les écraser en mode force)
+    const customPlans: Set<string> = new Set();
+    if (force) {
+      const customs = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "classLevel", "trimester", "month", "week", "domain", "subDomain"
+        FROM "annual_plans"
+        WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCustom" = true
+      `, tenantId, academicYearId);
+      for (const c of customs) {
+        customPlans.add(`${c.classLevel}|${c.trimester}|${c.month}|${c.week}|${c.domain}|${c.subDomain || ''}`);
+      }
+    }
 
     // Insérer toutes les données du seed — TOUTES les classes d'un coup
     let inserted = 0;
     let failed = 0;
+    let skippedCustom = 0;
     let firstError: string | null = null;
     for (const item of ANNUAL_PLAN_SEED_DATA) {
+      // ⭐ En mode force, sauter les cellules qui ont été personnalisées (isCustom=true)
+      if (force) {
+        const key = `${item.classLevel}|${item.trimester}|${item.month}|${item.week}|${item.domain}|${item.subDomain || ''}`;
+        if (customPlans.has(key)) {
+          skippedCustom++;
+          continue;
+        }
+      }
       try {
         // ⭐ Générer un ID unique — utiliser randomUUID pour éviter les collisions
         const { randomUUID } = require('crypto');
@@ -194,7 +235,7 @@ export class AnnualPlanService {
       }
     }
 
-    this.logger.log(`Seeded ${inserted} annual plans for tenant ${tenantId} (${failed} failed)`);
+    this.logger.log(`Seeded ${inserted} annual plans for tenant ${tenantId} (${failed} failed, ${skippedCustom} custom preserved)`);
 
     // ⭐ Si TOUT a échoué, lancer une erreur claire
     if (inserted === 0 && failed > 0) {
@@ -206,6 +247,6 @@ export class AnnualPlanService {
       );
     }
 
-    return { skipped: false, count: inserted, failed };
+    return { skipped: false, count: inserted, failed, skippedCustom, forced: force };
   }
 }

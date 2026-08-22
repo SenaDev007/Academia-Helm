@@ -225,7 +225,8 @@ function AnnualPlanningContent() {
   //    On ne bloque pas l'utilisateur si currentLevel?.schoolLevelId est null —
   //    on passe currentLevel?.id (education_levels UUID) en fallback, ou null
   //    et le backend fait SELECT FROM school_levels WHERE tenantId = $1.
-  const handleSeedAll = useCallback(async () => {
+  //    ⭐ force=true : réinsère les données officielles (sans écraser les personnalisations)
+  const handleSeedAll = useCallback(async (force = false) => {
     if (!academicYear?.id) {
       toast({ title: 'Erreur', description: 'Année scolaire non sélectionnée. Vérifiez le sélecteur d\'année dans l\'en-tête.', variant: 'destructive' });
       return;
@@ -245,6 +246,7 @@ function AnnualPlanningContent() {
         body: { 
           academicYearId: academicYear.id, 
           schoolLevelId: slId,
+          force,
         },
       });
       
@@ -252,7 +254,12 @@ function AnnualPlanningContent() {
       setSeedProgress(100);
       
       if (result?.skipped) {
-        toast({ title: 'ℹ️ Déjà initialisé', description: `${result.count} planifications existent déjà.` });
+        toast({ title: 'ℹ️ Déjà initialisé', description: `${result.count} planifications existent déjà. Cliquez sur "Mettre à jour" pour rafraîchir.` });
+      } else if (force) {
+        const msg = result?.skippedCustom 
+          ? `${result.count} planifications mises à jour (${result.skippedCustom} personnalisations conservées).`
+          : `${result.count} planifications mises à jour avec les dernières données officielles.`;
+        toast({ title: '✅ Mise à jour terminée', description: msg });
       } else {
         toast({ title: '✅ Initialisation terminée', description: `${result.count} planifications insérées pour toutes les classes.` });
       }
@@ -374,6 +381,14 @@ function AnnualPlanningContent() {
           >
             {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} PDF
           </button>
+          <button
+            onClick={() => handleSeedAll(true)}
+            disabled={seeding}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg text-sm font-bold"
+            title="Réinsère les dernières données officielles (conserve vos personnalisations)"
+          >
+            <RefreshCw className="w-4 h-4" /> Mettre à jour
+          </button>
           <button onClick={loadPlans} className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title="Rafraîchir">
             <RefreshCw className="h-4 w-4" />
           </button>
@@ -435,15 +450,22 @@ function AnnualPlanningContent() {
             </button>
           </div>
 
-          {/* Table for current month */}
+          {/* Table for current month — prend TOUTE la largeur disponible */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-            <table className="text-xs border-collapse min-w-[600px]">
+            <table className="text-xs border-collapse w-full table-fixed">
+              <colgroup>
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '14%' }} />
+                {currentWeeks.map((wk, i) => (
+                  <col key={i} style={{ width: `${68 / Math.max(currentWeeks.length, 1)}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
-                  <th className="p-2 border border-blue-300 text-left sticky left-0 z-10 min-w-[180px]">Domaines</th>
-                  <th className="p-2 border border-blue-300 text-left sticky left-[180px] z-10 min-w-[120px]">Sous-domaine</th>
+                  <th className="p-2 border border-blue-300 text-left">Domaines</th>
+                  <th className="p-2 border border-blue-300 text-left">Sous-domaine</th>
                   {currentWeeks.map(wk => (
-                    <th key={wk} className="p-2 border border-blue-300 text-center min-w-[120px]">{wk}</th>
+                    <th key={wk} className="p-2 border border-blue-300 text-center">{wk}</th>
                   ))}
                 </tr>
               </thead>
@@ -457,12 +479,12 @@ function AnnualPlanningContent() {
                     </tr>
                     {dom.subDomains.map(sub => (
                       <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                        <td className="p-1 border border-slate-200 bg-slate-50"></td>
+                        <td className="p-1 border border-slate-200 bg-slate-50">&nbsp;</td>
                         <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
                         {currentWeeks.map(wk => {
                           const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
                           return (
-                            <td key={wk} className="p-1 border border-slate-200 align-top min-w-[120px]">
+                            <td key={wk} className="p-1 border border-slate-200 align-top">
                               {plan ? (
                                 editingId === plan.id ? (
                                   <div className="space-y-1">

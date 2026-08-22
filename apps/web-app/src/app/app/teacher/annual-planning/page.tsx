@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Loader2, RefreshCw, Calendar, BookOpen, FileDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
@@ -8,6 +8,9 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 const CLASS_LEVELS = [
   { value: 'MATERNELLE_GRANDS', label: 'Maternelle' },
@@ -92,6 +95,32 @@ interface AnnualPlan {
 }
 
 export default function TeacherAnnualPlanningPage() {
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
+  const { academicYear } = useModuleContext();
+
+  return (
+    <ModuleContainer
+      header={{
+        title: 'Planification annuelle',
+        description: academicYear
+          ? `Planification pédagogique annuelle officielle — année ${academicYear.label} (lecture seule)`
+          : 'Planification pédagogique annuelle officielle (lecture seule)',
+        icon: 'book',
+      }}
+      subModules={{
+        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+          const Icon = tab.icon;
+          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
+        }),
+        activeModuleId: 'annual-planning',
+      }}
+      content={{ layout: 'custom', children: <TeacherAnnualPlanningContent /> }}
+    />
+  );
+}
+
+function TeacherAnnualPlanningContent() {
   const { academicYear } = useModuleContext();
   const { currentLevel } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
@@ -225,15 +254,22 @@ export default function TeacherAnnualPlanningPage() {
             </button>
           </div>
 
-          {/* Table for current month */}
+          {/* Table for current month — prend TOUTE la largeur disponible */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-            <table className="text-xs border-collapse min-w-[600px]">
+            <table className="text-xs border-collapse w-full table-fixed">
+              <colgroup>
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '14%' }} />
+                {currentWeeks.map((wk, i) => (
+                  <col key={i} style={{ width: `${68 / Math.max(currentWeeks.length, 1)}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className={cn('text-white', TRIMESTER_COLORS[currentMonthData.trimester])}>
-                  <th className="p-2 border border-blue-300 text-left sticky left-0 z-10 min-w-[180px]">Domaines</th>
-                  <th className="p-2 border border-blue-300 text-left sticky left-[180px] z-10 min-w-[120px]">Sous-domaine</th>
+                  <th className="p-2 border border-blue-300 text-left">Domaines</th>
+                  <th className="p-2 border border-blue-300 text-left">Sous-domaine</th>
                   {currentWeeks.map(wk => (
-                    <th key={wk} className="p-2 border border-blue-300 text-center min-w-[120px]">{wk}</th>
+                    <th key={wk} className="p-2 border border-blue-300 text-center">{wk}</th>
                   ))}
                 </tr>
               </thead>
@@ -247,12 +283,12 @@ export default function TeacherAnnualPlanningPage() {
                     </tr>
                     {dom.subDomains.map(sub => (
                       <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
-                        <td className="p-1 border border-slate-200 bg-slate-50"></td>
+                        <td className="p-1 border border-slate-200 bg-slate-50">&nbsp;</td>
                         <td className="p-1 border border-slate-200 font-semibold text-slate-600 bg-white">{sub}</td>
                         {currentWeeks.map(wk => {
                           const plan = getMaternelleContent(dom.domain, sub, currentMonthData.month, wk);
                           return (
-                            <td key={wk} className="p-1 border border-slate-200 align-top min-w-[120px]">
+                            <td key={wk} className="p-1 border border-slate-200 align-top">
                               {plan ? (
                                 <div className={cn('text-[9px] leading-tight p-1 rounded', plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700')}>
                                   {plan.content}
@@ -319,5 +355,4 @@ export default function TeacherAnnualPlanningPage() {
   );
 }
 
-// ⭐ React.Fragment import needed for maternelle domain grouping
-import React from 'react';
+// ⭐ React.Fragment est importé via React en haut de fichier

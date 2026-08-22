@@ -34,7 +34,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
-  ClipboardCheck, Package, Send, Bell,
+  ClipboardCheck, Package, Send, Bell, CalendarClock,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
@@ -44,6 +44,7 @@ import { CahierJournalFichesContainer } from "./CahierJournalFichesContainer";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
+import { MonthlyPlanningTab } from "./MonthlyPlanningTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { TeacherMaterialsWorkspace } from "@/components/pedagogy/materials/TeacherMaterialsWorkspace";
 import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
@@ -72,6 +73,10 @@ const ALL_TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false, maternellePrimaireOnly: false },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false, maternellePrimaireOnly: false },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations', secondaryOnly: false, maternellePrimaireOnly: true },
+  // ⭐ Planification mensuelle — auto-proposition depuis la planification annuelle
+  //    L'enseignant édite la planification de son mois pour sa classe.
+  //    Terminologie : SA (Situation d'Apprentissage), Séquence, U (Unité), D (Dossier)
+  { id: 'monthly-planning', label: 'Planification mensuelle', icon: CalendarClock, description: 'Planif auto + édition', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false, maternellePrimaireOnly: false },
   // ⭐ Travaux & Suivi — accessible depuis l'Espace Pédagogique (directeurs/promoteurs)
@@ -229,6 +234,14 @@ export function PedagogicalSpaceWorkspace({
           )}
           {tab === 'registre' && (
             <AttendanceRegisterTab
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
+              teacherId={teacherId}
+            />
+          )}
+          {/* ⭐ Planification mensuelle — auto-proposition depuis la planification annuelle */}
+          {tab === 'monthly-planning' && (
+            <MonthlyPlanningTab
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}

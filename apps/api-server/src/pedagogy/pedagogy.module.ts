@@ -18,6 +18,8 @@ import { TimetablesPrismaService } from './timetables-prisma.service';
 import { TimetablesPrismaController } from './timetables-prisma.controller';
 import { AnnualPlanService } from './annual-plan.service';
 import { AnnualPlanController } from './annual-plan.controller';
+import { MonthlyPlanService } from './monthly-plan.service';
+import { MonthlyPlanController } from './monthly-plan.controller';
 import { LessonPlansPrismaService } from './lesson-plans-prisma.service';
 import { LessonPlansPrismaController } from './lesson-plans-prisma.controller';
 import { DailyLogsPrismaService } from './daily-logs-prisma.service';
@@ -127,6 +129,8 @@ import { SaisieMasterController } from './saisiemaster.controller';
     SaisieMasterController,
     // ⭐ Planification pédagogique annuelle
     AnnualPlanController,
+    // ⭐ Planification pédagogique mensuelle (auto-proposition + édition enseignant)
+    MonthlyPlanController,
   ],
   providers: [
     // StorageService fourni par CommonModule (singleton global)
@@ -175,6 +179,8 @@ import { SaisieMasterController } from './saisiemaster.controller';
     PuppeteerPoolService,
     // ⭐ Planification pédagogique annuelle
     AnnualPlanService,
+    // ⭐ Planification pédagogique mensuelle
+    MonthlyPlanService,
   ],
   exports: [
     // StorageService fourni par CommonModule

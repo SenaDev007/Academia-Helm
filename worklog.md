@@ -7917,3 +7917,63 @@ Stage Summary:
 - localStorage purgé si session serveur invalide (évite faux positifs futurs)
 - Grace period 60s conservée comme safety net supplémentaire
 - Formulaire login affiché dans tous les cas (online/offline/session valide/invalide)
+
+---
+Task ID: Phase-21-Teacher-Profile-Matching-Fix
+Agent: main
+Task: Debug + fix teacher UI showing 'Aucun emploi du temps' despite EDT configured
+
+Work Log:
+
+- INVESTIGATION via Agent Browser (credentials fournis par user) :
+  * Login enseignant CSPEBE-26-00008 / NeufMont111 sur cspeb-eveildafriqueeducation.academiahelm.com
+  * Navigué à /app/teacher/timetable
+  * Vu : "Aucun emploi du temps configuré" / "La direction n'a pas encore configuré votre emploi du temps"
+
+- DEBUG via API calls dans la console navigateur :
+  1. /api/auth/me → user = Saliou AKPAKI, id=dffe5ffb-..., email=dawesakpovi@gmail.com, role=ENSEIGNANT
+  2. /api/pedagogy/teacher-profiles?academicYearId=... → 6 profiles retournés
+     - Chaque profile a : id, teacherId, teacher (avec id/firstName/lastName/matricule/email)
+     - PAS de userId sur le profile
+     - PAS de user.id sur teacher (le select ne l'inclut pas)
+  3. /api/pedagogy/teacher-class-assignments?teacherId=9ed8201c-... → 18 assignments !
+     - Chaque assignment a : classSubject.academicClass.id populated
+     - Exemple : classSubject.academicClass = { id: 'b76636fc-...', name: 'CE1' }
+  4. /api/timetables → 2 EDTs configurés : 'EDT Maternelle #2' et 'EDT Primaire #1'
+  5. /api/timetables/3a36cd60-... (Primaire) → entries avec class.officialClassId populated
+     - ex: entry.class.officialClassId = '98d27cfb-...' pour classe CI
+
+- ROOT CAUSE identifiée :
+  * Code Phase 19 : profiles.find(p => p.userId === user.id || p.user?.id === user.id)
+  * TeacherAcademicProfile n'a PAS de userId (uniquement teacherId → Teacher)
+  * L'API teacher-profiles ne select pas userId non plus (juste id/firstName/lastName/matricule/email)
+  * → myProfile toujours null → myTeacherId undefined → assignments jamais fetchés
+  * → teacherOfficialClassIds vide → toutes les entries filtrées → 'Aucun EDT configuré'
+
+- FIX : Matching multi-stratégies du profil :
+  1. p.userId === user.id (legacy/future-proof)
+  2. p.user?.id === user.id (legacy)
+  3. p.teacher.email.toLowerCase() === user.email.toLowerCase() (MATCHING PAR EMAIL — fiable)
+  4. p.teacher.matricule === user.matricule (matching par matricule)
+  Cas insensible à la casse pour l'email (Saliou@Gmail vs saliou@gmail)
+
+- VÉRIFICATION : Le parent UI fonctionne déjà !
+  * Login parent 0195722234 (Dawes AKPOVI)
+  * Navigué à /app/parent/timetable
+  * Vu : "Sèhomie Pénielle Béroukhyah AKPOVI TOHOU — Maternelle 1"
+  * 1 créneau LUNDI : 08:15-08:45 "Éducation à des réflexions de santé"
+  * Le main HTML montre bien les entries (j'ai vérifié via innerText)
+  * Le snapshot accessibility tree ne le montrait pas clairement à cause des éléments
+    collapsed/expanded
+
+- SYNTAX CHECK : ✅
+- TypeScript check : 0 erreur
+- 1 fichier modifié (+20 lignes, -1 ligne) :
+  * apps/web-app/src/app/app/teacher/timetable/page.tsx (profile matching logic)
+- Commit + push : 6f55f993 sur origin/main
+
+Stage Summary:
+- Teacher UI : affichera maintenant les EDT des classes du teacher (CE1 + CE2 pour Saliou)
+- Matching profile : par email (fiable) + fallback legacy userId/user.id
+- Parent UI : déjà fonctionnel (laissé tel quel)
+- Switcher de classe pour multi-classes (CE1 + CE2) fonctionnera maintenant

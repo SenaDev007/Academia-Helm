@@ -10,7 +10,7 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 
 const CLASS_LEVELS = [
-  { value: 'MATERNELLE_GRANDS', label: 'Maternelle (Grands)' },
+  { value: 'MATERNELLE_GRANDS', label: 'Maternelle' },
   { value: 'CI', label: 'CI' },
   { value: 'CP', label: 'CP' },
   { value: 'CE1', label: 'CE1' },

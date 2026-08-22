@@ -116,6 +116,7 @@ export class AnnualPlanService {
    * ⭐ SEED : Insère la planification officielle pour un tenant + année.
    *    Idempotent : ne réinsère pas si les données existent déjà.
    *    Toutes les écoles ont ces données par défaut.
+   *    Initialise TOUTES les classes (Maternelle + CI + CP + CE1 + CE2 + CM1 + CM2) en une seule fois.
    */
   async seedForTenant(
     tenantId: string,
@@ -133,10 +134,26 @@ export class AnnualPlanService {
       return { skipped: true, count: existing[0].count };
     }
 
-    // Insérer toutes les données du seed
+    // ⭐ Récupérer TOUS les schoolLevelIds du tenant (Maternelle + Primaire)
+    //    pour que les FK soient valides. On prend le schoolLevelId passé en param,
+    //    mais on pourrait aussi en résoudre d'autres si nécessaire.
+    const allSchoolLevels = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id", "code" FROM "school_levels" WHERE "tenantId" = $1
+    `, tenantId).catch(() => []);
+    
+    // Utiliser le schoolLevelId passé, ou le premier trouvé
+    const resolvedSchoolLevelId = schoolLevelId || allSchoolLevels[0]?.id;
+    if (!resolvedSchoolLevelId) {
+      throw new BadRequestException('Aucun schoolLevelId trouvé pour ce tenant');
+    }
+
+    // Insérer toutes les données du seed — TOUTES les classes d'un coup
     let inserted = 0;
+    let failed = 0;
     for (const item of ANNUAL_PLAN_SEED_DATA) {
       try {
+        // ⭐ Générer un ID unique et déterministe
+        const planId = `${tenantId.substring(0, 8)}-${item.classLevel}-${item.trimester}-${item.month.substring(0, 3)}-${item.week.substring(0, 3)}-${item.domain.substring(0, 5)}-${item.subDomain?.substring(0, 5) || 'ns'}-${inserted}`;
         await this.prisma.$executeRawUnsafe(`
           INSERT INTO "annual_plans" ("id", "tenantId", "academicYearId", "schoolLevelId",
             "classLevel", "trimester", "month", "week", "domain", "subDomain", "content",
@@ -144,18 +161,22 @@ export class AnnualPlanService {
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, false, NOW(), NOW())
           ON CONFLICT DO NOTHING
         `,
-          `${tenantId}-${item.classLevel}-${item.trimester}-${item.month}-${item.week}-${item.domain}-${item.subDomain || 'null'}-${inserted}`,
-          tenantId, academicYearId, schoolLevelId,
+          planId,
+          tenantId, academicYearId, resolvedSchoolLevelId,
           item.classLevel, item.trimester, item.month, item.week,
           item.domain, item.subDomain || null, item.content,
         );
         inserted++;
-      } catch (e) {
-        // Ignorer les doublons
+      } catch (e: any) {
+        failed++;
+        // Log first few errors for debugging
+        if (failed <= 3) {
+          this.logger.warn(`Seed insert failed for ${item.classLevel}-${item.month}-${item.domain}: ${e.message?.substring(0, 100)}`);
+        }
       }
     }
 
-    this.logger.log(`Seeded ${inserted} annual plans for tenant ${tenantId}`);
-    return { skipped: false, count: inserted };
+    this.logger.log(`Seeded ${inserted} annual plans for tenant ${tenantId} (${failed} failed)`);
+    return { skipped: false, count: inserted, failed };
   }
 }

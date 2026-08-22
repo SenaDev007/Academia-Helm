@@ -17,8 +17,9 @@ import { useAppSession } from '@/contexts/AppSessionContext';
 //  CONSTANTES — Structure exacte des tableaux (conforme aux PDFs)
 // ═══════════════════════════════════════════════════════════════════
 
+// Classes disponibles — 'Maternelle' (pas 'Maternelle (Grands)')
 const CLASS_LEVELS = [
-  { value: 'MATERNELLE_GRANDS', label: 'Maternelle (Grands)' },
+  { value: 'MATERNELLE_GRANDS', label: 'Maternelle' },
   { value: 'CI', label: 'CI' },
   { value: 'CP', label: 'CP' },
   { value: 'CE1', label: 'CE1' },
@@ -139,6 +140,8 @@ function AnnualPlanningContent() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedProgress, setSeedProgress] = useState(0);
 
   const isMaternelle = selectedClass === 'MATERNELLE_GRANDS';
 
@@ -150,21 +153,8 @@ function AnnualPlanningContent() {
         `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}`
       );
       const arr = Array.isArray(data) ? data : [];
-      if (arr.length === 0 && currentLevel?.schoolLevelId) {
-        // Auto-seed
-        try {
-          await pedagogyFetch('/api/pedagogy/annual-plans/seed', {
-            method: 'POST',
-            body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
-          });
-          const data2 = await pedagogyFetch<AnnualPlan[]>(
-            `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}`
-          );
-          setPlans(Array.isArray(data2) ? data2 : []);
-        } catch {}
-      } else {
-        setPlans(arr);
-      }
+      setPlans(arr);
+      // ⭐ NE PAS auto-seed ici — l'utilisateur clique sur "Initialiser" manuellement
     } catch (e: any) {
       console.error('Failed to load plans:', e);
     } finally {
@@ -173,6 +163,40 @@ function AnnualPlanningContent() {
   }, [academicYear?.id, selectedClass, currentLevel?.schoolLevelId]);
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
+
+  // ⭐ Initialiser TOUTES les classes d'un seul clic (pas classe par classe)
+  const handleSeedAll = useCallback(async () => {
+    if (!academicYear?.id || !currentLevel?.schoolLevelId) {
+      toast({ title: 'Erreur', description: 'Année scolaire ou niveau non sélectionné.', variant: 'destructive' });
+      return;
+    }
+    setSeeding(true);
+    setSeedProgress(0);
+    try {
+      const progressInterval = setInterval(() => {
+        setSeedProgress(prev => Math.min(prev + 5, 95));
+      }, 500);
+      
+      const result = await pedagogyFetch<any>('/api/pedagogy/annual-plans/seed', {
+        method: 'POST',
+        body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
+      });
+      
+      clearInterval(progressInterval);
+      setSeedProgress(100);
+      
+      if (result?.skipped) {
+        toast({ title: 'ℹ️ Déjà initialisé', description: `${result.count} planifications existent déjà.` });
+      } else {
+        toast({ title: '✅ Initialisation terminée', description: `${result.count} planifications insérées pour toutes les classes.` });
+      }
+      setTimeout(() => { loadPlans(); setSeeding(false); setSeedProgress(0); }, 1000);
+    } catch (e: any) {
+      setSeeding(false);
+      setSeedProgress(0);
+      toast({ title: 'Erreur', description: e.message || 'Échec de l\'initialisation', variant: 'destructive' });
+    }
+  }, [academicYear?.id, currentLevel?.schoolLevelId, loadPlans, toast]);
 
   // ⭐ Trouver le contenu d'une cellule (primaire) — par trimester + month + domain
   const getPrimaireContent = (trimester: number, month: string, domainKey: string): AnnualPlan | null => {
@@ -290,22 +314,30 @@ function AnnualPlanningContent() {
       </div>
 
       {/* TABLEAU — structure exacte du PDF */}
-      {plans.length === 0 ? (
+      {seeding ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+          <div className="w-full max-w-md mx-auto">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="w-5 h-5 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm font-bold text-slate-700">Initialisation en cours…</p>
+            </div>
+            <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+              <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${seedProgress}%` }} />
+            </div>
+            <p className="text-xs text-slate-400 mt-2">{seedProgress}% — Insertion de 1392 planifications (Maternelle, CI, CP, CE1, CE2, CM1, CM2)</p>
+          </div>
+        </div>
+      ) : plans.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">Aucune planification disponible pour {CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.</p>
-          <button onClick={async () => {
-            if (currentLevel?.schoolLevelId && academicYear?.id) {
-              try {
-                await pedagogyFetch('/api/pedagogy/annual-plans/seed', {
-                  method: 'POST', body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
-                });
-                loadPlans();
-                toast({ title: '✅ Planification initialisée' });
-              } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-            }
-          }} className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">
-            Initialiser la planification officielle
+          <p className="text-xs text-slate-400 mt-1">Cliquez sur le bouton ci-dessous pour initialiser la planification officielle pour TOUTES les classes.</p>
+          <button
+            onClick={handleSeedAll}
+            disabled={seeding}
+            className="mt-4 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold"
+          >
+            Initialiser la planification officielle (toutes les classes)
           </button>
         </div>
       ) : isMaternelle ? (

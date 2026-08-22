@@ -30,6 +30,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { ChatService } from './services/chat.service';
+import { StorageService } from '../../common/services/storage.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -48,7 +49,10 @@ const CHAT_FILE_UPLOAD_OPTIONS = {
 @Controller('chat')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly storage: StorageService,
+  ) {}
 
   // ═════════════════════════════════════════════════════════════════
   //  CONVERSATIONS
@@ -277,5 +281,78 @@ export class ChatController {
   async getTyping(@Query('conversationId') conversationId: string) {
     if (!conversationId) return [];
     return this.chatService.getTypingUsers(conversationId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  CANAUX (Telegram-style broadcast channels)
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('channels')
+  async createChannel(
+    @TenantId() tenantId: string,
+    @Body() body: { creatorId: string; name: string; description?: string },
+  ) {
+    if (!body.creatorId || !body.name) throw new BadRequestException('creatorId et name requis');
+    return this.chatService.createChannel(tenantId, body.creatorId, { name: body.name, description: body.description });
+  }
+
+  @Get('channels')
+  async listChannels(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId requis');
+    return this.chatService.listChannels(tenantId, userId);
+  }
+
+  @Post('channels/:id/subscribe')
+  async subscribeToChannel(@Param('id') channelId: string, @Body() body: { userId: string }) {
+    if (!body.userId) throw new BadRequestException('userId requis');
+    return this.chatService.subscribeToChannel(channelId, body.userId);
+  }
+
+  @Post('channels/:id/unsubscribe')
+  async unsubscribeFromChannel(@Param('id') channelId: string, @Body() body: { userId: string }) {
+    if (!body.userId) throw new BadRequestException('userId requis');
+    return this.chatService.unsubscribeFromChannel(channelId, body.userId);
+  }
+
+  @Post('channels/:id/broadcast')
+  async broadcastToChannel(@Param('id') channelId: string, @Body() body: { senderId: string; content: string }) {
+    if (!body.senderId || !body.content) throw new BadRequestException('senderId et content requis');
+    return this.chatService.broadcastToChannel(channelId, body.senderId, body.content);
+  }
+
+  @Get('channels/:id/messages')
+  async getChannelMessages(@Param('id') channelId: string, @Query('limit') limit?: string) {
+    return this.chatService.getChannelMessages(channelId, limit ? parseInt(limit, 10) : 50);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  AVATAR UPLOAD + E2E PUBLIC KEY
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('file', CHAT_FILE_UPLOAD_OPTIONS))
+  async uploadAvatar(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { userId: string },
+  ) {
+    if (!file) throw new BadRequestException('File is required');
+    if (!body.userId) throw new BadRequestException('userId is required');
+    const avatarUrl = await this.storage.uploadFile(file, `avatars/${body.userId}`);
+    return this.chatService.updateAvatar(body.userId, avatarUrl);
+  }
+
+  @Post('keys')
+  async setPublicKey(@Body() body: { userId: string; publicKey: string }) {
+    if (!body.userId || !body.publicKey) throw new BadRequestException('userId et publicKey requis');
+    return this.chatService.setPublicKey(body.userId, body.publicKey);
+  }
+
+  @Get('keys')
+  async getPublicKeys(@Query('userIds') userIdsStr: string) {
+    if (!userIdsStr) return [];
+    return this.chatService.getPublicKeys(userIdsStr.split(',').filter(Boolean));
   }
 }

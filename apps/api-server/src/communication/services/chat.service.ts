@@ -848,4 +848,64 @@ export class ChatService {
       lastName: r.lastName,
     }));
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  CANAUX (Telegram-style broadcast channels)
+  // ═════════════════════════════════════════════════════════════════
+
+  async createChannel(tenantId: string, creatorId: string, data: { name: string; description?: string }) {
+    const { randomUUID } = require('crypto');
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channels" ("id", "tenantId", "name", "description", "createdBy", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`, id, tenantId, data.name, data.description || null, creatorId);
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW())`, randomUUID(), id, creatorId);
+    return { id, name: data.name, description: data.description };
+  }
+
+  async listChannels(tenantId: string, userId: string) {
+    return await this.prisma.$queryRawUnsafe<any[]>(`SELECT c.*, (SELECT count(*) FROM chat_channel_subscribers WHERE "channelId" = c.id) AS "subscriberCount", EXISTS(SELECT 1 FROM chat_channel_subscribers WHERE "channelId" = c.id AND "userId" = $2) AS "isSubscribed" FROM "chat_channels" c WHERE c."tenantId" = $1 ORDER BY COALESCE(c."lastMessageAt", c."createdAt") DESC`, tenantId, userId);
+  }
+
+  async subscribeToChannel(channelId: string, userId: string) {
+    const { randomUUID } = require('crypto');
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW()) ON CONFLICT ("channelId", "userId") DO NOTHING`, randomUUID(), channelId, userId);
+    return { success: true };
+  }
+
+  async unsubscribeFromChannel(channelId: string, userId: string) {
+    await this.prisma.$executeRawUnsafe(`DELETE FROM "chat_channel_subscribers" WHERE "channelId" = $1 AND "userId" = $2`, channelId, userId);
+    return { success: true };
+  }
+
+  async broadcastToChannel(channelId: string, senderId: string, content: string) {
+    const { randomUUID } = require('crypto');
+    const msgId = randomUUID();
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "createdAt") VALUES ($1, $2, $3, 'TEXT', $4, NOW())`, msgId, `channel:${channelId}`, senderId, content);
+    const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
+    await this.prisma.$executeRawUnsafe(`UPDATE "chat_channels" SET "lastMessageAt" = NOW(), "lastMessagePreview" = $2, "updatedAt" = NOW() WHERE "id" = $1`, channelId, preview);
+    return { id: msgId, content, senderId, createdAt: new Date() };
+  }
+
+  async getChannelMessages(channelId: string, limit: number = 50) {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`SELECT m.*, u."firstName" AS "senderFirstName", u."lastName" AS "senderLastName" FROM "chat_messages" m LEFT JOIN "users" u ON u.id = m."senderId" WHERE m."conversationId" = $1 ORDER BY m."createdAt" DESC LIMIT $2`, `channel:${channelId}`, limit);
+    return rows.reverse();
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  AVATAR + E2E PUBLIC KEY
+  // ═════════════════════════════════════════════════════════════════
+
+  async updateAvatar(userId: string, avatarUrl: string) {
+    await this.prisma.$executeRawUnsafe(`UPDATE "users" SET "avatarUrl" = $2, "updatedAt" = NOW() WHERE "id" = $1`, userId, avatarUrl);
+    return { success: true, avatarUrl };
+  }
+
+  async setPublicKey(userId: string, publicKey: string) {
+    await this.prisma.$executeRawUnsafe(`UPDATE "users" SET "publicKey" = $2, "updatedAt" = NOW() WHERE "id" = $1`, userId, publicKey);
+    return { success: true };
+  }
+
+  async getPublicKeys(userIds: string[]) {
+    if (userIds.length === 0) return [];
+    return await this.prisma.$queryRawUnsafe<any[]>(`SELECT id AS "userId", "publicKey" FROM "users" WHERE id = ANY($1::text[])`, userIds);
+  }
 }

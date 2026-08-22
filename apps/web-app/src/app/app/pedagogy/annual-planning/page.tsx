@@ -9,6 +9,9 @@ import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 // ═══════════════════════════════════════════════════════════════════
 //  CONSTANTES — Structure exacte des tableaux (conforme aux PDFs)
@@ -101,6 +104,32 @@ interface AnnualPlan {
 const TRIMESTER_LABELS: Record<number, string> = { 1: '1er Trim.', 2: '2e Trim.', 3: '3e Trim.' };
 
 export default function AnnualPlanningPage() {
+  const { user } = useAppSession();
+  const userRole = user?.role || '';
+  const { academicYear } = useModuleContext();
+
+  return (
+    <ModuleContainer
+      header={{
+        title: 'Planification annuelle',
+        description: academicYear
+          ? `Planification pédagogique annuelle officielle — année ${academicYear.label}`
+          : 'Planification pédagogique annuelle officielle',
+        icon: 'clipboard',
+      }}
+      subModules={{
+        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+          const Icon = tab.icon;
+          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
+        }),
+        activeModuleId: 'annual-planning',
+      }}
+      content={{ layout: 'custom', children: <AnnualPlanningContent /> }}
+    />
+  );
+}
+
+function AnnualPlanningContent() {
   const { academicYear } = useModuleContext();
   const { currentLevel } = useSchoolLevel();
   const { toast } = useToast();

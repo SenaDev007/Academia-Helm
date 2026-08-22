@@ -1063,7 +1063,7 @@ function TimetableTab({ solutions, schoolLevelId, academicYearId, onAccept, onVi
   //    Maintenant : pas de toggle, pas de SolutionsList → ManualEditor uniquement.
   return (
     <div className="space-y-4">
-      <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} />
+      <ManualEditor schoolLevelId={schoolLevelId} academicYearId={academicYearId} academicYearLabel={academicYear?.label} />
     </div>
   );
 }
@@ -1156,7 +1156,7 @@ interface ManualEntry {
   class?: { id: string; name: string };
 }
 
-function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string; academicYearId: string }) {
+function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { schoolLevelId: string; academicYearId: string; academicYearLabel?: string }) {
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
@@ -1283,7 +1283,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
       //    Ex: "EDT Primaire #3" → "EDT CI 2026-2027" (basé sur les entries)
       const currentTt = timetables.find(t => t.id === activeTimetableId);
       if (currentTt && tEntries.length > 0) {
-        const yearLabel = academicYear?.label || new Date().getFullYear().toString();
+        const yearLabel = academicYearLabel || new Date().getFullYear().toString();
         const needsRename = currentTt.name.includes('#') || !currentTt.name.includes(yearLabel);
         if (needsRename) {
           // Extraire les noms de classes uniques depuis les entries
@@ -1302,7 +1302,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
         }
       }
     } catch (e) { console.error(e); }
-  }, [activeTimetableId, timetables, academicYear?.label]);
+  }, [activeTimetableId, timetables, academicYearLabel]);
 
   useEffect(() => { loadConfig(); loadData(); }, [loadConfig, loadData]);
   useEffect(() => { loadEntries(); }, [loadEntries]);

@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Loader2, RefreshCw, Calendar, BookOpen, AlertCircle,
-  Save, ChevronLeft, ChevronRight, Pencil, Check, X,
+  Loader2, RefreshCw, Calendar, Pencil, Check, X, FileDown,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -11,20 +10,80 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 
+// ═══════════════════════════════════════════════════════════════════
+//  CONSTANTES — Structure exacte des tableaux (conforme aux PDFs)
+// ═══════════════════════════════════════════════════════════════════
+
 const CLASS_LEVELS = [
-  { value: 'MATERNELLE_GRANDS', label: 'Maternelle (Grands)', level: 'MATERNELLE' },
-  { value: 'CI', label: 'CI', level: 'PRIMAIRE' },
-  { value: 'CP', label: 'CP', level: 'PRIMAIRE' },
-  { value: 'CE1', label: 'CE1', level: 'PRIMAIRE' },
-  { value: 'CE2', label: 'CE2', level: 'PRIMAIRE' },
-  { value: 'CM1', label: 'CM1', level: 'PRIMAIRE' },
-  { value: 'CM2', label: 'CM2', level: 'PRIMAIRE' },
+  { value: 'MATERNELLE_GRANDS', label: 'Maternelle (Grands)' },
+  { value: 'CI', label: 'CI' },
+  { value: 'CP', label: 'CP' },
+  { value: 'CE1', label: 'CE1' },
+  { value: 'CE2', label: 'CE2' },
+  { value: 'CM1', label: 'CM1' },
+  { value: 'CM2', label: 'CM2' },
 ];
 
-const TRIMESTERS = [
-  { value: 1, label: '1er Trimestre' },
-  { value: 2, label: '2ème Trimestre' },
-  { value: 3, label: '3ème Trimestre' },
+// Colonnes pour le tableau PRIMAIRE (CI à CM2) — EXACTEMENT comme le PDF
+const PRIMAIRE_COLUMNS = [
+  { group: '', key: 'trimester', label: 'Trim.' },
+  { group: '', key: 'month', label: 'Mois' },
+  { group: '', key: 'Français', label: 'Français' },
+  { group: '', key: 'Mathématiques', label: 'Maths' },
+  { group: '', key: 'EST', label: 'EST' },
+  { group: '', key: 'EPS', label: 'EPS' },
+  { group: 'Éducation Sociale', key: 'Morale', label: 'Morale' },
+  { group: 'Éducation Sociale', key: 'Civisme', label: 'Civisme' },
+  { group: 'Éducation Sociale', key: 'Histoire', label: 'Histoire' },
+  { group: 'Éducation Sociale', key: 'Géographie', label: 'Géographie' },
+  { group: 'Éducation Artistique', key: 'Chant', label: 'Chant' },
+  { group: 'Éducation Artistique', key: 'Poésie', label: 'Poésie' },
+  { group: 'Éducation Artistique', key: 'Conte', label: 'Conte' },
+  { group: 'Éducation Artistique', key: 'Dessin', label: 'Dessin' },
+  { group: 'Éducation Artistique', key: 'Couture', label: 'Couture' },
+];
+
+// Structure des mois par trimestre (pour PRIMAIRE)
+const PRIMAIRE_ROWS = [
+  // 1er Trimestre
+  { trimester: 1, month: 'Septembre' },
+  { trimester: 1, month: 'Octobre' },
+  { trimester: 1, month: 'Novembre' },
+  { trimester: 1, month: 'Décembre' },
+  // 2e Trimestre
+  { trimester: 2, month: 'Janvier' },
+  { trimester: 2, month: 'Février' },
+  { trimester: 2, month: 'Mars' },
+  // 3e Trimestre
+  { trimester: 3, month: 'Avril' },
+  { trimester: 3, month: 'Mai' },
+  { trimester: 3, month: 'Juin' },
+];
+
+// Domaines pour MATERNELLE — 5 domaines avec sous-domaines
+const MATERNELLE_DOMAINS = [
+  { domain: 'I. Education pour la santé', subDomains: ['Passage aux toilettes', 'Lavage des mains', 'Goûters'] },
+  { domain: 'II. Expression corporelle', subDomains: ['Expression corporelle'] },
+  { domain: 'III. Pré-lecture / Pré-écriture / Pré-mathématique', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
+  { domain: 'IV. Expression plastique / Expression émotionnelle', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
+  { domain: 'V. Poésie / Chant / Contes / Comptine / Communication orale', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
+];
+
+// Colonnes semaines pour MATERNELLE — tous les mois/semaines en une seule ligne
+const MATERNELLE_WEEKS = [
+  // 1er Trimestre
+  'Septembre 3ème', 'Septembre 4ème',
+  'Octobre 1ère', 'Octobre 2ème', 'Octobre 3ème', 'Octobre 4ème', 'Octobre 5ème',
+  'Novembre 1ère', 'Novembre 2ème', 'Novembre 3ème', 'Novembre 4ème',
+  'Décembre Congés',
+  // 2e Trimestre
+  'Janvier 1ère', 'Janvier 2ème', 'Janvier 3ème', 'Janvier 4ème',
+  'Février 1ère', 'Février 2ème', 'Février 3ème', 'Février 4ème',
+  'Mars 1ère', 'Mars 2ème', 'Mars 3ème', 'Mars 4ème',
+  // 3e Trimestre
+  'Avril 1ère', 'Avril 2ème', 'Avril 3ème', 'Avril 4ème',
+  'Mai 1ère', 'Mai 2ème', 'Mai 3ème', 'Mai 4ème',
+  'Juin 1ère', 'Juin 2ème', 'Juin 3ème', 'Juin 4ème',
 ];
 
 interface AnnualPlan {
@@ -39,86 +98,75 @@ interface AnnualPlan {
   isCustom: boolean;
 }
 
+const TRIMESTER_LABELS: Record<number, string> = { 1: '1er Trim.', 2: '2e Trim.', 3: '3e Trim.' };
+
 export default function AnnualPlanningPage() {
   const { academicYear } = useModuleContext();
   const { currentLevel } = useSchoolLevel();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<AnnualPlan[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('MATERNELLE_GRANDS');
-  const [selectedTrimester, setSelectedTrimester] = useState<number>(1);
+  const [selectedClass, setSelectedClass] = useState<string>('CM2');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const isMaternelle = selectedClass === 'MATERNELLE_GRANDS';
 
   const loadPlans = useCallback(async () => {
     if (!academicYear?.id) { setLoading(false); return; }
     setLoading(true);
     try {
       const data = await pedagogyFetch<AnnualPlan[]>(
-        `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}&trimester=${selectedTrimester}`
+        `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}`
       );
-      setPlans(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      console.error('Failed to load plans:', e);
-      // Auto-seed si pas de données
-      if (currentLevel?.schoolLevelId) {
+      const arr = Array.isArray(data) ? data : [];
+      if (arr.length === 0 && currentLevel?.schoolLevelId) {
+        // Auto-seed
         try {
           await pedagogyFetch('/api/pedagogy/annual-plans/seed', {
             method: 'POST',
             body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
           });
-          // Retry load
           const data2 = await pedagogyFetch<AnnualPlan[]>(
-            `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}&trimester=${selectedTrimester}`
+            `/api/pedagogy/annual-plans?academicYearId=${academicYear.id}&classLevel=${selectedClass}`
           );
           setPlans(Array.isArray(data2) ? data2 : []);
-        } catch (seedErr) {
-          console.error('Seed failed:', seedErr);
-        }
+        } catch {}
+      } else {
+        setPlans(arr);
       }
+    } catch (e: any) {
+      console.error('Failed to load plans:', e);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedClass, selectedTrimester, currentLevel?.schoolLevelId]);
+  }, [academicYear?.id, selectedClass, currentLevel?.schoolLevelId]);
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
 
-  // Group plans by month → week → domain
-  const groupedPlans = useMemo(() => {
-    const byMonth: Record<string, Record<string, Record<string, AnnualPlan[]>>> = {};
-    for (const p of plans) {
-      if (!byMonth[p.month]) byMonth[p.month] = {};
-      if (!byMonth[p.month][p.week]) byMonth[p.month][p.week] = {};
-      if (!byMonth[p.month][p.week][p.domain]) byMonth[p.month][p.week][p.domain] = [];
-      byMonth[p.month][p.week][p.domain].push(p);
-    }
-    return byMonth;
-  }, [plans]);
+  // ⭐ Trouver le contenu d'une cellule (primaire) — par trimester + month + domain
+  const getPrimaireContent = (trimester: number, month: string, domainKey: string): AnnualPlan | null => {
+    return plans.find(p =>
+      p.trimester === trimester &&
+      p.month === month &&
+      (p.domain === domainKey || p.subDomain === domainKey)
+    ) || null;
+  };
 
-  // Get unique weeks and domains
-  const allWeeks = useMemo(() => {
-    const weeks = new Set<string>();
-    for (const p of plans) weeks.add(p.week);
-    return Array.from(weeks);
-  }, [plans]);
-
-  const allDomains = useMemo(() => {
-    const domains = new Set<string>();
-    for (const p of plans) domains.add(p.domain);
-    return Array.from(domains);
-  }, [plans]);
-
-  const allMonths = useMemo(() => {
-    const months = new Set<string>();
-    for (const p of plans) months.add(p.month);
-    return Array.from(months);
-  }, [plans]);
+  // ⭐ Trouver le contenu d'une cellule (maternelle) — par subDomain + week
+  const getMaternelleContent = (domain: string, subDomain: string, week: string): AnnualPlan | null => {
+    return plans.find(p =>
+      p.domain === domain &&
+      p.subDomain === subDomain &&
+      p.week === week
+    ) || null;
+  };
 
   const handleSaveEdit = async (planId: string) => {
     try {
       await pedagogyFetch(`/api/pedagogy/annual-plans/${planId}`, {
-        method: 'PUT',
-        body: { content: editContent },
+        method: 'PUT', body: { content: editContent },
       });
       setPlans(prev => prev.map(p => p.id === planId ? { ...p, content: editContent, isCustom: true } : p));
       setEditingId(null);
@@ -128,7 +176,27 @@ export default function AnnualPlanningPage() {
     }
   };
 
-  const isDirector = true; // Director UI — editable
+  // Group headers pour le tableau primaire
+  const groupHeaders = useMemo(() => {
+    const groups: { group: string; colCount: number; firstKey: string }[] = [];
+    for (const col of PRIMAIRE_COLUMNS) {
+      if (col.group) {
+        const existing = groups.find(g => g.group === col.group);
+        if (existing) existing.colCount++;
+        else groups.push({ group: col.group, colCount: 1, firstKey: col.key });
+      } else {
+        groups.push({ group: '', colCount: 1, firstKey: col.key });
+      }
+    }
+    return groups;
+  }, []);
+
+  // Trimester change detection for row coloring
+  const getTrimesterBg = (tri: number) => {
+    if (tri === 1) return 'bg-blue-50/30';
+    if (tri === 2) return 'bg-emerald-50/30';
+    return 'bg-amber-50/30';
+  };
 
   if (loading) {
     return (
@@ -150,7 +218,7 @@ export default function AnnualPlanningPage() {
           <div>
             <h2 className="text-sm font-bold text-slate-900">Planification pédagogique annuelle</h2>
             <p className="text-xs text-slate-500">
-              {CLASS_LEVELS.find(c => c.value === selectedClass)?.label} — {TRIMESTERS.find(t => t.value === selectedTrimester)?.label}
+              {CLASS_LEVELS.find(c => c.value === selectedClass)?.label} — {academicYear?.label || ''}
             </p>
           </div>
         </div>
@@ -164,165 +232,259 @@ export default function AnnualPlanningPage() {
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
-          <select
-            value={selectedTrimester}
-            onChange={(e) => setSelectedTrimester(parseInt(e.target.value, 10))}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium"
-          >
-            {TRIMESTERS.map(t => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
           <button
-            onClick={loadPlans}
-            className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
-            title="Rafraîchir"
+            onClick={async () => {
+              setExportingPdf(true);
+              try {
+                const res = await fetch(`/api/pedagogy/annual-plans/export-pdf?academicYearId=${academicYear?.id}&classLevel=${selectedClass}`, { credentials: 'include' });
+                if (!res.ok) throw new Error('Erreur génération PDF');
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `planification_${selectedClass}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast({ title: '✅ PDF généré' });
+              } catch (e: any) {
+                toast({ title: 'Erreur PDF', description: e.message, variant: 'destructive' });
+              } finally { setExportingPdf(false); }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold"
           >
+            {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} PDF
+          </button>
+          <button onClick={loadPlans} className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title="Rafraîchir">
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      {/* Planning table */}
+      {/* TABLEAU — structure exacte du PDF */}
       {plans.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Aucune planification disponible pour cette classe et ce trimestre.</p>
-          <button
-            onClick={async () => {
-              if (currentLevel?.schoolLevelId && academicYear?.id) {
-                try {
-                  await pedagogyFetch('/api/pedagogy/annual-plans/seed', {
-                    method: 'POST',
-                    body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
-                  });
-                  loadPlans();
-                  toast({ title: '✅ Planification initialisée' });
-                } catch (e: any) {
-                  toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
-                }
-              }
-            }}
-            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
-          >
+          <p className="text-sm text-slate-500">Aucune planification disponible pour {CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.</p>
+          <button onClick={async () => {
+            if (currentLevel?.schoolLevelId && academicYear?.id) {
+              try {
+                await pedagogyFetch('/api/pedagogy/annual-plans/seed', {
+                  method: 'POST', body: { academicYearId: academicYear.id, schoolLevelId: currentLevel.schoolLevelId },
+                });
+                loadPlans();
+                toast({ title: '✅ Planification initialisée' });
+              } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+            }
+          }} className="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">
             Initialiser la planification officielle
           </button>
         </div>
-      ) : (
+      ) : isMaternelle ? (
+        // ═══ TABLEAU MATERNELLE — Domaines (lignes) × Semaines (colonnes) ═══
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-          <table className="w-full text-sm border-collapse min-w-[800px]">
+          <table className="text-xs border-collapse" style={{ minWidth: '2400px' }}>
             <thead>
-              <tr className="bg-slate-100">
-                <th className="p-3 text-left text-xs font-bold text-slate-700 border border-slate-200 sticky left-0 bg-slate-100 z-10 min-w-[200px]">
-                  Domaine
-                </th>
-                {allMonths.map(month => (
-                  <th key={month} className="p-3 text-center text-xs font-bold text-slate-700 border border-slate-200 min-w-[180px]">
-                    {month}
+              {/* Ligne 1 : Trimestre headers */}
+              <tr className="bg-slate-800 text-white">
+                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-0 bg-slate-800 z-10 min-w-[180px]">Domaines</th>
+                <th rowSpan={2} className="p-2 border border-slate-600 text-left sticky left-[180px] bg-slate-800 z-10 min-w-[120px]">Sous-domaine</th>
+                {/* Groupes par trimestre */}
+                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-blue-900">1er Trimestre</th>
+                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-emerald-900">2e Trimestre</th>
+                <th colSpan={12} className="p-2 border border-slate-600 text-center bg-amber-900">3e Trimestre</th>
+              </tr>
+              {/* Ligne 2 : Semaines */}
+              <tr className="bg-slate-700 text-white">
+                {MATERNELLE_WEEKS.map((w, i) => (
+                  <th key={w} className={cn(
+                    'p-1 border border-slate-600 text-center min-w-[80px] font-bold',
+                    i < 12 ? 'bg-blue-800' : i < 24 ? 'bg-emerald-800' : 'bg-amber-800'
+                  )}>
+                    {w.replace('Septembre ', 'Sept ').replace('Octobre ', 'Oct ').replace('Novembre ', 'Nov ')
+                       .replace('Décembre ', 'Déc ').replace('Janvier ', 'Jan ').replace('Février ', 'Fév ')
+                       .replace('Mars ', 'Mars ').replace('Avril ', 'Avr ').replace('Mai ', 'Mai ')
+                       .replace('Juin ', 'Juin ')}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {allDomains.map(domain => (
-                <tr key={domain} className="hover:bg-slate-50/50">
-                  <td className="p-3 border border-slate-200 font-bold text-xs text-slate-700 bg-slate-50 sticky left-0 z-10">
-                    {domain}
-                  </td>
-                  {allMonths.map(month => {
-                    const monthWeeks = groupedPlans[month] || {};
-                    const domainPlans = Object.values(monthWeeks).flatMap(weeks => weeks[domain] || []);
-                    if (domainPlans.length === 0) {
-                      return <td key={month} className="p-2 border border-slate-200 text-center text-slate-300">—</td>;
-                    }
-                    // Group by subDomain
-                    const bySubDomain: Record<string, AnnualPlan[]> = {};
-                    for (const p of domainPlans) {
-                      const sd = p.subDomain || '_';
-                      if (!bySubDomain[sd]) bySubDomain[sd] = [];
-                      bySubDomain[sd].push(p);
-                    }
-                    return (
-                      <td key={month} className="p-2 border border-slate-200 align-top">
-                        {Object.entries(bySubDomain).map(([subDomain, items]) => (
-                          <div key={subDomain} className="mb-2">
-                            {subDomain !== '_' && (
-                              <div className="text-[10px] font-bold text-slate-500 mb-1">{subDomain}</div>
-                            )}
-                            {items.map(item => (
-                              <div
-                                key={item.id}
-                                className={cn(
-                                  'mb-1 p-1.5 rounded text-[10px] border',
-                                  item.isCustom
-                                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                                    : 'bg-blue-50 border-blue-200 text-slate-700'
-                                )}
-                              >
-                                {editingId === item.id ? (
-                                  <div className="space-y-1">
-                                    <textarea
-                                      value={editContent}
-                                      onChange={e => setEditContent(e.target.value)}
-                                      className="w-full px-1 py-0.5 border border-blue-300 rounded text-[10px] bg-white"
-                                      rows={3}
-                                      autoFocus
-                                    />
-                                    <div className="flex gap-1">
-                                      <button
-                                        onClick={() => handleSaveEdit(item.id)}
-                                        className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[9px] font-bold"
-                                      >
-                                        <Check className="w-3 h-3" />
-                                      </button>
-                                      <button
-                                        onClick={() => setEditingId(null)}
-                                        className="px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded text-[9px]"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-start justify-between gap-1">
-                                    <span className="flex-1 leading-tight">{item.content}</span>
-                                    <div className="flex items-center gap-0.5 shrink-0">
-                                      {item.week !== 'Congés' && (
-                                        <span className="text-[8px] text-slate-400">{item.week}</span>
-                                      )}
-                                      {isDirector && item.week !== 'Congés' && (
-                                        <button
-                                          onClick={() => { setEditingId(item.id); setEditContent(item.content); }}
-                                          className="p-0.5 text-slate-400 hover:text-blue-600"
-                                          title="Modifier"
-                                        >
-                                          <Pencil className="w-2.5 h-2.5" />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                                {item.isCustom && (
-                                  <span className="text-[7px] text-amber-600 font-bold">✏️ Modifié</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ))}
+              {MATERNELLE_DOMAINS.map(dom => (
+                <>
+                  {/* Ligne de titre du domaine */}
+                  <tr key={dom.domain} className="bg-slate-100">
+                    <td colSpan={2 + MATERNELLE_WEEKS.length} className="p-2 font-bold text-slate-700 border border-slate-300">
+                      {dom.domain}
+                    </td>
+                  </tr>
+                  {/* Lignes des sous-domaines */}
+                  {dom.subDomains.map(sub => (
+                    <tr key={`${dom.domain}-${sub}`} className="hover:bg-blue-50/30">
+                      <td className="p-1 border border-slate-200 bg-slate-50 sticky left-0 z-10"></td>
+                      <td className="p-1 border border-slate-200 font-semibold text-slate-600 sticky left-[180px] z-10 bg-white">
+                        {sub}
                       </td>
-                    );
-                  })}
-                </tr>
+                      {MATERNELLE_WEEKS.map(week => {
+                        const plan = getMaternelleContent(dom.domain, sub, week);
+                        return (
+                          <td key={week} className="p-1 border border-slate-200 align-top min-w-[80px]">
+                            {plan ? (
+                              editingId === plan.id ? (
+                                <div className="space-y-1">
+                                  <textarea
+                                    value={editContent}
+                                    onChange={e => setEditContent(e.target.value)}
+                                    className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
+                                    rows={3} autoFocus
+                                  />
+                                  <div className="flex gap-0.5">
+                                    <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
+                                      <Check className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
+                                      <X className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div
+                                  className={cn(
+                                    'text-[8px] leading-tight cursor-pointer p-0.5 rounded',
+                                    plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
+                                  )}
+                                  onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
+                                  title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
+                                >
+                                  {plan.content}
+                                </div>
+                              )
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </>
               ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        // ═══ TABLEAU PRIMAIRE — Mois (lignes) × Matières (colonnes) ═══
+        <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+          <table className="text-xs border-collapse" style={{ minWidth: '1800px' }}>
+            <thead>
+              {/* Ligne 1 : Group headers (Éducation Sociale, Éducation Artistique) */}
+              <tr className="bg-slate-800 text-white">
+                {groupHeaders.map((g, i) => (
+                  <th
+                    key={i}
+                    colSpan={g.colCount}
+                    className={cn(
+                      'p-2 border border-slate-600 text-center font-bold',
+                      g.group === 'Éducation Sociale' ? 'bg-indigo-800' :
+                      g.group === 'Éducation Artistique' ? 'bg-purple-800' : 'bg-slate-800'
+                    )}
+                  >
+                    {g.group || ''}
+                  </th>
+                ))}
+              </tr>
+              {/* Ligne 2 : Column headers */}
+              <tr className="bg-slate-700 text-white">
+                {PRIMAIRE_COLUMNS.map(col => (
+                  <th
+                    key={col.key}
+                    className={cn(
+                      'p-2 border border-slate-600 text-center font-bold',
+                      col.key === 'trimester' ? 'bg-blue-800 sticky left-0 z-10 min-w-[60px]' :
+                      col.key === 'month' ? 'bg-blue-800 sticky left-[60px] z-10 min-w-[80px]' :
+                      col.group === 'Éducation Sociale' ? 'bg-indigo-700' :
+                      col.group === 'Éducation Artistique' ? 'bg-purple-700' : 'bg-slate-700'
+                    )}
+                  >
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PRIMAIRE_ROWS.map((row, idx) => {
+                const prevRow = idx > 0 ? PRIMAIRE_ROWS[idx - 1] : null;
+                const showTrimester = !prevRow || prevRow.trimester !== row.trimester;
+                return (
+                  <tr key={idx} className={cn('border-b border-slate-200', getTrimesterBg(row.trimester))}>
+                    {/* Trimestre (merged-like) */}
+                    <td className="p-2 border border-slate-200 font-bold text-center text-slate-600 sticky left-0 z-10 bg-inherit">
+                      {showTrimester ? TRIMESTER_LABELS[row.trimester] : ''}
+                    </td>
+                    {/* Mois */}
+                    <td className="p-2 border border-slate-200 font-bold text-slate-700 sticky left-[60px] z-10 bg-inherit">
+                      {row.month}
+                    </td>
+                    {/* Subject columns */}
+                    {PRIMAIRE_COLUMNS.slice(2).map(col => {
+                      const plan = getPrimaireContent(row.trimester, row.month, col.key);
+                      return (
+                        <td
+                          key={col.key}
+                          className={cn(
+                            'p-1 border border-slate-200 align-top min-w-[100px]',
+                            col.group === 'Éducation Sociale' ? 'bg-indigo-50/30' :
+                            col.group === 'Éducation Artistique' ? 'bg-purple-50/30' : ''
+                          )}
+                        >
+                          {plan ? (
+                            editingId === plan.id ? (
+                              <div className="space-y-1">
+                                <textarea
+                                  value={editContent}
+                                  onChange={e => setEditContent(e.target.value)}
+                                  className="w-full px-1 py-0.5 border border-blue-300 rounded text-[9px] bg-white"
+                                  rows={4} autoFocus
+                                />
+                                <div className="flex gap-0.5">
+                                  <button onClick={() => handleSaveEdit(plan.id)} className="p-0.5 bg-blue-600 text-white rounded">
+                                    <Check className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button onClick={() => setEditingId(null)} className="p-0.5 bg-slate-200 rounded">
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className={cn(
+                                  'text-[9px] leading-tight cursor-pointer p-0.5 rounded',
+                                  plan.isCustom ? 'bg-amber-50 text-amber-900' : 'text-slate-700'
+                                )}
+                                onClick={() => { setEditingId(plan.id); setEditContent(plan.content); }}
+                                title={plan.isCustom ? 'Modifié par la direction' : 'Contenu officiel'}
+                              >
+                                {plan.content}
+                                {plan.isCustom && <span className="block text-[7px] text-amber-600">✏️</span>}
+                              </div>
+                            )
+                          ) : (
+                            <span className="text-slate-300 text-[9px]">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-        <strong>ℹ️ Information :</strong> La planification affichée est conforme au programme officiel ministérielle (Bénin).
-        La direction peut modifier les cellules (icône ✏️) pour personnaliser. Les modifications sont marquées "✏️ Modifié".
-        Les enseignants consultent cette planification dans leur UI (lecture seule).
+        <strong>ℹ️ Information :</strong> Planification conforme au programme officiel ministériel (Bénin).
+        Cliquez sur une cellule pour la modifier (direction). Les cellules modifiées sont surlignées en ambre.
+        Les enseignants consultent cette planification en lecture seule dans leur UI.
       </div>
     </div>
   );

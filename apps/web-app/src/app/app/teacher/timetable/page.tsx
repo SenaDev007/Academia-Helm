@@ -102,7 +102,26 @@ export default function TeacherTimetablePage() {
       );
       const profList = await profRes.json();
       const profiles = Array.isArray(profList) ? profList : (profList?.data || []);
-      const myProfile = profiles.find((p: any) => p.userId === user.id || p.user?.id === user.id);
+      // ⭐ Matching du profil enseignant — le TeacherAcademicProfile n'a pas de
+      //    `userId` direct (il n'a que `teacherId` qui pointe vers Teacher).
+      //    Le Teacher non plus n'a pas de `userId` field dans la réponse de
+      //    l'API teacher-profiles (qui select: id, firstName, lastName, matricule, email).
+      //    On doit matcher via :
+      //      1. p.userId === user.id (au cas où userId est renvoyé)
+      //      2. p.user?.id === user.id (au cas où user est populate)
+      //      3. p.teacher.email === user.email (MATCHING PAR EMAIL — le plus fiable)
+      //      4. p.teacher.matricule === user.matricule (matching par matricule)
+      //      5. p.teacher.matricule === user.email (cas où le login est le matricule mais
+      //         renvoyé dans user.email — possible selon le portail)
+      //    Sans ce matching multiple, Saliou AKPAKI (CSPEBE-26-00008 / dawesakpovi@gmail.com)
+      //    ne trouve pas son profil → myTeacherId undefined → pas d'assignments fetchés
+      //    → 'Aucun emploi du temps configuré'
+      const myProfile = profiles.find((p: any) =>
+        p.userId === user.id ||
+        p.user?.id === user.id ||
+        (p.teacher?.email && user.email && p.teacher.email.toLowerCase() === user.email.toLowerCase()) ||
+        (p.teacher?.matricule && user.matricule && p.teacher.matricule === user.matricule)
+      );
       const myTeacherId = myProfile?.teacherId || myProfile?.id;
 
       // ⭐ ÉTAPE 2 : Récupérer les assignments de classe du teacher

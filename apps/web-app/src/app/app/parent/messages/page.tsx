@@ -6,9 +6,10 @@
  * ============================================================================
  *
  * Page de communication parent :
- *   1. Notifications in-app reçues par le parent (depuis /api/notifications)
- *   2. Annonces de l'école (depuis /api/communication/v2/announcements)
- *   3. Coordonnées de l'école pour contacter directement
+ *   1. ⭐ Messagerie — chat WhatsApp avec enseignants de l'enfant + direction
+ *   2. Notifications in-app reçues par le parent (depuis /api/notifications)
+ *   3. Annonces de l'école (depuis /api/communication/v2/announcements)
+ *   4. Coordonnées de l'école pour contacter directement
  *
  * Pas de redirect vers /app/communication (réservé au staff école).
  * ============================================================================
@@ -17,9 +18,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
+import WhatsAppChat from "@/components/communication/WhatsAppChat";
 import {
   MessageSquare, Loader2, Bell, CheckCircle2, Phone, Mail,
-  MapPin, RefreshCw, Building2, Megaphone,
+  MapPin, RefreshCw, Building2, Megaphone, ChatBubble,
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -32,7 +34,7 @@ export default function ParentMessagesPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"notifications" | "annonces" | "contact">("notifications");
+  const [activeTab, setActiveTab] = useState<"messagerie" | "notifications" | "annonces" | "contact">("messagerie");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -106,8 +108,9 @@ export default function ParentMessagesPage() {
       </div>
 
       {/* Onglets */}
-      <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1">
+      <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1 overflow-x-auto">
         {[
+          { id: "messagerie" as const, label: "Messagerie", icon: ChatBubble },
           { id: "notifications" as const, label: "Notifications", icon: Bell },
           { id: "annonces" as const, label: "Annonces", icon: Megaphone },
           { id: "contact" as const, label: "Contacter l'école", icon: Phone },
@@ -119,7 +122,7 @@ export default function ParentMessagesPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap",
                 isActive
                   ? "bg-teal-50 text-teal-700 border border-teal-200"
                   : "text-slate-600 hover:bg-slate-50"
@@ -133,7 +136,20 @@ export default function ParentMessagesPage() {
       </div>
 
       {/* Contenu */}
-      {loading ? (
+      {activeTab === "messagerie" ? (
+        // ⭐ Messagerie WhatsApp — pas de loading (géré par le composant lui-même)
+        user?.id ? (
+          <WhatsAppChat
+            currentUserId={user.id}
+            heightClass="h-[calc(100vh-280px)]"
+            readOnly={false}
+          />
+        ) : (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+          </div>
+        )
+      ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
         </div>

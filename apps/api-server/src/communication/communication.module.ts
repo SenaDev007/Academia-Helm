@@ -44,6 +44,9 @@ import { WhatsAppLogController } from './whatsapp-log.controller';
 import { WhatsAppWebhookController } from './whatsapp-webhook.controller';
 import { ScheduledEmailController } from './scheduled-email.controller';
 import { DatabaseModule } from '../database/database.module';
+import { ChatService } from './services/chat.service';
+import { ChatController } from './chat.controller';
+import { ChatGateway } from './chat.gateway';
 
 @Module({
   imports: [ConfigModule, DatabaseModule],
@@ -58,16 +61,18 @@ import { DatabaseModule } from '../database/database.module';
     WhatsAppLogController,
     WhatsAppWebhookController,
     ScheduledEmailController,
+    // ⭐ Chat (messagerie interne type WhatsApp)
+    ChatController,
   ],
   providers: [
-    EmailService, 
+    EmailService,
     EmailLogService,
     InboundEmailService,
     EmailTrackingService,
     WhatsAppService,
     WhatsAppLogService,
     WhatsAppTemplateRegistry,
-    SmsService, 
+    SmsService,
     VoiceService,
     CommunicationDashboardService,
     InternalMessagingService,
@@ -84,16 +89,19 @@ import { DatabaseModule } from '../database/database.module';
     SchedulingPrismaService,
     AutomationPrismaService,
     TemplatesPrismaService,
+    // ⭐ Chat (messagerie interne type WhatsApp)
+    ChatService,
+    ChatGateway,
   ],
   exports: [
-    EmailService, 
+    EmailService,
     EmailLogService,
     InboundEmailService,
     EmailTrackingService,
     WhatsAppService,
     WhatsAppLogService,
     WhatsAppTemplateRegistry,
-    SmsService, 
+    SmsService,
     VoiceService,
     CommunicationDashboardService,
     InternalMessagingService,
@@ -107,6 +115,8 @@ import { DatabaseModule } from '../database/database.module';
     SchedulingPrismaService,
     AutomationPrismaService,
     TemplatesPrismaService,
+    // ⭐ Chat exports
+    ChatService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

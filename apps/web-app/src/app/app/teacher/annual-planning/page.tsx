@@ -57,7 +57,7 @@ const MATERNELLE_DOMAINS = [
   { domain: 'II', subDomains: ['Expression corporelle'] },
   { domain: 'III', subDomains: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématique', 'Observation', 'Education sensorielle', 'Travaux manuels'] },
   { domain: 'IV', subDomains: ['Expression plastique', 'Expression émotionnelle'] },
-  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Comptine', 'Communication orale'] },
+  { domain: 'V', subDomains: ['Poésie', 'Chant', 'Contes', 'Comptine', 'Communication orale'] },
 ];
 
 // ⭐ Mois maternelle en ordre (pour pagination)

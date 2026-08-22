@@ -7,7 +7,8 @@ export default function CommunicationPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.push('/app/communication/dashboard');
+    // ⭐ Redirige vers la Messagerie unifiée (le seul onglet restant)
+    router.push('/app/communication/messages');
   }, [router]);
 
   return null;

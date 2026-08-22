@@ -356,6 +356,67 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   };
 
   // ───────────────────────────────────────────────────────────────────
+  // Render conversation item (shared between Groups and Direct lists)
+  // ┭ Telegram-style: avatar, name, last message preview, time, unread badge,
+  //    role label for DIRECT convs, member count for GROUP convs
+  // ───────────────────────────────────────────────────────────────────
+  const renderConversationItem = (conv: ChatConversation) => {
+    const display = getConversationDisplay(conv, currentUserId);
+    const isActive = conv.id === activeConvId;
+    return (
+      <button
+        key={conv.id}
+        onClick={() => setActiveConvId(conv.id)}
+        className={cn(
+          'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
+          isActive && 'bg-emerald-50'
+        )}
+      >
+        {/* Avatar */}
+        <div className={cn(
+          'w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 relative',
+          display.avatarUrl ? 'bg-slate-200' : getAvatarColor(display.name)
+        )}>
+          {display.avatarUrl ? (
+            <img src={display.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+          ) : (
+            getInitials(display.name)
+          )}
+          {/* Group icon badge */}
+          {conv.type === 'GROUP' && (
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
+              <Users className="w-2 h-2 text-white" />
+            </span>
+          )}
+        </div>
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-900 truncate">{display.name}</span>
+            {conv.lastMessageAt && (
+              <span className="text-[10px] text-slate-400 flex-shrink-0">{formatTime(conv.lastMessageAt)}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-slate-500 truncate flex-1">
+              {conv.lastMessagePreview || '—'}
+            </span>
+          </div>
+          {/* Role label (DIRECT only) or member count (GROUP only) */}
+          {display.roleLabel && conv.type === 'DIRECT' && (
+            <span className="text-[10px] text-emerald-700 font-semibold truncate block mt-0.5">
+              {display.roleLabel}
+            </span>
+          )}
+          {conv.type === 'GROUP' && display.subtitle && (
+            <span className="text-[10px] text-slate-400 block mt-0.5">{display.subtitle}</span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  // ───────────────────────────────────────────────────────────────────
   // Render
   // ───────────────────────────────────────────────────────────────────
 
@@ -448,57 +509,33 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               )}
             </div>
           ) : (
-            conversations.map(conv => {
-              const display = getConversationDisplay(conv, currentUserId);
-              const isActive = conv.id === activeConvId;
-              return (
-                <button
-                  key={conv.id}
-                  onClick={() => setActiveConvId(conv.id)}
-                  className={cn(
-                    'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
-                    isActive && 'bg-emerald-50'
-                  )}
-                >
-                  {/* Avatar */}
-                  <div className={cn(
-                    'w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0',
-                    display.avatarUrl ? 'bg-slate-200' : getAvatarColor(display.name)
-                  )}>
-                    {display.avatarUrl ? (
-                      <img src={display.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      getInitials(display.name)
+            <>
+              {/* ⭐ CATEGORIZE: Groups vs Direct conversations (like Telegram/WhatsApp) */}
+              {(() => {
+                const directConvs = conversations.filter(c => c.type === 'DIRECT');
+                const groupConvs = conversations.filter(c => c.type === 'GROUP');
+                return (
+                  <>
+                    {directConvs.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
+                          💬 Discussions
+                        </div>
+                        {directConvs.map(conv => renderConversationItem(conv))}
+                      </>
                     )}
-                  </div>
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm font-semibold text-slate-900 truncate">{display.name}</span>
-                      {conv.lastMessageAt && (
-                        <span className="text-[10px] text-slate-400 flex-shrink-0">{formatTime(conv.lastMessageAt)}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-slate-500 truncate flex-1">
-                        {conv.lastMessagePreview || '—'}
-                      </span>
-                      {/* Badge non lus (placeholder) */}
-                      <span className="text-[10px] text-emerald-600 font-bold">·</span>
-                    </div>
-                    {/* ⭐ Role label (ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur") */}
-                    {display.roleLabel && conv.type === 'DIRECT' && (
-                      <span className="text-[10px] text-emerald-700 font-semibold truncate">
-                        {display.roleLabel}
-                      </span>
+                    {groupConvs.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
+                          👥 Groupes
+                        </div>
+                        {groupConvs.map(conv => renderConversationItem(conv))}
+                      </>
                     )}
-                    {conv.type === 'GROUP' && display.subtitle && (
-                      <span className="text-[10px] text-slate-400">{display.subtitle}</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })
+                  </>
+                );
+              })()}
+            </>
           )}
         </div>
       </div>
@@ -618,16 +655,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             </div>
                           </a>
                         )}
-                        {/* Timestamp + read receipt */}
+                        {/* Timestamp + read receipt (WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ read) */}
                         <div className={cn(
                           'flex items-center gap-1 mt-0.5',
                           isMine ? 'justify-end text-emerald-50' : 'justify-end text-slate-400'
                         )}>
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
                           {isMine && (
-                            msg.readBy && msg.readBy.length > 0
-                              ? <CheckCheck className="w-3 h-3" />
-                              : <Check className="w-3 h-3" />
+                            <>
+                              {/* ✓✓ blue = read by at least one participant */}
+                              {msg.readBy && msg.readBy.length > 0 ? (
+                                <CheckCheck className="w-3 h-3 text-blue-300" />
+                              ) : (
+                                /* ✓ single = sent (waiting for delivery/read confirmation) */
+                                <Check className="w-3 h-3" />
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

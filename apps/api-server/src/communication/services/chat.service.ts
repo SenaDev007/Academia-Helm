@@ -128,11 +128,13 @@ export class ChatService {
 
     // Fetch participants for each conversation
     const conversationIds = participations.map(p => p.id);
+    // ⭐ FIX: users table has NO avatarUrl column — role is directly on users (u."role")
+    //    Previously used ur."role" from user_roles JOIN, but that table has roleId (FK to roles table),
+    //    not a "role" text column. So we use u."role" directly.
     const allParticipants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT p.*, u."firstName", u."lastName", u."email", u."avatarUrl", ur."role" AS "role_label"
+      SELECT p.*, u."firstName", u."lastName", u."email", u."role" AS "role_label"
       FROM chat_participants p
       JOIN "users" u ON u.id = p."userId"
-      LEFT JOIN "user_roles" ur ON ur."userId" = u.id
       WHERE p."conversationId" = ANY($1::text[]) AND p."leftAt" IS NULL
       ORDER BY p."joinedAt" ASC
     `, conversationIds);
@@ -158,22 +160,25 @@ export class ChatService {
       }
     }
 
-    // ⭐ Build role label (same logic as searchUsers)
+    // ⭐ Build role label — handles French values: ENSEIGNANT, COMPTABLE, DIRECTEUR, etc.
     const roleLabelFor = (role: string, children: string[] | undefined): string => {
       const upperRole = (role || '').toUpperCase();
-      if (upperRole === 'PARENT') {
+      // French values (from users.role column in DB)
+      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+      if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
         if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
         return 'Parent d\'élève';
       }
-      if (upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
-      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER') return 'Promoteur';
-      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT') return 'Directeur';
+      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
+      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
       if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
       if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
-      if (upperRole === 'SCHOOL_ADMIN') return 'Administration école';
+      if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
       if (upperRole === 'CENSEUR') return 'Censeur';
-      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR') return 'Directeur pédagogique';
-      if (upperRole === 'STUDENT') return 'Élève';
+      if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
+      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
+      if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
+      if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
       return role || 'Utilisateur';
     };
 
@@ -209,9 +214,11 @@ export class ChatService {
           firstName: p.firstName,
           lastName: p.lastName,
           email: p.email,
-          avatarUrl: p.avatarUrl,
+          // ⭐ FIX: users table has no avatarUrl — return null for now (V2 will
+          //    fetch from staff_photos or tenant_media)
+          avatarUrl: null,
           role_label: p.role_label,
-          roleLabel: roleLabelFor(p.role_label, children),  // ⭐ label human-readable
+          roleLabel: roleLabelFor(p.role_label, children),
           childrenNames: children,
         };
       }),
@@ -582,17 +589,18 @@ export class ChatService {
     const limit = Math.min(options.limit || 20, 50);
     const likeQuery = `%${query.trim().toLowerCase()}%`;
 
-    // ⭐ Recherche dans le tenant courant + autres tenants si demandé
+    // ⭐ FIX: users table has NO avatarUrl column AND user_roles JOIN fails (user_roles
+    //    has roleId FK to roles table, not a "role" text column). The role is stored
+    //    DIRECTLY on users.role. So we skip the user_roles JOIN entirely and use u."role".
     const tenantFilter = options.includeOtherTenants === false
       ? `AND u."tenantId" = $1`
       : '';
 
     const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT u.id, u."firstName", u."lastName", u."email", u."avatarUrl",
-             ur."role", t."name" AS "tenantName", u."tenantId",
+      SELECT u.id, u."firstName", u."lastName", u."email", u."role",
+             t."name" AS "tenantName", u."tenantId",
              (u."tenantId" = $1) AS "isSameTenant"
       FROM "users" u
-      LEFT JOIN "user_roles" ur ON ur."userId" = u.id
       LEFT JOIN "tenants" t ON t.id = u."tenantId"
       WHERE u.id != $2
         ${tenantFilter}
@@ -606,9 +614,12 @@ export class ChatService {
       LIMIT $4
     `, currentTenantId, currentUserId, likeQuery, limit);
 
-    // ⭐ Enrichir avec les noms des enfants pour les PARENTS
+    // ⭐ Enrichir avec les noms des enfants pour les PARENTS / GUARDIANS
     //    guardians.userId → student_guardians.guardianId → students
-    const parentUserIds = rows.filter(r => (r.role || '').toUpperCase() === 'PARENT').map(r => r.id);
+    const parentUserIds = rows.filter(r => {
+      const role = (r.role || '').toUpperCase();
+      return role === 'PARENT' || role === 'GUARDIAN';
+    }).map(r => r.id);
     const childrenByParent: Map<string, string[]> = new Map();
     if (parentUserIds.length > 0) {
       const childrenRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
@@ -624,24 +635,24 @@ export class ChatService {
       }
     }
 
-    // ⭐ Build role labels
+    // ⭐ Build role labels — handles French values (ENSEIGNANT, COMPTABLE, DIRECTEUR, etc.)
     const roleLabelFor = (role: string, children: string[] | undefined): string => {
       const upperRole = (role || '').toUpperCase();
-      if (upperRole === 'PARENT') {
-        if (children && children.length > 0) {
-          return `Parent de ${children.join(', ')}`;
-        }
+      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+      if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
+        if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
         return 'Parent d\'élève';
       }
-      if (upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
-      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER') return 'Promoteur';
-      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT') return 'Directeur';
+      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
+      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
       if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
       if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
-      if (upperRole === 'SCHOOL_ADMIN') return 'Administration école';
+      if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
       if (upperRole === 'CENSEUR') return 'Censeur';
-      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR') return 'Directeur pédagogique';
-      if (upperRole === 'STUDENT') return 'Élève';
+      if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
+      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
+      if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
+      if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
       return role || 'Utilisateur';
     };
 
@@ -653,7 +664,8 @@ export class ChatService {
         firstName: r.firstName,
         lastName: r.lastName,
         email: r.email,
-        avatarUrl: r.avatarUrl,
+        // ⭐ FIX: users table has no avatarUrl — null for now (V2 will use staff_photos)
+        avatarUrl: null,
         role: r.role,
         roleLabel: roleLabelFor(r.role, children),
         tenantName: r.tenantName,

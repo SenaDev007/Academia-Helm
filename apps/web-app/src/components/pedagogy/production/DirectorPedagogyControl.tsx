@@ -66,6 +66,7 @@ interface DirectorPedagogyControlProps {
 const TABS = [
   { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle, maternellePrimaireOnly: false },
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
+  { id: "monthly-plans", label: "Planifications Mensuelles", icon: CalendarRange, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
   { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: false },
@@ -176,6 +177,9 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         )}
         {tab === "cahier-journal" && (
           <PendingCahierJournalsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
+        )}
+        {tab === "monthly-plans" && (
+          <PendingMonthlyPlansTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
         {tab === "registres" && (
           <PendingRegistersTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
@@ -4922,4 +4926,313 @@ function SemainierCatalogueContent({ academicYearId, onView }: {
 
   // Fallback (ne devrait jamais arriver)
   return <div className="text-center text-slate-500 text-sm py-6">{breadcrumbs}<p>Navigation invalide</p></div>;
+}
+
+// ============================================================================
+// ⭐ Onglet "Planifications Mensuelles" — Planifs mensuelles soumises par les enseignants
+//    Le directeur peut valider (avec signature) ou rejeter (avec observation).
+//    Chaque planif soumise contient: classLevel + month + teacher + cells + signature titulaire
+// ============================================================================
+
+function PendingMonthlyPlansTab({
+  tenantId, academicYearId, userId, refreshKey, onRefresh,
+}: {
+  tenantId: string;
+  academicYearId: string;
+  userId: string;
+  refreshKey: number;
+  onRefresh: () => void;
+}) {
+  const [pendingPlans, setPendingPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(null);
+  const [rejectObservation, setRejectObservation] = useState("");
+  const [validating, setValidating] = useState(false);
+
+  // Load pending monthly plans
+  const loadPending = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch pending monthly plans");
+      const data = await res.json();
+      setPendingPlans(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      console.error("Failed to load pending monthly plans:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId]);
+
+  useEffect(() => { loadPending(); }, [loadPending, refreshKey]);
+
+  // Load director signature from school_directors profile (similar to Cahier Journal pattern)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/school-directors?userId=${encodeURIComponent(userId)}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const sig = data?.signatureDataUrl || data?.signatureUploadedUrl || null;
+        setDirectorSignature(sig);
+      } catch (e) { /* silent */ }
+    })();
+  }, [userId]);
+
+  const handleValidate = async (plan: any) => {
+    if (!directorSignature) {
+      toast.error("Signature du directeur requise. Configurez votre signature dans votre profil.");
+      return;
+    }
+    setValidating(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/validate?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "VALIDATE",
+            directorSignature,
+          }),
+          credentials: "include",
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error || `Échec (${res.status})`);
+      }
+      toast.success(`✅ Planification de ${plan.classLevel} — ${plan.month} validée`);
+      setSelectedPlan(null);
+      onRefresh();
+    } catch (e: any) {
+      toast.error("Échec validation: " + e.message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleReject = async (plan: any) => {
+    if (!rejectObservation.trim()) {
+      toast.error("Veuillez indiquer une observation pour le rejet.");
+      return;
+    }
+    setValidating(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/validate?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "REJECT",
+            directorObservation: rejectObservation.trim(),
+          }),
+          credentials: "include",
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error || `Échec (${res.status})`);
+      }
+      toast.success(`Planification de ${plan.classLevel} — ${plan.month} rejetée`);
+      setRejectObservation("");
+      setSelectedPlan(null);
+      onRefresh();
+    } catch (e: any) {
+      toast.error("Échec rejet: " + e.message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (pendingPlans.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <CalendarRange className="h-12 w-12 mx-auto text-slate-300 mb-2" />
+        <p className="text-sm font-bold text-slate-700">Aucune planification mensuelle en attente</p>
+        <p className="text-xs text-slate-500 mt-1">
+          Les planifications mensuelles soumises par les enseignants apparaîtront ici pour validation.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CalendarRange className="h-5 w-5 text-blue-600" />
+            Planifications Mensuelles en attente
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {pendingPlans.length} planification(s) soumise(s) par les enseignants — à valider ou rejeter.
+          </p>
+        </div>
+        <button onClick={loadPending} className="p-2 hover:bg-slate-100 rounded-lg">
+          <RefreshCw className="h-4 w-4 text-slate-500" />
+        </button>
+      </div>
+
+      {/* List of pending plans */}
+      <div className="space-y-3">
+        {pendingPlans.map((plan, idx) => {
+          const teacherName = `${plan.teacherFirstName || ''} ${plan.teacherLastName || ''}`.trim() || 'Enseignant';
+          return (
+            <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-sm transition">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
+                      {plan.classLevel}
+                    </span>
+                    <span className="text-sm font-bold text-slate-900">{plan.month}</span>
+                    {plan.submittedAt && (
+                      <span className="text-[10px] text-slate-400">
+                        soumis le {new Date(plan.submittedAt).toLocaleDateString('fr-FR')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    <strong>Enseignant :</strong> {teacherName}
+                    {plan.teacherRole && <span className="ml-1">({plan.teacherRole})</span>}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {plan.cellCount} cellule(s) — {plan.customCount} personnalisée(s)
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedPlan(plan)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Détails
+                  </button>
+                  <button
+                    onClick={() => handleValidate(plan)}
+                    disabled={validating}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Valider
+                  </button>
+                  <button
+                    onClick={() => { setSelectedPlan(plan); setRejectObservation(""); }}
+                    disabled={validating}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg disabled:opacity-50"
+                  >
+                    <XCircle className="w-3.5 h-3.5" /> Rejeter
+                  </button>
+                </div>
+              </div>
+              {/* Show teacher signature thumbnail if available */}
+              {plan.teacherSignature && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="text-[10px] text-slate-500 mb-1">Signature du titulaire :</div>
+                  <img src={plan.teacherSignature} alt="Signature" className="max-h-16 border border-slate-200 rounded p-1" />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail Modal */}
+      {selectedPlan && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">
+                Planification {selectedPlan.classLevel} — {selectedPlan.month}
+              </h3>
+              <button onClick={() => setSelectedPlan(null)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <div className="text-xs text-slate-500">Enseignant</div>
+                  <div className="font-semibold">
+                    {selectedPlan.teacherFirstName} {selectedPlan.teacherLastName}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">Statut</div>
+                  <div className="font-semibold text-blue-700">Soumis (en attente)</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">Cellules</div>
+                  <div className="font-semibold">{selectedPlan.cellCount} ({selectedPlan.customCount} personnalisées)</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">Soumis le</div>
+                  <div className="font-semibold">
+                    {selectedPlan.submittedAt ? new Date(selectedPlan.submittedAt).toLocaleString('fr-FR') : '—'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Reject observation input */}
+              <div className="border-t border-slate-100 pt-4">
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Observation (pour rejet)
+                </label>
+                <textarea
+                  value={rejectObservation}
+                  onChange={e => setRejectObservation(e.target.value)}
+                  rows={3}
+                  placeholder="Indiquez la raison du rejet (sera visible par l'enseignant)"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+              </div>
+
+              {/* Director signature preview */}
+              {directorSignature && (
+                <div className="border-t border-slate-100 pt-4">
+                  <div className="text-xs font-semibold text-slate-700 mb-1">Votre signature (directeur) :</div>
+                  <img src={directorSignature} alt="Signature" className="max-h-20 border border-slate-200 rounded p-1" />
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={() => setSelectedPlan(null)}
+                className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200"
+              >
+                Fermer
+              </button>
+              <button
+                onClick={() => handleReject(selectedPlan)}
+                disabled={validating || !rejectObservation.trim()}
+                className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Rejeter
+              </button>
+              <button
+                onClick={() => handleValidate(selectedPlan)}
+                disabled={validating || !directorSignature}
+                className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Valider'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

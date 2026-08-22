@@ -4355,6 +4355,61 @@ export class PedagogicalSpaceService {
       throw new BadRequestException(`Cahier déjà soumis (statut: ${journal.status})`);
     }
 
+    // ─── 1.5. ⭐ VÉRIFICATION PLANIFICATION MENSUELLE (début de mois) ───
+    //    Au début de chaque mois, le système vérifie si la planification mensuelle
+    //    du mois correspondant a été soumise ET validée par le directeur.
+    //    Si non → bloque la soumission du cahier journal avec un message clair.
+    try {
+      // Déterminer le mois du cahier journal depuis weekStartDate
+      const weekStartDate = new Date(journal.weekStartDate);
+      const MONTH_NAMES_FR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+                              'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+      const journalMonth = MONTH_NAMES_FR[weekStartDate.getMonth()];
+
+      // Résoudre le classLevel (officialClassId) depuis la classe physique
+      let classLevel: string | null = null;
+      if (journal.classId) {
+        const classRows: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT "officialClassId" FROM "classes" WHERE "id" = $1 AND "tenantId" = $2`,
+          journal.classId, tenantId,
+        );
+        classLevel = classRows[0]?.officialClassId || null;
+      }
+
+      // Vérifier s'il existe une planification mensuelle pour ce mois + classe
+      if (classLevel && journalMonth && journal.academicYearId) {
+        const monthlyPlanRows: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT "status" FROM "monthly_plans"
+           WHERE "tenantId" = $1 AND "academicYearId" = $2
+             AND "classLevel" = $3 AND "month" = $4
+             AND "teacherId" = $5
+           LIMIT 1`,
+          tenantId, journal.academicYearId, classLevel, journalMonth, journal.teacherId || journal.userId,
+        );
+
+        if (monthlyPlanRows.length > 0) {
+          const mpStatus = monthlyPlanRows[0].status;
+          if (mpStatus !== 'VALIDATED') {
+            const statusLabel = mpStatus === 'DRAFT' ? 'en brouillon (non soumise)'
+              : mpStatus === 'SUBMITTED' ? 'soumise mais non validée par le directeur'
+              : `(${mpStatus})`;
+            throw new BadRequestException(
+              `⚠️ Veuillez d'abord soumettre et faire valider la Planification Mensuelle de ${journalMonth} ` +
+              `(${classLevel}) avant de soumettre ce cahier journal. Statut actuel : ${statusLabel}.`
+            );
+          }
+        }
+        // ⭐ Si aucune planification mensuelle n'existe pour ce mois → on n'en bloque pas
+        //    la soumission (l'enseignant peut ne pas avoir encore créé de planif mensuelle
+        //    pour tous les mois — c'est toléré tant que le système n'a pas enregistré de
+        //    données pour ce mois).
+      }
+    } catch (e) {
+      if (e instanceof BadRequestException) throw e;
+      // Erreur non-bloquante (ex: table monthly_plans n'existe pas encore) → on continue
+      this.logger.warn(`Planification mensuelle check skipped: ${e.message}`);
+    }
+
     // ─── 2. Déterminer les jours à soumettre ───
     const ALL_DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
     const days = (dayRange && dayRange.length > 0) ? dayRange : ALL_DAYS;

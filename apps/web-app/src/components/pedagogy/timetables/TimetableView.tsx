@@ -103,14 +103,33 @@ export default function TimetableView({ entries, timetable, className }: Timetab
   const [configLoading, setConfigLoading] = useState(true);
 
   // Fetch config (schoolDays + timeBlocks) via /api/timetable-engine/config
+  // ⭐ Le timetable.schoolLevelId est un UUID `school_levels` (table school_levels).
+  //    Mais timetable_configs est indexé par UUID `education_levels` (table différente).
+  //    On doit RÉSOUDRE la correspondance school_levels → education_levels via
+  //    l'API /api/school-levels qui renvoie les deux UUIDs pour chaque niveau.
   useEffect(() => {
     let cancelled = false;
     setConfigLoading(true);
     (async () => {
       try {
+        // ⭐ ÉTAPE 1 : Fetch school-levels pour résoudre schoolLevelId → educationLevelId
+        const slRes = await fetch('/api/school-levels', { credentials: 'include' });
+        if (!slRes.ok) throw new Error('Failed to fetch school-levels');
+        const slData = await slRes.json();
+        const slList = Array.isArray(slData) ? slData : [];
+        // Trouver le SchoolLevel dont schoolLevelId === timetable.schoolLevelId
+        // (timetable.schoolLevelId = school_levels UUID)
+        // (sl.schoolLevelId = school_levels UUID, sl.id = education_levels UUID)
+        const match = slList.find((sl: any) => sl.schoolLevelId === timetable.schoolLevelId);
+        // Fallback : si pas de match via schoolLevelId, on essaie sl.id === timetable.schoolLevelId
+        // (au cas où le timetable aurait un education_levels UUID direct)
+        const educationLevelId = match?.id || slList.find((sl: any) => sl.id === timetable.schoolLevelId)?.id || timetable.schoolLevelId;
+        if (cancelled) return;
+
+        // ⭐ ÉTAPE 2 : Fetch la config avec le bon UUID (education_levels)
         const ts = Date.now();
         const res = await fetch(
-          `/api/timetable-engine/config?schoolLevelId=${timetable.schoolLevelId}&academicYearId=${timetable.academicYearId}&_t=${ts}`,
+          `/api/timetable-engine/config?schoolLevelId=${educationLevelId}&academicYearId=${timetable.academicYearId}&_t=${ts}`,
           { credentials: 'include' },
         );
         if (!res.ok) return;

@@ -295,18 +295,35 @@ export default function TeacherTimetablePage() {
         </div>
       ) : (
         <>
-          {/* ⭐ Grille d'emploi du temps IDENTIQUE au director UI (TimetablesWorkspace).
-              On prend le timetable de la première entry (toutes les entries du teacher
-              viennent du même EDT pour une classe donnée — le filter selectedClassId
-              garantit qu'on n'a qu'un seul timetable dans le lot). */}
           {(() => {
-            // ⭐ Trouver le timetable pertinent pour la classe sélectionnée
-            //    Si une classe est sélectionnée → entries filtrées par cette classe →
-            //    toutes viennent du même timetable (celui de la classe).
-            //    Si pas de classe sélectionnée → on prend le 1er timetable trouvé.
-            const tt = entries.find(e => e.timetable)?.timetable;
-            if (!tt) return null;
-            return <TimetableView entries={entries} timetable={tt} />;
+            // ⭐ Si une classe est sélectionnée → une seule grille
+            if (selectedClassId) {
+              const tt = entries.find(e => e.timetable)?.timetable;
+              if (!tt) return null;
+              return <TimetableView entries={entries} timetable={tt} />;
+            }
+            // ⭐ "Toutes mes classes" → une grille PAR classe (avec titre + nom de la classe)
+            //    On groupe par officialClassId pour avoir une grille distincte par classe.
+            const byOfficialClass = new Map<string, { entries: TimetableEntry[]; name: string }>();
+            for (const e of entries) {
+              const ocId = e.officialClassId || 'global';
+              if (!byOfficialClass.has(ocId)) {
+                byOfficialClass.set(ocId, { entries: [], name: e.className || 'Global' });
+              }
+              byOfficialClass.get(ocId)!.entries.push(e);
+            }
+            return Array.from(byOfficialClass.entries()).map(([ocId, data]) => {
+              const tt = data.entries.find(e => e.timetable)?.timetable;
+              if (!tt) return null;
+              return (
+                <div key={ocId} className="space-y-2">
+                  <h3 className="text-base font-bold text-slate-800 border-l-4 border-purple-500 pl-3">
+                    {data.name}
+                  </h3>
+                  <TimetableView entries={data.entries} timetable={tt} />
+                </div>
+              );
+            });
           })()}
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">

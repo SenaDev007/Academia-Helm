@@ -45,8 +45,11 @@ export default function ParentTimetablePage() {
   const [children, setChildren] = useState<any[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // ⭐ Toutes les entries par enfant — pour le mode "Tous mes enfants" qui
+  //    affiche une grille par enfant (enfant 1 + enfant 2 + ...).
+  //    Chaque entrée du Map contient : { childName, className, entries: TimetableEntry[] }
+  const [allChildrenEntries, setAllChildrenEntries] = useState<Map<string, { childName: string; className: string; entries: TimetableEntry[] }>>(new Map());
 
   // Charger les enfants
   useEffect(() => {
@@ -68,41 +71,41 @@ export default function ParentTimetablePage() {
   const selectedChild = children.find((c) => c.id === selectedChildId);
 
   const loadTimetable = useCallback(async () => {
-    // ⭐ ÉTAPE 0 : Déterminer le officialClassId (AcademicClass) de l'enfant.
-    //    Si selectedChild.academicClassId est défini → on l'utilise DIRECTEMENT
-    //    (c'est le cas le plus fiable — academicClassId est posé à l'admission).
-    //    Sinon, on tente de résoudre via le physical Class.id (classId).
-    const childAcademicClassId = (selectedChild as any)?.academicClassId as string | undefined;
-    if (!academicYear?.id || (!selectedChild?.classId && !childAcademicClassId)) {
+    if (!academicYear?.id || !user?.id || children.length === 0) {
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      // ⭐ ÉTAPE 1 : Si on n'a pas academicClassId direct, on le résout via
-      //    academic-structure/classes. Sinon, on skip cette étape (gain de temps).
-      let childOfficialClassId: string | undefined = childAcademicClassId;
+      // ⭐ ÉTAPE 1 : Récupérer les AcademicClasses pour résoudre classId (physical)
+      //    → officialClassId (AcademicClass) pour chaque enfant.
+      //    Si l'enfant a déjà academicClassId (champ direct), on l'utilise.
+      const classesRes = await fetch(
+        `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
+        { credentials: "include" },
+      );
+      const classList = await classesRes.json();
+      const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
 
-      if (!childOfficialClassId && selectedChild?.classId) {
-        // Résolution physical Class.id → AcademicClass.id
-        const classesRes = await fetch(
-          `/api/pedagogy/academic-structure/classes?academicYearId=${encodeURIComponent(academicYear.id)}`,
-          { credentials: "include" },
-        );
-        const classList = await classesRes.json();
-        const academicClasses = Array.isArray(classList) ? classList : (classList?.data || []);
-        // Trouver l'officialClassId (AcademicClass) de la classe de l'enfant
-        for (const ac of academicClasses) {
-          const phys = (ac.physicalClasses || []);
-          if (phys.some((pc: any) => pc.id === selectedChild.classId)) {
-            childOfficialClassId = ac.id;
-            break;
+      // ⭐ ÉTAPE 2 : Pour chaque enfant, calculer son officialClassId
+      //    child.academicClassId (prioritaire) OU résolution physical Class.id → AcademicClass.id
+      const childOfficialClassIds = new Map<string, string | undefined>(); // childId → officialClassId
+      for (const child of children) {
+        let officialId: string | undefined = (child as any)?.academicClassId;
+        if (!officialId && child.classId) {
+          for (const ac of academicClasses) {
+            const phys = (ac.physicalClasses || []);
+            if (phys.some((pc: any) => pc.id === child.classId)) {
+              officialId = ac.id;
+              break;
+            }
           }
         }
+        childOfficialClassIds.set(child.id, officialId);
       }
 
-      // ⭐ ÉTAPE 2 : Récupérer tous les EDT pour l'année
+      // ⭐ ÉTAPE 3 : Récupérer tous les EDT pour l'année
       const res = await fetch(
         `/api/timetables?academicYearId=${encodeURIComponent(academicYear.id)}`,
         { credentials: "include" },
@@ -111,72 +114,85 @@ export default function ParentTimetablePage() {
       const tList = Array.isArray(timetables) ? timetables : (timetables?.data || []);
 
       if (tList.length === 0) {
-        setEntries([]);
+        setAllChildrenEntries(new Map());
         setLoading(false);
         return;
       }
 
-      // ⭐ ÉTAPE 3 : Pour chaque EDT, récupérer les entries et filtrer par officialClassId
-      //    Avant ce fix, le parent ne voyait RIEN car le filter `e.classId === child.classId`
-      //    ne matchait jamais (entries ont le 1er physical Class.id, pas celui de l'enfant).
-      //    Maintenant on filtre via la relation Class.officialClassId → AcademicClass.id.
-      const allEntries: TimetableEntry[] = [];
+      // ⭐ ÉTAPE 4 : Pour chaque EDT, récupérer les entries et dispatcher vers chaque enfant
+      //    On boucle sur tous les EDTs une seule fois, et pour chaque entry on vérifie
+      //    à quel(s) enfant(s) elle appartient (via officialClassId ou classId direct).
+      //    On construit un Map<childId, {childName, className, entries: []}>.
+      const childDataMap = new Map<string, { childName: string; className: string; entries: TimetableEntry[] }>();
+      for (const child of children) {
+        childDataMap.set(child.id, {
+          childName: `${child.firstName} ${child.lastName}`,
+          className: child.className || child.academicClassName || "—",
+          entries: [],
+        });
+      }
+
       for (const t of tList) {
         try {
           const r2 = await fetch(`/api/timetables/${t.id}`, { credentials: "include" });
           const data = await r2.json();
           const tEntries = data?.entries || [];
+          const ttMeta = {
+            id: t.id,
+            schoolLevelId: t.schoolLevelId,
+            academicYearId: t.academicYearId,
+            name: t.name,
+          };
           for (const e of tEntries) {
-            // ⭐ Filtrage : l'entry appartient à la classe de l'enfant si :
-            //    - childOfficialClassId est défini ET e.class.officialClassId === childOfficialClassId
-            //    - OU fallback : e.classId === selectedChild.classId (compatibilité)
-            //    - OU l'entry n'a pas de classId (entry globale, ex: cérémonial)
             const entryOfficialClassId = e.class?.officialClassId;
             const isGlobal = !e.classId;
-            const belongsToChild = isGlobal
-              || (childOfficialClassId && entryOfficialClassId === childOfficialClassId)
-              || (e.classId === selectedChild.classId);
-            if (!belongsToChild) continue;
-            // ⭐ Attacher le timetable parent pour que TimetableView puisse récupérer la config
-            const ttMeta = {
-              id: t.id,
-              schoolLevelId: t.schoolLevelId,
-              academicYearId: t.academicYearId,
-              name: t.name,
-            };
-            allEntries.push({
-              id: e.id,
-              dayOfWeek: e.dayOfWeek,
-              startTime: e.startTime,
-              endTime: e.endTime,
-              duration: e.duration,
-              subjectId: e.subjectId,
-              subjectName: e.subject?.name,
-              subjectCode: e.subject?.code,
-              classId: e.classId,
-              className: e.class?.name,
-              teacherName: e.teacher ? `${e.teacher.firstName || ""} ${e.teacher.lastName || ""}`.trim() : undefined,
-              roomName: e.room?.name,
-              notes: e.notes,
-              step: e.step,
-              timetable: ttMeta,
-            });
+            // ⭐ Pour chaque enfant, vérifier si l'entry lui appartient
+            for (const child of children) {
+              const childOfficialId = childOfficialClassIds.get(child.id);
+              const belongsToChild = isGlobal
+                || (childOfficialId && entryOfficialClassId === childOfficialId)
+                || (e.classId === child.classId);
+              if (!belongsToChild) continue;
+              childDataMap.get(child.id)!.entries.push({
+                id: e.id,
+                dayOfWeek: e.dayOfWeek,
+                startTime: e.startTime,
+                endTime: e.endTime,
+                duration: e.duration,
+                subjectId: e.subjectId,
+                subjectName: e.subject?.name,
+                subjectCode: e.subject?.code,
+                classId: e.classId,
+                className: e.class?.name,
+                teacherName: e.teacher ? `${e.teacher.firstName || ""} ${e.teacher.lastName || ""}`.trim() : undefined,
+                roomName: e.room?.name,
+                notes: e.notes,
+                step: e.step,
+                timetable: ttMeta,
+              });
+            }
           }
         } catch (e) { console.warn("Failed:", e); }
       }
 
-      allEntries.sort((a, b) => {
-        if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
-        return a.startTime.localeCompare(b.startTime);
-      });
+      // ⭐ Trier les entries par enfant par jour puis heure
+      for (const child of children) {
+        const data = childDataMap.get(child.id);
+        if (data) {
+          data.entries.sort((a, b) => {
+            if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
+            return a.startTime.localeCompare(b.startTime);
+          });
+        }
+      }
 
-      setEntries(allEntries);
+      setAllChildrenEntries(childDataMap);
     } catch (e: any) {
       setError(e.message || "Erreur de chargement");
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedChild]);
+  }, [academicYear?.id, user?.id, children]);
 
   useEffect(() => { loadTimetable(); }, [loadTimetable]);
 
@@ -199,9 +215,12 @@ export default function ParentTimetablePage() {
           <div>
             <h2 className="text-sm font-bold text-slate-900">Emploi du temps</h2>
             <p className="text-xs text-slate-500">
-              {selectedChild
-                ? `${selectedChild.firstName} ${selectedChild.lastName} — ${selectedChild.className || "Classe non assignée"}`
-                : "Aucun enfant sélectionné"}
+              {selectedChildId === ""
+                ? (children.length > 1 ? "Tous mes enfants" : (children[0] ? `${children[0].firstName} ${children[0].lastName}` : ""))
+                : (selectedChild
+                  ? `${selectedChild.firstName} ${selectedChild.lastName} — ${selectedChild.className || "Classe non assignée"}`
+                  : "Aucun enfant sélectionné")
+              }
             </p>
           </div>
         </div>
@@ -210,10 +229,12 @@ export default function ParentTimetablePage() {
             value={selectedChildId}
             onChange={(e) => setSelectedChildId(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium"
+            title="Changer d'enfant"
           >
+            <option value="">Tous mes enfants</option>
             {children.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.firstName} {c.lastName} — {c.className || "—"}
+                {c.firstName} {c.lastName} — {c.className || c.academicClassName || "—"}
               </option>
             ))}
           </select>
@@ -234,26 +255,53 @@ export default function ParentTimetablePage() {
         </div>
       )}
 
-      {entries.length === 0 && !error ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-          <CalendarDays className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Aucun emploi du temps disponible</p>
-          <p className="text-xs text-slate-400 mt-1">
-            La direction n'a pas encore configuré l'emploi du temps de cette classe.
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* ⭐ Grille d'emploi du temps IDENTIQUE au director UI (TimetablesWorkspace).
-              On prend le timetable de la première entry — toutes les entries du child
-              viennent du même EDT (celui de sa classe). */}
-          {(() => {
-            const tt = entries.find(e => e.timetable)?.timetable;
-            if (!tt) return null;
-            return <TimetableView entries={entries} timetable={tt} />;
-          })()}
-        </>
-      )}
+      {(() => {
+        // ⭐ Si un enfant spécifique est sélectionné → une seule grille
+        if (selectedChildId) {
+          const data = allChildrenEntries.get(selectedChildId);
+          if (!data || data.entries.length === 0) {
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+                <CalendarDays className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm text-slate-500">Aucun emploi du temps disponible</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  La direction n'a pas encore configuré l'emploi du temps de cette classe.
+                </p>
+              </div>
+            );
+          }
+          const tt = data.entries.find(e => e.timetable)?.timetable;
+          if (!tt) return null;
+          return <TimetableView entries={data.entries} timetable={tt} />;
+        }
+
+        // ⭐ "Tous mes enfants" → une grille PAR enfant (avec titre + nom de l'enfant + classe)
+        if (allChildrenEntries.size === 0) {
+          return (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+              <CalendarDays className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Aucun emploi du temps disponible</p>
+              <p className="text-xs text-slate-400 mt-1">
+                La direction n'a pas encore configuré l'emploi du temps.
+              </p>
+            </div>
+          );
+        }
+
+        return Array.from(allChildrenEntries.entries()).map(([childId, data]) => {
+          if (data.entries.length === 0) return null;
+          const tt = data.entries.find(e => e.timetable)?.timetable;
+          if (!tt) return null;
+          return (
+            <div key={childId} className="space-y-2">
+              <h3 className="text-base font-bold text-slate-800 border-l-4 border-emerald-500 pl-3">
+                {data.childName} <span className="text-sm font-normal text-slate-500">— {data.className}</span>
+              </h3>
+              <TimetableView entries={data.entries} timetable={tt} />
+            </div>
+          );
+        });
+      })()}
     </div>
   );
 }

@@ -193,7 +193,16 @@ async function pedagogyFetch<T>(url: string, options?: { method?: string; body?:
 // Constantes — Structure des fiches (conforme PDFs officiels)
 // ─────────────────────────────────────────────────────────────────────────
 
-const FICHE_STANDARD = [
+interface FicheChamp {
+  code: string;
+  label: string;
+  color: string;
+  subRows: string[]; // empty = single row (one cell per week), non-empty = one row per sub-row
+  cellTemplate?: string; // pre-filled text for cells when subRows is empty
+  subRowTemplates?: Record<string, string>; // pre-filled text per sub-row
+}
+
+const FICHE_STANDARD: FicheChamp[] = [
   {
     code: "FRANÇAIS", label: "FRANÇAIS", color: "bg-blue-600",
     subRows: ["Vocab théma", "Comm Orale", "Lecture", "Expression Écrite", "Dictée", "Vocab", "Grammaire", "Orthographe", "Écriture", "Conjugaison"],
@@ -206,37 +215,50 @@ const FICHE_STANDARD = [
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
 
-const FICHE_IMMERSION = [
+const FICHE_IMMERSION: FicheChamp[] = [
   {
     code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
-    subRows: ["Thème", "Communication orale : Acquisition et utilisation des mots", "Initiation à la lecture", "Graphisme", "Lecture récréative"],
+    subRows: [], // ⭐ Single cell per week — NO sub-rows
+    cellTemplate: "Thème : \n\nCommunication orale : Acquisition et utilisation des mots : \n\n\n\nInitiation à la lecture : \n\nGraphisme : \n\nLecture récréative : ",
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
-    subRows: ["SA N°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
+    subRows: [], // ⭐ Single cell per week — NO sub-rows
+    cellTemplate: "SA N° \n\nFiche N°1 : \n\nFiche N°2 : \n\nFiche N°3 : \n\nFiche N°4 : \n\nFiche N°5 : ",
   },
   { code: "INITIATION_EST", label: "Initiation à l'EST", color: "bg-amber-600", subRows: [] },
   { code: "INITIATION_ES", label: "Initiation à l'ES", color: "bg-indigo-600", subRows: [] },
-  { code: "EA", label: "EA", color: "bg-purple-600", subRows: ["Chant", "Comptine", "Dessin"] },
+  {
+    code: "EA", label: "EA", color: "bg-purple-600",
+    subRows: ["Chant", "Comptine", "Dessin"], // ⭐ HAS sub-rows
+  },
   { code: "EPS", label: "EPS", color: "bg-rose-600", subRows: [] },
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
 
-const FICHE_SYSTEMATIQUE = [
+const FICHE_SYSTEMATIQUE: FicheChamp[] = [
   {
     code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
-    subRows: [
-      "Communication orale (Thème/Sous-thème)",
-      "Lecture-écriture (Leçon + Titre + Structure de langue + Leçon + Titre)",
-    ],
+    subRows: ["Communication orale", "Lecture – écriture"],
+    subRowTemplates: {
+      "Communication orale": "Thème/Sous-thème : \n\n\n",
+      "Lecture – écriture": "LECTURE-ECRITURE : Leçon \nTitre : Etude de \n\nSTRUCTURE DE LANGUE : Leçon \nTitre : \n\nLECTURE-ECRITURE : Leçon \nTitre : Etude de ",
+    },
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
-    subRows: ["SA N°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
+    subRows: [], // ⭐ Single cell per week
+    cellTemplate: "SA N° \n\nFiche N°1 : \n\nFiche N°2 : \n\nFiche N°3 : \n\nFiche N°4 : \n\nFiche N°5 : ",
   },
   { code: "EST", label: "EST", color: "bg-amber-600", subRows: [] },
-  { code: "ES", label: "ES", color: "bg-indigo-600", subRows: ["Morale", "Civisme", "Compétence"] },
-  { code: "EA", label: "EA", color: "bg-purple-600", subRows: ["Chant", "Poésie", "Dessin", "Conte"] },
+  {
+    code: "ES", label: "ES", color: "bg-indigo-600",
+    subRows: ["Morale", "Civisme", "Compétence"],
+  },
+  {
+    code: "EA", label: "EA", color: "bg-purple-600",
+    subRows: ["Chant", "Poésie", "Dessin", "Conte"],
+  },
   { code: "EPS", label: "EPS", color: "bg-rose-600", subRows: [] },
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
@@ -585,7 +607,17 @@ export function MonthlyPlanningTab({
             onClick={() => {
               if (isReadOnly) return;
               setEditingCellKey(cellKey);
-              setEditContent("");
+              // ⭐ Pre-fill with template text if available
+              const champ = ficheStructure?.find(c => c.code === champCode);
+              let template = "";
+              if (champ) {
+                if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
+                  template = champ.subRowTemplates[subRow];
+                } else if (!subRow && champ.cellTemplate) {
+                  template = champ.cellTemplate;
+                }
+              }
+              setEditContent(template);
             }}
             disabled={isReadOnly}
             className={cn(
@@ -750,15 +782,17 @@ export function MonthlyPlanningTab({
           <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
             <table className="text-xs border-collapse w-full" style={{ minWidth: '1100px' }}>
               <colgroup>
-                <col style={{ width: "18%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "8%" }} />
                 {WEEK_LABELS.map((_, i) => (
-                  <col key={i} style={{ width: "16.4%" }} />
+                  <col key={i} style={{ width: "15.4%" }} />
                 ))}
               </colgroup>
               <thead>
                 {/* Ligne 1 : header semaines */}
                 <tr className="bg-slate-700 text-white">
-                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "18%" }}>Champ de Formation</th>
+                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "15%" }}>Champ de Formation</th>
+                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "8%" }}>Sous-ligne</th>
                   {WEEK_LABELS.map((wk, i) => (
                     <th key={wk} className="p-2 border border-slate-400 text-center">
                       {wk}
@@ -881,7 +915,14 @@ export function MonthlyPlanningTab({
                                     onClick={() => {
                                       if (isReadOnly) return;
                                       setEditingCellKey(cellKey);
-                                      setEditContent("");
+                                      // ⭐ Pre-fill with template text if available
+                                      let template = "";
+                                      if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
+                                        template = champ.subRowTemplates[subRow];
+                                      } else if (!subRow && champ.cellTemplate) {
+                                        template = champ.cellTemplate;
+                                      }
+                                      setEditContent(template);
                                     }}
                                     disabled={isReadOnly}
                                     className="text-xs text-slate-400 hover:text-purple-600 w-full text-left p-2 min-h-[40px] border border-dashed border-slate-200 rounded"

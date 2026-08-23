@@ -818,24 +818,30 @@ export function MonthlyPlanningTab({
                     const cellKeyBase = `${selectedClass}|${selectedMonth}|${champ.code}|${subRow || ''}`;
                     return (
                       <tr key={`${champ.code}-${subIdx}`} className="hover:bg-purple-50/30">
-                        {/* ⭐ Column 1 : CHAMP DE FORMATION — champ name (rowSpan) + sub-row name inside same cell */}
-                        {subIdx === 0 && (
-                          <td
-                            rowSpan={rows.length}
-                            className={cn(
-                              "p-2 border border-slate-300 text-white text-center align-middle",
-                              champ.color
-                            )}
-                            style={{ width: "15%" }}
-                          >
-                            <div className="font-bold text-sm">{champ.label}</div>
-                            {rows.length > 1 && (
-                              <div className="text-[9px] opacity-80 mt-1">
-                                {rows.map(r => r).join("\n")}
-                              </div>
-                            )}
-                          </td>
-                        )}
+                        {/* ⭐ Column 1 : CHAMP DE FORMATION
+                            - Champs WITHOUT sub-rows: one cell with champ name (colored, centered)
+                            - Champs WITH sub-rows: one cell per sub-row
+                              * First sub-row: champ name (big) + sub-row name (small) below
+                              * Other sub-rows: just sub-row name (small)
+                            - NO rowSpan — each sub-row has its own cell in column 1 */}
+                        <td
+                          className={cn(
+                            "p-2 border border-slate-300 align-middle",
+                            subIdx === 0 ? cn(champ.color, "text-white text-center") : "bg-slate-50 text-slate-600 text-left pl-3"
+                          )}
+                          style={{ width: "15%" }}
+                        >
+                          {subIdx === 0 ? (
+                            <div>
+                              <div className="font-bold text-sm">{champ.label}</div>
+                              {subRow && (
+                                <div className="text-[10px] opacity-90 mt-0.5">{subRow}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] font-medium pl-4">↳ {subRow}</div>
+                          )}
+                        </td>
                         {WEEK_LABELS.map((wk, weekIdx) => {
                           const cellKey = `${cellKeyBase}|${weekIdx + 1}`;
                           return renderCell(weekIdx + 1, champ.code, subRow || undefined, cellKey);

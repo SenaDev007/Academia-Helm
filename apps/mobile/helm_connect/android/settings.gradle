@@ -1,9 +1,14 @@
 // ============================================================================
-// Helm Connect — Settings Gradle
+// Helm Connect — Settings Gradle (AGP 8.x compatible)
 // ============================================================================
-// Resolves the Flutter SDK path from local.properties (machine-specific)
-// and applies the Flutter app_plugin_loader to register Flutter plugins.
-// ============================================================================
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
 
 include ':app'
 

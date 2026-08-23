@@ -46,7 +46,10 @@ import { EducmasterExcelExportService } from './services/educmaster-excel-export
 import { ClassListPdfService } from './services/class-list-pdf.service';
 import { MatriculeService } from './services/matricule.service';
 import { StudentsImportService } from './services/students-import.service';
-import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
+// ⭐ ParentUserProvisioningService is now in ParentProvisioningModule (separate
+//    module) to avoid circular dependency: CommunicationModule ↔ StudentsModule.
+//    Import ParentProvisioningModule directly where you need the service.
+import { ParentProvisioningModule } from './parent-provisioning.module';
 import { StudentsImportController } from './controllers/students-import.controller';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
@@ -118,10 +121,8 @@ import { CommunicationModule } from '../communication/communication.module';
     MatriculeService,
     StudentTransferService,
     StudentsImportService,
-    // ⭐ Parent User Provisioning — auto-creates a User account (role=PARENT)
-    //    for guardians that don't have one yet. Used by ChatService + Finance
-    //    notification services to enable direct chat with parents.
-    ParentUserProvisioningService,
+    // ⭐ ParentUserProvisioningService moved to ParentProvisioningModule
+    //    (avoids circular dep — see parent-provisioning.module.ts)
   ],
   exports: [
     StudentsService,
@@ -144,8 +145,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ClassListPdfService,
     MatriculeService,
     StudentTransferService,
-    // ⭐ Exported for ChatService + Finance notification services
-    ParentUserProvisioningService,
+    // ⭐ ParentUserProvisioningService moved to ParentProvisioningModule.
+    //    Import ParentProvisioningModule directly where needed.
   ],
 })
 export class StudentsModule {}

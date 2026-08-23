@@ -93,10 +93,10 @@ import { PromoterEligibilityController } from './promoter-eligibility.controller
 import { PromoterEligibilityService } from './promoter-eligibility.service';
 import { MultiActionPaymentController } from './multi-action-payment.controller';
 import { CommunicationModule } from '../communication/communication.module';
-import { StudentsModule } from '../students/students.module';
+import { ParentProvisioningModule } from '../students/parent-provisioning.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule, CommonModule, StudentsModule],
+  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule, CommonModule, ParentProvisioningModule],
   controllers: [
     FeeStructureController,
     StudentAccountController,

@@ -368,7 +368,10 @@ export class ChatService {
     await this.getConversation(tenantId, userId, conversationId);
 
     const limit = Math.min(options.limit || 50, 200);
-    const beforeClause = options.before ? `AND m."createdAt" < (SELECT "createdAt" FROM chat_messages WHERE id = $3)` : '';
+    // ⭐ V2.7 fix: when beforeClause is present, it should reference $4 (not $3)
+    //    because $3 is now used for userId in the LEFT JOIN chat_message_user_deletions.
+    //    Params order: $1=conversationId, $2=limit, $3=userId, $4=options.before (when present)
+    const beforeClause = options.before ? `AND m."createdAt" < (SELECT "createdAt" FROM chat_messages WHERE id = $4)` : '';
 
     // ⭐ FIX (P2010 — column ur.role does not exist) :
     //    The user_roles table has a "roleId" FK to the roles table, NOT a "role" text column.

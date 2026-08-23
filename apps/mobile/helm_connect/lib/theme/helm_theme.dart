@@ -39,7 +39,7 @@ class HelmColors {
   static const Color darkText = Color(0xFFF8FAFC);
   static const Color darkTextMuted = Color(0xFF94A3B8);
 
-  // Functional colors (always the same)
+  // Functional colors (always the same — not theme-dependent)
   static const Color success = Color(0xFF16A34A);
   static const Color danger = Color(0xFFDC2626);
   static const Color warning = Color(0xFFF59E0B);
@@ -52,23 +52,22 @@ class HelmColors {
 
 class HelmThemes {
   static ThemeData lightTheme() {
+    const colorScheme = ColorScheme(
+      brightness: Brightness.light,
+      primary: HelmColors.primary,
+      onPrimary: Colors.white,
+      secondary: HelmColors.accent,
+      onSecondary: Colors.white,
+      surface: HelmColors.surface,
+      onSurface: HelmColors.text,
+      error: HelmColors.danger,
+      onError: Colors.white,
+    );
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      primaryColor: HelmColors.primary,
+      colorScheme: colorScheme,
       scaffoldBackgroundColor: HelmColors.background,
-      colorScheme: const ColorScheme.light(
-        primary: HelmColors.primary,
-        onPrimary: Colors.white,
-        secondary: HelmColors.accent,
-        onSecondary: Colors.white,
-        surface: HelmColors.surface,
-        onSurface: HelmColors.text,
-        background: HelmColors.background,
-        onBackground: HelmColors.text,
-        error: HelmColors.danger,
-        onError: Colors.white,
-      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: HelmColors.primaryDark,
         foregroundColor: Colors.white,
@@ -97,7 +96,7 @@ class HelmThemes {
           borderSide: const BorderSide(color: HelmColors.primary, width: 2),
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: const CardTheme(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: HelmColors.surface,
@@ -106,22 +105,22 @@ class HelmThemes {
   }
 
   static ThemeData darkTheme() {
+    const colorScheme = ColorScheme(
+      brightness: Brightness.dark,
+      primary: HelmColors.darkPrimary,
+      onPrimary: Colors.white,
+      secondary: HelmColors.darkAccent,
+      onSecondary: Colors.white,
+      surface: HelmColors.darkSurface,
+      onSurface: HelmColors.darkText,
+      error: HelmColors.danger,
+      onError: Colors.white,
+    );
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      colorScheme: colorScheme,
       scaffoldBackgroundColor: HelmColors.darkBackground,
-      colorScheme: const ColorScheme.dark(
-        primary: HelmColors.darkPrimary,
-        onPrimary: Colors.white,
-        secondary: HelmColors.darkAccent,
-        onSecondary: Colors.white,
-        surface: HelmColors.darkSurface,
-        onSurface: HelmColors.darkText,
-        background: HelmColors.darkBackground,
-        onBackground: HelmColors.darkText,
-        error: HelmColors.danger,
-        onError: Colors.white,
-      ),
       appBarTheme: const AppBarTheme(
         backgroundColor: HelmColors.darkSurface,
         foregroundColor: HelmColors.darkText,
@@ -131,7 +130,7 @@ class HelmThemes {
         backgroundColor: HelmColors.darkPrimary,
         foregroundColor: Colors.white,
       ),
-      cardTheme: CardTheme(
+      cardTheme: const CardTheme(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: HelmColors.darkSurface,

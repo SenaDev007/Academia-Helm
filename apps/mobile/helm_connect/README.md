@@ -55,39 +55,106 @@ apps/mobile/helm_connect/
 │   │   ├── announcements_screen.dart      # Announcements list
 │   │   ├── notification_prefs_screen.dart # DND + filters + quiet hours
 │   │   └── global_search_screen.dart      # V2.4 global search
-│   ├── widgets/                           # (V2: shared widgets)
-│   ├── utils/                             # (V2: helpers)
-│   └── ...
-├── android/                               # AndroidManifest, build.gradle
-├── ios/                                   # Info.plist, Runner.xcodeproj
-├── assets/icons/                          # Logos, splash screens
-└── pubspec.yaml                           # Dependencies
+├── android/                                # ⭐ Complete Android scaffolding
+│   ├── build.gradle                        # Project-level Gradle
+│   ├── settings.gradle                     # Flutter SDK resolver
+│   ├── gradle.properties                   # JVM args + AndroidX
+│   ├── local.properties.example            # Template (rename to local.properties)
+│   ├── gradle/wrapper/gradle-wrapper.properties  # Gradle 7.5
+│   └── app/
+│       ├── build.gradle                    # App config (compileSdk 34, minSdk 21)
+│       └── src/main/
+│           ├── AndroidManifest.xml         # Permissions + activity declarations
+│           ├── kotlin/com/academiahelm/helmconnect/MainActivity.kt
+│           └── res/
+│               ├── values/styles.xml       # LaunchTheme + NormalTheme
+│               ├── values-night/styles.xml  # Dark mode styles
+│               ├── values/colors.xml        # Helm color palette
+│               ├── drawable/launch_background.xml
+│               ├── drawable-v21/launch_background.xml
+│               ├── drawable/ic_launcher_background.xml  # Azure vector
+│               ├── drawable/ic_launcher_foreground.xml  # Speech bubble + dots
+│               ├── mipmap-anydpi-v26/ic_launcher.xml    # Adaptive icon
+│               ├── mipmap-anydpi-v26/ic_launcher_round.xml
+│               └── xml/network_security_config.xml      # HTTPS enforcement
+├── ios/Runner/Info.plist                  # iOS permissions + URL scheme
+├── assets/icons/                           # (Placeholder for app icons)
+├── pubspec.yaml                           # Dependencies
+├── analysis_options.yaml                  # Dart linting rules
+└── README.md
 ```
 
-## 🚀 Démarrage
+## 🚀 Démarrage avec Android Studio
 
-### Prérequis
-- Flutter 3.13+ (Dart 3.0+)
-- Android Studio / Xcode
-- Un backend Academia Helm déployé (API + BFF)
+### Prérequis (à installer avant d'ouvrir le projet)
 
-### Installation
-```bash
-cd apps/mobile/helm_connect
-flutter pub get
-flutter pub run build_runner build  # génération Hive adapters
-```
+1. **Android Studio** (Hedgehog 2023.1.1 ou plus récent)
+   - Téléchargement : https://developer.android.com/studio
+   - Lors de l'installation, cochez : "Android SDK", "Android SDK Platform", "Android Virtual Device"
+
+2. **Flutter SDK** (3.13.0 ou plus récent)
+   - Téléchargement : https://docs.flutter.dev/get-started/install
+   - Ajoutez `flutter` à votre PATH
+
+3. **Vérifier l'installation** :
+   ```bash
+   flutter doctor
+   ```
+   Vous devriez voir ✓ pour Flutter, Android toolchain, Android Studio.
+
+### Configuration initiale (5 minutes)
+
+1. **Clonez le dépôt** :
+   ```bash
+   git clone https://github.com/SenaDev007/Academia-Helm.git
+   cd Academia-Helm/apps/mobile/helm_connect
+   ```
+
+2. **Créez `local.properties`** :
+   ```bash
+   cp android/local.properties.example android/local.properties
+   ```
+   Éditez `android/local.properties` et remplacez le chemin `sdk.dir` par votre chemin Flutter SDK réel. Vous pouvez le trouver avec :
+   ```bash
+   which flutter   # /usr/local/bin/flutter  → le SDK est /usr/local/bin
+   # ou
+   flutter --version --machine | grep flutterRoot
+   ```
+
+3. **Téléchargez les dépendances** :
+   ```bash
+   flutter pub get
+   ```
 
 ### Lancer en développement
+
+#### Option A : Android Studio (recommandé)
+
+1. **Ouvrez Android Studio** → `File` → `Open` → sélectionnez le dossier `apps/mobile/helm_connect/android`
+2. Attendez que Gradle sync (peut prendre 5-10 min la première fois — téléchargement des dépendances)
+3. **Sélectionnez un device** dans la toolbar (un émulateur ou un device physique)
+4. **Cliquez sur ▶️ Run** (ou `Shift+F10`)
+
+#### Option B : Ligne de commande
+
 ```bash
-flutter run -d chrome   # Web (debug)
-flutter run -d android  # Android (debug)
-flutter run -d ios      # iOS (debug)
+# Lister les devices disponibles
+flutter devices
+
+# Lancer en mode debug sur Chrome (test rapide UI)
+flutter run -d chrome
+
+# Lancer sur un émulateur Android
+flutter run -d emulator-5554
+
+# Lancer sur un device physique (USB debugging activé)
+flutter run -d <device-id>
 ```
 
 ### Build de release
+
 ```bash
-# Android APK
+# Android APK (installable directement)
 flutter build apk --release
 # Output: build/app/outputs/flutter-apk/app-release.apk
 
@@ -95,7 +162,7 @@ flutter build apk --release
 flutter build appbundle --release
 # Output: build/app/outputs/bundle/release/app-release.aab
 
-# iOS (sur macOS uniquement)
+# iOS (sur macOS uniquement, Xcode requis)
 flutter build ipa --release
 # Output: build/ios/ipa/helm_connect.ipa
 ```
@@ -138,11 +205,28 @@ L'API utilisée par défaut est :
 - `https://academiahelm.com` — pour la recherche de tenants
 - `https://<tenant-slug>.acadiahelm.com` — après sélection du tenant
 
-Pour modifier l'URL en développement :
+Pour modifier l'URL en développement (tester contre un backend local) :
+
 ```dart
 // Dans lib/services/api_service.dart, classe ApiConfig :
-static const String _defaultBase = 'http://10.0.2.2:3001';  // Emulateur Android
+static const String _defaultBase = 'http://10.0.2.2:3001';
+// 10.0.2.2 = localhost de l'ordinateur hôte vu depuis l'émulateur Android
 ```
+
+## 🔐 Permissions Android
+
+| Permission | Usage |
+|-----------|-------|
+| `INTERNET` | Appels API + WebSocket |
+| `RECORD_AUDIO` | Messages vocaux |
+| `CAMERA` | Photos + vidéos (V2) |
+| `READ_MEDIA_IMAGES/VIDEO/AUDIO` | Pièces jointes (Android 13+) |
+| `READ/WRITE_EXTERNAL_STORAGE` | Pièces jointes (Android ≤ 12) |
+| `POST_NOTIFICATIONS` | Push notifications (Android 13+) |
+| `VIBRATE` | Notifications vibration |
+| `RECEIVE_BOOT_COMPLETED` | Relancer services au redémarrage |
+| `FOREGROUND_SERVICE` | Appels audio/vidéo (V2) |
+| `WAKE_LOCK` | Garder service en vie pendant un appel |
 
 ## 📦 Dépendances principales
 
@@ -167,6 +251,7 @@ static const String _defaultBase = 'http://10.0.2.2:3001';  // Emulateur Android
 - Écrans : tenant selection, login, chat list, conversation, announcements, notif prefs, global search
 - Thème Azure + Cyan + Dark mode
 - API service complet (auth, chat, announcements, search)
+- Configuration Android complète (AndroidManifest, build.gradle, MainActivity, ressources, icônes adaptatives vectorielles)
 
 ### ⏳ À venir
 - **Temps réel** : Socket.io client (instant delivery + typing + presence)
@@ -185,10 +270,30 @@ static const String _defaultBase = 'http://10.0.2.2:3001';  // Emulateur Android
 - Traduction automatique
 - Recherche sémantique
 
+## 🐛 Dépannage
+
+### `Flutter SDK not found`
+Vérifiez que `android/local.properties` contient :
+```
+sdk.dir=/chemin/vers/votre/flutter/sdk
+```
+
+### `Could not resolve all files for configuration ':classpath'`
+Vérifiez votre connexion internet. Gradle télécharge les dépendances lors du premier sync.
+
+### `Permission denied (microphone)`
+Sur Android 6+, les permissions dangereuses doivent être demandées à runtime. Le package `permission_handler` sera ajouté en V2.
+
+### `Cleartext HTTP traffic not permitted`
+Le `network_security_config.xml` bloque par défaut le trafic non-HTTPS. Pour le développement local, utilisez `http://10.0.2.2:3001` qui est autorisé dans la config.
+
+### Build fails with `minSdkVersion 21`
+Assurez-vous d'utiliser Flutter 3.13+. Si vous devez supporter Android 4.x (rare), changez `minSdk 21` à `minSdk 19` dans `android/app/build.gradle`.
+
 ## 🔐 Sécurité
 
 - JWT stocké dans SharedPreferences (V2: migrer vers flutter_secure_storage)
-- Communication HTTPS uniquement (pas de cleartext en production)
+- Communication HTTPS uniquement (configuré via `network_security_config.xml`)
 - Tenant ID vérifié côté backend (TenantGuard) — pas d'usurpation cross-tenant
 - V2 : authentification biométrique (Face ID / Touch ID) optionnelle
 - V3 : E2E chiffrement (Web Crypto + RSA-OAEP)

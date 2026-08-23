@@ -1,0 +1,41 @@
+# ============================================================================
+# Helm Connect — Dart analysis options
+# ============================================================================
+# Uses the recommended lint set from the Flutter team + custom rules
+# to enforce Azure/Cyan branding and good Dart practices.
+# ============================================================================
+
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # ─── Style ────────────────────────────────────────────────
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_locals
+    - prefer_final_in_for_each
+    - prefer_single_quotes
+    - require_trailing_commas
+    # ─── Documentation ────────────────────────────────────────
+    - public_member_api_docs
+    # ─── Error prevention ────────────────────────────────────
+    - avoid_dynamic_calls
+    - avoid_print
+    - unawaited_futures
+    - cancel_subscriptions
+    - close_sinks
+
+analyzer:
+  # Exclude generated files from analysis
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/generated_plugin_registrant.dart"
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # Treat TODOs as info, not warnings
+    todo: ignore
+    # Allow missing default in switch on dynamic (common in JSON parsing)
+    missing_default_for_switch: ignore

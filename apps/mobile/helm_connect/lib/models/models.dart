@@ -2,8 +2,6 @@
 // HELM CONNECT — Data models
 // ============================================================================
 
-import 'dart:typed_data';
-
 class User {
   final String id;
   final String email;

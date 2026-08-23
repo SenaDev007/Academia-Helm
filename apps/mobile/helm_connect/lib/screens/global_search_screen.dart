@@ -6,7 +6,6 @@
 
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'conversation_detail_screen.dart';
 
 class GlobalSearchScreen extends StatefulWidget {
   const GlobalSearchScreen({super.key});

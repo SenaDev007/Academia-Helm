@@ -123,18 +123,28 @@ class ApiService {
     return headers;
   }
 
-  static Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
+  /// Handle HTTP response — supports both JSON object ({...}) and JSON array ([...]).
+  /// For object responses (login, getCurrentUser, etc.), returns Map<String, dynamic>.
+  /// For array responses (listConversations, listMessages, etc.), returns List<dynamic>.
+  static Future<dynamic> _handleResponse(http.Response response) async {
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (response.body.isEmpty) return {};
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.body.isEmpty) return <String, dynamic>{};
+      final decoded = jsonDecode(response.body);
+      return decoded; // Map or List — caller will cast as needed
     }
     // Error
     try {
-      final err = jsonDecode(response.body) as Map<String, dynamic>;
+      final err = jsonDecode(response.body);
+      if (err is Map<String, dynamic>) {
+        throw ApiException(
+          statusCode: response.statusCode,
+          message: (err['message'] as String?) ?? (err['error'] as String?) ?? 'Erreur ${response.statusCode}',
+          backendError: err,
+        );
+      }
       throw ApiException(
         statusCode: response.statusCode,
-        message: (err['message'] as String?) ?? (err['error'] as String?) ?? 'Erreur ${response.statusCode}',
-        backendError: err,
+        message: 'Erreur ${response.statusCode}',
       );
     } catch (e) {
       if (e is ApiException) rethrow;
@@ -153,8 +163,15 @@ class ApiService {
       Uri.parse('$base/api/auth/available-tenants?q=${Uri.encodeQueryComponent(query)}'),
     );
     final data = await _handleResponse(response);
-    final tenants = data['tenants'] as List<dynamic>? ?? [];
-    return tenants.cast<Map<String, dynamic>>();
+    // The endpoint returns { tenants: [...] } OR a raw array — handle both
+    if (data is Map<String, dynamic>) {
+      final tenants = data['tenants'] as List<dynamic>? ?? [];
+      return tenants.cast<Map<String, dynamic>>().toList();
+    }
+    if (data is List) {
+      return data.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
   }
 
   static Future<Map<String, dynamic>> login({
@@ -172,7 +189,7 @@ class ApiService {
         'tenantSlug': tenantSlug,
       }),
     );
-    final data = await _handleResponse(response);
+    final data = await _handleResponse(response) as Map<String, dynamic>;
     // Persist token + user info
     final token = data['token'] as String;
     final user = data['user'] as Map<String, dynamic>;
@@ -200,7 +217,9 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     final response = await http.get(Uri.parse('$base/api/auth/me'), headers: headers);
-    return _handleResponse(response);
+    final data = await _handleResponse(response);
+    if (data is Map<String, dynamic>) return data;
+    throw ApiException(statusCode: response.statusCode, message: 'Invalid response format');
   }
 
   static Future<void> logout() async {
@@ -219,7 +238,10 @@ class ApiService {
       headers: headers,
     );
     final data = await _handleResponse(response);
-    return (data as List).cast<Map<String, dynamic>>().toList();
+    if (data is List) {
+      return data.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
   }
 
   static Future<Map<String, dynamic>> createDirectConversation(String otherUserId) async {
@@ -231,7 +253,7 @@ class ApiService {
       headers: headers,
       body: jsonEncode({'currentUserId': userId, 'otherUserId': otherUserId}),
     );
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 
   static Future<List<Map<String, dynamic>>> listMessages(String conversationId, {int limit = 50}) async {
@@ -243,7 +265,10 @@ class ApiService {
       headers: headers,
     );
     final data = await _handleResponse(response);
-    return (data as List).cast<Map<String, dynamic>>().toList();
+    if (data is List) {
+      return data.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
   }
 
   static Future<Map<String, dynamic>> sendTextMessage({
@@ -263,7 +288,7 @@ class ApiService {
         if (replyToId != null) 'replyToId': replyToId,
       }),
     );
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 
   static Future<void> markConversationRead(String conversationId) async {
@@ -288,8 +313,14 @@ class ApiService {
       headers: headers,
     );
     final data = await _handleResponse(response);
-    final items = data['items'] as List<dynamic>? ?? [];
-    return items.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['items'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    if (data is List) {
+      return data.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
   }
 
   // ─── Search ────────────────────────────────────────────────────
@@ -302,7 +333,7 @@ class ApiService {
       Uri.parse('$base/api/chat/v2/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
       headers: headers,
     );
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 
   // ─── Generic helpers ───────────────────────────────────────────
@@ -311,7 +342,7 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     final response = await http.get(Uri.parse('$base$path'), headers: headers);
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) async {
@@ -322,7 +353,7 @@ class ApiService {
       headers: headers,
       body: jsonEncode(body),
     );
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> put(String path, Map<String, dynamic> body) async {
@@ -333,7 +364,7 @@ class ApiService {
       headers: headers,
       body: jsonEncode(body),
     );
-    return _handleResponse(response);
+    return _handleResponse(response) as Map<String, dynamic>;
   }
 }
 

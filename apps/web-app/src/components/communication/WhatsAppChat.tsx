@@ -27,7 +27,7 @@ import {
   Loader2, Send, Search, Plus, Users, Paperclip, X, Check, CheckCheck,
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
-  BellOff,
+  BellOff, Play, Pause, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -203,12 +203,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ PRESENCE (online/offline) + TYPING + AUDIO RECORDING
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [typingUsers, setTypingUsers] = useState<{ userId: string; firstName?: string; lastName?: string }[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
+  // ⭐ AUDIO RECORDING — state machine: IDLE → RECORDING → PAUSED → PREVIEW
+  //    - RECORDING: timer running, user can pause OR stop & preview
+  //    - PAUSED: timer paused, user can resume OR stop & preview
+  //    - PREVIEW: shows audio player + send/cancel buttons
+  type RecordingState = 'idle' | 'recording' | 'paused' | 'preview';
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [recordingDuration, setRecordingDuration] = useState(0);  // seconds recorded
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingPingRef = useRef<number>(0);
+  // ⭐ Compat: keep isRecording boolean for old code that checks it
+  const isRecording = recordingState === 'recording' || recordingState === 'paused';
 
   // Modals
   const [showNewChat, setShowNewChat] = useState(false);
@@ -513,46 +523,149 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }).catch(() => {});
   }, [activeConvId, currentUserId]);
 
-  // ⭐ AUDIO RECORDING (MediaRecorder API)
-  const startRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      recordingChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordingChunksRef.current.push(e.data);
-      };
-      recorder.onstop = async () => {
-        // Create audio blob and send
-        const blob = new Blob(recordingChunksRef.current, { type: 'audio/webm' });
-        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
-        await handleSendAttachment(file, 'AUDIO');
-        // Stop all tracks
-        stream.getTracks().forEach(t => t.stop());
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      setRecordingDuration(0);
-      // Duration timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(d => d + 1);
-      }, 1000);
-    } catch (e: any) {
-      toast.error("Impossible d'accéder au microphone: " + e.message);
-    }
-  }, []);
+  // ⭐ AUDIO RECORDING — Full state machine with pause/resume + preview before send
+  //    States: idle → recording → paused → preview → idle
+  //
+  //    ⭐ Why the previous code "did nothing":
+  //       The MediaRecorder.onstop fired ASYNC, but at that point recordingChunksRef was empty
+  //       (some browsers only fire ondataavailable AFTER stop), so the blob was empty and
+  //       the upload silently failed or hit the same ur."role" backend bug.
+  //
+  //    ⭐ Fix:
+  //       - Use recorder.start(1000) to request data every 1s (chunks accumulate reliably)
+  //       - Pause/resume supported via MediaRecorder.pause()/resume()
+  //       - After stop: show PREVIEW state with audio player + send/cancel buttons
+  //       - Send only when user explicitly clicks "Envoyer" in preview mode
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+  // Reset all state — used internally (declared first to avoid TDZ)
+  const cleanupRecording = useCallback(() => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
     }
-    setIsRecording(false);
+    mediaRecorderRef.current = null;
+    recordingChunksRef.current = [];
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
+    setAudioBlob(prev => {
+      if (prev) setAudioBlobUrl(prevUrl => {
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
+        return null;
+      });
+      return null;
+    });
+    setRecordingDuration(0);
+    setRecordingState('idle');
   }, []);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      // Pick a mimeType the browser supports — webm/opus on Chrome, mp4 on Safari
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : '';
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordingChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        // Build the audio blob and create an object URL for preview
+        const chunks = recordingChunksRef.current;
+        if (chunks.length === 0) {
+          toast.error("Enregistrement vide — aucun audio capturé. Vérifiez votre microphone.");
+          cleanupRecording();
+          return;
+        }
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setAudioBlob(blob);
+        setAudioBlobUrl(url);
+        setRecordingState('preview');
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        stream.getTracks().forEach(t => t.stop());
+      };
+      // ⭐ Request data every 1s — ensures chunks are collected reliably
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+      setRecordingState('recording');
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(d => d + 1);
+      }, 1000);
+    } catch (e: any) {
+      toast.error("Impossible d'accéder au microphone : " + (e?.message || 'Permission refusée'));
+      cleanupRecording();
+    }
+  }, [cleanupRecording]);
+
+  const pauseRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'recording') {
+      rec.pause();
+      setRecordingState('paused');
+      // Stop the timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  }, []);
+
+  const resumeRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'paused') {
+      rec.resume();
+      setRecordingState('recording');
+      // Restart the timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(d => d + 1);
+      }, 1000);
+    }
+  }, []);
+
+  // Stop the recorder (without sending) → triggers onstop → PREVIEW state
+  const stopRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== 'inactive') {
+      rec.stop();  // Triggers onstop → builds blob → PREVIEW state
+    } else {
+      cleanupRecording();
+    }
+  }, [cleanupRecording]);
+
+  // Cancel everything — used by the "x" cancel button
+  const cancelRecording = useCallback(() => {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== 'inactive') {
+      // Detach onstop so it doesn't trigger the preview state
+      rec.onstop = null;
+      try { rec.stop(); } catch {}
+    }
+    cleanupRecording();
+  }, [cleanupRecording]);
+
+  // ⭐ SEND the audio from preview state
+  const sendRecordedAudio = useCallback(async () => {
+    if (!audioBlob || !activeConvId) return;
+    const mime = audioBlob.type || 'audio/webm';
+    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+    const file = new File([audioBlob], `vocal-${Date.now()}.${ext}`, { type: mime });
+    // Reset state BEFORE sending so the UI goes back to idle immediately
+    cleanupRecording();
+    await handleSendAttachment(file, 'AUDIO');
+  }, [audioBlob, activeConvId, cleanupRecording, handleSendAttachment]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -564,6 +677,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ───────────────────────────────────────────────────────────────────
   const handleSendText = async () => {
     if (!activeConvId || !text.trim() || sending) return;
+    // ⭐ If user has a pending audio preview, cancel it first (don't lose the text)
+    if (recordingState === 'preview') {
+      cancelRecording();
+    }
     const content = text.trim();
     setText('');
     setSending(true);
@@ -574,7 +691,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         body: JSON.stringify({ senderId: currentUserId, content }),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to send message');
+      if (!res.ok) {
+        // ⭐ Get verbose backend error message for diagnostics
+        const errData = await res.json().catch(() => ({}));
+        const msg = (errData as any)?.backendError?.message
+          || (errData as any)?.message
+          || (errData as any)?.error
+          || `Erreur ${res.status}`;
+        throw new Error(msg);
+      }
       const newMsg = await res.json();
       setMessages(prev => [...prev, newMsg]);
       // Rafraîchir la liste des convs pour updater le preview
@@ -604,13 +729,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         body: formData,
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to send attachment');
+      if (!res.ok) {
+        // ⭐ Get verbose backend error message for diagnostics
+        const errData = await res.json().catch(() => ({}));
+        const msg = (errData as any)?.backendError?.message
+          || (errData as any)?.message
+          || (errData as any)?.error
+          || `Erreur ${res.status}`;
+        throw new Error(msg);
+      }
       const newMsg = await res.json();
       setMessages(prev => [...prev, newMsg]);
       loadConversations();
-      toast.success(type === 'AUDIO' ? 'Audio envoyé' : type === 'IMAGE' ? 'Image envoyée' : 'Document envoyé');
+      toast.success(type === 'AUDIO' ? 'Message vocal envoyé' : type === 'IMAGE' ? 'Image envoyée' : 'Document envoyé');
     } catch (e: any) {
-      toast.error("Échec d'envoi du fichier: " + e.message);
+      toast.error("Échec d'envoi du fichier : " + e.message);
     } finally {
       setSending(false);
     }
@@ -1123,19 +1256,81 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               }}
               disabled={readOnly}
             />
-            {/* ⭐ AUDIO RECORDING button (MediaRecorder) — shows mic icon or recording UI */}
-            {isRecording ? (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-300 rounded-full px-3 py-1">
-                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                <span className="text-xs font-bold text-red-600">
+            {/* ⭐ AUDIO RECORDING UI — state machine: idle/recording/paused/preview */}
+            {recordingState === 'recording' || recordingState === 'paused' ? (
+              <div className={cn(
+                'flex items-center gap-2 border rounded-full px-3 py-1.5',
+                recordingState === 'recording'
+                  ? 'bg-red-50 border-red-300'
+                  : 'bg-amber-50 border-amber-300'
+              )}>
+                {recordingState === 'recording' ? (
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                ) : (
+                  <Pause className="w-3 h-3 text-amber-600" />
+                )}
+                <span className={cn(
+                  'text-xs font-bold tabular-nums',
+                  recordingState === 'recording' ? 'text-red-600' : 'text-amber-700'
+                )}>
                   {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
                 </span>
+                {recordingState === 'recording' ? (
+                  <button
+                    onClick={pauseRecording}
+                    className="p-1.5 bg-amber-500 text-white rounded-full hover:bg-amber-600"
+                    title="Mettre en pause"
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={resumeRecording}
+                    className="p-1.5 bg-emerald-500 text-white rounded-full hover:bg-emerald-600"
+                    title="Reprendre l'enregistrement"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {/* STOP — go to preview (does NOT send) */}
                 <button
                   onClick={stopRecording}
-                  className="p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
-                  title="Arrêter et envoyer"
+                  className="p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9]"
+                  title="Arrêter et écouter avant d'envoyer"
                 >
-                  <Send className="w-4 h-4" />
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={cancelRecording}
+                  className="p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600"
+                  title="Annuler l'enregistrement"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : recordingState === 'preview' && audioBlobUrl ? (
+              <div className="flex items-center gap-2 bg-[#E6F4FF] border border-[#BAE0FF] rounded-full px-3 py-1.5">
+                <audio
+                  controls
+                  src={audioBlobUrl}
+                  className="h-8"
+                  style={{ maxWidth: '180px' }}
+                />
+                <button
+                  onClick={sendRecordedAudio}
+                  disabled={sending || !activeConvId}
+                  className="p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30"
+                  title="Envoyer le message vocal"
+                >
+                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  onClick={cancelRecording}
+                  disabled={sending}
+                  className="p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 disabled:opacity-30"
+                  title="Annuler — recommencer"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (
@@ -1150,8 +1345,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             )}
             <button
               onClick={handleSendText}
-              disabled={!text.trim() || sending || isRecording}
+              disabled={!text.trim() || sending || isRecording || recordingState === 'preview'}
               className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30"
+              title="Envoyer le message"
             >
               {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>

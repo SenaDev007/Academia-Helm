@@ -104,6 +104,7 @@ export class AnnouncementService {
       attachments?: Array<{ url: string; name: string; size?: number; mime?: string }>;
       requiresConfirmation?: boolean;
       publishNow?: boolean;       // default true
+      scheduledAt?: Date;        // ⭐ V2.1 — when to auto-publish (overrides publishNow)
       expiresAt?: Date;
     },
   ): Promise<Announcement> {
@@ -144,32 +145,42 @@ export class AnnouncementService {
       throw new ForbiddenException(`Role ${authorRole} is not allowed to publish announcements`);
     }
 
-    const id = randomUUID();
-    const publishNow = data.publishNow !== false; // default true
-    const publishedAt = publishNow ? new Date() : null;
+    // ⭐ V2.1: scheduledAt takes precedence over publishNow
+    //    - If scheduledAt is provided → store as DRAFT (publishedAt=NULL, scheduledAt=date)
+    //    - Else if publishNow → publish immediately (publishedAt=NOW, scheduledAt=NULL)
+    //    - Else → store as DRAFT (publishedAt=NULL, scheduledAt=NULL) for later manual publish
+    let publishedAt: Date | null = null;
+    let scheduledAt: Date | null = null;
+    if (data.scheduledAt) {
+      scheduledAt = data.scheduledAt;
+      // Don't publish yet — dispatcher cron will publish when scheduledAt arrives
+    } else if (data.publishNow !== false) {
+      publishedAt = new Date();
+    }
 
+    const id = randomUUID();
     await this.prisma.$executeRawUnsafe(`
       INSERT INTO "chat_announcements"
         ("id", "tenantId", "authorId", "authorRole", "title", "body",
          "priority", "targetType", "targetClassId", "targetLevel",
          "targetGroupId", "targetChannelId", "attachments",
-         "requiresConfirmation", "publishedAt", "expiresAt",
+         "requiresConfirmation", "publishedAt", "scheduledAt", "expiresAt",
          "createdAt", "updatedAt")
       VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
          $11, $12, $13::jsonb,
-         $14, $15, $16,
+         $14, $15, $16, $17,
          NOW(), NOW())
     `, id, tenantId, authorId, authorRole, data.title, data.body,
        data.priority || 'NORMAL', data.targetType, data.targetClassId || null, data.targetLevel || null,
        data.targetGroupId || null, data.targetChannelId || null, JSON.stringify(data.attachments || []),
-       data.requiresConfirmation || false, publishedAt, data.expiresAt || null);
+       data.requiresConfirmation || false, publishedAt, scheduledAt, data.expiresAt || null);
 
-    this.logger.log(`⭐ Announcement created: id=${id}, target=${data.targetType}, priority=${data.priority || 'NORMAL'}, author=${authorName} (${authorRole})`);
+    this.logger.log(`⭐ Announcement created: id=${id}, target=${data.targetType}, priority=${data.priority || 'NORMAL'}, publishedAt=${publishedAt?.toISOString() || 'NULL'}, scheduledAt=${scheduledAt?.toISOString() || 'NULL'}, author=${authorName} (${authorRole})`);
 
     // ⭐ If published immediately, send push notifications to recipients
-    if (publishNow) {
+    if (publishedAt) {
       this.notifyRecipients(id, tenantId, data.targetType, data.priority || 'NORMAL').catch(err => {
         this.logger.error(`Failed to notify recipients for announcement ${id}: ${err.message}`);
       });

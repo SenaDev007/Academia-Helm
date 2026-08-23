@@ -78,6 +78,7 @@ export default function AnnouncementsModal({
     priority: 'NORMAL' as 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT',
     targetType: 'ALL_SCHOOL',
     requiresConfirmation: false,
+    scheduledAt: '',             // ⭐ V2.1 — ISO datetime-local string for scheduled publish
   });
 
   const loadAnnouncements = useCallback(async () => {
@@ -112,6 +113,9 @@ export default function AnnouncementsModal({
     }
     setPublishing(true);
     try {
+      // ⭐ V2.1: If scheduledAt is set, send as scheduled (publishNow=false).
+      //    Otherwise publish immediately.
+      const isScheduled = !!form.scheduledAt;
       const res = await fetch('/api/chat/announcements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -122,26 +126,31 @@ export default function AnnouncementsModal({
           priority: form.priority,
           targetType: form.targetType,
           requiresConfirmation: form.requiresConfirmation,
-          publishNow: true,
+          publishNow: !isScheduled,
+          scheduledAt: isScheduled ? new Date(form.scheduledAt).toISOString() : undefined,
         }),
         credentials: 'include',
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.message || `Erreur ${res.status}`);
+        throw new Error((err as any)?.message || (err as any)?.backendError?.message || `Erreur ${res.status}`);
       }
-      toast.success('Annonce publiée avec succès');
+      toast.success(
+        isScheduled
+          ? `Annonce programmée pour le ${new Date(form.scheduledAt).toLocaleString('fr-FR')}`
+          : 'Annonce publiée avec succès'
+      );
       setForm({
         title: '',
         body: '',
         priority: 'NORMAL',
         targetType: 'ALL_SCHOOL',
         requiresConfirmation: false,
+        scheduledAt: '',
       });
       setShowForm(false);
       loadAnnouncements();
     } catch (e: any) {
-      // If user lacks permission, the error message will indicate it
       toast.error('Échec : ' + e.message);
     } finally {
       setPublishing(false);
@@ -247,6 +256,16 @@ export default function AnnouncementsModal({
                   onChange={(e) => setForm({ ...form, requiresConfirmation: e.target.checked })}
                 />
                 Accusé de lecture obligatoire
+              </label>
+              {/* ⭐ V2.1 — Scheduled publish */}
+              <label className="flex items-center gap-1.5 text-xs text-slate-700 px-2 py-1.5">
+                <input
+                  type="datetime-local"
+                  value={form.scheduledAt}
+                  onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
+                  className="px-2 py-1 bg-white border border-slate-200 rounded text-xs"
+                />
+                <span className="text-[10px] text-slate-500">(vide = publication immédiate)</span>
               </label>
             </div>
             <div className="flex gap-2">

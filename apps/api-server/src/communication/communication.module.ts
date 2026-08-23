@@ -51,6 +51,10 @@ import { ChatGateway } from './chat.gateway';
 import { PushNotificationService } from './services/push-notification.service';
 import { AnnouncementService } from './services/announcement.service';
 import { AnnouncementController } from './announcement.controller';
+import { DynamicGroupService } from './services/dynamic-group.service';
+import { NotificationPreferencesService } from './services/notification-preferences.service';
+import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
+import { HelmConnectV2Controller } from './helm-connect-v2.controller';
 
 @Module({
   imports: [
@@ -80,6 +84,8 @@ import { AnnouncementController } from './announcement.controller';
     ChatController,
     // ⭐ Helm Connect — Annonces officielles V1
     AnnouncementController,
+    // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
+    HelmConnectV2Controller,
   ],
   providers: [
     EmailService,
@@ -112,6 +118,10 @@ import { AnnouncementController } from './announcement.controller';
     PushNotificationService,
     // ⭐ Helm Connect — Annonces officielles V1
     AnnouncementService,
+    // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
+    DynamicGroupService,
+    NotificationPreferencesService,
+    ScheduledAnnouncementDispatcher,
   ],
   exports: [
     EmailService,

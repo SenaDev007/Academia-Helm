@@ -27,6 +27,7 @@ import {
   Loader2, Send, Search, Plus, Users, Paperclip, X, Check, CheckCheck,
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
+  BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -34,6 +35,7 @@ import { useAppSession } from '@/contexts/AppSessionContext';
 import { useChatSocket } from '@/lib/chat/useChatSocket';
 import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
 import AnnouncementsModal from './AnnouncementsModal';
+import NotificationPreferencesModal from './NotificationPreferencesModal';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -215,6 +217,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showNewChannel, setShowNewChannel] = useState(false);
   // ⭐ Helm Connect — Annonces officielles V1
   const [showAnnouncements, setShowAnnouncements] = useState(false);
+  // ⭐ Helm Connect V2.3 — Notification Preferences
+  const [showNotifPrefs, setShowNotifPrefs] = useState(false);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -735,6 +739,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     <Settings className="w-4 h-4" />
                   </button>
+                  {/* ⭐ Helm Connect V2.3 — Notification preferences (DND, mute, quiet hours) */}
+                  <button
+                    onClick={() => setShowNotifPrefs(true)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                    title="Notifications (mode silencieux)"
+                  >
+                    <BellOff className="w-4 h-4" />
+                  </button>
                   {/* ⭐ New channel button (Telegram-style) */}
                   <button
                     onClick={() => setShowNewChannel(true)}
@@ -1214,6 +1226,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         <AnnouncementsModal
           currentUserId={currentUserId}
           onClose={() => setShowAnnouncements(false)}
+        />
+      )}
+      {/* ⭐ Helm Connect V2.3 — Notification Preferences modal */}
+      {showNotifPrefs && (
+        <NotificationPreferencesModal
+          currentUserId={currentUserId}
+          onClose={() => setShowNotifPrefs(false)}
         />
       )}
 

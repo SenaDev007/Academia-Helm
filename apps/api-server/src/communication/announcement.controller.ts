@@ -73,6 +73,7 @@ export class AnnouncementController {
       attachments?: Array<{ url: string; name: string; size?: number; mime?: string }>;
       requiresConfirmation?: boolean;
       publishNow?: boolean;
+      scheduledAt?: string;             // ⭐ V2.1 — ISO date string for scheduled publish
       expiresAt?: string;
     },
   ) {
@@ -89,6 +90,7 @@ export class AnnouncementController {
       attachments: body.attachments,
       requiresConfirmation: body.requiresConfirmation,
       publishNow: body.publishNow,
+      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
       expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
     });
   }

@@ -28,6 +28,7 @@ import {
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1322,6 +1323,71 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             </div>
                           </a>
                         )}
+                        {/* ⭐ POLL — Telegram-style poll display */}
+                        {msg.type === 'POLL' && msg.content && (() => {
+                          try {
+                            const poll = JSON.parse(msg.content);
+                            const totalVotes = poll.options?.reduce((sum: number, o: any) => sum + (o.voteCount || 0), 0) || 0;
+                            return (
+                              <div className="min-w-[200px]">
+                                {/* Poll icon + question */}
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <BarChart3 className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
+                                  <span className="text-sm font-bold">{poll.question}</span>
+                                </div>
+                                {/* Options */}
+                                <div className="space-y-1">
+                                  {poll.options?.map((opt: any, idx: number) => {
+                                    const pct = totalVotes > 0 ? Math.round((opt.voteCount / totalVotes) * 100) : 0;
+                                    return (
+                                      <button
+                                        key={idx}
+                                        onClick={async () => {
+                                          try {
+                                            await fetch(`/api/chat/v2/polls/${msg.id}/vote`, {
+                                              method: 'POST',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ userId: currentUserId, optionIds: [opt.id] }),
+                                              credentials: 'include',
+                                            });
+                                            // Reload messages to show updated vote counts
+                                            if (activeConvId) loadMessages();
+                                          } catch (e) {
+                                            toast.error('Échec du vote');
+                                          }
+                                        }}
+                                        className="w-full text-left p-1.5 rounded-lg hover:bg-slate-100 transition-colors relative overflow-hidden"
+                                      >
+                                        {/* Progress bar background */}
+                                        {pct > 0 && (
+                                          <div
+                                            className="absolute inset-y-0 left-0 bg-[#1677FF]/10 rounded-lg"
+                                            style={{ width: `${pct}%` }}
+                                          />
+                                        )}
+                                        <div className="relative flex items-center justify-between gap-2">
+                                          <span className="text-xs">{opt.text}</span>
+                                          <span className="text-[10px] font-bold text-[#0958D9]">
+                                            {opt.voteCount > 0 ? `${pct}%` : ''}
+                                          </span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {/* Footer: vote count + settings */}
+                                <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                                  <span>{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</span>
+                                  {poll.multipleChoice && <span>· Choix multiple</span>}
+                                  {poll.anonymous && <span>· Anonyme</span>}
+                                  {poll.closed && <span className="text-rose-500 font-bold">· Fermé</span>}
+                                </div>
+                              </div>
+                            );
+                          } catch {
+                            return <span className="text-xs text-slate-400">Sondage</span>;
+                          }
+                        })()}
                         {/* Timestamp + read receipt (WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ read) */}
                         <div className={cn(
                           'flex items-center gap-1 mt-0.5',

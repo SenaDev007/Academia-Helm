@@ -90,6 +90,9 @@ export interface ChatMessage {
   } | null;
   // Pour qui a lu (whatsapp blue ticks)
   readBy?: { userId: string; readAt: Date }[];
+  // ⭐ V1.5: priority flag + emoji reactions
+  isImportant?: boolean;
+  reactions?: { emoji: string; userId: string; firstName?: string; lastName?: string }[];
 }
 
 @Injectable()
@@ -471,8 +474,32 @@ export class ChatService {
         if (!receiptsByMsg.has(r.messageId)) receiptsByMsg.set(r.messageId, []);
         receiptsByMsg.get(r.messageId)!.push(r);
       }
+
+      // ⭐ V1.5: batch-load reactions for all messages in this conversation
+      const reactions: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT r."messageId", r."userId", r.emoji, r."createdAt",
+               u."firstName", u."lastName"
+        FROM chat_message_reactions r
+        JOIN "users" u ON u.id = r."userId"
+        WHERE r."messageId" = ANY($1::text[])
+        ORDER BY r."createdAt" ASC
+      `, msgIds).catch(() => []); // graceful fallback if table doesn't exist yet
+
+      // Group reactions by messageId → [{ emoji, userId, firstName, lastName }, ...]
+      const reactionsByMsg = new Map<string, any[]>();
+      for (const r of reactions) {
+        if (!reactionsByMsg.has(r.messageId)) reactionsByMsg.set(r.messageId, []);
+        reactionsByMsg.get(r.messageId)!.push({
+          emoji: r.emoji,
+          userId: r.userId,
+          firstName: r.firstName,
+          lastName: r.lastName,
+        });
+      }
+
       messages.forEach(m => {
         m.readBy = receiptsByMsg.get(m.id) || [];
+        m.reactions = reactionsByMsg.get(m.id) || [];
       });
     }
 
@@ -491,6 +518,7 @@ export class ChatService {
       replyToId: m.replyToId,
       createdAt: m.createdAt,
       editedAt: m.editedAt,
+      isImportant: m.isImportant || false,  // ⭐ V1.5: priority flag
       deletedAt: m.deletedAt,
       sender: {
         firstName: m.senderFirstName,
@@ -499,6 +527,7 @@ export class ChatService {
         role: m.senderRole,
       },
       readBy: m.readBy || [],
+      reactions: m.reactions || [],  // ⭐ V1.5: emoji reactions
     }));
   }
 

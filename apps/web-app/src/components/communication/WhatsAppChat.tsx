@@ -28,7 +28,7 @@ import {
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
-  BarChart3, Download,
+  BarChart3, Download, Pencil, Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -249,6 +249,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showFormatToolbar, setShowFormatToolbar] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<{ id: string; senderName: string; content: string } | null>(null);
 
+  // ⭐ V1.5: Forward modal state + inline edit state
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+
+  // ⭐ V1.5: Quick-reaction emoji bar (shown on hover)
+  const [showReactionBar, setShowReactionBar] = useState<string | null>(null);
+  const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
   // ⭐ Issue 1 — Custom confirmation modal (replaces native confirm())
   const { danger, warning, dialog: confirmDialogEl } = useConfirmDialog();
   // ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style)
@@ -805,8 +813,69 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   };
 
   const handleMessageForward = async (messageId: string) => {
-    toast.info('Transfert de message — sélectionnez la conversation destinataire');
-    // V2.7: Open a conversation picker modal
+    // ⭐ V1.5: implemented forward — opens a conversation picker modal
+    //    The modal lists the user's conversations and lets them pick one.
+    //    The backend POST /api/chat/messages/:id/forward copies the message.
+    setForwardMessageId(messageId);
+  };
+
+  // ⭐ V1.5: Message reactions
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    try {
+      await fetch(`/api/chat/messages/${messageId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, emoji }),
+        credentials: 'include',
+      });
+      // Optimistic update — toggle the reaction locally
+      setMessages(prev => prev.map(m => {
+        if (m.id !== messageId) return m;
+        const existing = (m as any).reactions || [];
+        const alreadyReacted = existing.some((r: any) => r.userId === currentUserId && r.emoji === emoji);
+        const updatedReactions = alreadyReacted
+          ? existing.filter((r: any) => !(r.userId === currentUserId && r.emoji === emoji))
+          : [...existing, { emoji, userId: currentUserId, firstName: user?.firstName, lastName: user?.lastName }];
+        return { ...m, reactions: updatedReactions };
+      }));
+    } catch (e: any) {
+      toast.error('Échec réaction: ' + e.message);
+    }
+  };
+
+  // ⭐ V1.5: Message edit
+  const handleMessageEdit = async (messageId: string, newContent: string) => {
+    try {
+      const res = await fetch(`/api/chat/messages/${messageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, content: newContent }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content: newContent, editedAt: new Date().toISOString() } : m));
+      toast.success('Message modifié');
+    } catch (e: any) {
+      toast.error('Échec: ' + e.message);
+    }
+  };
+
+  // ⭐ V1.5: Mark message as important
+  const handleToggleImportant = async (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    const isImportant = !!(msg as any).isImportant;
+    try {
+      await fetch(`/api/chat/messages/${messageId}/important`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, isImportant: !isImportant }),
+        credentials: 'include',
+      });
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isImportant: !isImportant } : m));
+      toast.success(isImportant ? 'Message marqué comme normal' : 'Message marqué comme important');
+    } catch (e: any) {
+      toast.error('Échec: ' + e.message);
+    }
   };
 
   const handleMessageDeleteForMe = async (messageId: string) => {
@@ -1447,6 +1516,34 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             >
                               <Pin className="w-3.5 h-3.5" /> Épingler
                             </button>
+                            {/* ⭐ V1.5: Edit (sender only) */}
+                            {isMine && msg.type === 'TEXT' && (
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setEditContent(msg.content?.replace(/<[^>]*>/g, '') || '');
+                                  const menu = document.querySelector('.msg-action-menu') as HTMLElement;
+                                  if (menu) menu.style.display = 'none';
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> Modifier
+                              </button>
+                            )}
+                            {/* ⭐ V1.5: Forward */}
+                            <button
+                              onClick={() => handleMessageForward(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <Forward className="w-3.5 h-3.5" /> Transférer
+                            </button>
+                            {/* ⭐ V1.5: Important toggle */}
+                            <button
+                              onClick={() => handleToggleImportant(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <Star className="w-3.5 h-3.5" /> {(msg as any).isImportant ? 'Retirer marquage' : 'Marquer important'}
+                            </button>
                             <button
                               onClick={() => handleMessageDeleteForMe(msg.id)}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
@@ -1470,7 +1567,45 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           </div>
                         )}
                         {/* Content based on message type */}
-                        {msg.type === 'TEXT' && (
+                        {msg.type === 'TEXT' && editingMessageId === msg.id ? (
+                          // ⭐ V1.5: Inline edit mode
+                          <div className="flex flex-col gap-1">
+                            <textarea
+                              autoFocus
+                              value={editContent}
+                              onChange={e => setEditContent(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  if (editContent.trim()) {
+                                    handleMessageEdit(msg.id, editContent.trim());
+                                  }
+                                  setEditingMessageId(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingMessageId(null);
+                                }
+                              }}
+                              className={cn(
+                                'w-full text-sm bg-transparent border rounded-lg p-1.5 outline-none resize-none',
+                                isMine ? 'border-white/30 text-white' : 'border-slate-300 text-slate-800'
+                              )}
+                              rows={Math.min(5, Math.max(1, editContent.split('\n').length))}
+                            />
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => setEditingMessageId(null)}
+                                className={cn('text-[10px] px-2 py-0.5 rounded', isMine ? 'text-white/70 hover:bg-white/10' : 'text-slate-500 hover:bg-slate-100')}
+                              >Annuler</button>
+                              <button
+                                onClick={() => {
+                                  if (editContent.trim()) handleMessageEdit(msg.id, editContent.trim());
+                                  setEditingMessageId(null);
+                                }}
+                                className="text-[10px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600"
+                              >Enregistrer</button>
+                            </div>
+                          </div>
+                        ) : msg.type === 'TEXT' && (
                           <div
                             className="whitespace-pre-wrap break-words"
                             dangerouslySetInnerHTML={{ __html: msg.content }}
@@ -1623,6 +1758,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           'flex items-center gap-1 mt-0.5',
                           isMine ? 'justify-end text-white/80' : 'justify-end text-slate-500'
                         )}>
+                          {/* ⭐ V1.5: Important badge */}
+                          {(msg as any).isImportant && (
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          )}
+                          {/* ⭐ V1.5: Edited indicator */}
+                          {msg.editedAt && (
+                            <span className="text-[9px] italic opacity-70">modifié</span>
+                          )}
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
                           {isMine && (
                             <>
@@ -1636,6 +1779,53 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             </>
                           )}
                         </div>
+                        {/* ⭐ V1.5: Quick reaction bar (appears on hover) */}
+                        {!isReadOnly && (
+                          <div className={cn(
+                            'absolute -top-7 right-0 flex items-center gap-0.5 bg-white rounded-full shadow-lg border border-slate-200 px-1 py-0.5 transition-opacity',
+                            showReactionBar === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                          )}>
+                            {QUICK_EMOJIS.map(emoji => (
+                              <button
+                                key={emoji}
+                                onClick={(e) => { e.stopPropagation(); handleToggleReaction(msg.id, emoji); setShowReactionBar(null); }}
+                                className="text-sm hover:scale-125 transition-transform p-0.5"
+                                title={`Réagir avec ${emoji}`}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {/* ⭐ V1.5: Reactions display (grouped by emoji with count) */}
+                        {(msg as any).reactions && (msg as any).reactions.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {Object.entries(
+                              (msg as any).reactions.reduce((acc: Record<string, number>, r: any) => {
+                                acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                return acc;
+                              }, {})
+                            ).map(([emoji, count]) => {
+                              const myReaction = (msg as any).reactions.some((r: any) => r.userId === currentUserId && r.emoji === emoji);
+                              return (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleToggleReaction(msg.id, emoji)}
+                                  className={cn(
+                                    'flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-colors',
+                                    myReaction
+                                      ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  )}
+                                  title={myReaction ? 'Cliquez pour retirer' : 'Cliquez pour réagir'}
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span>{count}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </React.Fragment>
@@ -1958,6 +2148,53 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       {/* ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style) */}
       {previewDoc && (
         <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+      )}
+      {/* ⭐ V1.5: Forward modal — pick a conversation to forward the message to */}
+      {forwardMessageId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Transférer vers…</h3>
+              <button onClick={() => setForwardMessageId(null)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {conversations.filter(c => c.id !== activeConvId).map(conv => {
+                const disp = getConversationDisplay(conv, currentUserId);
+                return (
+                  <button
+                    key={conv.id}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/chat/messages/${forwardMessageId}/forward`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId: currentUserId, targetConversationId: conv.id }),
+                          credentials: 'include',
+                        });
+                        if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                        toast.success(`Message transféré vers ${disp.name}`);
+                      } catch (e: any) {
+                        toast.error('Échec: ' + e.message);
+                      }
+                      setForwardMessageId(null);
+                    }}
+                    className="w-full flex items-center gap-3 p-2.5 hover:bg-slate-50 rounded-lg transition text-left"
+                  >
+                    <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0', getAvatarColor(disp.name))}>
+                      {getInitials(disp.name)}
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 truncate">{disp.name}</span>
+                  </button>
+                );
+              })}
+              {conversations.filter(c => c.id !== activeConvId).length === 0 && (
+                <div className="text-center py-8 text-sm text-slate-400">Aucune autre conversation disponible</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -38,7 +38,7 @@ import {
   MonitorPlay, BarChart3, Zap, ShieldCheck, Search, Upload,
   Menu, X, Play, Eye, Clock, ChevronDown, Users, Film,
   Plus, Settings, TrendingUp, Heart, MessageCircle, Share2, Send,
-  CheckCircle2, XCircle, Download,
+  CheckCircle2, XCircle, Download, Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/contexts/AppSessionContext';

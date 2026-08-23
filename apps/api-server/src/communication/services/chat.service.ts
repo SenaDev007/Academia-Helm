@@ -640,22 +640,29 @@ export class ChatService {
 
     // Part 2: Search in guardians table (parents who may not have a users entry)
     //    Only return guardians from the same tenant (parents belong to a specific school)
-    const guardianRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
-             g."tenantId", t."name" AS "tenantName",
-             (g."tenantId" = $1) AS "isSameTenant"
-      FROM "guardians" g
-      LEFT JOIN "tenants" t ON t.id = g."tenantId"
-      WHERE g."tenantId" = $1
+    let guardianRows: any[] = [];
+    try {
+      guardianRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
+               g."tenantId", t."name" AS "tenantName",
+               (g."tenantId" = $1) AS "isSameTenant"
+        FROM "guardians" g
+        LEFT JOIN "tenants" t ON t.id = g."tenantId"
+        WHERE g."tenantId" = $1
         AND (
           LOWER(COALESCE(g."firstName", '')) LIKE $2
           OR LOWER(COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."firstName", '') || ' ' || COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."email", '')) LIKE $2
         )
-      ORDER BY g."lastName" ASC, g."firstName" ASC
-      LIMIT $3
-    `, currentTenantId, likeQuery, limit).catch(() => []);
+        ORDER BY g."lastName" ASC, g."firstName" ASC
+        LIMIT $3
+      `, currentTenantId, likeQuery, limit);
+      this.logger.log(`Guardians search: tenant=${currentTenantId?.substring(0,8)}..., found=${guardianRows.length}, query=${query}`);
+    } catch (e: any) {
+      this.logger.error(`Guardians search FAILED: ${e.message}`);
+      // Don't throw — just return empty guardians (users search still works)
+    }
 
     // Merge: combine userRows + guardianRows (dedup by email if possible)
     const seenEmails = new Set<string>();

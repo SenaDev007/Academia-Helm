@@ -1252,7 +1252,10 @@ function NewChatModal({
           body: JSON.stringify({ currentUserId, otherUserId: user.userId }),
           credentials: 'include',
         });
-        if (!res.ok) throw new Error('Failed to create conversation');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error((errData as any)?.message || (errData as any)?.error || `Erreur ${res.status}`);
+        }
         const conv = await res.json();
         onConversationCreated(conv.id);
         toast.success(`Conversation démarrée avec ${user.firstName} ${user.lastName}`);

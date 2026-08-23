@@ -283,6 +283,7 @@ interface MainModule {
   path: string;
   label: string;
   icon: any;
+  iconUrl?: string;  // ⭐ Custom Academia Helm icon (PNG in /icons/modules/)
   featureCode?: string;
   roles?: string[];
   requiresSecondary?: boolean;
@@ -298,7 +299,7 @@ const MAIN_MODULES: MainModule[] = [
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'admin'],
   },
   // ⭐ Ajout des DIRECTEUR_* (MATERNELLE/PRIMAIRE/SECONDAIRE/MAT_PRI) pour qu'ils voient le module Élèves
-  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
+  { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, iconUrl: '/icons/modules/eleves-scolarite.png', featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
   // ⭐ Vie Scolaire — juste après Élèves & Scolarité (Secondaire uniquement)
   {
     path: '/app/discipline', label: 'Vie Scolaire', icon: Shield,
@@ -314,12 +315,12 @@ const MAIN_MODULES: MainModule[] = [
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'admin'],
   },
   // ⭐ Finance : directeurs niveau-spécifiques voient le module (consultation filtrée), mais l'accès aux sous-onglets financiers sensibles (payroll, audit, settings) sera restreint au niveau sub-tab
-  { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
+  { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, iconUrl: '/icons/modules/finance-economat.png', featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
   // ⭐ Examens : tous les directeurs voient ce module (filtrage par niveau + piste via SchoolLevelSelector + AcademicTrackSelector)
-  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: GraduationCap, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'admin'] },
+  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: GraduationCap, iconUrl: '/icons/modules/examen-notes.png', featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'admin'] },
   // ⭐ RH : directeurs niveau-spécifiques voient le module (overview, staff, contracts…) mais pas payroll/cnss/settings (restreint au niveau sub-tab)
-  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
-  { path: '/app/communication', label: 'Helm Connect', icon: MessageSquare, featureCode: 'COMMUNICATION' },
+  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, iconUrl: '/icons/modules/rh-personnel.png', featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
+  { path: '/app/communication', label: 'Helm Connect', icon: MessageSquare, iconUrl: '/icons/modules/helm-connect.png', featureCode: 'COMMUNICATION' },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
 ];
 
@@ -385,7 +386,7 @@ const SAISIEMASTER_MODULES = [
 const SUPPLEMENTARY_MODULES = [
   { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed, featureCode: 'CANTEEN' },
   { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
-  { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, featureCode: 'SHOP' },
+  { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, iconUrl: '/icons/modules/boutique.png', featureCode: 'SHOP' },
   // ⭐ Modules masqués temporairement — seront réactivés lors des mises à jour futures
   // { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
   // { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
@@ -613,9 +614,20 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600 shadow-sm shadow-gold-500/40" />
         )}
-        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
-          active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
-        }`} />
+        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
+        {(item as any).iconUrl ? (
+          <img
+            src={(item as any).iconUrl}
+            alt={item.label}
+            className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 object-contain ${
+              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-105'
+            }`}
+          />
+        ) : (
+          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
+            active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
+          }`} />
+        )}
         {effectiveOpen && (
           <span className={`text-[13px] transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
             active ? 'font-semibold text-white' : 'font-medium'
@@ -655,9 +667,20 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600" />
         )}
-        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
-          active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
-        }`} />
+        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
+        {(item as any).iconUrl ? (
+          <img
+            src={(item as any).iconUrl}
+            alt={item.label}
+            className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 object-contain ${
+              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-110'
+            }`}
+          />
+        ) : (
+          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
+            active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
+          }`} />
+        )}
       </Link>
     );
   };

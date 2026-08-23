@@ -368,23 +368,23 @@ export class ChatService {
     await this.getConversation(tenantId, userId, conversationId);
 
     const limit = Math.min(options.limit || 50, 200);
-    const beforeClause = options.before ? `AND m."createdAt" < (SELECT "createdAt" FROM chat_messages WHERE id = $4)` : '';
+    const beforeClause = options.before ? `AND m."createdAt" < (SELECT "createdAt" FROM chat_messages WHERE id = $3)` : '';
 
+    // ⭐ FIX (P2010 — column ur.role does not exist) :
+    //    The user_roles table has a "roleId" FK to the roles table, NOT a "role" text column.
+    //    The role is stored directly on users.role. Use u."role" and drop the user_roles JOIN entirely.
     const messages: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT m.*,
              u."firstName" AS "senderFirstName",
              u."lastName" AS "senderLastName",
-             u."avatarUrl" AS "senderAvatarUrl",
-             ur."role" AS "senderRole"
+             u."role" AS "senderRole"
       FROM chat_messages m
       LEFT JOIN "users" u ON u.id = m."senderId"
-      LEFT JOIN "user_roles" ur ON ur."userId" = m."senderId"
       WHERE m."conversationId" = $1
         AND m."deletedAt" IS NULL
         ${beforeClause}
       ORDER BY m."createdAt" DESC
       LIMIT $2
-      ${options.before ? 'OFFSET 0' : ''}
     `, conversationId, limit, ...(options.before ? [options.before] : []));
 
     // Pour chaque message, charger les accusés de lecture
@@ -907,17 +907,16 @@ export class ChatService {
    * Liste les invitations reçues par un utilisateur (PENDING).
    */
   async listPendingInvitations(userId: string): Promise<any[]> {
+    // ⭐ FIX: user_roles has no "role" column — use users.role directly.
     const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT i.*,
              s."firstName" AS "senderFirstName",
              s."lastName" AS "senderLastName",
-             s."avatarUrl" AS "senderAvatarUrl",
-             t."name" AS "senderTenantName",
-             ur."role" AS "senderRole"
+             s."role" AS "senderRole",
+             t."name" AS "senderTenantName"
       FROM chat_invitations i
       LEFT JOIN "users" s ON s.id = i."senderId"
       LEFT JOIN "tenants" t ON t.id = i."senderTenantId"
-      LEFT JOIN "user_roles" ur ON ur."userId" = i."senderId"
       WHERE i."recipientId" = $1 AND i."status" = 'PENDING'
       ORDER BY i."createdAt" DESC
     `, userId);

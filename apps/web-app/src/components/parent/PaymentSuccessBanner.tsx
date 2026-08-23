@@ -15,8 +15,8 @@
  *   - Boutons :
  *     • Télécharger PDF (window.open receipt.pdf)
  *     • Email (renvoyer à soi-même)
- *     • WhatsApp (lien wa.me)
- *     • SMS
+ *     • WhatsApp (GRISÉ — remplacé par Helm Connect)
+ *     • Helm Connect (remplace SMS — envoie le reçu PDF + template WhatsApp au parent)
  *     • Fermer
  *
  * Le PDF généré est EXACTEMENT le même que celui de l'admin :
@@ -26,10 +26,11 @@
 
 import { useState } from "react";
 import {
-  CheckCircle2, Download, Mail, MessageSquare, Smartphone, X,
+  CheckCircle2, Download, Mail, MessageSquare, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { financeService } from "@/services/finance.service";
+import { HelmConnectIcon } from "@/components/finance/OfficialIcons";
 
 interface PaymentSuccessBannerProps {
   /** ID de la FinanceTransaction créée */
@@ -48,7 +49,7 @@ export function PaymentSuccessBanner({
   createdAt,
   onClose,
 }: PaymentSuccessBannerProps) {
-  const [sending, setSending] = useState<"email" | "whatsapp" | "sms" | null>(null);
+  const [sending, setSending] = useState<"email" | "helm_connect" | null>(null);
 
   const formatDate = (iso?: string) => {
     if (!iso) return "—";
@@ -92,41 +93,23 @@ export function PaymentSuccessBanner({
     }
   };
 
-  // WhatsApp : ouvrir wa.me avec lien pré-rempli
-  const handleWhatsApp = async () => {
-    setSending("whatsapp");
+  // ⭐ Helm Connect — replaces both WhatsApp and SMS.
+  //    Sends the receipt PDF + the exact WhatsApp 'recu_paiement' template
+  //    wording as a Helm Connect chat message to the parent's account.
+  const handleHelmConnect = async () => {
+    setSending("helm_connect");
     try {
-      const data = await financeService.getWhatsAppLink(transactionId);
-      if (data?.url) {
-        window.open(data.url, "_blank");
-        toast.success("WhatsApp ouvert", {
-          description: "Cliquez sur Envoyer dans WhatsApp.",
-        });
-      } else {
-        toast.error("Pas de téléphone", {
-          description: "Aucun numéro de parent trouvé.",
-        });
-      }
-    } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
-    } finally {
-      setSending(null);
-    }
-  };
-
-  // SMS
-  const handleSms = async () => {
-    setSending("sms");
-    try {
-      const r = await financeService.resendReceipt(transactionId, ["sms"]);
-      const s = r?.channels?.sms;
+      const r = await financeService.resendReceipt(transactionId, ["helm_connect"]);
+      const s = r?.channels?.helm_connect;
       if (s?.status === "skipped") {
-        toast.error("Contact manquant", { description: s.reason });
+        toast.error("Contact manquant", {
+          description: s.error || "Aucun parent lié à cet élève",
+        });
       } else if (s?.status === "failed") {
         toast.error("Échec d'envoi", { description: s.error || "Échec de l'envoi" });
       } else {
         toast.success("Reçu envoyé", {
-          description: `SMS envoyé${s?.to ? ` à ${s.to}` : ""}`,
+          description: `Helm Connect envoyé au parent`,
         });
       }
     } catch (e: any) {
@@ -175,21 +158,23 @@ export function PaymentSuccessBanner({
                 <Mail className="h-3.5 w-3.5" />
                 Email
               </button>
+              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
               <button
-                onClick={handleWhatsApp}
-                disabled={sending === "whatsapp"}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 disabled:opacity-50 transition-colors"
+                disabled
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200 rounded-lg cursor-not-allowed opacity-50"
+                title="WhatsApp désactivé — utilisez Helm Connect"
               >
-                <MessageSquare className="h-3.5 w-3.5" />
+                <MessageSquare className="h-3.5 w-3.5 grayscale" />
                 WhatsApp
               </button>
+              {/* ⭐ Helm Connect — REPLACES SMS */}
               <button
-                onClick={handleSms}
-                disabled={sending === "sms"}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                onClick={handleHelmConnect}
+                disabled={sending === "helm_connect"}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
               >
-                <Smartphone className="h-3.5 w-3.5" />
-                SMS
+                <HelmConnectIcon className="h-3.5 w-3.5" />
+                {sending === "helm_connect" ? "Envoi..." : "Helm Connect"}
               </button>
             </div>
           </div>

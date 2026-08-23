@@ -1518,23 +1518,40 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {msg.type === 'DOCUMENT' && msg.attachmentUrl && (() => {
                           const ft = getFileTypeIcon(msg.attachmentMime, msg.attachmentName);
                           return (
-                            <a
-                              href={getAttachmentUrl(msg.attachmentUrl)}
-                              download={msg.attachmentName}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={cn(
-                                'flex items-center gap-2 p-2 rounded-lg transition-colors',
-                                isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100',
+                            <div>
+                              <a
+                                href={getAttachmentUrl(msg.attachmentUrl)}
+                                download={msg.attachmentName}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={cn(
+                                  'flex items-center gap-2 p-2 rounded-lg transition-colors',
+                                  isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100',
+                                )}
+                                onClick={(e) => { e.preventDefault(); setPreviewDoc({ filePath: getAttachmentUrl(msg.attachmentUrl), fileName: msg.attachmentName || ft.label, mimeType: msg.attachmentMime || '' }); }}
+                              >
+                                {ft.icon}
+                                <div className="min-w-0">
+                                  <div className={cn('text-xs font-semibold truncate', isMine ? 'text-white' : 'text-slate-900')}>{msg.attachmentName || ft.label}</div>
+                                  <div className={cn('text-[10px]', isMine ? 'text-white/80' : 'text-slate-500')}>{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
+                                </div>
+                              </a>
+                              {/* ⭐ Issue B FIX: render the caption text below the file chip.
+                                  The backend sends a formatted message (same wording as the WhatsApp
+                                  template 'recu_paiement') as msg.content. Previously this was NOT
+                                  rendered for DOCUMENT messages — only the file chip was shown.
+                                  Now we render it with dangerouslySetInnerHTML (same as TEXT branch)
+                                  because the caption uses HTML formatting (<b>, <i>, \n). */}
+                              {msg.content && (
+                                <div
+                                  className={cn(
+                                    'whitespace-pre-wrap break-words text-xs mt-1',
+                                    isMine ? 'text-white/90' : 'text-slate-700',
+                                  )}
+                                  dangerouslySetInnerHTML={{ __html: msg.content }}
+                                />
                               )}
-                              onClick={(e) => { e.preventDefault(); setPreviewDoc({ filePath: getAttachmentUrl(msg.attachmentUrl), fileName: msg.attachmentName || ft.label, mimeType: msg.attachmentMime || '' }); }}
-                            >
-                              {ft.icon}
-                              <div className="min-w-0">
-                                <div className={cn('text-xs font-semibold truncate', isMine ? 'text-white' : 'text-slate-900')}>{msg.attachmentName || ft.label}</div>
-                                <div className={cn('text-[10px]', isMine ? 'text-white/80' : 'text-slate-500')}>{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
-                              </div>
-                            </a>
+                            </div>
                           );
                         })()}
                         {/* ⭐ POLL — Telegram-style poll display with WHITE background for readability */}

@@ -6,7 +6,7 @@ import {
   Sparkles, Download, CheckCircle2, Search, Phone, ArrowRight, Loader2,
   AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard, ShoppingCart,
 } from 'lucide-react';
-import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -531,7 +531,7 @@ export default function NewPaymentModal({
     window.open(financeService.getReceiptPdfUrl(receipt.id), '_blank');
   };
 
-  const handleResendReceipt = async (channel: 'email' | 'whatsapp' | 'sms') => {
+  const handleResendReceipt = async (channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => {
     if (!receipt) return;
     setSendingChannel(channel);
     try {
@@ -620,34 +620,26 @@ export default function NewPaymentModal({
                 <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
               </Button>
-              {/* WhatsApp : 2 options (lien + API) */}
+              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={async () => {
-                  if (!receipt) return;
-                  try {
-                    const data = await financeService.getWhatsAppLink(receipt.id);
-                    if (data?.url) {
-                      window.open(data.url, '_blank');
-                      toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
-                    } else {
-                      toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
-                    }
-                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-                }}
+                disabled
+                className="opacity-40 cursor-not-allowed"
+                title="WhatsApp désactivé — utilisez Helm Connect"
               >
-                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5" />
+                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5 grayscale" />
                 WhatsApp
               </Button>
+              {/* ⭐ Helm Connect — REPLACES SMS */}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleResendReceipt('sms')}
-                disabled={sendingChannel === 'sms'}
+                onClick={() => handleResendReceipt('helm_connect')}
+                disabled={sendingChannel === 'helm_connect'}
               >
-                <SmsIcon className="w-3.5 h-3.5 mr-1.5" />
-                {sendingChannel === 'sms' ? 'Envoi...' : 'SMS'}
+                <HelmConnectIcon className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'helm_connect' ? 'Envoi...' : 'Helm Connect'}
               </Button>
               <Button size="sm" variant="ghost" onClick={handleNewPayment}>
                 Nouveau paiement

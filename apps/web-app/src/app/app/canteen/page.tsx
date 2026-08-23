@@ -1,18 +1,20 @@
 /**
  * ============================================================================
- * APP CANTEEN PAGE — Point d'entrée Cantine
+ * APP CANTEEN PAGE — Cantine (uniquement)
  * ============================================================================
  *
- * Refonte août 2026 (Issue #10) : la page Cantine est désormais servie par
- * l'interface unifiée `ShopCanteenModulePage` (sidebar + feed type EduCast)
- * qui regroupe Boutique + Cantine dans une seule page. On transmet
- * `initialView='canteen:dashboard'` pour présélectionner le tableau de bord
- * Cantine à l'arrivée.
+ * Refonte août 2026 (Issue #10 v2) : la page Cantine est servie par
+ * ShopCanteenModulePage avec `mode='canteen'`. La sidebar ne contient QUE
+ * les 12 sous-modules Cantine. Le HomeView ne montre QUE les KPIs et
+ * cartes Cantine. Aucun mélange avec Boutique.
+ *
+ * Toutes les données proviennent du backend (pas de mock).
+ * Endpoint : /api/modules-complementaires/canteen/dashboard
  * ============================================================================
  */
 
 import ShopCanteenModulePage from '@/components/pilotage/modules/ShopCanteenModulePage';
 
 export default function CanteenPage() {
-  return <ShopCanteenModulePage initialView="canteen:dashboard" />;
+  return <ShopCanteenModulePage mode="canteen" initialView="canteen:dashboard" />;
 }

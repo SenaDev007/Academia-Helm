@@ -1,18 +1,20 @@
 /**
  * ============================================================================
- * APP SHOP PAGE — Point d'entrée Boutique
+ * APP SHOP PAGE — Boutique (uniquement)
  * ============================================================================
  *
- * Refonte août 2026 (Issue #10) : la page Boutique est désormais servie par
- * l'interface unifiée `ShopCanteenModulePage` (sidebar + feed type EduCast)
- * qui regroupe Boutique + Cantine dans une seule page. On transmet
- * `initialView='shop:dashboard'` pour présélectionner la vue d'ensemble
- * Boutique à l'arrivée.
+ * Refonte août 2026 (Issue #10 v2) : la page Boutique est servie par
+ * ShopCanteenModulePage avec `mode='shop'`. La sidebar ne contient QUE
+ * les 14 sous-modules Boutique. Le HomeView ne montre QUE les KPIs et
+ * cartes Boutique. Aucun mélange avec Cantine.
+ *
+ * Toutes les données proviennent du backend (pas de mock).
+ * Endpoint : /api/modules-complementaires/shop/stats
  * ============================================================================
  */
 
 import ShopCanteenModulePage from '@/components/pilotage/modules/ShopCanteenModulePage';
 
 export default function ShopPage() {
-  return <ShopCanteenModulePage initialView="shop:dashboard" />;
+  return <ShopCanteenModulePage mode="shop" initialView="shop:dashboard" />;
 }

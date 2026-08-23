@@ -2,37 +2,34 @@
 
 /**
  * ============================================================================
- * BOUTIQUE & CANTINE — Interface unifiée type YouTube
+ * BOUTIQUE OU CANTINE — Interface unifiée type YouTube (sidebar + feed)
  * ============================================================================
  *
- * Refonte août 2026 (Issue #10) : remplacement des deux pages séparées
- * (`ShopModulePage` + `CanteenModulePage`) par une interface unifiée type
- * YouTube/EduCast (sidebar + feed) qui regroupe Boutique et Cantine dans
- * une seule page. Les sous-composants existants (Shop*, Canteen*) sont
- * réutilisés tels quels — seule la coquille change.
+ * Refonte août 2026 (Issue #10 v2) :
+ * La page sidebar+feed (pattern EduCast) sert DÉSORMAIS un seul module à la
+ * fois, déterminé par le prop `mode` :
+ *   - mode='shop'    → affiche UNIQUEMENT les 14 sous-modules Boutique
+ *   - mode='canteen' → affiche UNIQUEMENT les 12 sous-modules Cantine
+ *
+ * ❌ Aucune donnée mock : toutes les stats proviennent des vrais endpoints
+ *    backend `/api/modules-complementaires/shop/stats` (Boutique) ou
+ *    `/api/modules-complementaires/canteen/dashboard` (Cantine).
+ *
+ * ❌ Aucun mélange Boutique ↔ Cantine : la sidebar ne contient QUE les items
+ *    du module actif. Le HomeView ne montre QUE les KPIs et cartes du module
+ *    actif. La top bar ne montre QUE le bouton d'action rapide du module actif.
  *
  * Structure :
  *   ┌───────────────────────────────────────────────────────────┐
- *   │ Top bar: [☰] [Logo] [Search] [Nvelle Vente] [Nouveau Menu] [Avatar]
+ *   │ Top bar: [☰] [Logo mono-couleur] [Search] [Action] [Avatar]│
  *   ├────────────┬──────────────────────────────────────────────┤
  *   │ Sidebar    │ Main content area                             │
  *   │            │                                                │
  *   │ 🏠 Accueil │  Selon `activeView` :                           │
- *   │ ─ BOUTIQUE │   - 'home'            → HomeView (KPIs + cards) │
- *   │   📊 Stats │   - 'shop:*'          → Shop* sub-component      │
- *   │   📋 Catal.│   - 'canteen:*'       → Canteen* sub-component  │
- *   │   📦 Art.. │                                                │
- *   │   ...      │                                                │
- *   │ ─ CANTINE │                                                │
- *   │   📊 Tabl..│                                                │
- *   │   👩‍🍳 Menus │                                                │
+ *   │ ─ MODULE  │   - 'home'           → HomeView (KPIs + cards) │
+ *   │   📊 Stats │   - '<mode>:<sub>'  → Sous-composant           │
  *   │   ...      │                                                │
  *   └────────────┴──────────────────────────────────────────────┘
- *
- * Routing : `/app/shop` et `/app/canteen` pointent tous les deux vers
- * cette page, avec un `initialView` différent pour présélectionner le
- * sous-module à afficher en premier (utile quand l'utilisateur arrive
- * depuis la sidebar qui garde les deux entrées).
  * ============================================================================
  */
 
@@ -83,8 +80,12 @@ import CanteenSettings from './canteen/CanteenSettings';
 // Types
 // ─────────────────────────────────────────────────────────────────────
 
+type ModuleMode = 'shop' | 'canteen';
+
 interface ShopCanteenModulePageProps {
-  /** Vue initiale présélectionnée. Ex: 'shop:dashboard' ou 'canteen:dashboard'. */
+  /** Détermine QUEL module cette page sert. Aucun mélange Boutique ↔ Cantine. */
+  mode: ModuleMode;
+  /** Vue initiale présélectionnée (ex: 'shop:dashboard' ou 'canteen:menus'). Si omis, utilise '<mode>:dashboard'. */
   initialView?: string;
 }
 
@@ -92,8 +93,8 @@ interface SidebarItem {
   id: string;
   label: string;
   icon: any;
-  /** 'shop' pour Boutique, 'canteen' pour Cantine, 'home' pour l'accueil unifié. */
-  group: 'home' | 'shop' | 'canteen';
+  /** 'home' pour l'accueil du module, sinon identique au mode actif. */
+  group: 'home' | ModuleMode;
 }
 
 interface ShopStats {
@@ -111,11 +112,11 @@ interface CanteenStats {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Sidebar config (groupée Boutique + Cantine)
+// Sidebar config — Boutique ET Cantine declarés, MAIS filtrés par `mode`
 // ─────────────────────────────────────────────────────────────────────
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
-  // ACCUEIL (vue unifiée)
+  // ACCUEIL du module (vue d'ensemble)
   { id: 'home', label: 'Accueil', icon: Home, group: 'home' },
 
   // BOUTIQUE — 14 sous-modules
@@ -149,15 +150,77 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: 'canteen:settings', label: 'Paramètres', icon: Settings, group: 'canteen' },
 ];
 
-const GROUP_LABELS: Record<string, string> = {
-  shop: 'Boutique',
-  canteen: 'Cantine',
+// ─────────────────────────────────────────────────────────────────────
+// Config par mode — couleur, libellé, logo, action rapide
+// ─────────────────────────────────────────────────────────────────────
+
+interface ModeConfig {
+  /** Label humain du module. */
+  label: string;
+  /** Description courte affichée dans le HomeView. */
+  description: string;
+  /** Couleur d'accent (Tailwind). */
+  accent: 'amber' | 'emerald';
+  /** Classes Tailwind pour le logo de la top bar. */
+  logoBg: string;
+  /** Icône principale du module (rendue dans le logo). */
+  logoIcon: any;
+  /** Bouton d'action rapide (un seul par mode). */
+  quickAction: { label: string; icon: any; view: string; btnClass: string };
+  /** Endpoint backend pour récupérer les KPIs. */
+  statsEndpoint: string;
+  /** Libellé de la section dans la sidebar. */
+  sidebarSectionLabel: string;
+}
+
+const MODE_CONFIG: Record<ModuleMode, ModeConfig> = {
+  shop: {
+    label: 'Boutique & Économat',
+    description: 'Gestion des ventes, stocks, fournisseurs, kits scolaires et lien direct avec les encaissements du module Finance.',
+    accent: 'amber',
+    logoBg: 'bg-gradient-to-br from-amber-500 to-orange-500',
+    logoIcon: ShoppingBag,
+    quickAction: {
+      label: 'Nouvelle Vente',
+      icon: Plus,
+      view: 'shop:pos',
+      btnClass: 'bg-amber-600 text-white rounded-full text-sm font-bold hover:bg-amber-700',
+    },
+    statsEndpoint: '/api/modules-complementaires/shop/stats',
+    sidebarSectionLabel: 'Boutique & Économat',
+  },
+  canteen: {
+    label: 'Cantine & Restauration',
+    description: 'Gestion complète de la restauration scolaire : menus, inscriptions, présences, régimes & allergies, paiements, stocks, fournisseurs, incidents hygiène et rapports.',
+    accent: 'emerald',
+    logoBg: 'bg-gradient-to-br from-emerald-500 to-teal-500',
+    logoIcon: UtensilsCrossed,
+    quickAction: {
+      label: 'Nouveau Menu',
+      icon: ChefHat,
+      view: 'canteen:menus',
+      btnClass: 'bg-emerald-600 text-white rounded-full text-sm font-bold hover:bg-emerald-700',
+    },
+    statsEndpoint: '/api/modules-complementaires/canteen/dashboard',
+    sidebarSectionLabel: 'Cantine & Restauration',
+  },
 };
 
-const GROUP_COLORS: Record<string, { active: string; text: string; dot: string }> = {
-  home: { active: 'bg-slate-900 text-white', text: 'text-slate-700', dot: 'bg-slate-900' },
-  shop: { active: 'bg-amber-50 text-amber-700', text: 'text-slate-700', dot: 'bg-amber-500' },
-  canteen: { active: 'bg-emerald-50 text-emerald-700', text: 'text-slate-700', dot: 'bg-emerald-500' },
+const ACCENT_COLOR_CLASSES: Record<'amber' | 'emerald', {
+  text: string; dot: string; sidebarActive: string; sidebarHover: string;
+}> = {
+  amber: {
+    text: 'text-amber-700',
+    dot: 'bg-amber-500',
+    sidebarActive: 'bg-amber-50 text-amber-700 font-bold',
+    sidebarHover: 'text-slate-700 hover:bg-slate-50',
+  },
+  emerald: {
+    text: 'text-emerald-700',
+    dot: 'bg-emerald-500',
+    sidebarActive: 'bg-emerald-50 text-emerald-700 font-bold',
+    sidebarHover: 'text-slate-700 hover:bg-slate-50',
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -181,71 +244,53 @@ function getAvatarColor(name: string): string {
 // Main Component
 // ─────────────────────────────────────────────────────────────────────
 
-export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCanteenModulePageProps) {
+export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteenModulePageProps) {
   const { academicYear, isLoading: contextLoading } = useModuleContext();
   const { user } = useAppSession();
+  const config = MODE_CONFIG[mode];
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeView, setActiveView] = useState<string>(initialView || 'home');
+  const [activeView, setActiveView] = useState<string>(initialView || `${mode}:dashboard`);
   const [searchQuery, setSearchQuery] = useState('');
-  const [shopStats, setShopStats] = useState<ShopStats | null>(null);
-  const [canteenStats, setCanteenStats] = useState<CanteenStats | null>(null);
+  // ⭐ Une seule source de stats — celle du module actif. Pas de mock.
+  const [stats, setStats] = useState<ShopStats & CanteenStats | null>(null);
 
-  // ── Chargement des KPIs Boutique + Cantine (vue d'accueil) ──
+  // ── Chargement des KPIs du module actif (pas l'autre) ──
   useEffect(() => {
     if (academicYear?.id) {
-      loadShopStats();
-      loadCanteenStats();
+      loadStats();
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, mode]);
 
-  const loadShopStats = async () => {
+  const loadStats = async () => {
     try {
       const res = await fetch(
-        `/api/modules-complementaires/shop/stats?academicYearId=${academicYear?.id}`,
+        `${config.statsEndpoint}?academicYearId=${academicYear?.id}`,
         { credentials: 'include' },
       );
-      if (res.ok) setShopStats(await res.json());
+      if (res.ok) setStats(await res.json());
     } catch (e) {
-      console.error('Erreur chargement stats boutique:', e);
+      console.error(`Erreur chargement stats ${mode}:`, e);
     }
   };
 
-  const loadCanteenStats = async () => {
-    try {
-      const res = await fetch(
-        `/api/modules-complementaires/canteen/dashboard?academicYearId=${academicYear?.id}`,
-        { credentials: 'include' },
-      );
-      if (res.ok) setCanteenStats(await res.json());
-    } catch (e) {
-      console.error('Erreur chargement stats cantine:', e);
-    }
-  };
+  // ── Items visibles dans la sidebar — STRICTEMENT filtrés par `mode`.
+  //    Aucun item de l'autre module ne peut apparaître. ──
+  const visibleItems = useMemo(() => {
+    return SIDEBAR_ITEMS.filter(item =>
+      item.group === 'home' || item.group === mode
+    );
+  }, [mode]);
 
-  // ── Groupement des items par section pour la sidebar ──
-  const groupedItems = useMemo(() => {
-    const groups: Record<string, SidebarItem[]> = { home: [], shop: [], canteen: [] };
-    for (const item of SIDEBAR_ITEMS) {
-      groups[item.group].push(item);
-    }
-    return groups;
-  }, []);
-
-  // ── Filtrage par recherche ──
+  // ── Filtrage par recherche (parmi les items visibles du mode actif) ──
   const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return SIDEBAR_ITEMS;
+    if (!searchQuery.trim()) return visibleItems;
     const q = searchQuery.toLowerCase();
-    return SIDEBAR_ITEMS.filter(item => item.label.toLowerCase().includes(q));
-  }, [searchQuery]);
+    return visibleItems.filter(item => item.label.toLowerCase().includes(q));
+  }, [visibleItems, searchQuery]);
 
-  const filteredGroups = useMemo(() => {
-    const groups: Record<string, SidebarItem[]> = { home: [], shop: [], canteen: [] };
-    for (const item of filteredItems) {
-      groups[item.group].push(item);
-    }
-    return groups;
-  }, [filteredItems]);
+  const filteredHome = filteredItems.filter(i => i.group === 'home');
+  const filteredModule = filteredItems.filter(i => i.group === mode);
 
   // ── Rendu du contenu principal selon activeView ──
   const renderMainContent = () => {
@@ -255,35 +300,40 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
       );
     }
 
-    // Vue d'accueil unifiée
+    // Vue d'accueil du module
     if (activeView === 'home') {
       return (
         <HomeView
-          shopStats={shopStats}
-          canteenStats={canteenStats}
+          mode={mode}
+          stats={stats}
           onNavigate={setActiveView}
         />
       );
     }
 
-    // Sous-modules Boutique
-    switch (activeView) {
-      case 'shop:dashboard': return <ShopDashboard />;
-      case 'shop:catalog': return <ShopCatalog />;
-      case 'shop:products': return <ShopProducts />;
-      case 'shop:orders': return <ShopOrders />;
-      case 'shop:pos': return <ShopPOS />;
-      case 'shop:payments': return <ShopPayments />;
-      case 'shop:inventory': return <ShopStocks />;
-      case 'shop:suppliers': return <ShopSuppliers />;
-      case 'shop:discounts': return <ShopDiscounts />;
-      case 'shop:kits': return <ShopKits />;
-      case 'shop:pickups': return <ShopPickups />;
-      case 'shop:returns': return <ShopReturns />;
-      case 'shop:analysis': return <ShopReports />;
-      case 'shop:settings': return <ShopSettings />;
+    // Sous-modules — STRICTEMENT du mode actif
+    if (mode === 'shop') {
+      switch (activeView) {
+        case 'shop:dashboard': return <ShopDashboard />;
+        case 'shop:catalog': return <ShopCatalog />;
+        case 'shop:products': return <ShopProducts />;
+        case 'shop:orders': return <ShopOrders />;
+        case 'shop:pos': return <ShopPOS />;
+        case 'shop:payments': return <ShopPayments />;
+        case 'shop:inventory': return <ShopStocks />;
+        case 'shop:suppliers': return <ShopSuppliers />;
+        case 'shop:discounts': return <ShopDiscounts />;
+        case 'shop:kits': return <ShopKits />;
+        case 'shop:pickups': return <ShopPickups />;
+        case 'shop:returns': return <ShopReturns />;
+        case 'shop:analysis': return <ShopReports />;
+        case 'shop:settings': return <ShopSettings />;
+        default: return <HomeView mode={mode} stats={stats} onNavigate={setActiveView} />;
+      }
+    }
 
-      // Sous-modules Cantine
+    // mode === 'canteen'
+    switch (activeView) {
       case 'canteen:dashboard': return <CanteenDashboard />;
       case 'canteen:menus': return <CanteenMenus />;
       case 'canteen:enrollments': return <CanteenEnrollments />;
@@ -296,12 +346,14 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
       case 'canteen:incidents': return <CanteenIncidents />;
       case 'canteen:reports': return <CanteenReports />;
       case 'canteen:settings': return <CanteenSettings />;
-
-      default: return <HomeView shopStats={shopStats} canteenStats={canteenStats} onNavigate={setActiveView} />;
+      default: return <HomeView mode={mode} stats={stats} onNavigate={setActiveView} />;
     }
   };
 
   const currentView = SIDEBAR_ITEMS.find(i => i.id === activeView);
+  const QuickActionIcon = config.quickAction.icon;
+  const LogoIcon = config.logoIcon;
+  const accentClasses = ACCENT_COLOR_CLASSES[config.accent];
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] bg-white overflow-hidden">
@@ -316,48 +368,39 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
           {sidebarOpen ? <X className="w-5 h-5 text-slate-700" /> : <MenuIcon className="w-5 h-5 text-slate-700" />}
         </button>
 
-        {/* Logo combiné Boutique + Cantine */}
+        {/* Logo — couleur unique du module actif (pas de mélange) */}
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-emerald-500 flex items-center justify-center">
-            <ShoppingBag className="w-4 h-4 text-white" />
+          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', config.logoBg)}>
+            <LogoIcon className="w-4 h-4 text-white" />
           </div>
-          <div className="hidden sm:block">
-            <span className="text-lg font-bold text-slate-900">Boutique</span>
-            <span className="text-slate-300 mx-1">+</span>
-            <span className="text-lg font-bold text-slate-900">Cantine</span>
-          </div>
+          <span className="hidden sm:block text-lg font-bold text-slate-900">{config.label}</span>
         </div>
 
-        {/* Search bar */}
+        {/* Search bar — limitée aux sous-modules du mode actif */}
         <div className="flex-1 max-w-2xl mx-auto">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Rechercher un module (catalogue, menus, stocks, fournisseurs...)"
-              className="w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-amber-500/30"
+              placeholder={`Rechercher dans ${config.label}...`}
+              className={cn(
+                'w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-sm outline-none focus:bg-white focus:ring-2',
+                config.accent === 'amber' ? 'focus:ring-amber-500/30' : 'focus:ring-emerald-500/30',
+              )}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
         </div>
 
-        {/* Quick actions — Boutique + Cantine */}
+        {/* Quick action — UN SEUL bouton (celui du module actif) */}
         <button
-          onClick={() => setActiveView('shop:pos')}
-          className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-full text-sm font-bold hover:bg-amber-700"
-          title="Ouvrir le point de vente Boutique"
+          onClick={() => setActiveView(config.quickAction.view)}
+          className={cn('flex items-center gap-2 px-3 py-2', config.quickAction.btnClass)}
+          title={config.quickAction.label}
         >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:block">Nouvelle Vente</span>
-        </button>
-        <button
-          onClick={() => setActiveView('canteen:menus')}
-          className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-full text-sm font-bold hover:bg-emerald-700"
-          title="Planifier un nouveau menu Cantine"
-        >
-          <ChefHat className="w-4 h-4" />
-          <span className="hidden sm:block">Nouveau Menu</span>
+          <QuickActionIcon className="w-4 h-4" />
+          <span className="hidden sm:block">{config.quickAction.label}</span>
         </button>
 
         {/* User avatar */}
@@ -372,50 +415,34 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
         {sidebarOpen && (
           <div className="w-60 flex-shrink-0 border-r border-slate-200 overflow-y-auto bg-white">
             <div className="py-2">
-              {/* ACCUEIL (vue unifiée) */}
-              {filteredGroups.home.length > 0 && (
+              {/* ACCUEIL du module */}
+              {filteredHome.length > 0 && (
                 <div className="mb-2">
-                  {filteredGroups.home.map(item => (
+                  {filteredHome.map(item => (
                     <SidebarButton
                       key={item.id}
                       item={item}
                       isActive={activeView === item.id}
+                      accentClasses={accentClasses}
                       onClick={() => setActiveView(item.id)}
                     />
                   ))}
                 </div>
               )}
 
-              {/* BOUTIQUE group */}
-              {filteredGroups.shop.length > 0 && (
+              {/* SECTION du module actif — uniquement */}
+              {filteredModule.length > 0 && (
                 <div className="border-t border-slate-100 pt-2 mt-2">
-                  <div className="px-4 py-1 text-[10px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                    Boutique & Économat
+                  <div className={cn('px-4 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5', accentClasses.text)}>
+                    <span className={cn('w-1.5 h-1.5 rounded-full', accentClasses.dot)} />
+                    {config.sidebarSectionLabel}
                   </div>
-                  {filteredGroups.shop.map(item => (
+                  {filteredModule.map(item => (
                     <SidebarButton
                       key={item.id}
                       item={item}
                       isActive={activeView === item.id}
-                      onClick={() => setActiveView(item.id)}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* CANTINE group */}
-              {filteredGroups.canteen.length > 0 && (
-                <div className="border-t border-slate-100 pt-2 mt-2">
-                  <div className="px-4 py-1 text-[10px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Cantine & Restauration
-                  </div>
-                  {filteredGroups.canteen.map(item => (
-                    <SidebarButton
-                      key={item.id}
-                      item={item}
-                      isActive={activeView === item.id}
+                      accentClasses={accentClasses}
                       onClick={() => setActiveView(item.id)}
                     />
                   ))}
@@ -425,7 +452,7 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
               {/* Empty search results */}
               {filteredItems.length === 0 && (
                 <div className="px-4 py-8 text-center text-xs text-slate-400">
-                  Aucun module ne correspond à « {searchQuery} »
+                  Aucun sous-module ne correspond à « {searchQuery} »
                 </div>
               )}
             </div>
@@ -444,10 +471,6 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
                 Accueil
               </button>
               <span className="text-slate-300">/</span>
-              <span className="font-semibold text-slate-700">
-                {GROUP_LABELS[currentView.group]}
-              </span>
-              <span className="text-slate-300">/</span>
               <span className="font-bold text-slate-900">{currentView.label}</span>
             </div>
           )}
@@ -464,23 +487,21 @@ export default function ShopCanteenModulePage({ initialView = 'home' }: ShopCant
 // ─────────────────────────────────────────────────────────────────────
 
 function SidebarButton({
-  item, isActive, onClick,
+  item, isActive, accentClasses, onClick,
 }: {
   item: SidebarItem;
   isActive: boolean;
+  accentClasses: { sidebarActive: string; sidebarHover: string };
   onClick: () => void;
 }) {
   const Icon = item.icon;
-  const colors = GROUP_COLORS[item.group];
 
   return (
     <button
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
-        isActive
-          ? cn('font-bold', colors.active)
-          : cn('hover:bg-slate-50', colors.text),
+        isActive ? accentClasses.sidebarActive : accentClasses.sidebarHover,
       )}
     >
       <Icon className="w-5 h-5 flex-shrink-0" />
@@ -490,146 +511,171 @@ function SidebarButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// HOME VIEW — Vue d'accueil unifiée Boutique + Cantine
+// HOME VIEW — Vue d'accueil du module actif (UN SEUL module)
 // ─────────────────────────────────────────────────────────────────────
 
 function HomeView({
-  shopStats, canteenStats, onNavigate,
+  mode, stats, onNavigate,
 }: {
-  shopStats: ShopStats | null;
-  canteenStats: CanteenStats | null;
+  mode: ModuleMode;
+  stats: (ShopStats & CanteenStats) | null;
   onNavigate: (view: string) => void;
 }) {
+  const config = MODE_CONFIG[mode];
+
+  // KPIs et quick-actions SPÉCIFIQUES au mode actif (pas de mélange)
+  const kpis = mode === 'shop' ? [
+    {
+      label: 'Produits actifs',
+      value: String(stats?.totalProducts ?? 0),
+      icon: Package,
+      trend: null as 'up' | null,
+      navigate: 'shop:products',
+    },
+    {
+      label: 'Recette (30j)',
+      value: formatCurrency(stats?.totalRevenueMonth ?? 0),
+      icon: TrendingUp,
+      trend: 'up' as 'up' | null,
+      navigate: 'shop:analysis',
+    },
+    {
+      label: 'Ventes (30j)',
+      value: String(stats?.totalSalesMonth ?? 0),
+      icon: Archive,
+      trend: 'up' as 'up' | null,
+      navigate: 'shop:orders',
+    },
+    {
+      label: 'Alertes stock',
+      value: String(stats?.lowStockAlerts ?? 0),
+      icon: AlertCircle,
+      trend: null as 'up' | null,
+      navigate: 'shop:inventory',
+    },
+  ] : [
+    {
+      label: 'Élèves inscrits',
+      value: String(stats?.enrolledStudents ?? 0),
+      icon: Users,
+      trend: 'up' as 'up' | null,
+      navigate: 'canteen:students',
+    },
+    {
+      label: 'Repas aujourd\'hui',
+      value: String(stats?.mealsToday ?? 0),
+      icon: UtensilsCrossed,
+      trend: null as 'up' | null,
+      navigate: 'canteen:attendance',
+    },
+    {
+      label: 'Alertes stock',
+      value: String(stats?.stockAlerts ?? 0),
+      icon: Package,
+      trend: null as 'up' | null,
+      navigate: 'canteen:stocks',
+    },
+    {
+      label: 'Score hygiène',
+      value: String(stats?.hygieneScore ?? '—'),
+      icon: ShieldIconReplacement,
+      trend: 'up' as 'up' | null,
+      navigate: 'canteen:incidents',
+    },
+  ];
+
+  const quickActions = mode === 'shop' ? [
+    { label: 'Nouvelle Vente', icon: Plus, view: 'shop:pos', primary: true },
+    { label: 'Catalogue', icon: List, view: 'shop:catalog' },
+    { label: 'Articles & Variantes', icon: Package, view: 'shop:products' },
+    { label: 'Commandes', icon: Archive, view: 'shop:orders' },
+    { label: 'Stocks', icon: Box, view: 'shop:inventory' },
+    { label: 'Fournisseurs', icon: Truck, view: 'shop:suppliers' },
+    { label: 'Kits Scolaires', icon: Bookmark, view: 'shop:kits' },
+    { label: 'Retours', icon: RotateCcw, view: 'shop:returns' },
+    { label: 'Rapports', icon: BarChart3, view: 'shop:analysis' },
+  ] : [
+    { label: 'Nouveau Menu', icon: ChefHat, view: 'canteen:menus', primary: true },
+    { label: 'Inscriptions', icon: ClipboardCheck, view: 'canteen:enrollments' },
+    { label: 'Élèves inscrits', icon: Users, view: 'canteen:students' },
+    { label: 'Présences', icon: UtensilsCrossed, view: 'canteen:attendance' },
+    { label: 'Régimes & Allergies', icon: AlertTriangle, view: 'canteen:diets' },
+    { label: 'Paiements', icon: CreditCard, view: 'canteen:payments' },
+    { label: 'Stocks', icon: Package, view: 'canteen:stocks' },
+    { label: 'Fournisseurs', icon: Truck, view: 'canteen:suppliers' },
+    { label: 'Incidents', icon: AlertCircle, view: 'canteen:incidents' },
+    { label: 'Rapports', icon: BarChart3, view: 'canteen:reports' },
+  ];
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* En-tête */}
+      {/* En-tête — nom du module actif uniquement */}
       <div>
-        <h1 className="text-2xl font-black text-slate-900">
-          Boutique <span className="text-slate-300">+</span> Cantine
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Vue d'ensemble unifiée des ventes, stocks, repas et inscriptions.
-          Naviguez d'un module à l'autre via la sidebar à gauche.
-        </p>
+        <h1 className="text-2xl font-black text-slate-900">{config.label}</h1>
+        <p className="text-sm text-slate-500 mt-1">{config.description}</p>
       </div>
 
-      {/* KPIs globaux ( Boutique + Cantine ) */}
+      {/* KPIs du module actif (données réelles backend) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard
-          label="Produits actifs"
-          value={String(shopStats?.totalProducts ?? 0)}
-          icon={Package}
-          color="amber"
-          trend={null}
-          onClick={() => onNavigate('shop:products')}
-        />
-        <KpiCard
-          label="Recette Boutique (30j)"
-          value={formatCurrency(shopStats?.totalRevenueMonth ?? 0)}
-          icon={TrendingUp}
-          color="amber"
-          trend="up"
-          onClick={() => onNavigate('shop:analysis')}
-        />
-        <KpiCard
-          label="Élèves inscrits Cantine"
-          value={String(canteenStats?.enrolledStudents ?? 0)}
-          icon={Users}
-          color="emerald"
-          trend="up"
-          onClick={() => onNavigate('canteen:students')}
-        />
-        <KpiCard
-          label="Repas aujourd'hui"
-          value={String(canteenStats?.mealsToday ?? 0)}
-          icon={UtensilsCrossed}
-          color="emerald"
-          trend={null}
-          onClick={() => onNavigate('canteen:attendance')}
-        />
+        {kpis.map(kpi => (
+          <KpiCard
+            key={kpi.label}
+            label={kpi.label}
+            value={kpi.value}
+            icon={kpi.icon}
+            color={config.accent}
+            trend={kpi.trend}
+            onClick={() => onNavigate(kpi.navigate)}
+          />
+        ))}
       </div>
 
-      {/* Deux colonnes : Boutique + Cantine */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* ── Colonne Boutique ── */}
-        <ModuleSectionCard
-          title="Boutique & Économat"
-          description="Gestion des ventes, stocks, fournisseurs, kits scolaires et lien direct avec les encaissements du module Finance."
-          accentColor="amber"
-          accentIcon={ShoppingBag}
-          stats={[
-            { label: 'Ventes (30j)', value: String(shopStats?.totalSalesMonth ?? 0) },
-            { label: 'Alertes stock', value: String(shopStats?.lowStockAlerts ?? 0) },
-          ]}
-          quickActions={[
-            { label: 'Nouvelle Vente', icon: Plus, view: 'shop:pos', primary: true },
-            { label: 'Catalogue', icon: List, view: 'shop:catalog' },
-            { label: 'Commandes', icon: Archive, view: 'shop:orders' },
-            { label: 'Stocks', icon: Box, view: 'shop:inventory' },
-            { label: 'Fournisseurs', icon: Truck, view: 'shop:suppliers' },
-            { label: 'Kits Scolaires', icon: Bookmark, view: 'shop:kits' },
-            { label: 'Rapports', icon: BarChart3, view: 'shop:analysis' },
-          ]}
-          onNavigate={onNavigate}
-          externalLink={{ href: '/app/finance/payments', label: 'Encaissements Finance' }}
-        />
+      {/* Carte résumé du module — une seule, pas de mélange */}
+      <ModuleSectionCard
+        mode={mode}
+        onNavigate={onNavigate}
+        quickActions={quickActions}
+        externalLink={mode === 'shop' ? { href: '/app/finance/payments', label: 'Encaissements Finance' } : undefined}
+      />
 
-        {/* ── Colonne Cantine ── */}
-        <ModuleSectionCard
-          title="Cantine & Restauration"
-          description="Gestion complète de la restauration scolaire : menus, inscriptions, présences, régimes & allergies, paiements, stocks, fournisseurs, incidents hygiène et rapports."
-          accentColor="emerald"
-          accentIcon={UtensilsCrossed}
-          stats={[
-            { label: 'Alertes stock', value: String(canteenStats?.stockAlerts ?? 0) },
-            { label: 'Score hygiène', value: String(canteenStats?.hygieneScore ?? '—') },
-          ]}
-          quickActions={[
-            { label: 'Nouveau Menu', icon: ChefHat, view: 'canteen:menus', primary: true },
-            { label: 'Inscriptions', icon: ClipboardCheck, view: 'canteen:enrollments' },
-            { label: 'Présences', icon: UtensilsCrossed, view: 'canteen:attendance' },
-            { label: 'Régimes & Allergies', icon: AlertTriangle, view: 'canteen:diets' },
-            { label: 'Paiements', icon: CreditCard, view: 'canteen:payments' },
-            { label: 'Incidents', icon: AlertCircle, view: 'canteen:incidents' },
-            { label: 'Rapports', icon: BarChart3, view: 'canteen:reports' },
-          ]}
-          onNavigate={onNavigate}
-        />
-      </div>
-
-      {/* Paramètres communs en bas */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <button
-          onClick={() => onNavigate('shop:settings')}
-          className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50/30 transition text-left"
-        >
-          <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
-            <Settings className="w-5 h-5 text-amber-600" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900">Configuration Boutique</p>
-            <p className="text-xs text-slate-500">Catégories, TVA, moyens de paiement, imprimantes</p>
-          </div>
-        </button>
-        <button
-          onClick={() => onNavigate('canteen:settings')}
-          className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 transition text-left"
-        >
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center">
-            <Settings className="w-5 h-5 text-emerald-600" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-slate-900">Paramètres Cantine</p>
-            <p className="text-xs text-slate-500">Tarifs repas, allergies, fournisseurs, hygiène</p>
-          </div>
-        </button>
-      </div>
+      {/* Carte paramètres du module */}
+      <button
+        onClick={() => onNavigate(mode === 'shop' ? 'shop:settings' : 'canteen:settings')}
+        className={cn(
+          'flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 transition text-left w-full max-w-md',
+          config.accent === 'amber'
+            ? 'hover:border-amber-300 hover:bg-amber-50/30'
+            : 'hover:border-emerald-300 hover:bg-emerald-50/30',
+        )}
+      >
+        <div className={cn(
+          'w-10 h-10 rounded-lg flex items-center justify-center',
+          config.accent === 'amber' ? 'bg-amber-50' : 'bg-emerald-50',
+        )}>
+          <Settings className={cn('w-5 h-5', config.accent === 'amber' ? 'text-amber-600' : 'text-emerald-600')} />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-slate-900">
+            {mode === 'shop' ? 'Configuration Boutique' : 'Paramètres Cantine'}
+          </p>
+          <p className="text-xs text-slate-500">
+            {mode === 'shop'
+              ? 'Catégories, TVA, moyens de paiement, imprimantes'
+              : 'Tarifs repas, allergies, fournisseurs, hygiène'}
+          </p>
+        </div>
+      </button>
     </div>
   );
 }
 
+// Icône placeholder pour Score Hygiène (utilise AlertCircle déjà importé)
+function ShieldIconReplacement({ className }: { className?: string }) {
+  return <AlertCircle className={className} />;
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// KPI CARD — Petite carte KPI cliquable
+// KPI CARD — Petite carte KPI cliquable (données réelles backend)
 // ─────────────────────────────────────────────────────────────────────
 
 function KpiCard({
@@ -672,60 +718,45 @@ function KpiCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// MODULE SECTION CARD — Carte résumé d'un module (Boutique ou Cantine)
+// MODULE SECTION CARD — Carte résumé du module actif (UN SEUL)
 // ─────────────────────────────────────────────────────────────────────
 
 function ModuleSectionCard({
-  title, description, accentColor, accentIcon: AccentIcon, stats, quickActions, onNavigate, externalLink,
+  mode, onNavigate, quickActions, externalLink,
 }: {
-  title: string;
-  description: string;
-  accentColor: 'amber' | 'emerald';
-  accentIcon: any;
-  stats: { label: string; value: string }[];
-  quickActions: { label: string; icon: any; view: string; primary?: boolean }[];
+  mode: ModuleMode;
   onNavigate: (view: string) => void;
+  quickActions: { label: string; icon: any; view: string; primary?: boolean }[];
   externalLink?: { href: string; label: string };
 }) {
+  const config = MODE_CONFIG[mode];
   const colorClasses = {
     amber: {
       gradient: 'from-amber-500 to-orange-500',
-      chip: 'bg-amber-50 text-amber-700',
       btn: 'bg-amber-600 hover:bg-amber-700',
       btnLight: 'border-amber-200 text-amber-700 hover:bg-amber-50',
     },
     emerald: {
       gradient: 'from-emerald-500 to-teal-500',
-      chip: 'bg-emerald-50 text-emerald-700',
       btn: 'bg-emerald-600 hover:bg-emerald-700',
       btnLight: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50',
     },
-  }[accentColor];
+  }[config.accent];
+
+  const AccentIcon = config.logoIcon;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Bandeau d'en-tête avec dégradé */}
       <div className={cn('p-5 bg-gradient-to-r text-white', colorClasses.gradient)}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
-              <AccentIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black">{title}</h3>
-              <p className="text-xs text-white/80 mt-0.5 line-clamp-2">{description}</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur flex items-center justify-center">
+            <AccentIcon className="w-5 h-5" />
           </div>
-        </div>
-
-        {/* Stats inline */}
-        <div className="flex gap-4 mt-4">
-          {stats.map(s => (
-            <div key={s.label}>
-              <p className="text-[10px] uppercase tracking-wider text-white/70 font-bold">{s.label}</p>
-              <p className="text-xl font-black">{s.value}</p>
-            </div>
-          ))}
+          <div>
+            <h3 className="text-lg font-black">{config.label}</h3>
+            <p className="text-xs text-white/80 mt-0.5 line-clamp-2">{config.description}</p>
+          </div>
         </div>
       </div>
 
@@ -752,7 +783,7 @@ function ModuleSectionCard({
           })}
         </div>
 
-        {/* Lien externe (Finance pour Boutique) */}
+        {/* Lien externe (Finance pour Boutique uniquement) */}
         {externalLink && (
           <a
             href={externalLink.href}

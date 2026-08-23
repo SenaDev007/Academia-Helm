@@ -27,7 +27,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import {
   Loader2, RefreshCw, Calendar, Save, Sparkles, Pencil, Check, X,
   BookOpen, AlertCircle, Info, Send, ChevronLeft, ChevronRight,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, Download, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -740,6 +740,42 @@ export function MonthlyPlanningTab({
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Sauvegarder
+              </button>
+              {/* ⭐ Bouton PDF — génère un PDF de la planification mensuelle */}
+              <button
+                onClick={async () => {
+                  try {
+                    toast.info("Génération du PDF en cours...");
+                    const params = new URLSearchParams({
+                      academicYearId: academicYearId || '',
+                      classLevel: selectedClass,
+                      month: selectedMonth,
+                      teacherId: teacherId || '',
+                    });
+                    const res = await fetch(`/api/pedagogy/monthly-plans/export-pdf?${params.toString()}`, {
+                      credentials: 'include',
+                    });
+                    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `planification_${selectedClass}_${selectedMonth}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    toast.success("PDF téléchargé");
+                  } catch (e: any) {
+                    toast.error("Échec PDF: " + e.message);
+                  }
+                }}
+                disabled={saving || loading}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold"
+                title="Télécharger la planification en PDF"
+              >
+                <Download className="w-4 h-4" />
+                PDF
               </button>
               {/* ⭐ Bouton Soumettre (visible seulement si DRAFT) */}
               {planStatus === "DRAFT" && (

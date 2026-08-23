@@ -18,8 +18,9 @@
  */
 
 import {
-  Controller, Get, Post, Put, Body, Param, Query, UseGuards, Logger, BadRequestException,
+  Controller, Get, Post, Put, Body, Param, Query, UseGuards, Logger, BadRequestException, Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -185,10 +186,40 @@ export class MonthlyPlanController {
   async getPendingPlans(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('status') status?: string,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId requis');
     }
-    return this.monthlyPlanService.getPendingMonthlyPlans(tenantId, academicYearId);
+    return this.monthlyPlanService.getPendingMonthlyPlans(tenantId, academicYearId, status);
+  }
+
+  // ⭐ Export PDF de la planification mensuelle
+  @Get('export-pdf')
+  async exportPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classLevel') classLevel: string,
+    @Query('month') month: string,
+    @Query('teacherId') teacherId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId || !classLevel || !month) {
+      throw new BadRequestException('academicYearId, classLevel, month requis');
+    }
+    try {
+      const cells = await this.monthlyPlanService.getMonthlyPlanCells(
+        tenantId, academicYearId, classLevel, month, teacherId,
+      );
+      // Generate simple HTML → let the browser convert to PDF via print
+      // (V2 will use Puppeteer for proper PDF generation)
+      const html = this.monthlyPlanService.generatePlanHtml(cells, classLevel, month);
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="planification_${classLevel}_${month}.html"`);
+      res.send(html);
+    } catch (e: any) {
+      this.logger.error(`Export PDF error: ${e.message}`);
+      res.status(500).json({ error: 'Erreur lors de la génération du PDF', details: e.message });
+    }
   }
 }

@@ -591,8 +591,10 @@ export class MonthlyPlanService {
    * ⭐ Liste les planifications mensuelles en attente de validation (côté directeur).
    *    Utilisé par l'espace "Validation Direction".
    */
-  async getPendingMonthlyPlans(tenantId: string, academicYearId: string): Promise<any[]> {
-    // ⭐ On récupère les planifs SOUMISES (status=SUBMITTED) — une seule ligne par planif
+  async getPendingMonthlyPlans(tenantId: string, academicYearId: string, status?: string): Promise<any[]> {
+    // ⭐ Accept optional status filter (SUBMITTED / VALIDATED / REJECTED)
+    //    Default to SUBMITTED if not provided
+    const statusFilter = status || 'SUBMITTED';
     return await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT
         mp."classLevel",
@@ -600,21 +602,81 @@ export class MonthlyPlanService {
         mp."teacherId",
         mp."submittedAt",
         mp."teacherSignature",
+        mp."directorSignature",
+        mp."directorObservation",
+        mp."validatedAt",
         COUNT(mp.id) AS "cellCount",
         COUNT(CASE WHEN mp."isCustom" THEN 1 END) AS "customCount",
         u."firstName" AS "teacherFirstName",
         u."lastName" AS "teacherLastName",
-        ur."role" AS "teacherRole",
+        u."role" AS "teacherRole",
         c."name" AS "className"
       FROM "monthly_plans" mp
       LEFT JOIN "users" u ON u.id = mp."teacherId"
-      LEFT JOIN "user_roles" ur ON ur."userId" = mp."teacherId"
       LEFT JOIN "classes" c ON c."officialClassId" = mp."classLevel"
       WHERE mp."tenantId" = $1 AND mp."academicYearId" = $2
-        AND mp."status" = 'SUBMITTED'
+        AND mp."status" = $3
       GROUP BY mp."classLevel", mp."month", mp."teacherId", mp."submittedAt", mp."teacherSignature",
-               u."firstName", u."lastName", ur."role", c."name"
+               mp."directorSignature", mp."directorObservation", mp."validatedAt",
+               u."firstName", u."lastName", u."role", c."name"
       ORDER BY mp."submittedAt" DESC
-    `, tenantId, academicYearId);
+    `, tenantId, academicYearId, statusFilter);
+  }
+
+  // ⭐ Get cells for a specific plan (for PDF export + director detail view)
+  async getMonthlyPlanCells(
+    tenantId: string, academicYearId: string, classLevel: string, month: string, teacherId: string,
+  ): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM "monthly_plans"
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4
+        ${teacherId ? 'AND "teacherId" = $5' : ''}
+      ORDER BY "weekNumber" ASC, "domain" ASC
+    `, tenantId, academicYearId, classLevel, month, ...(teacherId ? [teacherId] : []));
+  }
+
+  // ⭐ Generate printable HTML for the planification (for PDF export)
+  generatePlanHtml(cells: any[], classLevel: string, month: string): string {
+    const weeks = ['1ère Semaine', '2ème Semaine', '3ème Semaine', '4ème Semaine', '5ème Semaine'];
+    const domains = [...new Set(cells.map(c => c.domain))];
+
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Planification ${classLevel} — ${month}</title>
+    <style>
+      body { font-family: 'Times New Roman', serif; margin: 20px; }
+      h1 { text-align: center; font-size: 16pt; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border: 1px solid #000; padding: 4px; font-size: 9pt; vertical-align: top; }
+      th { background: #f0f0f0; font-weight: bold; text-align: center; }
+      .header { text-align: center; margin-bottom: 10px; }
+      .footer { margin-top: 20px; display: flex; justify-content: space-between; }
+      .signature { border-top: 1px solid #000; padding-top: 5px; width: 200px; text-align: center; font-size: 10pt; }
+    </style></head><body>
+    <div class="header">
+      <h1>PLANIFICATION MENSUELLE — ${month}</h1>
+      <p>Classe: ${classLevel} — Année Scolaire 2026-2027</p>
+    </div>
+    <table>
+      <thead><tr><th>Champ de Formation</th>${weeks.map(w => `<th>${w}</th>`).join('')}</tr></thead>
+      <tbody>`;
+
+    for (const domain of domains) {
+      const domainCells = cells.filter(c => c.domain === domain);
+      html += `<tr><td><strong>${domain}</strong>${domainCells[0]?.subDomain ? '<br/><small>' + domainCells[0].subDomain + '</small>' : ''}</td>`;
+      for (let w = 1; w <= 5; w++) {
+        const cell = domainCells.find(c => c.weekNumber === w);
+        html += `<td>${cell?.content ? cell.content.replace(/<[^>]*>/g, '') : '—'}</td>`;
+      }
+      html += '</tr>';
+    }
+
+    html += `</tbody></table>
+    <div class="footer">
+      <div class="signature">Le Directeur<br/><br/></div>
+      <div class="signature">Le Titulaire<br/><br/></div>
+    </div>
+    </body></html>`;
+
+    return html;
   }
 }

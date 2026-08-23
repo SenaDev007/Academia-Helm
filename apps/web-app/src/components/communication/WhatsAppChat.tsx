@@ -874,15 +874,44 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const getFileTypeIcon = (mime?: string, name?: string) => {
     const ext = (name?.split('.').pop() || '').toLowerCase();
     const m = (mime || '').toLowerCase();
-    if (m.includes('pdf') || ext === 'pdf') return { icon: <FileText className="w-5 h-5 text-red-600" />, label: 'PDF' };
-    if (m.includes('word') || ext === 'doc' || ext === 'docx') return { icon: <FileText className="w-5 h-5 text-blue-700" />, label: 'Word' };
-    if (m.includes('sheet') || m.includes('excel') || ext === 'xls' || ext === 'xlsx') return { icon: <FileText className="w-5 h-5 text-green-700" />, label: 'Excel' };
-    if (m.includes('presentation') || ext === 'ppt' || ext === 'pptx') return { icon: <FileText className="w-5 h-5 text-orange-600" />, label: 'PowerPoint' };
-    if (m.includes('zip') || m.includes('compressed') || ext === 'zip' || ext === 'rar' || ext === '7z') return { icon: <FileText className="w-5 h-5 text-amber-600" />, label: 'Archive' };
-    if (m.includes('image/') || ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') return { icon: <ImageIcon className="w-5 h-5 text-purple-600" />, label: 'Image' };
-    if (m.includes('audio/') || ext === 'mp3' || ext === 'wav' || ext === 'ogg' || ext === 'webm' || ext === 'm4a') return { icon: <Mic className="w-5 h-5 text-pink-600" />, label: 'Audio' };
-    if (m.includes('video/') || ext === 'mp4' || ext === 'avi' || ext === 'mov') return { icon: <FileText className="w-5 h-5 text-indigo-600" />, label: 'Vidéo' };
-    return { icon: <FileText className="w-5 h-5 text-slate-600" />, label: 'Fichier' };
+    // ⭐ Official-style colored badges with label text (like Telegram/WhatsApp)
+    //    Uses background color + white text for file-type chips
+    if (m.includes('pdf') || ext === 'pdf') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-red-600 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">PDF</div>,
+      label: 'PDF Document'
+    };
+    if (m.includes('word') || ext === 'doc' || ext === 'docx') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-blue-700 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">DOC</div>,
+      label: 'Word Document'
+    };
+    if (m.includes('sheet') || m.includes('excel') || ext === 'xls' || ext === 'xlsx') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-green-700 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">XLS</div>,
+      label: 'Excel Spreadsheet'
+    };
+    if (m.includes('presentation') || ext === 'ppt' || ext === 'pptx') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-orange-600 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">PPT</div>,
+      label: 'PowerPoint'
+    };
+    if (m.includes('zip') || m.includes('compressed') || ext === 'zip' || ext === 'rar' || ext === '7z') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-amber-600 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">ZIP</div>,
+      label: 'Archive'
+    };
+    if (m.includes('image/') || ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') return {
+      icon: <ImageIcon className="w-5 h-5 text-purple-600 flex-shrink-0" />,
+      label: 'Image'
+    };
+    if (m.includes('audio/') || ext === 'mp3' || ext === 'wav' || ext === 'ogg' || ext === 'webm' || ext === 'm4a') return {
+      icon: <Mic className="w-5 h-5 text-pink-600 flex-shrink-0" />,
+      label: 'Audio'
+    };
+    if (m.includes('video/') || ext === 'mp4' || ext === 'avi' || ext === 'mov') return {
+      icon: <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0">MP4</div>,
+      label: 'Vidéo'
+    };
+    return {
+      icon: <FileText className="w-5 h-5 text-slate-600 flex-shrink-0" />,
+      label: 'Fichier'
+    };
   };
 
   const handleSendAttachment = async (file: File, type: 'AUDIO' | 'DOCUMENT' | 'IMAGE') => {

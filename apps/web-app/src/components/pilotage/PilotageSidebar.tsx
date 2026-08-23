@@ -680,7 +680,7 @@ export default function PilotageSidebar({
               onClick={() => setOpen(!open)}
               className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group/section"
             >
-              <span className="flex items-center gap-2 text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em]">
+              <span className="flex items-center gap-2 text-[10px] font-semibold text-blue-200/80 uppercase tracking-[0.15em]">
                 <SectionIcon className="w-3.5 h-3.5" />
                 {title}
                 {badge && (
@@ -690,7 +690,7 @@ export default function PilotageSidebar({
                 )}
               </span>
               <ChevronDown
-                className={`w-3.5 h-3.5 text-blue-300/40 transition-transform duration-200 ${
+                className={`w-3.5 h-3.5 text-blue-200/80 transition-transform duration-200 ${
                   open ? 'rotate-0' : '-rotate-90'
                 }`}
               />
@@ -763,11 +763,11 @@ export default function PilotageSidebar({
                 onClick={() => setMainModulesOpen(!mainModulesOpen)}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group/section"
               >
-                <span className="text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em]">
+                <span className="text-[10px] font-semibold text-blue-200/80 uppercase tracking-[0.15em]">
                   Modules principaux
                 </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-blue-300/40 transition-transform duration-200 group-hover/section:text-blue-300/60 ${
+                  className={`w-3.5 h-3.5 text-blue-200/80 transition-transform duration-200 group-hover/section:text-blue-200 ${
                     mainModulesOpen ? 'rotate-0' : '-rotate-90'
                   }`}
                 />
@@ -831,11 +831,11 @@ export default function PilotageSidebar({
                 onClick={() => setSupplementaryModulesOpen(!supplementaryModulesOpen)}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group/section"
               >
-                <span className="text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em]">
+                <span className="text-[10px] font-semibold text-blue-200/80 uppercase tracking-[0.15em]">
                   Modules supplémentaires
                 </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-blue-300/40 transition-transform duration-200 group-hover/section:text-blue-300/60 ${
+                  className={`w-3.5 h-3.5 text-blue-200/80 transition-transform duration-200 group-hover/section:text-blue-200 ${
                     supplementaryModulesOpen ? 'rotate-0' : '-rotate-90'
                   }`}
                 />
@@ -879,7 +879,7 @@ export default function PilotageSidebar({
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
             onClick={onCloseMobileDrawer}
-            className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-blue-200/60 hover:bg-white/[0.04] hover:text-white"
+            className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-blue-100/80 hover:bg-white/[0.04] hover:text-white"
             title={!effectiveOpen ? 'Visiter le site' : undefined}
             {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
           >
@@ -895,7 +895,7 @@ export default function PilotageSidebar({
             className={`group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
               isActive('/app/settings')
                 ? 'bg-white/[0.12] text-white relative'
-                : 'text-blue-200/60 hover:bg-white/[0.04] hover:text-white'
+                : 'text-blue-100/80 hover:bg-white/[0.04] hover:text-white'
             }`}
             title={!effectiveOpen ? 'Paramètres' : undefined}
           >
@@ -947,7 +947,7 @@ export default function PilotageSidebar({
       <div className="border-t border-white/[0.06]">
         {effectiveOpen ? (
           <div className="p-4">
-            <p className="text-[10px] font-semibold text-blue-300/40 uppercase tracking-[0.15em] mb-2.5">Niveau actif</p>
+            <p className="text-[10px] font-semibold text-blue-200/80 uppercase tracking-[0.15em] mb-2.5">Niveau actif</p>
             {currentLevel ? (
               <div className="flex items-center space-x-3 bg-white/[0.05] rounded-xl px-3 py-2.5">
                 <div className={`w-2.5 h-2.5 rounded-full bg-gradient-to-br ${getLevelColor(currentLevel.code)} shadow-sm animate-pulse`} />
@@ -955,8 +955,8 @@ export default function PilotageSidebar({
               </div>
             ) : (
               <div className="flex items-center space-x-3 bg-white/[0.05] rounded-xl px-3 py-2.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-blue-400/40" />
-                <p className="text-sm font-medium text-blue-200/60">Non défini</p>
+                <div className="w-2.5 h-2.5 rounded-full bg-blue-300/80" />
+                <p className="text-sm font-medium text-blue-100/80">Non défini</p>
               </div>
             )}
           </div>
@@ -1005,7 +1005,7 @@ export default function PilotageSidebar({
           {/* ⭐ SaisieMaster supprimé de la sidebar tablette aussi */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
-            className="flex items-center justify-center p-2.5 rounded-xl text-blue-200/60 hover:bg-white/[0.04] hover:text-white min-h-[44px] min-w-[44px]"
+            className="flex items-center justify-center p-2.5 rounded-xl text-blue-100/80 hover:bg-white/[0.04] hover:text-white min-h-[44px] min-w-[44px]"
             title="Visiter le site"
             {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
           >
@@ -1016,7 +1016,7 @@ export default function PilotageSidebar({
             className={`flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 min-h-[44px] min-w-[44px] ${
               isActive('/app/settings')
                 ? 'bg-white/[0.12] text-white'
-                : 'text-blue-200/60 hover:bg-white/[0.04] hover:text-white'
+                : 'text-blue-100/80 hover:bg-white/[0.04] hover:text-white'
             }`}
             title="Paramètres"
           >

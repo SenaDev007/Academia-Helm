@@ -52,11 +52,13 @@ export async function POST(
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
+  const url = new URL(request.url);
+  const queryString = url.search; // ⭐ FIX Issue 6: forward query string — same pattern as GET
   const pathStr = path ? path.join('/') : '';
   const body = await request.json();
   const headers = await getProxyAuthHeaders(request);
   const response = await fetch(
-    nestControllerUrl(`pedagogy/annual-plans${pathStr ? '/' + pathStr : ''}`),
+    nestControllerUrl(`pedagogy/annual-plans${pathStr ? '/' + pathStr : ''}${queryString}`),
     { method: 'POST', headers, body: JSON.stringify(body) }
   );
 
@@ -72,11 +74,13 @@ export async function PUT(
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
   const { path } = await params;
+  const url = new URL(request.url);
+  const queryString = url.search; // ⭐ FIX Issue 6: forward query string — same pattern as GET
   const pathStr = path ? path.join('/') : '';
   const body = await request.json();
   const headers = await getProxyAuthHeaders(request);
   const response = await fetch(
-    nestControllerUrl(`pedagogy/annual-plans${pathStr ? '/' + pathStr : ''}`),
+    nestControllerUrl(`pedagogy/annual-plans${pathStr ? '/' + pathStr : ''}${queryString}`),
     { method: 'PUT', headers, body: JSON.stringify(body) }
   );
 

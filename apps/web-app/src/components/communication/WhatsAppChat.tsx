@@ -28,7 +28,7 @@ import {
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
-  BarChart3,
+  BarChart3, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -43,6 +43,8 @@ import PollModal from './PollModal';
 import DropdownMenu from './DropdownMenu';
 import { getHelmWatermarkStyle } from './HelmWatermark';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -246,6 +248,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
   const [showFormatToolbar, setShowFormatToolbar] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<{ id: string; senderName: string; content: string } | null>(null);
+
+  // ⭐ Issue 1 — Custom confirmation modal (replaces native confirm())
+  const { danger, warning, dialog: confirmDialogEl } = useConfirmDialog();
+  // ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style)
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -803,7 +810,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   };
 
   const handleMessageDeleteForMe = async (messageId: string) => {
-    if (!confirm('Supprimer ce message pour moi ?')) return;
+    // ⭐ Issue 1: custom confirmation modal (warning style — amber)
+    const ok = await warning(
+      'Ce message sera supprimé uniquement pour vous. Les autres participants le verront encore.',
+      'Supprimer pour moi ?',
+    );
+    if (!ok) return;
     try {
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/${messageId}/delete-for-me`, {
         method: 'POST',
@@ -821,7 +833,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   };
 
   const handleMessageDeleteForEveryone = async (messageId: string) => {
-    if (!confirm('Supprimer ce message pour TOUT LE MONDE ? Cette action est irréversible.')) return;
+    // ⭐ Issue 1: custom confirmation modal (danger style — red, destructive)
+    const ok = await danger(
+      'Ce message sera supprimé pour TOUS les participants. Cette action est irréversible.',
+      'Supprimer pour tout le monde ?',
+    );
+    if (!ok) return;
     try {
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/${messageId}/delete-for-everyone`, {
         method: 'POST',
@@ -861,13 +878,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // Send attachment (document, image, audio)
   // ───────────────────────────────────────────────────────────────────
   // ⭐ Helper: get absolute URL for attachment (prepend backend URL if relative)
+  // ⭐ Issue 2 + 5 FIX: backend serves files under /api/* (NestJS setGlobalPrefix('api'))
+  //    Without /api prefix, /chat/audio/... returns 404 "Cannot GET /chat/audio/..."
+  //    and audio playback fails too. We now prepend /api when path starts with /chat/.
   const getAttachmentUrl = (url?: string): string => {
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url; // Absolute (R2/S3)
     // Relative path from backend (local storage) — prepend API URL
-    // Ensure path starts with /
     const path = url.startsWith('/') ? url : `/${url}`;
-    return `https://api.academiahelm.com${path}`;
+    // ⭐ FIX: NestJS uses setGlobalPrefix('api') — so /chat/audio/X must become /api/chat/audio/X
+    //    If path already starts with /api, keep as-is; otherwise prepend /api.
+    const withApi = path.startsWith('/api') ? path : `/api${path}`;
+    return `https://api.academiahelm.com${withApi}`;
   };
 
   // ⭐ Helper: get file-type icon based on MIME or filename
@@ -1446,6 +1468,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               target="_blank"
                               rel="noreferrer"
                               className="block"
+                              onClick={(e) => { e.preventDefault(); setPreviewDoc({ filePath: getAttachmentUrl(msg.attachmentUrl), fileName: msg.attachmentName || 'Image', mimeType: msg.attachmentMime || 'image/*' }); }}
                             >
                               <img
                                 src={getAttachmentUrl(msg.attachmentUrl)}
@@ -1472,7 +1495,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               className="p-1 rounded hover:bg-slate-200"
                               title="Télécharger"
                             >
-                              <FileText className="w-4 h-4" />
+                              <Download className="w-4 h-4" />
                             </a>
                             {msg.content && <span className="text-xs">{msg.content}</span>}
                           </div>
@@ -1486,6 +1509,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               target="_blank"
                               rel="noreferrer"
                               className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                              onClick={(e) => { e.preventDefault(); setPreviewDoc({ filePath: getAttachmentUrl(msg.attachmentUrl), fileName: msg.attachmentName || ft.label, mimeType: msg.attachmentMime || '' }); }}
                             >
                               {ft.icon}
                               <div className="min-w-0">
@@ -1882,6 +1906,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           <span>{error}</span>
           <button onClick={() => setError(null)}><X className="w-3 h-3" /></button>
         </div>
+      )}
+
+      {/* ⭐ Issue 1 — Custom confirmation modal (replaces native confirm()) */}
+      {confirmDialogEl}
+      {/* ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style) */}
+      {previewDoc && (
+        <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
       )}
     </div>
   );

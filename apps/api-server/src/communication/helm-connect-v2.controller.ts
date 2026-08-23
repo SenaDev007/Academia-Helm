@@ -155,7 +155,7 @@ export class HelmConnectV2Controller {
   ) {
     if (!body.userId) throw new BadRequestException('userId is required');
     if (!body.duration) throw new BadRequestException('duration is required (1H/8H/24H/FOREVER)');
-    return this.notifPrefsService.enableDnd(userId, tenantId, body.duration, body.exceptions);
+    return this.notifPrefsService.enableDnd(body.userId, tenantId, body.duration, body.exceptions);
   }
 
   @Post('notifications/dnd/disable')

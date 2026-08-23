@@ -1439,7 +1439,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {/* Timestamp + read receipt (WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ read) */}
                         <div className={cn(
                           'flex items-center gap-1 mt-0.5',
-                          isMine ? 'justify-end text-[#E6F4FF]' : 'justify-end text-slate-400'
+                          isMine ? 'justify-end text-white/80' : 'justify-end text-slate-500'
                         )}>
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
                           {isMine && (

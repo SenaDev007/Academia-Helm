@@ -399,18 +399,11 @@ export function MonthlyPlanningTab({
         `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
       );
       if (data.cells.length === 0) {
-        // ⭐ FIX: Only auto-propose ONCE per session per (class, month) combo
-        //    Previously, every click triggered a new auto-propose + toast spam.
-        //    Now we track which combos have been tried and skip if already tried.
-        const comboKey = `${selectedClass}|${selectedMonth}`;
-        if (!triedAutoProposeRef.current.has(comboKey)) {
-          triedAutoProposeRef.current.add(comboKey);
-          await autoProposeRef.current();
-        } else {
-          // Already tried — just show empty state without spamming toast
-          setCells([]);
-          setHasExistingCustom(false);
-        }
+        // ⭐ FIX: NEVER auto-propose in loadPlan. Auto-propose overwrites user edits
+        //    every time the plan reloads (save → loadPlan → 0 cells → auto-propose → edits lost).
+        //    Instead: show empty cells with templates. User clicks "Importer" button manually.
+        setCells([]);
+        setHasExistingCustom(false);
       } else {
         setCells(data.cells);
         setHasExistingCustom(data.hasExistingCustom);
@@ -423,8 +416,8 @@ export function MonthlyPlanningTab({
     } catch (e: any) {
       const msg = e?.message || "";
       if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("Failed to fetch monthly plans")) {
-        console.warn("Table monthly_plans non disponible — essai auto-proposition:", msg);
-        try { await autoProposeRef.current(); } catch (e2) { console.error("Auto-propose fallback failed:", e2); }
+        console.warn("Table monthly_plans non disponible:", msg);
+        setCells([]);
       } else {
         console.error("Failed to load monthly plan:", e);
         toast.error("Erreur lors du chargement: " + msg);
@@ -476,8 +469,11 @@ export function MonthlyPlanningTab({
     }
     setSubmitting(true);
     try {
+      // ⭐ Save all cells BEFORE submitting
+      await saveRef.current();
+
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/submit?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`,
+        `/api/pedagogy/monthly-plans/submit?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId || ''}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -486,8 +482,13 @@ export function MonthlyPlanningTab({
         }
       );
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.error || `Erreur ${res.status}`);
+        // ⭐ Get verbose error from BFF/backend
+        const errData = await res.json().catch(() => ({}));
+        const msg = (errData as any)?.backendError?.message
+          || (errData as any)?.message
+          || (errData as any)?.error
+          || `Erreur ${res.status}`;
+        throw new Error(msg);
       }
       toast.success("✅ Planification mensuelle soumise au directeur");
       setShowSignatureModal(false);

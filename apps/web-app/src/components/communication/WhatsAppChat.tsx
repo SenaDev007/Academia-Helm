@@ -1523,13 +1523,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               download={msg.attachmentName}
                               target="_blank"
                               rel="noreferrer"
-                              className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                              className={cn(
+                                'flex items-center gap-2 p-2 rounded-lg transition-colors',
+                                isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100',
+                              )}
                               onClick={(e) => { e.preventDefault(); setPreviewDoc({ filePath: getAttachmentUrl(msg.attachmentUrl), fileName: msg.attachmentName || ft.label, mimeType: msg.attachmentMime || '' }); }}
                             >
                               {ft.icon}
                               <div className="min-w-0">
-                                <div className="text-xs font-semibold truncate">{msg.attachmentName || ft.label}</div>
-                                <div className="text-[10px] text-slate-400">{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
+                                <div className={cn('text-xs font-semibold truncate', isMine ? 'text-white' : 'text-slate-900')}>{msg.attachmentName || ft.label}</div>
+                                <div className={cn('text-[10px]', isMine ? 'text-white/80' : 'text-slate-500')}>{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
                               </div>
                             </a>
                           );
@@ -1595,7 +1598,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               </div>
                             );
                           } catch {
-                            return <span className="text-xs text-slate-400">Sondage</span>;
+                            return <span className={cn('text-xs', isMine ? 'text-white/80' : 'text-slate-500')}>Sondage</span>;
                           }
                         })()}
                         {/* Timestamp + read receipt (WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ read) */}
@@ -2078,7 +2081,7 @@ function NewChatModal({
             <input
               autoFocus
               type="text"
-              placeholder="Rechercher un utilisateur (nom, email)..."
+              placeholder="Rechercher par nom, email ou téléphone..."
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
               value={query}
               onChange={e => setQuery(e.target.value)}

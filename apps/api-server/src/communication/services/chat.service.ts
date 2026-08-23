@@ -727,11 +727,15 @@ export class ChatService {
 
     // Part 2: Search in guardians table (parents who may not have a users entry)
     //    Only return guardians from the same tenant (parents belong to a specific school)
-    //    ⭐ Also include guardians WITH userId (we'll dedupe against userRows later by email/userId)
+    //    ⭐ FIX Issue #?: removed g."userId" from SELECT — the guardians table
+    //       has NO userId column. The query was throwing 'column "userId" does
+    //       not exist' which was silently swallowed by the try/catch below →
+    //       parents were never returned in search results.
+    //    ⭐ Dedup against users results happens later by email match.
     let guardianRows: any[] = [];
     try {
       guardianRows = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
+        SELECT g.id AS "guardianId", g."firstName", g."lastName", g."email",
                g."phone", g."tenantId", t."name" AS "tenantName",
                (g."tenantId" = $1) AS "isSameTenant"
         FROM "guardians" g
@@ -765,8 +769,9 @@ export class ChatService {
       allRows.push({ ...r, source: 'users' });
     }
     for (const g of guardianRows) {
-      // Skip guardians that already have a linked user (already in userRows)
-      if (g.userId) continue;
+      // ⭐ FIX: skip guardians whose email matches a user already in userRows
+      //    (was previously `if (g.userId) continue;` but guardians has no userId column)
+      if (g.email && seenEmails.has((g.email || '').toLowerCase())) continue;
       if (seenGuardianIds.has(g.guardianId)) continue;
       seenGuardianIds.add(g.guardianId);
       // Add guardian as a pseudo-user (can't chat directly but shown in search)
@@ -809,21 +814,11 @@ export class ChatService {
         childrenByParent.get(r.guardianId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
       }
     }
-    // Also search by userId for guardians who have a userId
-    const parentUserIdsWithAccount = rows.filter(r => r.userId && r.source !== 'guardians').map(r => r.userId);
-    if (parentUserIdsWithAccount.length > 0) {
-      const childrenRows2: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT g."userId" AS "parentUserId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
-        FROM "guardians" g
-        JOIN "student_guardians" sg ON sg."guardianId" = g.id
-        JOIN "students" s ON s.id = sg."studentId"
-        WHERE g."userId" = ANY($1::text[])
-      `, parentUserIdsWithAccount);
-      for (const r of childrenRows2) {
-        if (!childrenByParent.has(r.parentUserId)) childrenByParent.set(r.parentUserId, []);
-        childrenByParent.get(r.parentUserId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
-      }
-    }
+    // Also search by userId for guardians who have a userId — DISABLED
+    // ⭐ FIX: guardians table has no userId column. The previous block queried
+    //    WHERE g."userId" = ANY($1) which would always return empty (no userId
+    //    column) or throw. Since we now correctly look up children via
+    //    guardianId above (lines 800-810), this redundant block is removed.
 
     // ⭐ Get current user's role for contextual role labels
     const currentUserRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
@@ -907,9 +902,10 @@ export class ChatService {
       throw new BadRequestException('guardianId is required');
     }
 
-    // Fetch guardian record
+    // Fetch guardian record — ⭐ FIX: removed g."userId" from SELECT
+    //    (guardians table has no userId column — was throwing 'column "userId" does not exist')
     const guardian: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT g.id, g."firstName", g."lastName", g.email, g.phone, g."userId", g."tenantId",
+      SELECT g.id, g."firstName", g."lastName", g.email, g.phone, g."tenantId",
              t."name" AS "tenantName"
       FROM "guardians" g
       LEFT JOIN "tenants" t ON t.id = g."tenantId"
@@ -921,10 +917,20 @@ export class ChatService {
     }
     const g = guardian[0];
 
-    // If guardian already has a user account, no invitation needed
-    if (g.userId) {
+    // ⭐ FIX: instead of checking g.userId (which doesn't exist), look up
+    //    if a User account with matching email exists in the same tenant.
+    //    If yes, the guardian already has an account — no invitation needed.
+    let existingUser: any[] = [];
+    if (g.email) {
+      existingUser = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id FROM "users"
+        WHERE email = $1 AND "tenantId" = $2 AND status = 'active'
+        LIMIT 1
+      `, g.email, g.tenantId).catch(() => []);
+    }
+    if (existingUser.length > 0) {
       return {
-        id: g.userId,
+        id: existingUser[0].id,
         status: 'ALREADY_HAS_ACCOUNT',
         magicLink: '',
         channel: 'DIRECT',

@@ -603,31 +603,36 @@ export function MonthlyPlanningTab({
             {cell.content}
           </div>
         ) : (
-          <button
-            onClick={() => {
-              if (isReadOnly) return;
-              setEditingCellKey(cellKey);
-              // ⭐ Pre-fill with template text if available
-              const champ = ficheStructure?.find(c => c.code === champCode);
-              let template = "";
-              if (champ) {
-                if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
-                  template = champ.subRowTemplates[subRow];
-                } else if (!subRow && champ.cellTemplate) {
-                  template = champ.cellTemplate;
-                }
+          // ⭐ Empty cell — show pre-filled template text (not "...")
+          //    If template exists, display it as placeholder text (slate-400)
+          //    Click to edit → textarea pre-filled with the template
+          (() => {
+            const champ = ficheStructure?.find(c => c.code === champCode);
+            let template = "";
+            if (champ) {
+              if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
+                template = champ.subRowTemplates[subRow];
+              } else if (!subRow && champ.cellTemplate) {
+                template = champ.cellTemplate;
               }
-              setEditContent(template);
-            }}
-            disabled={isReadOnly}
-            className={cn(
-              "text-[9px] text-slate-400 hover:text-purple-600 w-full text-left p-1 min-h-[60px]",
-              isReadOnly && "cursor-not-allowed"
-            )}
-            title={isReadOnly ? "Planification verrouillée" : "Cliquer pour ajouter"}
-          >
-            {isReadOnly ? "" : "…"}
-          </button>
+            }
+            return (
+              <div
+                onClick={() => {
+                  if (isReadOnly) return;
+                  setEditingCellKey(cellKey);
+                  setEditContent(template);
+                }}
+                className={cn(
+                  "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
+                  isReadOnly ? "cursor-not-allowed text-slate-300" : "text-slate-500 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
+                )}
+                title={isReadOnly ? "Planification verrouillée" : "Cliquer pour remplir"}
+              >
+                {isReadOnly ? "" : (template || "…")}
+              </div>
+            );
+          })()
         )}
       </td>
     );
@@ -783,16 +788,14 @@ export function MonthlyPlanningTab({
             <table className="text-xs border-collapse w-full" style={{ minWidth: '1100px' }}>
               <colgroup>
                 <col style={{ width: "15%" }} />
-                <col style={{ width: "8%" }} />
                 {WEEK_LABELS.map((_, i) => (
-                  <col key={i} style={{ width: "15.4%" }} />
+                  <col key={i} style={{ width: "17%" }} />
                 ))}
               </colgroup>
               <thead>
                 {/* Ligne 1 : header semaines */}
                 <tr className="bg-slate-700 text-white">
                   <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "15%" }}>Champ de Formation</th>
-                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "8%" }}>Sous-ligne</th>
                   {WEEK_LABELS.map((wk, i) => (
                     <th key={wk} className="p-2 border border-slate-400 text-center">
                       {wk}
@@ -815,22 +818,24 @@ export function MonthlyPlanningTab({
                     const cellKeyBase = `${selectedClass}|${selectedMonth}|${champ.code}|${subRow || ''}`;
                     return (
                       <tr key={`${champ.code}-${subIdx}`} className="hover:bg-purple-50/30">
+                        {/* ⭐ Column 1 : CHAMP DE FORMATION — champ name (rowSpan) + sub-row name inside same cell */}
                         {subIdx === 0 && (
                           <td
                             rowSpan={rows.length}
                             className={cn(
-                              "p-2 border border-slate-300 font-bold text-white text-center align-middle",
+                              "p-2 border border-slate-300 text-white text-center align-middle",
                               champ.color
                             )}
+                            style={{ width: "15%" }}
                           >
                             <div className="font-bold text-sm">{champ.label}</div>
+                            {rows.length > 1 && (
+                              <div className="text-[9px] opacity-80 mt-1">
+                                {rows.map(r => r).join("\n")}
+                              </div>
+                            )}
                           </td>
                         )}
-                        {/* ⭐ Sub-row label — shown as a second column (was "Matière" column) */}
-                        <td className="p-1 border border-slate-200 font-semibold text-slate-700 bg-slate-50 text-[10px] align-top" style={{ width: "12%" }}>
-                          {subRow || <span className="text-slate-400 italic">{champ.label}</span>}
-                        </td>
-
                         {WEEK_LABELS.map((wk, weekIdx) => {
                           const cellKey = `${cellKeyBase}|${weekIdx + 1}`;
                           return renderCell(weekIdx + 1, champ.code, subRow || undefined, cellKey);
@@ -911,11 +916,10 @@ export function MonthlyPlanningTab({
                                     {cell.content}
                                   </div>
                                 ) : (
-                                  <button
+                                  <div
                                     onClick={() => {
                                       if (isReadOnly) return;
                                       setEditingCellKey(cellKey);
-                                      // ⭐ Pre-fill with template text if available
                                       let template = "";
                                       if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
                                         template = champ.subRowTemplates[subRow];
@@ -924,11 +928,23 @@ export function MonthlyPlanningTab({
                                       }
                                       setEditContent(template);
                                     }}
-                                    disabled={isReadOnly}
-                                    className="text-xs text-slate-400 hover:text-purple-600 w-full text-left p-2 min-h-[40px] border border-dashed border-slate-200 rounded"
+                                    className={cn(
+                                      "text-xs leading-tight cursor-pointer p-2 rounded min-h-[40px] whitespace-pre-wrap",
+                                      isReadOnly
+                                        ? "cursor-not-allowed text-slate-300"
+                                        : "text-slate-500 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
+                                    )}
                                   >
-                                    {isReadOnly ? "—" : "+ ajouter"}
-                                  </button>
+                                    {isReadOnly ? "—" : (() => {
+                                      let template = "";
+                                      if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
+                                        template = champ.subRowTemplates[subRow];
+                                      } else if (!subRow && champ.cellTemplate) {
+                                        template = champ.cellTemplate;
+                                      }
+                                      return template || "+ ajouter";
+                                    })()}
+                                  </div>
                                 )}
                               </div>
                             );

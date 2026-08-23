@@ -447,15 +447,16 @@ export function MonthlyPlanningTab({
           },
         }
       );
-      toast.success(`Planification sauvegardée : ${result.saved} cellules`);
-      setHasExistingCustom(false);
-      await loadPlan();
+      // ⭐ NO toast on save — prevents multiple toasts spam
+      // ⭐ NO loadPlan() — DON'T reload after saving (preserves user edits)
+      //    The local state (cells) already has the correct data.
+      setHasExistingCustom(true);
     } catch (e: any) {
       toast.error("Échec de la sauvegarde: " + e.message);
     } finally {
       setSaving(false);
     }
-  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells, loadPlan]);
+  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells]);
 
   saveRef.current = handleSave;
 
@@ -467,13 +468,26 @@ export function MonthlyPlanningTab({
       toast.error("Signature du titulaire requise pour soumettre.");
       return;
     }
+    // ⭐ Validate ALL required params BEFORE making the request
+    if (!selectedClass || !selectedMonth) {
+      toast.error("Classe et mois requis.");
+      return;
+    }
     setSubmitting(true);
     try {
-      // ⭐ Save all cells BEFORE submitting
+      // ⭐ Save all cells BEFORE submitting (silently — no toast)
       await saveRef.current();
 
+      // ⭐ Build URL with explicit validation
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: selectedClass,
+        month: selectedMonth,
+        teacherId: teacherId || 'unknown',
+      });
+
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/submit?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId || ''}`,
+        `/api/pedagogy/monthly-plans/submit?${params.toString()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -482,7 +496,6 @@ export function MonthlyPlanningTab({
         }
       );
       if (!res.ok) {
-        // ⭐ Get verbose error from BFF/backend
         const errData = await res.json().catch(() => ({}));
         const msg = (errData as any)?.backendError?.message
           || (errData as any)?.message
@@ -490,7 +503,8 @@ export function MonthlyPlanningTab({
           || `Erreur ${res.status}`;
         throw new Error(msg);
       }
-      toast.success("✅ Planification mensuelle soumise au directeur");
+      // ⭐ Single success toast (not multiple)
+      toast.success("Planification soumise au directeur");
       setShowSignatureModal(false);
       setPendingSignature(null);
       await loadPlan();

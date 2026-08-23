@@ -2369,6 +2369,11 @@ function ProfileModal({
   onAvatarUpload: (file: File) => void;
   avatarInputRef: React.RefObject<HTMLInputElement>;
 }) {
+  // ⭐ Get absolute URL for avatar (same logic as attachments)
+  const avatarUrl = myAvatarUrl
+    ? (myAvatarUrl.startsWith('http') ? myAvatarUrl : `https://api.academiahelm.com${myAvatarUrl.startsWith('/') ? myAvatarUrl : `/${myAvatarUrl}`}`)
+    : null;
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
@@ -2380,16 +2385,16 @@ function ProfileModal({
         </div>
         <div className="p-6 flex flex-col items-center gap-4">
           {/* Avatar */}
-          <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-[#3B9EFF] to-blue-500">
-            {myAvatarUrl ? (
-              <img src={myAvatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
+          <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-[#3B9EFF] to-blue-500 overflow-hidden">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={userName} className="w-full h-full rounded-full object-cover" />
             ) : (
               getInitials(userName || '?')
             )}
           </div>
+          {/* ⭐ Show user name ONLY — no ID, no encryption info (security) */}
           <div className="text-center">
-            <div className="text-sm font-bold text-slate-900">{userName}</div>
-            <div className="text-xs text-slate-500">ID: {currentUserId.substring(0, 8)}...</div>
+            <div className="text-sm font-bold text-slate-900">{userName || 'Utilisateur'}</div>
           </div>
           {/* Upload button */}
           <input
@@ -2409,11 +2414,6 @@ function ProfileModal({
           >
             Modifier ma photo
           </button>
-          {/* E2E encryption status */}
-          <div className="text-xs text-slate-500 text-center mt-2 p-2 bg-slate-50 rounded-lg w-full">
-            <Check className="w-3 h-3 text-[#1677FF] inline mr-1" />
-            Chiffrement E2E activé (RSA-OAEP 2048-bit)
-          </div>
         </div>
       </div>
     </div>

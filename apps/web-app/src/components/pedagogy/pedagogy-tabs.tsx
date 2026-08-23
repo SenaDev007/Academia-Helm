@@ -278,20 +278,15 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
       'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
     ],
   },
-  {
-    id: 'orion-pedagogy',
-    label: 'Analytique ORION',
-    path: '/app/pedagogy/orion',
-    icon: BarChart3,
-    roles: [
-      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'PROMOTER', 'director', 'admin',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
+  // ⭐ ORION analytics tab — REMOVED per user request (2026-08-23)
+  // User: 'Supprime carrément l'onglet analytique Orient et tout son contenu'
+  // {
+  //   id: 'orion-pedagogy',
+  //   label: 'Analytique ORION',
+  //   path: '/app/pedagogy/orion',
+  //   icon: BarChart3,
+  //   roles: [...],
+  // },
 ];
 
 /**

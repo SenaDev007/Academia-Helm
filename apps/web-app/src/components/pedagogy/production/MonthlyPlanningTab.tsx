@@ -112,32 +112,56 @@ function computeWeekRangesForMonth(monthName: string, year: number): { start: Da
   if (monthIdx === -1) return [];
 
   const weeks: { start: Date; end: Date }[] = [];
-  // First day of the month
-  const firstDay = new Date(year, monthIdx, 1);
-  // Find the Monday of the week containing the 1st (or before the 1st if month starts mid-week)
-  // ⭐ Same logic as Cahier Journal's getMondayOfWeek():
-  //    day 0 = Sunday → offset -6 (go back to previous Monday)
-  //    day 1 = Monday → offset 0 (already Monday)
-  //    day 2 = Tuesday → offset -1
-  //    etc.
-  const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, ...
-  const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // reculer au lundi
+  let weekStart: Date;
 
-  let weekStart = new Date(firstDay);
-  weekStart.setDate(weekStart.getDate() + offsetToMonday);
+  if (monthName === "Septembre") {
+    // ⭐ RENTRÉE SCOLAIRE : la pré-rentrée = 2e lundi de septembre
+    //    La rentrée proprement dite (cours) = 3e lundi de septembre
+    //    Les planifications commencent à la semaine du 2e lundi (pré-rentrée)
+    //    Exemple 2026 : pré-rentrée = 7 sept (2e lundi), rentrée = 14 sept (3e lundi)
+    //    Week 1 = semaine du 2e lundi = 7-11 sept (pour 2026)
+    weekStart = getNthMondayOfMonth(year, monthIdx, 2); // 2nd Monday = pre-rentrée week
+  } else {
+    // Other months : Week 1 = Monday of the week containing the 1st
+    const firstDay = new Date(year, monthIdx, 1);
+    const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, ...
+    const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    weekStart = new Date(firstDay);
+    weekStart.setDate(weekStart.getDate() + offsetToMonday);
+  }
 
   for (let i = 0; i < 5; i++) {
     const start = new Date(weekStart);
-    // ⭐ FIX: end = Monday + 4 days = Friday (NOT +6 = Sunday)
-    //    Aligned with Cahier Journal + Fiche Pédagogique (school week = Lundi→Vendredi)
     const end = new Date(weekStart);
-    end.setDate(end.getDate() + 4); // +4 days = Friday
+    end.setDate(end.getDate() + 4); // +4 days = Friday (Lundi→Vendredi)
     weeks.push({ start, end });
-    // Next week starts on the following Monday (= this Friday + 3 days)
     weekStart = new Date(end);
     weekStart.setDate(weekStart.getDate() + 3); // Friday + 3 = next Monday
   }
   return weeks;
+}
+
+/**
+ * ⭐ Returns the Nth Monday of the given month.
+ *    e.g., getNthMondayOfMonth(2026, 8, 2) = 2nd Monday of September 2026 = Sept 7, 2026
+ */
+function getNthMondayOfMonth(year: number, monthIdx: number, n: number): Date {
+  const firstDay = new Date(year, monthIdx, 1);
+  const dayOfWeek = firstDay.getDay(); // 0 = Sunday, 1 = Monday, ...
+  // Find the first Monday of the month
+  let firstMonday = new Date(firstDay);
+  if (dayOfWeek === 1) {
+    // 1st is already Monday
+    // firstMonday is the 1st
+  } else {
+    // Find next Monday after the 1st
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+    firstMonday.setDate(firstMonday.getDate() + daysUntilMonday);
+  }
+  // Add (n-1) weeks to get the Nth Monday
+  const nthMonday = new Date(firstMonday);
+  nthMonday.setDate(nthMonday.getDate() + (n - 1) * 7);
+  return nthMonday;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -184,31 +208,35 @@ const FICHE_STANDARD = [
 
 const FICHE_IMMERSION = [
   {
-    code: "FRANÇAIS", label: "FRANÇAIS", color: "bg-blue-600",
-    subRows: ["Thème", "Communication orale (Acquisition et utilisation des mots)", "Initiation à la lecture", "Graphisme", "Lecture récréative"],
+    code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
+    subRows: ["Thème", "Communication orale : Acquisition et utilisation des mots", "Initiation à la lecture", "Graphisme", "Lecture récréative"],
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
-    subRows: ["SAN°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
+    subRows: ["SA N°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
   },
   { code: "INITIATION_EST", label: "Initiation à l'EST", color: "bg-amber-600", subRows: [] },
-  { code: "EA", label: "ÉA", color: "bg-purple-600", subRows: ["Chant", "Comptine", "Dessin"] },
+  { code: "INITIATION_ES", label: "Initiation à l'ES", color: "bg-indigo-600", subRows: [] },
+  { code: "EA", label: "EA", color: "bg-purple-600", subRows: ["Chant", "Comptine", "Dessin"] },
   { code: "EPS", label: "EPS", color: "bg-rose-600", subRows: [] },
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
 
 const FICHE_SYSTEMATIQUE = [
   {
-    code: "FRANÇAIS", label: "FRANÇAIS", color: "bg-blue-600",
-    subRows: ["Communication orale (Thème/Sous-thème)", "Lecture-écriture 1 (Leçon + Titre + Structure de langue)", "Lecture-écriture 2 (Leçon + Titre + Etude)"],
+    code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
+    subRows: [
+      "Communication orale (Thème/Sous-thème)",
+      "Lecture-écriture (Leçon + Titre + Structure de langue + Leçon + Titre)",
+    ],
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
-    subRows: ["SAN°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
+    subRows: ["SA N°", "Fiche N°1", "Fiche N°2", "Fiche N°3", "Fiche N°4", "Fiche N°5"],
   },
   { code: "EST", label: "EST", color: "bg-amber-600", subRows: [] },
-  { code: "ES", label: "ÉS", color: "bg-indigo-600", subRows: ["Morale", "Civisme", "Compétence"] },
-  { code: "EA", label: "ÉA", color: "bg-purple-600", subRows: ["Chant", "Poésie", "Dessin", "Conte"] },
+  { code: "ES", label: "ES", color: "bg-indigo-600", subRows: ["Morale", "Civisme", "Compétence"] },
+  { code: "EA", label: "EA", color: "bg-purple-600", subRows: ["Chant", "Poésie", "Dessin", "Conte"] },
   { code: "EPS", label: "EPS", color: "bg-rose-600", subRows: [] },
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
@@ -305,6 +333,9 @@ export function MonthlyPlanningTab({
 
   const autoProposeRef = useRef<() => Promise<void>>(async () => {});
   const saveRef = useRef<() => Promise<void>>(async () => {});
+  // ⭐ Track which (class, month) combos have been auto-proposed in this session
+  //    Prevents spamming "Proposition automatique importée" on every click
+  const triedAutoProposeRef = useRef<Set<string>>(new Set());
 
   // ───────────────────────────────────────────────────────────────────
   // Auto-proposition
@@ -345,7 +376,18 @@ export function MonthlyPlanningTab({
         `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
       );
       if (data.cells.length === 0) {
-        await autoProposeRef.current();
+        // ⭐ FIX: Only auto-propose ONCE per session per (class, month) combo
+        //    Previously, every click triggered a new auto-propose + toast spam.
+        //    Now we track which combos have been tried and skip if already tried.
+        const comboKey = `${selectedClass}|${selectedMonth}`;
+        if (!triedAutoProposeRef.current.has(comboKey)) {
+          triedAutoProposeRef.current.add(comboKey);
+          await autoProposeRef.current();
+        } else {
+          // Already tried — just show empty state without spamming toast
+          setCells([]);
+          setHasExistingCustom(false);
+        }
       } else {
         setCells(data.cells);
         setHasExistingCustom(data.hasExistingCustom);
@@ -708,17 +750,15 @@ export function MonthlyPlanningTab({
           <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
             <table className="text-xs border-collapse w-full" style={{ minWidth: '1100px' }}>
               <colgroup>
-                <col style={{ width: "5%" }} />
-                <col style={{ width: "12%" }} />
+                <col style={{ width: "18%" }} />
                 {WEEK_LABELS.map((_, i) => (
-                  <col key={i} style={{ width: "16.6%" }} />
+                  <col key={i} style={{ width: "16.4%" }} />
                 ))}
               </colgroup>
               <thead>
                 {/* Ligne 1 : header semaines */}
                 <tr className="bg-slate-700 text-white">
-                  <th className="p-2 border border-slate-400 text-center" rowSpan={2}>Champ de Formation</th>
-                  <th className="p-2 border border-slate-400 text-center" rowSpan={2}>Matière</th>
+                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "18%" }}>Champ de Formation</th>
                   {WEEK_LABELS.map((wk, i) => (
                     <th key={wk} className="p-2 border border-slate-400 text-center">
                       {wk}
@@ -752,9 +792,11 @@ export function MonthlyPlanningTab({
                             <div className="font-bold text-sm">{champ.label}</div>
                           </td>
                         )}
-                        <td className="p-1 border border-slate-200 font-semibold text-slate-700 bg-slate-50 text-[10px] align-top">
+                        {/* ⭐ Sub-row label — shown as a second column (was "Matière" column) */}
+                        <td className="p-1 border border-slate-200 font-semibold text-slate-700 bg-slate-50 text-[10px] align-top" style={{ width: "12%" }}>
                           {subRow || <span className="text-slate-400 italic">{champ.label}</span>}
                         </td>
+
                         {WEEK_LABELS.map((wk, weekIdx) => {
                           const cellKey = `${cellKeyBase}|${weekIdx + 1}`;
                           return renderCell(weekIdx + 1, champ.code, subRow || undefined, cellKey);

@@ -7,16 +7,9 @@
  * Replace SMS/WhatsApp notifications in the Finance module with Helm Connect
  * chat messages. When an encaissement (payment receipt) is recorded, or when
  * a recovery reminder (relance/action/promesse) is triggered, this service
- * sends a professional, well-structured message to the parent's Helm Connect
- * account (instead of sending an SMS to their phone).
- *
- * ⭐ Why Helm Connect instead of SMS:
- *   - The parent already has a Helm Connect account (auto-provisioned by
- *     ParentUserProvisioningService when their child was enrolled).
- *   - The parent can login to the parent portal with their phone number.
- *   - Messages are free (no SMS gateway fees) and persistent (the parent
- *     can re-read them anytime).
- *   - PDF receipts can be attached (impossible with SMS).
+ * sends a chat message to the parent's Helm Connect account using the
+ * EXACT SAME wording as the previous WhatsApp templates — so parents
+ * receive a consistent notification regardless of channel.
  *
  * ⭐ Endpoints used:
  *   - POST /api/chat/conversations/guardian-direct (creates/gets the conv
@@ -26,16 +19,16 @@
  *     attachment with a caption)
  *
  * ⭐ Sender identity:
- * For encaissement receipts, the sender is the cashier (the user who recorded
- * the payment). For recovery reminders, the sender is the school's director
- * or a per-tenant "Helm Connect" bot user.
+ * For encaissement receipts, the sender is the cashier (tx.cashierId).
+ * For recovery reminders, the sender is the tenant's director (looked up
+ * from users table — PROMOTER > SCHOOL_OWNER > ADMIN priority).
  *
- * ⭐ Fallback strategy:
- * If the parent has no guardian record (rare edge case), the message is
- * skipped silently (with a warning log). The existing email/WhatsApp
- * notification channels are NOT disabled yet — they continue to fire in
- * parallel, so the parent always receives the notification through at
- * least one channel.
+ * ⭐ Templates:
+ * The message text is built to match EXACTLY the existing WhatsApp templates
+ * registered at Gupshup:
+ *   - Receipt: 'recu_paiement' template (header "Recu de paiement" + 7 vars)
+ *   - Recovery: free-text message assembled from getLevelConfig() — same
+ *     wording as the WhatsApp branch in recovery-notification-finance.service.ts
  * ============================================================================
  */
 
@@ -57,7 +50,15 @@ export interface ReceiptNotificationPayload {
   pdfBuffer: Buffer;
   pdfFilename: string;     // e.g. "recu-CSPEB-R-25-00001.pdf"
   paymentDate: Date;
-  balanceAfter?: number;   // Remaining balance after this payment (optional)
+  // ⭐ Same fields as the WhatsApp template variables (recu_paiement):
+  parentName?: string;              // {{1}}
+  schoolName?: string;              // {{3}}
+  // The balance_line variable {{7}} — pre-formatted by the caller to include:
+  //   - fifoLine (arriérés réglés FIFO)
+  //   - remainingArrearsLine (arriérés encore dus)
+  //   - balanceLine (solde restant à payer)
+  //   - personalizationNote (note personnalisée)
+  balanceLine?: string;
 }
 
 export interface RecoveryNotificationPayload {
@@ -65,13 +66,17 @@ export interface RecoveryNotificationPayload {
   studentId: string;
   studentName: string;
   guardianId: string;
-  directorId?: string;     // The user sending the reminder (defaults to bot)
+  directorId?: string;
   level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE';
   amountDue: number;
   daysOverdue: number;
   className?: string;
   academicYearLabel?: string;
-  customMessage?: string;
+  // ⭐ Same fields as the WhatsApp free-text message:
+  parentName?: string;
+  schoolName?: string;
+  feeLabel?: string;
+  isPreviousYearArrear?: boolean;
 }
 
 @Injectable()
@@ -86,7 +91,8 @@ export class HelmConnectFinanceNotificationService {
 
   /**
    * Send a payment receipt to the parent's Helm Connect account.
-   * The PDF receipt is attached as a DOCUMENT message with a caption.
+   * Uses the EXACT same wording as the WhatsApp 'recu_paiement' template.
+   * The PDF receipt is attached as a DOCUMENT message with the caption.
    */
   async sendReceiptNotification(payload: ReceiptNotificationPayload): Promise<{
     success: boolean;
@@ -112,31 +118,48 @@ export class HelmConnectFinanceNotificationService {
         provisioningResult.userId,
       );
 
-      // 3. Build a professional, well-structured message
-      const formattedAmount = formatCurrencyXOF(payload.amount);
-      const formattedBalance = payload.balanceAfter !== undefined
-        ? formatCurrencyXOF(payload.balanceAfter)
-        : null;
+      // 3. Build the message using the EXACT WhatsApp template 'recu_paiement'
+      //    Template body (from whatsapp-template.registry.ts line 744-755):
+      //      Bonjour {{1}},
+      //
+      //      Nous confirmons la reception du paiement pour {{2}} aupres de {{3}}.
+      //
+      //      Recu n° : {{4}}
+      //      Montant : {{5}} FCFA
+      //      Date : {{6}}
+      //      {{7}}
+      //      Le recu PDF detaille est disponible aupres de l'etablissement.
+      //
+      //      Cordialement,
+      //      La Direction
+      //    Header: "Recu de paiement"
+      //    Footer: FOOTER (= "Academia Helm — Helm Connect")
       const dateStr = payload.paymentDate.toLocaleDateString('fr-FR', {
-        day: '2-digit', month: 'long', year: 'numeric',
+        day: '2-digit', month: '2-digit', year: 'numeric',
       });
+      const amountStr = payload.amount.toLocaleString('fr-FR');
+      const parentName = payload.parentName || 'Parent';
+      const studentName = escapeHtml(payload.studentName);
+      const schoolName = escapeHtml(payload.schoolName || "l'établissement");
+      const balanceLine = payload.balanceLine || '';
 
       const caption = [
-        `🧾 <b>Reçu de paiement — ${escapeHtml(payload.receiptNumber)}</b>`,
+        `🧾 <b>Recu de paiement</b>`,
         ``,
-        `<b>Élève :</b> ${escapeHtml(payload.studentName)}`,
-        payload.className ? `<b>Classe :</b> ${escapeHtml(payload.className)}` : null,
-        payload.academicYearLabel ? `<b>Année scolaire :</b> ${escapeHtml(payload.academicYearLabel)}` : null,
+        `Bonjour ${escapeHtml(parentName)},`,
         ``,
-        `<b>Montant réglé :</b> ${formattedAmount}`,
-        formattedBalance !== null
-          ? `<b>Solde restant dû :</b> ${formattedBalance}`
-          : `<b>Solde restant dû :</b> 0 FCFA (soldé)`,
+        `Nous confirmons la reception du paiement pour ${studentName} aupres de ${schoolName}.`,
+        ``,
+        `<b>Recu n° :</b> ${escapeHtml(payload.receiptNumber)}`,
+        `<b>Montant :</b> ${amountStr} FCFA`,
         `<b>Date :</b> ${dateStr}`,
+        balanceLine ? escapeHtml(balanceLine) : null,
+        `Le recu PDF detaille est disponible aupres de l'etablissement.`,
         ``,
-        `Bonjour, veuillez trouver ci-joint le reçu de paiement pour l'encaissement effectué. Ce document fait foi de preuve de paiement. Pour toute question, veuillez contacter l'administration de l'école.`,
+        `Cordialement,`,
+        `La Direction`,
         ``,
-        `<i>Message automatique envoyé via Helm Connect — Academia Helm</i>`,
+        `<i>— Academia Helm — Helm Connect</i>`,
       ].filter(Boolean).join('\n');
 
       // 4. Send the PDF as a DOCUMENT message with the caption
@@ -183,7 +206,8 @@ export class HelmConnectFinanceNotificationService {
 
   /**
    * Send a recovery reminder to the parent's Helm Connect account.
-   * Three levels: PREMIERE_RELANCE (J+3), DEUXIEME_RELANCE (J+7), MISE_EN_DEMEURE (J+15).
+   * Uses the EXACT same wording as the WhatsApp free-text message in
+   * recovery-notification-finance.service.ts sendByWhatsApp().
    */
   async sendRecoveryNotification(payload: RecoveryNotificationPayload): Promise<{
     success: boolean;
@@ -211,9 +235,58 @@ export class HelmConnectFinanceNotificationService {
         provisioningResult.userId,
       );
 
-      // 3. Build the message based on the level
-      const formattedAmount = formatCurrencyXOF(payload.amountDue);
-      const messageText = buildRecoveryMessage(payload, formattedAmount);
+      // 3. Build the message using the EXACT same wording as the WhatsApp branch
+      //    (see recovery-notification-finance.service.ts lines 437-457 + 530-572)
+      const levelConfig = getRecoveryLevelConfig(payload.level);
+      const schoolName = payload.schoolName || "l'établissement";
+      const balanceStr = payload.amountDue.toLocaleString('fr-FR');
+      const classPart = payload.className && payload.className !== '—'
+        ? ` (Classe: ${payload.className})`
+        : '';
+      const yearPart = payload.academicYearLabel
+        ? `📅 Année scolaire : ${payload.academicYearLabel}${payload.isPreviousYearArrear ? ' (arriéré reporté)' : ''}\n`
+        : '';
+      const fifoNote = payload.isPreviousYearArrear
+        ? `\nℹ️ Conformément à la politique de l'établissement, les paiements sont affectés en priorité aux arriérés des années antérieures (méthode FIFO).\n`
+        : '';
+
+      const parentName = payload.parentName ? ` ${payload.parentName}` : '';
+      const feeLabel = payload.feeLabel || 'frais scolaires';
+
+      // Mirror the WhatsApp free-text message exactly:
+      //   {{emoji}} {{waTitle}}\n
+      //   \n
+      //   Bonjour{{parentName}},\n
+      //   \n
+      //   {{waBody}}\n
+      //   \n
+      //   {{yearPart}}
+      //   👤 Élève : {{studentName}}{{classPart}}\n
+      //   💰 Solde restant : {{balanceStr}} FCFA\n
+      //   📋 Frais : {{feeLabel}}\n
+      //   {{fifoNote}}
+      //   \n
+      //   Merci de régulariser cette situation dans les meilleurs délais. Pour toute question, contactez l'administration de {{schoolName}}.\n
+      //   \n
+      //   Cordialement,\n
+      //   La Direction — {{schoolName}}
+      const messageText = [
+        `${levelConfig.emoji} <b>${levelConfig.waTitle}</b>`,
+        ``,
+        `Bonjour${parentName},`,
+        ``,
+        levelConfig.waBody,
+        ``,
+        yearPart + // already ends with \n if present
+          `👤 Élève : ${escapeHtml(payload.studentName)}${classPart}\n` +
+          `💰 Solde restant : ${balanceStr} FCFA\n` +
+          `📋 Frais : ${escapeHtml(feeLabel)}\n` +
+          (fifoNote ? fifoNote : '') +
+          `\nMerci de régulariser cette situation dans les meilleurs délais. Pour toute question, contactez l'administration de ${escapeHtml(schoolName)}.`,
+        ``,
+        `Cordialement,`,
+        `La Direction — ${escapeHtml(schoolName)}`,
+      ].join('\n');
 
       // 4. Send as a TEXT message
       const message = await this.chatService.sendTextMessage(
@@ -246,11 +319,6 @@ export class HelmConnectFinanceNotificationService {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────
 
-function formatCurrencyXOF(amount: number): string {
-  // XOF has no decimals — format with thousands separator (French style)
-  return `${Math.round(amount).toLocaleString('fr-FR')} FCFA`;
-}
-
 function escapeHtml(text: string): string {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -260,49 +328,37 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function buildRecoveryMessage(
-  payload: RecoveryNotificationPayload,
-  formattedAmount: string,
-): string {
-  const studentName = escapeHtml(payload.studentName);
-  const className = payload.className ? escapeHtml(payload.className) : null;
-  const academicYear = payload.academicYearLabel ? escapeHtml(payload.academicYearLabel) : null;
-  const customMessage = payload.customMessage ? escapeHtml(payload.customMessage) : null;
-
-  const headerEmoji = {
-    PREMIERE_RELANCE: '📧',
-    DEUXIEME_RELANCE: '⚠️',
-    MISE_EN_DEMEURE: '🚨',
-  }[payload.level];
-
-  const headerTitle = {
-    PREMIERE_RELANCE: 'Rappel de paiement',
-    DEUXIEME_RELANCE: 'Rappel urgent de paiement',
-    MISE_EN_DEMEURE: 'Mise en demeure finale',
-  }[payload.level];
-
-  const bodyIntro = {
-    PREMIERE_RELANCE: `Nous vous rappelons qu'un solde reste à régler pour la scolarité de votre enfant ${studentName}.`,
-    DEUXIEME_RELANCE: `Malgré notre précédent rappel, le solde de la scolarité de ${studentName} reste impayé.`,
-    MISE_EN_DEMEURE: `Après plusieurs rappels restés sans suite, nous vous informons que des mesures administratives seront engagées (suspension des services, blocage de l'accès aux résultats) si le règlement n'intervient pas sous 48h.`,
-  }[payload.level];
-
-  const lines: string[] = [
-    `${headerEmoji} <b>${headerTitle}</b>`,
-    ``,
-    bodyIntro,
-    ``,
-    `<b>Élève :</b> ${studentName}`,
-    className ? `<b>Classe :</b> ${className}` : null,
-    academicYear ? `<b>Année scolaire :</b> ${academicYear}` : null,
-    `<b>Montant dû :</b> ${formattedAmount}`,
-    `<b>Jours de retard :</b> ${payload.daysOverdue} jour${payload.daysOverdue > 1 ? 's' : ''}`,
-    ``,
-    `Nous vous prions de bien vouloir régulariser la situation dans les meilleurs délais. Pour toute information complémentaire ou pour convenir d'un échéancier, veuillez contacter l'administration de l'école.`,
-    customMessage ? `\n<b>Message complémentaire :</b> ${customMessage}` : null,
-    ``,
-    `<i>Message automatique envoyé via Helm Connect — Academia Helm</i>`,
-  ].filter(Boolean);
-
-  return lines.join('\n');
+/**
+ * Recovery level configuration — EXACT copy of the WhatsApp config
+ * from recovery-notification-finance.service.ts getLevelConfig()
+ * (lines 517-576). Keeping the same wording for consistency across
+ * notification channels (WhatsApp + Helm Connect).
+ */
+function getRecoveryLevelConfig(level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE'): {
+  emoji: string;
+  waTitle: string;
+  waBody: string;
+} {
+  switch (level) {
+    case 'PREMIERE_RELANCE':
+      return {
+        emoji: '📧',
+        waTitle: 'Rappel de paiement',
+        waBody: "Nous vous rappelons qu'un solde reste à régler pour les frais scolaires de votre enfant. Nous vous prions de bien vouloir procéder au règlement dans les meilleurs délais.",
+      };
+    case 'DEUXIEME_RELANCE':
+      return {
+        emoji: '⚠️',
+        waTitle: 'Rappel urgent de paiement',
+        waBody: 'Malgré notre précédent rappel, le solde de votre enfant reste impayé. Nous vous invitons à régulariser rapidement cette situation pour éviter toute mesure conservatoire.',
+      };
+    case 'MISE_EN_DEMEURE':
+      return {
+        emoji: '🚨',
+        waTitle: 'Mise en demeure finale',
+        waBody: "Après plusieurs rappels restés sans suite, nous sommes au regret de vous informer qu'une mise en demeure finale est émise. Sans régularisation sous 8 jours, des mesures administratives seront engagées.",
+      };
+    default:
+      return getRecoveryLevelConfig('PREMIERE_RELANCE');
+  }
 }

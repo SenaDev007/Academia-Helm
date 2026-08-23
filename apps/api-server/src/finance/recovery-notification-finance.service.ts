@@ -233,6 +233,11 @@ export class RecoveryNotificationFinanceService {
                 daysOverdue,
                 className,
                 academicYearLabel: academicYearName,
+                // ⭐ Same fields as the WhatsApp free-text message:
+                parentName: contacts.name,
+                schoolName: branding.schoolName,
+                feeLabel,
+                isPreviousYearArrear,
               });
               results.helm_connect = {
                 status: helmResult.success ? 'sent' : 'failed',

@@ -229,9 +229,28 @@ export class ReceiptNotificationFinanceService {
           });
         } else if (channel === 'helm_connect') {
           // ⭐ NEW: Helm Connect — send a chat message to the parent's account
-          //    with the PDF receipt attached. The parent can read the message
-          //    in their Helm Connect chat (they login to the parent portal
-          //    with their phone number).
+          //    with the PDF receipt attached. The message uses the EXACT same
+          //    wording as the WhatsApp 'recu_paiement' template (see
+          //    whatsapp-template.registry.ts line 738).
+          //
+          //    Build the balance_line variable — same way the WhatsApp branch
+          //    does it (lines 377-395 of this file).
+          const dateStr = new Date(tx.createdAt).toLocaleDateString('fr-FR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+          });
+          const balanceLineStr = balanceAfter != null
+            ? (balanceAfter > 0
+              ? `Solde restant a payer : ${balanceAfter.toLocaleString('fr-FR')} FCFA`
+              : `Compte solde - aucun solde restant.`)
+            : '';
+          const fifoLineStr = amountAppliedToArrears && amountAppliedToArrears > 0
+            ? `Arrieres anterieurs regles (FIFO) : ${amountAppliedToArrears.toLocaleString('fr-FR')} FCFA. `
+            : '';
+          const remainingArrearsLineStr = openArrears.length > 0
+            ? `Arrieres encore dus : ${openArrears.reduce((s, a) => s + Number(a.balanceDue ?? 0), 0).toLocaleString('fr-FR')} FCFA. `
+            : '';
+          const fullBalanceLine = `${fifoLineStr}${remainingArrearsLineStr}${balanceLineStr}${personalizationNote ? ` ${personalizationNote}` : ''}`.trim();
+
           const helmResult = await this.helmConnectFinanceNotificationService.sendReceiptNotification({
             tenantId,
             studentId: tx.studentAccount?.studentId || '',
@@ -244,7 +263,10 @@ export class ReceiptNotificationFinanceService {
             pdfBuffer: pdfBuffer || Buffer.from(''),
             pdfFilename: `recu-${tx.receiptNumber}.pdf`,
             paymentDate: tx.createdAt,
-            balanceAfter: balanceAfter ?? undefined,
+            // ⭐ Same fields as the WhatsApp template variables:
+            parentName: contacts.name,
+            schoolName: branding.schoolName,
+            balanceLine: fullBalanceLine,
           });
           results.helm_connect = {
             status: helmResult.success ? 'sent' : 'failed',

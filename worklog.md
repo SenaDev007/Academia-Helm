@@ -8310,3 +8310,113 @@ Prochaines étapes :
 - V2.9 : Pièces jointes Flutter (photos, vidéos, audio, documents)
 - V2.10 : Push notifications Flutter (Firebase Cloud Messaging)
 - V3 : IA ORION + ATLAS + transcription vocale + traduction
+
+---
+Task ID: Helm-Connect-V2.6-Watermark-Responsive-Attachments-Polls
+Agent: main
+Task: Watermark Helm Connect (logo + icônes) + Responsive mobile + Menu pièces jointes catégorisé + Sondages (Telegram-style)
+
+Work Log:
+
+- 🎨 FILIGRANE HELM CONNECT (background watermark) :
+  * Nouveau HelmWatermark.tsx (~165 lignes) :
+    - Pattern SVG inline (240×240 tile qui se répète)
+    - 9 icônes mélangées : bulle de chat, mégaphone, téléphone, vidéo,
+      logo Academia Helm (graduation cap), paperclip, cloche, micro, cœur
+    - Couleurs Azure (#1677FF) à 5% d'opacité (subtil comme WhatsApp)
+    - Variant dark mode prête (couleurs cyan/primary plus vives)
+    - 3 exports : HelmWatermark (composant React), getHelmWatermarkUrl (string), getHelmWatermarkStyle (CSS)
+  * Appliqué à l'arrière-plan de la zone messages dans WhatsAppChat
+  * VÉRIFIÉ en production via agent-browser : le style background-image avec l'SVG data URL est bien rendu ✅
+
+- 📱 RESPONSIVE MOBILE (correction critique) :
+  * Bug : 'sur mobile, bouton d'envoi audio invisible pendant l'enregistrement'
+  * Cause racine : l'UI recording était inline avec le text input + paperclip + mic + send, ce qui faisait 5+ éléments en ligne → débordement sur petit écran → bouton Send poussé hors écran
+  * Fix : State machine avec LAYOUT EXCLUSIF
+    - IDLE : paperclip + text + mic + send (4 éléments)
+    - RECORDING : timer + pause + stop + cancel (text input MASQUÉ — toute la largeur disponible)
+    - PAUSED : icône pause + resume + stop + cancel
+    - PREVIEW : audio player + send + cancel (text input MASQUÉ)
+  * Tous les boutons ont flex-shrink-0 pour rester visibles
+  * Padding responsive : p-2 sm:p-3
+  * Tailles d'icônes responsive : w-4 sm:w-3.5
+  * Audio player : flex-1 min-w-0 (s'adapte à l'espace disponible)
+
+- 📎 MENU PIÈCES JOINTES CATÉGORISÉ (style Telegram/WhatsApp) :
+  * Nouveau CategorizedAttachmentMenu.tsx (~260 lignes) :
+    - 8 catégories avec icônes circulaires colorées :
+      * 📷 Photos (violet) — galerie d'images
+      * 📷 Caméra (rose) — capture directe via input capture="environment"
+      * 🎬 Vidéos (rouge) — galerie de vidéos
+      * 📄 Documents (Azure) — PDF, Word, Excel, ZIP, etc.
+      * 🎵 Audio (ambre) — fichier audio
+      * 📊 Sondage (emerald) — ouvre PollModal
+      * 📍 Localisation (cyan) — V2.7
+      * 👤 Contact (fuchsia) — V2.7
+    - 4 inputs file cachés avec accept MIME appropriés
+    - Spinner animé pendant envoi
+    - Toast d'erreur verbeux
+  * VÉRIFIÉ en production via agent-browser : les 8 catégories sont visibles ✅
+  * Le bouton paperclip de WhatsAppChat ouvre maintenant le menu catégorisé (au lieu de l'input file direct)
+
+- 📊 SONDAGES (style Telegram) :
+  * Backend PollService (~250 lignes) :
+    - createPoll — crée un message type='POLL' avec pollData JSON dans content
+    - vote — enregistre vote + recompute counts + update message content
+    - getPoll — détails + votes utilisateur
+    - closePoll — clôture (auteur only)
+    - Support : multipleChoice, anonymous, expiration (1H/8H/24H/7D/∞)
+    - Vérification RBAC participant
+    - Auto-close si expiration atteinte
+  * Migration 20260824120000_add_polls appliquée à Neon DB ✅
+    - Table chat_poll_votes (id, pollId, optionId, userId, tenantId, votedAt)
+    - UNIQUE(pollId, userId, optionId) — un user ne vote qu'une fois par option
+    - 3 indexes pour performance
+    - chat_messages.type → TEXT (accepte POLL en plus de TEXT/AUDIO/IMAGE/DOCUMENT)
+  * PollController avec 4 endpoints REST sous /chat/v2/polls
+  * Frontend PollModal (~310 lignes) :
+    - Question (200 chars max, compteur en temps réel)
+    - 2 à 10 options (100 chars chacune, numérotées)
+    - Toggle multiple choice (animé)
+    - Toggle anonymous (animé)
+    - 5 durées d'expiration (1h, 8h, 24h, 7j, ∞)
+    - Validation : question ≥5 chars, options ≥2 non-vides
+    - Toast verbeux en cas d'erreur backend
+    - Bouton "Créer le sondage" avec spinner + icône Send
+  * VÉRIFIÉ en production via agent-browser : le modal s'ouvre avec Question + Options + Choix multiple + Anonyme + Expiration + Créer ✅
+
+- ⚠️ DÉPLOIEMENT RAILWAY EN RETARD :
+  * Backend uptime = 5.8 heures (depuis dernier deploy ~01:30 UTC)
+  * Plusieurs commits poussés depuis sans déclenchement Railway :
+    - 51f88293 (Fix P2010 listMessages ur.role — NON déployé)
+    - 1cd1cffb (Refonte enregistrement vocal — frontend only)
+    - 42ebe0e1 (Fix TDZ frontend — frontend only)
+    - 4b624479 (Flutter config — frontend only)
+    - 1e3e34f1 (Force Railway redeploy — empty commit, n'a pas trigger)
+    - 662cfa99 (V2.6 polls + watermark + responsive — NON déployé)
+    - 73ca2a0a (Trigger Railway redeploy — empty commit, n'a pas trigger)
+  * Endpoint /api/chat/v2/polls retourne 404 (PollController non déployé)
+  * Erreur P2010 'column ur.role does not exist' persiste pour listMessages
+  * ⚠️ Le webhook Railway auto-deploy semble cassé ou désactivé
+  * Solution : l'utilisateur doit déclencher un "Redeploy" manuel depuis le dashboard Railway
+
+Stage Summary:
+- ✅ Filigrane Helm Connect visible en production (watermark avec 9 icônes mélangées sur fond #F5F7FA à 5% opacité Azure)
+- ✅ UI mobile responsive : state machine avec layout exclusif, bouton Send TOUJOURS visible
+- ✅ Menu pièces jointes catégorisé avec 8 catégories (Photos/Caméra/Vidéos/Documents/Audio/Sondage/Localisation/Contact)
+- ✅ Modal de sondage fonctionnel (Question + Options + Choix multiple + Anonyme + Expiration)
+- ✅ Backend PollService + PollController prêts (déployés localement, en attente Railway)
+- ✅ Migration DB Neon appliquée (chat_poll_votes + type TEXT)
+- ❌ Backend Railway non déployé : l'utilisateur doit trigger un Redeploy manuel
+  → Le fix P2010 ur.role ET le PollController seront actifs après ce Redeploy
+- Fichiers (9 modified/created) :
+  * apps/api-server/prisma/migrations/20260824120000_add_polls/migration.sql (NEW)
+  * apps/api-server/src/communication/services/poll.service.ts (NEW, ~250 lignes)
+  * apps/api-server/src/communication/poll.controller.ts (NEW, ~75 lignes)
+  * apps/api-server/src/communication/communication.module.ts (+PollService/PollController)
+  * apps/web-app/src/components/communication/HelmWatermark.tsx (NEW, ~165 lignes)
+  * apps/web-app/src/components/communication/CategorizedAttachmentMenu.tsx (NEW, ~260 lignes)
+  * apps/web-app/src/components/communication/PollModal.tsx (NEW, ~310 lignes)
+  * apps/web-app/src/components/communication/WhatsAppChat.tsx (input bar responsive + watermark + modals wiring)
+  * scripts/apply-polls-migration.mjs (NEW)
+  * scripts/replace-input-bar.py (NEW — script de remplacement du bloc input bar)

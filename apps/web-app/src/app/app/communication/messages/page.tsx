@@ -5,9 +5,13 @@ import WhatsAppChat from '@/components/communication/WhatsAppChat';
 import { Loader2 } from 'lucide-react';
 
 /**
- * ⭐ Communication page — renders the WhatsApp-like chat directly.
- *    No ModuleHeader, no tabs, no ModuleContentArea wrapper.
- *    The chat fills the entire viewport (minus the 64px app sidebar).
+ * ⭐ Helm Connect — page de messagerie (renommée depuis "Communication")
+ *    Rend le chat WhatsApp-like directement.
+ *    Pas de ModuleHeader, pas d'onglets, pas de ModuleContentArea wrapper.
+ *    Le chat remplit tout l'écran (moins la sidebar 64px).
+ *
+ *    Helm Connect = système nerveux communicationnel d'Academia Helm.
+ *    Slogan : « Communiquez. Collaborez. Restez connectés. »
  */
 
 export default function MessagesPage() {

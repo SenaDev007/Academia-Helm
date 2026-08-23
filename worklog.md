@@ -7977,3 +7977,99 @@ Stage Summary:
 - Matching profile : par email (fiable) + fallback legacy userId/user.id
 - Parent UI : déjà fonctionnel (laissé tel quel)
 - Switcher de classe pour multi-classes (CE1 + CE2) fonctionnera maintenant
+
+---
+Task ID: Helm-Connect-V1-Bugfixes-And-Announcements
+Agent: main
+Task: Fix Prisma P2010 error in chat, fix guardian search, rename Communication module to Helm Connect, build V1 announcements feature
+
+Work Log:
+
+- BUG 1 — Prisma P2010 ("more than one row returned by a subquery used as an expression") lors de la création de conversation :
+  * ROOT CAUSE : Dans `listConversations()` (chat.service.ts:111-127), la sous-requête corrélée `SELECT row_to_json(p) FROM chat_participants p WHERE p."conversationId" = c.id AND p."leftAt" IS NULL` retournait une ligne PAR participant. Or une conversation a TOUJOURS 2+ participants → la sous-requête échouait.
+  * FIX : Supprimé la sous-requête `participantMeta` (champ inutilisé dans le mapping final). La sous-requête `unreadCount` reste — elle utilise `count(*)` qui ne peut pas échouer.
+  * Fichier : apps/api-server/src/communication/services/chat.service.ts (+6 lignes, -3 lignes)
+
+- BUG 2 — Guardians ne s'affichaient pas lors de la recherche de parents (depuis un compte enseignant CSPEB-EVEIL D'AFRIQUE EDUCATION) :
+  * TEST avec agent-browser sur le compte enseignant Saliou AKPAKI (dawesakpovi@gmail.com, tenantId=59b8c348-ae5f-4d67-8fbd-af6aefa1f394) :
+    - Recherche "AKPOVI" → 3 résultats (Sèna/Aurore/Elodie) mais aucun parent
+    - Recherche "ADJIBOGOUN" → 1 résultat PARENT ✓ (donc les guardians S'AFFICHENT bien via la table users)
+    - Recherche "AGLOSSI" → 1 résultat PARENT avec enfants
+  * VÉRIFICATION DB directe (Neon) : 7 guardians dans le tenant CSPEB, dont 1 seul avec userId (Dawes AKPOVI → lié à Saliou AKPAKI). Les 6 autres n'ont ni email ni userId.
+  * AMÉLIORATION BACKEND : Ajouté colonne `phone` au SELECT des guardians + ajouté recherche par phone (LIKE) → les guardians avec phone mais sans email peuvent maintenant être trouvés
+  * AMÉLIORATION BACKEND : Ajouté champs `source` et `phone` dans la réponse de `searchUsers()` (pour différencier guardians-sans-compte des users)
+  * AMÉLIORATION BACKEND : Nouvelle méthode `inviteGuardianToHelmConnect()` qui crée une invitation magic-link pour les guardians sans compte Helm Connect
+  * AMÉLIORATION BACKEND : Nouveau endpoint POST /chat/invitations/guardian (controller)
+  * AMÉLIORATION FRONTEND : NewChatModal détecte maintenant les guardians sans compte et propose l'envoi d'invitation SMS/email (au lieu de l'ancien flux cassé qui envoyait un recipientId bogus)
+
+- RENAME Communication → Helm Connect :
+  * PilotageSidebar : `label: 'Communication'` → `label: 'Helm Connect'`
+  * Teacher layout + page : idem + slogan "Communiquez. Collaborez. Restez connectés." en desc
+  * WhatsAppChat header : "Messages" → "Helm Connect" + slogan sous le header
+  * Page messages/page.tsx : commentaire mis à jour "Helm Connect — page de messagerie"
+  * page-names.ts : '/federis/communication' → 'Helm Connect'
+
+- HELM CONNECT V1 — Annonces officielles (la pièce manquante de V1 selon le brief) :
+  * MIGRATION SQL 20260823200000_add_helm_connect_announcements :
+    - Table `chat_announcements` (id, tenantId, authorId, title, body, priority, targetType, targetClassId, targetLevel, targetGroupId, targetChannelId, attachments JSONB, requiresConfirmation, publishedAt, expiresAt, createdAt, updatedAt, deletedAt)
+    - Table `chat_announcement_reads` (id, announcementId, userId, tenantId, readAt, confirmed, UNIQUE(announcementId, userId))
+    - 4 indexes pour performance
+    - Migration APPLIQUÉE en production Neon via scripts/apply-announcements-migration.mjs ✓
+  * SERVICE AnnouncementService (announcement.service.ts) :
+    - createAnnouncement() — publier une annonce (avec validation des rôles éditeurs)
+    - listAnnouncements() — liste paginée (publishers voient les brouillons, les autres voient published)
+    - getAnnouncement() — détail + enrichissement (read stats, isReadByMe)
+    - markAsRead() / confirmRead() — accusé de lecture
+    - getReadStats() — statistiques de lecture détaillées (publishers)
+    - deleteAnnouncement() — soft delete
+    - estimateRecipients() — calcule total destinataires par targetType (ALL_SCHOOL/LEVEL/CLASS/TEACHERS/PARENTS/GROUP/CHANNEL)
+    - canPublish() — valide rôles : DIRECTEUR_*, SCHOOL_ADMIN, PLATFORM_*, PROMOTER, COMMUNICATION_MANAGER
+  * CONTROLLER AnnouncementController (announcement.controller.ts) :
+    - GET    /chat/announcements
+    - GET    /chat/announcements/:id
+    - POST   /chat/announcements
+    - POST   /chat/announcements/:id/read
+    - POST   /chat/announcements/:id/confirm
+    - GET    /chat/announcements/:id/stats
+    - DELETE /chat/announcements/:id
+  * MODULE communication.module.ts : AnnouncementService + AnnouncementController enregistrés
+  * FRONTEND AnnouncementsModal.tsx (nouveau composant) :
+    - Liste paginée des annonces avec badges priorité (LOW/NORMAL/HIGH/URGENT)
+    - Formulaire de publication (priorité + targetType + requiresConfirmation)
+    - Bouton "Marquer comme lu" / "Confirmer avoir lu" (si requiresConfirmation)
+    - Barre de progression "lu/total destinataires (%)" par annonce
+    - Affichage auteur + date + niveau/classe ciblée
+  * WHATSAPPCHAT : ajout bouton 🔔 "Annonces officielles" (icône Bell) à côté de "Nouveau canal"
+  * Icône "Invitations" changée de Bell → UserPlus (pour libérer Bell pour Annonces)
+
+Stage Summary:
+- ✅ Bug P2010 conversation creation : fixé (subquery participantMeta supprimée)
+- ✅ Bug guardian search : backend enrichi (phone + source fields), frontend corrigé (guardians sans compte → invitation SMS/email au lieu d'envoi d'invitation cassée)
+- ✅ Module renommé Communication → Helm Connect partout (sidebar + teacher + page + loading names)
+- ✅ Slogan "Communiquez. Collaborez. Restez connectés." ajouté dans header WhatsAppChat + teacher desc
+- ✅ Annonces officielles V1 : migration DB appliquée + service + controller + frontend modal complet
+- ✅ Bouton 🔔 ajouté dans WhatsAppChat pour ouvrir AnnouncementsModal
+- Fichiers modifiés (8) :
+  * apps/api-server/src/communication/services/chat.service.ts (+60 lignes)
+  * apps/api-server/src/communication/chat.controller.ts (+20 lignes)
+  * apps/api-server/src/communication/services/announcement.service.ts (NOUVEAU, ~350 lignes)
+  * apps/api-server/src/communication/announcement.controller.ts (NOUVEAU, ~95 lignes)
+  * apps/api-server/src/communication/communication.module.ts (+3 lignes)
+  * apps/api-server/prisma/migrations/20260823200000_add_helm_connect_announcements/migration.sql (NOUVEAU)
+  * apps/web-app/src/components/communication/AnnouncementsModal.tsx (NOUVEAU, ~310 lignes)
+  * apps/web-app/src/components/communication/WhatsAppChat.tsx (+30 lignes, header renommé + import AnnouncementsModal)
+  * apps/web-app/src/app/app/communication/messages/page.tsx (commentaire Helm Connect)
+  * apps/web-app/src/app/app/teacher/page.tsx + layout.tsx (label Helm Connect)
+  * apps/web-app/src/components/pilotage/PilotageSidebar.tsx (label Helm Connect)
+  * apps/web-app/src/lib/loading/page-names.ts (label Helm Connect)
+- Scripts (3) :
+  * scripts/apply-announcements-migration.mjs (NOUVEAU)
+  * scripts/verify-announcements-tables.mjs (NOUVEAU)
+  * scripts/check-guardians.mjs + check-users-parents.mjs (NOUVEAU, debug DB)
+
+Prochaines étapes (V1 restant) :
+- Groupes scolaires automatiques (classes, enseignants, parents) — V2
+- Notifications intelligentes avec mode silencieux — V2
+- Recherche globale transversale (messages, fichiers, annonces) — V2
+- Centre documentaire par conversation — V2
+- Appels audio/vidéo — V2

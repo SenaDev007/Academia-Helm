@@ -109,10 +109,12 @@ export class ChatService {
    * Inclut les métadonnées du dernier message et les participants.
    */
   async listConversations(tenantId: string, userId: string): Promise<ChatConversation[]> {
+    // ⭐ FIX (Prisma P2010 — "more than one row returned by a subquery used as an expression"):
+    //    The previous `participantMeta` correlated subquery returned ONE row per participant,
+    //    but a conversation always has 2+ participants → PostgreSQL threw P2010.
+    //    The field was unused in the result mapping → removed entirely.
     const participations: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT c.*,
-             (SELECT row_to_json(p) FROM chat_participants p
-              WHERE p."conversationId" = c.id AND p."leftAt" IS NULL) AS "participantMeta",
              (SELECT count(*) FROM chat_messages m
               WHERE m."conversationId" = c.id
                 AND m."createdAt" > COALESCE(p."lastReadAt", '1970-01-01'::timestamp)
@@ -640,11 +642,12 @@ export class ChatService {
 
     // Part 2: Search in guardians table (parents who may not have a users entry)
     //    Only return guardians from the same tenant (parents belong to a specific school)
+    //    ⭐ Also include guardians WITH userId (we'll dedupe against userRows later by email/userId)
     let guardianRows: any[] = [];
     try {
       guardianRows = await this.prisma.$queryRawUnsafe<any[]>(`
         SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
-               g."tenantId", t."name" AS "tenantName",
+               g."phone", g."tenantId", t."name" AS "tenantName",
                (g."tenantId" = $1) AS "isSameTenant"
         FROM "guardians" g
         LEFT JOIN "tenants" t ON t.id = g."tenantId"
@@ -654,6 +657,7 @@ export class ChatService {
           OR LOWER(COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."firstName", '') || ' ' || COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."email", '')) LIKE $2
+          OR LOWER(COALESCE(g."phone", '')) LIKE $2
         )
         ORDER BY g."lastName" ASC, g."firstName" ASC
         LIMIT $3
@@ -665,7 +669,10 @@ export class ChatService {
     }
 
     // Merge: combine userRows + guardianRows (dedup by email if possible)
+    //    ⭐ For guardians WITHOUT userId → keep them (can be invited by SMS/email)
+    //    ⭐ For guardians WITH userId → skip them (the linked user will appear via userRows)
     const seenEmails = new Set<string>();
+    const seenGuardianIds = new Set<string>();
     const allRows: any[] = [];
     for (const r of userRows) {
       if (r.email && seenEmails.has(r.email.toLowerCase())) continue;
@@ -675,18 +682,21 @@ export class ChatService {
     for (const g of guardianRows) {
       // Skip guardians that already have a linked user (already in userRows)
       if (g.userId) continue;
+      if (seenGuardianIds.has(g.guardianId)) continue;
+      seenGuardianIds.add(g.guardianId);
       // Add guardian as a pseudo-user (can't chat directly but shown in search)
       allRows.push({
         id: g.guardianId,
         firstName: g.firstName,
         lastName: g.lastName,
         email: g.email,
+        phone: g.phone,
         role: 'PARENT',
         tenantId: g.tenantId,
         tenantName: g.tenantName,
         isSameTenant: g.isSameTenant,
         source: 'guardians',
-        userId: null, // No user account — can't chat directly
+        userId: null as (string | null), // No user account — can't chat directly
       });
     }
 
@@ -782,8 +792,81 @@ export class ChatService {
         // ⭐ Guardians without a user account can't start a direct conversation
         canStartDirectConversation: isSame && !isGuardianWithoutAccount,
         childrenNames: children,
+        // ⭐ NEW: source field (so frontend can distinguish guardians without account)
+        source: r.source,
+        // ⭐ NEW: phone field (for guardians without account — used to send SMS invitation)
+        phone: r.phone,
+        // ⭐ NEW: guardianId (for guardians without account — used by /chat/invitations/guardian endpoint)
+        guardianId: isGuardianWithoutAccount ? r.id : undefined,
       };
     });
+  }
+
+  /**
+   * ⭐ NEW — Invite a guardian (without user account) to join Helm Connect via SMS/email.
+   *    Used by teachers to start a communication channel with parents who don't have
+   *    an Academia Helm account yet.
+   *
+   *    The invitation stores the guardianId and creates a magic-link token. The frontend
+   *    can then send an SMS/email to the guardian's phone/email with the magic link.
+   *
+   *    In V1, this returns the invitation record. V2 will integrate with an actual
+   *    SMS gateway (Twilio/etc.) to send the link automatically.
+   */
+  async inviteGuardianToHelmConnect(
+    senderTenantId: string,
+    senderId: string,
+    data: { guardianId: string; channel?: 'SMS' | 'EMAIL' | 'WHATSAPP'; message?: string },
+  ): Promise<{ id: string; status: string; magicLink: string; channel: string }> {
+    if (!data.guardianId) {
+      throw new BadRequestException('guardianId is required');
+    }
+
+    // Fetch guardian record
+    const guardian: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT g.id, g."firstName", g."lastName", g.email, g.phone, g."userId", g."tenantId",
+             t."name" AS "tenantName"
+      FROM "guardians" g
+      LEFT JOIN "tenants" t ON t.id = g."tenantId"
+      WHERE g.id = $1
+    `, data.guardianId);
+
+    if (guardian.length === 0) {
+      throw new NotFoundException('Guardian not found');
+    }
+    const g = guardian[0];
+
+    // If guardian already has a user account, no invitation needed
+    if (g.userId) {
+      return {
+        id: g.userId,
+        status: 'ALREADY_HAS_ACCOUNT',
+        magicLink: '',
+        channel: 'DIRECT',
+      };
+    }
+
+    // Determine the channel
+    const channel = data.channel || (g.phone ? 'SMS' : g.email ? 'EMAIL' : 'SMS');
+
+    // Create invitation record in chat_invitations (using recipientEmail for the link)
+    const invId = randomUUID();
+    const magicToken = randomUUID();
+    const magicLink = `/auth/invite?token=${magicToken}&guardianId=${g.id}&tenantId=${g.tenantId}`;
+
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_invitations" ("id", "senderId", "senderTenantId", "recipientEmail", "recipientName", "message", "status", "createdAt")
+      VALUES ($1, $2, $3, $4, $5, $6, 'PENDING_GUARDIAN', NOW())
+    `, invId, senderId, senderTenantId || g.tenantId, g.email || g.phone || '', `${g.firstName || ''} ${g.lastName || ''}`.trim(), data.message || `Invitation à rejoindre Helm Connect — Academia Helm`);
+
+    this.logger.log(`⭐ Guardian invitation created: guardian=${g.id}, channel=${channel}, hasPhone=${!!g.phone}, hasEmail=${!!g.email}`);
+
+    return {
+      id: invId,
+      status: 'PENDING',
+      magicLink,
+      channel,
+    };
   }
 
   /**

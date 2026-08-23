@@ -213,6 +213,25 @@ export class ChatController {
     return this.chatService.sendInvitation(tenantId, body.senderId, body);
   }
 
+  /**
+   * ⭐ NEW — POST /chat/invitations/guardian
+   *    Invite a guardian (without user account) to join Helm Connect via SMS/email.
+   *    body: { senderId, guardianId, channel?, message? }
+   */
+  @Post('invitations/guardian')
+  async inviteGuardian(
+    @TenantId() tenantId: string,
+    @Body() body: { senderId: string; guardianId: string; channel?: 'SMS' | 'EMAIL' | 'WHATSAPP'; message?: string },
+  ) {
+    if (!body.senderId) throw new BadRequestException('senderId is required');
+    if (!body.guardianId) throw new BadRequestException('guardianId is required');
+    return this.chatService.inviteGuardianToHelmConnect(tenantId, body.senderId, {
+      guardianId: body.guardianId,
+      channel: body.channel,
+      message: body.message,
+    });
+  }
+
   @Get('invitations/pending')
   async listPendingInvitations(
     @Query('userId') userId: string,

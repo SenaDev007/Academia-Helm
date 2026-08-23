@@ -33,6 +33,7 @@ import { toast } from 'sonner';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useChatSocket } from '@/lib/chat/useChatSocket';
 import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
+import AnnouncementsModal from './AnnouncementsModal';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -104,6 +105,8 @@ interface ChatUser {
   isSameTenant: boolean;
   canStartDirectConversation: boolean;  // true = same tenant (no invitation required)
   childrenNames?: string[];    // for parents: their children's names
+  source?: 'users' | 'guardians';      // ⭐ Whether entry comes from users table or guardians table
+  phone?: string;                       // ⭐ For guardians without account — to send SMS invitation
 }
 
 interface WhatsAppChatProps {
@@ -210,6 +213,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showInvitations, setShowInvitations] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
+  // ⭐ Helm Connect — Annonces officielles V1
+  const [showAnnouncements, setShowAnnouncements] = useState(false);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -709,10 +714,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       )}>
         {/* Header */}
         <div className="p-4 border-b border-slate-100 bg-emerald-50/30">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-emerald-600" />
-              Messages
+              Helm Connect
               {/* ⭐ Socket.io connection indicator */}
               <span
                 className={cn('w-2 h-2 rounded-full', socket.isConnected ? 'bg-green-400' : 'bg-slate-300')}
@@ -738,6 +743,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     <Megaphone className="w-4 h-4" />
                   </button>
+                  {/* ⭐ Helm Connect — Annonces officielles V1 */}
+                  <button
+                    onClick={() => setShowAnnouncements(true)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                    title="Annonces officielles"
+                  >
+                    <Bell className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => setShowNewGroup(true)}
                     className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
@@ -750,7 +763,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
                     title="Invitations"
                   >
-                    <Bell className="w-4 h-4" />
+                    <UserPlus className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setShowNewChat(true)}
@@ -763,6 +776,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               )}
             </div>
           </div>
+          {/* ⭐ Helm Connect subtitle */}
+          <p className="text-[11px] text-slate-500 italic mb-3">
+            Communiquez. Collaborez. Restez connectés.
+          </p>
           {/* Search (filtre local des convs) */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -1192,6 +1209,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           }}
         />
       )}
+      {/* ⭐ Helm Connect — Announcements modal (V1) */}
+      {showAnnouncements && (
+        <AnnouncementsModal
+          currentUserId={currentUserId}
+          onClose={() => setShowAnnouncements(false)}
+        />
+      )}
 
       {error && (
         <div className="absolute top-4 right-4 bg-rose-50 border border-rose-200 text-rose-700 text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
@@ -1259,6 +1283,49 @@ function NewChatModal({
         const conv = await res.json();
         onConversationCreated(conv.id);
         toast.success(`Conversation démarrée avec ${user.firstName} ${user.lastName}`);
+      } catch (e: any) {
+        toast.error("Échec: " + e.message);
+      }
+    } else if (user.source === 'guardians' && user.guardianId) {
+      // ⭐ HELM CONNECT — Guardian without user account: invite via SMS/email
+      //    The teacher can send a magic-link invitation to the parent's phone/email.
+      //    Once the parent accepts, a real Helm Connect account is created and the
+      //    conversation can start.
+      const guardianId = user.guardianId!;
+      const hasPhone = !!user.phone;
+      const hasEmail = !!user.email;
+      if (!hasPhone && !hasEmail) {
+        toast.error(
+          `Impossible d'inviter ${user.firstName} ${user.lastName} : ce parent n'a ni numéro de téléphone ni adresse email renseignés dans la fiche élève. Veuillez mettre à jour la fiche de l'élève (module Scolarité) pour pouvoir le contacter via Helm Connect.`
+        );
+        return;
+      }
+      const channel = hasPhone ? 'SMS' : 'EMAIL';
+      try {
+        const res = await fetch('/api/chat/invitations/guardian', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderId: currentUserId,
+            guardianId,
+            channel,
+            message: 'Invitation à rejoindre Helm Connect — Academia Helm',
+          }),
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err as any)?.message || `Erreur ${res.status}`);
+        }
+        const data = await res.json();
+        setSentInvites(prev => new Set(prev).add(guardianId));
+        if (data.status === 'ALREADY_HAS_ACCOUNT') {
+          toast.success(`${user.firstName} ${user.lastName} a déjà un compte Helm Connect.`);
+        } else {
+          toast.success(
+            `Invitation envoyée à ${user.firstName} ${user.lastName} par ${channel === 'SMS' ? 'SMS' : 'email'}. Le parent recevra un lien magique pour créer son compte Helm Connect.`
+          );
+        }
       } catch (e: any) {
         toast.error("Échec: " + e.message);
       }
@@ -1344,10 +1411,14 @@ function NewChatModal({
                       {user.roleLabel}
                     </div>
                   )}
-                  {/* ⭐ Distinction intra-école vs cross-école */}
+                  {/* ⭐ Distinction intra-école vs cross-école vs guardian-without-account */}
                   {user.canStartDirectConversation ? (
                     <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
                       ✓ Même école — discussion directe
+                    </div>
+                  ) : user.source === 'guardians' && user.guardianId ? (
+                    <div className="text-[10px] text-blue-600 font-semibold mt-0.5">
+                      ℹ Parent sans compte Helm Connect — cliquez pour envoyer une invitation par {user.phone ? 'SMS' : user.email ? 'email' : 'courrier'}
                     </div>
                   ) : user.tenantName ? (
                     <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
@@ -1359,7 +1430,7 @@ function NewChatModal({
                     </div>
                   )}
                 </div>
-                {sentInvites.has(user.userId) ? (
+                {sentInvites.has(user.userId || user.guardianId || '') ? (
                   <span className="text-xs text-emerald-600 font-semibold flex-shrink-0">Invité</span>
                 ) : user.canStartDirectConversation ? (
                   <MessageSquare className="w-4 h-4 text-emerald-600 flex-shrink-0" />

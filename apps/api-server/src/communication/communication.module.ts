@@ -49,6 +49,8 @@ import { ChatService } from './services/chat.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { PushNotificationService } from './services/push-notification.service';
+import { AnnouncementService } from './services/announcement.service';
+import { AnnouncementController } from './announcement.controller';
 
 @Module({
   imports: [
@@ -76,6 +78,8 @@ import { PushNotificationService } from './services/push-notification.service';
     ScheduledEmailController,
     // ⭐ Chat (messagerie interne type WhatsApp)
     ChatController,
+    // ⭐ Helm Connect — Annonces officielles V1
+    AnnouncementController,
   ],
   providers: [
     EmailService,
@@ -106,6 +110,8 @@ import { PushNotificationService } from './services/push-notification.service';
     ChatService,
     ChatGateway,
     PushNotificationService,
+    // ⭐ Helm Connect — Annonces officielles V1
+    AnnouncementService,
   ],
   exports: [
     EmailService,

@@ -47,7 +47,7 @@ const TEACHER_MODULES = [
   { path: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources et documents" },
   { path: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques" },
   { path: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques" },
-  { path: "/app/teacher/communication", label: "Communication", icon: MessageSquare, desc: "Messages et chats" },
+  { path: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés." },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {

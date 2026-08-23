@@ -42,6 +42,7 @@ import CategorizedAttachmentMenu from './CategorizedAttachmentMenu';
 import PollModal from './PollModal';
 import DropdownMenu from './DropdownMenu';
 import { getHelmWatermarkStyle } from './HelmWatermark';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -683,12 +684,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // Send text message (with optional reply-to + formatting preserved)
   // ───────────────────────────────────────────────────────────────────
   const handleSendText = async () => {
-    if (!activeConvId || !text.trim() || sending) return;
+    // ⭐ Strip HTML tags to check if there's actual text content
+    const textContent = text.replace(/<[^>]*>/g, '').trim();
+    if (!activeConvId || !textContent || sending) return;
     // ⭐ If user has a pending audio preview, cancel it first (don't lose the text)
     if (recordingState === 'preview') {
       cancelRecording();
     }
-    const content = text.trim();
+    const content = text.trim(); // Keep HTML for sending — backend stores HTML
     const replyToId = replyToMessage?.id || undefined;
     setText('');
     setReplyToMessage(null);
@@ -837,7 +840,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url; // Absolute (R2/S3)
     // Relative path from backend (local storage) — prepend API URL
-    return `https://api.academiahelm.com${url}`;
+    // Ensure path starts with /
+    const path = url.startsWith('/') ? url : `/${url}`;
+    return `https://api.academiahelm.com${path}`;
   };
 
   // ⭐ Helper: get file-type icon based on MIME or filename
@@ -1314,7 +1319,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         )}
                         {/* Content based on message type */}
                         {msg.type === 'TEXT' && (
-                          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                          <div
+                            className="whitespace-pre-wrap break-words"
+                            dangerouslySetInnerHTML={{ __html: msg.content }}
+                          />
                         )}
                         {msg.type === 'IMAGE' && msg.attachmentUrl && (
                           <div>
@@ -1555,71 +1563,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               // Layout: vertical stack — toolbar (format buttons + reply preview) on top,
               // then horizontal row: attach + textarea + mic + send
               <>
-                {/* ⭐ Format toolbar (B / I / U / S — Markdown shortcuts) */}
-                {(showFormatToolbar || replyToMessage) && (
-                  <div className="flex items-center gap-1 mb-1.5 px-1">
-                    {replyToMessage && (
-                      <div className="flex items-center gap-2 flex-1 px-3 py-1.5 bg-slate-100 rounded-lg border-l-2 border-[#1677FF]">
-                        <Reply className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] font-bold text-slate-700">
-                            {replyToMessage.senderName}
-                          </div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {replyToMessage.content}
-                          </div>
+                {/* ⭐ Reply preview (if replying to a message) */}
+                {replyToMessage && (
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <div className="flex items-center gap-2 flex-1 px-3 py-1.5 bg-slate-100 rounded-lg border-l-2 border-[#1677FF]">
+                      <Reply className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-bold text-slate-700">
+                          {replyToMessage.senderName}
                         </div>
-                        <button
-                          onClick={() => setReplyToMessage(null)}
-                          className="p-1 hover:bg-slate-200 rounded"
-                          title="Annuler la réponse"
-                        >
-                          <X className="w-3 h-3 text-slate-500" />
-                        </button>
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {replyToMessage.content}
+                        </div>
                       </div>
-                    )}
-                    {showFormatToolbar && (
-                      <>
-                        <button
-                          onClick={() => insertFormat('*')}
-                          className="p-1.5 hover:bg-slate-100 rounded font-bold text-sm flex-shrink-0"
-                          title="Gras"
-                        >
-                          B
-                        </button>
-                        <button
-                          onClick={() => insertFormat('_')}
-                          className="p-1.5 hover:bg-slate-100 rounded italic text-sm flex-shrink-0"
-                          title="Italique"
-                          style={{ fontStyle: 'italic' }}
-                        >
-                          I
-                        </button>
-                        <button
-                          onClick={() => insertFormat('~')}
-                          className="p-1.5 hover:bg-slate-100 rounded line-through text-sm flex-shrink-0"
-                          title="Barré"
-                          style={{ textDecoration: 'line-through' }}
-                        >
-                          S
-                        </button>
-                        <button
-                          onClick={() => insertFormat('`')}
-                          className="p-1.5 hover:bg-slate-100 rounded font-mono text-xs flex-shrink-0"
-                          title="Code"
-                        >
-                          {'</>'}
-                        </button>
-                        <button
-                          onClick={() => insertFormat('[')}
-                          className="p-1.5 hover:bg-slate-100 rounded text-sm flex-shrink-0"
-                          title="Surligné"
-                          style={{ backgroundColor: '#FEF3C7' }}
-                        >
-                          H
-                        </button>
-                      </>
-                    )}
+                      <button
+                        onClick={() => setReplyToMessage(null)}
+                        className="p-1 hover:bg-slate-200 rounded"
+                        title="Annuler la réponse"
+                      >
+                        <X className="w-3 h-3 text-slate-500" />
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div className="flex items-end gap-1.5 sm:gap-2">
@@ -1632,29 +1596,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
-                  <textarea
-                    placeholder="Tapez un message..."
-                    className="flex-1 min-w-0 px-3 sm:px-4 py-2 bg-slate-100 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30 resize-none max-h-24"
-                    value={text}
-                    rows={1}
-                    onChange={e => {
-                      setText(e.target.value);
-                      handleTyping();
-                      // Auto-resize
-                      e.target.style.height = 'auto';
-                      e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px';
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendText();
-                      }
-                    }}
-                    onFocus={() => setShowFormatToolbar(true)}
-                    disabled={readOnly}
-                  />
+                  <div className="flex-1 min-w-0 bg-slate-100 rounded-2xl overflow-hidden">
+                    <RichTextEditor
+                      value={text}
+                      onChange={(html) => { setText(html); handleTyping(); }}
+                      minHeight="36px"
+                      placeholder="Tapez un message..."
+                    />
+                  </div>
                   {/* Mic button (idle state — only when text is empty) */}
-                  {!text.trim() && (
+                  {!text.replace(/<[^>]*>/g, '').trim() && (
                     <button
                       onClick={startRecording}
                       disabled={readOnly || sending}
@@ -1667,7 +1618,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   {/* Send button — always visible */}
                   <button
                     onClick={handleSendText}
-                    disabled={!text.trim() || sending}
+                    disabled={!text.replace(/<[^>]*>/g, '').trim() || sending}
                     className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
                     title="Envoyer le message"
                   >

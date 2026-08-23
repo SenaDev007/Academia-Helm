@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, static as expressStatic } from 'express';
+import { join } from 'path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
@@ -121,6 +122,12 @@ async function bootstrap() {
       { path: 'health', method: RequestMethod.GET },
     ],
   });
+
+  // ⭐ Serve static files from the 'public' directory — required for chat attachments
+  //    StorageService saves uploaded files (audio, images, documents) to
+  //    process.cwd()/public/chat/audio/uuid-file.webm etc.
+  //    Without this, attachment URLs like /chat/audio/xxx.webm return 404.
+  app.use(expressStatic(join(process.cwd(), 'public')));
 
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 

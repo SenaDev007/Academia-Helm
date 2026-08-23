@@ -4943,19 +4943,32 @@ function PendingMonthlyPlansTab({
   refreshKey: number;
   onRefresh: () => void;
 }) {
+  // ⭐ Étapes A-D : Refonte conforme au pattern Cahier Journal
+  // A) Status sub-tabs (SUBMITTED / VALIDATED / REJECTED)
+  // B) Hiérarchie collapsible : schoolLevel → month → classLevel → items
+  // C) Dashboard card (inline — pas de card séparée)
+  // D) Vue détail in-page (remplace le modal)
+
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
   const [pendingPlans, setPendingPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
   const [directorSignature, setDirectorSignature] = useState<string | null>(null);
   const [rejectObservation, setRejectObservation] = useState("");
   const [validating, setValidating] = useState(false);
+  const [modalPlan, setModalPlan] = useState<any | null>(null);
 
-  // Load pending monthly plans
+  // Collapse states for hierarchy
+  const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set());
+
+  // Load pending monthly plans with status filter
   const loadPending = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}`,
+        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}&status=${statusTab}`,
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to fetch pending monthly plans");
@@ -4963,14 +4976,21 @@ function PendingMonthlyPlansTab({
       setPendingPlans(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error("Failed to load pending monthly plans:", e);
+      setPendingPlans([]);
     } finally {
       setLoading(false);
     }
-  }, [academicYearId]);
+  }, [academicYearId, statusTab]);
 
   useEffect(() => { loadPending(); }, [loadPending, refreshKey]);
 
-  // Load director signature from school_directors profile (similar to Cahier Journal pattern)
+  // Reset selection on tab change
+  useEffect(() => {
+    setSelectedPlan(null);
+    setModalPlan(null);
+  }, [statusTab]);
+
+  // Load director signature
   useEffect(() => {
     (async () => {
       try {
@@ -4990,25 +5010,29 @@ function PendingMonthlyPlansTab({
     }
     setValidating(true);
     try {
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: plan.classLevel,
+        month: plan.month,
+        teacherId: plan.teacherId || '',
+      });
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/validate?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId)}`,
+        `/api/pedagogy/monthly-plans/validate?${params.toString()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "VALIDATE",
-            directorSignature,
-          }),
+          body: JSON.stringify({ action: "VALIDATE", directorSignature }),
           credentials: "include",
         }
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.error || `Échec (${res.status})`);
+        throw new Error((err as any)?.backendError?.message || (err as any)?.error || `Échec (${res.status})`);
       }
-      toast.success(`✅ Planification de ${plan.classLevel} — ${plan.month} validée`);
-      setSelectedPlan(null);
+      toast.success(`Planification ${plan.classLevel} — ${plan.month} validée`);
+      setModalPlan(null);
       onRefresh();
+      loadPending();
     } catch (e: any) {
       toast.error("Échec validation: " + e.message);
     } finally {
@@ -5023,31 +5047,212 @@ function PendingMonthlyPlansTab({
     }
     setValidating(true);
     try {
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: plan.classLevel,
+        month: plan.month,
+        teacherId: plan.teacherId || '',
+      });
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/validate?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId)}`,
+        `/api/pedagogy/monthly-plans/validate?${params.toString()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "REJECT",
-            directorObservation: rejectObservation.trim(),
-          }),
+          body: JSON.stringify({ action: "REJECT", directorObservation: rejectObservation.trim() }),
           credentials: "include",
         }
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err as any)?.error || `Échec (${res.status})`);
+        throw new Error((err as any)?.backendError?.message || (err as any)?.error || `Échec (${res.status})`);
       }
-      toast.success(`Planification de ${plan.classLevel} — ${plan.month} rejetée`);
+      toast.success(`Planification ${plan.classLevel} — ${plan.month} rejetée`);
       setRejectObservation("");
-      setSelectedPlan(null);
+      setModalPlan(null);
       onRefresh();
+      loadPending();
     } catch (e: any) {
       toast.error("Échec rejet: " + e.message);
     } finally {
       setValidating(false);
     }
+  };
+
+  // ⭐ In-page detail view (Étape D — replaces modal)
+  if (selectedPlan) {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setSelectedPlan(null)}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200"
+        >
+          <ChevronLeft className="h-4 w-4" /> Retour à la liste
+        </button>
+        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+          <div className="flex items-center gap-3 mb-4">
+            <CalendarRange className="h-8 w-8 text-blue-600" />
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">
+                Planification {selectedPlan.classLevel} — {selectedPlan.month}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {selectedPlan.teacherFirstName} {selectedPlan.teacherLastName} · {selectedPlan.cellCount} cellules
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-slate-500">Enseignant</div>
+              <div className="font-semibold">{selectedPlan.teacherFirstName} {selectedPlan.teacherLastName}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Statut</div>
+              <div className="font-semibold text-blue-700">{statusTab === 'SUBMITTED' ? 'Soumis (en attente)' : statusTab === 'VALIDATED' ? 'Validé' : 'Rejeté'}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Cellules</div>
+              <div className="font-semibold">{selectedPlan.cellCount} ({selectedPlan.customCount} personnalisées)</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Soumis le</div>
+              <div className="font-semibold">{selectedPlan.submittedAt ? new Date(selectedPlan.submittedAt).toLocaleString('fr-FR') : '—'}</div>
+            </div>
+          </div>
+          {selectedPlan.teacherSignature && (
+            <div className="border-t border-slate-100 pt-4">
+              <div className="text-xs font-semibold text-slate-700 mb-1">Signature du titulaire :</div>
+              <img src={selectedPlan.teacherSignature} alt="Signature" className="max-h-20 border border-slate-200 rounded p-1" />
+            </div>
+          )}
+          {selectedPlan.directorObservation && (
+            <div className="border-t border-slate-100 pt-4">
+              <div className="text-xs font-semibold text-slate-700 mb-1">Observation du directeur :</div>
+              <p className="text-sm text-slate-600 p-3 bg-amber-50 rounded-lg">{selectedPlan.directorObservation}</p>
+            </div>
+          )}
+          {statusTab === 'SUBMITTED' && (
+            <div className="border-t border-slate-100 pt-4 flex gap-2">
+              <button
+                onClick={() => { setModalPlan(selectedPlan); setRejectObservation(""); }}
+                disabled={validating}
+                className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                Rejeter
+              </button>
+              <button
+                onClick={() => handleValidate(selectedPlan)}
+                disabled={validating || !directorSignature}
+                className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Valider'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Reject modal (still uses modal for the observation textarea) */}
+        {modalPlan && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-base font-bold text-slate-900">Rejeter la planification</h3>
+                <button onClick={() => setModalPlan(null)} className="p-1 hover:bg-slate-100 rounded-lg">
+                  <X className="w-4 h-4 text-slate-500" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <p className="text-sm text-slate-600">Planification {modalPlan.classLevel} — {modalPlan.month}</p>
+                <textarea
+                  value={rejectObservation}
+                  onChange={e => setRejectObservation(e.target.value)}
+                  rows={3}
+                  placeholder="Indiquez la raison du rejet (visible par l'enseignant)"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  autoFocus
+                />
+              </div>
+              <div className="p-4 border-t border-slate-100 flex gap-2">
+                <button onClick={() => setModalPlan(null)} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200">Annuler</button>
+                <button onClick={() => handleReject(modalPlan)} disabled={validating || !rejectObservation.trim()} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50">
+                  {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirmer le rejet'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ⭐ Build hierarchy: schoolLevel → month → classLevel → items (Étape B)
+  const levelOrder = ['Maternelle', 'Primaire', 'Secondaire', 'Collège', 'Lycée', 'Autres'];
+  const levelColors: Record<string, string> = {
+    Maternelle: 'text-pink-700 bg-pink-50 border-pink-200',
+    Primaire: 'text-blue-700 bg-blue-50 border-blue-200',
+    Secondaire: 'text-purple-700 bg-purple-50 border-purple-200',
+    Collège: 'text-amber-700 bg-amber-50 border-amber-200',
+    Lycée: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    Autres: 'text-slate-700 bg-slate-50 border-slate-200',
+  };
+  const monthOrder = ['Septembre', 'Octobre', 'Novembre', 'Décembre', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin'];
+
+  // Derive schoolLevel from classLevel
+  const getSchoolLevel = (classLevel: string): string => {
+    const cl = (classLevel || '').toUpperCase();
+    if (cl.includes('MAT') || cl.includes('GS') || cl.includes('CP') || cl === 'CI') return 'Maternelle';
+    if (cl.includes('CP') || cl.includes('CE') || cl.includes('CM')) return 'Primaire';
+    if (cl.includes('6E') || cl.includes('5E') || cl.includes('4E') || cl.includes('3E')) return 'Secondaire';
+    return 'Autres';
+  };
+
+  const hierarchy: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const plan of pendingPlans) {
+    const schoolLevel = plan.schoolLevelName || getSchoolLevel(plan.classLevel) || 'Autres';
+    const month = plan.month || 'Mois inconnu';
+    const classLevel = plan.classLevel || 'Sans classe';
+    if (!hierarchy[schoolLevel]) hierarchy[schoolLevel] = {};
+    if (!hierarchy[schoolLevel][month]) hierarchy[schoolLevel][month] = {};
+    if (!hierarchy[schoolLevel][month][classLevel]) hierarchy[schoolLevel][month][classLevel] = [];
+    hierarchy[schoolLevel][month][classLevel].push(plan);
+  }
+
+  const sortedLevels = Object.keys(hierarchy).sort((a, b) => {
+    const ia = levelOrder.indexOf(a); const ib = levelOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  const toggleCollapse = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) => {
+    setter(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  };
+
+  // Compute all keys for expand/collapse all
+  const allLevelKeys = sortedLevels;
+  const allMonthKeys: string[] = [];
+  const allClassKeys: string[] = [];
+  const emptyLevelKeys: string[] = [];
+  const emptyMonthKeys: string[] = [];
+  for (const sl of sortedLevels) {
+    let slHasItems = false;
+    for (const mo of Object.keys(hierarchy[sl])) {
+      const monthKey = `${sl}::${mo}`;
+      allMonthKeys.push(monthKey);
+      const classKeys = Object.keys(hierarchy[sl][mo]);
+      const monthItemsCount = classKeys.reduce((s, cn) => s + (hierarchy[sl][mo][cn]?.length || 0), 0);
+      for (const cn of classKeys) allClassKeys.push(`${sl}::${mo}::${cn}`);
+      if (monthItemsCount === 0) emptyMonthKeys.push(monthKey);
+      else slHasItems = true;
+    }
+    if (!slHasItems) emptyLevelKeys.push(sl);
+  }
+
+  const handleExpandAll = () => { setCollapsedSchoolLevels(new Set()); setCollapsedMonths(new Set()); setCollapsedClasses(new Set()); };
+  const handleCollapseAll = () => { setCollapsedSchoolLevels(new Set(emptyLevelKeys)); setCollapsedMonths(new Set(emptyMonthKeys)); setCollapsedClasses(new Set()); };
+
+  // ⭐ Status sub-tabs config (Étape A)
+  const tabConfig = {
+    SUBMITTED: { label: 'En attente', icon: Clock, color: 'text-blue-700 bg-blue-50' },
+    VALIDATED: { label: 'Validés', icon: CheckCircle2, color: 'text-emerald-700 bg-emerald-50' },
+    REJECTED: { label: 'Rejetés', icon: XCircle, color: 'text-red-700 bg-red-50' },
   };
 
   if (loading) {
@@ -5062,87 +5267,156 @@ function PendingMonthlyPlansTab({
     return (
       <div className="text-center py-12">
         <CalendarRange className="h-12 w-12 mx-auto text-slate-300 mb-2" />
-        <p className="text-sm font-bold text-slate-700">Aucune planification mensuelle en attente</p>
+        <p className="text-sm font-bold text-slate-700">
+          {statusTab === 'SUBMITTED' ? 'Aucune planification en attente' : statusTab === 'VALIDATED' ? 'Aucune planification validée' : 'Aucune planification rejetée'}
+        </p>
         <p className="text-xs text-slate-500 mt-1">
-          Les planifications mensuelles soumises par les enseignants apparaîtront ici pour validation.
+          Les planifications mensuelles {statusTab === 'SUBMITTED' ? 'soumises' : statusTab === 'VALIDATED' ? 'validées' : 'rejetées'} par les enseignants apparaîtront ici.
         </p>
       </div>
     );
   }
 
+  // ⭐ In-page detail view (Étape D) — if selectedPlan is set, render detail instead of list
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <CalendarRange className="h-5 w-5 text-blue-600" />
-            Planifications Mensuelles en attente
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {pendingPlans.length} planification(s) soumise(s) par les enseignants — à valider ou rejeter.
-          </p>
+      {/* Header + status sub-tabs (Étape A) */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
+          const cfg = tabConfig[s];
+          const Icon = cfg.icon;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusTab(s)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-all',
+                statusTab === s ? `${cfg.color} border-current` : 'text-slate-500 hover:text-slate-700 border-transparent'
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {cfg.label}
+            </button>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-slate-500">{pendingPlans.length} élément(s)</span>
+          <button onClick={handleExpandAll} className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200" title="Tout déplier">
+            <ChevronsUpDown className="h-3.5 w-3.5" /> Tout déplier
+          </button>
+          <button onClick={handleCollapseAll} className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200" title="Tout replier">
+            <ChevronsDownUp className="h-3.5 w-3.5" /> Tout replier
+          </button>
+          <button onClick={loadPending} className="p-2 hover:bg-slate-100 rounded-lg" title="Recharger">
+            <RefreshCw className="h-4 w-4 text-slate-500" />
+          </button>
         </div>
-        <button onClick={loadPending} className="p-2 hover:bg-slate-100 rounded-lg">
-          <RefreshCw className="h-4 w-4 text-slate-500" />
-        </button>
       </div>
 
-      {/* List of pending plans */}
+      {/* ⭐ Collapsible hierarchy (Étape B) */}
       <div className="space-y-3">
-        {pendingPlans.map((plan, idx) => {
-          const teacherName = `${plan.teacherFirstName || ''} ${plan.teacherLastName || ''}`.trim() || 'Enseignant';
+        {sortedLevels.map(schoolLevel => {
+          const months = hierarchy[schoolLevel];
+          const monthNames = Object.keys(months).sort((a, b) => {
+            const ia = monthOrder.indexOf(a); const ib = monthOrder.indexOf(b);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+          });
+          const totalItems = monthNames.reduce((s, mo) => s + Object.values(months[mo]).reduce((cs, items) => cs + items.length, 0), 0);
+          const isLevelCollapsed = collapsedSchoolLevels.has(schoolLevel);
+          const levelColorClass = levelColors[schoolLevel] || levelColors.Autres;
           return (
-            <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-sm transition">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">
-                      {plan.classLevel}
-                    </span>
-                    <span className="text-sm font-bold text-slate-900">{plan.month}</span>
-                    {plan.submittedAt && (
-                      <span className="text-[10px] text-slate-400">
-                        soumis le {new Date(plan.submittedAt).toLocaleDateString('fr-FR')}
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-slate-600">
-                    <strong>Enseignant :</strong> {teacherName}
-                    {plan.teacherRole && <span className="ml-1">({plan.teacherRole})</span>}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    {plan.cellCount} cellule(s) — {plan.customCount} personnalisée(s)
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setSelectedPlan(plan)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> Détails
-                  </button>
-                  <button
-                    onClick={() => handleValidate(plan)}
-                    disabled={validating}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg disabled:opacity-50"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Valider
-                  </button>
-                  <button
-                    onClick={() => { setSelectedPlan(plan); setRejectObservation(""); }}
-                    disabled={validating}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-lg disabled:opacity-50"
-                  >
-                    <XCircle className="w-3.5 h-3.5" /> Rejeter
-                  </button>
-                </div>
-              </div>
-              {/* Show teacher signature thumbnail if available */}
-              {plan.teacherSignature && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="text-[10px] text-slate-500 mb-1">Signature du titulaire :</div>
-                  <img src={plan.teacherSignature} alt="Signature" className="max-h-16 border border-slate-200 rounded p-1" />
+            <div key={schoolLevel} className={cn('border rounded-lg overflow-hidden', levelColorClass.split(' ').slice(-1)[0])}>
+              {/* En-tête niveau scolaire */}
+              <button
+                onClick={() => toggleCollapse(setCollapsedSchoolLevels, schoolLevel)}
+                className={cn('w-full flex items-center gap-2 px-4 py-2.5 font-bold text-sm transition-colors', levelColorClass)}
+              >
+                {isLevelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <School className="h-5 w-5" />
+                <span>{schoolLevel}</span>
+                <span className="ml-1 text-xs font-normal opacity-75">
+                  ({monthNames.length} mois · {totalItems} planif(s))
+                </span>
+              </button>
+              {!isLevelCollapsed && (
+                <div className="bg-white border-t border-slate-200 p-3 space-y-2">
+                  {monthNames.map(month => {
+                    const classes = months[month];
+                    const classNames = Object.keys(classes).sort();
+                    const monthItems = classNames.reduce((s, cn) => s + classes[cn].length, 0);
+                    const monthKey = `${schoolLevel}::${month}`;
+                    const isMonthCollapsed = collapsedMonths.has(monthKey);
+                    return (
+                      <div key={month} className="border border-indigo-100 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => toggleCollapse(setCollapsedMonths, monthKey)}
+                          className="w-full flex items-center gap-2 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                        >
+                          {isMonthCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-indigo-600" /> : <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />}
+                          <Calendar className="h-4 w-4 text-indigo-600" />
+                          <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{month}</span>
+                          <span className="ml-auto text-xs text-indigo-500">{monthItems} planif(s) · {classNames.length} classe(s)</span>
+                        </button>
+                        {!isMonthCollapsed && (
+                          <div className="p-2 space-y-2 bg-white">
+                            {classNames.map(className => {
+                              const classPlans = classes[className];
+                              const classKey = `${schoolLevel}::${month}::${className}`;
+                              const isClassCollapsed = collapsedClasses.has(classKey);
+                              return (
+                                <div key={className} className="border border-slate-200 rounded-lg overflow-hidden">
+                                  <button
+                                    onClick={() => toggleCollapse(setCollapsedClasses, classKey)}
+                                    className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors"
+                                  >
+                                    {isClassCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : <ChevronDown className="h-3.5 w-3.5 text-slate-600" />}
+                                    <CalendarRange className="h-4 w-4 text-slate-600" />
+                                    <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</span>
+                                    <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">{classPlans.length}</span>
+                                  </button>
+                                  {!isClassCollapsed && (
+                                    <div className="p-2 space-y-2 bg-white">
+                                      {classPlans.map((plan, idx) => {
+                                        const teacherName = `${plan.teacherFirstName || ''} ${plan.teacherLastName || ''}`.trim() || 'Enseignant';
+                                        return (
+                                          <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300">
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 mb-1">
+                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">{plan.classLevel}</span>
+                                                <span className="text-sm font-bold text-slate-900">{plan.month}</span>
+                                                {plan.submittedAt && <span className="text-[10px] text-slate-400">soumis le {new Date(plan.submittedAt).toLocaleDateString('fr-FR')}</span>}
+                                              </div>
+                                              <div className="text-xs text-slate-600"><strong>Enseignant :</strong> {teacherName}</div>
+                                              <div className="text-xs text-slate-500 mt-0.5">{plan.cellCount} cellule(s) — {plan.customCount} personnalisée(s)</div>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                              <button onClick={() => setSelectedPlan(plan)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                                                <Eye className="h-3 w-3" /> Voir
+                                              </button>
+                                              {statusTab === 'SUBMITTED' && (
+                                                <button onClick={() => { setModalPlan(plan); setRejectObservation(""); }} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                                                  <CheckCircle2 className="h-3 w-3" /> Traiter
+                                                </button>
+                                              )}
+                                              {statusTab !== 'SUBMITTED' && (
+                                                <span className={cn('px-2 py-1 text-[10px] font-bold uppercase rounded', statusTab === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+                                                  {statusTab === 'VALIDATED' ? '✓ Validé' : '✗ Rejeté'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -5150,83 +5424,35 @@ function PendingMonthlyPlansTab({
         })}
       </div>
 
-      {/* Detail Modal */}
-      {selectedPlan && (
+      {/* ⭐ Validation modal (Étape D — for reject with observation) */}
+      {modalPlan && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">
-                Planification {selectedPlan.classLevel} — {selectedPlan.month}
-              </h3>
-              <button onClick={() => setSelectedPlan(null)} className="p-1 hover:bg-slate-100 rounded-lg">
+              <h3 className="text-base font-bold text-slate-900">Traiter — {modalPlan.classLevel} {modalPlan.month}</h3>
+              <button onClick={() => setModalPlan(null)} className="p-1 hover:bg-slate-100 rounded-lg">
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
-            <div className="p-4 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-xs text-slate-500">Enseignant</div>
-                  <div className="font-semibold">
-                    {selectedPlan.teacherFirstName} {selectedPlan.teacherLastName}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">Statut</div>
-                  <div className="font-semibold text-blue-700">Soumis (en attente)</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">Cellules</div>
-                  <div className="font-semibold">{selectedPlan.cellCount} ({selectedPlan.customCount} personnalisées)</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">Soumis le</div>
-                  <div className="font-semibold">
-                    {selectedPlan.submittedAt ? new Date(selectedPlan.submittedAt).toLocaleString('fr-FR') : '—'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Reject observation input */}
-              <div className="border-t border-slate-100 pt-4">
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Observation (pour rejet)
-                </label>
-                <textarea
-                  value={rejectObservation}
-                  onChange={e => setRejectObservation(e.target.value)}
-                  rows={3}
-                  placeholder="Indiquez la raison du rejet (sera visible par l'enseignant)"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                />
-              </div>
-
-              {/* Director signature preview */}
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-slate-600">{modalPlan.teacherFirstName} {modalPlan.teacherLastName} · {modalPlan.cellCount} cellules</p>
               {directorSignature && (
-                <div className="border-t border-slate-100 pt-4">
-                  <div className="text-xs font-semibold text-slate-700 mb-1">Votre signature (directeur) :</div>
-                  <img src={directorSignature} alt="Signature" className="max-h-20 border border-slate-200 rounded p-1" />
+                <div>
+                  <div className="text-xs font-semibold text-slate-700 mb-1">Votre signature :</div>
+                  <img src={directorSignature} alt="Signature" className="max-h-16 border border-slate-200 rounded p-1" />
                 </div>
               )}
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Observation (pour rejet)</label>
+                <textarea value={rejectObservation} onChange={e => setRejectObservation(e.target.value)} rows={3} placeholder="Raison du rejet (visible par l'enseignant)" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+              </div>
             </div>
             <div className="p-4 border-t border-slate-100 flex gap-2">
-              <button
-                onClick={() => setSelectedPlan(null)}
-                className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200"
-              >
-                Fermer
+              <button onClick={() => setModalPlan(null)} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-200">Annuler</button>
+              <button onClick={() => handleReject(modalPlan)} disabled={validating || !rejectObservation.trim()} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Rejeter'}
               </button>
-              <button
-                onClick={() => handleReject(selectedPlan)}
-                disabled={validating || !rejectObservation.trim()}
-                className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
-              >
-                Rejeter
-              </button>
-              <button
-                onClick={() => handleValidate(selectedPlan)}
-                disabled={validating || !directorSignature}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
-              >
+              <button onClick={() => handleValidate(modalPlan)} disabled={validating || !directorSignature} className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50">
                 {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Valider'}
               </button>
             </div>

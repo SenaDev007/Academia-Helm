@@ -8698,3 +8698,66 @@ L'user peut maintenant:
 3. Voir le type/taille du document en texte lisible (blanc sur bleu / slate-500 sur blanc)
 4. Rechercher un parent par nom, email OU téléphone dans NewChatModal
 5. Cliquer sur un parent dans les résultats → UI d'invitation s'affiche (mais l'envoi SMS reste un stub)
+
+---
+Task ID: Helm-Connect-Finance-Integration
+Agent: main
+Task: User clarifications: (1) no invitation flow for parents — they can already login with phone; (2) replace SMS/WhatsApp notifications in Finance module with Helm Connect chat messages (encaissements + recouvrement)
+
+Work Log:
+- Investigation agent a trouvé:
+  1. Guardians table n'avait PAS de colonne userId (pourtant SQL queries référaient à g."userId" → erreur silencieuse avalée par try/catch)
+  2. Aucun service n'auto-crée un User quand un Guardian est créé (pendant student enrollment)
+  3. loginParentByPhone REQUIERT un User existant — sinon jette "Compte parent non configuré"
+  4. ReceiptNotificationFinanceService envoie sur ['email', 'whatsapp', 'sms']
+  5. RecoveryNotificationFinanceService envoie sur ['email', 'whatsapp', 'sms']
+  6. PDF receipt est déjà généré par receipt-finance.service.ts (retourne pdfBuffer)
+  7. ChatService.sendAttachmentMessage supporte un Buffer comme Express.Multer.File
+
+Phase 1 — Foundation (parent user provisioning):
+- Migration 20260901100000_add_userId_to_guardians: ALTER TABLE guardians ADD COLUMN userId TEXT REFERENCES users(id) ON DELETE SET NULL + index + FK constraint idempotent
+- Prisma schema: Guardian model ajouté userId String? @map("userId") + relation user User? + @@index([userId]); User model ajouté back-relation guardians Guardian[]
+- Nouveau ParentUserProvisioningService (src/students/services/parent-user-provisioning.service.ts):
+  * ensureUserForGuardian(guardianId) — auto-crée User (role=PARENT, passwordHash=null) si aucun, back-fill guardian.userId, race condition handling (P2002)
+  * ensureUserForGuardianByPhone(tenantId, phone) — variant pour finance
+  * ensureUserForPrimaryGuardianOfStudent(tenantId, studentId) — variant pour receipt notification
+- Enregistré dans StudentsModule (providers + exports)
+
+Phase 2 — Direct chat with parents (no invitation):
+- CommunicationModule: importe StudentsModule (pour ParentUserProvisioningService)
+- ChatService: injecte ParentUserProvisioningService + nouvelle méthode createOrGetDirectConversationWithGuardian(tenantId, currentUserId, guardianId)
+- Nouveau endpoint POST /api/chat/conversations/guardian-direct (body: { currentUserId, guardianId })
+- Frontend WhatsAppChat.tsx NewChatModal: branche guardians remplacée — appel /api/chat/conversations/guardian-direct au lieu de /api/chat/invitations/guardian; UI label changé de "Parent sans compte — cliquez pour envoyer une invitation" à "Parent d'élève — cliquez pour démarrer la conversation"
+
+Phase 3 — Finance notifications via Helm Connect:
+- Nouveau HelmConnectFinanceNotificationService (src/finance/helm-connect-finance-notification.service.ts):
+  * sendReceiptNotification(payload) — provisionne User parent, crée conversation cashier↔parent, envoie message DOCUMENT avec PDF receipt attaché + caption professionnel (reçu number, élève, classe, montant, solde, date, signature Helm Connect)
+  * sendRecoveryNotification(payload) — même pattern pour relances, 3 niveaux (PREMIERE_RELANCE, DEUXIEME_RELANCE, MISE_EN_DEMEURE) avec wording progressif
+- ReceiptNotificationFinanceService: injecte HelmConnectFinanceNotificationService + nouvelle branche 'helm_connect' dans le loop channels
+- RecoveryNotificationFinanceService: même injection + même branche; lookup du directeur du tenant comme senderId
+- Call sites modifiés:
+  * finance-transaction.service.ts ligne 488: ['email', 'whatsapp', 'sms'] → ['email', 'helm_connect']
+  * auto-recovery.service.ts ligne 116: même changement + type étendu
+  * recovery-reminder.controller.ts ligne 85: même défaut dans le endpoint POST /finance/recovery-reminders/:arrearId/notify
+
+Commit poussé: 6c71f1b6 (15 files changed, 773 insertions, 41 deletions)
+- Nouveaux fichiers:
+  * apps/api-server/prisma/migrations/20260901100000_add_userId_to_guardians/migration.sql
+  * apps/api-server/src/finance/helm-connect-finance-notification.service.ts
+  * apps/api-server/src/students/services/parent-user-provisioning.service.ts
+
+Vérification post-déploiement:
+- ⏳ En attente — uptime 4532s (build Railway non encore terminé au moment du test)
+- L'utilisateur devra peut-être trigger un Redeploy manuel depuis le dashboard Railway si l'auto-deploy webhook ne se déclenche pas
+
+Stage Summary:
+- ✅ Phase 1: Migration + Prisma schema + ParentUserProvisioningService créés
+- ✅ Phase 2: Endpoint POST /api/chat/conversations/guardian-direct + frontend update
+- ✅ Phase 3: HelmConnectFinanceNotificationService créé + injection dans ReceiptNotification + RecoveryNotification services + call sites modifiés
+- ✅ Commit poussé (6c71f1b6)
+- ⏳ Déploiement Railway en cours (vérifier l'uptime dans ~1-2 min)
+- ⚠️ TODO (follow-up):
+  * Hook ParentUserProvisioningService dans guardian creation flows (students-import, admission.service, guardians-prisma service) pour auto-créer le User à l'inscription
+  * Backfill script pour les guardians existants (sans userId)
+  * Add Helm Connect dispatch hooks dans CollectionPrismaService.createCollectionAction + createPaymentPromise (action/promesse sub-tabs — actuellement silencieux, n'envoient aucune notification)
+  * Tester end-to-end avec credentials valides (l'utilisateur doit tester lui-même car les credentials test sont outdated)

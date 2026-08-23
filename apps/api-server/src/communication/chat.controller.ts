@@ -169,6 +169,44 @@ export class ChatController {
     return { success: true };
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  V2.7 — MESSAGE DELETION (WhatsApp/Telegram-style)
+  //    - Delete for me : removes the message from the user's view (soft delete per user)
+  //    - Delete for everyone : sender only, marks deletedAt (visible to everyone as
+  //      "Message supprimé" placeholder)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ POST /chat/conversations/:id/messages/:msgId/delete-for-me
+   *    Soft-deletes the message for THIS user only (others still see it).
+   *    Implementation: insert into chat_message_user_deletions (userId, messageId).
+   */
+  @Post('conversations/:id/messages/:msgId/delete-for-me')
+  async deleteMessageForMe(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.deleteMessageForMe(tenantId, body.userId, conversationId, messageId);
+  }
+
+  /**
+   * ⭐ POST /chat/conversations/:id/messages/:msgId/delete-for-everyone
+   *    Hard-deletes the message for everyone (sender only). Marks deletedAt.
+   */
+  @Post('conversations/:id/messages/:msgId/delete-for-everyone')
+  async deleteMessageForEveryone(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.deleteMessageForEveryone(tenantId, body.userId, conversationId, messageId);
+  }
+
   @Get('unread-count')
   async getUnreadCount(
     @TenantId() tenantId: string,

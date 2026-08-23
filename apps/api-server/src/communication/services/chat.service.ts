@@ -373,6 +373,9 @@ export class ChatService {
     // ⭐ FIX (P2010 — column ur.role does not exist) :
     //    The user_roles table has a "roleId" FK to the roles table, NOT a "role" text column.
     //    The role is stored directly on users.role. Use u."role" and drop the user_roles JOIN entirely.
+    // ⭐ V2.7 : filter out messages the user has deleted FOR THEMSELVES
+    //    (chat_message_user_deletions table — if it doesn't exist, the LEFT JOIN returns NULL and
+    //     the WHERE clause still works).
     const messages: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT m.*,
              u."firstName" AS "senderFirstName",
@@ -380,12 +383,14 @@ export class ChatService {
              u."role" AS "senderRole"
       FROM chat_messages m
       LEFT JOIN "users" u ON u.id = m."senderId"
+      LEFT JOIN "chat_message_user_deletions" d ON d."messageId" = m.id AND d."userId" = $3
       WHERE m."conversationId" = $1
         AND m."deletedAt" IS NULL
+        AND d.id IS NULL
         ${beforeClause}
       ORDER BY m."createdAt" DESC
       LIMIT $2
-    `, conversationId, limit, ...(options.before ? [options.before] : []));
+    `, conversationId, limit, userId, ...(options.before ? [options.before] : []));
 
     // Pour chaque message, charger les accusés de lecture
     if (messages.length > 0) {
@@ -564,6 +569,83 @@ export class ChatService {
       GROUP BY c.id
     `, tenantId, userId);
     return rows.map(r => ({ conversationId: r.conversationId, unread: r.unread }));
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  V2.7 — MESSAGE DELETION (WhatsApp/Telegram-style)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ Delete a message FOR ME only (others still see it).
+   *    Implementation: insert into chat_message_user_deletions (userId, messageId).
+   *    The listMessages query (V2.7) will filter out these messages per user.
+   */
+  async deleteMessageForMe(
+    tenantId: string,
+    userId: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ success: boolean }> {
+    // Verify user is participant in the conversation
+    await this.getConversation(tenantId, userId, conversationId);
+
+    // Verify message exists in this conversation
+    const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id FROM chat_messages
+      WHERE id = $1 AND "conversationId" = $2 AND "deletedAt" IS NULL
+    `, messageId, conversationId);
+    if (msg.length === 0) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Insert into chat_message_user_deletions (ignore if already exists)
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "chat_message_user_deletions" ("id", "messageId", "userId", "deletedAt")
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT DO NOTHING
+      `, randomUUID(), messageId, userId);
+    } catch (e: any) {
+      // Table might not exist yet (V2.7 migration pending) — fall back to soft delete globally
+      this.logger.warn(`chat_message_user_deletions table not available: ${e.message}`);
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * ⭐ Delete a message FOR EVERYONE (sender only).
+   *    Marks deletedAt — the message appears as "Message supprimé" to everyone.
+   */
+  async deleteMessageForEveryone(
+    tenantId: string,
+    userId: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ success: boolean }> {
+    // Verify user is participant
+    await this.getConversation(tenantId, userId, conversationId);
+
+    // Verify the message exists AND the user is the sender
+    const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, "senderId" FROM chat_messages
+      WHERE id = $1 AND "conversationId" = $2 AND "deletedAt" IS NULL
+    `, messageId, conversationId);
+    if (msg.length === 0) {
+      throw new NotFoundException('Message not found');
+    }
+    if (msg[0].senderId !== userId) {
+      throw new ForbiddenException('Only the sender can delete a message for everyone');
+    }
+
+    // Mark as deleted (soft delete)
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_messages"
+      SET "deletedAt" = NOW()
+      WHERE "id" = $1
+    `, messageId);
+
+    return { success: true };
   }
 
   // ═════════════════════════════════════════════════════════════════

@@ -27,7 +27,7 @@ import {
   Loader2, Send, Search, Plus, Users, Paperclip, X, Check, CheckCheck,
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
-  BellOff, Play, Pause, CheckCircle2,
+  BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -240,6 +240,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   // ⭐ Helm Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
+  // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
+  const [showFormatToolbar, setShowFormatToolbar] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<{ id: string; senderName: string; content: string } | null>(null);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -676,7 +679,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, [messages.length]);
 
   // ───────────────────────────────────────────────────────────────────
-  // Send text message
+  // Send text message (with optional reply-to + formatting preserved)
   // ───────────────────────────────────────────────────────────────────
   const handleSendText = async () => {
     if (!activeConvId || !text.trim() || sending) return;
@@ -685,13 +688,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       cancelRecording();
     }
     const content = text.trim();
+    const replyToId = replyToMessage?.id || undefined;
     setText('');
+    setReplyToMessage(null);
     setSending(true);
     try {
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUserId, content }),
+        body: JSON.stringify({
+          senderId: currentUserId,
+          content,
+          ...(replyToId ? { replyToId } : {}),
+        }),
         credentials: 'include',
       });
       if (!res.ok) {
@@ -710,8 +719,112 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     } catch (e: any) {
       toast.error("Échec d'envoi du message: " + e.message);
       setText(content); // Restore le texte non envoyé
+      if (replyToId) setReplyToMessage({ id: replyToId, senderName: replyToMessage?.senderName || '', content: replyToMessage?.content || '' });
     } finally {
       setSending(false);
+    }
+  };
+
+  // ───────────────────────────────────────────────────────────────────
+  // Insert Markdown format around selection or at cursor
+  // ───────────────────────────────────────────────────────────────────
+  const insertFormat = (marker: string) => {
+    const textarea = document.querySelector('textarea[placeholder="Tapez un message..."]') as HTMLTextAreaElement;
+    if (!textarea) {
+      // Fallback: just append the marker
+      setText(prev => prev + marker + marker);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = text.substring(start, end);
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+    const newText = before + marker + (selectedText || 'texte') + marker + after;
+    setText(newText);
+    // Set cursor position after the inserted text
+    setTimeout(() => {
+      textarea.focus();
+      const newPos = start + marker.length + (selectedText || 'texte').length + marker.length;
+      textarea.setSelectionRange(newPos, newPos);
+    }, 0);
+  };
+
+  // ───────────────────────────────────────────────────────────────────
+  // Message actions (reply/forward/delete/pin/copy)
+  // ───────────────────────────────────────────────────────────────────
+  const handleMessageReply = (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    setReplyToMessage({
+      id: messageId,
+      senderName: `${msg.senderFirstName || ''} ${msg.senderLastName || ''}`.trim() || 'Utilisateur',
+      content: msg.content || (msg.type === 'AUDIO' ? '🎤 Message vocal' : msg.type === 'IMAGE' ? '📷 Image' : msg.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
+    });
+    // Focus the text input
+    setTimeout(() => {
+      const textarea = document.querySelector('textarea[placeholder="Tapez un message..."]') as HTMLTextAreaElement;
+      textarea?.focus();
+    }, 100);
+  };
+
+  const handleMessageForward = async (messageId: string) => {
+    toast.info('Transfert de message — sélectionnez la conversation destinataire');
+    // V2.7: Open a conversation picker modal
+  };
+
+  const handleMessageDeleteForMe = async (messageId: string) => {
+    if (!confirm('Supprimer ce message pour moi ?')) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/${messageId}/delete-for-me`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      // Remove from local state
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      toast.success('Message supprimé pour vous');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    }
+  };
+
+  const handleMessageDeleteForEveryone = async (messageId: string) => {
+    if (!confirm('Supprimer ce message pour TOUT LE MONDE ? Cette action est irréversible.')) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/${messageId}/delete-for-everyone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, deletedAt: new Date().toISOString() } : m));
+      toast.success('Message supprimé pour tous');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    }
+  };
+
+  const handleMessagePin = async (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    const isPinned = !!(msg as any).isPinned;
+    try {
+      const endpoint = isPinned ? 'unpin' : 'pin';
+      const res = await fetch(`/api/chat/v2/messages/${messageId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isPinned: !isPinned } : m));
+      toast.success(isPinned ? 'Message désépinglé' : 'Message épinglé');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
     }
   };
 
@@ -1325,49 +1438,129 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               </div>
             ) : (
               // IDLE state — normal text input + attach + mic + send
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* ⭐ Attach button — opens categorized menu (V2.6) */}
-                <button
-                  onClick={() => setShowAttachmentMenu(true)}
-                  className="p-2 text-slate-500 hover:bg-slate-100 rounded-full flex-shrink-0"
-                  title="Joindre un fichier"
-                  disabled={readOnly}
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
-                <input
-                  type="text"
-                  placeholder="Tapez un message..."
-                  className="flex-1 min-w-0 px-3 sm:px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30"
-                  value={text}
-                  onChange={e => { setText(e.target.value); handleTyping(); }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendText();
-                    }
-                  }}
-                  disabled={readOnly}
-                />
-                {/* Mic button (idle state) */}
-                <button
-                  onClick={startRecording}
-                  disabled={readOnly || sending}
-                  className="p-2 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30 flex-shrink-0"
-                  title="Enregistrer un message vocal"
-                >
-                  <Mic className="w-5 h-5" />
-                </button>
-                {/* Send button — always visible */}
-                <button
-                  onClick={handleSendText}
-                  disabled={!text.trim() || sending}
-                  className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
-                  title="Envoyer le message"
-                >
-                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                </button>
-              </div>
+              // Layout: vertical stack — toolbar (format buttons + reply preview) on top,
+              // then horizontal row: attach + textarea + mic + send
+              <>
+                {/* ⭐ Format toolbar (B / I / U / S — Markdown shortcuts) */}
+                {(showFormatToolbar || replyToMessage) && (
+                  <div className="flex items-center gap-1 mb-1.5 px-1">
+                    {replyToMessage && (
+                      <div className="flex items-center gap-2 flex-1 px-3 py-1.5 bg-slate-100 rounded-lg border-l-2 border-[#1677FF]">
+                        <Reply className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[10px] font-bold text-slate-700">
+                            {replyToMessage.senderName}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {replyToMessage.content}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setReplyToMessage(null)}
+                          className="p-1 hover:bg-slate-200 rounded"
+                          title="Annuler la réponse"
+                        >
+                          <X className="w-3 h-3 text-slate-500" />
+                        </button>
+                      </div>
+                    )}
+                    {showFormatToolbar && (
+                      <>
+                        <button
+                          onClick={() => insertFormat('*')}
+                          className="p-1.5 hover:bg-slate-100 rounded font-bold text-sm flex-shrink-0"
+                          title="Gras"
+                        >
+                          B
+                        </button>
+                        <button
+                          onClick={() => insertFormat('_')}
+                          className="p-1.5 hover:bg-slate-100 rounded italic text-sm flex-shrink-0"
+                          title="Italique"
+                          style={{ fontStyle: 'italic' }}
+                        >
+                          I
+                        </button>
+                        <button
+                          onClick={() => insertFormat('~')}
+                          className="p-1.5 hover:bg-slate-100 rounded line-through text-sm flex-shrink-0"
+                          title="Barré"
+                          style={{ textDecoration: 'line-through' }}
+                        >
+                          S
+                        </button>
+                        <button
+                          onClick={() => insertFormat('`')}
+                          className="p-1.5 hover:bg-slate-100 rounded font-mono text-xs flex-shrink-0"
+                          title="Code"
+                        >
+                          {'</>'}
+                        </button>
+                        <button
+                          onClick={() => insertFormat('[')}
+                          className="p-1.5 hover:bg-slate-100 rounded text-sm flex-shrink-0"
+                          title="Surligné"
+                          style={{ backgroundColor: '#FEF3C7' }}
+                        >
+                          H
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-end gap-1.5 sm:gap-2">
+                  {/* ⭐ Attach button — opens categorized menu (V2.6) */}
+                  <button
+                    onClick={() => setShowAttachmentMenu(true)}
+                    className="p-2 text-slate-500 hover:bg-slate-100 rounded-full flex-shrink-0"
+                    title="Joindre un fichier"
+                    disabled={readOnly}
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                  <textarea
+                    placeholder="Tapez un message..."
+                    className="flex-1 min-w-0 px-3 sm:px-4 py-2 bg-slate-100 rounded-2xl text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30 resize-none max-h-24"
+                    value={text}
+                    rows={1}
+                    onChange={e => {
+                      setText(e.target.value);
+                      handleTyping();
+                      // Auto-resize
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 96) + 'px';
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendText();
+                      }
+                    }}
+                    onFocus={() => setShowFormatToolbar(true)}
+                    disabled={readOnly}
+                  />
+                  {/* Mic button (idle state — only when text is empty) */}
+                  {!text.trim() && (
+                    <button
+                      onClick={startRecording}
+                      disabled={readOnly || sending}
+                      className="p-2 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30 flex-shrink-0"
+                      title="Enregistrer un message vocal"
+                    >
+                      <Mic className="w-5 h-5" />
+                    </button>
+                  )}
+                  {/* Send button — always visible */}
+                  <button
+                    onClick={handleSendText}
+                    disabled={!text.trim() || sending}
+                    className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
+                    title="Envoyer le message"
+                  >
+                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

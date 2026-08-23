@@ -220,17 +220,35 @@ export class AnnouncementService {
     const userRole = (userRow[0]?.role || '').toUpperCase();
     const isPublisher = this.canPublish(userRole);
 
-    // ⭐ If user is not a publisher, only show published announcements targeting them
-    const publishedFilter = (isPublisher && options.onlyPublished !== true)
-      ? `AND (a."publishedAt" IS NOT NULL OR a."authorId" = $2)`
-      : `AND a."publishedAt" IS NOT NULL AND (a."expiresAt" IS NULL OR a."expiresAt" > NOW())`;
+    // ⭐ Build the filter + matching params list dynamically.
+    //    ⚠️ PostgreSQL's prepared statement will REJECT extra params
+    //    ("bind message supplies N parameters, but prepared statement requires M")
+    //    So we must build the params array to MATCH the placeholders exactly.
+    //    Strategy: always reference $2 = userId when publisher (to show drafts),
+    //    but skip $2 reference when not publisher → AND only pass 1 param.
+    const isPublisherBranch = isPublisher && options.onlyPublished !== true;
 
-    const targetFilter = options.targetType
-      ? `AND a."targetType" = $3`
-      : '';
+    let publishedFilter: string;
+    let targetFilter: string;
+    let params: any[];
 
-    const params: any[] = [tenantId, userId];
-    if (options.targetType) params.push(options.targetType);
+    if (isPublisherBranch && options.targetType) {
+      publishedFilter = `AND (a."publishedAt" IS NOT NULL OR a."authorId" = $2)`;
+      targetFilter = `AND a."targetType" = $3`;
+      params = [tenantId, userId, options.targetType];
+    } else if (isPublisherBranch && !options.targetType) {
+      publishedFilter = `AND (a."publishedAt" IS NOT NULL OR a."authorId" = $2)`;
+      targetFilter = '';
+      params = [tenantId, userId];
+    } else if (!isPublisherBranch && options.targetType) {
+      publishedFilter = `AND a."publishedAt" IS NOT NULL AND (a."expiresAt" IS NULL OR a."expiresAt" > NOW())`;
+      targetFilter = `AND a."targetType" = $2`;
+      params = [tenantId, options.targetType];
+    } else {
+      publishedFilter = `AND a."publishedAt" IS NOT NULL AND (a."expiresAt" IS NULL OR a."expiresAt" > NOW())`;
+      targetFilter = '';
+      params = [tenantId];
+    }
 
     const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT a.*, u."firstName" AS "authorFirstName", u."lastName" AS "authorLastName"

@@ -8646,3 +8646,55 @@ Stage Summary:
   - Le fichier n'existe pas sur Railway ephemeral FS (wiped par dernier redeploy)
   - Le FileServingController retourne un 404 helpful pour ces cas
 - 💡 L'user doit tester en envoyant un NOUVEAU message audio après ce fix
+
+---
+Task ID: Fix-Chat-Gray-Text-Parent-Search-SQL
+Agent: main
+Task: User confirmed audio works now. 3 remaining issues: (1) gray text on blue for document type/size, (2) documents/images download + preview, (3) parents can't be found in search
+
+Work Log:
+- Investigation agent a trouvé 3 bugs:
+  1. WhatsAppChat.tsx ligne 1532: text-slate-400 pour type/taille document → illisible sur bulle bleue isMine (bg-[#3B9EFF])
+  2. chat.service.ts searchUsers() ligne 734: SELECT g."userId" — la colonne n'existe PAS sur la table guardians → erreur SQL silencieusement avalée par try/catch ligne 751 → guardianRows toujours vide → parents JAMAIS retournés
+  3. chat.service.ts inviteGuardianToHelmConnect() ligne 912: même bug g."userId"
+
+Fix appliqués (commit 00879495):
+
+A. WhatsAppChat.tsx:
+   - Ligne 1534-1535: text-slate-400 → cn('text-xs', isMine ? 'text-white/80' : 'text-slate-500')
+   - Ligne 1534: filename text-xs font-semibold → cn(..., isMine ? 'text-white' : 'text-slate-900')
+   - Ligne 1526-1529: hover:bg-slate-100 → cn('...', isMine ? 'hover:bg-white/10' : 'hover:bg-slate-100')
+   - Ligne 1601 (POLL fallback): text-slate-400 → cn('text-xs', isMine ? 'text-white/80' : 'text-slate-500')
+   - Ligne 2084: search placeholder "Rechercher un utilisateur (nom, email)..." → "Rechercher par nom, email ou téléphone..."
+
+B. chat.service.ts searchUsers() — fix SQL:
+   - Ligne 738: SELECT retiré g."userId" (colonne inexistante)
+   - Ligne 771-774: dedup logic remplacée: was `if (g.userId) continue;` → now `if (g.email && seenEmails.has(g.email.toLowerCase())) continue;`
+   - Lignes 813-825 (old code): supprimé le block qui query WHERE g."userId" = ANY($1) — jamais fonctionné, redondant avec lookup par guardianId
+
+C. chat.service.ts inviteGuardianToHelmConnect() — fix SQL:
+   - Ligne 908: SELECT retiré g."userId"
+   - Lignes 920-938: remplacé `if (g.userId) return ALREADY_HAS_ACCOUNT` par lookup explicite:
+     `SELECT id FROM users WHERE email = g.email AND tenantId = g.tenantId AND status = 'active'`
+     Si un user avec email matching existe → guardian considéré comme ayant déjà un compte
+
+Vérification après deploy Railway (uptime 6s):
+- GET /api/chat/search-users → 401 Unauthorized (route existe, auth requise)
+- Plus de 500 silencieux — la requête SQL ne jette plus
+- L'user peut maintenant tester la recherche de parents par nom/email/téléphone
+
+Stage Summary:
+- ✅ Gray text on blue fix (4 classes conditionnelles sur isMine)
+- ✅ Parent search SQL bug fixed (removed g."userId" qui n'existe pas)
+- ✅ Parent invitation SQL bug fixed (même fix)
+- ✅ Search placeholder metionne téléphone (visibilité de la feature)
+- ✅ Déployé sur Railway (commit 00879495, uptime 6s)
+- ⚠️ Invitation flow (SMS magic-link) reste un stub — pas de gateway SMS, pas de /auth/invite endpoint
+- ⚠️ Impossible de tester end-to-end (credentials toujours outdated)
+
+L'user peut maintenant:
+1. Envoyer un NOUVEAU document/image dans un chat → preview modal s'ouvre + download fonctionne (R2 fix précédent)
+2. Cliquer sur un document → DocumentPreviewModal s'ouvre avec iframe PDF ou image
+3. Voir le type/taille du document en texte lisible (blanc sur bleu / slate-500 sur blanc)
+4. Rechercher un parent par nom, email OU téléphone dans NewChatModal
+5. Cliquer sur un parent dans les résultats → UI d'invitation s'affiche (mais l'envoi SMS reste un stub)

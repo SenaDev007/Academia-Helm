@@ -1785,17 +1785,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       ) : (
-        // Empty state when no conversation selected — uses Helm watermark + AH SVG logo
+        // Empty state when no conversation selected — uses Helm watermark background + Helm Connect icon
+        // ⭐ Per user feedback: KEEP the watermark theme (asked for) but DO NOT replace
+        //    the Helm Connect icon with the AH SVG logo (was not asked for).
         <div
           className="hidden md:flex flex-1 items-center justify-center relative"
           style={getHelmWatermarkStyle({ opacity: 0.08 })}
         >
           <div className="text-center relative z-10">
             <img
-              src="/images/logo-Academia-Helm.svg"
-              alt="Academia Helm"
-              className="w-24 h-24 mx-auto mb-4 object-contain"
-              style={{ filter: 'brightness(0) opacity(0.6)' }}
+              src="/icons/modules/helm-connect.png"
+              alt="Helm Connect"
+              className="w-16 h-16 mx-auto mb-4 object-contain opacity-80"
             />
             <h3 className="text-lg font-bold text-slate-700">Helm Connect</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-sm">

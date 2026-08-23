@@ -8598,3 +8598,51 @@ Stage Summary:
 - ❌ Impossible de tester end-to-end (credentials outdated, pas d'OAuth)
 - ⚠️ Les anciens fichiers audio uploadés avant ce fix sont perdus (Railway ephemeral FS)
 - 💡 Fix long terme: configurer STORAGE_TYPE=r2 sur Railway pour persistence cross-deploy
+
+---
+Task ID: Fix-R2-Storage-Env-Vars
+Agent: main
+Task: User confirmed R2_* env vars were configured on Railway, but audio still returned NestJS 404 — investigate why
+
+Work Log:
+- User message: "J'ai déjà configuré ces choses depuis longtemps. Les variables R2_ACCESS_KEY_ID et R2_ACCOUNT_ID, également R2_BUCKET_NAME et R2_PUBLIC_URL, R2_SECRET_ACCESS_KEY, j'avais déjà tout configuré. Même le storage type est déjà sur R2 configuré."
+- Re-lu src/common/services/storage.service.ts (constructor lignes 39-73 avant fix)
+- BUG identifié: storage.service.ts lisait UNIQUEMENT les variables S3_*:
+    ligne 42: this.bucketName = this.configService.get<string>('S3_BUCKET')
+    ligne 44: this.publicUrl = this.configService.get<string>('S3_PUBLIC_URL')
+    ligne 47-50: S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+  L'user avait R2_* vars → tous les S3_* étaient vides → S3Client construit avec credentials vides
+  + ligne 119: return key (relatif) au lieu de l'URL publique complète
+  → DB stockait '/chat/audio/uuid.webm' (relatif) au lieu de 'https://cdn.../uuid.webm' (absolu)
+  → frontend prepend 'https://api.academiahelm.com' → NestJS 404 (no controller at /chat/audio/...)
+
+FIX appliqué dans src/common/services/storage.service.ts:
+1. Constructor: read from BOTH R2_* et S3_* (R2 prend precedence quand STORAGE_TYPE=r2)
+   - R2_BUCKET_NAME (alias S3_BUCKET)
+   - R2_PUBLIC_URL (alias S3_PUBLIC_URL)
+   - R2_ENDPOINT (alias S3_ENDPOINT)
+   - R2_REGION (alias S3_REGION)
+   - R2_ACCESS_KEY_ID (alias S3_ACCESS_KEY_ID)
+   - R2_SECRET_ACCESS_KEY (alias S3_SECRET_ACCESS_KEY)
+2. Constructor: construit le R2 endpoint depuis R2_ACCOUNT_ID si R2_ENDPOINT n'est pas set
+   Format: https://<account_id>.r2.cloudflarestorage.com
+3. Constructor: log d'erreur clair si config R2 incomplète (aide debug future silent failures)
+4. uploadFile (ligne 170-205): return full public URL = `${publicUrl}/${key}` au lieu de `key`
+5. uploadBuffer (ligne 240-271): idem que uploadFile
+
+Vérification après deploy Railway (uptime 22s):
+- FileServingController toujours fonctionnel: GET /api/chat/files/chat/audio/test.webm → 404 avec mon message custom (controller bien chargé)
+- Nouveau fix R2 en production (déployé commit ce3cacbb)
+- Pour les NOUVEAUX uploads: StorageService va utiliser R2_* env vars → S3Client construit correctement → upload réussit → URL publique complète stockée en DB → frontend l'utilise as-is → audio playback marche
+
+Stage Summary:
+- ✅ Root cause identifié: variables env R2_* vs S3_* (mismatch)
+- ✅ Fix appliqué: aliasing R2_* → S3_* dans storage.service.ts
+- ✅ Construction du endpoint R2 depuis R2_ACCOUNT_ID (si R2_ENDPOINT absent)
+- ✅ uploadFile/uploadBuffer retournent URL complète (pas juste le key)
+- ✅ Déployé sur Railway (commit ce3cacbb, uptime 22s)
+- ⚠️ Anciens messages audio (URLs relatives stockées avant fix) toujours cassés:
+  - Le fichier n'existe pas sur R2 (upload avait échoué silencieusement avec credentials vides)
+  - Le fichier n'existe pas sur Railway ephemeral FS (wiped par dernier redeploy)
+  - Le FileServingController retourne un 404 helpful pour ces cas
+- 💡 L'user doit tester en envoyant un NOUVEAU message audio après ce fix

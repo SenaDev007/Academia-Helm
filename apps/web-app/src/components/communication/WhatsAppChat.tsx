@@ -832,6 +832,29 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ───────────────────────────────────────────────────────────────────
   // Send attachment (document, image, audio)
   // ───────────────────────────────────────────────────────────────────
+  // ⭐ Helper: get absolute URL for attachment (prepend backend URL if relative)
+  const getAttachmentUrl = (url?: string): string => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url; // Absolute (R2/S3)
+    // Relative path from backend (local storage) — prepend API URL
+    return `https://api.academiahelm.com${url}`;
+  };
+
+  // ⭐ Helper: get file-type icon based on MIME or filename
+  const getFileTypeIcon = (mime?: string, name?: string) => {
+    const ext = (name?.split('.').pop() || '').toLowerCase();
+    const m = (mime || '').toLowerCase();
+    if (m.includes('pdf') || ext === 'pdf') return { icon: <FileText className="w-5 h-5 text-red-600" />, label: 'PDF' };
+    if (m.includes('word') || ext === 'doc' || ext === 'docx') return { icon: <FileText className="w-5 h-5 text-blue-700" />, label: 'Word' };
+    if (m.includes('sheet') || m.includes('excel') || ext === 'xls' || ext === 'xlsx') return { icon: <FileText className="w-5 h-5 text-green-700" />, label: 'Excel' };
+    if (m.includes('presentation') || ext === 'ppt' || ext === 'pptx') return { icon: <FileText className="w-5 h-5 text-orange-600" />, label: 'PowerPoint' };
+    if (m.includes('zip') || m.includes('compressed') || ext === 'zip' || ext === 'rar' || ext === '7z') return { icon: <FileText className="w-5 h-5 text-amber-600" />, label: 'Archive' };
+    if (m.includes('image/') || ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp') return { icon: <ImageIcon className="w-5 h-5 text-purple-600" />, label: 'Image' };
+    if (m.includes('audio/') || ext === 'mp3' || ext === 'wav' || ext === 'ogg' || ext === 'webm' || ext === 'm4a') return { icon: <Mic className="w-5 h-5 text-pink-600" />, label: 'Audio' };
+    if (m.includes('video/') || ext === 'mp4' || ext === 'avi' || ext === 'mov') return { icon: <FileText className="w-5 h-5 text-indigo-600" />, label: 'Vidéo' };
+    return { icon: <FileText className="w-5 h-5 text-slate-600" />, label: 'Fichier' };
+  };
+
   const handleSendAttachment = async (file: File, type: 'AUDIO' | 'DOCUMENT' | 'IMAGE') => {
     if (!activeConvId || sending) return;
     setSending(true);
@@ -841,31 +864,33 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       formData.append('senderId', currentUserId);
       formData.append('type', type);
 
-      const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/attachment`, {
+      // ⭐ Upload DIRECTLY to backend — bypass Vercel BFF to avoid 413 (4.5MB limit)
+      //    The backend has CORS enabled for *.academiahelm.com
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+      const tenantId = typeof window !== 'undefined' ? localStorage.getItem('x-tenant-id') || document.cookie.match(/x-tenant-id=([^;]+)/)?.[1] || '' : '';
+
+      const res = await fetch(`https://api.academiahelm.com/api/chat/conversations/${activeConvId}/messages/attachment`, {
         method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
+        },
         body: formData,
         credentials: 'include',
       });
-      // ⭐ Always read the response body as text first, then try to parse as JSON
-      //    This handles cases where the BFF/backend returns non-JSON (e.g., HTML error pages)
-      //    which would otherwise throw "Unexpected token '-' '------form'"
+
       const responseText = await res.text();
       let data: any = null;
       try {
         data = JSON.parse(responseText);
       } catch {
-        // Body isn't JSON — show the raw text (truncated) in the error
         if (!res.ok) {
           throw new Error(`Réponse non-JSON (status ${res.status}) : ${responseText.substring(0, 200)}`);
         }
-        // 200 OK but non-JSON body — treat as success without data
         data = {};
       }
       if (!res.ok) {
-        const msg = data?.backendError?.message
-          || data?.message
-          || data?.error
-          || `Erreur ${res.status}`;
+        const msg = data?.message || data?.error || `Erreur ${res.status}`;
         throw new Error(msg);
       }
       const newMsg = data;
@@ -1293,50 +1318,74 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         )}
                         {msg.type === 'IMAGE' && msg.attachmentUrl && (
                           <div>
-                            <img
-                              src={msg.attachmentUrl}
-                              alt={msg.attachmentName || 'Image'}
-                              className="max-w-full rounded-lg mb-1"
-                              style={{ maxHeight: '300px' }}
-                            />
+                            <a
+                              href={getAttachmentUrl(msg.attachmentUrl)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block"
+                            >
+                              <img
+                                src={getAttachmentUrl(msg.attachmentUrl)}
+                                alt={msg.attachmentName || 'Image'}
+                                className="max-w-full rounded-lg mb-1 cursor-pointer hover:opacity-90 transition-opacity"
+                                style={{ maxHeight: '300px' }}
+                                loading="lazy"
+                              />
+                            </a>
                             {msg.content && <p className="text-xs mt-1">{msg.content}</p>}
                           </div>
                         )}
                         {msg.type === 'AUDIO' && msg.attachmentUrl && (
                           <div className="flex items-center gap-2">
-                            <audio controls src={msg.attachmentUrl} className="h-8" />
+                            <audio
+                              controls
+                              src={getAttachmentUrl(msg.attachmentUrl)}
+                              className="h-9 max-w-[240px]"
+                              preload="metadata"
+                            />
+                            <a
+                              href={getAttachmentUrl(msg.attachmentUrl)}
+                              download={msg.attachmentName || 'audio'}
+                              className="p-1 rounded hover:bg-slate-200"
+                              title="Télécharger"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </a>
                             {msg.content && <span className="text-xs">{msg.content}</span>}
                           </div>
                         )}
-                        {msg.type === 'DOCUMENT' && msg.attachmentUrl && (
-                          <a
-                            href={msg.attachmentUrl}
-                            download={msg.attachmentName}
-                            className="flex items-center gap-2 hover:underline"
-                          >
-                            <FileText className="w-5 h-5" />
-                            <div>
-                              <div className="text-xs font-semibold">{msg.attachmentName || 'Document'}</div>
-                              {msg.attachmentSize && (
-                                <div className="text-[10px] opacity-70">{formatFileSize(msg.attachmentSize)}</div>
-                              )}
-                            </div>
-                          </a>
-                        )}
-                        {/* ⭐ POLL — Telegram-style poll display */}
+                        {msg.type === 'DOCUMENT' && msg.attachmentUrl && (() => {
+                          const ft = getFileTypeIcon(msg.attachmentMime, msg.attachmentName);
+                          return (
+                            <a
+                              href={getAttachmentUrl(msg.attachmentUrl)}
+                              download={msg.attachmentName}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                            >
+                              {ft.icon}
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold truncate">{msg.attachmentName || ft.label}</div>
+                                <div className="text-[10px] text-slate-400">{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
+                              </div>
+                            </a>
+                          );
+                        })()}
+                        {/* ⭐ POLL — Telegram-style poll display with WHITE background for readability */}
                         {msg.type === 'POLL' && msg.content && (() => {
                           try {
                             const poll = JSON.parse(msg.content);
                             const totalVotes = poll.options?.reduce((sum: number, o: any) => sum + (o.voteCount || 0), 0) || 0;
                             return (
-                              <div className="min-w-[200px]">
-                                {/* Poll icon + question */}
-                                <div className="flex items-center gap-1.5 mb-2">
+                              <div className="min-w-[200px] bg-white rounded-lg p-3 shadow-sm">
+                                {/* Poll icon + question — DARK text on WHITE background */}
+                                <div className="flex items-center gap-1.5 mb-3">
                                   <BarChart3 className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
-                                  <span className="text-sm font-bold">{poll.question}</span>
+                                  <span className="text-sm font-bold text-slate-900">{poll.question}</span>
                                 </div>
-                                {/* Options */}
-                                <div className="space-y-1">
+                                {/* Options — each option is a clearly visible button */}
+                                <div className="space-y-1.5">
                                   {poll.options?.map((opt: any, idx: number) => {
                                     const pct = totalVotes > 0 ? Math.round((opt.voteCount / totalVotes) * 100) : 0;
                                     return (
@@ -1350,34 +1399,33 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                               body: JSON.stringify({ userId: currentUserId, optionIds: [opt.id] }),
                                               credentials: 'include',
                                             });
-                                            // Reload messages to show updated vote counts
                                             if (activeConvId) loadMessages();
                                           } catch (e) {
                                             toast.error('Échec du vote');
                                           }
                                         }}
-                                        className="w-full text-left p-1.5 rounded-lg hover:bg-slate-100 transition-colors relative overflow-hidden"
+                                        className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-[#E6F4FF] transition-colors relative overflow-hidden border border-slate-200"
                                       >
                                         {/* Progress bar background */}
                                         {pct > 0 && (
                                           <div
-                                            className="absolute inset-y-0 left-0 bg-[#1677FF]/10 rounded-lg"
+                                            className="absolute inset-y-0 left-0 bg-[#1677FF]/15 rounded-lg transition-all"
                                             style={{ width: `${pct}%` }}
                                           />
                                         )}
                                         <div className="relative flex items-center justify-between gap-2">
-                                          <span className="text-xs">{opt.text}</span>
+                                          <span className="text-xs text-slate-700 font-medium">{opt.text}</span>
                                           <span className="text-[10px] font-bold text-[#0958D9]">
-                                            {opt.voteCount > 0 ? `${pct}%` : ''}
+                                            {opt.voteCount > 0 ? `${pct}% (${opt.voteCount})` : ''}
                                           </span>
                                         </div>
                                       </button>
                                     );
                                   })}
                                 </div>
-                                {/* Footer: vote count + settings */}
-                                <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
-                                  <span>{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</span>
+                                {/* Footer — DARK text on WHITE background */}
+                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-500">
+                                  <span className="font-medium">{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</span>
                                   {poll.multipleChoice && <span>· Choix multiple</span>}
                                   {poll.anonymous && <span>· Anonyme</span>}
                                   {poll.closed && <span className="text-rose-500 font-bold">· Fermé</span>}

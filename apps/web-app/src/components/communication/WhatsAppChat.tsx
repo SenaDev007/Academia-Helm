@@ -39,6 +39,7 @@ import NotificationPreferencesModal from './NotificationPreferencesModal';
 import GlobalSearchModal from './GlobalSearchModal';
 import CategorizedAttachmentMenu from './CategorizedAttachmentMenu';
 import PollModal from './PollModal';
+import DropdownMenu from './DropdownMenu';
 import { getHelmWatermarkStyle } from './HelmWatermark';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -731,16 +732,29 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         body: formData,
         credentials: 'include',
       });
+      // ⭐ Always read the response body as text first, then try to parse as JSON
+      //    This handles cases where the BFF/backend returns non-JSON (e.g., HTML error pages)
+      //    which would otherwise throw "Unexpected token '-' '------form'"
+      const responseText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        // Body isn't JSON — show the raw text (truncated) in the error
+        if (!res.ok) {
+          throw new Error(`Réponse non-JSON (status ${res.status}) : ${responseText.substring(0, 200)}`);
+        }
+        // 200 OK but non-JSON body — treat as success without data
+        data = {};
+      }
       if (!res.ok) {
-        // ⭐ Get verbose backend error message for diagnostics
-        const errData = await res.json().catch(() => ({}));
-        const msg = (errData as any)?.backendError?.message
-          || (errData as any)?.message
-          || (errData as any)?.error
+        const msg = data?.backendError?.message
+          || data?.message
+          || data?.error
           || `Erreur ${res.status}`;
         throw new Error(msg);
       }
-      const newMsg = await res.json();
+      const newMsg = data;
       setMessages(prev => [...prev, newMsg]);
       loadConversations();
       toast.success(type === 'AUDIO' ? 'Message vocal envoyé' : type === 'IMAGE' ? 'Image envoyée' : 'Document envoyé');
@@ -865,80 +879,62 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         activeConvId ? 'hidden md:flex' : 'flex',
         'w-full md:w-80'
       )}>
-        {/* Header */}
-        <div className="p-4 border-b border-slate-100 bg-[#E6F4FF]/30">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+        {/* Header — compact, single-line title + actions */}
+        <div className="px-3 py-2 border-b border-slate-100 bg-[#E6F4FF]/30">
+          <div className="flex items-center justify-between gap-2">
+            {/* Title — nowrap to prevent 2-line wrapping */}
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
               <MessageSquare className="w-4 h-4 text-[#1677FF]" />
-              Helm Connect
+              <span className="truncate">Helm Connect</span>
               {/* ⭐ Socket.io connection indicator */}
               <span
-                className={cn('w-2 h-2 rounded-full', socket.isConnected ? 'bg-green-400' : 'bg-slate-300')}
+                className={cn('w-2 h-2 rounded-full flex-shrink-0', socket.isConnected ? 'bg-green-400' : 'bg-slate-300')}
                 title={socket.isConnected ? 'Connecté (temps réel)' : 'Déconnecté (polling)'}
               />
             </h2>
-            <div className="flex items-center gap-1">
-              {!readOnly && (
-                <>
-                  {/* ⭐ Profile / Avatar button */}
-                  <button
-                    onClick={() => setShowProfile(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Mon profil"
-                  >
-                    <Settings className="w-4 h-4" />
-                  </button>
-                  {/* ⭐ Helm Connect V2.3 — Notification preferences (DND, mute, quiet hours) */}
-                  <button
-                    onClick={() => setShowNotifPrefs(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Notifications (mode silencieux)"
-                  >
-                    <BellOff className="w-4 h-4" />
-                  </button>
-                  {/* ⭐ New channel button (Telegram-style) */}
-                  <button
-                    onClick={() => setShowNewChannel(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Nouveau canal"
-                  >
-                    <Megaphone className="w-4 h-4" />
-                  </button>
-                  {/* ⭐ Helm Connect — Annonces officielles V1 */}
-                  <button
-                    onClick={() => setShowAnnouncements(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Annonces officielles"
-                  >
-                    <Bell className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setShowNewGroup(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Nouveau groupe"
-                  >
-                    <Users className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setShowInvitations(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                    title="Invitations"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setShowNewChat(true)}
-                    className="p-1.5 rounded-lg bg-[#1677FF] text-white hover:bg-[#0958D9]"
-                    title="Nouveau message"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
+            {/* Actions — only 3 buttons to fit on mobile */}
+            {!readOnly && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {/* Primary actions always visible */}
+                <button
+                  onClick={() => setShowProfile(true)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                  title="Mon profil"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                {/* ⭐ New message (primary CTA) */}
+                <button
+                  onClick={() => setShowNewChat(true)}
+                  className="p-1.5 rounded-lg bg-[#1677FF] text-white hover:bg-[#0958D9]"
+                  title="Nouveau message"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                {/* ⭐ "More" dropdown — groups secondary actions */}
+                <DropdownMenu
+                  trigger={
+                    <button
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                      title="Plus d'options"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  }
+                  items={[
+                    { label: 'Notifications', icon: <BellOff className="w-4 h-4" />, onClick: () => setShowNotifPrefs(true) },
+                    { label: 'Nouveau canal', icon: <Megaphone className="w-4 h-4" />, onClick: () => setShowNewChannel(true) },
+                    { label: 'Annonces officielles', icon: <Bell className="w-4 h-4" />, onClick: () => setShowAnnouncements(true) },
+                    { label: 'Recherche globale', icon: <Search className="w-4 h-4" />, onClick: () => setShowGlobalSearch(true) },
+                    { label: 'Nouveau groupe', icon: <Users className="w-4 h-4" />, onClick: () => setShowNewGroup(true) },
+                    { label: 'Invitations', icon: <UserPlus className="w-4 h-4" />, onClick: () => setShowInvitations(true) },
+                  ]}
+                />
+              </div>
+            )}
           </div>
           {/* ⭐ Helm Connect subtitle */}
-          <p className="text-[11px] text-slate-500 italic mb-3">
+          <p className="text-[10px] text-slate-500 italic mt-1 truncate">
             Communiquez. Collaborez. Restez connectés.
           </p>
           {/* Search (filtre local des convs) */}
@@ -952,14 +948,6 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               onChange={() => {}}
             />
           </div>
-          {/* ⭐ V2.4 — Global Search (recherche transversale) */}
-          <button
-            onClick={() => setShowGlobalSearch(true)}
-            className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#E6F4FF] text-[#0958D9] text-[11px] font-bold rounded-lg hover:bg-[#BAE0FF]"
-          >
-            <Search className="w-3.5 h-3.5" />
-            Recherche globale
-          </button>
         </div>
 
         {/* List */}
@@ -1251,84 +1239,88 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {/* Input bar — fully responsive (mobile-friendly) */}
           <div className="p-2 sm:p-3 bg-white border-t border-slate-200">
             {/* ⭐ State machine: idle | recording | paused | preview
-                When recording/paused/preview, the text input + attach button are HIDDEN
-                to give all the horizontal space to the recording controls.
-                This ensures the send button is ALWAYS visible on mobile. */}
+                Compact and aesthetic recording UI — small width, clear actions. */}
             {recordingState === 'recording' || recordingState === 'paused' ? (
-              <div className={cn(
-                'flex items-center gap-1.5 sm:gap-2 border rounded-full px-2 sm:px-3 py-1.5 sm:py-2',
-                recordingState === 'recording'
-                  ? 'bg-red-50 border-red-300'
-                  : 'bg-amber-50 border-amber-300'
-              )}>
-                {recordingState === 'recording' ? (
-                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-                ) : (
-                  <Pause className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                )}
-                <span className={cn(
-                  'text-xs sm:text-sm font-bold tabular-nums flex-shrink-0',
-                  recordingState === 'recording' ? 'text-red-600' : 'text-amber-700'
+              // Compact recording UI — single bar with timer + 3 small buttons
+              <div className="flex items-center gap-2 justify-between">
+                {/* Left: indicator + timer */}
+                <div className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-full border flex-shrink-0',
+                  recordingState === 'recording'
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-amber-50 border-amber-200'
                 )}>
-                  {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                </span>
-                <div className="flex-1" />
-                {recordingState === 'recording' ? (
+                  {recordingState === 'recording' ? (
+                    <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  ) : (
+                    <Pause className="w-3 h-3 text-amber-600" />
+                  )}
+                  <span className={cn(
+                    'text-xs font-mono font-bold tabular-nums',
+                    recordingState === 'recording' ? 'text-red-600' : 'text-amber-700'
+                  )}>
+                    {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                  </span>
+                </div>
+                {/* Right: 3 compact action buttons */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {recordingState === 'recording' ? (
+                    <button
+                      onClick={pauseRecording}
+                      className="p-2 bg-amber-500 text-white rounded-full hover:bg-amber-600"
+                      title="Pause"
+                    >
+                      <Pause className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={resumeRecording}
+                      className="p-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600"
+                      title="Reprendre"
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
-                    onClick={pauseRecording}
-                    className="p-2 sm:p-1.5 bg-amber-500 text-white rounded-full hover:bg-amber-600 flex-shrink-0"
-                    title="Mettre en pause"
+                    onClick={stopRecording}
+                    className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9]"
+                    title="Arrêter et écouter"
                   >
-                    <Pause className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
+                    <CheckCircle2 className="w-3.5 h-3.5" />
                   </button>
-                ) : (
                   <button
-                    onClick={resumeRecording}
-                    className="p-2 sm:p-1.5 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 flex-shrink-0"
-                    title="Reprendre l'enregistrement"
+                    onClick={cancelRecording}
+                    className="p-2 bg-rose-500 text-white rounded-full hover:bg-rose-600"
+                    title="Annuler"
                   >
-                    <Play className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                )}
-                {/* STOP — go to preview (does NOT send) */}
-                <button
-                  onClick={stopRecording}
-                  className="p-2 sm:p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] flex-shrink-0"
-                  title="Arrêter et écouter"
-                >
-                  <CheckCircle2 className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
-                </button>
-                <button
-                  onClick={cancelRecording}
-                  className="p-2 sm:p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 flex-shrink-0"
-                  title="Annuler"
-                >
-                  <X className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
-                </button>
+                </div>
               </div>
             ) : recordingState === 'preview' && audioBlobUrl ? (
-              <div className="flex items-center gap-1.5 sm:gap-2 bg-[#E6F4FF] border border-[#BAE0FF] rounded-full px-2 sm:px-3 py-1.5 sm:py-2">
+              // Compact preview UI — audio player + send + cancel
+              <div className="flex items-center gap-2 bg-[#E6F4FF] border border-[#BAE0FF] rounded-full pl-2 pr-1 py-1">
                 <audio
                   controls
                   src={audioBlobUrl}
-                  className="h-8 flex-1 min-w-0"
+                  className="h-7 flex-1 min-w-0"
                   style={{ maxWidth: '100%' }}
                 />
                 <button
                   onClick={sendRecordedAudio}
                   disabled={sending || !activeConvId}
-                  className="p-2 sm:p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
-                  title="Envoyer le message vocal"
+                  className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
+                  title="Envoyer"
                 >
-                  {sending ? <Loader2 className="w-4 sm:w-3.5 h-4 sm:h-3.5 animate-spin" /> : <Send className="w-4 sm:w-3.5 h-4 sm:h-3.5" />}
+                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                 </button>
                 <button
                   onClick={cancelRecording}
                   disabled={sending}
-                  className="p-2 sm:p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 disabled:opacity-30 flex-shrink-0"
-                  title="Annuler — recommencer"
+                  className="p-2 bg-rose-500 text-white rounded-full hover:bg-rose-600 disabled:opacity-30 flex-shrink-0"
+                  title="Annuler"
                 >
-                  <X className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (

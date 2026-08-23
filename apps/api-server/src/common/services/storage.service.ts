@@ -39,15 +39,75 @@ export class StorageService {
   constructor(private readonly configService: ConfigService) {
     const rawType = this.configService.get<string>('STORAGE_TYPE') || 'local';
     this.storageType = rawType as StorageType;
-    this.bucketName = this.configService.get<string>('S3_BUCKET') || '';
+
+    // ⭐ FIX: read from BOTH R2_* and S3_* env vars.
+    //    The user has configured R2_* env vars on Railway (R2_ACCESS_KEY_ID,
+    //    R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL, R2_ACCOUNT_ID).
+    //    Previously, only S3_* env vars were read — so when STORAGE_TYPE=r2
+    //    was set with R2_* vars, all the R2 config was empty and the S3Client
+    //    was constructed with empty credentials. The actual upload would
+    //    silently fail OR succeed but return a relative key (not a URL).
+    //    Now: when storageType === 'r2', R2_* vars take precedence, falling
+    //    back to S3_* for backwards compatibility.
+    const isR2 = rawType === 'r2';
+    const bucketVar = isR2 ? 'R2_BUCKET_NAME' : 'S3_BUCKET';
+    const publicUrlVar = isR2 ? 'R2_PUBLIC_URL' : 'S3_PUBLIC_URL';
+    const endpointVar = isR2 ? 'R2_ENDPOINT' : 'S3_ENDPOINT';
+    const regionVar = isR2 ? 'R2_REGION' : 'S3_REGION';
+    const accessKeyVar = isR2 ? 'R2_ACCESS_KEY_ID' : 'S3_ACCESS_KEY_ID';
+    const secretKeyVar = isR2 ? 'R2_SECRET_ACCESS_KEY' : 'S3_SECRET_ACCESS_KEY';
+
+    this.bucketName =
+      this.configService.get<string>(bucketVar) ||
+      this.configService.get<string>('S3_BUCKET') ||  // fallback
+      '';
     this.blobToken = this.configService.get<string>('BLOB_READ_WRITE_TOKEN') || '';
-    this.publicUrl = this.configService.get<string>('S3_PUBLIC_URL') || '';
+    this.publicUrl =
+      this.configService.get<string>(publicUrlVar) ||
+      this.configService.get<string>('S3_PUBLIC_URL') ||  // fallback
+      '';
 
     if (this.storageType === 'r2' || this.storageType === 's3') {
-      const endpoint = this.configService.get<string>('S3_ENDPOINT');
-      const region = this.configService.get<string>('S3_REGION') || 'auto';
-      const accessKeyId = this.configService.get<string>('S3_ACCESS_KEY_ID') || '';
-      const secretAccessKey = this.configService.get<string>('S3_SECRET_ACCESS_KEY') || '';
+      const endpoint =
+        this.configService.get<string>(endpointVar) ||
+        this.configService.get<string>('S3_ENDPOINT') ||  // fallback
+        '';
+      const region =
+        this.configService.get<string>(regionVar) ||
+        this.configService.get<string>('S3_REGION') ||
+        'auto';
+      const accessKeyId =
+        this.configService.get<string>(accessKeyVar) ||
+        this.configService.get<string>('S3_ACCESS_KEY_ID') ||  // fallback
+        '';
+      const secretAccessKey =
+        this.configService.get<string>(secretKeyVar) ||
+        this.configService.get<string>('S3_SECRET_ACCESS_KEY') ||  // fallback
+        '';
+
+      // ⭐ Log a clear warning if required R2 config is missing — helps debug
+      //    silent upload failures that produce relative-path URLs instead
+      //    of full https URLs.
+      if (!accessKeyId || !secretAccessKey || !this.bucketName) {
+        this.logger.error(
+          `⚠️  Storage config incomplete for ${this.storageType.toUpperCase()}: ` +
+          `${accessKeyVar}=${accessKeyId ? '✓' : '✗'} ` +
+          `${secretKeyVar}=${secretAccessKey ? '✓' : '✗'} ` +
+          `${bucketVar}=${this.bucketName ? '✓' : '✗'}. ` +
+          `Uploads will fail silently and fall back to local storage.`
+        );
+      }
+
+      // ⭐ R2 endpoint: either explicit (R2_ENDPOINT) or derived from
+      //    R2_ACCOUNT_ID (https://<account_id>.r2.cloudflarestorage.com).
+      //    The user typically has R2_ACCOUNT_ID set, not R2_ENDPOINT.
+      let resolvedEndpoint = endpoint;
+      if (this.storageType === 'r2' && !resolvedEndpoint) {
+        const accountId = this.configService.get<string>('R2_ACCOUNT_ID') || '';
+        if (accountId) {
+          resolvedEndpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+        }
+      }
 
       const clientConfig: any = {
         region,
@@ -55,13 +115,16 @@ export class StorageService {
       };
 
       // R2 requires a custom endpoint and forcePathStyle
-      if (this.storageType === 'r2' && endpoint) {
-        clientConfig.endpoint = endpoint;
+      if (this.storageType === 'r2' && resolvedEndpoint) {
+        clientConfig.endpoint = resolvedEndpoint;
         clientConfig.forcePathStyle = true;
       }
 
       this.s3Client = new S3Client(clientConfig);
-      this.logger.log(`Storage initialized: ${this.storageType.toUpperCase()} (bucket: ${this.bucketName})`);
+      this.logger.log(
+        `Storage initialized: ${this.storageType.toUpperCase()} ` +
+        `(bucket: ${this.bucketName}, publicUrl: ${this.publicUrl || 'NOT SET'})`
+      );
     } else if (this.storageType === 'vercel-blob') {
       if (!this.blobToken) {
         this.logger.error('BLOB_READ_WRITE_TOKEN is not set! Vercel Blob storage will not work.');
@@ -115,8 +178,16 @@ export class StorageService {
             ContentType: file.mimetype,
           }),
         );
-        this.logger.log(`${this.storageType.toUpperCase()} upload: ${key}`);
-        return key;
+        // ⭐ FIX: return the FULL public URL (https://...) so the frontend
+        //    can use it directly in <audio src> / <img src> / <a href download>.
+        //    Previously returned just the key (e.g. 'chat/audio/uuid.webm')
+        //    which the frontend had to prepend a backend URL to — but that
+        //    only works for local-storage URLs, not R2.
+        const publicFileUrl = this.publicUrl
+          ? `${this.publicUrl.replace(/\/$/, '')}/${key}`
+          : key;
+        this.logger.log(`${this.storageType.toUpperCase()} upload: ${key} → ${publicFileUrl}`);
+        return publicFileUrl;
       } catch (error) {
         this.logger.error(`${this.storageType.toUpperCase()} Upload Error: ${error.message}`);
         throw error;
@@ -177,8 +248,12 @@ export class StorageService {
             ContentType: contentType,
           }),
         );
-        this.logger.log(`${this.storageType.toUpperCase()} upload: ${key}`);
-        return key;
+        // ⭐ FIX: return the FULL public URL (https://...) — see uploadFile above.
+        const publicFileUrl = this.publicUrl
+          ? `${this.publicUrl.replace(/\/$/, '')}/${key}`
+          : key;
+        this.logger.log(`${this.storageType.toUpperCase()} upload: ${key} → ${publicFileUrl}`);
+        return publicFileUrl;
       } catch (error) {
         this.logger.error(`${this.storageType.toUpperCase()} Upload Error: ${error.message}`);
         throw error;

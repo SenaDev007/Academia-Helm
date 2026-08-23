@@ -22,6 +22,7 @@
  */
 
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { ParentUserProvisioningService } from '../../students/services/parent-user-provisioning.service';
@@ -858,6 +859,140 @@ export class ChatService {
     `, isImportant, messageId);
 
     return { id: messageId, isImportant };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — GROUP INVITE LINKS
+  // ═════════════════════════════════════════════════════════════════
+  async generateInviteLink(tenantId: string, conversationId: string, userId: string): Promise<{ inviteLink: string; token: string }> {
+    // Verify user is admin participant
+    const conv: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT c.type, c."inviteToken" FROM chat_conversations c
+      JOIN chat_participants p ON p."conversationId" = c.id
+      WHERE c.id = $1 AND p."userId" = $2 AND p.role = 'ADMIN' AND p."leftAt" IS NULL
+    `, conversationId, userId);
+    if (conv.length === 0) throw new ForbiddenException('Only group admins can generate invite links');
+
+    // Generate token if not already set
+    let token = conv[0].inviteToken;
+    if (!token) {
+      token = randomUUID();
+      await this.prisma.$executeRawUnsafe(`UPDATE chat_conversations SET "inviteToken" = $1 WHERE id = $2`, token, conversationId);
+    }
+    return { inviteLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.academiahelm.com'}/app/communication?join=${token}`, token };
+  }
+
+  async joinByInviteLink(tenantId: string, token: string, userId: string): Promise<{ conversationId: string; name?: string }> {
+    const conv: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, name FROM chat_conversations WHERE "inviteToken" = $1 AND "tenantId" = $2
+    `, token, tenantId);
+    if (conv.length === 0) throw new NotFoundException('Invalid or expired invite link');
+
+    const conversationId = conv[0].id;
+    // Check if already a participant
+    const existing: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id FROM chat_participants WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, conversationId, userId);
+    if (existing.length > 0) return { conversationId, name: conv[0].name };
+
+    // Add as MEMBER
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO chat_participants ("id", "conversationId", "userId", "tenantId", "role", "joinedAt")
+      VALUES ($1, $2, $3, $4, 'MEMBER', NOW())
+    `, randomUUID(), conversationId, userId, tenantId);
+
+    return { conversationId, name: conv[0].name };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — SCHEDULED MESSAGES
+  // ═════════════════════════════════════════════════════════════════
+  async scheduleMessage(tenantId: string, conversationId: string, senderId: string, content: string, scheduledFor: Date): Promise<{ id: string; scheduledFor: string }> {
+    await this.getConversation(tenantId, senderId, conversationId);
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO chat_scheduled_messages ("id", "conversationId", "senderId", "type", "content", "scheduledFor", "status", "createdAt")
+      VALUES ($1, $2, $3, 'TEXT', $4, $5, 'PENDING', NOW())
+    `, id, conversationId, senderId, content, scheduledFor);
+    return { id, scheduledFor: scheduledFor.toISOString() };
+  }
+
+  async listScheduledMessages(tenantId: string, conversationId: string, userId: string): Promise<any[]> {
+    await this.getConversation(tenantId, userId, conversationId);
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM chat_scheduled_messages
+      WHERE "conversationId" = $1 AND "status" = 'PENDING'
+      ORDER BY "scheduledFor" ASC
+    `, conversationId);
+  }
+
+  async cancelScheduledMessage(tenantId: string, schedId: string, userId: string): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_scheduled_messages SET "status" = 'CANCELLED' WHERE id = $1 AND "senderId" = $2
+    `, schedId, userId);
+    return { success: true };
+  }
+
+  /**
+   * Cron: dispatch due scheduled messages. Called every minute via @Interval.
+   */
+  @Interval(60000) // every 60 seconds
+  async dispatchScheduledMessages(): Promise<number> {
+    const due: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM chat_scheduled_messages
+      WHERE "status" = 'PENDING' AND "scheduledFor" <= NOW()
+      LIMIT 50
+    `);
+    let count = 0;
+    for (const sm of due) {
+      try {
+        const msg = await this.sendTextMessage(sm.tenantId || '', sm.senderId, sm.conversationId, { content: sm.content });
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE chat_scheduled_messages SET "status" = 'SENT', "sentMessageId" = $1, "sentAt" = NOW() WHERE id = $2
+        `, msg.id, sm.id);
+        count++;
+      } catch (e: any) {
+        this.logger.error(`Failed to dispatch scheduled message ${sm.id}: ${e.message}`);
+        await this.prisma.$executeRawUnsafe(`UPDATE chat_scheduled_messages SET "status" = 'FAILED' WHERE id = $1`, sm.id);
+      }
+    }
+    if (count > 0) this.logger.log(`Dispatched ${count} scheduled messages`);
+    return count;
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — CALL HISTORY
+  // ═════════════════════════════════════════════════════════════════
+  async startCall(tenantId: string, conversationId: string, callerId: string, callType: 'AUDIO' | 'VIDEO'): Promise<{ callId: string }> {
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO chat_call_history ("id", "conversationId", "callerId", "callType", "status", "startedAt")
+      VALUES ($1, $2, $3, $4, 'ONGOING', NOW())
+    `, id, conversationId, callerId, callType);
+    return { callId: id };
+  }
+
+  async endCall(tenantId: string, callId: string, status: string): Promise<{ id: string; duration: number }> {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "startedAt" FROM chat_call_history WHERE id = $1
+    `, callId);
+    if (rows.length === 0) throw new NotFoundException('Call not found');
+    const startedAt = new Date(rows[0].startedAt);
+    const duration = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_call_history SET "status" = $1, "endedAt" = NOW(), "duration" = $2 WHERE id = $3
+    `, status, duration, callId);
+    return { id: callId, duration };
+  }
+
+  async listCalls(tenantId: string, conversationId: string): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT c.*, u."firstName" AS "callerFirstName", u."lastName" AS "callerLastName"
+      FROM chat_call_history c
+      JOIN "users" u ON u.id = c."callerId"
+      WHERE c."conversationId" = $1
+      ORDER BY c."startedAt" DESC LIMIT 50
+    `, conversationId);
   }
 
   /**

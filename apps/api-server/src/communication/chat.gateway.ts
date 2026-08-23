@@ -183,6 +183,82 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — WEBRTC CALL SIGNALING
+  //    Events: call:offer, call:answer, call:ice-candidate,
+  //            call:reject, call:hangup
+  // ═════════════════════════════════════════════════════════════════
+
+  @SubscribeMessage('call:offer')
+  handleCallOffer(
+    @MessageBody() data: { toUserId: string; callId: string; callType: string; offer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const callerId = client.data.userId;
+    if (!callerId) return;
+    // Forward the offer to the callee's socket room
+    this.server.to(`user:${data.toUserId}`).emit('call:offer', {
+      fromUserId: callerId,
+      callId: data.callId,
+      callType: data.callType,
+      offer: data.offer,
+    });
+  }
+
+  @SubscribeMessage('call:answer')
+  handleCallAnswer(
+    @MessageBody() data: { toUserId: string; callId: string; answer: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const calleeId = client.data.userId;
+    if (!calleeId) return;
+    this.server.to(`user:${data.toUserId}`).emit('call:answer', {
+      fromUserId: calleeId,
+      callId: data.callId,
+      answer: data.answer,
+    });
+  }
+
+  @SubscribeMessage('call:ice-candidate')
+  handleIceCandidate(
+    @MessageBody() data: { toUserId: string; callId: string; candidate: any },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const fromUserId = client.data.userId;
+    if (!fromUserId) return;
+    this.server.to(`user:${data.toUserId}`).emit('call:ice-candidate', {
+      fromUserId,
+      callId: data.callId,
+      candidate: data.candidate,
+    });
+  }
+
+  @SubscribeMessage('call:reject')
+  handleCallReject(
+    @MessageBody() data: { toUserId: string; callId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const fromUserId = client.data.userId;
+    if (!fromUserId) return;
+    this.server.to(`user:${data.toUserId}`).emit('call:reject', {
+      fromUserId,
+      callId: data.callId,
+    });
+  }
+
+  @SubscribeMessage('call:hangup')
+  handleCallHangup(
+    @MessageBody() data: { toUserId: string; callId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const fromUserId = client.data.userId;
+    if (!fromUserId) return;
+    this.server.to(`user:${data.toUserId}`).emit('call:hangup', {
+      fromUserId,
+      callId: data.callId,
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
   //  Méthodes utilitaires publiques — appelées par ChatController pour
   //  broadcaster les events sans avoir à connaître les détails Socket.io.
   // ═════════════════════════════════════════════════════════════════

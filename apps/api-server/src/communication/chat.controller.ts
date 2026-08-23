@@ -112,6 +112,94 @@ export class ChatController {
     return this.chatService.createGroupConversation(tenantId, body.creatorId, body);
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — GROUP INVITE LINKS
+  // ═════════════════════════════════════════════════════════════════
+  @Post('conversations/:id/invite-link')
+  async generateInviteLink(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.generateInviteLink(tenantId, conversationId, body.userId);
+  }
+
+  @Post('join/:token')
+  async joinByInviteLink(
+    @TenantId() tenantId: string,
+    @Param('token') token: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.joinByInviteLink(tenantId, token, body.userId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — SCHEDULED MESSAGES
+  // ═════════════════════════════════════════════════════════════════
+  @Post('conversations/:id/schedule')
+  async scheduleMessage(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { senderId: string; content: string; scheduledFor: string },
+  ) {
+    if (!body.senderId) throw new BadRequestException('senderId is required');
+    if (!body.content?.trim()) throw new BadRequestException('content is required');
+    if (!body.scheduledFor) throw new BadRequestException('scheduledFor is required');
+    return this.chatService.scheduleMessage(tenantId, conversationId, body.senderId, body.content, new Date(body.scheduledFor));
+  }
+
+  @Get('conversations/:id/scheduled')
+  async listScheduledMessages(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.listScheduledMessages(tenantId, conversationId, userId);
+  }
+
+  @Delete('scheduled/:schedId')
+  async cancelScheduledMessage(
+    @TenantId() tenantId: string,
+    @Param('schedId') schedId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.cancelScheduledMessage(tenantId, schedId, body.userId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V2 — CALL HISTORY (audio/video calls)
+  // ═════════════════════════════════════════════════════════════════
+  @Post('conversations/:id/call')
+  async startCall(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { callerId: string; callType: 'AUDIO' | 'VIDEO' },
+  ) {
+    if (!body.callerId) throw new BadRequestException('callerId is required');
+    return this.chatService.startCall(tenantId, conversationId, body.callerId, body.callType || 'AUDIO');
+  }
+
+  @Put('calls/:callId')
+  async endCall(
+    @TenantId() tenantId: string,
+    @Param('callId') callId: string,
+    @Body() body: { status: string },
+  ) {
+    return this.chatService.endCall(tenantId, callId, body.status || 'COMPLETED');
+  }
+
+  @Get('conversations/:id/calls')
+  async listCalls(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+  ) {
+    return this.chatService.listCalls(tenantId, conversationId);
+  }
+
   @Get('conversations/:id')
   async getConversation(
     @TenantId() tenantId: string,

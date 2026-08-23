@@ -1010,12 +1010,95 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     };
   };
 
+  // ⭐ V2: Image compression — resize images >2MB before upload (saves R2 storage + bandwidth)
+  const compressImage = async (file: File): Promise<File> => {
+    if (file.size < 2 * 1024 * 1024) return file;
+    return new Promise((resolve) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = e => {
+        img.src = e.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxSize = 1920;
+          let { width, height } = img;
+          if (width > height && width > maxSize) { height = (height * maxSize) / width; width = maxSize; }
+          else if (height > maxSize) { width = (width * maxSize) / height; height = maxSize; }
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(blob => {
+            resolve(blob ? new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }) : file);
+          }, 'image/jpeg', 0.85);
+        };
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // ⭐ V2: Start a call (audio/video) — records in chat_call_history + initiates WebRTC signaling
+  const handleStartCall = async (callType: 'AUDIO' | 'VIDEO') => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/call`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callerId: currentUserId, callType }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      // ⭐ V2: Initiate WebRTC signaling via Socket.io
+      //    For now, notify the other participants via socket
+      const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
+      if (other && socket) {
+        socket.emit('call:offer', { toUserId: other.userId, callId: data.callId, callType, offer: null });
+      }
+      toast.info(`Appel ${callType === 'VIDEO' ? 'vidéo' : 'audio'} en cours...`);
+    } catch (e: any) { toast.error('Échec appel: ' + e.message); }
+  };
+
+  // ⭐ V2: Generate group invite link (copies to clipboard)
+  const handleGenerateInviteLink = async () => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/invite-link`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const data = await res.json();
+      navigator.clipboard.writeText(data.inviteLink).then(() => {
+        toast.success('Lien d\'invitation copié dans le presse-papiers');
+      });
+    } catch (e: any) { toast.error('Échec: ' + e.message); }
+  };
+
+  // ⭐ V2: Schedule a message for later
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleText, setScheduleText] = useState('');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const handleScheduleMessage = async () => {
+    if (!activeConvId || !scheduleText.trim() || !scheduleDate) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/schedule`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: currentUserId, content: scheduleText, scheduledFor: scheduleDate }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      toast.success('Message programmé pour ' + new Date(scheduleDate).toLocaleString('fr-FR'));
+      setShowScheduleModal(false); setScheduleText(''); setScheduleDate('');
+    } catch (e: any) { toast.error('Échec: ' + e.message); }
+  };
+
   const handleSendAttachment = async (file: File, type: 'AUDIO' | 'DOCUMENT' | 'IMAGE') => {
     if (!activeConvId || sending) return;
     setSending(true);
     try {
+      // ⭐ V2: compress images >2MB before upload
+      const fileToSend = type === 'IMAGE' ? await compressImage(file) : file;
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToSend);
       formData.append('senderId', currentUserId);
       formData.append('type', type);
 
@@ -1422,6 +1505,30 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 </p>
               )}
             </div>
+            {/* ⭐ V2: Call buttons (audio + video) + invite link (groups only) */}
+            <button
+              onClick={() => handleStartCall('AUDIO')}
+              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+              title="Appel audio"
+            >
+              <Phone className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleStartCall('VIDEO')}
+              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+              title="Appel vidéo"
+            >
+              <Video className="w-4 h-4" />
+            </button>
+            {activeConv.type === 'GROUP' && (
+              <button
+                onClick={handleGenerateInviteLink}
+                className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+                title="Copier le lien d'invitation"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+            )}
             {/* ⭐ Issue A5 FIX: Search button now opens the global search modal (was a no-op) */}
             <button
               onClick={() => setShowGlobalSearch(true)}
@@ -1994,6 +2101,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   </button>
+                  {/* ⭐ V2: Schedule message button */}
+                  <button
+                    onClick={() => { setScheduleText(text.replace(/<[^>]*>/g, '')); setShowScheduleModal(true); }}
+                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full flex-shrink-0"
+                    title="Programmer l'envoi"
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
                 </div>
               </>
             )}
@@ -2192,6 +2307,25 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               {conversations.filter(c => c.id !== activeConvId).length === 0 && (
                 <div className="text-center py-8 text-sm text-slate-400">Aucune autre conversation disponible</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ⭐ V2: Schedule message modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-slate-900">Programmer le message</h3>
+              <button onClick={() => setShowScheduleModal(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <textarea value={scheduleText} onChange={e => setScheduleText(e.target.value)} placeholder="Votre message..." className="w-full p-3 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30 mb-3" rows={3} />
+            <input type="datetime-local" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="w-full p-2.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30 mb-4" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Annuler</button>
+              <button onClick={handleScheduleMessage} disabled={!scheduleText.trim() || !scheduleDate} className="px-4 py-2 text-sm font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-30">Programmer</button>
             </div>
           </div>
         </div>

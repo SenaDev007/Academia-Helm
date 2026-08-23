@@ -656,16 +656,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     cleanupRecording();
   }, [cleanupRecording]);
 
-  // ⭐ SEND the audio from preview state
-  const sendRecordedAudio = useCallback(async () => {
-    if (!audioBlob || !activeConvId) return;
-    const mime = audioBlob.type || 'audio/webm';
-    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
-    const file = new File([audioBlob], `vocal-${Date.now()}.${ext}`, { type: mime });
-    // Reset state BEFORE sending so the UI goes back to idle immediately
-    cleanupRecording();
-    await handleSendAttachment(file, 'AUDIO');
-  }, [audioBlob, activeConvId, cleanupRecording, handleSendAttachment]);
+  // ⭐ NOTE: sendRecordedAudio is declared AFTER handleSendAttachment
+  //    to avoid a Temporal Dead Zone (TDZ) ReferenceError — useCallback's
+  //    deps array is evaluated eagerly, so it would throw "Cannot access
+  //    'X' before initialization" if sendRecordedAudio appeared before
+  //    handleSendAttachment in the source.
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -759,6 +754,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     handleSendAttachment(file, type);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // ⭐ SEND the audio from preview state (declared AFTER handleSendAttachment to avoid TDZ)
+  const sendRecordedAudio = useCallback(async () => {
+    if (!audioBlob || !activeConvId) return;
+    const mime = audioBlob.type || 'audio/webm';
+    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+    const file = new File([audioBlob], `vocal-${Date.now()}.${ext}`, { type: mime });
+    // Reset state BEFORE sending so the UI goes back to idle immediately
+    cleanupRecording();
+    await handleSendAttachment(file, 'AUDIO');
+  }, [audioBlob, activeConvId, cleanupRecording, handleSendAttachment]);
 
   // ───────────────────────────────────────────────────────────────────
   // Render conversation item (shared between Groups and Direct lists)

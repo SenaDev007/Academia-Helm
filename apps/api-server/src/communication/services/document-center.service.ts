@@ -30,7 +30,12 @@ import { Injectable, Logger, NotFoundException, ForbiddenException, BadRequestEx
 import { PrismaService } from '../../database/prisma.service';
 import { randomUUID } from 'crypto';
 
-const URL_REGEX = /https?:\/\/[^\s"'<>\]]+[^.\s"'<>\])/gi;
+// ⭐ FIX: regex had an unbalanced `)` causing SWC build failure
+//    "Unterminated regexp literal" / "Syntax Error"
+//    Original (broken): /https?:\/\/[^\s"'<>\]]+[^.\s"'<>\])/gi
+//                                                       ^ extra unmatched paren
+//    Fixed: matches URLs starting with http(s)://, stops at whitespace / quotes / angle brackets / ]
+const URL_REGEX = /https?:\/\/[^\s"'<>\]]+/gi;
 
 @Injectable()
 export class ConversationDocumentCenterService {

@@ -47,12 +47,22 @@ import {
 import type { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Public } from '../auth/decorators/public.decorator';
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 const ALLOWED_FOLDERS = ['chat', 'avatars', 'uploads', 'logos', 'icons'];
 
+/**
+ * ⭐ @Public() marks all routes in this controller as PUBLIC (no JWT required).
+ * This is necessary because:
+ *   - <audio src="..."> tags don't send Authorization headers
+ *   - <a href="..." download> tags don't send Authorization headers
+ *   - <img src="..."> tags don't send Authorization headers
+ * Consistent with how R2/S3 URLs work (also public).
+ */
 @Controller('chat/files')
+@Public()
 export class FileServingController {
   /**
    * 3-segment route: matches /api/chat/files/chat/audio/uuid.webm

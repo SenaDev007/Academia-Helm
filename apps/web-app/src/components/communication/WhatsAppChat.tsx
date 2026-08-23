@@ -878,18 +878,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // Send attachment (document, image, audio)
   // ───────────────────────────────────────────────────────────────────
   // ⭐ Helper: get absolute URL for attachment (prepend backend URL if relative)
-  // ⭐ Issue 2 + 5 FIX: backend serves files under /api/* (NestJS setGlobalPrefix('api'))
-  //    Without /api prefix, /chat/audio/... returns 404 "Cannot GET /chat/audio/..."
-  //    and audio playback fails too. We now prepend /api when path starts with /chat/.
+  // ⭐ Issue 2 + 5 FIX: backend serves files under /api/chat/files/* via a dedicated
+  //    NestJS controller (FileServingController) that streams files from the
+  //    public/ folder. This bypasses the express.static middleware that wasn't
+  //    being invoked (NestJS router was intercepting and returning 404 first).
+  //    Format expected: '/chat/audio/uuid-file.webm' (relative path stored in DB)
+  //    → 'https://api.academiahelm.com/api/chat/files/chat/audio/uuid-file.webm'
   const getAttachmentUrl = (url?: string): string => {
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url; // Absolute (R2/S3)
-    // Relative path from backend (local storage) — prepend API URL
+    // Relative path from backend (local storage) — prepend /api/chat/files/
+    // to route through the NestJS FileServingController endpoint.
     const path = url.startsWith('/') ? url : `/${url}`;
-    // ⭐ FIX: NestJS uses setGlobalPrefix('api') — so /chat/audio/X must become /api/chat/audio/X
-    //    If path already starts with /api, keep as-is; otherwise prepend /api.
-    const withApi = path.startsWith('/api') ? path : `/api${path}`;
-    return `https://api.academiahelm.com${withApi}`;
+    // Avoid double-prefixing if the path already starts with /api/chat/files/
+    if (path.startsWith('/api/chat/files/')) {
+      return `https://api.academiahelm.com${path}`;
+    }
+    return `https://api.academiahelm.com/api/chat/files${path}`;
   };
 
   // ⭐ Helper: get file-type icon based on MIME or filename

@@ -47,6 +47,7 @@ import { ScheduledEmailController } from './scheduled-email.controller';
 import { DatabaseModule } from '../database/database.module';
 import { ChatService } from './services/chat.service';
 import { ChatController } from './chat.controller';
+import { FileServingController } from './file-serving.controller';
 import { ChatGateway } from './chat.gateway';
 import { PushNotificationService } from './services/push-notification.service';
 import { AnnouncementService } from './services/announcement.service';
@@ -86,6 +87,9 @@ import { PollController } from './poll.controller';
     ScheduledEmailController,
     // ⭐ Chat (messagerie interne type WhatsApp)
     ChatController,
+    // ⭐ Chat — File serving controller (streams public/* files via NestJS route
+    //    to bypass the express.static not being invoked issue). See file-serving.controller.ts.
+    FileServingController,
     // ⭐ Helm Connect — Annonces officielles V1
     AnnouncementController,
     // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements

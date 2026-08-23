@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -32,7 +32,7 @@ const METHOD_LABELS: Record<string, string> = {
 export default function TransactionsContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const { tenant } = useAppSession();
-  const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+  // ⭐ whatsappMenuId state removed — WhatsApp dropdown is no longer rendered (button is grayed out)
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -355,71 +355,37 @@ export default function TransactionsContent() {
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        {/* WhatsApp : dropdown avec 2 options */}
-                        <div className="relative">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
-                            onClick={() => setWhatsappMenuId(whatsappMenuId === t.id ? null : t.id)}
-                            title="Envoyer par WhatsApp"
-                          >
-                            <WhatsAppIcon className="w-3.5 h-3.5" />
-                          </Button>
-                          {whatsappMenuId === t.id && (
-                            <div className="absolute right-0 top-8 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[180px]">
-                              <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 flex items-center gap-2"
-                                onClick={async () => {
-                                  setWhatsappMenuId(null);
-                                  try {
-                                    const data = await financeService.getWhatsAppLink(t.id);
-                                    if (data?.url) {
-                                      window.open(data.url, '_blank');
-                                      toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
-                                    } else {
-                                      toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
-                                    }
-                                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-                                }}
-                              >
-                                <WhatsAppIcon className="w-3.5 h-3.5" />
-                                Envoi rapide (lien)
-                              </button>
-                              <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center gap-2"
-                                onClick={async () => {
-                                  setWhatsappMenuId(null);
-                                  try {
-                                    const r = await financeService.resendReceipt(t.id, ['whatsapp']);
-                                    const s = r?.channels?.whatsapp;
-                                    if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
-                                    else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
-                                    else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
-                                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
-                                }}
-                              >
-                                <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
-                                Envoi auto (API)
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        {/* ⭐ WhatsApp button — GRAYED OUT (replaced by Helm Connect below)
+                              Per user request: "Tu vas masquer le bouton WhatsApp qui est là
+                              pour le moment, tu vas le masquer ou bien il faut le griser." */}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                          disabled
+                          className="h-7 w-7 opacity-30 cursor-not-allowed"
+                          title="WhatsApp désactivé — utilisez Helm Connect"
+                        >
+                          <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
+                        </Button>
+                        {/* ⭐ Helm Connect button — REPLACES the SMS button
+                              Sends the receipt PDF + the same WhatsApp template wording
+                              directly to the parent's Helm Connect chat account. */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
                           onClick={async () => {
                             try {
-                              const r = await financeService.resendReceipt(t.id, ['sms']);
-                              const s = r?.channels?.sms;
-                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
-                              else toast({ title: 'Reçu envoyé', description: `SMS envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                              const r = await financeService.resendReceipt(t.id, ['helm_connect']);
+                              const s = r?.channels?.helm_connect;
+                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.error || 'Aucun parent lié à cet élève', variant: 'destructive' });
+                              else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
+                              else toast({ title: 'Reçu envoyé', description: `Helm Connect envoyé au parent${s?.to ? ` (conv ${s.to.substring(0, 8)}...)` : ''}` });
                             } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
                           }}
-                          title="Envoyer par SMS"
+                          title="Envoyer par Helm Connect"
                         >
-                          <SmsIcon className="w-3.5 h-3.5" />
+                          <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </TableCell>

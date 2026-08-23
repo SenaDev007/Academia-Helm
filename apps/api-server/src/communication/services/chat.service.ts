@@ -329,6 +329,25 @@ export class ChatService {
     const { userId: parentUserId, created: userCreated } =
       await this.parentUserProvisioningService.ensureUserForGuardian(guardianId);
 
+    // ⭐ SAFEGUARD: prevent self-conversation (parentUserId === currentUserId)
+    //    This would happen if the guardian's email matches the teacher's email,
+    //    or if guardian.userId was previously set to the wrong user.
+    //    Throwing here gives a clear error message instead of creating a
+    //    broken conversation that shows the teacher's name instead of the parent's.
+    if (parentUserId === currentUserId) {
+      this.logger.error(
+        `Refusing to create self-conversation: guardian ${guardianId} is linked to user ${parentUserId} ` +
+        `which is the SAME as the current user ${currentUserId}. ` +
+        `This likely means the guardian's email matches the teacher's email, ` +
+        `or guardian.userId was previously set to the wrong user.`
+      );
+      throw new BadRequestException(
+        "Impossible de créer une conversation avec ce parent : le compte Helm Connect lié au parent est le même que le vôtre. " +
+        "Cela peut se produire si l'email du parent est le même que le vôtre. " +
+        "Veuillez vérifier la fiche de l'élève (module Scolarité) et corriger l'email du parent."
+      );
+    }
+
     // 2. Create or get the direct conversation between the teacher and the parent
     const conversation = await this.createOrGetDirectConversation(
       tenantId,

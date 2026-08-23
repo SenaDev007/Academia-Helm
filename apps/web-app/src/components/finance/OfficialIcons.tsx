@@ -77,3 +77,36 @@ export function SmsIcon({ className = 'w-4 h-4' }: IconProps) {
     </svg>
   );
 }
+
+/**
+ * ⭐ Icône Helm Connect (bulle de discussion bleu dégradé + point de notification).
+ * Remplace les boutons WhatsApp + SMS dans le module Finance pour envoyer les
+ * notifications directement dans le compte Helm Connect du parent.
+ */
+export function HelmConnectIcon({ className = 'w-4 h-4' }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* Bulle de dialogue principale */}
+      <path
+        d="M12 2C6.477 2 2 5.94 2 10.5c0 2.523 1.4 4.768 3.6 6.268V21l3.5-2.1c.93.234 1.91.35 2.9.35 5.523 0 10-3.94 10-8.75S17.523 2 12 2z"
+        fill="url(#helm-connect-grad)"
+      />
+      {/* Points de discussion (comme WhatsApp) */}
+      <circle cx="7" cy="10.5" r="1.2" fill="white" />
+      <circle cx="12" cy="10.5" r="1.2" fill="white" />
+      <circle cx="17" cy="10.5" r="1.2" fill="white" />
+      {/* Dégradé bleu Academia Helm */}
+      <defs>
+        <linearGradient id="helm-connect-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0958D9" />
+          <stop offset="100%" stopColor="#1677FF" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}

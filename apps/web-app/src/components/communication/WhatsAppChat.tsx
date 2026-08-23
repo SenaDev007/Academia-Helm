@@ -1827,9 +1827,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         <NewChatModal
           currentUserId={currentUserId}
           onClose={() => setShowNewChat(false)}
-          onConversationCreated={(convId) => {
+          onConversationCreated={async (convId) => {
             setShowNewChat(false);
-            loadConversations();
+            // ⭐ FIX race condition: await loadConversations() BEFORE setActiveConvId
+            //    so the conversation is in the conversations[] array when the chat
+            //    header tries to find it via getConversationDisplay().
+            //    Previously, setActiveConvId ran before loadConversations finished,
+            //    causing activeConv to be null briefly → header showed wrong/no name.
+            await loadConversations();
             setActiveConvId(convId);
           }}
         />
@@ -1952,7 +1957,7 @@ function NewChatModal({
 }: {
   currentUserId: string;
   onClose: () => void;
-  onConversationCreated: (convId: string) => void;
+  onConversationCreated: (convId: string) => void | Promise<void>;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ChatUser[]>([]);
@@ -1995,7 +2000,7 @@ function NewChatModal({
           throw new Error((errData as any)?.message || (errData as any)?.error || `Erreur ${res.status}`);
         }
         const conv = await res.json();
-        onConversationCreated(conv.id);
+        await onConversationCreated(conv.id);
         toast.success(`Conversation démarrée avec ${user.firstName} ${user.lastName}`);
       } catch (e: any) {
         toast.error("Échec: " + e.message);
@@ -2027,7 +2032,7 @@ function NewChatModal({
           throw new Error((err as any)?.message || `Erreur ${res.status}`);
         }
         const data = await res.json();
-        onConversationCreated(data.conversationId);
+        await onConversationCreated(data.conversationId);
         toast.success(
           `Conversation démarrée avec ${user.firstName} ${user.lastName}` +
           (data.userCreated ? ' (compte parent créé automatiquement)' : '')

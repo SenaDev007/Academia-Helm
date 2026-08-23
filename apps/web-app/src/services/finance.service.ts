@@ -154,9 +154,11 @@ class FinanceService {
   }
 
   /**
-   * Renvoie le reçu par email/WhatsApp/SMS au parent de l'élève.
+   * Renvoie le reçu par email/WhatsApp/SMS/Helm Connect au parent de l'élève.
+   * ⭐ 'helm_connect' remplace WhatsApp+SMS : envoie un message Helm Connect
+   *    au parent avec le PDF reçu en pièce jointe.
    */
-  async resendReceipt(transactionId: string, channels: ('email' | 'whatsapp' | 'sms')[]): Promise<any> {
+  async resendReceipt(transactionId: string, channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[]): Promise<any> {
     return financeFetch(`/api/finance/transactions/${encodeURIComponent(transactionId)}/resend`, {
       method: 'POST',
       body: { channels },
@@ -194,12 +196,12 @@ class FinanceService {
    * l'élève ayant un arriéré. Reproduit le pattern des notifications de reçu.
    *
    * POST /api/finance/recovery-reminders/:arrearId/notify
-   * Body: { channels: ('email'|'whatsapp'|'sms')[], level: 'PREMIERE_RELANCE'|'DEUXIEME_RELANCE'|'MISE_EN_DEMEURE' }
-   * Response: { arrearId, level, channels: { email: {status,to?,error?}, whatsapp: {...}, sms: {...} } }
+   * Body: { channels: ('email'|'whatsapp'|'sms'|'helm_connect')[], level: 'PREMIERE_RELANCE'|'DEUXIEME_RELANCE'|'MISE_EN_DEMEURE' }
+   * Response: { arrearId, level, channels: { email: {status,to?,error?}, whatsapp: {...}, sms: {...}, helm_connect: {...} } }
    */
   async sendRecoveryNotification(
     arrearId: string,
-    channels: ('email' | 'whatsapp' | 'sms')[],
+    channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[],
     level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE' = 'PREMIERE_RELANCE',
   ): Promise<any> {
     return financeFetch(`/api/finance/recovery-reminders/${encodeURIComponent(arrearId)}/notify`, {

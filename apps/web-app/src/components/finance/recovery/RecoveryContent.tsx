@@ -48,7 +48,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
-import { WhatsAppIcon, GmailIcon, SmsIcon } from '../OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from '../OfficialIcons';
 import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
 import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
@@ -407,10 +407,12 @@ export default function RecoveryContent() {
           description: 'Aucun arriéré FeeArrear trouvé pour cet élève. Relance basique envoyée par SMS.',
         });
       } else {
-        // NOUVEAU système : envoi multi-canal (email + WhatsApp + SMS) au parent
+        // ⭐ NOUVEAU système : envoi multi-canal (email + Helm Connect) au parent
+        //    Helm Connect remplace WhatsApp + SMS — le parent reçoit la relance
+        //    directement dans son compte Helm Connect.
         const result = await financeService.sendRecoveryNotification(
           matchingArrear.id,
-          ['email', 'whatsapp', 'sms'],
+          ['email', 'helm_connect'],
           manualLevel,
         );
         const channels = result?.channels || {};
@@ -1164,11 +1166,11 @@ function SettingsTab() {
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 block">Canaux de relance</Label>
             <div className="flex gap-3">
-              {(['email', 'whatsapp', 'sms'] as const).map((channel) => (
+              {(['email', 'helm_connect'] as const).map((channel) => (
                 <label key={channel} className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={form.autoRecoveryChannels[channel]}
+                    checked={form.autoRecoveryChannels[channel] ?? (channel === 'helm_connect' ? true : false)}
                     onChange={(e) => setForm((f) => ({
                       ...f,
                       autoRecoveryChannels: { ...f.autoRecoveryChannels, [channel]: e.target.checked },
@@ -1176,7 +1178,7 @@ function SettingsTab() {
                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   <span className="text-sm text-slate-700 capitalize">
-                    {channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}
+                    {channel === 'email' ? 'Email' : 'Helm Connect'}
                   </span>
                 </label>
               ))}
@@ -1469,7 +1471,7 @@ function ArrearsTab({
   yearId: string;
   setYearId: (v: string) => void;
   allYears: { id: string; name: string }[];
-  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
+  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => void;
   schoolInfo: any;
   onDelete: (arrear: any) => void;
 }) {
@@ -1682,25 +1684,25 @@ function ArrearsTab({
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        {/* WhatsApp */}
+                        {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150"
-                          onClick={() => onSendChannel(a.id, 'whatsapp')}
-                          title="Envoyer relance par WhatsApp"
+                          disabled
+                          className="h-7 w-7 opacity-30 cursor-not-allowed"
+                          title="WhatsApp désactivé — utilisez Helm Connect"
                         >
-                          <WhatsAppIcon className="w-3.5 h-3.5" />
+                          <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
                         </Button>
-                        {/* SMS */}
+                        {/* ⭐ Helm Connect — REPLACES SMS */}
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
-                          onClick={() => onSendChannel(a.id, 'sms')}
-                          title="Envoyer relance par SMS"
+                          onClick={() => onSendChannel(a.id, 'helm_connect')}
+                          title="Envoyer relance par Helm Connect"
                         >
-                          <SmsIcon className="w-3.5 h-3.5" />
+                          <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>
                         {/* Abandonner (write-off) — uniquement si OPEN ou PARTIALLY_PAID */}
                         {(!a.status || a.status === 'OPEN' || a.status === 'PARTIALLY_PAID') && (
@@ -1785,7 +1787,7 @@ function RemindersTab({
 }: {
   reminders: any[];
   arrears: any[];
-  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms') => void;
+  onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => void;
   onDelete: (reminder: any) => void;
 }) {
   return (
@@ -1850,25 +1852,25 @@ function RemindersTab({
                           >
                             <GmailIcon className="w-3.5 h-3.5" />
                           </Button>
-                          {/* WhatsApp */}
+                          {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150"
-                            onClick={() => onSendChannel(matchingArrear.id, 'whatsapp')}
-                            title="Renvoyer par WhatsApp"
+                            disabled
+                            className="h-7 w-7 opacity-30 cursor-not-allowed"
+                            title="WhatsApp désactivé — utilisez Helm Connect"
                           >
-                            <WhatsAppIcon className="w-3.5 h-3.5" />
+                            <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
                           </Button>
-                          {/* SMS */}
+                          {/* ⭐ Helm Connect — REPLACES SMS */}
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
-                            onClick={() => onSendChannel(matchingArrear.id, 'sms')}
-                            title="Renvoyer par SMS"
+                            onClick={() => onSendChannel(matchingArrear.id, 'helm_connect')}
+                            title="Renvoyer par Helm Connect"
                           >
-                            <SmsIcon className="w-3.5 h-3.5" />
+                            <HelmConnectIcon className="w-3.5 h-3.5" />
                           </Button>
                         </>
                       ) : (

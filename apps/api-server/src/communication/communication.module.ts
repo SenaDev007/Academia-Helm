@@ -57,6 +57,8 @@ import { ScheduledAnnouncementDispatcher } from './services/scheduled-announceme
 import { HelmConnectV2Controller } from './helm-connect-v2.controller';
 import { GlobalSearchService } from './services/global-search.service';
 import { ConversationDocumentCenterService } from './services/document-center.service';
+import { PollService } from './services/poll.service';
+import { PollController } from './poll.controller';
 
 @Module({
   imports: [
@@ -88,6 +90,8 @@ import { ConversationDocumentCenterService } from './services/document-center.se
     AnnouncementController,
     // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
     HelmConnectV2Controller,
+    // ⭐ Helm Connect V2.6 — Polls (Telegram-style)
+    PollController,
   ],
   providers: [
     EmailService,
@@ -128,6 +132,8 @@ import { ConversationDocumentCenterService } from './services/document-center.se
     GlobalSearchService,
     // ⭐ Helm Connect V2.5 — Conversation Document Center
     ConversationDocumentCenterService,
+    // ⭐ Helm Connect V2.6 — Polls
+    PollService,
   ],
   exports: [
     EmailService,

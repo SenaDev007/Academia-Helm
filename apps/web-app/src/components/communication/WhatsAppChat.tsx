@@ -37,6 +37,9 @@ import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '
 import AnnouncementsModal from './AnnouncementsModal';
 import NotificationPreferencesModal from './NotificationPreferencesModal';
 import GlobalSearchModal from './GlobalSearchModal';
+import CategorizedAttachmentMenu from './CategorizedAttachmentMenu';
+import PollModal from './PollModal';
+import { getHelmWatermarkStyle } from './HelmWatermark';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -232,6 +235,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showNotifPrefs, setShowNotifPrefs] = useState(false);
   // ⭐ Helm Connect V2.4 — Global Search
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  // ⭐ Helm Connect V2.6 — Poll creation modal
+  const [showPollModal, setShowPollModal] = useState(false);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -1138,7 +1145,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23f8fafc%22 width=%22100%22 height=%22100%22/></svg>')]">
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-2 relative"
+            style={getHelmWatermarkStyle({ opacity: 0.05 })}
+          >
             {loadingMsgs ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -1238,129 +1248,139 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input bar */}
-          <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-slate-500 hover:bg-slate-100 rounded-full"
-              title="Joindre un fichier"
-              disabled={readOnly}
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-            <input
-              type="text"
-              placeholder="Tapez un message..."
-              className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30"
-              value={text}
-              onChange={e => { setText(e.target.value); handleTyping(); }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendText();
-                }
-              }}
-              disabled={readOnly}
-            />
-            {/* ⭐ AUDIO RECORDING UI — state machine: idle/recording/paused/preview */}
+          {/* Input bar — fully responsive (mobile-friendly) */}
+          <div className="p-2 sm:p-3 bg-white border-t border-slate-200">
+            {/* ⭐ State machine: idle | recording | paused | preview
+                When recording/paused/preview, the text input + attach button are HIDDEN
+                to give all the horizontal space to the recording controls.
+                This ensures the send button is ALWAYS visible on mobile. */}
             {recordingState === 'recording' || recordingState === 'paused' ? (
               <div className={cn(
-                'flex items-center gap-2 border rounded-full px-3 py-1.5',
+                'flex items-center gap-1.5 sm:gap-2 border rounded-full px-2 sm:px-3 py-1.5 sm:py-2',
                 recordingState === 'recording'
                   ? 'bg-red-50 border-red-300'
                   : 'bg-amber-50 border-amber-300'
               )}>
                 {recordingState === 'recording' ? (
-                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                  <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
                 ) : (
-                  <Pause className="w-3 h-3 text-amber-600" />
+                  <Pause className="w-3 h-3 text-amber-600 flex-shrink-0" />
                 )}
                 <span className={cn(
-                  'text-xs font-bold tabular-nums',
+                  'text-xs sm:text-sm font-bold tabular-nums flex-shrink-0',
                   recordingState === 'recording' ? 'text-red-600' : 'text-amber-700'
                 )}>
                   {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
                 </span>
+                <div className="flex-1" />
                 {recordingState === 'recording' ? (
                   <button
                     onClick={pauseRecording}
-                    className="p-1.5 bg-amber-500 text-white rounded-full hover:bg-amber-600"
+                    className="p-2 sm:p-1.5 bg-amber-500 text-white rounded-full hover:bg-amber-600 flex-shrink-0"
                     title="Mettre en pause"
                   >
-                    <Pause className="w-3.5 h-3.5" />
+                    <Pause className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
                   </button>
                 ) : (
                   <button
                     onClick={resumeRecording}
-                    className="p-1.5 bg-emerald-500 text-white rounded-full hover:bg-emerald-600"
+                    className="p-2 sm:p-1.5 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 flex-shrink-0"
                     title="Reprendre l'enregistrement"
                   >
-                    <Play className="w-3.5 h-3.5" />
+                    <Play className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
                   </button>
                 )}
                 {/* STOP — go to preview (does NOT send) */}
                 <button
                   onClick={stopRecording}
-                  className="p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9]"
-                  title="Arrêter et écouter avant d'envoyer"
+                  className="p-2 sm:p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] flex-shrink-0"
+                  title="Arrêter et écouter"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
                 </button>
                 <button
                   onClick={cancelRecording}
-                  className="p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600"
-                  title="Annuler l'enregistrement"
+                  className="p-2 sm:p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 flex-shrink-0"
+                  title="Annuler"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
                 </button>
               </div>
             ) : recordingState === 'preview' && audioBlobUrl ? (
-              <div className="flex items-center gap-2 bg-[#E6F4FF] border border-[#BAE0FF] rounded-full px-3 py-1.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-[#E6F4FF] border border-[#BAE0FF] rounded-full px-2 sm:px-3 py-1.5 sm:py-2">
                 <audio
                   controls
                   src={audioBlobUrl}
-                  className="h-8"
-                  style={{ maxWidth: '180px' }}
+                  className="h-8 flex-1 min-w-0"
+                  style={{ maxWidth: '100%' }}
                 />
                 <button
                   onClick={sendRecordedAudio}
                   disabled={sending || !activeConvId}
-                  className="p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30"
+                  className="p-2 sm:p-1.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
                   title="Envoyer le message vocal"
                 >
-                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  {sending ? <Loader2 className="w-4 sm:w-3.5 h-4 sm:h-3.5 animate-spin" /> : <Send className="w-4 sm:w-3.5 h-4 sm:h-3.5" />}
                 </button>
                 <button
                   onClick={cancelRecording}
                   disabled={sending}
-                  className="p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 disabled:opacity-30"
+                  className="p-2 sm:p-1.5 bg-rose-500 text-white rounded-full hover:bg-rose-600 disabled:opacity-30 flex-shrink-0"
                   title="Annuler — recommencer"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 sm:w-3.5 h-4 sm:h-3.5" />
                 </button>
               </div>
             ) : (
-              <button
-                onClick={startRecording}
-                disabled={readOnly || sending}
-                className="p-2 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30"
-                title="Enregistrer un message vocal"
-              >
-                <Mic className="w-5 h-5" />
-              </button>
+              // IDLE state — normal text input + attach + mic + send
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {/* ⭐ Attach button — opens categorized menu (V2.6) */}
+                <button
+                  onClick={() => setShowAttachmentMenu(true)}
+                  className="p-2 text-slate-500 hover:bg-slate-100 rounded-full flex-shrink-0"
+                  title="Joindre un fichier"
+                  disabled={readOnly}
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+                <input
+                  type="text"
+                  placeholder="Tapez un message..."
+                  className="flex-1 min-w-0 px-3 sm:px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30"
+                  value={text}
+                  onChange={e => { setText(e.target.value); handleTyping(); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendText();
+                    }
+                  }}
+                  disabled={readOnly}
+                />
+                {/* Mic button (idle state) */}
+                <button
+                  onClick={startRecording}
+                  disabled={readOnly || sending}
+                  className="p-2 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30 flex-shrink-0"
+                  title="Enregistrer un message vocal"
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+                {/* Send button — always visible */}
+                <button
+                  onClick={handleSendText}
+                  disabled={!text.trim() || sending}
+                  className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
+                  title="Envoyer le message"
+                >
+                  {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                </button>
+              </div>
             )}
-            <button
-              onClick={handleSendText}
-              disabled={!text.trim() || sending || isRecording || recordingState === 'preview'}
-              className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30"
-              title="Envoyer le message"
-            >
-              {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-            </button>
           </div>
         </div>
       ) : (
-        // Empty state when no conversation selected
+                // Empty state when no conversation selected
         <div className="hidden md:flex flex-1 items-center justify-center bg-slate-50">
           <div className="text-center">
             <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
@@ -1456,6 +1476,28 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           onOpenConversation={(convId) => {
             setShowGlobalSearch(false);
             setActiveConvId(convId);
+          }}
+        />
+      )}
+      {/* ⭐ Helm Connect V2.6 — Categorized Attachment Menu */}
+      {showAttachmentMenu && (
+        <CategorizedAttachmentMenu
+          currentUserId={currentUserId}
+          conversationId={activeConvId}
+          onClose={() => setShowAttachmentMenu(false)}
+          onSendFile={handleSendAttachment}
+          onOpenPoll={() => setShowPollModal(true)}
+        />
+      )}
+      {/* ⭐ Helm Connect V2.6 — Poll creation modal */}
+      {showPollModal && (
+        <PollModal
+          currentUserId={currentUserId}
+          conversationId={activeConvId}
+          onClose={() => setShowPollModal(false)}
+          onPollCreated={() => {
+            // Reload messages to show the new poll
+            if (activeConvId) loadMessages();
           }}
         />
       )}

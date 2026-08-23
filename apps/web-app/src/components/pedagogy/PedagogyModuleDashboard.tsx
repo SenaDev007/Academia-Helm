@@ -312,31 +312,20 @@ export function PedagogyModuleDashboard() {
     .slice(0, 6);
 
   return (
-    <div className="space-y-8 pb-12">
-      <div className="flex items-end justify-between">
-        <div>
-          <motion.h1 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="text-3xl font-bold text-slate-900 tracking-tight"
-          >
-            {isTeacher ? 'Mon Espace Pédagogique' : 'Veille Pédagogique'}
-          </motion.h1>
-          <motion.p 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-slate-500 mt-1"
-          >
-            Année scolaire <span className="font-bold" style={{ color: PRIMARY }}>{academicYear.label}</span>
-          </motion.p>
-        </div>
+    <div className="space-y-6 pb-12">
+      {/* ⭐ Refactor Issue B: removed the duplicate motion.h1 + motion.p title block
+          (was lines 316-342). The page title is now provided by the parent
+          ModuleContainer.header.title ('Organisation Pédagogique & Études'),
+          consistent with CahierJournalTab, MonthlyPlanningTab and other tabs
+          that never render their own page title.
+          Only the compact 'Actualiser' button is kept, right-aligned. */}
+      <div className="flex justify-end">
         <button
           onClick={() => invalidate()}
           disabled={isFetching}
-          className="group flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-gray-50 border-slate-200 disabled:opacity-50"
+          className="group flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-gray-50 border-slate-200 disabled:opacity-50"
         >
-          <RefreshCw className={cn('h-4 w-4 transition-transform duration-500', isFetching && 'animate-spin')} style={{ color: PRIMARY }} />
+          <RefreshCw className={cn('h-3.5 w-3.5 transition-transform duration-500', isFetching && 'animate-spin')} style={{ color: PRIMARY }} />
           {isFetching ? 'Synchronisation...' : 'Actualiser'}
         </button>
       </div>

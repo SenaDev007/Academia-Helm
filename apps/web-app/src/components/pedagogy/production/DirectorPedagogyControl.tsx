@@ -5086,7 +5086,7 @@ function PendingMonthlyPlansTab({
           onClick={() => setSelectedPlan(null)}
           className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200"
         >
-          <ChevronLeft className="h-4 w-4" /> Retour à la liste
+          <ChevronRight className="h-4 w-4 rotate-180" /> Retour à la liste
         </button>
         <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center gap-3 mb-4">
@@ -5197,11 +5197,21 @@ function PendingMonthlyPlansTab({
   const monthOrder = ['Septembre', 'Octobre', 'Novembre', 'Décembre', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin'];
 
   // Derive schoolLevel from classLevel
+  // ⭐ FIX Issue D (chevron fix is also part of same batch):
+  //   Benin education system:
+  //     Maternelle = PS / MS / GS (Petite/Moyenne/Grande Section)
+  //     Primaire  = CI (Cours d'Initiation), CP, CE1, CE2, CM1, CM2
+  //     Secondaire = 6e, 5e, 4e, 3e, 2nde, 1ère, Terminale
+  //   The previous version misclassified CI and CP as Maternelle — wrong.
   const getSchoolLevel = (classLevel: string): string => {
     const cl = (classLevel || '').toUpperCase();
-    if (cl.includes('MAT') || cl.includes('GS') || cl.includes('CP') || cl === 'CI') return 'Maternelle';
-    if (cl.includes('CP') || cl.includes('CE') || cl.includes('CM')) return 'Primaire';
-    if (cl.includes('6E') || cl.includes('5E') || cl.includes('4E') || cl.includes('3E')) return 'Secondaire';
+    // Maternelle : PS, MS, GS (Petite/Moyenne/Grande Section) + anything with 'MAT'
+    if (cl === 'PS' || cl === 'MS' || cl === 'GS' || cl.includes('MAT')) return 'Maternelle';
+    // Primaire : CI, CP, CE1, CE2, CM1, CM2 (exact match to avoid 'CP' matching 'CP-XYZ' etc.)
+    if (cl === 'CI' || cl === 'CP' || cl === 'CE1' || cl === 'CE2' || cl === 'CM1' || cl === 'CM2') return 'Primaire';
+    // Secondaire : 6e à 3e, 2nde, 1ère, Terminale
+    if (cl === '6E' || cl === '5E' || cl === '4E' || cl === '3E' ||
+        cl === '2NDE' || cl === 'SND' || cl === '1ERE' || cl === '1ER' || cl === 'TERMINALE' || cl === 'TERM') return 'Secondaire';
     return 'Autres';
   };
 

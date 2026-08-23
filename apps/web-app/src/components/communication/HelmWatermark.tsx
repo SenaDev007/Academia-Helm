@@ -2,23 +2,23 @@
  * ============================================================================
  * HELM CONNECT — Background watermark pattern
  * ============================================================================
- * 
- * Creates a subtle, beautiful background pattern like WhatsApp's doodle 
+ *
+ * Creates a subtle, beautiful background pattern like WhatsApp's doodle
  * background, but with Helm Connect branding :
- *   - Academia Helm logo (graduation cap)
+ *   - Academia Helm crest (shield with open book) — centered, larger
  *   - Speech bubbles (chat)
  *   - Megaphone (annonces)
  *   - Phone (calls)
  *   - Video (calls)
  *   - Paperclip (attachments)
  *   - Bell (notifications)
- * 
+ *
  * The pattern is rendered as an SVG data URL, with the Azure color tint.
- * It's applied to the conversation view background.
- * 
+ * It's applied to the conversation view background AND the empty welcome screen.
+ *
  * ⭐ Two variants :
- *   - Light mode : pattern on #F5F7FA background (subtle, low opacity)
- *   - Dark mode : pattern on #0B1220 background (cyan-tinted)
+ *   - Light mode : pattern on #F5F7FA background (opacity 0.08 — was 0.05, bumped for visibility)
+ *   - Dark mode : pattern on #0B1220 background (opacity 0.12 — was 0.08)
  * ============================================================================
  */
 
@@ -47,7 +47,7 @@ function generateWatermarkSvg(color: string, opacity: number): string {
   
   // Each icon is rendered with a transform="translate(x, y) scale(s)"
   // Use single quotes inside the SVG, escaped for data URL
-  
+
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'>
     <g fill='none' stroke='${color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' opacity='${opacity}'>
       <!-- Top-left : Speech bubble (Helm Connect logo) -->
@@ -73,11 +73,15 @@ function generateWatermarkSvg(color: string, opacity: number): string {
         <polygon points='23 7 16 12 23 17 23 7'/>
         <rect x='1' y='5' width='15' height='14' rx='2' ry='2'/>
       </g>
-      <!-- Center : Academia Helm logo (graduation cap) -->
-      <g transform='translate(95, 100) scale(1.0)'>
-        <path d='M12 3 L1 9 L12 15 L23 9 L12 3 Z'/>
-        <path d='M5 12 v5 c0 1 3 3 7 3 s7 -2 7 -3 v-5'/>
-        <line x1='23' y1='9' x2='23' y2='14'/>
+      <!-- ⭐ Center : Academia Helm crest (shield with open book)
+           Replaces the generic graduation cap with a more recognizable
+           school-crest shape (shield outline + open book inside). -->
+      <g transform='translate(85, 90) scale(2.0)'>
+        <!-- Shield outline -->
+        <path d='M12 1 L22 5 V12 C22 17.5 17.5 21.5 12 22.5 C6.5 21.5 2 17.5 2 12 V5 Z'/>
+        <!-- Open book inside the shield -->
+        <path d='M5 9.5 C7 8.5 9.5 8.5 12 9.5 C14.5 8.5 17 8.5 19 9.5 V15.5 C17 14.5 14.5 14.5 12 15.5 C9.5 14.5 7 14.5 5 15.5 Z'/>
+        <line x1='12' y1='9.5' x2='12' y2='15.5'/>
       </g>
       <!-- Middle-right : Paperclip (attachments) -->
       <g transform='translate(195, 105) scale(0.8)'>
@@ -114,7 +118,7 @@ export function HelmWatermark({
   dark = false,
 }: HelmWatermarkProps) {
   const patternColor = color || (dark ? '#3B9EFF' : '#1677FF');
-  const patternOpacity = opacity ?? (dark ? 0.08 : 0.05);
+  const patternOpacity = opacity ?? (dark ? 0.12 : 0.08);
   const bgColor = dark ? '#0B1220' : '#F5F7FA';
   
   const svgUrl = generateWatermarkSvg(patternColor, patternOpacity);
@@ -139,7 +143,7 @@ export function HelmWatermark({
  */
 export function getHelmWatermarkUrl(opts?: { color?: string; opacity?: number; dark?: boolean }): string {
   const color = opts?.color || (opts?.dark ? '#3B9EFF' : '#1677FF');
-  const opacity = opts?.opacity ?? (opts?.dark ? 0.08 : 0.05);
+  const opacity = opts?.opacity ?? (opts?.dark ? 0.12 : 0.08);
   return generateWatermarkSvg(color, opacity);
 }
 
@@ -149,7 +153,7 @@ export function getHelmWatermarkUrl(opts?: { color?: string; opacity?: number; d
  */
 export function getHelmWatermarkStyle(opts?: { color?: string; opacity?: number; dark?: boolean }): React.CSSProperties {
   const color = opts?.color || (opts?.dark ? '#3B9EFF' : '#1677FF');
-  const opacity = opts?.opacity ?? (opts?.dark ? 0.08 : 0.05);
+  const opacity = opts?.opacity ?? (opts?.dark ? 0.12 : 0.08);
   const bgColor = opts?.dark ? '#0B1220' : '#F5F7FA';
   return {
     backgroundColor: bgColor,

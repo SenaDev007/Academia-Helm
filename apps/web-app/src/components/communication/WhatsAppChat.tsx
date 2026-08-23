@@ -1244,8 +1244,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   <>
                     {directConvs.length > 0 && (
                       <>
-                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
-                          💬 Discussions
+                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                          <MessageSquare className="w-3 h-3" /> Discussions
                         </div>
                         {directConvs.map(conv => renderConversationItem(conv))}
                       </>
@@ -1253,8 +1253,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     {/* ⭐ CANAUX (Telegram-style broadcast channels) */}
                     {channels.length > 0 && (
                       <>
-                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
-                          📢 Canaux
+                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                          <Megaphone className="w-3 h-3" /> Canaux
                         </div>
                         {channels.map((ch: any) => (
                           <button
@@ -1285,8 +1285,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     )}
                     {groupConvs.length > 0 && (
                       <>
-                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
-                          👥 Groupes
+                        <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                          <Users className="w-3 h-3" /> Groupes
                         </div>
                         {groupConvs.map(conv => renderConversationItem(conv))}
                       </>
@@ -1348,10 +1348,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 </p>
               )}
             </div>
-            <button className="p-1.5 rounded hover:bg-[#0958D9]" title="Rechercher">
+            {/* ⭐ Issue A5 FIX: Search button now opens the global search modal (was a no-op) */}
+            <button
+              onClick={() => setShowGlobalSearch(true)}
+              className="p-1.5 rounded hover:bg-[#0958D9]"
+              title="Rechercher dans les conversations"
+            >
               <Search className="w-4 h-4" />
             </button>
-            <button className="p-1.5 rounded hover:bg-[#0958D9]" title="Plus">
+            {/* ⭐ Issue A5 FIX: MoreVertical button now opens notification preferences for this conversation (was a no-op) */}
+            <button
+              onClick={() => setShowNotifPrefs(true)}
+              className="p-1.5 rounded hover:bg-[#0958D9]"
+              title="Préférences de notification"
+            >
               <MoreVertical className="w-4 h-4" />
             </button>
           </div>
@@ -1775,13 +1785,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       ) : (
-                // Empty state when no conversation selected — uses Helm Connect custom icon
-        <div className="hidden md:flex flex-1 items-center justify-center bg-slate-50">
-          <div className="text-center">
+        // Empty state when no conversation selected — uses Helm watermark + AH SVG logo
+        <div
+          className="hidden md:flex flex-1 items-center justify-center relative"
+          style={getHelmWatermarkStyle({ opacity: 0.08 })}
+        >
+          <div className="text-center relative z-10">
             <img
-              src="/icons/modules/helm-connect.png"
-              alt="Helm Connect"
-              className="w-16 h-16 mx-auto mb-4 object-contain opacity-80"
+              src="/images/logo-Academia-Helm.svg"
+              alt="Academia Helm"
+              className="w-24 h-24 mx-auto mb-4 object-contain"
+              style={{ filter: 'brightness(0) opacity(0.6)' }}
             />
             <h3 className="text-lg font-bold text-slate-700">Helm Connect</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-sm">

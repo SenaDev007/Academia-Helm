@@ -213,6 +213,36 @@ static const String _defaultBase = 'http://10.0.2.2:3001';
 // 10.0.2.2 = localhost de l'ordinateur hôte vu depuis l'émulateur Android
 ```
 
+## 🔔 Firebase Cloud Messaging (push notifications) — CONFIGURÉ ✅
+
+**Projet Firebase** : `academia-helm-35536`
+
+**google-services.json** placé dans `android/app/google-services.json` — contient 3 packages Android :
+- `com.academiahelm.helmconnect` ← Helm Connect (notre app)
+- `io.academiahelm.mobile` ← Academia Helm mobile app
+- `io.academiahelm.mobile.debug` ← debug variant
+
+**Activation dans le projet** :
+- `android/build.gradle` : `classpath 'com.google.gms:google-services:4.4.0'`
+- `android/app/build.gradle` : `apply plugin: 'com.google.gms.google-services'` + `firebase-bom:32.3.1` + `firebase-messaging`
+- `android/app/src/main/AndroidManifest.xml` : `<service android:name=".HelmConnectFirebaseMessagingService">` activé
+- `pubspec.yaml` : `firebase_core`, `firebase_messaging`, `flutter_local_notifications` décommentés
+- `HelmConnectFirebaseMessagingService.kt` : service Kotlin prêt (récupère les notifications en arrière-plan)
+
+**Endpoints backend liés** (déjà disponibles dans l'API NestJS) :
+- `POST /api/chat/push/subscribe` — enregistre le token FCM de l'utilisateur
+- `POST /api/chat/push/unsubscribe` — supprime un token FCM
+- `GET /api/chat/push/vapid-public-key` — clé VAPID (pour Web Push)
+- `POST /api/chat/push/send` — envoi manuel de push (admin/testing)
+
+**Étapes de test des push notifications** :
+1. Build l'app : `flutter run -d android`
+2. Au démarrage, l'app s'enregistre auprès de Firebase et obtient un token FCM
+3. Le token FCM est imprimé dans les logs (Logcat) via `HelmConnectFirebaseMessagingService.onNewToken()`
+4. Envoyer le token au backend : `POST /api/chat/push/subscribe { userId, subscription: { token: "FCM_TOKEN" } }`
+5. Tester l'envoi : `POST /api/chat/push/send { userId, title: "Test", body: "Hello from Academia Helm!" }`
+6. L'app doit recevoir la notification — visible dans la barre de notifications Android
+
 ## 🔐 Permissions Android
 
 | Permission | Usage |

@@ -54,11 +54,11 @@ dependencies:
   # record: ^5.0.4              # V2: messages vocaux
   # audioplayers: ^5.2.0        # V2: lecture audio
 
-  # ─── Push notifications (Firebase Cloud Messaging — V2)
-  # ⚠️ Décommenter UNIQUEMENT après avoir configuré Firebase (voir note ci-dessus)
-  # firebase_core: ^2.24.2
-  # firebase_messaging: ^14.7.9
-  # flutter_local_notifications: ^16.0.0
+  # ─── Push notifications (Firebase Cloud Messaging) ⭐ ACTIVE ───
+  # google-services.json is in android/app/ — registered in Firebase project academia-helm-35536
+  firebase_core: ^2.24.2
+  firebase_messaging: ^14.7.9
+  flutter_local_notifications: ^16.0.0
 
   # ─── Crypto (E2E — V3)
   # encrypt: ^5.0.3

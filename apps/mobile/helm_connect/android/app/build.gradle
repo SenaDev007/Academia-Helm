@@ -32,6 +32,8 @@ if (flutterVersionName == null) {
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+// ⭐ Firebase — required to read google-services.json (in android/app/)
+apply plugin: 'com.google.gms.google-services'
 
 android {
     namespace "com.academiahelm.helmconnect"
@@ -78,7 +80,8 @@ flutter {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
     implementation 'androidx.multidex:multidex:2.0.1'
-    // ⭐ For Firebase Cloud Messaging (push notifications — uncomment when setting up FCM)
-    // implementation platform('com.google.firebase:firebase-bom:32.3.1')
-    // implementation 'com.google.firebase:firebase-messaging'
+    // ⭐ Firebase Cloud Messaging — for push notifications
+    // Import the Firebase BoM (Bill of Materials) to manage versions
+    implementation platform('com.google.firebase:firebase-bom:32.3.1')
+    implementation 'com.google.firebase:firebase-messaging'
 }

@@ -26,8 +26,10 @@ app/.cxx/
 *.jks
 key.properties
 
-# Google Services (Firebase) config — keep template, ignore real file
-google-services.json
+# Google Services (Firebase) config
+# ⭐ This project INCLUDES google-services.json for shared dev Firebase project
+#    If you have your own Firebase project, replace this file and DO NOT commit your real one
+# google-services.json
 
 # Generated files
 *.apk

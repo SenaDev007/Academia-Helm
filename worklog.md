@@ -8524,3 +8524,77 @@ Stage Summary:
   * src/app/app/shop/page.tsx (MODIFIED — utilise ShopCanteenModulePage avec initialView="shop:dashboard")
   * src/app/app/canteen/page.tsx (MODIFIED — utilise ShopCanteenModulePage avec initialView="canteen:dashboard")
 - À noter : ShopModulePage.tsx et CanteenModulePage.tsx sont encore présents dans le code mais ne sont plus référencés par les routes. Pourront être supprimés dans un cleanup ultérieur si nécessaire (ou gardés comme fallback).
+
+---
+Task ID: Fix-Chat-Attachment-Download-Audio-Playback
+Agent: main
+Task: Tester directement via Agent Browser le téléchargement des fichiers + audio playback + prévisualisation
+
+Work Log:
+- Chargé la skill agent-browser + installé les dépendances
+- Navigué vers https://cspeb-eveildafriqueeducation.academiahelm.com/login
+- Tenté login avec 9 comptes test (salumerhel2036@gmail.com, saliou.akpaki@academiahelm.com, promoteur@cspeb.bj, s.akpovitohou@gmail.com, superadmin@academiahub.com, etc.) → TOUS ont retourné 401 Unauthorized (credentials outdated)
+- Testé les URLs audio directement via curl pour diagnostiquer le problème:
+  * GET /chat/audio/xxx.webm → 404 NestJS ("Cannot GET /chat/audio/xxx.webm")
+  * GET /api/chat/audio/xxx.webm → 404 NestJS (même erreur — pas de route pour /api/chat/audio/)
+  * GET /health → 200 (backend en vie, uptime ~190s)
+  * GET /uploads/test.txt → 404 NestJS (express.static n'est PAS invoqué)
+
+ROOT CAUSE identifié:
+- main.ts ligne 130: `app.use(expressStatic(join(process.cwd(), 'public')))` — DEVRAIT servir les fichiers statiques à la racine
+- MAIS le router NestJS intercepte TOUTES les requêtes AVANT le middleware express.static
+- Pour tout chemin sans controller NestJS correspondant, NestJS retourne son 404 par défaut
+- express.static n'est jamais invoqué → tous les fichiers audio/doc/image retournent 404
+- Mon "fix" précédent (prepend /api) était AUSAI incorrect — il rendait l'URL non-routable
+
+Fix appliqué (backend):
+1. Créé `apps/api-server/src/communication/file-serving.controller.ts` (~150 lignes)
+   - Controller NestJS `@Controller('chat/files')` avec @Public() (pas d'auth requise)
+   - 2 routes paramétrées (plus fiable que wildcard `*path` qui a changé de syntaxe dans path-to-regexp v6):
+     * GET /api/chat/files/:folder/:sub/:filename  (3 segments, ex: chat/audio/uuid.webm)
+     * GET /api/chat/files/:folder/:filename       (2 segments, ex: avatars/user.png)
+   - Sécurité: ALLOWED_FOLDERS = ['chat', 'avatars', 'uploads', 'logos', 'icons']
+   - Path traversal protection (rejects '..')
+   - Defense in depth: vérifie que le path résolu reste dans public/
+   - Content-Type map pour .webm, .mp3, .wav, .ogg, .m4a, .mp4, .webp, .png, .jpg, .jpeg, .gif, .svg, .pdf, .doc(x), .xls(x), .ppt(x), .zip, .txt, .json
+   - Cache-Control: public, max-age=86400 (24h)
+   - Access-Control-Allow-Origin: * (pour <audio src> cross-origin)
+   - Streams via fs.createReadStream(filePath).pipe(res) — pas de lecture en mémoire
+2. Enregistré dans `apps/api-server/src/communication/communication.module.ts` (controllers array)
+
+Fix appliqué (frontend):
+- `apps/web-app/src/components/communication/WhatsAppChat.tsx` — getAttachmentUrl() réécrite:
+  * Ancien (cassé): prepend /api → 'https://api.academiahelm.com/api/chat/audio/xxx.webm' → 404
+  * Nouveau: prepend /api/chat/files → 'https://api.academiahelm.com/api/chat/files/chat/audio/xxx.webm' → 200
+  * URLs absolues (R2/S3, commençant par http(s)://) retournées as-is
+  * Évite le double-prefix si path déjà /api/chat/files/
+
+Vérification après déploiement Railway (uptime 51s):
+- GET /api/chat/files/chat/audio/test-file.webm → 404 avec MON message custom:
+  "File not found: chat/audio/test-file.webm. If this is an audio message recently uploaded,
+   the file may have been lost during a Railway redeploy (ephemeral filesystem).
+   Consider configuring STORAGE_TYPE=r2 on Railway for persistent file storage."
+- Cela confirme: controller bien chargé + @Public() fonctionne (pas de 401)
+
+LIMITATION connue:
+- Les fichiers audio uploadés AVANT ce fix n'existent plus sur le filesystem Railway (ephemère)
+- Le fichier 04d7db89-...-vocal-1787495150611.webm (mentionné par l'user) retourne 404 (perte disque)
+- Pour les NOUVEAUX messages audio envoyés APRÈS ce fix:
+  1. Upload POST /api/chat/conversations/:id/messages/attachment → file saved à public/chat/audio/uuid.webm
+  2. DB store /chat/audio/uuid.webm
+  3. Frontend construit https://api.academiahelm.com/api/chat/files/chat/audio/uuid.webm
+  4. NestJS FileServingController stream le fichier → audio playback ✅
+
+IMPOSSIBLE de tester end-to-end:
+- Test credentials dans ENV-TEST-CREDENTIALS.md sont outdated (401 sur tous les 9 comptes testés)
+- Pas de bouton Google OAuth sur la page de login (seulement email/password)
+- L'utilisateur doit tester lui-même avec son compte réel
+
+Stage Summary:
+- ✅ Backend FileServingController créé + déployé sur Railway (uptime 51s)
+- ✅ @Public() decorator pour autoriser <audio src> sans headers Authorization
+- ✅ Frontend getAttachmentUrl() corrigé pour pointer vers le nouveau endpoint
+- ✅ Endpoint vérifié sur Railway: retourne mon 404 custom (controller chargé + @Public fonctionne)
+- ❌ Impossible de tester end-to-end (credentials outdated, pas d'OAuth)
+- ⚠️ Les anciens fichiers audio uploadés avant ce fix sont perdus (Railway ephemeral FS)
+- 💡 Fix long terme: configurer STORAGE_TYPE=r2 sur Railway pour persistence cross-deploy

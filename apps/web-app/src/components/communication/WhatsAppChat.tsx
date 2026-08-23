@@ -521,20 +521,40 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => clearInterval(interval);
   }, [activeConvId, currentUserId]);
 
-  // ⭐ TYPING SEND : notify server when user starts/stops typing
+  // ⭐ TYPING SEND : notify server via BOTH Socket.io (real-time) AND HTTP (fallback)
   const handleTyping = useCallback(() => {
     if (!activeConvId || !currentUserId) return;
     const now = Date.now();
     // Throttle: only ping every 3 seconds
     if (now - lastTypingPingRef.current < 3000) return;
     lastTypingPingRef.current = now;
+    // ⭐ Socket.io real-time (instant delivery to other participants)
+    socket.startTyping(activeConvId);
+    // ⭐ HTTP fallback (for when Socket.io is not connected)
     fetch('/api/chat/typing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conversationId: activeConvId, userId: currentUserId, isTyping: true }),
       credentials: 'include',
     }).catch(() => {});
-  }, [activeConvId, currentUserId]);
+  }, [activeConvId, currentUserId, socket]);
+
+  // ⭐ Stop typing when user stops typing (after 5s of no input)
+  const stopTypingRef = useRef<NodeJS.Timeout | null>(null);
+  const handleStopTyping = useCallback(() => {
+    if (!activeConvId) return;
+    socket.stopTyping(activeConvId);
+    if (stopTypingRef.current) clearTimeout(stopTypingRef.current);
+    stopTypingRef.current = setTimeout(() => {
+      socket.stopTyping(activeConvId);
+      fetch('/api/chat/typing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: activeConvId, userId: currentUserId, isTyping: false }),
+        credentials: 'include',
+      }).catch(() => {});
+    }, 5000);
+  }, [activeConvId, currentUserId, socket]);
 
   // ⭐ AUDIO RECORDING — Full state machine with pause/resume + preview before send
   //    States: idle → recording → paused → preview → idle
@@ -571,7 +591,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     });
     setRecordingDuration(0);
     setRecordingState('idle');
-  }, []);
+    // ⭐ Stop typing indicator (was showing "typing" during recording)
+    socket.stopTyping(activeConvId || '');
+  }, [activeConvId, socket]);
 
   const startRecording = useCallback(async () => {
     try {
@@ -617,6 +639,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       recordingTimerRef.current = setInterval(() => {
         setRecordingDuration(d => d + 1);
       }, 1000);
+      // ⭐ Broadcast "recording audio" via Socket.io
+      socket.startTyping(activeConvId); // Reuse typing channel — shows "typing" to others
     } catch (e: any) {
       toast.error("Impossible d'accéder au microphone : " + (e?.message || 'Permission refusée'));
       cleanupRecording();
@@ -1304,13 +1328,70 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         </span>
                       </div>
                     )}
-                    <div className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
+                    <div className={cn('flex group', isMine ? 'justify-end' : 'justify-start')}>
                       <div className={cn(
-                        'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm',
+                        'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
                         isMine
                           ? 'bg-[#3B9EFF] text-white rounded-br-sm'
                           : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
                       )}>
+                        {/* ⭐ Message actions — hover button (top right of bubble) */}
+                        {!isReadOnly && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Show action menu
+                              const menu = (e.currentTarget.parentElement?.querySelector('.msg-action-menu') as HTMLElement);
+                              if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+                            }}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Actions"
+                          >
+                            <MoreVertical className="w-3 h-3" />
+                          </button>
+                        )}
+                        {/* ⭐ Action dropdown menu */}
+                        {!isReadOnly && (
+                          <div className="msg-action-menu absolute top-full right-0 mt-1 z-50 min-w-[160px] bg-white border border-slate-200 rounded-lg shadow-xl py-1" style={{ display: 'none' }}>
+                            <button
+                              onClick={() => handleMessageReply(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <Reply className="w-3.5 h-3.5" /> Répondre
+                            </button>
+                            <button
+                              onClick={() => {
+                                const text = msg.content?.replace(/<[^>]*>/g, '') || '';
+                                navigator.clipboard.writeText(text).then(() => toast.success('Message copié'));
+                                const menu = document.querySelector('.msg-action-menu') as HTMLElement;
+                                if (menu) menu.style.display = 'none';
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Copier
+                            </button>
+                            <button
+                              onClick={() => handleMessagePin(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <Pin className="w-3.5 h-3.5" /> Épingler
+                            </button>
+                            <button
+                              onClick={() => handleMessageDeleteForMe(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Supprimer pour moi
+                            </button>
+                            {isMine && (
+                              <button
+                                onClick={() => handleMessageDeleteForEveryone(msg.id)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Supprimer pour tous
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {/* Sender name (for group) */}
                         {!isMine && activeConv.type === 'GROUP' && msg.sender && (
                           <div className="text-[10px] font-bold text-[#0958D9] mb-0.5">
@@ -1599,7 +1680,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   <div className="flex-1 min-w-0 bg-slate-100 rounded-2xl overflow-hidden">
                     <RichTextEditor
                       value={text}
-                      onChange={(html) => { setText(html); handleTyping(); }}
+                      onChange={(html) => {
+                        setText(html);
+                        handleTyping();
+                        // Auto-stop typing after 5s of no input
+                        if (stopTypingRef.current) clearTimeout(stopTypingRef.current);
+                        stopTypingRef.current = setTimeout(() => handleStopTyping(), 5000);
+                      }}
                       minHeight="36px"
                       placeholder="Tapez un message..."
                     />

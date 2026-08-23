@@ -65,8 +65,8 @@ interface DirectorPedagogyControlProps {
 //       + secondaire) car le semainier est une responsabilité transverse.
 const TABS = [
   { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle, maternellePrimaireOnly: false },
-  { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "monthly-plans", label: "Planifications Mensuelles", icon: CalendarRange, maternellePrimaireOnly: true },
+  { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
   { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: false },

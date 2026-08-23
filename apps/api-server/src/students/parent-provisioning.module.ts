@@ -1,30 +1,22 @@
 /**
  * ============================================================================
- * PARENT PROVISIONING MODULE
+ * PARENT PROVISIONING MODULE — minimal module to break circular dependency
  * ============================================================================
  *
- * ⭐ Why this module exists (circular dependency breaker):
+ * ⭐ Why this module exists:
+ * `ParentUserProvisioningService` is needed by both `CommunicationModule`
+ * (for the chat with parents flow) and `FinanceModule` (for the receipt
+ * + recovery notifications). Both modules need to import the module that
+ * provides this service.
  *
- * Before this module was introduced, ParentUserProvisioningService was
- * registered in StudentsModule. But:
- *   - CommunicationModule needed ParentUserProvisioningService → imported
- *     StudentsModule
- *   - StudentsModule already imported CommunicationModule (for
- *     AdmissionNotificationService)
- *   → circular import: CommunicationModule ↔ StudentsModule
+ * However, putting it inside `StudentsModule` creates a circular import:
+ *   - StudentsModule imports CommunicationModule (for AdmissionNotificationService)
+ *   - CommunicationModule imports StudentsModule (for ParentUserProvisioningService)
+ *   → NestJS throws "Cannot access 'X' before initialization" on startup
  *
- * The circular import caused Node.js to crash at startup:
- *   "ReferenceError: Cannot access 'CommunicationModule' before
- *    initialization"
- *   (see Railway logs 2026-08-23T17:49Z)
- *
- * Fix: extract ParentUserProvisioningService into its own small module
- * that depends ONLY on DatabaseModule (for PrismaService). Both
- * CommunicationModule and FinanceModule import this small module instead
- * of StudentsModule — no cycle.
- *
- * ParentUserProvisioningService itself only needs PrismaService (no other
- * dependency), so this module is self-contained.
+ * This dedicated module breaks the cycle: it has NO imports other than
+ * `DatabaseModule` (which provides `PrismaService`). Both CommunicationModule
+ * and FinanceModule can safely import this module without creating cycles.
  * ============================================================================
  */
 

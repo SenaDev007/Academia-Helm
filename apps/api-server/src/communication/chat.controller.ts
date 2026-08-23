@@ -240,6 +240,73 @@ export class ChatController {
   }
 
   // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE REACTIONS (emoji)
+  //     POST /api/chat/messages/:msgId/react  → toggle a reaction
+  //     Body: { userId, emoji }
+  //     Returns: { messageId, emoji, action: 'added' | 'removed', count }
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:msgId/react')
+  async toggleReaction(
+    @TenantId() tenantId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string; emoji: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    if (!body.emoji) throw new BadRequestException('emoji is required');
+    return this.chatService.toggleReaction(tenantId, messageId, body.userId, body.emoji);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE EDIT (content update + editedAt timestamp)
+  //     PUT /api/chat/messages/:msgId
+  //     Body: { userId, content }
+  //     Returns: { id, content, editedAt }
+  // ═════════════════════════════════════════════════════════════════
+  @Put('messages/:msgId')
+  async editMessage(
+    @TenantId() tenantId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string; content: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    if (!body.content || !body.content.trim()) throw new BadRequestException('content is required');
+    return this.chatService.editMessage(tenantId, messageId, body.userId, body.content);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE FORWARD (to another conversation)
+  //     POST /api/chat/messages/:msgId/forward
+  //     Body: { userId, targetConversationId }
+  //     Returns: { id, conversationId, type, content, attachmentUrl }
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:msgId/forward')
+  async forwardMessage(
+    @TenantId() tenantId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string; targetConversationId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    if (!body.targetConversationId) throw new BadRequestException('targetConversationId is required');
+    return this.chatService.forwardMessage(tenantId, messageId, body.userId, body.targetConversationId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MARK MESSAGE AS IMPORTANT (priority flag)
+  //     POST /api/chat/messages/:msgId/important
+  //     Body: { userId, isImportant }
+  //     Returns: { id, isImportant }
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:msgId/important')
+  async toggleImportant(
+    @TenantId() tenantId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string; isImportant: boolean },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.toggleImportant(tenantId, messageId, body.userId, body.isImportant ?? true);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
   //  RECHERCHE D'UTILISATEURS + INVITATIONS
   // ═════════════════════════════════════════════════════════════════
 

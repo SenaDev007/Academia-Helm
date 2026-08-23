@@ -678,6 +678,159 @@ export class ChatService {
     return { success: true };
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE REACTIONS (emoji)
+  //     Toggle a reaction on/off. If the user already reacted with this
+  //     emoji, remove it. Otherwise, add it.
+  // ═════════════════════════════════════════════════════════════════
+  async toggleReaction(
+    tenantId: string,
+    messageId: string,
+    userId: string,
+    emoji: string,
+  ): Promise<{ messageId: string; emoji: string; action: 'added' | 'removed'; count: number }> {
+    // Check if reaction already exists
+    const existing: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id FROM chat_message_reactions
+      WHERE "messageId" = $1 AND "userId" = $2 AND emoji = $3
+      LIMIT 1
+    `, messageId, userId, emoji);
+
+    if (existing.length > 0) {
+      // Remove existing reaction (toggle off)
+      await this.prisma.$executeRawUnsafe(`
+        DELETE FROM chat_message_reactions
+        WHERE "messageId" = $1 AND "userId" = $2 AND emoji = $3
+      `, messageId, userId, emoji);
+      const count = await this.getReactionCount(messageId, emoji);
+      return { messageId, emoji, action: 'removed', count };
+    }
+
+    // Add new reaction
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO chat_message_reactions ("id", "messageId", "userId", "emoji", "createdAt")
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT ON CONSTRAINT "chat_message_reactions_message_user_emoji_idx" DO NOTHING
+    `, randomUUID(), messageId, userId, emoji);
+    const count = await this.getReactionCount(messageId, emoji);
+    return { messageId, emoji, action: 'added', count };
+  }
+
+  private async getReactionCount(messageId: string, emoji: string): Promise<number> {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT count(*)::int AS cnt FROM chat_message_reactions
+      WHERE "messageId" = $1 AND emoji = $2
+    `, messageId, emoji);
+    return rows[0]?.cnt || 0;
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE EDIT
+  //     Only the original sender can edit. Sets editedAt = NOW().
+  // ═════════════════════════════════════════════════════════════════
+  async editMessage(
+    tenantId: string,
+    messageId: string,
+    userId: string,
+    content: string,
+  ): Promise<{ id: string; content: string; editedAt: string }> {
+    // Verify the user is the sender
+    const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, "senderId" FROM chat_messages WHERE id = $1
+    `, messageId);
+    if (msg.length === 0) throw new NotFoundException('Message not found');
+    if (msg[0].senderId !== userId) throw new ForbiddenException('Only the sender can edit this message');
+
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_messages SET content = $1, "editedAt" = NOW() WHERE id = $2
+    `, content, messageId);
+
+    return { id: messageId, content, editedAt: new Date().toISOString() };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MESSAGE FORWARD
+  //     Copies the message to the target conversation with the current user
+  //     as sender. Preserves type + attachmentUrl + content.
+  // ═════════════════════════════════════════════════════════════════
+  async forwardMessage(
+    tenantId: string,
+    messageId: string,
+    userId: string,
+    targetConversationId: string,
+  ): Promise<{ id: string; conversationId: string; type: string; content: string | null; attachmentUrl: string | null }> {
+    // Load original message
+    const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT type, content, "attachmentUrl", "attachmentName", "attachmentSize", "attachmentMime"
+      FROM chat_messages WHERE id = $1
+    `, messageId);
+    if (msg.length === 0) throw new NotFoundException('Message not found');
+
+    // Verify user is a participant in the target conversation
+    const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "userId" FROM chat_participants
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, targetConversationId, userId);
+    if (participants.length === 0) throw new ForbiddenException('You are not a participant in the target conversation');
+
+    // Insert forwarded message
+    const newId = randomUUID();
+    const m = msg[0];
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO chat_messages (
+        "id", "conversationId", "senderId", "type",
+        "content", "attachmentUrl", "attachmentName", "attachmentSize", "attachmentMime",
+        "createdAt"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+    `, newId, targetConversationId, userId, m.type, m.content, m.attachmentUrl, m.attachmentName, m.attachmentSize, m.attachmentMime);
+
+    // Update conversation's lastMessage
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_conversations
+      SET "lastMessageAt" = NOW(), "lastMessageSenderId" = $1,
+          "lastMessagePreview" = $2, "updatedAt" = NOW()
+      WHERE id = $3
+    `, userId, m.content ? m.content.substring(0, 100) : (m.attachmentName || 'Pièce jointe'), targetConversationId);
+
+    return {
+      id: newId,
+      conversationId: targetConversationId,
+      type: m.type,
+      content: m.content,
+      attachmentUrl: m.attachmentUrl,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V1 GAP — MARK MESSAGE AS IMPORTANT
+  //     Toggles the isImportant flag on a message.
+  // ═════════════════════════════════════════════════════════════════
+  async toggleImportant(
+    tenantId: string,
+    messageId: string,
+    userId: string,
+    isImportant: boolean,
+  ): Promise<{ id: string; isImportant: boolean }> {
+    // Verify user is a participant in the conversation that contains this message
+    const msgConv: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT cm."conversationId" FROM chat_messages cm
+      WHERE cm.id = $1
+    `, messageId);
+    if (msgConv.length === 0) throw new NotFoundException('Message not found');
+
+    const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "userId" FROM chat_participants
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, msgConv[0].conversationId, userId);
+    if (participants.length === 0) throw new ForbiddenException('You are not a participant in this conversation');
+
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_messages SET "isImportant" = $1 WHERE id = $2
+    `, isImportant, messageId);
+
+    return { id: messageId, isImportant };
+  }
+
   /**
    * ⭐ Delete a message FOR EVERYONE (sender only).
    *    Marks deletedAt — the message appears as "Message supprimé" to everyone.

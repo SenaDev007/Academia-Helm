@@ -194,6 +194,7 @@ function formatFileSize(bytes: number): string {
 // ─────────────────────────────────────────────────────────────────────
 
 export default function WhatsAppChat({ currentUserId, readOnly = false, heightClass }: WhatsAppChatProps) {
+  const isReadOnly = readOnly; // ⭐ Alias for message action rendering
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1717,13 +1718,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       ) : (
-                // Empty state when no conversation selected
+                // Empty state when no conversation selected — uses Helm Connect custom icon
         <div className="hidden md:flex flex-1 items-center justify-center bg-slate-50">
           <div className="text-center">
-            <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-lg font-bold text-slate-700">Academia Helm Chat</h3>
+            <img
+              src="/icons/modules/helm-connect.png"
+              alt="Helm Connect"
+              className="w-16 h-16 mx-auto mb-4 object-contain opacity-80"
+            />
+            <h3 className="text-lg font-bold text-slate-700">Helm Connect</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-sm">
-              Communiquez avec vos collègues, vos enseignants ou la direction directement dans l'application.
+              Communiquez. Collaborez. Restez connectés.
             </p>
             {!readOnly && (
               <button

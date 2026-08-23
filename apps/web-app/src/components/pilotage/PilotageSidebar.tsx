@@ -19,7 +19,6 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -610,20 +609,10 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600 shadow-sm shadow-gold-500/40" />
         )}
-        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
-        {item.iconUrl ? (
-          <img
-            src={item.iconUrl}
-            alt={item.label}
-            className={`w-[20px] h-[20px] flex-shrink-0 transition-all duration-200 object-contain ${
-              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-105'
-            }`}
-          />
-        ) : (
-          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
-            active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
-          }`} />
-        )}
+        {/* ⭐ Icône lucide-react restaurée sur chaque bouton (Issue: restore lucide icons) */}
+        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
+          active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
+        }`} />
         {effectiveOpen && (
           <span className={`text-[13px] transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
             active ? 'font-semibold text-white' : 'font-medium'
@@ -663,20 +652,10 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600" />
         )}
-        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
-        {(item as any).iconUrl ? (
-          <img
-            src={(item as any).iconUrl}
-            alt={item.label}
-            className={`w-[20px] h-[20px] flex-shrink-0 transition-transform duration-200 object-contain ${
-              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-110'
-            }`}
-          />
-        ) : (
-          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
-            active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
-          }`} />
-        )}
+        {/* ⭐ Icône lucide-react restaurée sur chaque bouton (collapsed sidebar) */}
+        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
+          active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
+        }`} />
       </Link>
     );
   };

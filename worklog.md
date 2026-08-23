@@ -8176,3 +8176,137 @@ Prochaines étapes (V2 restant) :
 - V2.5 — Centre documentaire par conversation (médias/docs/liens/épinglés)
 - V2.6 — Appels audio/vidéo
 - V3 — IA ORION (résumés) + ATLAS (assistant conversationnel) + transcription vocale + traduction
+
+---
+Task ID: Helm-Connect-V2.4-V2.5-Branding-Flutter
+Agent: main
+Task: V2.4 (recherche globale) + V2.5 (centre documentaire) + rebranding Azure/Cyan + Flutter mobile app
+
+Work Log:
+
+- V2.4 — Recherche globale transversale :
+  * Service backend GlobalSearchService (~330 lignes) :
+    - searchMessages (dans mes conversations)
+    - searchPeople (users + guardians)
+    - searchGroups (mes groupes)
+    - searchFiles (messages avec attachments)
+    - searchAnnouncements (publiées qui me ciblent)
+  * Recherche parallèle 5 sections, 10 résultats max/section
+  * Filtres optionnels : types (multi), dateFrom, dateTo
+  * Permissions respectées (uniquement mes conversations)
+  * Endpoint GET /chat/v2/search?q=...&types=...&dateFrom=...&dateTo=...
+  * Frontend GlobalSearchModal (~410 lignes) :
+    - 6 onglets : Tout / Messages / Personnes / Groupes / Fichiers / Annonces
+    - Badges priorité pour annonces (🔴 URGENT / ⚠️ IMPORTANT / 📢 ANNONCE / ℹ️ INFO)
+    - Avatars colorés (gradient Azure → Cyan)
+    - Click message → ouvre la conversation correspondante
+    - Click fichier → ouvre l'URL dans un nouvel onglet
+  * Bouton "Recherche globale" ajouté dans la sidebar WhatsAppChat
+
+- V2.5 — Centre documentaire par conversation :
+  * Migration 20260824100000_add_pinned_messages appliquée à Neon ✅
+    - Ajout colonnes isPinned, pinnedBy, pinnedAt sur chat_messages
+    - Index idx_chat_messages_pinned
+  * Service backend ConversationDocumentCenterService (~280 lignes) :
+    - listMedia (toutes les images de la conv)
+    - listDocuments (PDF, Word, Excel, etc.)
+    - listLinks (URLs extraites à la volée des messages texte)
+    - listPinned (messages épinglés)
+    - pinMessage / unpinMessage (RBAC participant vérifié)
+  * 6 endpoints REST sous /chat/v2/conversations/:id/{media|documents|links|pinned}
+    + 2 endpoints /chat/v2/messages/:id/{pin|unpin}
+
+- Rebranding Azure/Cyan (remplacement du vert emerald) :
+  * Python script pour remplacer 40 classes emerald→azure dans WhatsAppChat.tsx
+    (bg-emerald-600 → bg-[#1677FF], hover:bg-emerald-700 → hover:bg-[#0958D9], etc.)
+  * Mêmes remplacements dans AnnouncementsModal + NotificationPreferencesModal
+  * Couleurs fonctionnelles préservées : rouge danger, vert succès, orange warning
+
+- Helm Theme System (web) :
+  * Nouveau fichier apps/web-app/src/lib/helm-theme.ts
+  * 6 thèmes disponibles :
+    - Azure (défaut) : #1677FF primary, #13C2C2 accent
+    - Emerald (vert école) : #10B981 primary
+    - Violet (créatif) : #7C3AED primary
+    - Amber (chaleureux) : #F59E0B primary
+    - Midnight (sombre premium)
+    - Tenant (thème institutionnel — configurable par établissement)
+  * Dark mode complet avec couleurs dédiées
+  * getHelmTheme(), setHelmTheme(), isDarkMode(), setDarkMode()
+  * Variables CSS (--helm-primary, --helm-bg, --helm-text, etc.)
+
+- Flutter Mobile App (apps/mobile/helm_connect/) :
+  * pubspec.yaml : 18 dépendances clés (http, socket_io_client, provider,
+    shared_preferences, hive, flutter_secure_storage, image_picker,
+    file_picker, record, audioplayers, firebase_core, firebase_messaging,
+    flutter_local_notifications, encrypt, pointycastle, intl, uuid,
+    flutter_svg, google_fonts)
+  * helm_theme.dart : HelmColors (Azure + Dark) + HelmThemes.lightTheme()/darkTheme()
+    - Material 3 design
+    - ColorScheme complet (primary, secondary, surface, background, error)
+    - AppBarTheme, FloatingActionButtonTheme, CardTheme
+  * models.dart : User, Tenant, Conversation, Participant, Message, Announcement
+    - FromJson factories pour tous les modèles
+    - Helpers : fullName, initials, isOwn, isDeleted
+  * api_service.dart (~340 lignes) :
+    - AuthService : login, logout, saveSession, isLoggedIn, getToken, getUserId
+    - ApiConfig : tenant base URL persisted in SharedPreferences (multi-tenant)
+    - Endpoints : searchTenants, login, getCurrentUser, logout
+    - Chat : listConversations, createDirectConversation, listMessages,
+      sendTextMessage, markConversationRead
+    - Announcements : listAnnouncements
+    - Search : globalSearch
+    - Generic helpers : get, post, put
+    - ApiException avec backendError passthrough
+  * 7 Screens Flutter :
+    1. TenantSelectionScreen : first-launch school picker (gradient Azure header)
+    2. LoginScreen : email + password avec banner tenant sélectionné
+    3. ChatScreen : liste conversations + slogan + polling 15s
+       - Boutons : Recherche globale, Annonces, Menu (Notifications/Déconnexion)
+       - Badge non-lus (bulle #1677FF)
+       - Horodatage relatif (maintenant, il y a Xmin, HH:MM, il y a Xj, DD/MM)
+    4. ConversationDetailScreen : vue chat WhatsApp-style
+       - Bulles envoyées : #E6F4FF + border #BAE0FF
+       - Bulles reçues : #FFFFFF + border #E2E8F0
+       - Indicateur lecture (✓✓ cyan #13C2C2)
+       - Bouton envoi circulaire Azure
+       - Polling 10s (V2: Socket.io)
+    5. AnnouncementsScreen : liste annonces avec badges priorité colorés
+       - Bouton "Confirmer avoir lu" si requiresConfirmation
+       - Stats "X/Y lus"
+    6. NotificationPrefsScreen : DND 1h/8h/24h/∞ + 6 toggles
+    7. GlobalSearchScreen : 6 tabs (Tout/Messages/Personnes/Groupes/Fichiers/Annonces)
+  * StartupGate : auto-redirect basé sur l'état de session
+  * README.md complet (~140 lignes) avec :
+    - Identité visuelle (Azure + Dark mode)
+    - Structure du projet
+    - Prérequis + installation + build
+    - Flux utilisateur détaillé
+    - Configuration backend
+    - Dépendances principales
+    - Roadmap V2.4 → V3
+    - Sécurité
+
+Stage Summary:
+- ✅ V2.4 — Recherche globale transversale : 5 types (messages, personnes, groupes, fichiers, annonces) avec filtres + dates
+- ✅ V2.5 — Centre documentaire : 4 vues par conversation (médias/docs/liens/épinglés) + pin/unpin messages
+- ✅ Rebranding Azure/Cyan : 40 classes emerald→azure, identité Helm Connect différenciée de WhatsApp/Telegram
+- ✅ Theme system : 6 thèmes (Azure/Emerald/Violet/Amber/Midnight/Tenant) + Dark mode complet
+- ✅ Flutter mobile app : 7 screens complets + thème Azure + Dark mode + API service multi-tenant + README
+- ✅ Migration DB Neon : chat_messages.isPinned + pinnedBy + pinnedAt appliquée
+- 16 fichiers modifiés/créés :
+  - 2 backend services (global-search, document-center)
+  - 1 backend migration (pinned_messages)
+  - 1 backend controller étendu (+9 endpoints)
+  - 1 frontend GlobalSearchModal (~410 lignes)
+  - 3 frontend modals rebranding Azure
+  - 1 frontend theme system (helm-theme.ts)
+  - 12 Flutter files (pubspec, README, main, theme, models, services, 7 screens)
+
+Prochaines étapes :
+- V2.6 : Appels audio/vidéo (WebRTC)
+- V2.7 : Temps réel Socket.io Flutter (instant delivery + typing + presence)
+- V2.8 : Offline-first Flutter (Hive sync + file d'attente)
+- V2.9 : Pièces jointes Flutter (photos, vidéos, audio, documents)
+- V2.10 : Push notifications Flutter (Firebase Cloud Messaging)
+- V3 : IA ORION + ATLAS + transcription vocale + traduction

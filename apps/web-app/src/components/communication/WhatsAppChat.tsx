@@ -1053,7 +1053,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           <div className="flex items-center justify-between gap-2">
             {/* Title — nowrap to prevent 2-line wrapping */}
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
-              <MessageSquare className="w-4 h-4 text-[#1677FF]" />
+              <img
+                src="/icons/modules/helm-connect.png"
+                alt="Helm Connect"
+                className="w-4 h-4 object-contain"
+              />
               <span className="truncate">Helm Connect</span>
               {/* ⭐ Socket.io connection indicator */}
               <span

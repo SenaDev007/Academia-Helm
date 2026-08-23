@@ -283,7 +283,6 @@ interface MainModule {
   path: string;
   label: string;
   icon: any;
-  iconUrl?: string;  // ⭐ Custom Academia Helm icon (PNG in /icons/modules/)
   featureCode?: string;
   roles?: string[];
   requiresSecondary?: boolean;
@@ -614,20 +613,9 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600 shadow-sm shadow-gold-500/40" />
         )}
-        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
-        {(item as any).iconUrl ? (
-          <img
-            src={(item as any).iconUrl}
-            alt={item.label}
-            className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 object-contain ${
-              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-105'
-            }`}
-          />
-        ) : (
-          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
-            active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
-          }`} />
-        )}
+        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-all duration-200 ${
+          active ? 'text-gold-400 scale-110' : 'text-blue-300/70 group-hover:text-blue-100 group-hover:scale-105'
+        }`} />
         {effectiveOpen && (
           <span className={`text-[13px] transition-all duration-200 whitespace-nowrap overflow-hidden text-ellipsis flex-1 ${
             active ? 'font-semibold text-white' : 'font-medium'
@@ -667,20 +655,9 @@ export default function PilotageSidebar({
         {active && (
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600" />
         )}
-        {/* ⭐ Custom Academia Helm icon OR lucide-react fallback */}
-        {(item as any).iconUrl ? (
-          <img
-            src={(item as any).iconUrl}
-            alt={item.label}
-            className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 object-contain ${
-              active ? 'scale-110 brightness-125' : 'opacity-80 group-hover:opacity-100 group-hover:scale-110'
-            }`}
-          />
-        ) : (
-          <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
-            active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
-          }`} />
-        )}
+        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 ${
+          active ? 'text-gold-400 scale-110' : 'group-hover:scale-110'
+        }`} />
       </Link>
     );
   };

@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useSchoolLevel } from "@/hooks/useSchoolLevel";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -219,12 +220,12 @@ const FICHE_IMMERSION: FicheChamp[] = [
   {
     code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
     subRows: [], // ⭐ Single cell per week — NO sub-rows
-    cellTemplate: "Thème : \n\nCommunication orale : Acquisition et utilisation des mots : \n\n\n\nInitiation à la lecture : \n\nGraphisme : \n\nLecture récréative : ",
+    cellTemplate: "Thème : <br><br>Communication orale : Acquisition et utilisation des mots : <br><br><br>Initiation à la lecture : <br>Graphisme : <br>Lecture récréative : ",
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
     subRows: [], // ⭐ Single cell per week — NO sub-rows
-    cellTemplate: "SA N° \n\nFiche N°1 : \n\nFiche N°2 : \n\nFiche N°3 : \n\nFiche N°4 : \n\nFiche N°5 : ",
+    cellTemplate: "SA N° <br><br>Fiche N°1 : <br><br>Fiche N°2 : <br><br>Fiche N°3 : <br><br>Fiche N°4 : <br><br>Fiche N°5 : ",
   },
   { code: "INITIATION_EST", label: "Initiation à l'EST", color: "bg-amber-600", subRows: [] },
   { code: "INITIATION_ES", label: "Initiation à l'ES", color: "bg-indigo-600", subRows: [] },
@@ -241,14 +242,14 @@ const FICHE_SYSTEMATIQUE: FicheChamp[] = [
     code: "FRANÇAIS", label: "Français", color: "bg-blue-600",
     subRows: ["Communication orale", "Lecture – écriture"],
     subRowTemplates: {
-      "Communication orale": "Thème/Sous-thème : \n\n\n",
-      "Lecture – écriture": "LECTURE-ECRITURE : Leçon \nTitre : Etude de \n\nSTRUCTURE DE LANGUE : Leçon \nTitre : \n\nLECTURE-ECRITURE : Leçon \nTitre : Etude de ",
+      "Communication orale": "Thème/Sous-thème : <br><br>",
+      "Lecture – écriture": "LECTURE-ECRITURE : Leçon <br>Titre : Etude de <br><br>STRUCTURE DE LANGUE : Leçon <br>Titre : <br><br>LECTURE-ECRITURE : Leçon <br>Titre : Etude de ",
     },
   },
   {
     code: "MATHEMATIQUE", label: "Mathématique", color: "bg-emerald-600",
     subRows: [], // ⭐ Single cell per week
-    cellTemplate: "SA N° \n\nFiche N°1 : \n\nFiche N°2 : \n\nFiche N°3 : \n\nFiche N°4 : \n\nFiche N°5 : ",
+    cellTemplate: "SA N° <br><br>Fiche N°1 : <br><br>Fiche N°2 : <br><br>Fiche N°3 : <br><br>Fiche N°4 : <br><br>Fiche N°5 : ",
   },
   { code: "EST", label: "EST", color: "bg-amber-600", subRows: [] },
   {
@@ -604,58 +605,14 @@ export function MonthlyPlanningTab({
     return (
       <td key={cellKey} className="p-1 border border-slate-200 align-top">
         {isEditing ? (
-          // ⭐ Editing mode — show textarea + save/cancel buttons
-          //    Works for BOTH existing cells AND empty cells
+          // ⭐ Editing mode — use RichTextEditor (same as Cahier Journal)
+          //    Bold/Italic/Underline via contentEditable + execCommand
+          //    Content stored as HTML — persisted in DB, visible by director
           <div className="space-y-1">
-            {/* Format toolbar */}
-            <div className="flex items-center gap-0.5 bg-slate-50 rounded p-0.5 mb-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
-                  if (!ta) return;
-                  const s = ta.selectionStart, e = ta.selectionEnd;
-                  const newText = editContent.substring(0, s) + '*' + editContent.substring(s, e) + '*' + editContent.substring(e);
-                  setEditContent(newText);
-                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
-                }}
-                className="p-0.5 hover:bg-slate-200 rounded font-bold text-[9px]"
-                title="Gras"
-              >B</button>
-              <button
-                type="button"
-                onClick={() => {
-                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
-                  if (!ta) return;
-                  const s = ta.selectionStart, e = ta.selectionEnd;
-                  const newText = editContent.substring(0, s) + '_' + editContent.substring(s, e) + '_' + editContent.substring(e);
-                  setEditContent(newText);
-                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
-                }}
-                className="p-0.5 hover:bg-slate-200 rounded italic text-[9px]"
-                title="Italique"
-              >I</button>
-              <button
-                type="button"
-                onClick={() => {
-                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
-                  if (!ta) return;
-                  const s = ta.selectionStart, e = ta.selectionEnd;
-                  const newText = editContent.substring(0, s) + '~' + editContent.substring(s, e) + '~' + editContent.substring(e);
-                  setEditContent(newText);
-                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
-                }}
-                className="p-0.5 hover:bg-slate-200 rounded line-through text-[9px]"
-                title="Barré"
-              >S</button>
-            </div>
-            <textarea
-              data-key={cellKey}
+            <RichTextEditor
               value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white resize-y min-h-[80px]"
-              rows={5}
-              autoFocus
+              onChange={(html) => setEditContent(html)}
+              minHeight="80px"
             />
             <div className="flex gap-0.5">
               <button onClick={handleSave} className="p-0.5 bg-emerald-600 text-white rounded" title="Enregistrer">
@@ -667,10 +624,10 @@ export function MonthlyPlanningTab({
             </div>
           </div>
         ) : cell ? (
-          // ⭐ Existing cell — show content (click to edit)
+          // ⭐ Existing cell — render HTML content (click to edit)
           <div
             className={cn(
-              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
+              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px]",
               cell.isCustom ? "bg-amber-50 text-amber-900 border border-amber-200"
                 : cell.isAutoProposed ? "bg-purple-50 text-purple-900 border border-purple-100"
                 : "text-slate-700"
@@ -681,11 +638,10 @@ export function MonthlyPlanningTab({
               setEditContent(cell.content);
             }}
             title={cell.isCustom ? "Modifié" : cell.isAutoProposed ? "Auto-proposé" : "Contenu"}
-          >
-            {cell.content}
-          </div>
+            dangerouslySetInnerHTML={{ __html: cell.content }}
+          />
         ) : (
-          // ⭐ Empty cell — show template text (click to edit)
+          // ⭐ Empty cell — show template text as HTML (click to edit)
           <div
             onClick={() => {
               if (isReadOnly) return;
@@ -693,12 +649,12 @@ export function MonthlyPlanningTab({
               setEditContent(template);
             }}
             className={cn(
-              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
+              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px]",
               isReadOnly ? "cursor-not-allowed text-slate-300" : "text-slate-500 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
             )}
             title={isReadOnly ? "Planification verrouillée" : "Cliquer pour remplir"}
+            dangerouslySetInnerHTML={isReadOnly ? undefined : { __html: template || "…" }}
           >
-            {isReadOnly ? "" : (template || "…")}
           </div>
         )}
       </td>
@@ -722,22 +678,11 @@ export function MonthlyPlanningTab({
               </span>
             </h2>
             <p className="text-xs text-slate-500">
-              {classesToShow.find(c => c.value === selectedClass)?.label} — {selectedMonth} {selectedYear} — {sheetLabel}
+              {classesToShow.find(c => c.value === selectedClass)?.label} — {selectedMonth} — {sheetLabel}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Sélecteur d'année (modifiable) */}
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
-            className="px-2 py-2 border border-slate-200 rounded-lg text-xs font-medium bg-white"
-            title="Année"
-          >
-            {[selectedYear - 1, selectedYear, selectedYear + 1].map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
           {classesToShow.length > 1 ? (
             <select
               value={selectedClass}
@@ -1117,7 +1062,7 @@ export function MonthlyPlanningTab({
           onSign={(dataUrl) => setPendingSignature(dataUrl)}
           signature={pendingSignature}
           submitting={submitting}
-          className={`${classesToShow.find(c => c.value === selectedClass)?.label || ''} — ${selectedMonth} ${selectedYear}`}
+          className={`${classesToShow.find(c => c.value === selectedClass)?.label || ''} — ${selectedMonth}`}
           month={selectedMonth}
           classLabel={classesToShow.find(c => c.value === selectedClass)?.label || ''}
         />

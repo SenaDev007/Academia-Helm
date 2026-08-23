@@ -64,15 +64,16 @@ export class RecoveryReminderController {
    * l'élève ayant un arriéré. Reproduit le pattern des notifications de reçu.
    *
    * Body: {
-   *   channels: ('email' | 'whatsapp' | 'sms')[],   // défaut: ['email', 'whatsapp', 'sms']
+   *   channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[],   // défaut: ['email', 'helm_connect']
    *   level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE',  // défaut: PREMIERE_RELANCE
    * }
    *
    * Response: {
    *   arrearId, level, channels: {
-   *     email:    { status, to?, error? },
-   *     whatsapp: { status, to?, error? },
-   *     sms:      { status, to?, error? },
+   *     email:         { status, to?, error? },
+   *     whatsapp:      { status, to?, error? },  // legacy, kept for backward compat
+   *     sms:           { status, to?, error? },  // legacy, kept for backward compat
+   *     helm_connect:  { status, to?, error? },  // ⭐ NEW — replaces whatsapp + sms
    *   }
    * }
    */
@@ -82,8 +83,10 @@ export class RecoveryReminderController {
     @Param('arrearId') arrearId: string,
     @Body() body: { channels?: string[]; level?: string },
   ) {
-    const channels = (body?.channels ?? ['email', 'whatsapp', 'sms']) as (
-      'email' | 'whatsapp' | 'sms'
+    // ⭐ Issue #?: default channels = ['email', 'helm_connect']
+    //    Helm Connect replaces WhatsApp + SMS for recovery reminders.
+    const channels = (body?.channels ?? ['email', 'helm_connect']) as (
+      'email' | 'whatsapp' | 'sms' | 'helm_connect'
     )[];
     const level = (body?.level ?? 'PREMIERE_RELANCE') as
       | 'PREMIERE_RELANCE'

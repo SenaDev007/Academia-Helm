@@ -46,6 +46,7 @@ import { EducmasterExcelExportService } from './services/educmaster-excel-export
 import { ClassListPdfService } from './services/class-list-pdf.service';
 import { MatriculeService } from './services/matricule.service';
 import { StudentsImportService } from './services/students-import.service';
+import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
 import { StudentsImportController } from './controllers/students-import.controller';
 import { StudentTransferController } from './student-transfer.controller';
 import { StudentTransferService } from './student-transfer.service';
@@ -117,6 +118,10 @@ import { CommunicationModule } from '../communication/communication.module';
     MatriculeService,
     StudentTransferService,
     StudentsImportService,
+    // ⭐ Parent User Provisioning — auto-creates a User account (role=PARENT)
+    //    for guardians that don't have one yet. Used by ChatService + Finance
+    //    notification services to enable direct chat with parents.
+    ParentUserProvisioningService,
   ],
   exports: [
     StudentsService,
@@ -139,6 +144,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ClassListPdfService,
     MatriculeService,
     StudentTransferService,
+    // ⭐ Exported for ChatService + Finance notification services
+    ParentUserProvisioningService,
   ],
 })
 export class StudentsModule {}

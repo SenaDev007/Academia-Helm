@@ -24,6 +24,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
+import { ParentUserProvisioningService } from '../../students/services/parent-user-provisioning.service';
 import { randomUUID } from 'crypto';
 
 export interface ChatConversation {
@@ -98,6 +99,7 @@ export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly parentUserProvisioningService: ParentUserProvisioningService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -298,6 +300,47 @@ export class ChatService {
 
     return (await this.listConversations(resolvedTenantId, currentUserId))
       .find(c => c.id === convId)!;
+  }
+
+  /**
+   * ⭐ Crée ou récupère une conversation DIRECTE avec un PARENT (guardian).
+   *
+   * Contrairement à createOrGetDirectConversation qui prend deux userIds,
+   * cette méthode prend un guardianId. Elle :
+   *   1. Appelle ParentUserProvisioningService.ensureUserForGuardian() qui
+   *      auto-crée un compte User (role=PARENT) si le guardian n'en a pas
+   *      encore un, et back-fill guardian.userId
+   *   2. Appelle createOrGetDirectConversation() avec le userId du parent
+   *
+   * ⭐ Permet à un enseignant/directeur de discuter directement avec un
+   *    parent SANS avoir besoin d'envoyer une invitation par SMS/email —
+   *    le parent peut déjà se connecter à l'espace parent via son numéro
+   *    de téléphone (OTP).
+   */
+  async createOrGetDirectConversationWithGuardian(
+    tenantId: string,
+    currentUserId: string,
+    guardianId: string,
+  ): Promise<{ conversationId: string; parentUserId: string; userCreated: boolean }> {
+    if (!guardianId) {
+      throw new BadRequestException('guardianId is required');
+    }
+    // 1. Ensure the guardian has a User account (creates one if needed)
+    const { userId: parentUserId, created: userCreated } =
+      await this.parentUserProvisioningService.ensureUserForGuardian(guardianId);
+
+    // 2. Create or get the direct conversation between the teacher and the parent
+    const conversation = await this.createOrGetDirectConversation(
+      tenantId,
+      currentUserId,
+      parentUserId,
+    );
+
+    return {
+      conversationId: conversation.id,
+      parentUserId,
+      userCreated,
+    };
   }
 
   /**

@@ -2001,29 +2001,24 @@ function NewChatModal({
         toast.error("Échec: " + e.message);
       }
     } else if (user.source === 'guardians' && user.guardianId) {
-      // ⭐ HELM CONNECT — Guardian without user account: invite via SMS/email
-      //    The teacher can send a magic-link invitation to the parent's phone/email.
-      //    Once the parent accepts, a real Helm Connect account is created and the
-      //    conversation can start.
+      // ⭐ Issue #?: NO MORE INVITATION FLOW — direct chat with the parent.
+      //    Per user feedback: "On n'a pas besoin d'envoyer d'invitation à un
+      //    parent. Le parent qui a inscrit, lorsqu'un élève est inscrit dans
+      //    l'école, on a déjà les informations de son parent. Le parent peut
+      //    se connecter à l'espace parent avec son numéro de téléphone."
+      //
+      //    The backend's POST /api/chat/conversations/guardian-direct endpoint
+      //    auto-creates a User account (role=PARENT) for the guardian if they
+      //    don't have one yet, then creates/gets the direct conversation.
+      //    The parent can login to the parent portal with their phone (OTP).
       const guardianId = user.guardianId!;
-      const hasPhone = !!user.phone;
-      const hasEmail = !!user.email;
-      if (!hasPhone && !hasEmail) {
-        toast.error(
-          `Impossible d'inviter ${user.firstName} ${user.lastName} : ce parent n'a ni numéro de téléphone ni adresse email renseignés dans la fiche élève. Veuillez mettre à jour la fiche de l'élève (module Scolarité) pour pouvoir le contacter via Helm Connect.`
-        );
-        return;
-      }
-      const channel = hasPhone ? 'SMS' : 'EMAIL';
       try {
-        const res = await fetch('/api/chat/invitations/guardian', {
+        const res = await fetch('/api/chat/conversations/guardian-direct', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            senderId: currentUserId,
+            currentUserId,
             guardianId,
-            channel,
-            message: 'Invitation à rejoindre Helm Connect — Academia Helm',
           }),
           credentials: 'include',
         });
@@ -2032,14 +2027,11 @@ function NewChatModal({
           throw new Error((err as any)?.message || `Erreur ${res.status}`);
         }
         const data = await res.json();
-        setSentInvites(prev => new Set(prev).add(guardianId));
-        if (data.status === 'ALREADY_HAS_ACCOUNT') {
-          toast.success(`${user.firstName} ${user.lastName} a déjà un compte Helm Connect.`);
-        } else {
-          toast.success(
-            `Invitation envoyée à ${user.firstName} ${user.lastName} par ${channel === 'SMS' ? 'SMS' : 'email'}. Le parent recevra un lien magique pour créer son compte Helm Connect.`
-          );
-        }
+        onConversationCreated(data.conversationId);
+        toast.success(
+          `Conversation démarrée avec ${user.firstName} ${user.lastName}` +
+          (data.userCreated ? ' (compte parent créé automatiquement)' : '')
+        );
       } catch (e: any) {
         toast.error("Échec: " + e.message);
       }
@@ -2131,8 +2123,8 @@ function NewChatModal({
                       ✓ Même école — discussion directe
                     </div>
                   ) : user.source === 'guardians' && user.guardianId ? (
-                    <div className="text-[10px] text-blue-600 font-semibold mt-0.5">
-                      ℹ Parent sans compte Helm Connect — cliquez pour envoyer une invitation par {user.phone ? 'SMS' : user.email ? 'email' : 'courrier'}
+                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5">
+                      ✓ Parent d'élève — cliquez pour démarrer la conversation
                     </div>
                   ) : user.tenantName ? (
                     <div className="text-[10px] text-amber-600 font-semibold mt-0.5">

@@ -80,6 +80,29 @@ export class ChatController {
     return this.chatService.createOrGetDirectConversation(tenantId, body.currentUserId, body.otherUserId);
   }
 
+  /**
+   * ⭐ Start a DIRECT conversation with a PARENT (guardian).
+   *    Unlike /conversations/direct which requires a userId, this endpoint
+   *    accepts a guardianId and auto-provisions a User account for the
+   *    parent if they don't have one yet (role=PARENT, login via phone OTP).
+   *    No SMS/email invitation needed — the parent can already login to
+   *    the parent portal with their phone number.
+   */
+  @Post('conversations/guardian-direct')
+  async createGuardianDirectConversation(
+    @TenantId() tenantId: string,
+    @Body() body: { currentUserId: string; guardianId: string },
+  ) {
+    if (!body.currentUserId || !body.guardianId) {
+      throw new BadRequestException('currentUserId and guardianId are required');
+    }
+    return this.chatService.createOrGetDirectConversationWithGuardian(
+      tenantId,
+      body.currentUserId,
+      body.guardianId,
+    );
+  }
+
   @Post('conversations/group')
   async createGroupConversation(
     @TenantId() tenantId: string,

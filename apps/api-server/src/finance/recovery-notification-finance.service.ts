@@ -28,8 +28,9 @@ import { EmailService } from '../communication/services/email.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
+import { HelmConnectFinanceNotificationService } from './helm-connect-finance-notification.service';
 
-export type RecoveryChannel = 'email' | 'whatsapp' | 'sms';
+export type RecoveryChannel = 'email' | 'whatsapp' | 'sms' | 'helm_connect';
 export type RecoveryLevel = 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE';
 
 @Injectable()
@@ -42,6 +43,10 @@ export class RecoveryNotificationFinanceService {
     private readonly emailService: EmailService,
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
+    // ⭐ Helm Connect finance notification service — replaces WhatsApp+SMS
+    //    for recovery reminders. The parent receives the reminder directly
+    //    in their Helm Connect chat account.
+    private readonly helmConnectFinanceNotificationService: HelmConnectFinanceNotificationService,
   ) {}
 
   /**
@@ -174,6 +179,68 @@ export class RecoveryNotificationFinanceService {
             academicYearName,
             isPreviousYearArrear,
           });
+        } else if (channel === 'helm_connect') {
+          // ⭐ NEW: Helm Connect — send a chat message to the parent's account
+          //    with the recovery reminder. The parent can read the message in
+          //    their Helm Connect chat (they login to the parent portal with
+          //    their phone number).
+          //
+          //    We need a directorId (the user sending the reminder).
+          //    Strategy: find the tenant's director (PROMOTER or SCHOOL_OWNER role)
+          //    fallback to any admin user. If none found, skip this channel.
+          const directorRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+            SELECT id FROM "users"
+            WHERE "tenantId" = $1 AND status = 'active'
+              AND ("role" IN ('PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+                              'SUPER_DIRECTOR', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+                              'DIRECTEUR', 'admin', 'ADMIN', 'DIRECTOR'))
+            ORDER BY
+              CASE
+                WHEN "role" IN ('PROMOTER', 'SCHOOL_OWNER') THEN 1
+                WHEN "role" IN ('SUPER_DIRECTOR', 'DIRECTEUR_GENERAL') THEN 2
+                ELSE 3
+              END,
+              "createdAt" ASC
+            LIMIT 1
+          `, tenantId).catch(() => []);
+
+          if (directorRow.length === 0) {
+            this.logger.warn(`No director found for tenant ${tenantId}. Skipping helm_connect recovery notification.`);
+            results.helm_connect = { status: 'skipped', error: 'No director found for tenant' };
+          } else {
+            const directorId = directorRow[0].id;
+            // Find the primary guardian for this student
+            const guardianRow = await this.prisma.studentGuardian.findFirst({
+              where: { studentId: student.id, guardian: { tenantId } },
+              orderBy: [{ isPrimary: 'desc' }],
+            });
+            if (!guardianRow) {
+              this.logger.warn(`No guardian found for student ${student.id} (tenant ${tenantId}). Skipping helm_connect recovery notification.`);
+              results.helm_connect = { status: 'skipped', error: 'No guardian linked to this student' };
+            } else {
+              // Compute days overdue (approximate — uses arrear.createdAt as start)
+              const daysOverdue = Math.floor(
+                (Date.now() - new Date(arrear.createdAt || Date.now()).getTime()) / (1000 * 60 * 60 * 24)
+              );
+              const helmResult = await this.helmConnectFinanceNotificationService.sendRecoveryNotification({
+                tenantId,
+                studentId: student.id,
+                studentName,
+                guardianId: guardianRow.guardianId,
+                directorId,
+                level,
+                amountDue: balanceDue,
+                daysOverdue,
+                className,
+                academicYearLabel: academicYearName,
+              });
+              results.helm_connect = {
+                status: helmResult.success ? 'sent' : 'failed',
+                to: helmResult.conversationId,
+                error: helmResult.error,
+              };
+            }
+          }
         }
       } catch (err: any) {
         this.logger.error(`Échec envoi ${channel} pour relance ${arrearId}: ${err.message}`);

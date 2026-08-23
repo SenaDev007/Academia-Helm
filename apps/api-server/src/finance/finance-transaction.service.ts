@@ -480,12 +480,15 @@ export class FinanceTransactionService {
       .generateForTransaction(tx.id, tenantId)
       .then(({ receiptUrl }) => {
         this.logger.log(`Reçu PDF généré pour transaction ${tx.receiptNumber}: ${receiptUrl}`);
-        // Envoyer automatiquement les notifications (email + WhatsApp + SMS)
-        // Fire-and-forget — ne bloque jamais la réponse API
+        // ⭐ Envoyer automatiquement les notifications (email + Helm Connect)
+        //    Helm Connect remplace WhatsApp + SMS : le parent reçoit le reçu PDF
+        //    directement dans son compte Helm Connect (il se connecte au portail
+        //    parent avec son numéro de téléphone). Email conservé pour archivage.
+        //    Fire-and-forget — ne bloque jamais la réponse API
         return this.receiptNotificationService.sendReceiptNotifications(
           tx.id,
           tenantId,
-          ['email', 'whatsapp', 'sms'],
+          ['email', 'helm_connect'],
         );
       })
       .then((results) => {

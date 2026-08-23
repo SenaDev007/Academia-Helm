@@ -42,6 +42,7 @@ import { ReceiptGenerationService } from './receipt-generation.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { RecoveryNotificationFinanceService } from './recovery-notification-finance.service';
+import { HelmConnectFinanceNotificationService } from './helm-connect-finance-notification.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
 import { TenantPaymentConfigService } from './tenant-payment-config.service';
 import { TenantPaymentConfigController } from './tenant-payment-config.controller';
@@ -92,9 +93,10 @@ import { PromoterEligibilityController } from './promoter-eligibility.controller
 import { PromoterEligibilityService } from './promoter-eligibility.service';
 import { MultiActionPaymentController } from './multi-action-payment.controller';
 import { CommunicationModule } from '../communication/communication.module';
+import { StudentsModule } from '../students/students.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule, CommonModule],
+  imports: [ConfigModule, DatabaseModule, SettingsModule, CommunicationModule, CommonModule, StudentsModule],
   controllers: [
     FeeStructureController,
     StudentAccountController,
@@ -153,6 +155,10 @@ import { CommunicationModule } from '../communication/communication.module';
     ReceiptFinanceService,
     ReceiptNotificationFinanceService,
     RecoveryNotificationFinanceService,
+    // ⭐ Helm Connect finance notifications — replaces SMS/WhatsApp for
+    //    receipt delivery and recovery reminders. Messages go to the
+    //    parent's Helm Connect account (auto-provisioned if needed).
+    HelmConnectFinanceNotificationService,
     ArrearAccumulationService,
     TenantPaymentConfigService,
     FedapayService,

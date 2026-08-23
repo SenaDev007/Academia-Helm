@@ -110,10 +110,13 @@ export class AutoRecoveryService {
     this.logger.log(`Relance auto pour tenant ${settings.tenantId}`);
 
     // Parser les canaux
-    let channels: ('email' | 'whatsapp' | 'sms')[] = ['email', 'whatsapp', 'sms'];
+    // ⭐ Issue #?: replace WhatsApp + SMS with Helm Connect for recovery reminders.
+    //    The parent receives the reminder directly in their Helm Connect chat account.
+    //    Email is kept for archival; helm_connect replaces the WhatsApp + SMS channels.
+    let channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[] = ['email', 'helm_connect'];
     try {
       const parsed = JSON.parse(settings.autoRecoveryChannels || '{}');
-      channels = (['email', 'whatsapp', 'sms'] as const).filter((c) => parsed[c] !== false);
+      channels = (['email', 'whatsapp', 'sms', 'helm_connect'] as const).filter((c) => parsed[c] !== false);
     } catch {
       // Garder les canaux par défaut
     }

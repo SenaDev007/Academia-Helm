@@ -12,6 +12,7 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { StudentsModule } from '../students/students.module';
 import { EmailService } from './services/email.service';
 import { EmailLogService } from './services/email-log.service';
 import { InboundEmailService } from './services/inbound-email.service';
@@ -65,6 +66,10 @@ import { PollController } from './poll.controller';
   imports: [
     ConfigModule,
     DatabaseModule,
+    // ⭐ StudentsModule provides ParentUserProvisioningService (auto-creates
+    //    User accounts for guardians so they can participate in chat + login
+    //    to parent portal via phone OTP).
+    StudentsModule,
     // ⭐ JwtModule pour ChatGateway (vérification du JWT lors du handshake Socket.io)
     JwtModule.registerAsync({
       imports: [ConfigModule],

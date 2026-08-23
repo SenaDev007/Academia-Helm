@@ -1765,6 +1765,8 @@ model User {
   updatedAt                                 DateTime                          @updatedAt
   // ⭐ Relations multi-tenant : un user peut gérer plusieurs écoles
   userTenants                               UserTenant[]
+  // ⭐ Back-relation: a parent's User account (linked from Guardian record)
+  guardians                                 Guardian[]
   createdAbsences                           Absence[]                         @relation("AbsenceCreator")
   justifiedAbsences                         Absence[]                         @relation("AbsenceJustifier")
   activityLogs                              ActivityLog[]
@@ -4134,12 +4136,15 @@ model Guardian {
   email            String?
   relationship     String?
   address          String?
+  userId           String?           @map("userId")  // ⭐ Link to a User account (role=PARENT) for chat + portal login
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   studentGuardians StudentGuardian[]
 
   @@index([tenantId])
+  @@index([userId])
   @@map("guardians")
 }
 

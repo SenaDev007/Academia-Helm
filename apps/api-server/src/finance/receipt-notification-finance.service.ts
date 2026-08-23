@@ -24,6 +24,7 @@ import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { renderReceiptEmail } from './receipt-email-templates';
+import { HelmConnectFinanceNotificationService } from './helm-connect-finance-notification.service';
 
 @Injectable()
 export class ReceiptNotificationFinanceService {
@@ -36,16 +37,28 @@ export class ReceiptNotificationFinanceService {
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
     private readonly configService: ConfigService,
+    // ⭐ Helm Connect finance notification service — replaces WhatsApp+SMS
+    //    for receipt delivery. The parent receives the PDF receipt directly
+    //    in their Helm Connect chat account.
+    private readonly helmConnectFinanceNotificationService: HelmConnectFinanceNotificationService,
   ) {}
 
   /**
    * Envoie les notifications de reçu sur les canaux demandés.
    * Ne lance JAMAIS d'erreur — retourne un rapport par canal.
+   *
+   * ⭐ Channels:
+   *   - 'email'         — PDF receipt as email attachment (kept as-is)
+   *   - 'whatsapp'       — WhatsApp message with PDF (kept for backward compat,
+   *                       but no longer called by default — see finance-transaction.service.ts)
+   *   - 'sms'            — Plain SMS (kept for backward compat)
+   *   - 'helm_connect'   — ⭐ NEW: sends a Helm Connect message to the parent's
+   *                       account with the PDF receipt attached. Replaces SMS+WhatsApp.
    */
   async sendReceiptNotifications(
     transactionId: string,
     tenantId: string,
-    channels: ('email' | 'whatsapp' | 'sms')[],
+    channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[],
   ): Promise<Record<string, { status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }>> {
     const results: Record<string, any> = {};
 
@@ -53,6 +66,7 @@ export class ReceiptNotificationFinanceService {
     const tx = await this.prisma.financeTransaction.findUnique({
       where: { id: transactionId },
       include: {
+        academicYear: { select: { name: true } },  // ⭐ for helm_connect caption
         studentAccount: {
           include: {
             student: {
@@ -213,6 +227,30 @@ export class ReceiptNotificationFinanceService {
             tenderedAmount: tx.tenderedAmount != null ? Number(tx.tenderedAmount) : undefined,
             changeGiven: tx.changeGiven != null ? Number(tx.changeGiven) : undefined,
           });
+        } else if (channel === 'helm_connect') {
+          // ⭐ NEW: Helm Connect — send a chat message to the parent's account
+          //    with the PDF receipt attached. The parent can read the message
+          //    in their Helm Connect chat (they login to the parent portal
+          //    with their phone number).
+          const helmResult = await this.helmConnectFinanceNotificationService.sendReceiptNotification({
+            tenantId,
+            studentId: tx.studentAccount?.studentId || '',
+            studentName,
+            receiptNumber: tx.receiptNumber,
+            amount: Number(tx.amount),
+            className,
+            academicYearLabel: tx.academicYear?.name,
+            cashierId: tx.cashierId,  // user who recorded the payment
+            pdfBuffer: pdfBuffer || Buffer.from(''),
+            pdfFilename: `recu-${tx.receiptNumber}.pdf`,
+            paymentDate: tx.createdAt,
+            balanceAfter: balanceAfter ?? undefined,
+          });
+          results.helm_connect = {
+            status: helmResult.success ? 'sent' : 'failed',
+            to: helmResult.conversationId,
+            error: helmResult.error,
+          };
         }
       } catch (err: any) {
         results[channel] = { status: 'failed', error: err.message };

@@ -8486,3 +8486,41 @@ Stage Summary:
   * Fix TDZ sendRecordedAudio (frontend only)
   * Flutter config (frontend only)
   * V2.6 watermark + responsive + attachments + polls
+
+---
+Task ID: Issue-10-Unify-Boutique-Cantine
+Agent: main
+Task: Refonte UI single-page Boutique + Cantine comme EduCast (sidebar + feed au lieu d'onglets dispersés)
+
+Work Log:
+- Lu le pattern de référence `EduCastModulePage.tsx` (1701 lignes) : sidebar groupée + top bar sticky + main content area scrollable avec FeedView et WatchView inline
+- Identifié les deux pages existantes à unifier :
+  * `ShopModulePage.tsx` (193 lignes) — pattern ModuleContainer avec 14 sous-modules Boutique
+  * `CanteenModulePage.tsx` (187 lignes) — pattern ModuleContainer avec 12 sous-modules Cantine
+- Vérifié que les 26 sous-composants existants (ShopDashboard, ShopPOS, ..., CanteenMenus, ..., CanteenSettings) ont tous un `export default function` — réutilisables tels quels
+- Vérifié les imports partagés : `useModuleContext`, `useAppSession`, `cn`, `formatCurrency` — tous exportés et déjà utilisés par ShopModulePage/CanteenModulePage
+- Créé `src/components/pilotage/modules/ShopCanteenModulePage.tsx` (~768 lignes) avec :
+  * Top bar sticky (h-14) avec hamburger + logo dégradé amber→emerald + search bar + 2 quick actions ("Nouvelle Vente" amber + "Nouveau Menu" emerald) + avatar user
+  * Sidebar gauche (w-60) groupée en 3 sections : ACCUEIL, BOUTIQUE (14 items), CANTINE (12 items) — chaque item a un `group` ('home'|'shop'|'canteen') avec couleur d'accent dédiée
+  * Filtrage par recherche dans la sidebar (filtre les items par label)
+  * Fil d'ariane compact en haut du main content area quand on n'est pas sur Accueil (ex : Accueil / Boutique / Articles & Variantes)
+  * HomeView unifiée : 4 KPI cards globaux + 2 ModuleSectionCard (Boutique amber + Cantine emerald) avec gradient header + quick actions grid + lien externe vers Finance pour Boutique
+  * Switch case pour rendre le bon sous-composant selon `activeView` ('shop:dashboard', 'canteen:menus', etc.)
+  * 2 composants utilitaires : KpiCard (carte KPI cliquable) + ModuleSectionCard (carte résumé d'un module avec gradient + stats + quick actions grid)
+- Mis à jour `src/app/app/shop/page.tsx` : importe ShopCanteenModulePage avec `initialView="shop:dashboard"`
+- Mis à jour `src/app/app/canteen/page.tsx` : importe ShopCanteenModulePage avec `initialView="canteen:dashboard"`
+- Conservé les deux entrées dans PilotageSidebar (Boutique + Cantine) : elles pointent vers la même page unifiée mais avec des vues par défaut différentes — l'utilisateur peut thus accéder rapidement à l'un ou l'autre dashboard depuis la sidebar externe
+- Nettoyé les imports inutilisés (Download, ShoppingCart) du fichier nouveau
+
+Stage Summary:
+- ✅ Refonte Issue #10 terminée : Boutique + Cantine sont désormais servis par une interface unifiée type YouTube/EduCast
+- ✅ Pattern sidebar+feed au lieu des 26 onglets dispersés (14 Boutique + 12 Cantine)
+- ✅ Vue d'accueil combinée avec KPIs des deux modules + cartes résumés + quick actions
+- ✅ Navigation fluide entre Boutique et Cantine sans rechargement de page
+- ✅ Sous-composants existants (Shop*, Canteen*) 100% réutilisés — zéro régression sur les fonctionnalités individuelles
+- ✅ Routes /app/shop et /app/canteen préservées avec initialView par défaut différent (rétro-compatibilité bookmarks)
+- Fichiers :
+  * src/components/pilotage/modules/ShopCanteenModulePage.tsx (NEW, ~768 lignes)
+  * src/app/app/shop/page.tsx (MODIFIED — utilise ShopCanteenModulePage avec initialView="shop:dashboard")
+  * src/app/app/canteen/page.tsx (MODIFIED — utilise ShopCanteenModulePage avec initialView="canteen:dashboard")
+- À noter : ShopModulePage.tsx et CanteenModulePage.tsx sont encore présents dans le code mais ne sont plus référencés par les routes. Pourront être supprimés dans un cleanup ultérieur si nécessaire (ou gardés comme fallback).

@@ -565,30 +565,112 @@ export function MonthlyPlanningTab({
   const renderCell = (weekNum: number, champCode: string, subRow: string | undefined, cellKey: string) => {
     const cell = findCell(weekNum, champCode, subRow || undefined);
     const isEditing = editingCellKey === cellKey;
+
+    // ⭐ Get template text for this cell
+    const champ = ficheStructure?.find(c => c.code === champCode);
+    let template = "";
+    if (champ) {
+      if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
+        template = champ.subRowTemplates[subRow];
+      } else if (!subRow && champ.cellTemplate) {
+        template = champ.cellTemplate;
+      }
+    }
+
+    // ⭐ Save handler that works for BOTH existing cells AND new empty cells
+    const handleSave = async () => {
+      if (cell && cell.id) {
+        // Existing cell — use PUT
+        try {
+          await pedagogyFetch(`/api/pedagogy/monthly-plans/${cell.id}`, {
+            method: "PUT", body: { content: editContent },
+          });
+          toast.success("Cellule mise à jour");
+        } catch (e: any) {
+          toast.error("Échec: " + e.message);
+        }
+      } else {
+        // New cell — update local state + trigger bulk save
+        updateCellLocal(weekNum, champCode, subRow || undefined, editContent);
+        toast.success("Cellule créée");
+      }
+      setEditingCellKey(null);
+      if (!cell || !cell.id) {
+        // For new cells, trigger the bulk save
+        await saveRef.current();
+      }
+    };
+
     return (
       <td key={cellKey} className="p-1 border border-slate-200 align-top">
-        {cell && isEditing ? (
+        {isEditing ? (
+          // ⭐ Editing mode — show textarea + save/cancel buttons
+          //    Works for BOTH existing cells AND empty cells
           <div className="space-y-1">
+            {/* Format toolbar */}
+            <div className="flex items-center gap-0.5 bg-slate-50 rounded p-0.5 mb-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
+                  if (!ta) return;
+                  const s = ta.selectionStart, e = ta.selectionEnd;
+                  const newText = editContent.substring(0, s) + '*' + editContent.substring(s, e) + '*' + editContent.substring(e);
+                  setEditContent(newText);
+                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
+                }}
+                className="p-0.5 hover:bg-slate-200 rounded font-bold text-[9px]"
+                title="Gras"
+              >B</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
+                  if (!ta) return;
+                  const s = ta.selectionStart, e = ta.selectionEnd;
+                  const newText = editContent.substring(0, s) + '_' + editContent.substring(s, e) + '_' + editContent.substring(e);
+                  setEditContent(newText);
+                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
+                }}
+                className="p-0.5 hover:bg-slate-200 rounded italic text-[9px]"
+                title="Italique"
+              >I</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const ta = document.querySelector(`textarea[data-key="${cellKey}"]`) as HTMLTextAreaElement;
+                  if (!ta) return;
+                  const s = ta.selectionStart, e = ta.selectionEnd;
+                  const newText = editContent.substring(0, s) + '~' + editContent.substring(s, e) + '~' + editContent.substring(e);
+                  setEditContent(newText);
+                  setTimeout(() => { ta.focus(); ta.setSelectionRange(s + 1, e + 1); }, 0);
+                }}
+                className="p-0.5 hover:bg-slate-200 rounded line-through text-[9px]"
+                title="Barré"
+              >S</button>
+            </div>
             <textarea
+              data-key={cellKey}
               value={editContent}
               onChange={e => setEditContent(e.target.value)}
-              className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white"
-              rows={4}
+              className="w-full px-1 py-0.5 border border-purple-300 rounded text-[9px] bg-white resize-y min-h-[80px]"
+              rows={5}
               autoFocus
             />
             <div className="flex gap-0.5">
-              <button onClick={() => saveCellInline(cell)} className="p-0.5 bg-emerald-600 text-white rounded">
+              <button onClick={handleSave} className="p-0.5 bg-emerald-600 text-white rounded" title="Enregistrer">
                 <Check className="w-2.5 h-2.5" />
               </button>
-              <button onClick={() => setEditingCellKey(null)} className="p-0.5 bg-slate-200 rounded">
+              <button onClick={() => setEditingCellKey(null)} className="p-0.5 bg-slate-200 rounded" title="Annuler">
                 <X className="w-2.5 h-2.5" />
               </button>
             </div>
           </div>
         ) : cell ? (
+          // ⭐ Existing cell — show content (click to edit)
           <div
             className={cn(
-              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px]",
+              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
               cell.isCustom ? "bg-amber-50 text-amber-900 border border-amber-200"
                 : cell.isAutoProposed ? "bg-purple-50 text-purple-900 border border-purple-100"
                 : "text-slate-700"
@@ -603,36 +685,21 @@ export function MonthlyPlanningTab({
             {cell.content}
           </div>
         ) : (
-          // ⭐ Empty cell — show pre-filled template text (not "...")
-          //    If template exists, display it as placeholder text (slate-400)
-          //    Click to edit → textarea pre-filled with the template
-          (() => {
-            const champ = ficheStructure?.find(c => c.code === champCode);
-            let template = "";
-            if (champ) {
-              if (subRow && champ.subRowTemplates && champ.subRowTemplates[subRow]) {
-                template = champ.subRowTemplates[subRow];
-              } else if (!subRow && champ.cellTemplate) {
-                template = champ.cellTemplate;
-              }
-            }
-            return (
-              <div
-                onClick={() => {
-                  if (isReadOnly) return;
-                  setEditingCellKey(cellKey);
-                  setEditContent(template);
-                }}
-                className={cn(
-                  "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
-                  isReadOnly ? "cursor-not-allowed text-slate-300" : "text-slate-500 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
-                )}
-                title={isReadOnly ? "Planification verrouillée" : "Cliquer pour remplir"}
-              >
-                {isReadOnly ? "" : (template || "…")}
-              </div>
-            );
-          })()
+          // ⭐ Empty cell — show template text (click to edit)
+          <div
+            onClick={() => {
+              if (isReadOnly) return;
+              setEditingCellKey(cellKey);
+              setEditContent(template);
+            }}
+            className={cn(
+              "text-[9px] leading-tight cursor-pointer p-1 rounded min-h-[60px] whitespace-pre-wrap",
+              isReadOnly ? "cursor-not-allowed text-slate-300" : "text-slate-500 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
+            )}
+            title={isReadOnly ? "Planification verrouillée" : "Cliquer pour remplir"}
+          >
+            {isReadOnly ? "" : (template || "…")}
+          </div>
         )}
       </td>
     );

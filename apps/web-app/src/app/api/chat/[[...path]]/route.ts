@@ -40,14 +40,19 @@ export async function POST(
   const contentType = request.headers.get('content-type') || '';
 
   // ⭐ SIMPLIFIED: if multipart/form-data, pass the raw body stream through directly
-  //    No body sniffing, no cloning, no formData() parsing — just forward the stream
   if (contentType.includes('multipart/form-data')) {
     const authHeaders = await getProxyAuthHeaders(request);
-    // Build headers: auth headers + original Content-Type (with boundary!)
-    const forwardHeaders: Record<string, string> = {
-      ...authHeaders,
-      'content-type': contentType, // ⭐ Pass the ORIGINAL Content-Type (with boundary)
-    };
+    // ⭐ Build headers: auth headers but REMOVE the default 'Content-Type: application/json'
+    //    that getProxyAuthHeaders sets, then add the ORIGINAL multipart Content-Type
+    const forwardHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(authHeaders)) {
+      // Skip Content-Type — we'll set it from the original request
+      if (key.toLowerCase() !== 'content-type') {
+        forwardHeaders[key] = value;
+      }
+    }
+    // ⭐ Set the ORIGINAL Content-Type (with boundary) — critical for multer
+    forwardHeaders['Content-Type'] = contentType;
 
     // ⭐ Forward the raw body stream — don't touch it
     const response = await fetch(

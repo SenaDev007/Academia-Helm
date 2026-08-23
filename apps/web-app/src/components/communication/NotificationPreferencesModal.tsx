@@ -207,7 +207,7 @@ export default function NotificationPreferencesModal({
         disabled={saving}
         className={cn(
           'w-11 h-6 rounded-full transition-colors relative flex-shrink-0',
-          value ? 'bg-emerald-500' : 'bg-slate-300'
+          value ? 'bg-[3B9EFF]' : 'bg-slate-300'
         )}
       >
         <div
@@ -224,10 +224,10 @@ export default function NotificationPreferencesModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-[#E6F4FF/5]0]">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Bell className="w-4 h-4 text-emerald-600" />
+              <Bell className="w-4 h-4 text-[1677FF]" />
               Notifications
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -343,7 +343,7 @@ export default function NotificationPreferencesModal({
             {/* ⭐ Filtres par type */}
             <div className="space-y-2">
               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                <Volume2 className="w-4 h-4 text-emerald-600" />
+                <Volume2 className="w-4 h-4 text-[1677FF]" />
                 Types d'événements
               </h4>
               <div className="space-y-2">

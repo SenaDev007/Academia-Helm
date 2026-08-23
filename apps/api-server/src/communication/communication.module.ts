@@ -55,6 +55,8 @@ import { DynamicGroupService } from './services/dynamic-group.service';
 import { NotificationPreferencesService } from './services/notification-preferences.service';
 import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
 import { HelmConnectV2Controller } from './helm-connect-v2.controller';
+import { GlobalSearchService } from './services/global-search.service';
+import { ConversationDocumentCenterService } from './services/document-center.service';
 
 @Module({
   imports: [
@@ -122,6 +124,10 @@ import { HelmConnectV2Controller } from './helm-connect-v2.controller';
     DynamicGroupService,
     NotificationPreferencesService,
     ScheduledAnnouncementDispatcher,
+    // ⭐ Helm Connect V2.4 — Global Search
+    GlobalSearchService,
+    // ⭐ Helm Connect V2.5 — Conversation Document Center
+    ConversationDocumentCenterService,
   ],
   exports: [
     EmailService,

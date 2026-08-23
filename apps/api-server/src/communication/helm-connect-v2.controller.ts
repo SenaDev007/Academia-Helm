@@ -37,6 +37,8 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { DynamicGroupService, DynamicGroupSourceType } from './services/dynamic-group.service';
 import { NotificationPreferencesService, MuteDuration, EventType } from './services/notification-preferences.service';
 import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
+import { GlobalSearchService, SearchType } from './services/global-search.service';
+import { ConversationDocumentCenterService } from './services/document-center.service';
 
 @Controller('chat/v2')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -45,6 +47,8 @@ export class HelmConnectV2Controller {
     private readonly dynamicGroupService: DynamicGroupService,
     private readonly notifPrefsService: NotificationPreferencesService,
     private readonly scheduledDispatcher: ScheduledAnnouncementDispatcher,
+    private readonly globalSearchService: GlobalSearchService,
+    private readonly documentCenterService: ConversationDocumentCenterService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -211,5 +215,114 @@ export class HelmConnectV2Controller {
   @Post('announcements/dispatch')
   async dispatchScheduledAnnouncements() {
     return this.scheduledDispatcher.dispatchDueAnnouncements();
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  V2.4 — GLOBAL SEARCH (recherche transversale)
+  // ═════════════════════════════════════════════════════════════════
+  /**
+   * GET /chat/v2/search?q=...&types=message,person&dateFrom=...&dateTo=...
+   *    Returns { messages, people, groups, files, announcements, total }
+   *    Each section is limited to 10 items by default (max 50).
+   */
+  @Get('search')
+  async globalSearch(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('q') query: string,
+    @Query('types') typesStr?: string,            // comma-separated: message,person,group,file,announcement
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    if (!query) throw new BadRequestException('q (query) is required');
+    const types = typesStr
+      ? (typesStr.split(',').filter(Boolean) as SearchType[])
+      : undefined;
+    return this.globalSearchService.globalSearch(tenantId, userId, query, {
+      types,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  V2.5 — CONVERSATION DOCUMENT CENTER
+  // ═════════════════════════════════════════════════════════════════
+  @Get('conversations/:id/media')
+  async listMedia(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.listMedia(tenantId, userId, conversationId, {
+      limit: limit ? parseInt(limit, 10) : 50,
+      offset: offset ? parseInt(offset, 10) : 0,
+    });
+  }
+
+  @Get('conversations/:id/documents')
+  async listDocuments(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.listDocuments(tenantId, userId, conversationId, {
+      limit: limit ? parseInt(limit, 10) : 50,
+      offset: offset ? parseInt(offset, 10) : 0,
+    });
+  }
+
+  @Get('conversations/:id/links')
+  async listLinks(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.listLinks(tenantId, userId, conversationId, {
+      limit: limit ? parseInt(limit, 10) : 50,
+      offset: offset ? parseInt(offset, 10) : 0,
+    });
+  }
+
+  @Get('conversations/:id/pinned')
+  async listPinned(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.listPinned(tenantId, userId, conversationId);
+  }
+
+  @Post('messages/:id/pin')
+  async pinMessage(
+    @TenantId() tenantId: string,
+    @Param('id') messageId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.pinMessage(tenantId, body.userId, messageId);
+  }
+
+  @Post('messages/:id/unpin')
+  async unpinMessage(
+    @TenantId() tenantId: string,
+    @Param('id') messageId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.documentCenterService.unpinMessage(tenantId, body.userId, messageId);
   }
 }

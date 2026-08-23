@@ -36,6 +36,7 @@ import { useChatSocket } from '@/lib/chat/useChatSocket';
 import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
 import AnnouncementsModal from './AnnouncementsModal';
 import NotificationPreferencesModal from './NotificationPreferencesModal';
+import GlobalSearchModal from './GlobalSearchModal';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -169,7 +170,7 @@ function getInitials(name: string): string {
 
 function getAvatarColor(name: string): string {
   const colors = [
-    'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
+    'bg-blue-500', 'bg-[#3B9EFF]', 'bg-amber-500', 'bg-rose-500',
     'bg-indigo-500', 'bg-purple-500', 'bg-cyan-500', 'bg-orange-500',
   ];
   const hash = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -219,6 +220,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   // ⭐ Helm Connect V2.3 — Notification Preferences
   const [showNotifPrefs, setShowNotifPrefs] = useState(false);
+  // ⭐ Helm Connect V2.4 — Global Search
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -641,7 +644,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         onClick={() => setActiveConvId(conv.id)}
         className={cn(
           'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
-          isActive && 'bg-emerald-50'
+          isActive && 'bg-[#E6F4FF]'
         )}
       >
         {/* Avatar */}
@@ -656,7 +659,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           )}
           {/* Group icon badge */}
           {conv.type === 'GROUP' && (
-            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-[#3B9EFF] rounded-full border-2 border-white flex items-center justify-center">
               <Users className="w-2 h-2 text-white" />
             </span>
           )}
@@ -680,7 +683,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
           {/* Role label (DIRECT only) or member count (GROUP only) */}
           {display.roleLabel && conv.type === 'DIRECT' && (
-            <span className="text-[10px] text-emerald-700 font-semibold truncate block mt-0.5">
+            <span className="text-[10px] text-[#0958D9] font-semibold truncate block mt-0.5">
               {display.roleLabel}
             </span>
           )}
@@ -717,10 +720,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         'w-full md:w-80'
       )}>
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 bg-emerald-50/30">
+        <div className="p-4 border-b border-slate-100 bg-[#E6F4FF]/30">
           <div className="flex items-center justify-between mb-1">
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-emerald-600" />
+              <MessageSquare className="w-4 h-4 text-[#1677FF]" />
               Helm Connect
               {/* ⭐ Socket.io connection indicator */}
               <span
@@ -779,7 +782,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   </button>
                   <button
                     onClick={() => setShowNewChat(true)}
-                    className="p-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                    className="p-1.5 rounded-lg bg-[#1677FF] text-white hover:bg-[#0958D9]"
                     title="Nouveau message"
                   >
                     <Plus className="w-4 h-4" />
@@ -798,11 +801,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <input
               type="text"
               placeholder="Rechercher une conversation..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-emerald-500/30"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
               value={''}
               onChange={() => {}}
             />
           </div>
+          {/* ⭐ V2.4 — Global Search (recherche transversale) */}
+          <button
+            onClick={() => setShowGlobalSearch(true)}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#E6F4FF] text-[#0958D9] text-[11px] font-bold rounded-lg hover:bg-[#BAE0FF]"
+          >
+            <Search className="w-3.5 h-3.5" />
+            Recherche globale
+          </button>
         </div>
 
         {/* List */}
@@ -819,7 +830,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               {!readOnly && (
                 <button
                   onClick={() => setShowNewChat(true)}
-                  className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700"
+                  className="px-3 py-1.5 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
                 >
                   + Nouveau message
                 </button>
@@ -836,7 +847,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     className={cn(
                       'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
                       categoryFilter === cat
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-[#1677FF] text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     )}
                   >
@@ -893,7 +904,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             onClick={() => setActiveChannelId(ch.id)}
                             className={cn(
                               'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
-                              activeChannelId === ch.id && 'bg-emerald-50'
+                              activeChannelId === ch.id && 'bg-[#E6F4FF]'
                             )}
                           >
                             <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0">
@@ -934,10 +945,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       {activeConv ? (
         <div className="flex-1 flex flex-col bg-slate-50">
           {/* Header */}
-          <div className="p-3 bg-emerald-700 text-white flex items-center gap-3 shadow-sm">
+          <div className="p-3 bg-[#0958D9] text-white flex items-center gap-3 shadow-sm">
             <button
               onClick={() => setActiveConvId(null)}
-              className="md:hidden p-1 rounded hover:bg-emerald-800"
+              className="md:hidden p-1 rounded hover:bg-[#0958D9]"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -950,7 +961,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               {activeConv.type === 'DIRECT' && (() => {
                 const other = activeConv.participants.find(p => p.userId !== currentUserId);
                 return other && onlineUsers.has(other.userId) ? (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-emerald-700" />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-[#0958D9]" />
                 ) : null;
               })()}
             </div>
@@ -959,16 +970,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 {getConversationDisplay(activeConv, currentUserId).name}
               </h3>
               {activeConv.type === 'GROUP' ? (
-                <p className="text-[10px] text-emerald-100">
+                <p className="text-[10px] text-[#BAE0FF]">
                   {activeConv.participants.map(p => `${p.firstName || ''} ${p.lastName || ''}`.trim()).join(', ')}
                 </p>
               ) : typingUsers.length > 0 ? (
                 /* ⭐ Typing indicator (like WhatsApp 'typing...') */
-                <p className="text-[10px] text-emerald-100 italic">
+                <p className="text-[10px] text-[#BAE0FF] italic">
                   {typingUsers.map(t => `${t.firstName || ''} ${t.lastName || ''}`.trim()).join(', ')} tape…
                 </p>
               ) : (
-                <p className="text-[10px] text-emerald-100">
+                <p className="text-[10px] text-[#BAE0FF]">
                   {(() => {
                     const other = activeConv.participants.find(p => p.userId !== currentUserId);
                     const isOnline = other && onlineUsers.has(other.userId);
@@ -979,10 +990,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 </p>
               )}
             </div>
-            <button className="p-1.5 rounded hover:bg-emerald-800" title="Rechercher">
+            <button className="p-1.5 rounded hover:bg-[#0958D9]" title="Rechercher">
               <Search className="w-4 h-4" />
             </button>
-            <button className="p-1.5 rounded hover:bg-emerald-800" title="Plus">
+            <button className="p-1.5 rounded hover:bg-[#0958D9]" title="Plus">
               <MoreVertical className="w-4 h-4" />
             </button>
           </div>
@@ -1016,12 +1027,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className={cn(
                         'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm',
                         isMine
-                          ? 'bg-emerald-500 text-white rounded-br-sm'
+                          ? 'bg-[#3B9EFF] text-white rounded-br-sm'
                           : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
                       )}>
                         {/* Sender name (for group) */}
                         {!isMine && activeConv.type === 'GROUP' && msg.sender && (
-                          <div className="text-[10px] font-bold text-emerald-700 mb-0.5">
+                          <div className="text-[10px] font-bold text-[#0958D9] mb-0.5">
                             {msg.sender.firstName} {msg.sender.lastName}
                           </div>
                         )}
@@ -1064,7 +1075,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {/* Timestamp + read receipt (WhatsApp-style: ✓ sent, ✓✓ delivered, blue ✓✓ read) */}
                         <div className={cn(
                           'flex items-center gap-1 mt-0.5',
-                          isMine ? 'justify-end text-emerald-50' : 'justify-end text-slate-400'
+                          isMine ? 'justify-end text-[#E6F4FF]' : 'justify-end text-slate-400'
                         )}>
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
                           {isMine && (
@@ -1101,7 +1112,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <input
               type="text"
               placeholder="Tapez un message..."
-              className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/30"
+              className="flex-1 px-4 py-2 bg-slate-100 rounded-full text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#3B9EFF]/30"
               value={text}
               onChange={e => { setText(e.target.value); handleTyping(); }}
               onKeyDown={e => {
@@ -1140,7 +1151,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <button
               onClick={handleSendText}
               disabled={!text.trim() || sending || isRecording}
-              className="p-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 disabled:opacity-30"
+              className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30"
             >
               {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
@@ -1158,7 +1169,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {!readOnly && (
               <button
                 onClick={() => setShowNewChat(true)}
-                className="mt-6 px-5 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700"
+                className="mt-6 px-5 py-2.5 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9]"
               >
                 + Nouvelle conversation
               </button>
@@ -1233,6 +1244,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         <NotificationPreferencesModal
           currentUserId={currentUserId}
           onClose={() => setShowNotifPrefs(false)}
+        />
+      )}
+      {/* ⭐ Helm Connect V2.4 — Global Search modal */}
+      {showGlobalSearch && (
+        <GlobalSearchModal
+          currentUserId={currentUserId}
+          onClose={() => setShowGlobalSearch(false)}
+          onOpenConversation={(convId) => {
+            setShowGlobalSearch(false);
+            setActiveConvId(convId);
+          }}
         />
       )}
 
@@ -1387,7 +1409,7 @@ function NewChatModal({
               autoFocus
               type="text"
               placeholder="Rechercher un utilisateur (nom, email)..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
               value={query}
               onChange={e => setQuery(e.target.value)}
             />
@@ -1426,13 +1448,13 @@ function NewChatModal({
                   </div>
                   {/* ⭐ Role label (ex: "Collègue enseignant", "Parent de Awa Dupont", "Directeur") */}
                   {user.roleLabel && (
-                    <div className="text-[11px] text-emerald-700 font-semibold truncate">
+                    <div className="text-[11px] text-[#0958D9] font-semibold truncate">
                       {user.roleLabel}
                     </div>
                   )}
                   {/* ⭐ Distinction intra-école vs cross-école vs guardian-without-account */}
                   {user.canStartDirectConversation ? (
-                    <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5">
                       ✓ Même école — discussion directe
                     </div>
                   ) : user.source === 'guardians' && user.guardianId ? (
@@ -1450,9 +1472,9 @@ function NewChatModal({
                   )}
                 </div>
                 {sentInvites.has(user.userId || user.guardianId || '') ? (
-                  <span className="text-xs text-emerald-600 font-semibold flex-shrink-0">Invité</span>
+                  <span className="text-xs text-[#1677FF] font-semibold flex-shrink-0">Invité</span>
                 ) : user.canStartDirectConversation ? (
-                  <MessageSquare className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <MessageSquare className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
                 ) : (
                   <UserPlus className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 )}
@@ -1557,14 +1579,14 @@ function NewGroupModal({
           <input
             type="text"
             placeholder="Nom du groupe *"
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
             value={name}
             onChange={e => setName(e.target.value)}
           />
           <input
             type="text"
             placeholder="Description (optionnel)"
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
             value={description}
             onChange={e => setDescription(e.target.value)}
           />
@@ -1575,13 +1597,13 @@ function NewGroupModal({
             <input
               type="text"
               placeholder="Rechercher des utilisateurs à ajouter..."
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
               value={query}
               onChange={e => setQuery(e.target.value)}
             />
           </div>
           {selected.size > 0 && (
-            <div className="mt-2 text-xs text-emerald-700 font-semibold">
+            <div className="mt-2 text-xs text-[#0958D9] font-semibold">
               {selected.size} participant(s) sélectionné(s)
             </div>
           )}
@@ -1597,7 +1619,7 @@ function NewGroupModal({
               >
                 <div className={cn(
                   'w-5 h-5 rounded border flex items-center justify-center flex-shrink-0',
-                  isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
+                  isSelected ? 'bg-[#1677FF] border-[#1677FF] text-white' : 'border-slate-300'
                 )}>
                   {isSelected && <Check className="w-3 h-3" />}
                 </div>
@@ -1621,7 +1643,7 @@ function NewGroupModal({
           <button
             onClick={createGroup}
             disabled={creating || !name.trim() || selected.size === 0}
-            className="w-full px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-30"
+            className="w-full px-4 py-2.5 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9] disabled:opacity-30"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Créer le groupe'}
           </button>
@@ -1732,7 +1754,7 @@ function InvitationsModal({
                 <div className="flex gap-1">
                   <button
                     onClick={() => accept(inv.id)}
-                    className="px-3 py-1 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700"
+                    className="px-3 py-1 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
                   >
                     Accepter
                   </button>
@@ -1777,7 +1799,7 @@ function ProfileModal({
         </div>
         <div className="p-6 flex flex-col items-center gap-4">
           {/* Avatar */}
-          <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-emerald-500 to-blue-500">
+          <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-[#3B9EFF] to-blue-500">
             {myAvatarUrl ? (
               <img src={myAvatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
             ) : (
@@ -1802,13 +1824,13 @@ function ProfileModal({
           />
           <button
             onClick={() => avatarInputRef.current?.click()}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700"
+            className="px-4 py-2 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9]"
           >
             Modifier ma photo
           </button>
           {/* E2E encryption status */}
           <div className="text-xs text-slate-500 text-center mt-2 p-2 bg-slate-50 rounded-lg w-full">
-            <Check className="w-3 h-3 text-emerald-600 inline mr-1" />
+            <Check className="w-3 h-3 text-[#1677FF] inline mr-1" />
             Chiffrement E2E activé (RSA-OAEP 2048-bit)
           </div>
         </div>

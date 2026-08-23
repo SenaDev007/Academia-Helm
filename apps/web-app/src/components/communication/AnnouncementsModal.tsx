@@ -176,10 +176,10 @@ export default function AnnouncementsModal({
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-[#E6F4FF/5]0]">
           <div>
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Megaphone className="w-4 h-4 text-emerald-600" />
+              <Megaphone className="w-4 h-4 text-[1677FF]" />
               Annonces officielles
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -202,7 +202,7 @@ export default function AnnouncementsModal({
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[1677FF] text-white rounded-lg text-xs font-bold hover:bg-[0958D9]"
           >
             <Plus className="w-3.5 h-3.5" />
             {showForm ? 'Annuler' : 'Publier une annonce'}
@@ -215,7 +215,7 @@ export default function AnnouncementsModal({
             <input
               type="text"
               placeholder="Titre de l'annonce *"
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF/3]0]"
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               autoFocus
@@ -223,7 +223,7 @@ export default function AnnouncementsModal({
             <textarea
               placeholder="Contenu de l'annonce *"
               rows={4}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500/30"
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#3B9EFF/3]0]"
               value={form.body}
               onChange={(e) => setForm({ ...form, body: e.target.value })}
             />
@@ -278,7 +278,7 @@ export default function AnnouncementsModal({
               <button
                 onClick={publishAnnouncement}
                 disabled={publishing || !form.title.trim() || !form.body.trim()}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-[1677FF] text-white text-sm font-bold rounded-lg hover:bg-[0958D9] disabled:opacity-50"
               >
                 {publishing ? (
                   <Loader2 className="w-4 h-4 animate-spin mx-auto" />
@@ -369,7 +369,7 @@ export default function AnnouncementsModal({
                   {a.totalRecipients !== undefined && a.totalRecipients > 0 && (
                     <div className="mt-1.5 h-1 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-emerald-500 transition-all"
+                        className="h-full bg-[3B9EFF] transition-all"
                         style={{ width: `${readPercent}%` }}
                       />
                     </div>
@@ -391,7 +391,7 @@ export default function AnnouncementsModal({
                     </button>
                   )}
                   {a.confirmedByCurrentUser && (
-                    <div className="mt-2 text-[11px] text-emerald-600 font-semibold">
+                    <div className="mt-2 text-[11px] text-[1677FF] font-semibold">
                       ✓ Lu et confirmé
                     </div>
                   )}

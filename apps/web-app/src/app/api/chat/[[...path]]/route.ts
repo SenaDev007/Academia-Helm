@@ -36,7 +36,14 @@ export async function GET(
   const response = await fetch(targetUrl, { headers, cache: 'no-store' });
 
   if (!response.ok) {
-    return NextResponse.json({ error: 'Failed to fetch chat data' }, { status: response.status });
+    // ⭐ Pass through the backend's actual error message so the frontend can
+    //    display useful diagnostics instead of a generic "Failed to fetch".
+    let errBody: any = null;
+    try { errBody = await response.json(); } catch { errBody = await response.text().catch(() => null); }
+    return NextResponse.json(
+      { error: 'Failed to fetch chat data', backendError: errBody, backendStatus: response.status, targetUrl },
+      { status: response.status }
+    );
   }
   return NextResponse.json(await response.json());
 }

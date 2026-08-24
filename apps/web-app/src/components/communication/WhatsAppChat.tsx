@@ -438,37 +438,61 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const ringtoneRef = useRef<{ ctx: AudioContext; interval: any } | null>(null);
 
-  // ⭐ V2.5: Ringtone — plays a phone ring pattern using Web Audio API
-  const playRingtone = useCallback(() => {
+  // ⭐ FIX: Ringtone — softer volume + different patterns for outgoing vs incoming
+  //    Outgoing (caller): single soft "calling" tone every 2s (gentle beep)
+  //    Incoming (callee): classic double-ring pattern every 3s (ring ring... ring ring)
+  const playRingtone = useCallback((mode: 'outgoing' | 'incoming' = 'outgoing') => {
     if (ringtoneRef.current) return; // Already playing
     try {
       const ctx = new AudioContext();
-      const interval = setInterval(() => {
+      const playTone = (freq: number, startTime: number, duration: number, volume: number) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.frequency.value = 440;
+        // Soft sine wave with gentle attack/release for a warm, professional tone
+        osc.frequency.value = freq;
         osc.type = 'sine';
-        gain.gain.setValueAtTime(0, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0, ctx.currentTime + startTime);
+        gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + startTime + 0.04);
+        gain.gain.linearRampToValueAtTime(volume * 0.7, ctx.currentTime + startTime + duration * 0.6);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startTime + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.4);
-        // Second tone (higher pitch)
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.frequency.value = 550;
-        osc2.type = 'sine';
-        gain2.gain.setValueAtTime(0, ctx.currentTime + 0.4);
-        gain2.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.45);
-        gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
-        osc2.start();
-        osc2.stop(ctx.currentTime + 0.8);
-      }, 1500); // Ring every 1.5 seconds
-      ringtoneRef.current = { ctx, interval };
+        osc.start(ctx.currentTime + startTime);
+        osc.stop(ctx.currentTime + startTime + duration);
+      };
+
+      let intervalMs: number;
+      if (mode === 'incoming') {
+        // Incoming: classic phone ring — two short rings, then pause (3s loop)
+        // Uses a pleasant middle-C + G chord (softer than the old 440/550Hz)
+        intervalMs = 3000;
+        const interval = setInterval(() => {
+          // First ring (0.4s)
+          playTone(523.25, 0, 0.4, 0.06);    // C5
+          playTone(659.25, 0, 0.4, 0.04);    // E5 (chord)
+          // Second ring (0.4s, starting at 0.6s)
+          playTone(523.25, 0.6, 0.4, 0.06);
+          playTone(659.25, 0.6, 0.4, 0.04);
+        }, intervalMs);
+        ringtoneRef.current = { ctx, interval };
+      } else {
+        // Outgoing: gentle single beep every 2s ("calling... calling...")
+        // Lower pitch, very soft — doesn't assault the ears like the old 440Hz
+        intervalMs = 2000;
+        const interval = setInterval(() => {
+          playTone(392.00, 0, 0.5, 0.05);    // G4 — soft, warm tone
+        }, intervalMs);
+        ringtoneRef.current = { ctx, interval };
+      }
+      // Play the first tone immediately (don't wait for the first interval)
+      if (mode === 'incoming') {
+        playTone(523.25, 0, 0.4, 0.06);
+        playTone(659.25, 0, 0.4, 0.04);
+        playTone(523.25, 0.6, 0.4, 0.06);
+        playTone(659.25, 0.6, 0.4, 0.04);
+      } else {
+        playTone(392.00, 0, 0.5, 0.05);
+      }
     } catch (e) {
       console.warn('Ringtone playback failed:', e);
     }
@@ -482,10 +506,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   }, []);
 
-  // ⭐ V2.5: Play/stop ringtone based on call state
+  // ⭐ FIX: Play/stop ringtone based on call state — different sounds for caller vs callee
   useEffect(() => {
-    if (callState === 'outgoing' || callState === 'incoming') {
-      playRingtone();
+    if (callState === 'outgoing') {
+      playRingtone('outgoing');
+    } else if (callState === 'incoming') {
+      playRingtone('incoming');
     } else {
       stopRingtone();
     }
@@ -502,6 +528,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
     }
+    // ⭐ FIX: Clear the remote stream ref + detach from video element
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current.getTracks().forEach(t => t.stop());
+      remoteStreamRef.current = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
     if (callTimerRef.current) {
       clearInterval(callTimerRef.current);
       callTimerRef.current = null;
@@ -511,6 +545,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setCallDuration(0);
     setMuted(false);
     setVideoOff(false);
+    // ⭐ FIX: Reset speaker to default on
+    setSpeakerOn(true);
   }, []);
 
   // ⭐ V2.5: setupPeerConnection is declared AFTER `socket` to avoid TDZ
@@ -567,6 +603,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }, []),
   });
 
+  // ⭐ FIX: Remote stream ref — stores the remote MediaStream so we can re-attach it
+  //    to the video element whenever the call state changes (e.g., when the active
+  //    overlay renders a NEW <video> element, the old srcObject was lost).
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+
+  // ⭐ FIX: Speaker toggle state (default on) — wired to the speaker button
+  const [speakerOn, setSpeakerOn] = useState(true);
+
   // ⭐ V2.5: WebRTC peer connection setup (shared by caller + callee)
   //    Declared AFTER `socket` to avoid TDZ — useCallback deps reference `socket`.
   const setupPeerConnection = useCallback((otherUserId: string, callId: string) => {
@@ -588,8 +632,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       }
     };
 
-    // Remote track → render in video element
+    // ⭐ FIX: Remote track → store stream in ref AND attach to video element.
+    //    The stream is stored in remoteStreamRef so that when the active call overlay
+    //    renders a NEW <video> element (with the same remoteVideoRef), we can re-attach
+    //    the stream via the useEffect below.
     pc.ontrack = (event) => {
+      remoteStreamRef.current = event.streams[0];
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
@@ -605,6 +653,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     peerConnectionRef.current = pc;
     return pc;
   }, [socket, cleanupCall]);
+
+  // ⭐ FIX: Re-attach the remote stream to the video element whenever the call
+  //    state changes. When callState goes from 'outgoing' → 'active', the active
+  //    overlay renders a NEW <video ref={remoteVideoRef}> element. The old element
+  //    (hidden, at the top of the JSX) had the srcObject set by pc.ontrack. The new
+  //    element starts with srcObject=null, so the remote video doesn't show.
+  //    This useEffect copies the stream from remoteStreamRef to the new element.
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    }
+  }, [callState]);
+
+  // ⭐ FIX: Apply speaker state to the remote video element's volume.
+  //    When speaker is off, mute the remote audio (volume = 0). When on, restore.
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.volume = speakerOn ? 1 : 0;
+      remoteVideoRef.current.muted = !speakerOn;
+    }
+  }, [speakerOn, callState]);
 
   // ⭐ E2E ENCRYPTION: auto-generate key pair on mount + publish public key
   useEffect(() => {
@@ -1587,6 +1656,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
     if (!other) return;
     const otherName = `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Utilisateur';
+    // ⭐ FIX: Include the caller's own name + avatar in the call:offer payload so the
+    //    recipient sees the real name (not "Utilisateur") without a DB lookup.
+    const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur';
+    const myAvatarUrl = (user as any)?.avatarUrl || (user as any)?.photoUrl || null;
 
     try {
       // 1. Create call record in DB
@@ -1611,9 +1684,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // 4. Send offer to callee via Socket.io
+      // 4. Send offer to callee via Socket.io — include callerName + callerAvatarUrl
       if (socket) {
-        socket.emit('call:offer', { toUserId: other.userId, callId, callType, offer });
+        socket.emit('call:offer', {
+          toUserId: other.userId, callId, callType, offer,
+          callerName: myName,
+          callerAvatarUrl: myAvatarUrl,
+        });
       }
 
       setCallData({ callId, callType, otherUserId: other.userId, otherUserName: otherName });
@@ -1698,11 +1775,24 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V2.5: Socket.io listeners for incoming call events
   useEffect(() => {
     if (!socket) return;
-    const onCallOffer = (data: { fromUserId: string; callId: string; callType: string; offer: any }) => {
+    const onCallOffer = (data: { fromUserId: string; callId: string; callType: string; offer: any; callerName?: string; callerAvatarUrl?: string }) => {
       if (callState !== 'idle') return; // Already in a call — auto-reject
-      const otherName = activeConv?.participants?.find(p => p.userId === data.fromUserId);
-      const name = otherName ? `${otherName.firstName || ''} ${otherName.lastName || ''}`.trim() : 'Utilisateur';
-      setCallData({ callId: data.callId, callType: data.callType as 'AUDIO' | 'VIDEO', otherUserId: data.fromUserId, otherUserName: name });
+      // ⭐ FIX: Use callerName from the payload (sent by the caller) instead of
+      //    looking up from activeConv.participants (which may be empty for a
+      //    newly opened conversation). Fallback to participants lookup, then 'Utilisateur'.
+      const participant = activeConv?.participants?.find(p => p.userId === data.fromUserId);
+      const name = data.callerName
+        || (participant ? `${participant.firstName || ''} ${participant.lastName || ''}`.trim() : '')
+        || 'Utilisateur';
+      const avatarUrl = data.callerAvatarUrl || (participant as any)?.avatarUrl || null;
+      setCallData({
+        callId: data.callId,
+        callType: data.callType as 'AUDIO' | 'VIDEO',
+        otherUserId: data.fromUserId,
+        otherUserName: name,
+        // Store avatar for the incoming call UI
+        ...(avatarUrl ? { otherUserAvatarUrl: avatarUrl } : {}),
+      } as any);
       setCallState('incoming');
       // Store offer for acceptCall — we'll need it when user clicks Accept
       (window as any)._pendingCallOffer = data;
@@ -3237,8 +3327,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       )}
       {/* ⭐ V2.5: WebRTC call overlay — WhatsApp-style design */}
       {/* Hidden video elements for local + remote streams */}
-      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
-      <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
+      {/* ⭐ FIX: Hidden video elements — use sr-only instead of 'hidden' (display:none)
+          because some browsers refuse to play audio on a display:none video element.
+          sr-only keeps the element in the layout (1px, opacity 0) so audio plays. */}
+      <video ref={localVideoRef} autoPlay playsInline muted className="sr-only" aria-hidden />
+      <video ref={remoteVideoRef} autoPlay playsInline className="sr-only" aria-hidden />
 
       {/* Incoming call — WhatsApp-style full-screen modal */}
       {callState === 'incoming' && callData && (
@@ -3347,13 +3440,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   <span className="text-[10px] text-white/80">{videoOff ? 'Caméra' : 'Vidéo'}</span>
                 </button>
               )}
-              {/* Speaker (always visible) */}
+              {/* ⭐ FIX: Speaker toggle (wired) — mutes/unmutes the remote audio */}
               {callState === 'active' && (
-                <button className="flex flex-col items-center gap-1 px-3">
-                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white">
-                    <Volume2 className="w-5 h-5" />
+                <button onClick={() => setSpeakerOn(!speakerOn)} className="flex flex-col items-center gap-1 px-3">
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', speakerOn ? 'bg-white/20' : 'bg-white')}>
+                    {speakerOn ? <Volume2 className="w-5 h-5" /> : <Volume2 className="w-5 h-5 text-slate-900 opacity-40" />}
                   </div>
-                  <span className="text-[10px] text-white/80">Haut-parleur</span>
+                  <span className="text-[10px] text-white/80">{speakerOn ? 'Haut-parleur' : 'Muet'}</span>
                 </button>
               )}
               {/* End call — red button */}

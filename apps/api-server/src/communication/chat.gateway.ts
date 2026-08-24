@@ -190,17 +190,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('call:offer')
   handleCallOffer(
-    @MessageBody() data: { toUserId: string; callId: string; callType: string; offer: any },
+    @MessageBody() data: { toUserId: string; callId: string; callType: string; offer: any; callerName?: string; callerAvatarUrl?: string },
     @ConnectedSocket() client: Socket,
   ) {
     const callerId = client.data.userId;
     if (!callerId) return;
-    // Forward the offer to the callee's socket room
+    // Forward the offer to the callee's socket room — include callerName + avatar
+    // so the recipient can display the real caller name without a DB lookup.
     this.server.to(`user:${data.toUserId}`).emit('call:offer', {
       fromUserId: callerId,
       callId: data.callId,
       callType: data.callType,
       offer: data.offer,
+      callerName: data.callerName || null,
+      callerAvatarUrl: data.callerAvatarUrl || null,
     });
   }
 

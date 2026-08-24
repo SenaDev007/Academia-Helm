@@ -177,11 +177,36 @@ class Participant {
   String get fullName => '${firstName ?? ''} ${lastName ?? ''}'.trim();
 }
 
+class Reaction {
+  final String emoji;
+  final String userId;
+  final String? firstName;
+  final String? lastName;
+
+  Reaction({
+    required this.emoji,
+    required this.userId,
+    this.firstName,
+    this.lastName,
+  });
+
+  factory Reaction.fromJson(Map<String, dynamic> json) {
+    return Reaction(
+      emoji: json['emoji'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      firstName: json['firstName'] as String?,
+      lastName: json['lastName'] as String?,
+    );
+  }
+
+  String get fullName => '${firstName ?? ''} ${lastName ?? ''}'.trim();
+}
+
 class Message {
   final String id;
   final String conversationId;
   final String senderId;
-  final String type; // TEXT | AUDIO | DOCUMENT | IMAGE
+  final String type; // TEXT | AUDIO | DOCUMENT | IMAGE | VIDEO | POLL | SYSTEM
   final String? content;
   final String? attachmentUrl;
   final String? attachmentName;
@@ -189,14 +214,23 @@ class Message {
   final String? attachmentMime;
   final int? duration;
   final String? replyToId;
+  final String? replyToContent;     // ⭐ V3-4: for reply quote preview (whatsapp-style)
+  final String? replyToSenderName;  // ⭐ V3-4: parent message sender name
   final DateTime createdAt;
   final DateTime? editedAt;
   final DateTime? deletedAt;
+  final DateTime? deliveredAt;  // ⭐ V3-4: for 3-state read receipts
+  final List<Reaction> reactions;  // ⭐ V3-4: emoji reactions
+  final List<Map<String, dynamic>> readBy;  // ⭐ V3-4: who has read it
   final bool isPinned;
+  final bool isImportant;
   final String? senderFirstName;
   final String? senderLastName;
   final String? senderRole;
   final bool isOwn;
+  // ⭐ V3-1: local-only fields (for offline pending messages)
+  final String? status; // 'pending' | 'sent' | 'failed' — used only locally
+  final String? localId;
 
   Message({
     required this.id,
@@ -210,17 +244,42 @@ class Message {
     this.attachmentMime,
     this.duration,
     this.replyToId,
+    this.replyToContent,
+    this.replyToSenderName,
     required this.createdAt,
     this.editedAt,
     this.deletedAt,
+    this.deliveredAt,
+    this.reactions = const [],
+    this.readBy = const [],
     this.isPinned = false,
+    this.isImportant = false,
     this.senderFirstName,
     this.senderLastName,
     this.senderRole,
     this.isOwn = false,
+    this.status,
+    this.localId,
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
+    // Sender info can be at top-level OR nested in `sender` object
+    final sender = json['sender'] as Map<String, dynamic>?;
+    final senderFirstName = json['senderFirstName'] as String? ?? sender?['firstName'] as String?;
+    final senderLastName = json['senderLastName'] as String? ?? sender?['lastName'] as String?;
+    final senderRole = json['senderRole'] as String? ?? sender?['role'] as String?;
+
+    // Parse reactions (V3-4)
+    final reactionsJson = json['reactions'] as List<dynamic>? ?? [];
+    final reactions = reactionsJson
+        .map((r) => Reaction.fromJson(r as Map<String, dynamic>))
+        .where((r) => r.emoji.isNotEmpty)
+        .toList();
+
+    // Parse readBy (V3-4)
+    final readByJson = json['readBy'] as List<dynamic>? ?? [];
+    final readBy = readByJson.cast<Map<String, dynamic>>().toList();
+
     return Message(
       id: json['id'] as String,
       conversationId: json['conversationId'] as String,
@@ -233,20 +292,45 @@ class Message {
       attachmentMime: json['attachmentMime'] as String?,
       duration: json['duration'] as int?,
       replyToId: json['replyToId'] as String?,
+      replyToContent: json['replyToContent'] as String?,
+      replyToSenderName: json['replyToSenderName'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       editedAt: json['editedAt'] != null ? DateTime.parse(json['editedAt'] as String) : null,
       deletedAt: json['deletedAt'] != null ? DateTime.parse(json['deletedAt'] as String) : null,
+      deliveredAt: json['deliveredAt'] != null ? DateTime.parse(json['deliveredAt'] as String) : null,
+      reactions: reactions,
+      readBy: readBy,
       isPinned: json['isPinned'] as bool? ?? false,
-      senderFirstName: json['senderFirstName'] as String?,
-      senderLastName: json['senderLastName'] as String?,
-      senderRole: json['senderRole'] as String?,
+      isImportant: json['isImportant'] as bool? ?? false,
+      senderFirstName: senderFirstName,
+      senderLastName: senderLastName,
+      senderRole: senderRole,
       isOwn: (json['senderId'] as String?) == currentUserId,
+      status: json['status'] as String?,
+      localId: json['localId'] as String?,
     );
   }
 
   String get senderName => '${senderFirstName ?? ''} ${senderLastName ?? ''}'.trim();
   bool get isDeleted => deletedAt != null;
   bool get isAttachment => attachmentUrl != null;
+}
+
+/// Strip HTML tags from a string (used for reply quote previews).
+String stripHtml(String? html) {
+  if (html == null || html.isEmpty) return '';
+  return html
+      .replaceAll(RegExp(r'<div[^>]*>'), '\n')
+      .replaceAll('</div>', '')
+      .replaceAll(RegExp(r'<br\s*/?>'), '\n')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&quot;', '"')
+      .trim();
 }
 
 class Announcement {

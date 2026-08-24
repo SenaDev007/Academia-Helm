@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ⭐ V3-4: Clipboard.setData for copy action
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/models.dart';
@@ -33,10 +34,25 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   bool _loading = true;
   bool _sending = false;
   Timer? _refreshTimer;
+  // ⭐ V3-4: Current user ID — used for reaction "is mine" detection
+  String _currentUserId = '';
+  // ⭐ V3-4: Reply-to state — when set, shows a "replying to" bar above the composer
+  Message? _replyToMessage;
+  // ⭐ V3-4: Inline edit state
+  String? _editingMessageId;
+  final _editController = TextEditingController();
+  // ⭐ V3-4: Typing indicator state
+  bool _isOtherTyping = false;
+  Timer? _typingDebounce;
+  bool _isTypingSent = false;
+  // ⭐ V3-4: Cached reply-quotes (msgId → {senderName, content}) for parent messages
+  final Map<String, _ReplyQuote> _replyQuoteCache = {};
 
   @override
   void initState() {
     super.initState();
+    // ⭐ V3-4: Load current user ID for reaction "is mine" detection
+    _loadCurrentUserId();
     _loadMessages();
     // ⭐ Socket.io: connect for realtime (replaces 10s polling)
     _initSocket();
@@ -46,15 +62,34 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _flushPendingQueue();
   }
 
+  Future<void> _loadCurrentUserId() async {
+    final userId = await AuthService.getUserId();
+    if (mounted) {
+      setState(() => _currentUserId = userId ?? '');
+    }
+  }
+
   void _initSocket() async {
-    final api = ApiService();
-    final token = await api.getAuthToken();
-    final userId = await ApiConfig.userId;
+    final token = await ApiService.getAuthToken();
+    final userId = await AuthService.getUserId();
     if (token != null && userId != null) {
       await _socket.connect(token: token, userId: userId);
       _socket.onNewMessage = (data) {
         if (data['conversationId'] == widget.conversation.id) {
           _loadMessages(); // Refresh to get the new message
+          // ⭐ V3-4: When a new message arrives, the other person is no longer typing
+          if (mounted) setState(() => _isOtherTyping = false);
+        }
+      };
+      // ⭐ V3-4: Typing indicator — bind onTypingStart / onTypingStop
+      _socket.onTypingStart = (String conversationId, String typingUserId) {
+        if (conversationId == widget.conversation.id && typingUserId != _currentUserId && mounted) {
+          setState(() => _isOtherTyping = true);
+        }
+      };
+      _socket.onTypingStop = (String conversationId, String typingUserId) {
+        if (conversationId == widget.conversation.id && typingUserId != _currentUserId && mounted) {
+          setState(() => _isOtherTyping = false);
         }
       };
       // ⭐ V3-1: on every (re)connect, flush the offline pending queue
@@ -109,8 +144,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       final xfile = await picker.pickImage(source: source, maxWidth: 1920, imageQuality: 85);
       if (xfile == null) return;
       final file = File(xfile.path);
-      final api = ApiService();
-      await api.sendAttachment(
+      await ApiService.sendAttachment(
         conversationId: widget.conversation.id,
         file: file,
         type: 'IMAGE',
@@ -135,8 +169,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       final result = await FilePicker.platform.pickFiles();
       if (result == null || result.files.isEmpty) return;
       final file = File(result.files.first.path!);
-      final api = ApiService();
-      await api.sendAttachment(
+      await ApiService.sendAttachment(
         conversationId: widget.conversation.id,
         file: file,
         type: 'DOCUMENT',
@@ -201,6 +234,28 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           _messages = json.map((m) => Message.fromJson(m, userId ?? '')).toList();
           _loading = false;
         });
+        // ⭐ V3-4: Hydrate the reply-quote cache for messages with replyToId.
+        //    For each message with a replyToId, find the parent in the loaded
+        //    messages and cache its senderName + content (stripped of HTML).
+        final msgById = <String, Map<String, dynamic>>{};
+        for (final m in json) {
+          msgById[m['id'] as String] = m;
+        }
+        for (final m in json) {
+          final replyToId = m['replyToId'] as String?;
+          if (replyToId != null && !_replyQuoteCache.containsKey(replyToId)) {
+            final parent = msgById[replyToId];
+            if (parent != null) {
+              final parentSenderName = '${parent['senderFirstName'] ?? parent['sender']?['firstName'] ?? ''} '
+                      '${parent['senderLastName'] ?? parent['sender']?['lastName'] ?? ''}'
+                  .trim();
+              _replyQuoteCache[replyToId] = _ReplyQuote(
+                senderName: parentSenderName.isNotEmpty ? parentSenderName : 'Utilisateur',
+                content: stripHtml(parent['content'] as String?),
+              );
+            }
+          }
+        }
         // Mark as read
         ApiService.markConversationRead(widget.conversation.id);
         _scrollToBottom();
@@ -250,6 +305,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     if (content.isEmpty) return;
     setState(() => _sending = true);
 
+    // ⭐ V3-4: Capture the replyToId if user is replying to a message
+    final replyToId = _replyToMessage?.id;
+    // ⭐ V3-4: Stop typing indicator on send
+    _stopTyping();
+
     // ⭐ V3-1: Create a local pending message — display immediately + queue for retry
     final localId = ChatLocalStorage.generateLocalId();
     final now = DateTime.now().toIso8601String();
@@ -265,18 +325,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       localId: localId,
     );
 
-    // Append to local cache + pending queue
+    // Append to local cache + pending queue (with replyToId if replying)
     await ChatLocalStorage.appendMessage(localMsg);
     await ChatLocalStorage.addPendingMessage(PendingMessage(
       localId: localId,
       conversationId: widget.conversation.id,
       senderId: userId,
       content: content,
+      replyToId: replyToId,
       queuedAt: now,
       attempts: 0,
     ));
 
-    // Display immediately in UI
+    // Display immediately in UI (with reply quote if applicable)
+    final replySenderName = _replyToMessage?.senderName;
+    final replyContent = stripHtml(_replyToMessage?.content);
     if (mounted) {
       setState(() {
         _messages = [..._messages, Message.fromJson({
@@ -287,18 +350,25 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           'content': content,
           'createdAt': now,
           'status': 'pending',
+          if (replyToId != null) 'replyToId': replyToId,
+          if (replyToId != null) 'replyToSenderName': replySenderName,
+          if (replyToId != null) 'replyToContent': replyContent,
         }, userId)];
       });
       _scrollToBottom();
     }
 
-    // Clear the input
+    // Clear the input + reply-to state
     _messageController.clear();
+    if (_replyToMessage != null) {
+      setState(() => _replyToMessage = null);
+    }
 
     try {
       await ApiService.sendTextMessage(
         conversationId: widget.conversation.id,
         content: content,
+        replyToId: replyToId,
       );
       // Success — remove from pending queue + reload from server (replaces localId with server id)
       await ChatLocalStorage.removePendingMessage(localId);
@@ -323,7 +393,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   Future<void> _summarizeConversation() async {
     final userId = await AuthService.getUserId() ?? '';
     if (userId.isEmpty) return;
-    final api = ApiService();
 
     // Loading dialog
     if (!mounted) return;
@@ -342,16 +411,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
 
     try {
-      final response = await api.post(
-        '/chat/conversations/${widget.conversation.id}/summarize',
-        body: {
-          'userId': userId,
-          'maxMessages': 50,
-        },
+      final data = await ApiService.summarizeConversation(
+        conversationId: widget.conversation.id,
+        maxMessages: 50,
       );
       if (mounted) Navigator.of(context).pop(); // close loading
-
-      final data = response as Map<String, dynamic>;
       _showSummaryDialog(data);
     } catch (e) {
       if (mounted) Navigator.of(context).pop(); // close loading
@@ -452,8 +516,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   // ⭐ V3-2: Whisper transcription — call POST /chat/messages/:id/transcribe
   Future<void> _transcribeMessage(Message msg) async {
-    final api = ApiService();
-
     // Loading dialog
     if (!mounted) return;
     showDialog(
@@ -471,13 +533,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
 
     try {
-      final response = await api.post(
-        '/chat/messages/${msg.id}/transcribe',
-        body: {},
-      );
+      final data = await ApiService.transcribeMessage(msg.id);
       if (mounted) Navigator.of(context).pop(); // close loading
 
-      final data = response as Map<String, dynamic>;
       final transcription = data['transcription'] as String? ?? '';
       final usingWhisper = data['usingWhisper'] as bool? ?? false;
 
@@ -603,6 +661,62 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     ),
                   ),
           ),
+          // ⭐ V3-4: Typing indicator (whatsapp-style)
+          if (_isOtherTyping)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('en train d\'écrire... ', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: 1),
+                    duration: const Duration(milliseconds: 600),
+                    builder: (context, value, child) => Opacity(opacity: 0.5 + 0.5 * (value.abs()), child: child),
+                    child: const Text('•', style: TextStyle(fontSize: 18, color: Color(0xFF64748B))),
+                  ),
+                ],
+              ),
+            ),
+          // ⭐ V3-4: Reply-to bar (whatsapp-style) — shown when _replyToMessage is set
+          if (_replyToMessage != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
+                border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.reply, color: Color(0xFF1677FF), size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _replyToMessage!.senderName,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0958D9)),
+                        ),
+                        Text(
+                          stripHtml(_replyToMessage!.content),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => setState(() => _replyToMessage = null),
+                  ),
+                ],
+              ),
+            ),
           // Input bar
           Container(
             padding: const EdgeInsets.all(8),
@@ -629,6 +743,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                         borderSide: BorderSide.none,
                       ),
                     ),
+                    onChanged: _onTextChanged,
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
@@ -673,6 +788,15 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       );
     }
     final isOwn = msg.isOwn;
+
+    // ⭐ V3-4: Group reactions by emoji with count — whatsapp style
+    final Map<String, int> reactionCounts = {};
+    final Map<String, bool> myReactions = {};
+    for (final r in msg.reactions) {
+      reactionCounts[r.emoji] = (reactionCounts[r.emoji] ?? 0) + 1;
+      if (r.userId == _currentUserId) myReactions[r.emoji] = true;
+    }
+
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -694,6 +818,45 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ⭐ V3-4: Reply quote preview (whatsapp-style)
+            if (msg.replyToId != null)
+              Builder(builder: (context) {
+                // Prefer backend-provided replyToSenderName/Content, otherwise use cache
+                final quote = _replyQuoteCache[msg.replyToId];
+                final quoteSender = msg.replyToSenderName?.isNotEmpty == true
+                    ? msg.replyToSenderName!
+                    : quote?.senderName ?? '';
+                final quoteContent = msg.replyToContent?.isNotEmpty == true
+                    ? msg.replyToContent!
+                    : quote?.content ?? '';
+                if (quoteSender.isEmpty && quoteContent.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isOwn ? const Color(0xFFBAE0FF).withOpacity(0.3) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: const Border(left: BorderSide(color: Color(0xFF1677FF), width: 2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        quoteSender,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0958D9)),
+                      ),
+                      Text(
+                        stripHtml(quoteContent),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
             // Sender name (for groups)
             if (!isOwn && widget.conversation.type == 'GROUP')
               Padding(
@@ -703,9 +866,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0958D9)),
                 ),
               ),
-            // Content
-            if (msg.content != null)
-              Text(msg.content!, style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
+            // Content (V3-4: strip HTML before display)
+            if (msg.content != null && msg.content!.isNotEmpty)
+              Text(stripHtml(msg.content), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
             // Attachment
             if (msg.isAttachment) ...[
               const SizedBox(height: 8),
@@ -724,18 +887,59 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ),
               ),
             ],
-            // Timestamp + read receipt
+            // ⭐ V3-4: Reactions display (grouped by emoji with count)
+            if (reactionCounts.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                children: reactionCounts.entries.map((entry) {
+                  final isMine = myReactions[entry.key] == true;
+                  return GestureDetector(
+                    onTap: () => _sendReaction(msg, entry.key),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isMine ? const Color(0xFFBAE0FF) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isMine ? const Color(0xFF1677FF) : const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(entry.key, style: const TextStyle(fontSize: 12)),
+                          if (entry.value > 1) ...[
+                            const SizedBox(width: 2),
+                            Text('${entry.value}', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+            // Timestamp + read receipt (3 states)
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (msg.editedAt != null)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Text('modifié', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic)),
+                  ),
                 Text(
                   _formatTime(msg.createdAt),
                   style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
                 ),
                 if (isOwn) ...[
                   const SizedBox(width: 4),
-                  const Icon(Icons.done_all, size: 12, color: Color(0xFF13C2C2)),
+                  _buildReadReceiptIcon(msg),
+                ],
+                if (msg.status == 'pending') ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.access_time, size: 12, color: Color(0xFF94A3B8)),
                 ],
               ],
             ),
@@ -746,6 +950,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  // ⭐ V3-4: 3-state read receipt (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
+  Widget _buildReadReceiptIcon(Message msg) {
+    if (msg.readBy.isNotEmpty) {
+      return const Icon(Icons.done_all, size: 12, color: Color(0xFF13C2C2)); // blue = read
+    }
+    if (msg.deliveredAt != null) {
+      return const Icon(Icons.done_all, size: 12, color: Color(0xFF94A3B8)); // gray = delivered
+    }
+    return const Icon(Icons.check, size: 12, color: Color(0xFF94A3B8)); // single check = sent
+  }
+
   // ⭐ V1.5: Long-press message actions (reply, copy, delete, pin, react)
   void _showMessageActions(Message msg) {
     showModalBottomSheet(
@@ -754,15 +969,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ⭐ V3-4: Reply — sets _replyToMessage state + focuses the composer
             ListTile(
               leading: const Icon(Icons.reply, color: Color(0xFF0958D9)),
               title: const Text('Répondre'),
               onTap: () {
                 Navigator.pop(context);
-                // TODO: set reply context + scroll to message
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(content: Text('Réponse — fonction à venir'), duration: Duration(seconds: 1)),
-                );
+                _handleReply(msg);
               },
             ),
             ListTile(
@@ -786,29 +999,89 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   _transcribeMessage(msg);
                 },
               ),
+            // ⭐ V3-4: Copy — really copies to clipboard now
             ListTile(
               leading: const Icon(Icons.copy, color: Color(0xFF64748B)),
               title: const Text('Copier'),
               onTap: () {
                 Navigator.pop(context);
-                if (msg.content != null) {
-                  // Copy to clipboard
-                  ScaffoldMessenger.of(this.context).showSnackBar(
-                    const SnackBar(content: Text('Message copié'), duration: Duration(seconds: 1)),
-                  );
+                final textContent = stripHtml(msg.content);
+                if (textContent.isNotEmpty) {
+                  Clipboard.setData(ClipboardData(text: textContent)).then((_) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Message copié'), duration: Duration(seconds: 1)),
+                      );
+                    }
+                  });
                 }
               },
             ),
+            // ⭐ V3-4: Forward — opens a conversation picker modal
             ListTile(
-              leading: const Icon(Icons.push_pin, color: Color(0xFF64748B)),
-              title: const Text('Épingler'),
+              leading: const Icon(Icons.forward, color: Color(0xFF0958D9)),
+              title: const Text('Transférer'),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(content: Text('Message épinglé'), duration: Duration(seconds: 1)),
-                );
+                _showForwardModal(msg);
               },
             ),
+            // ⭐ V3-4: Pin message (calls backend)
+            ListTile(
+              leading: const Icon(Icons.push_pin, color: Color(0xFF64748B)),
+              title: Text(msg.isPinned ? 'Désépingler' : 'Épingler'),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await ApiService.pinMessage(msg.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(msg.isPinned ? 'Message désépinglé' : 'Message épinglé')),
+                    );
+                    _loadMessages();
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Échec: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+            // ⭐ V3-4: Mark important (calls backend)
+            ListTile(
+              leading: Icon(msg.isImportant ? Icons.star : Icons.star_border, color: const Color(0xFFF59E0B)),
+              title: Text(msg.isImportant ? 'Retirer marquage' : 'Marquer important'),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await ApiService.markImportant(msg.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(msg.isImportant ? 'Marquage retiré' : 'Message marqué important')),
+                    );
+                    _loadMessages();
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Échec: $e')),
+                    );
+                  }
+                }
+              },
+            ),
+            // ⭐ V3-4: Edit (sender only, text messages only)
+            if (msg.isOwn && msg.type == 'TEXT')
+              ListTile(
+                leading: const Icon(Icons.edit, color: Color(0xFF64748B)),
+                title: const Text('Modifier'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _startEditMessage(msg);
+                },
+              ),
             if (msg.isOwn)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
@@ -858,15 +1131,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   void _sendReaction(Message msg, String emoji) async {
     try {
-      final api = ApiService();
-      await api.post('/chat/messages/${msg.id}/react', body: {
-        'userId': (await ApiConfig.userId) ?? '',
-        'emoji': emoji,
-      });
+      await ApiService.addReaction(messageId: msg.id, emoji: emoji);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Réaction $emoji envoyée'), duration: const Duration(seconds: 1)),
         );
+        // Refresh to show the new reaction
+        _loadMessages();
       }
     } catch (e) {
       if (mounted) {
@@ -879,10 +1150,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   void _deleteMessage(Message msg, {required bool forEveryone}) async {
     try {
-      final api = ApiService();
-      final userId = await ApiConfig.userId ?? '';
-      final endpoint = forEveryone ? 'delete-for-everyone' : 'delete-for-me';
-      await api.post('/chat/conversations/${widget.conversation.id}/messages/${msg.id}/$endpoint', body: {'userId': userId});
+      if (forEveryone) {
+        await ApiService.deleteMessageForEveryone(
+          conversationId: widget.conversation.id,
+          messageId: msg.id,
+        );
+      } else {
+        await ApiService.deleteMessageForMe(
+          conversationId: widget.conversation.id,
+          messageId: msg.id,
+        );
+      }
       if (mounted) {
         _loadMessages();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -933,4 +1211,200 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     if (parts.isNotEmpty) return parts[0][0].toUpperCase();
     return '?';
   }
+
+  // ⭐ V3-4: Reply — set the _replyToMessage state and focus the composer
+  void _handleReply(Message msg) {
+    setState(() => _replyToMessage = msg);
+    // Focus the text input
+    FocusScope.of(context).requestFocus(FocusNode());
+  }
+
+  // ⭐ V3-4: Edit message — open an inline edit dialog
+  void _startEditMessage(Message msg) {
+    _editController.text = stripHtml(msg.content);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Modifier le message'),
+        content: TextField(
+          controller: _editController,
+          maxLines: 5,
+          autofocus: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Message',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newContent = _editController.text.trim();
+              if (newContent.isEmpty) return;
+              Navigator.pop(context);
+              try {
+                await ApiService.editMessage(
+                  messageId: msg.id,
+                  newContent: newContent,
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Message modifié')),
+                  );
+                  _loadMessages();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Échec: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V3-4: Forward — open a conversation picker modal
+  void _showForwardModal(Message msg) async {
+    try {
+      final conversations = await ApiService.listConversations();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Transférer vers...'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Preview of the message being forwarded
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Message à transférer', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(
+                        stripHtml(msg.content),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                // Conversation list
+                SizedBox(
+                  height: 280,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: conversations.length,
+                    itemBuilder: (context, index) {
+                      final conv = conversations[index];
+                      // Filter out the current conversation
+                      if (conv['id'] == widget.conversation.id) return const SizedBox.shrink();
+                      final name = (conv['name'] as String?) ??
+                          ((conv['participants'] as List<dynamic>?) ?? [])
+                              .map((p) => '${p['firstName'] ?? ''} ${p['lastName'] ?? ''}'.trim())
+                              .where((n) => n.isNotEmpty)
+                              .join(', ');
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: const Color(0xFF1677FF),
+                          child: Text(
+                            _getInitials(name),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(name, style: const TextStyle(fontSize: 14)),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          try {
+                            await ApiService.forwardMessage(
+                              messageId: msg.id,
+                              targetConversationId: conv['id'] as String,
+                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Message transféré vers $name')),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Échec: $e')),
+                              );
+                            }
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  // ⭐ V3-4: Typing indicator — called when the user types in the composer
+  void _onTextChanged(String value) {
+    if (value.isEmpty) {
+      _stopTyping();
+      return;
+    }
+    _startTyping();
+    // Auto-stop typing after 3s of no input
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(seconds: 3), () => _stopTyping());
+  }
+
+  void _startTyping() {
+    if (_isTypingSent) return;
+    _socket.startTyping(widget.conversation.id);
+    _isTypingSent = true;
+  }
+
+  void _stopTyping() {
+    if (!_isTypingSent) return;
+    _socket.stopTyping(widget.conversation.id);
+    _isTypingSent = false;
+    _typingDebounce?.cancel();
+  }
+}
+
+/// ⭐ V3-4: Cached reply quote — { senderName, content } for parent messages.
+class _ReplyQuote {
+  final String senderName;
+  final String content;
+  _ReplyQuote({required this.senderName, required this.content});
 }

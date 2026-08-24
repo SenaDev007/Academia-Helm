@@ -16,13 +16,33 @@
 //   POST /api/chat/conversations/direct
 //   GET  /api/chat/conversations/:id/messages
 //   POST /api/chat/conversations/:id/messages/text
+//   POST /api/chat/conversations/:id/messages/attachment  (multipart)
+//   GET  /api/chat/conversations/:id/search?q=...
+//   POST /api/chat/messages/:id/react           — add/toggle reaction
+//   PUT   /api/chat/messages/:id                — edit message
+//   POST  /api/chat/messages/:id/forward         — forward to target conversation
+//   POST  /api/chat/messages/:id/important       — mark important
+//   POST  /api/chat/messages/:id/pin             — pin message
+//   POST  /api/chat/conversations/:id/messages/:id/delete-for-me
+//   POST  /api/chat/conversations/:id/messages/:id/delete-for-everyone
+//   GET  /api/chat/presence?userIds=...
+//   POST /api/chat/presence                      — update own presence status
+//   POST /api/chat/avatar                        — upload own avatar (multipart)
+//   GET  /api/chat/profile/:userId               — get user profile
+//   PUT  /api/chat/profile                       — update profile (bio, status, etc.)
+//   POST /api/chat/announcements/:id/confirm     — confirm read announcement
+//   POST /api/chat/conversations/:id/summarize  — ORION conversation summary (V3-3)
+//   POST /api/chat/messages/:id/transcribe      — Whisper transcription (V3-2)
 //   GET  /api/chat/announcements
 //   POST /api/chat/v2/notifications/dnd/enable
 //   GET  /api/chat/v2/search?q=...
+//   POST /api/chat/push/subscribe                — register FCM token
 // ============================================================================
 
 import 'dart:convert';
-import 'package:http/http.dart as http;
+import 'dart:io' show File;
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConfig {
@@ -304,6 +324,234 @@ class ApiService {
     );
   }
 
+  // ─── Attachments (V2 — image/document/audio/video) ────────────────
+
+  /// Send a file attachment (image/document/audio/video) to a conversation.
+  /// Uses multipart/form-data. The file is read from disk and uploaded.
+  ///
+  /// [type] should be one of: 'IMAGE' | 'DOCUMENT' | 'AUDIO' | 'VIDEO'
+  static Future<Map<String, dynamic>> sendAttachment({
+    required String conversationId,
+    required File file,
+    required String type,
+    required String fileName,
+    String? mimeType,
+  }) async {
+    final base = await ApiConfig.baseUrl;
+    final userId = await AuthService.getUserId() ?? '';
+    final headers = await _getHeaders(isMultipart: true);
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$base/api/chat/conversations/$conversationId/messages/attachment'),
+    );
+    request.files.add(await http.MultipartFile.fromPath(
+      'file',
+      file.path,
+      filename: fileName,
+      contentType: mimeType != null ? MediaType.parse(mimeType) : null,
+    ));
+    request.fields['senderId'] = userId;
+    request.fields['type'] = type;
+    request.headers.addAll(headers);
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: 'Failed to send attachment: ${response.body}',
+      );
+    }
+    final data = jsonDecode(response.body);
+    return data as Map<String, dynamic>;
+  }
+
+  // ─── Message actions (V3 — parity with web) ───────────────────────
+
+  /// Add or toggle a reaction on a message (emoji).
+  /// Backend: POST /chat/messages/:id/react with { userId, emoji }
+  static Future<Map<String, dynamic>> addReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    return post('/api/chat/messages/$messageId/react', {
+      'emoji': emoji,
+      // userId is auto-injected by backend from JWT — but the web app sends it
+      // explicitly so we keep it for backward compat.
+    });
+  }
+
+  /// Edit a message (sender only). Backend: PUT /chat/messages/:id
+  static Future<Map<String, dynamic>> editMessage({
+    required String messageId,
+    required String newContent,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return put('/api/chat/messages/$messageId', {
+      'userId': userId,
+      'content': newContent,
+    });
+  }
+
+  /// Forward a message to another conversation.
+  /// Backend: POST /chat/messages/:id/forward with { userId, targetConversationId }
+  static Future<Map<String, dynamic>> forwardMessage({
+    required String messageId,
+    required String targetConversationId,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/api/chat/messages/$messageId/forward', {
+      'userId': userId,
+      'targetConversationId': targetConversationId,
+    });
+  }
+
+  /// Mark a message as important (toggle).
+  /// Backend: POST /chat/messages/:id/important with { userId }
+  static Future<Map<String, dynamic>> markImportant(String messageId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/api/chat/messages/$messageId/important', {
+      'userId': userId,
+    });
+  }
+
+  /// Pin a message (toggle).
+  /// Backend: POST /chat/v2/messages/:id/pin with { userId }
+  static Future<Map<String, dynamic>> pinMessage(String messageId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/api/chat/v2/messages/$messageId/pin', {
+      'userId': userId,
+    });
+  }
+
+  /// Delete a message for me only.
+  /// Backend: POST /chat/conversations/:convId/messages/:id/delete-for-me
+  static Future<void> deleteMessageForMe({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    await post(
+      '/api/chat/conversations/$conversationId/messages/$messageId/delete-for-me',
+      {'userId': userId},
+    );
+  }
+
+  /// Delete a message for everyone (sender only).
+  /// Backend: POST /chat/conversations/:convId/messages/:id/delete-for-everyone
+  static Future<void> deleteMessageForEveryone({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    await post(
+      '/api/chat/conversations/$conversationId/messages/$messageId/delete-for-everyone',
+      {'userId': userId},
+    );
+  }
+
+  // ─── In-conversation search (V3) ──────────────────────────────────
+
+  /// Search messages inside a conversation.
+  /// Backend: GET /chat/conversations/:id/search?userId=&q=
+  static Future<List<Map<String, dynamic>>> searchInConversation({
+    required String conversationId,
+    required String query,
+  }) async {
+    if (query.length < 2) return [];
+    final base = await ApiConfig.baseUrl;
+    final userId = await AuthService.getUserId() ?? '';
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$base/api/chat/conversations/$conversationId/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
+      headers: headers,
+    );
+    final data = await _handleResponse(response);
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final results = data['results'] as List<dynamic>? ?? [];
+      return results.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  // ─── Presence (V3) ────────────────────────────────────────────────
+
+  /// Get presence status for a list of users.
+  /// Backend: GET /chat/presence?userIds=u1,u2,u3
+  static Future<Map<String, dynamic>> getPresence(List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final ids = userIds.join(',');
+    final response = await http.get(
+      Uri.parse('$base/api/chat/presence?userIds=$ids'),
+      headers: headers,
+    );
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  /// Update own presence status.
+  /// Backend: POST /chat/presence with { userId, status }
+  /// [status] should be one of: 'online' | 'away' | 'dnd' | 'offline'
+  static Future<Map<String, dynamic>> updatePresence(String status) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/api/chat/presence', {
+      'userId': userId,
+      'status': status,
+    });
+  }
+
+  // ─── Profile + avatar (V3) ─────────────────────────────────────────
+
+  /// Get the profile of a user (avatar, bio, role, email, status).
+  /// Backend: GET /chat/profile/:userId
+  static Future<Map<String, dynamic>> getProfile(String userId) async {
+    return get('/api/chat/profile/$userId');
+  }
+
+  /// Update own profile (bio, availabilityStatus, etc.).
+  /// Backend: PUT /chat/profile with { userId, bio?, availabilityStatus?, ... }
+  static Future<Map<String, dynamic>> updateProfile({
+    String? bio,
+    String? availabilityStatus,
+    String? availableFrom,
+    String? availableUntil,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return put('/api/chat/profile', {
+      'userId': userId,
+      if (bio != null) 'bio': bio,
+      if (availabilityStatus != null) 'availabilityStatus': availabilityStatus,
+      if (availableFrom != null) 'availableFrom': availableFrom,
+      if (availableUntil != null) 'availableUntil': availableUntil,
+    });
+  }
+
+  /// Upload own avatar (multipart).
+  /// Backend: POST /chat/avatar (multipart form-data with 'file' + 'userId')
+  static Future<Map<String, dynamic>> uploadAvatar(File file) async {
+    final base = await ApiConfig.baseUrl;
+    final userId = await AuthService.getUserId() ?? '';
+    final headers = await _getHeaders(isMultipart: true);
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$base/api/chat/avatar'),
+    );
+    request.files.add(await http.MultipartFile.fromPath('file', file.path));
+    request.fields['userId'] = userId;
+    request.headers.addAll(headers);
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(statusCode: response.statusCode, message: 'Failed to upload avatar');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   // ─── Announcements ─────────────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> listAnnouncements() async {
@@ -325,6 +573,36 @@ class ApiService {
     return [];
   }
 
+  /// Confirm having read an announcement.
+  /// Backend: POST /chat/announcements/:id/confirm with { userId }
+  static Future<void> confirmAnnouncementRead(String announcementId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    await post('/api/chat/announcements/$announcementId/confirm', {
+      'userId': userId,
+    });
+  }
+
+  // ─── ORION + Whisper (V3) ──────────────────────────────────────────
+
+  /// Generate an ORION summary of a conversation (last N messages).
+  /// Backend: POST /chat/conversations/:id/summarize with { userId, maxMessages? }
+  static Future<Map<String, dynamic>> summarizeConversation({
+    required String conversationId,
+    int maxMessages = 50,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/api/chat/conversations/$conversationId/summarize', {
+      'userId': userId,
+      'maxMessages': maxMessages,
+    });
+  }
+
+  /// Transcribe an audio message to text using Whisper.
+  /// Backend: POST /chat/messages/:id/transcribe
+  static Future<Map<String, dynamic>> transcribeMessage(String messageId) async {
+    return post('/api/chat/messages/$messageId/transcribe', {});
+  }
+
   // ─── Search ────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> globalSearch(String query) async {
@@ -336,6 +614,95 @@ class ApiService {
       headers: headers,
     );
     return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  // ─── FCM (V3-4) ───────────────────────────────────────────────────
+
+  /// Register an FCM device token for the current user (mobile push).
+  /// Backend: POST /notifications/device-tokens with { fcmToken, platform?, deviceInfo? }
+  static Future<Map<String, dynamic>> registerFcmToken({
+    required String fcmToken,
+    String platform = 'ANDROID',
+    String? deviceInfo,
+  }) async {
+    return post('/api/notifications/device-tokens', {
+      'fcmToken': fcmToken,
+      'platform': platform,
+      if (deviceInfo != null) 'deviceInfo': deviceInfo,
+    });
+  }
+
+  /// Unregister the FCM device token on logout.
+  /// Backend: DELETE /notifications/device-tokens with { fcmToken }
+  static Future<void> unregisterFcmToken(String fcmToken) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    await http.delete(
+      Uri.parse('$base/api/notifications/device-tokens'),
+      headers: headers,
+      body: jsonEncode({'fcmToken': fcmToken}),
+    );
+  }
+
+  // ─── Notifications (V3-4 — in-app bell) ─────────────────────────────
+
+  /// List notifications for the current user.
+  /// Backend: GET /notifications?unread=true&limit=&offset=
+  static Future<List<Map<String, dynamic>>> listNotifications({
+    bool onlyUnread = false,
+    int limit = 30,
+    int offset = 0,
+  }) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final params = 'limit=$limit&offset=$offset${onlyUnread ? '&unread=true' : ''}';
+    final response = await http.get(
+      Uri.parse('$base/api/notifications?$params'),
+      headers: headers,
+    );
+    final data = await _handleResponse(response);
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      // Some backends wrap lists in { data: [...] }
+      final list = data['data'] as List<dynamic>?;
+      if (list != null) return list.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Get the unread notification count for the current user.
+  /// Backend: GET /notifications/unread-count → { count: number }
+  static Future<int> getUnreadNotificationCount() async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$base/api/notifications/unread-count'),
+      headers: headers,
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return (data['count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Mark a single notification as read.
+  /// Backend: PATCH /notifications/:id/read
+  static Future<void> markNotificationRead(String notificationId) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    await http.patch(
+      Uri.parse('$base/api/notifications/$notificationId/read'),
+      headers: headers,
+    );
+  }
+
+  /// Mark all notifications as read.
+  /// Backend: PATCH /notifications/read-all
+  static Future<void> markAllNotificationsRead() async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    await http.patch(
+      Uri.parse('$base/api/notifications/read-all'),
+      headers: headers,
+    );
   }
 
   // ─── Generic helpers ───────────────────────────────────────────
@@ -368,6 +735,12 @@ class ApiService {
     );
     return _handleResponse(response) as Map<String, dynamic>;
   }
+
+  /// ⭐ FIX: Get auth token — used by SocketService for the socket handshake.
+  /// Returns null if the user is not logged in.
+  static Future<String?> getAuthToken() async {
+    return AuthService.getToken();
+  }
 }
 
 class ApiException implements Exception {
@@ -379,32 +752,4 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
-
-  // ⭐ V2: Send attachment (image/document/audio) to a conversation
-  Future<void> sendAttachment({
-    required String conversationId,
-    required File file,
-    required String type,
-    required String fileName,
-  }) async {
-    final url = await ApiConfig.baseUrl;
-    final userId = await ApiConfig.getUserId() ?? '';
-    final headers = await ApiConfig._getHeaders(isMultipart: true);
-
-    final request = http.MultipartRequest('POST', Uri.parse('$url/api/chat/conversations/$conversationId/messages/attachment'));
-    request.files.add(await http.MultipartFile.fromPath('file', file.path));
-    request.fields['senderId'] = userId;
-    request.fields['type'] = type;
-    request.headers.addAll(headers);
-
-    final response = await request.send();
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw ApiException(statusCode: response.statusCode, message: 'Failed to send attachment');
-    }
-  }
-
-  // ⭐ V2: Get auth token
-  Future<String?> getAuthToken() async {
-    return await ApiConfig.getToken();
-  }
 }

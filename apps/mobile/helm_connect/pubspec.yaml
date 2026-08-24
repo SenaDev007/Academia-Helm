@@ -32,6 +32,7 @@ dependencies:
 
   # ─── HTTP + WebSocket (chat real-time)
   http: ^1.1.0
+  http_parser: ^4.0.2
   socket_io_client: ^2.0.3
 
   # ─── State management
@@ -59,6 +60,11 @@ dependencies:
   firebase_core: ^2.24.2
   firebase_messaging: ^14.7.9
   flutter_local_notifications: ^16.0.0
+
+  # ─── WebRTC (audio/video calls — V3-4 P1) ⭐ ACTIVE
+  flutter_webrtc: ^0.10.4
+  # ─── Permission handler (RECORD_AUDIO / CAMERA / POST_NOTIFICATIONS) ⭐ ACTIVE
+  permission_handler: ^11.3.1
 
   # ─── Crypto (E2E — V3)
   # encrypt: ^5.0.3

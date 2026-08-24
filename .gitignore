@@ -141,3 +141,13 @@ apps/mobile-app/ios/Runner/GeneratedPluginRegistrant.*
 
 # Local properties (machine-specific)
 apps/mobile-app/android/local.properties
+# ⭐ V3-4: Helm Connect mobile app — machine-specific, never commit
+apps/mobile/helm_connect/android/local.properties
+apps/mobile/helm_connect/android/.gradle/
+apps/mobile/helm_connect/android/key.properties
+apps/mobile/helm_connect/android/app/upload-keystore.jks
+apps/mobile/helm_connect/.dart_tool/
+apps/mobile/helm_connect/.flutter-plugins
+apps/mobile/helm_connect/.flutter-plugins-dependencies
+apps/mobile/helm_connect/build/
+apps/mobile/helm_connect/android/app/build/

@@ -41,8 +41,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
-            minifyEnabled = false
-            shrinkResources = false
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
@@ -52,7 +52,7 @@ flutter {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.0")
     implementation("androidx.multidex:multidex:2.0.1")
     // Firebase Cloud Messaging
     implementation(platform("com.google.firebase:firebase-bom:32.3.1"))

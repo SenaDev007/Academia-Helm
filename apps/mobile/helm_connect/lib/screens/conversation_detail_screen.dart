@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // ⭐ V3-4: Clipboard.setData for copy action
+import 'package:shared_preferences/shared_preferences.dart'; // ⭐ V3-5: for myName lookup
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/models.dart';
@@ -16,6 +17,9 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 // ⭐ V3-1: Offline-first chat — local cache + send queue
 import '../services/chat_local_storage.dart';
+// ⭐ V3-5: WebRTC calls + branded call screen
+import '../services/call_service.dart';
+import 'call_screen.dart';
 
 class ConversationDetailScreen extends StatefulWidget {
   final Conversation conversation;
@@ -47,6 +51,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   bool _isTypingSent = false;
   // ⭐ V3-4: Cached reply-quotes (msgId → {senderName, content}) for parent messages
   final Map<String, _ReplyQuote> _replyQuoteCache = {};
+  // ⭐ V3-5: WebRTC call service (audio + video)
+  late final CallService _callService;
 
   @override
   void initState() {
@@ -56,6 +62,15 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _loadMessages();
     // ⭐ Socket.io: connect for realtime (replaces 10s polling)
     _initSocket();
+    // ⭐ V3-5: Initialize WebRTC call service + bind socket callbacks
+    _callService = CallService(_socket);
+    _callService.addListener(_onCallStateChanged);
+    // ⭐ Wrap async callbacks in sync closures (socket callbacks expect void Function)
+    _socket.onCallOffer = (data) => _callService.onIncomingCallOffer(data);
+    _socket.onCallAnswer = (data) { _callService.onCallAnswer(data); };
+    _socket.onCallIceCandidate = (data) { _callService.onIceCandidate(data); };
+    _socket.onCallReject = (data) => _callService.onCallReject();
+    _socket.onCallHangup = (data) => _callService.onCallHangup();
     // Polling fallback (reduced to 30s — Socket.io should deliver instantly)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
     // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
@@ -66,6 +81,47 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     final userId = await AuthService.getUserId();
     if (mounted) {
       setState(() => _currentUserId = userId ?? '');
+    }
+  }
+
+  // ⭐ V3-5: Start an outgoing call (audio or video)
+  void _startCall(String callType) async {
+    if (widget.conversation.type == 'GROUP') return; // Group calls not supported yet
+    final other = widget.conversation.participants.firstWhere(
+      (p) => p.userId != _currentUserId,
+      orElse: () => widget.conversation.participants.first,
+    );
+    if (other.userId.isEmpty) return;
+    final otherName = other.fullName.isNotEmpty ? other.fullName : 'Utilisateur';
+    // Get my own name (for callerName payload parity with web)
+    final prefs = await SharedPreferences.getInstance();
+    final myName = prefs.getString('auth_user_email')?.split('@').first ?? 'Utilisateur';
+    await _callService.startCall(
+      otherUserId: other.userId,
+      otherUserName: otherName,
+      callType: callType,
+      myName: myName,
+    );
+    // The _onCallStateChanged listener will push CallScreen when state changes
+  }
+
+  // ⭐ V3-5: Listen to CallService state changes — push the CallScreen overlay
+  bool _isCallScreenPushed = false;
+  void _onCallStateChanged() {
+    if (!mounted) return;
+    final state = _callService.state;
+    if ((state == CallState.incoming || state == CallState.outgoing || state == CallState.active) && !_isCallScreenPushed) {
+      _isCallScreenPushed = true;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: '/call'),
+          builder: (_) => CallScreen(callService: _callService),
+          fullscreenDialog: true,
+        ),
+      ).then((_) {
+        // Reset the flag when CallScreen pops
+        _isCallScreenPushed = false;
+      });
     }
   }
 
@@ -195,6 +251,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _socket.disconnect();
     _messageController.dispose();
     _scrollController.dispose();
+    _editController.dispose();
+    _typingDebounce?.cancel();
+    // ⭐ V3-5: Cleanup the call service
+    _callService.removeListener(_onCallStateChanged);
+    _callService.dispose();
     super.dispose();
   }
 
@@ -635,7 +696,20 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           ],
         ),
         // ⭐ V3-3: Sparkles button to trigger ORION conversation summary
+        // ⭐ V3-5: Phone + Video call buttons (DIRECT conversations only)
         actions: [
+          if (widget.conversation.type != 'GROUP')
+            IconButton(
+              icon: const Icon(Icons.phone, color: Colors.white),
+              tooltip: 'Appel audio',
+              onPressed: () => _startCall('AUDIO'),
+            ),
+          if (widget.conversation.type != 'GROUP')
+            IconButton(
+              icon: const Icon(Icons.videocam, color: Colors.white),
+              tooltip: 'Appel vidéo',
+              onPressed: () => _startCall('VIDEO'),
+            ),
           IconButton(
             icon: const Icon(Icons.auto_awesome, color: Colors.white),
             tooltip: 'Résumer la conversation (ORION IA)',

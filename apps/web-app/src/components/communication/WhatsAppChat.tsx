@@ -666,6 +666,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   }, [callState]);
 
+  // ⭐ FIX: Re-attach the LOCAL stream to the video element whenever the call
+  //    state changes — same root cause as the remote stream issue. When the active
+  //    overlay renders the PiP <video ref={localVideoRef}>, it's a NEW element
+  //    (the sr-only one at the top of the JSX is a different element). The new
+  //    PiP starts with srcObject=null, so the local camera preview is black.
+  //    This useEffect copies the stream from localStreamRef to the new element.
+  useEffect(() => {
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+  }, [callState]);
+
   // ⭐ FIX: Apply speaker state to the remote video element's volume.
   //    When speaker is off, mute the remote audio (volume = 0). When on, restore.
   useEffect(() => {

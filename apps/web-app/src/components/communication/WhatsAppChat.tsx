@@ -28,7 +28,7 @@ import {
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
-  BarChart3, Download, Pencil, Star,
+  BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -273,6 +273,61 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const ringtoneRef = useRef<{ ctx: AudioContext; interval: any } | null>(null);
+
+  // ⭐ V2.5: Ringtone — plays a phone ring pattern using Web Audio API
+  const playRingtone = useCallback(() => {
+    if (ringtoneRef.current) return; // Already playing
+    try {
+      const ctx = new AudioContext();
+      const interval = setInterval(() => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 440;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.05);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+        // Second tone (higher pitch)
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.frequency.value = 550;
+        osc2.type = 'sine';
+        gain2.gain.setValueAtTime(0, ctx.currentTime + 0.4);
+        gain2.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.45);
+        gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.8);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start();
+        osc2.stop(ctx.currentTime + 0.8);
+      }, 1500); // Ring every 1.5 seconds
+      ringtoneRef.current = { ctx, interval };
+    } catch (e) {
+      console.warn('Ringtone playback failed:', e);
+    }
+  }, []);
+
+  const stopRingtone = useCallback(() => {
+    if (ringtoneRef.current) {
+      clearInterval(ringtoneRef.current.interval);
+      try { ringtoneRef.current.ctx.close(); } catch {}
+      ringtoneRef.current = null;
+    }
+  }, []);
+
+  // ⭐ V2.5: Play/stop ringtone based on call state
+  useEffect(() => {
+    if (callState === 'outgoing' || callState === 'incoming') {
+      playRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [callState, playRingtone, stopRingtone]);
 
   // ⭐ V2.5: Cleanup call resources
   const cleanupCall = useCallback(() => {
@@ -2118,7 +2173,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             {QUICK_EMOJIS.map(emoji => (
                               <button
                                 key={emoji}
-                                onClick={(e) => { e.stopPropagation(); handleToggleReaction(msg.id, emoji); setShowReactionBar(null); }}
+                                onClick={(e) => { e.stopPropagation(); handleToggleReaction(msg.id, emoji); }}
                                 className="text-sm hover:scale-125 transition-transform p-0.5"
                                 title={`Réagir avec ${emoji}`}
                               >
@@ -2553,121 +2608,135 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       )}
-      {/* ⭐ V2.5: WebRTC call overlay + incoming call modal */}
+      {/* ⭐ V2.5: WebRTC call overlay — WhatsApp-style design */}
       {/* Hidden video elements for local + remote streams */}
       <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
       <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
-      {/* Incoming call modal */}
+
+      {/* Incoming call — WhatsApp-style full-screen modal */}
       {callState === 'incoming' && callData && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-8 text-center">
-            <div className={cn('w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(callData.otherUserName))}>
+        <div className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-900 to-black z-[60] flex flex-col items-center justify-between p-8">
+          {/* Top: incoming label */}
+          <div className="pt-8 text-center">
+            <p className="text-sm text-emerald-400 font-medium">Appel entrant Helm Connect</p>
+          </div>
+          {/* Center: avatar + name */}
+          <div className="text-center">
+            <div className={cn('w-28 h-28 rounded-full mx-auto mb-5 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-white/10', getAvatarColor(callData.otherUserName))}>
               {getInitials(callData.otherUserName)}
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1">{callData.otherUserName}</h3>
-            <p className="text-sm text-slate-500 mb-1">
-              {callData.callType === 'VIDEO' ? 'Appel vidéo entrant' : 'Appel audio entrant'}
-            </p>
-            <p className="text-xs text-slate-400 mb-6">Academia Helm — Helm Connect</p>
-            <div className="flex justify-center gap-6">
-              <button
-                onClick={() => rejectCall(callData.otherUserId, callData.callId)}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white">
-                  <Phone className="w-6 h-6 rotate-[135deg]" />
-                </div>
-                <span className="text-xs font-semibold text-slate-600">Refuser</span>
-              </button>
-              <button
-                onClick={() => {
-                  const offer = (window as any)._pendingCallOffer?.offer;
-                  if (offer) acceptCall(callData.otherUserId, callData.callId, callData.callType, offer);
-                }}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white animate-pulse">
-                  <Phone className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold text-slate-600">Accepter</span>
-              </button>
-            </div>
+            <h2 className="text-2xl font-bold text-white mb-1">{callData.otherUserName}</h2>
+            <p className="text-slate-400">{callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'}</p>
+          </div>
+          {/* Bottom: Accept / Reject */}
+          <div className="flex justify-center gap-16 pb-10">
+            <button onClick={() => rejectCall(callData.otherUserId, callData.callId)} className="flex flex-col items-center gap-2">
+              <div className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg">
+                <Phone className="w-7 h-7 rotate-[135deg]" />
+              </div>
+              <span className="text-xs text-slate-300">Refuser</span>
+            </button>
+            <button
+              onClick={() => { const offer = (window as any)._pendingCallOffer?.offer; if (offer) acceptCall(callData.otherUserId, callData.callId, callData.callType, offer); }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white shadow-lg animate-pulse">
+                <Phone className="w-7 h-7" />
+              </div>
+              <span className="text-xs text-slate-300">Accepter</span>
+            </button>
           </div>
         </div>
       )}
-      {/* Outgoing call + active call overlay */}
+
+      {/* Outgoing + Active call — WhatsApp-style overlay */}
       {(callState === 'outgoing' || callState === 'active') && callData && (
-        <div className="fixed inset-0 bg-slate-900 z-[60] flex flex-col items-center justify-between p-8">
-          {/* Remote video (full screen for VIDEO calls) */}
+        <div className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-900 to-black z-[60] flex flex-col items-center justify-between">
+          {/* Remote video (full screen for VIDEO calls when active) */}
           {callData.callType === 'VIDEO' && callState === 'active' && (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+            <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
           )}
-          {/* Call info */}
-          <div className="text-center relative z-10">
-            <div className={cn('w-24 h-24 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-3xl font-bold', getAvatarColor(callData.otherUserName))}>
-              {getInitials(callData.otherUserName)}
-            </div>
-            <h3 className="text-xl font-bold text-white mb-1">{callData.otherUserName}</h3>
-            <p className="text-sm text-slate-400">
-              {callState === 'outgoing' ? 'Appel en cours…' : `${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')}`}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              {callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'} — Helm Connect
-            </p>
-          </div>
-          {/* Local video (PiP for VIDEO calls) */}
-          {callData.callType === 'VIDEO' && callState === 'active' && (
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className={cn(
-                'absolute bottom-24 right-4 w-32 h-44 rounded-2xl object-cover border-2 border-white/20 z-10',
-                videoOff && 'opacity-30'
-              )}
-            />
-          )}
-          {/* Call controls */}
-          <div className="flex items-center gap-4 relative z-10">
+          {/* Top bar: name + encrypted indicator */}
+          <div className="absolute top-0 left-0 right-0 p-4 pt-6 flex items-center justify-center gap-2 z-10">
+            <span className="text-white font-bold text-lg">{callData.otherUserName}</span>
             {callState === 'active' && (
-              <>
-                <button
-                  onClick={toggleMute}
-                  className={cn(
-                    'w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors',
-                    muted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'
-                  )}
-                  title={muted ? 'Activer micro' : 'Couper micro'}
-                >
-                  {muted ? <Mic className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                </button>
-                {callData.callType === 'VIDEO' && (
-                  <button
-                    onClick={toggleVideo}
-                    className={cn(
-                      'w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors',
-                      videoOff ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'
-                    )}
-                    title={videoOff ? 'Activer caméra' : 'Couper caméra'}
-                  >
-                    <Video className="w-5 h-5" />
-                  </button>
-                )}
-              </>
+              <span className="flex items-center gap-1 text-xs text-emerald-400">
+                🔒 <span className="hidden sm:inline">Chiffré de bout en bout</span>
+              </span>
             )}
-            <button
-              onClick={hangup}
-              className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white"
-              title="Raccrocher"
-            >
-              <Phone className="w-6 h-6 rotate-[135deg]" />
-            </button>
+          </div>
+          {/* Center: avatar (for AUDIO calls or outgoing VIDEO) */}
+          {(callData.callType === 'AUDIO' || callState !== 'active') && (
+            <div className="text-center z-10 pt-20">
+              <div className={cn('w-32 h-32 rounded-full mx-auto mb-5 flex items-center justify-center text-white text-5xl font-bold ring-4 ring-white/10', getAvatarColor(callData.otherUserName))}>
+                {getInitials(callData.otherUserName)}
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-1">{callData.otherUserName}</h2>
+              <p className="text-slate-400">
+                {callState === 'outgoing' ? 'Appel en cours…' : `${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')}`}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">{callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'} — Helm Connect</p>
+            </div>
+          )}
+          {/* Active call timer (for VIDEO when active — no avatar shown) */}
+          {callData.callType === 'VIDEO' && callState === 'active' && (
+            <div className="absolute top-14 left-0 right-0 text-center z-10">
+              <p className="text-white text-lg font-semibold">{Math.floor(callDuration / 60)}:{(callDuration % 60).toString().padStart(2, '0')}</p>
+            </div>
+          )}
+          {/* Local video PiP (for VIDEO calls when active) */}
+          {callData.callType === 'VIDEO' && callState === 'active' && (
+            <video
+              ref={localVideoRef} autoPlay playsInline muted
+              className={cn('absolute bottom-32 right-4 w-28 h-40 rounded-2xl object-cover border-2 border-white/20 z-20', videoOff && 'opacity-30')}
+            />
+          )}
+          {/* Right-side controls (for VIDEO calls) */}
+          {callData.callType === 'VIDEO' && callState === 'active' && (
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-20">
+              <button onClick={toggleVideo} className="w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white" title="Basculer caméra">
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {/* Bottom control bar — WhatsApp-style pill */}
+          <div className="w-full pb-10 flex justify-center z-30">
+            <div className="flex items-center gap-2 px-6 py-4 rounded-full bg-black/50 backdrop-blur-md">
+              {/* Mute */}
+              {callState === 'active' && (
+                <button onClick={toggleMute} className="flex flex-col items-center gap-1 px-3">
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', muted ? 'bg-white' : 'bg-white/20')}>
+                    {muted ? <MicOff className="w-5 h-5 text-slate-900" /> : <Mic className="w-5 h-5" />}
+                  </div>
+                  <span className="text-[10px] text-white/80">{muted ? 'Activer' : 'Micro'}</span>
+                </button>
+              )}
+              {/* Video toggle (VIDEO calls only) */}
+              {callState === 'active' && callData.callType === 'VIDEO' && (
+                <button onClick={toggleVideo} className="flex flex-col items-center gap-1 px-3">
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', videoOff ? 'bg-white' : 'bg-white/20')}>
+                    {videoOff ? <VideoOff className="w-5 h-5 text-slate-900" /> : <Video className="w-5 h-5" />}
+                  </div>
+                  <span className="text-[10px] text-white/80">{videoOff ? 'Caméra' : 'Vidéo'}</span>
+                </button>
+              )}
+              {/* Speaker (always visible) */}
+              {callState === 'active' && (
+                <button className="flex flex-col items-center gap-1 px-3">
+                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white">
+                    <Volume2 className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] text-white/80">Haut-parleur</span>
+                </button>
+              )}
+              {/* End call — red button */}
+              <button onClick={hangup} className="flex flex-col items-center gap-1 px-3">
+                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg">
+                  <Phone className="w-6 h-6 rotate-[135deg]" />
+                </div>
+                <span className="text-[10px] text-white/80">Terminer</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

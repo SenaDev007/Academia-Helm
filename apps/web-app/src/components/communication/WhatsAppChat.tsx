@@ -28,7 +28,7 @@ import {
   ArrowLeft, MoreVertical, Mic, FileText, Image as ImageIcon, Bell,
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
-  BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff,
+  BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -257,6 +257,67 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V1.5: Quick-reaction emoji bar (shown on hover)
   const [showReactionBar, setShowReactionBar] = useState<string | null>(null);
   const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  // ⭐ GAP FILL: In-conversation search
+  const [showConvSearch, setShowConvSearch] = useState(false);
+  const [convSearchQuery, setConvSearchQuery] = useState('');
+  const [convSearchResults, setConvSearchResults] = useState<any[]>([]);
+  const handleConvSearch = async (q: string) => {
+    setConvSearchQuery(q);
+    if (q.trim().length < 2) { setConvSearchResults([]); return; }
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/search?userId=${currentUserId}&q=${encodeURIComponent(q)}`, { credentials: 'include' });
+      if (res.ok) setConvSearchResults(await res.json());
+    } catch {}
+  };
+
+  // ⭐ GAP FILL: User profile modal + status selector
+  const [profileUser, setProfileUser] = useState<{ userId: string; name: string } | null>(null);
+  const [profileData, setProfileData] = useState<any>(null);
+  const [myStatus, setMyStatus] = useState<string>('online');
+
+  const handleOpenProfile = async (userId: string, name: string) => {
+    setProfileUser({ userId, name });
+    try {
+      const res = await fetch(`/api/chat/profile/${userId}`, { credentials: 'include' });
+      if (res.ok) setProfileData(await res.json());
+    } catch {}
+  };
+
+  const handleUpdateMyStatus = async (status: string) => {
+    setMyStatus(status);
+    try {
+      await fetch('/api/chat/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, availabilityStatus: status }),
+        credentials: 'include',
+      });
+      toast.success(`Statut: ${status === 'online' ? 'En ligne' : status === 'away' ? 'Absent' : status === 'dnd' ? 'Ne pas déranger' : 'Hors ligne'}`);
+    } catch {}
+  };
+
+  const handleReportMessage = async (messageId: string) => {
+    try {
+      await fetch(`/api/chat/messages/${messageId}/report`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reporterId: currentUserId, reason: 'Message inapproprié' }),
+        credentials: 'include',
+      });
+      toast.success('Message signalé à l\'administration');
+    } catch (e: any) { toast.error('Échec: ' + e.message); }
+  };
+
+  // ⭐ GAP FILL: Delivered receipt — 3 states (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
+  const getReceiptIcon = (msg: any, isMine: boolean) => {
+    if (!isMine) return null;
+    if (msg.readBy && msg.readBy.length > 0) {
+      return <CheckCheck className="w-3 h-3 text-blue-300" />; // ✓✓ blue = read
+    }
+    if (msg.deliveredAt) {
+      return <CheckCheck className="w-3 h-3 text-slate-400" />; // ✓✓ gray = delivered
+    }
+    return <Check className="w-3 h-3" />; // ✓ single = sent
+  };
   // ⭐ Issue 1 — Custom confirmation modal (replaces native confirm())
   const { danger, warning, dialog: confirmDialogEl } = useConfirmDialog();
   // ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style)
@@ -1747,8 +1808,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 ) : null;
               })()}
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-bold truncate">
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { const other = activeConv.participants.find(p => p.userId !== currentUserId); if (other) handleOpenProfile(other.userId, `${other.firstName || ''} ${other.lastName || ''}`.trim()); }}>
+              <h3 className="text-sm font-bold truncate hover:underline">
                 {getConversationDisplay(activeConv, currentUserId).name}
               </h3>
               {activeConv.type === 'GROUP' ? (
@@ -1796,6 +1857,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <UserPlus className="w-4 h-4" />
               </button>
             )}
+            {/* ⭐ GAP FILL: In-conversation search toggle */}
+            <button
+              onClick={() => setShowConvSearch(!showConvSearch)}
+              className="p-1.5 rounded hover:bg-[#0958D9]"
+              title="Rechercher dans la conversation"
+            >
+              <Search className="w-4 h-4" />
+            </button>
             {/* ⭐ Issue A5 FIX: Search button now opens the global search modal (was a no-op) */}
             <button
               onClick={() => setShowGlobalSearch(true)}
@@ -1934,6 +2003,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
                             >
                               <Trash2 className="w-3.5 h-3.5" /> Supprimer pour moi
+                            </button>
+                            {/* ⭐ GAP FILL: Signaler (moderation) */}
+                            <button
+                              onClick={() => handleReportMessage(msg.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50"
+                            >
+                              <Flag className="w-3.5 h-3.5" /> Signaler
                             </button>
                             {isMine && (
                               <button
@@ -2152,17 +2228,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             <span className="text-[9px] italic opacity-70">modifié</span>
                           )}
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
-                          {isMine && (
-                            <>
-                              {/* ✓✓ blue = read by at least one participant */}
-                              {msg.readBy && msg.readBy.length > 0 ? (
-                                <CheckCheck className="w-3 h-3 text-blue-300" />
-                              ) : (
-                                /* ✓ single = sent (waiting for delivery/read confirmation) */
-                                <Check className="w-3 h-3" />
-                              )}
-                            </>
-                          )}
+                          {isMine && getReceiptIcon(msg, true)}
                         </div>
                         {/* ⭐ V1.5: Quick reaction bar (appears on hover) */}
                         {!isReadOnly && (
@@ -2737,6 +2803,54 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <span className="text-[10px] text-white/80">Terminer</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ GAP FILL: In-conversation search bar */}
+      {showConvSearch && activeConvId && (
+        <div className="absolute top-14 left-0 right-0 z-50 bg-white border-b border-slate-200 p-2">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-slate-400" />
+            <input autoFocus type="text" value={convSearchQuery} onChange={e => handleConvSearch(e.target.value)} placeholder="Rechercher dans cette conversation..." className="flex-1 text-sm outline-none" />
+            <button onClick={() => { setShowConvSearch(false); setConvSearchQuery(''); setConvSearchResults([]); }} className="p-1 hover:bg-slate-100 rounded"><X className="w-4 h-4 text-slate-500" /></button>
+          </div>
+          {convSearchResults.length > 0 && (
+            <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
+              {convSearchResults.map((r: any) => (
+                <div key={r.id} className="p-2 text-xs hover:bg-slate-50 rounded cursor-pointer" onClick={() => setShowConvSearch(false)}>
+                  <p className="text-slate-700 line-clamp-2">{r.content || r.attachmentName || '—'}</p>
+                  <p className="text-[10px] text-slate-400">{new Date(r.createdAt).toLocaleString('fr-FR')}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ⭐ GAP FILL: User profile modal + status selector */}
+      {profileUser && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="p-6 text-center border-b border-slate-100">
+              <div className={cn('w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(profileUser.name))}>{getInitials(profileUser.name)}</div>
+              <h3 className="text-lg font-bold text-slate-900">{profileUser.name}</h3>
+              <p className="text-sm text-slate-500">{profileData?.role || '—'}</p>
+              <p className="text-xs text-slate-400">{profileData?.email || ''}</p>
+              <div className="mt-2"><span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold', profileData?.availabilityStatus === 'online' ? 'bg-green-100 text-green-700' : profileData?.availabilityStatus === 'away' ? 'bg-amber-100 text-amber-700' : profileData?.availabilityStatus === 'dnd' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500')}>{profileData?.availabilityStatus === 'online' ? '🟢 En ligne' : profileData?.availabilityStatus === 'away' ? '🟡 Absent' : profileData?.availabilityStatus === 'dnd' ? '🔴 Ne pas déranger' : '⚫ Hors ligne'}</span></div>
+            </div>
+            {profileData?.bio && <div className="p-4 border-b border-slate-100"><p className="text-xs font-semibold text-slate-500 uppercase mb-1">Bio</p><p className="text-sm text-slate-700">{profileData.bio}</p></div>}
+            {profileUser.userId === currentUserId && (
+              <div className="p-4 border-b border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Mon statut</p>
+                <div className="flex gap-2">
+                  {[{value:'online',label:'🟢 En ligne'},{value:'away',label:'🟡 Absent'},{value:'dnd',label:'🔴 DND'},{value:'offline',label:'⚫ Hors ligne'}].map(s => (
+                    <button key={s.value} onClick={() => handleUpdateMyStatus(s.value)} className={cn('px-2 py-1 rounded-full text-[10px] font-semibold border', myStatus === s.value ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500')}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="p-4 flex justify-end"><button onClick={() => { setProfileUser(null); setProfileData(null); }} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Fermer</button></div>
           </div>
         </div>
       )}

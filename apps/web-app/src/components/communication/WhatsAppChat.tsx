@@ -262,6 +262,77 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ Issue 3 — Document/image preview modal (Telegram/WhatsApp style)
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
+  // ⭐ V2.5: WebRTC call state
+  const [callState, setCallState] = useState<'idle' | 'outgoing' | 'incoming' | 'active'>('idle');
+  const [callData, setCallData] = useState<{ callId: string; callType: 'AUDIO' | 'VIDEO'; otherUserId: string; otherUserName: string } | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [videoOff, setVideoOff] = useState(false);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ⭐ V2.5: Cleanup call resources
+  const cleanupCall = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    setCallState('idle');
+    setCallData(null);
+    setCallDuration(0);
+    setMuted(false);
+    setVideoOff(false);
+  }, []);
+
+  // ⭐ V2.5: WebRTC peer connection setup (shared by caller + callee)
+  const setupPeerConnection = useCallback((otherUserId: string, callId: string) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+    });
+
+    // Add local tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    // ICE candidate → send to remote peer via Socket.io
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket) {
+        socket.emit('call:ice-candidate', { toUserId: otherUserId, callId, candidate: event.candidate });
+      }
+    };
+
+    // Remote track → render in video element
+    pc.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    // Connection state changes
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        cleanupCall();
+      }
+    };
+
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [socket, cleanupCall]);
+
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -1036,25 +1107,161 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     });
   };
 
-  // ⭐ V2: Start a call (audio/video) — records in chat_call_history + initiates WebRTC signaling
+  // ⭐ V2.5: Start a call (audio/video) — full WebRTC flow
   const handleStartCall = async (callType: 'AUDIO' | 'VIDEO') => {
-    if (!activeConvId) return;
+    if (!activeConvId || callState !== 'idle') return;
+    const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
+    if (!other) return;
+    const otherName = `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Utilisateur';
+
     try {
+      // 1. Create call record in DB
       const res = await fetch(`/api/chat/conversations/${activeConvId}/call`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callerId: currentUserId, callType }),
         credentials: 'include',
       });
       const data = await res.json();
-      // ⭐ V2: Initiate WebRTC signaling via Socket.io
-      //    For now, notify the other participants via socket
-      const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
-      if (other && socket) {
-        socket.emit('call:offer', { toUserId: other.userId, callId: data.callId, callType, offer: null });
+      const callId = data.callId;
+
+      // 2. Get local media stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'VIDEO',
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      // 3. Set up WebRTC peer connection + create offer
+      const pc = setupPeerConnection(other.userId, callId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // 4. Send offer to callee via Socket.io
+      if (socket) {
+        socket.emit('call:offer', { toUserId: other.userId, callId, callType, offer });
       }
-      toast.info(`Appel ${callType === 'VIDEO' ? 'vidéo' : 'audio'} en cours...`);
-    } catch (e: any) { toast.error('Échec appel: ' + e.message); }
+
+      setCallData({ callId, callType, otherUserId: other.userId, otherUserName: otherName });
+      setCallState('outgoing');
+    } catch (e: any) {
+      toast.error('Échec appel: ' + e.message);
+      cleanupCall();
+    }
   };
+
+  // ⭐ V2.5: Accept incoming call
+  const acceptCall = async (fromUserId: string, callId: string, callType: string, offer: any) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'VIDEO',
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      const pc = setupPeerConnection(fromUserId, callId);
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (socket) {
+        socket.emit('call:answer', { toUserId: fromUserId, callId, answer });
+      }
+
+      setCallData({ callId, callType: callType as 'AUDIO' | 'VIDEO', otherUserId: fromUserId, otherUserName: callData?.otherUserName || 'Appel' });
+      setCallState('active');
+      // Start duration timer
+      callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+    } catch (e: any) {
+      toast.error('Échec acceptation: ' + e.message);
+      cleanupCall();
+    }
+  };
+
+  // ⭐ V2.5: Reject incoming call
+  const rejectCall = (fromUserId: string, callId: string) => {
+    if (socket) socket.emit('call:reject', { toUserId: fromUserId, callId });
+    fetch(`/api/chat/calls/${callId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'DECLINED' }),
+      credentials: 'include',
+    }).catch(() => {});
+    cleanupCall();
+  };
+
+  // ⭐ V2.5: Hang up (either side)
+  const hangup = () => {
+    if (callData) {
+      if (socket) socket.emit('call:hangup', { toUserId: callData.otherUserId, callId: callData.callId });
+      fetch(`/api/chat/calls/${callData.callId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+        credentials: 'include',
+      }).catch(() => {});
+    }
+    cleanupCall();
+  };
+
+  // ⭐ V2.5: Toggle mute
+  const toggleMute = () => {
+    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setMuted(!audioTrack.enabled);
+    }
+  };
+
+  // ⭐ V2.5: Toggle video
+  const toggleVideo = () => {
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      setVideoOff(!videoTrack.enabled);
+    }
+  };
+
+  // ⭐ V2.5: Socket.io listeners for incoming call events
+  useEffect(() => {
+    if (!socket) return;
+    const onCallOffer = (data: { fromUserId: string; callId: string; callType: string; offer: any }) => {
+      if (callState !== 'idle') return; // Already in a call — auto-reject
+      const otherName = activeConv?.participants?.find(p => p.userId === data.fromUserId);
+      const name = otherName ? `${otherName.firstName || ''} ${otherName.lastName || ''}`.trim() : 'Utilisateur';
+      setCallData({ callId: data.callId, callType: data.callType as 'AUDIO' | 'VIDEO', otherUserId: data.fromUserId, otherUserName: name });
+      setCallState('incoming');
+      // Store offer for acceptCall — we'll need it when user clicks Accept
+      (window as any)._pendingCallOffer = data;
+    };
+    const onCallAnswer = async (data: { fromUserId: string; callId: string; answer: any }) => {
+      if (peerConnectionRef.current && callData?.callId === data.callId) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+        setCallState('active');
+        callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+      }
+    };
+    const onIceCandidate = async (data: { fromUserId: string; callId: string; candidate: any }) => {
+      if (peerConnectionRef.current && callData?.callId === data.callId) {
+        try { await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch {}
+      }
+    };
+    const onCallReject = () => { toast.info('Appel refusé'); cleanupCall(); };
+    const onCallHangup = () => { toast.info('Appel terminé par l\'interlocuteur'); cleanupCall(); };
+
+    socket.on('call:offer', onCallOffer);
+    socket.on('call:answer', onCallAnswer);
+    socket.on('call:ice-candidate', onIceCandidate);
+    socket.on('call:reject', onCallReject);
+    socket.on('call:hangup', onCallHangup);
+
+    return () => {
+      socket.off('call:offer', onCallOffer);
+      socket.off('call:answer', onCallAnswer);
+      socket.off('call:ice-candidate', onIceCandidate);
+      socket.off('call:reject', onCallReject);
+      socket.off('call:hangup', onCallHangup);
+    };
+  }, [socket, callState, callData, activeConv, cleanupCall]);
 
   // ⭐ V2: Generate group invite link (copies to clipboard)
   const handleGenerateInviteLink = async () => {
@@ -2327,6 +2534,124 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               <button onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Annuler</button>
               <button onClick={handleScheduleMessage} disabled={!scheduleText.trim() || !scheduleDate} className="px-4 py-2 text-sm font-bold text-white bg-blue-500 rounded-lg hover:bg-blue-600 disabled:opacity-30">Programmer</button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ⭐ V2.5: WebRTC call overlay + incoming call modal */}
+      {/* Hidden video elements for local + remote streams */}
+      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
+      <video ref={remoteVideoRef} autoPlay playsInline className="hidden" />
+      {/* Incoming call modal */}
+      {callState === 'incoming' && callData && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xs p-8 text-center">
+            <div className={cn('w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(callData.otherUserName))}>
+              {getInitials(callData.otherUserName)}
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-1">{callData.otherUserName}</h3>
+            <p className="text-sm text-slate-500 mb-1">
+              {callData.callType === 'VIDEO' ? 'Appel vidéo entrant' : 'Appel audio entrant'}
+            </p>
+            <p className="text-xs text-slate-400 mb-6">Academia Helm — Helm Connect</p>
+            <div className="flex justify-center gap-6">
+              <button
+                onClick={() => rejectCall(callData.otherUserId, callData.callId)}
+                className="flex flex-col items-center gap-2"
+              >
+                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white">
+                  <Phone className="w-6 h-6 rotate-[135deg]" />
+                </div>
+                <span className="text-xs font-semibold text-slate-600">Refuser</span>
+              </button>
+              <button
+                onClick={() => {
+                  const offer = (window as any)._pendingCallOffer?.offer;
+                  if (offer) acceptCall(callData.otherUserId, callData.callId, callData.callType, offer);
+                }}
+                className="flex flex-col items-center gap-2"
+              >
+                <div className="w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white animate-pulse">
+                  <Phone className="w-6 h-6" />
+                </div>
+                <span className="text-xs font-semibold text-slate-600">Accepter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Outgoing call + active call overlay */}
+      {(callState === 'outgoing' || callState === 'active') && callData && (
+        <div className="fixed inset-0 bg-slate-900 z-[60] flex flex-col items-center justify-between p-8">
+          {/* Remote video (full screen for VIDEO calls) */}
+          {callData.callType === 'VIDEO' && callState === 'active' && (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+          {/* Call info */}
+          <div className="text-center relative z-10">
+            <div className={cn('w-24 h-24 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-3xl font-bold', getAvatarColor(callData.otherUserName))}>
+              {getInitials(callData.otherUserName)}
+            </div>
+            <h3 className="text-xl font-bold text-white mb-1">{callData.otherUserName}</h3>
+            <p className="text-sm text-slate-400">
+              {callState === 'outgoing' ? 'Appel en cours…' : `${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')}`}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              {callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'} — Helm Connect
+            </p>
+          </div>
+          {/* Local video (PiP for VIDEO calls) */}
+          {callData.callType === 'VIDEO' && callState === 'active' && (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className={cn(
+                'absolute bottom-24 right-4 w-32 h-44 rounded-2xl object-cover border-2 border-white/20 z-10',
+                videoOff && 'opacity-30'
+              )}
+            />
+          )}
+          {/* Call controls */}
+          <div className="flex items-center gap-4 relative z-10">
+            {callState === 'active' && (
+              <>
+                <button
+                  onClick={toggleMute}
+                  className={cn(
+                    'w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors',
+                    muted ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'
+                  )}
+                  title={muted ? 'Activer micro' : 'Couper micro'}
+                >
+                  {muted ? <Mic className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+                {callData.callType === 'VIDEO' && (
+                  <button
+                    onClick={toggleVideo}
+                    className={cn(
+                      'w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors',
+                      videoOff ? 'bg-red-500' : 'bg-white/20 hover:bg-white/30'
+                    )}
+                    title={videoOff ? 'Activer caméra' : 'Couper caméra'}
+                  >
+                    <Video className="w-5 h-5" />
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              onClick={hangup}
+              className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white"
+              title="Raccrocher"
+            >
+              <Phone className="w-6 h-6 rotate-[135deg]" />
+            </button>
           </div>
         </div>
       )}

@@ -203,6 +203,24 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length];
 }
 
+// ⭐ FIX: Strip HTML tags from content for previews (reply quote, forward modal, notifications)
+//    Converts <div>/<br> to newlines, removes other tags, decodes entities.
+function stripHtml(html: string | null | undefined): string {
+  if (!html) return '';
+  return html
+    .replace(/<div[^>]*>/g, '\n')
+    .replace(/<\/div>/g, '')
+    .replace(/<br\s*\/?>/g, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -279,9 +297,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
 
-  // ⭐ V1.5: Quick-reaction emoji bar (shown on hover)
+  // ⭐ V1.5: Quick-reaction emoji bar (shown on LONG-PRESS or right-click — WhatsApp style)
   const [showReactionBar, setShowReactionBar] = useState<string | null>(null);
+  const [reactionBarPos, setReactionBarPos] = useState<{ x: number; y: number } | null>(null);
   const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  // ⭐ FIX: Action menu state — React-driven instead of display:none toggle (so click-outside closes it)
+  const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
+  // ⭐ FIX: Long-press timer for mobile reaction bar
+  const longPressTimerRef = useRef<any>(null);
 
   // ⭐ GAP FILL: In-conversation search
   const [showConvSearch, setShowConvSearch] = useState(false);
@@ -1092,6 +1115,73 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  // ⭐ FIX: Instant scroll to bottom on first message load / conversation switch
+  //    The smooth scroll above shows the user the top of the conversation first
+  //    before scrolling down — WhatsApp goes straight to the bottom instantly.
+  const isFirstLoadRef = useRef(true);
+  useEffect(() => {
+    if (messages.length > 0 && isFirstLoadRef.current) {
+      // Instant scroll on first load
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      });
+      isFirstLoadRef.current = false;
+    }
+  }, [messages.length]);
+
+  // ⭐ FIX: Reset first-load flag when conversation changes — next conv should also instant-scroll
+  useEffect(() => {
+    isFirstLoadRef.current = true;
+  }, [activeConvId]);
+
+  // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar
+  useEffect(() => {
+    if (!activeMenuMsgId && !showReactionBar) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Close action menu if click is outside any .msg-action-menu
+      if (activeMenuMsgId && !target.closest('.msg-action-menu') && !target.closest('[data-msg-action-trigger]')) {
+        setActiveMenuMsgId(null);
+      }
+      // Close reaction bar if click is outside
+      if (showReactionBar && !target.closest('.msg-reaction-bar')) {
+        setShowReactionBar(null);
+        setReactionBarPos(null);
+      }
+    };
+    // Use a tiny delay so the same click that opened the menu doesn't immediately close it
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [activeMenuMsgId, showReactionBar]);
+
+  // ⭐ FIX: Reply quote cache — fetch parent message preview for messages with replyToId
+  const [replyQuoteCache, setReplyQuoteCache] = useState<Record<string, { senderName: string; content: string }>>({});
+  useEffect(() => {
+    // For any message with replyToId that's not yet in cache, find it in the current messages list
+    const toFetch = messages.filter((m: any) => m.replyToId && !replyQuoteCache[m.replyToId]);
+    if (toFetch.length === 0) return;
+    // Look in the current messages list first (most parent messages are already loaded)
+    const msgById = new Map(messages.map((m: any) => [m.id, m]));
+    const newEntries: Record<string, { senderName: string; content: string }> = {};
+    for (const m of toFetch) {
+      const parent = msgById.get((m as any).replyToId);
+      if (parent) {
+        newEntries[(m as any).replyToId] = {
+          senderName: `${parent.senderFirstName || parent.sender?.firstName || ''} ${parent.senderLastName || parent.sender?.lastName || ''}`.trim() || 'Utilisateur',
+          content: stripHtml(parent.content) || (parent.type === 'AUDIO' ? '🎤 Message vocal' : parent.type === 'IMAGE' ? '📷 Image' : parent.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
+        };
+      }
+    }
+    if (Object.keys(newEntries).length > 0) {
+      setReplyQuoteCache(prev => ({ ...prev, ...newEntries }));
+    }
+  }, [messages, replyQuoteCache]);
+
   // ───────────────────────────────────────────────────────────────────
   // Send text message (with optional reply-to + formatting preserved)
   // ───────────────────────────────────────────────────────────────────
@@ -1219,7 +1309,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setReplyToMessage({
       id: messageId,
       senderName: `${msg.senderFirstName || ''} ${msg.senderLastName || ''}`.trim() || 'Utilisateur',
-      content: msg.content || (msg.type === 'AUDIO' ? '🎤 Message vocal' : msg.type === 'IMAGE' ? '📷 Image' : msg.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
+      content: stripHtml(msg.content) || (msg.type === 'AUDIO' ? '🎤 Message vocal' : msg.type === 'IMAGE' ? '📷 Image' : msg.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
     });
     // Focus the text input
     setTimeout(() => {
@@ -1254,8 +1344,47 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           : [...existing, { emoji, userId: currentUserId, firstName: user?.firstName, lastName: user?.lastName }];
         return { ...m, reactions: updatedReactions };
       }));
+      // Close the reaction bar after applying
+      setShowReactionBar(null);
+      setReactionBarPos(null);
     } catch (e: any) {
       toast.error('Échec réaction: ' + e.message);
+    }
+  };
+
+  // ⭐ FIX: Long-press handler for mobile reaction bar (WhatsApp style)
+  const handleMessageLongPress = (msg: any, e: React.MouseEvent | React.TouchEvent) => {
+    if (isReadOnly) return;
+    // Get position from event
+    let x = 0, y = 0;
+    if ('clientX' in e) {
+      x = e.clientX;
+      y = e.clientY;
+    } else if ('touches' in e && e.touches.length > 0) {
+      x = e.touches[0].clientX;
+      y = e.touches[0].clientY;
+    }
+    // Position the reaction bar above the message, centered on the click point
+    setReactionBarPos({ x, y });
+    setShowReactionBar(msg.id);
+    // Also open the action menu
+    setActiveMenuMsgId(null);
+  };
+
+  // ⭐ FIX: Start long-press timer on touch start
+  const handleTouchStart = (msg: any, e: React.TouchEvent) => {
+    if (isReadOnly) return;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      handleMessageLongPress(msg, e);
+    }, 500); // 500ms long-press
+  };
+
+  // ⭐ FIX: Cancel long-press on touch end / move
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
   };
 
@@ -2144,20 +2273,53 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       </div>
                     )}
                     <div className={cn('flex group', isMine ? 'justify-end' : 'justify-start')}>
-                      <div className={cn(
-                        'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
-                        isMine
-                          ? 'bg-[#3B9EFF] text-white rounded-br-sm'
-                          : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
-                      )}>
+                      <div
+                        data-msg-id={msg.id}
+                        className={cn(
+                          'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
+                          isMine
+                            ? 'bg-[#3B9EFF] text-white rounded-br-sm'
+                            : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
+                        )}
+                        // ⭐ FIX: Long-press (mobile) + right-click (desktop) → show reaction bar (WhatsApp style)
+                        onContextMenu={(e) => {
+                          if (isReadOnly) return;
+                          e.preventDefault();
+                          handleMessageLongPress(msg, e);
+                        }}
+                        onTouchStart={(e) => handleTouchStart(msg, e)}
+                        onTouchEnd={handleTouchEnd}
+                        onTouchMove={handleTouchEnd}
+                      >
+                        {/* ⭐ FIX: Reply quote inside bubble — WhatsApp style */}
+                        {(msg as any).replyToId && replyQuoteCache[(msg as any).replyToId] && (
+                          <div className={cn(
+                            'mb-1.5 px-2 py-1 rounded-md text-[11px] border-l-2 cursor-pointer',
+                            isMine
+                              ? 'bg-white/10 border-white/40 text-white/80'
+                              : 'bg-slate-100 border-[#1677FF] text-slate-600'
+                          )}
+                          onClick={() => {
+                            // Scroll to the parent message
+                            const el = document.querySelector(`[data-msg-id="${(msg as any).replyToId}"]`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              el.classList.add('ring-2', 'ring-blue-400');
+                              setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 1500);
+                            }
+                          }}
+                        >
+                          <div className="font-bold truncate">{replyQuoteCache[(msg as any).replyToId].senderName}</div>
+                          <div className="truncate opacity-80">{replyQuoteCache[(msg as any).replyToId].content}</div>
+                        </div>
+                        )}
                         {/* ⭐ Message actions — hover button (top right of bubble) */}
                         {!isReadOnly && (
                           <button
+                            data-msg-action-trigger
                             onClick={(e) => {
                               e.stopPropagation();
-                              // Show action menu
-                              const menu = (e.currentTarget.parentElement?.querySelector('.msg-action-menu') as HTMLElement);
-                              if (menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+                              setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id);
                             }}
                             className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity"
                             title="Actions"
@@ -2165,21 +2327,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             <MoreVertical className="w-3 h-3" />
                           </button>
                         )}
-                        {/* ⭐ Action dropdown menu */}
-                        {!isReadOnly && (
-                          <div className="msg-action-menu absolute top-full right-0 mt-1 z-50 min-w-[160px] bg-white border border-slate-200 rounded-lg shadow-xl py-1" style={{ display: 'none' }}>
+                        {/* ⭐ FIX: Action dropdown menu — positioned ABOVE the bubble + state-driven (auto-closes on outside click) */}
+                        {!isReadOnly && activeMenuMsgId === msg.id && (
+                          <div className="msg-action-menu absolute bottom-full right-0 mb-1 z-50 min-w-[160px] bg-white border border-slate-200 rounded-lg shadow-xl py-1">
                             <button
-                              onClick={() => handleMessageReply(msg.id)}
+                              onClick={() => { handleMessageReply(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Reply className="w-3.5 h-3.5" /> Répondre
                             </button>
-                            {/* ⭐ V1.5: Réagir (emoji picker toggle — works on mobile too) */}
+                            {/* ⭐ FIX: Réagir — opens the floating reaction bar above the bubble */}
                             <button
-                              onClick={() => {
-                                setShowReactionBar(showReactionBar === msg.id ? null : msg.id);
-                                const menu = document.querySelector('.msg-action-menu') as HTMLElement;
-                                if (menu) menu.style.display = 'none';
+                              onClick={(e) => {
+                                handleMessageLongPress(msg, e);
+                                setActiveMenuMsgId(null);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
@@ -2187,17 +2348,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             </button>
                             <button
                               onClick={() => {
-                                const text = msg.content?.replace(/<[^>]*>/g, '') || '';
-                                navigator.clipboard.writeText(text).then(() => toast.success('Message copié'));
-                                const menu = document.querySelector('.msg-action-menu') as HTMLElement;
-                                if (menu) menu.style.display = 'none';
+                                const textContent = stripHtml(msg.content);
+                                navigator.clipboard.writeText(textContent).then(() => toast.success('Message copié'));
+                                setActiveMenuMsgId(null);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Copy className="w-3.5 h-3.5" /> Copier
                             </button>
                             <button
-                              onClick={() => handleMessagePin(msg.id)}
+                              onClick={() => { handleMessagePin(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Pin className="w-3.5 h-3.5" /> Épingler
@@ -2207,9 +2367,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               <button
                                 onClick={() => {
                                   setEditingMessageId(msg.id);
-                                  setEditContent(msg.content?.replace(/<[^>]*>/g, '') || '');
-                                  const menu = document.querySelector('.msg-action-menu') as HTMLElement;
-                                  if (menu) menu.style.display = 'none';
+                                  setEditContent(stripHtml(msg.content));
+                                  setActiveMenuMsgId(null);
                                 }}
                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                               >
@@ -2218,27 +2377,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             )}
                             {/* ⭐ V1.5: Forward */}
                             <button
-                              onClick={() => handleMessageForward(msg.id)}
+                              onClick={() => { handleMessageForward(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Forward className="w-3.5 h-3.5" /> Transférer
                             </button>
                             {/* ⭐ V1.5: Important toggle */}
                             <button
-                              onClick={() => handleToggleImportant(msg.id)}
+                              onClick={() => { handleToggleImportant(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Star className="w-3.5 h-3.5" /> {(msg as any).isImportant ? 'Retirer marquage' : 'Marquer important'}
                             </button>
                             <button
-                              onClick={() => handleMessageDeleteForMe(msg.id)}
+                              onClick={() => { handleMessageDeleteForMe(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
                             >
                               <Trash2 className="w-3.5 h-3.5" /> Supprimer pour moi
                             </button>
                             {/* ⭐ GAP FILL: Signaler (moderation) */}
                             <button
-                              onClick={() => handleReportMessage(msg.id)}
+                              onClick={() => { handleReportMessage(msg.id); setActiveMenuMsgId(null); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-50"
                             >
                               <Flag className="w-3.5 h-3.5" /> Signaler
@@ -2246,7 +2405,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             {/* ⭐ V3-2: Transcrire (audio messages only) */}
                             {msg.type === 'AUDIO' && (
                               <button
-                                onClick={() => handleTranscribeMessage(msg.id)}
+                                onClick={() => { handleTranscribeMessage(msg.id); setActiveMenuMsgId(null); }}
                                 disabled={transcribingMsgId === msg.id}
                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
                               >
@@ -2260,7 +2419,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             )}
                             {isMine && (
                               <button
-                                onClick={() => handleMessageDeleteForEveryone(msg.id)}
+                                onClick={() => { handleMessageDeleteForEveryone(msg.id); setActiveMenuMsgId(null); }}
                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
                               >
                                 <Trash2 className="w-3.5 h-3.5" /> Supprimer pour tous
@@ -2635,7 +2794,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           {replyToMessage.senderName}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
-                          {replyToMessage.content}
+                          {stripHtml(replyToMessage.content)}
                         </div>
                       </div>
                       <button
@@ -2918,6 +3077,28 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       )}
+      {/* ⭐ FIX: Floating reaction bar — WhatsApp style. Shown on long-press / right-click.
+          Positioned at the click point, floats ABOVE the message. */}
+      {showReactionBar && reactionBarPos && (
+        <div
+          className="msg-reaction-bar fixed z-[100] flex items-center gap-0.5 bg-white rounded-full shadow-xl border border-slate-200 px-1.5 py-1"
+          style={{
+            left: `${Math.min(reactionBarPos.x - 100, window.innerWidth - 220)}px`,
+            top: `${Math.max(reactionBarPos.y - 50, 10)}px`,
+          }}
+        >
+          {QUICK_EMOJIS.map((emoji) => (
+            <button
+              key={emoji}
+              onClick={() => handleToggleReaction(showReactionBar, emoji)}
+              className="text-xl hover:scale-125 transition-transform p-1 rounded-full hover:bg-slate-100"
+              title={`Réagir avec ${emoji}`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      )}
       {/* ⭐ Helm Connect V2.4 — Global Search modal */}
       {showGlobalSearch && (
         <GlobalSearchModal
@@ -2967,14 +3148,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       )}
       {/* ⭐ V1.5: Forward modal — pick a conversation to forward the message to */}
       {forwardMessageId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setForwardMessageId(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[70vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900">Transférer vers…</h3>
               <button onClick={() => setForwardMessageId(null)} className="p-1 hover:bg-slate-100 rounded-lg">
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
+            {/* ⭐ FIX: Show preview of the message being forwarded */}
+            {(() => {
+              const fwdMsg = messages.find(m => m.id === forwardMessageId);
+              if (!fwdMsg) return null;
+              const preview = stripHtml(fwdMsg.content) || (fwdMsg.type === 'AUDIO' ? '🎤 Message vocal' : fwdMsg.type === 'IMAGE' ? '📷 Image' : fwdMsg.type === 'DOCUMENT' ? '📎 Document' : 'Message');
+              return (
+                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Message à transférer</p>
+                  <p className="text-xs text-slate-600 truncate">{preview}</p>
+                </div>
+              );
+            })()}
             <div className="overflow-y-auto p-2">
               {conversations.filter(c => c.id !== activeConvId).map(conv => {
                 const disp = getConversationDisplay(conv, currentUserId);
@@ -2989,8 +3188,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           body: JSON.stringify({ userId: currentUserId, targetConversationId: conv.id }),
                           credentials: 'include',
                         });
-                        if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                        if (!res.ok) {
+                          const errData = await res.json().catch(() => ({}));
+                          throw new Error((errData as any)?.backendError?.message || (errData as any)?.message || `Erreur ${res.status}`);
+                        }
                         toast.success(`Message transféré vers ${disp.name}`);
+                        // ⭐ FIX: Refresh conversations so the target conv's lastMessage preview updates
+                        loadConversations();
                       } catch (e: any) {
                         toast.error('Échec: ' + e.message);
                       }

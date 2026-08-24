@@ -45,14 +45,14 @@ dependencies:
   # ─── Secure storage (auth token — V2)
   # flutter_secure_storage: ^9.0.0  # V2: migrate JWT from SharedPreferences
 
-  # ─── Images + files (V2)
-  # image_picker: ^1.0.4        # V2: photos + vidéos
-  # file_picker: ^6.1.1        # V2: documents
-  # cached_network_image: ^3.3.0  # V2: cache images
+  # ─── Images + files
+  image_picker: ^1.0.4        # photos + vidéos
+  file_picker: ^6.1.1        # documents
+  cached_network_image: ^3.3.0  # cache images
 
-  # ─── Audio recording (voice messages — V2)
-  # record: ^5.0.4              # V2: messages vocaux
-  # audioplayers: ^5.2.0        # V2: lecture audio
+  # ─── Audio recording (voice messages)
+  record: ^5.0.4              # messages vocaux
+  audioplayers: ^5.2.0        # lecture audio
 
   # ─── Push notifications (Firebase Cloud Messaging) ⭐ ACTIVE ───
   # google-services.json is in android/app/ — registered in Firebase project academia-helm-35536
@@ -74,8 +74,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
   # hive_generator: ^2.0.1   # V2: Hive adapters
   # build_runner: ^2.4.7     # V2: code generation
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#1677FF"
+  adaptive_icon_foreground: "assets/icons/app_icon.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

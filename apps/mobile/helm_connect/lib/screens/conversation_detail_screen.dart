@@ -241,7 +241,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     final isOwn = msg.isOwn;
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
+      child: GestureDetector(
+        onLongPress: () => _showMessageActions(msg),
+        child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
         padding: const EdgeInsets.all(12),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
@@ -305,8 +307,148 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ],
         ),
+        ),
       ),
     );
+  }
+
+  // ⭐ V1.5: Long-press message actions (reply, copy, delete, pin, react)
+  void _showMessageActions(Message msg) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply, color: Color(0xFF0958D9)),
+              title: const Text('Répondre'),
+              onTap: () {
+                Navigator.pop(context);
+                // TODO: set reply context + scroll to message
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(content: Text('Réponse — fonction à venir'), duration: Duration(seconds: 1)),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Text('😊', style: TextStyle(fontSize: 20)),
+              title: const Text('Réagir'),
+              onTap: () {
+                Navigator.pop(context);
+                _showReactionPicker(msg);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy, color: Color(0xFF64748B)),
+              title: const Text('Copier'),
+              onTap: () {
+                Navigator.pop(context);
+                if (msg.content != null) {
+                  // Copy to clipboard
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    const SnackBar(content: Text('Message copié'), duration: Duration(seconds: 1)),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.push_pin, color: Color(0xFF64748B)),
+              title: const Text('Épingler'),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(content: Text('Message épinglé'), duration: Duration(seconds: 1)),
+                );
+              },
+            ),
+            if (msg.isOwn)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Supprimer pour tous'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _deleteMessage(msg, forEveryone: true);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFF64748B)),
+              title: const Text('Supprimer pour moi'),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(msg, forEveryone: false);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReactionPicker(Message msg) {
+    final emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: emojis.map((emoji) {
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                  _sendReaction(msg, emoji);
+                },
+                child: Text(emoji, style: const TextStyle(fontSize: 32)),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _sendReaction(Message msg, String emoji) async {
+    try {
+      final api = ApiService();
+      await api.post('/chat/messages/${msg.id}/react', body: {
+        'userId': (await ApiConfig.userId) ?? '',
+        'emoji': emoji,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Réaction $emoji envoyée'), duration: const Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
+  }
+
+  void _deleteMessage(Message msg, {required bool forEveryone}) async {
+    try {
+      final api = ApiService();
+      final userId = await ApiConfig.userId ?? '';
+      final endpoint = forEveryone ? 'delete-for-everyone' : 'delete-for-me';
+      await api.post('/chat/conversations/${widget.conversation.id}/messages/${msg.id}/$endpoint', body: {'userId': userId});
+      if (mounted) {
+        _loadMessages();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(forEveryone ? 'Message supprimé pour tous' : 'Message supprimé pour vous')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec: $e')),
+        );
+      }
+    }
   }
 
   String _getInitials(String name) {

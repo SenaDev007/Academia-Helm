@@ -26,9 +26,11 @@ import 'package:http/http.dart as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConfig {
-  // ⭐ In production, this resolves to https://<tenant-slug>.acadiahelm.com
-  // Stored in SharedPreferences after first-launch tenant selection.
-  static const String _defaultBase = 'https://academiahelm.com';
+  // ⭐ Backend API URL — same as web app (api.academiahelm.com)
+  // After tenant selection, the tenant-specific subdomain is used for auth.
+  // For API calls (chat, etc.), we always use api.academiahelm.com.
+  static const String _defaultBase = 'https://api.academiahelm.com';
+  static const String _defaultAuthBase = 'https://academiahelm.com';
 
   static String? _tenantBase;
 

@@ -1720,14 +1720,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {/* ⭐ V2: Call buttons (audio + video) + invite link (groups only) */}
             <button
               onClick={() => handleStartCall('AUDIO')}
-              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+              className="p-1.5 rounded hover:bg-[#0958D9]"
               title="Appel audio"
             >
               <Phone className="w-4 h-4" />
             </button>
             <button
               onClick={() => handleStartCall('VIDEO')}
-              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+              className="p-1.5 rounded hover:bg-[#0958D9]"
               title="Appel vidéo"
             >
               <Video className="w-4 h-4" />
@@ -1735,7 +1735,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {activeConv.type === 'GROUP' && (
               <button
                 onClick={handleGenerateInviteLink}
-                className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:block"
+                className="p-1.5 rounded hover:bg-[#0958D9]"
                 title="Copier le lien d'invitation"
               >
                 <UserPlus className="w-4 h-4" />
@@ -1817,6 +1817,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Reply className="w-3.5 h-3.5" /> Répondre
+                            </button>
+                            {/* ⭐ V1.5: Réagir (emoji picker toggle — works on mobile too) */}
+                            <button
+                              onClick={() => {
+                                setShowReactionBar(showReactionBar === msg.id ? null : msg.id);
+                                const menu = document.querySelector('.msg-action-menu') as HTMLElement;
+                                if (menu) menu.style.display = 'none';
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <span className="text-sm">😊</span> Réagir
                             </button>
                             <button
                               onClick={() => {
@@ -2102,7 +2113,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {!isReadOnly && (
                           <div className={cn(
                             'absolute -top-7 right-0 flex items-center gap-0.5 bg-white rounded-full shadow-lg border border-slate-200 px-1 py-0.5 transition-opacity',
-                            showReactionBar === msg.id ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                            showReactionBar === msg.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
                           )}>
                             {QUICK_EMOJIS.map(emoji => (
                               <button

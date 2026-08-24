@@ -32,6 +32,8 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { ChatService } from './services/chat.service';
 import { StorageService } from '../common/services/storage.service';
 import { PushNotificationService } from './services/push-notification.service';
+// ⭐ V3-3: ORION-powered conversation summaries
+import { ChatSummaryService } from './services/chat-summary.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -54,6 +56,8 @@ export class ChatController {
     private readonly chatService: ChatService,
     private readonly storage: StorageService,
     private readonly pushService: PushNotificationService,
+    // ⭐ V3-3: ORION-powered conversation summaries
+    private readonly summaryService: ChatSummaryService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -705,5 +709,23 @@ export class ChatController {
   async createPedagogicalConversation(@TenantId() tenantId: string, @Body() body: { creatorId: string; classId: string; subjectId?: string; name?: string }) {
     if (!body.creatorId) throw new BadRequestException('creatorId is required');
     return this.chatService.createPedagogicalConversation(tenantId, body.creatorId, { classId: body.classId, subjectId: body.subjectId, name: body.name });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V3-3: ORION-POWERED CONVERSATION SUMMARY
+  // ═════════════════════════════════════════════════════════════════
+  @Post('conversations/:id/summarize')
+  async summarizeConversation(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { userId: string; maxMessages?: number },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.summaryService.summarizeConversation(
+      tenantId,
+      body.userId,
+      conversationId,
+      { maxMessages: body.maxMessages },
+    );
   }
 }

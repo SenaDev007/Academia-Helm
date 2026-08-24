@@ -62,6 +62,8 @@ import { ConversationDocumentCenterService } from './services/document-center.se
 import { PollService } from './services/poll.service';
 import { PollController } from './poll.controller';
 import { HelmConnectNotificationBridgeService } from './services/helm-connect-bridge.service';
+// ⭐ V3-3: ORION-powered chat conversation summaries
+import { ChatSummaryService } from './services/chat-summary.service';
 
 @Module({
   imports: [
@@ -147,6 +149,8 @@ import { HelmConnectNotificationBridgeService } from './services/helm-connect-br
     PollService,
     // ⭐ V3-4 — Helm Connect Notification Bridge (Examens/Absences/Discipline → Helm Connect)
     HelmConnectNotificationBridgeService,
+    // ⭐ V3-3 — ORION-powered chat conversation summaries
+    ChatSummaryService,
   ],
   exports: [
     EmailService,
@@ -174,6 +178,8 @@ import { HelmConnectNotificationBridgeService } from './services/helm-connect-br
     ChatService,
     // ⭐ V3-4 — Bridge pour notifications multi-canal depuis Examens/Absences/Discipline
     HelmConnectNotificationBridgeService,
+    // ⭐ V3-3 — Chat summary service (exposed for ChatController)
+    ChatSummaryService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

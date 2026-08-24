@@ -29,6 +29,7 @@ import {
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
+  Sparkles, ListChecks, ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -260,6 +261,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  // ⭐ V3-3 — ORION-powered conversation summary
+  const [showSummary, setShowSummary] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryData, setSummaryData] = useState<any>(null);
   // ⭐ Helm Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
   // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
@@ -322,6 +327,30 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       });
       toast.success('Message signalé à l\'administration');
     } catch (e: any) { toast.error('Échec: ' + e.message); }
+  };
+
+  // ⭐ V3-3: ORION-powered conversation summary — call POST /chat/conversations/:id/summarize
+  const handleSummarizeConversation = async () => {
+    if (!activeConvId) return;
+    setShowSummary(true);
+    setSummaryLoading(true);
+    setSummaryData(null);
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/summarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, maxMessages: 50 }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to summarize conversation');
+      const data = await res.json();
+      setSummaryData(data);
+    } catch (e: any) {
+      toast.error('Échec du résumé: ' + e.message);
+      setShowSummary(false);
+    } finally {
+      setSummaryLoading(false);
+    }
   };
 
   // ⭐ GAP FILL: Delivered receipt — 3 states (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
@@ -2035,6 +2064,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             >
               <Search className="w-4 h-4" />
             </button>
+            {/* ⭐ V3-3: ORION-powered conversation summary button (Sparkles icon) */}
+            <button
+              onClick={handleSummarizeConversation}
+              className="p-1.5 rounded hover:bg-[#0958D9]"
+              title="Résumer la conversation (ORION IA)"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
             {/* ⭐ Issue A5 FIX: MoreVertical button now opens notification preferences for this conversation (was a no-op) */}
             <button
               onClick={() => setShowNotifPrefs(true)}
@@ -2722,6 +2759,116 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           currentUserId={currentUserId}
           onClose={() => setShowNotifPrefs(false)}
         />
+      )}
+      {/* ⭐ V3-3 — ORION-powered conversation summary modal */}
+      {showSummary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !summaryLoading && setShowSummary(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Résumé ORION</h3>
+                  <p className="text-[10px] text-slate-500">Synthèse intelligente de la conversation</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !summaryLoading && setShowSummary(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                disabled={summaryLoading}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 space-y-4">
+              {summaryLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3 text-indigo-500" />
+                  <p className="text-sm font-medium">Analyse de la conversation par ORION...</p>
+                  <p className="text-xs text-slate-400 mt-1">Cela peut prendre 5 à 10 secondes</p>
+                </div>
+              ) : summaryData ? (
+                <>
+                  {/* Synthèse */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-indigo-600" />
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Synthèse</h4>
+                    </div>
+                    <p className="text-sm text-slate-700 leading-relaxed">{summaryData.summary}</p>
+                  </div>
+
+                  {/* Points clés */}
+                  {summaryData.keyPoints?.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <ListChecks className="w-4 h-4 text-emerald-600" />
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Points clés</h4>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {summaryData.keyPoints.map((point: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                            <span className="text-emerald-500 mt-1.5">•</span>
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Action items */}
+                  {summaryData.actionItems?.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Actions & décisions</h4>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {summaryData.actionItems.map((item: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                            <span className="text-amber-500 mt-1.5">→</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Suggested title */}
+                  {summaryData.suggestedTitle && (
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Titre suggéré</p>
+                      <p className="text-sm font-medium text-slate-800">{summaryData.suggestedTitle}</p>
+                    </div>
+                  )}
+
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    <span>{summaryData.messageCount} messages analysés</span>
+                    <span>•</span>
+                    <span>{summaryData.participantCount} participants</span>
+                    <span>•</span>
+                    <span className={summaryData.usingLLM ? 'text-emerald-600' : 'text-amber-600'}>
+                      {summaryData.usingLLM ? 'ORION IA' : 'Résumé basique (fallback)'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-sm">Aucun résumé disponible</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {/* ⭐ Helm Connect V2.4 — Global Search modal */}
       {showGlobalSearch && (

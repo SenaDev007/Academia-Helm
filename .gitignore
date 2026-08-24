@@ -13,6 +13,12 @@ bun.lock
 .env.production
 .env.development
 .env.staging
+.env.*.local
+
+# ⭐ V3-4: Firebase service account — NEVER commit (contains private key)
+apps/api-server/firebase-service-account.json
+apps/api-server/*firebase*.json
+!apps/api-server/firebase-service-account.example.json
 
 # Scripts with sensitive DB credentials — NEVER commit
 scripts/*.py

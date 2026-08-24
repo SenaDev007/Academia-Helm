@@ -48,6 +48,8 @@ export class FcmSenderService {
   private firebaseApp: any = null;
   private isInitialized = false;
   private isConfigured = false;
+  // ⭐ FIX: store the getMessaging function (firebase-admin 12.x modular API)
+  private _getMessaging: (() => any) | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -118,9 +120,13 @@ export class FcmSenderService {
         this.firebaseApp = existingApps[0];
       } else {
         this.firebaseApp = (admin as any).initializeApp({
-          credential: (admin as any).credential.cert(serviceAccount),
+          credential: (admin as any).cert(serviceAccount),
         });
       }
+      // ⭐ FIX: messaging is a separate module in firebase-admin 12.x
+      //    We store the getMessaging function for later use.
+      const { getMessaging } = await import('firebase-admin/messaging');
+      this._getMessaging = () => getMessaging(this.firebaseApp);
       this.isConfigured = true;
       this.logger.log('✅ Firebase Admin SDK initialized — FCM push notifications enabled.');
     } catch (e: any) {
@@ -222,7 +228,7 @@ export class FcmSenderService {
 
     try {
       const admin = await import('firebase-admin');
-      const messaging = (admin as any).messaging(this.firebaseApp);
+      const messaging = this._getMessaging ? this._getMessaging() : (admin as any).messaging(this.firebaseApp);
 
       // Build the multicast message
       const message = {

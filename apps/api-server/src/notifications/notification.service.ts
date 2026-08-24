@@ -21,9 +21,11 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PushService } from './push.service';
+// ⭐ V3-4: FCM sender for mobile push notifications
+import { FcmSenderService } from './fcm-sender.service';
 
 @Injectable()
 export class NotificationService {
@@ -32,6 +34,8 @@ export class NotificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pushService: PushService,
+    @Optional() @Inject(FcmSenderService)
+    private readonly fcmSender?: FcmSenderService,
   ) {}
 
   // ═══ CRUD principal ═══
@@ -80,6 +84,25 @@ export class NotificationService {
       .catch((err) =>
         this.logger.warn(`Push send failed (in create): ${err.message}`),
       );
+
+    // ⭐ V3-4: Fire-and-forget — envoyer aussi un push FCM aux appareils mobiles
+    //    (l'app mobile Flutter enregistre ses tokens via POST /notifications/device-tokens)
+    if (this.fcmSender) {
+      this.fcmSender
+        .sendToUser(data.recipientId, {
+          title: data.title,
+          body: data.body,
+          type: data.type,
+          data: data.data
+            ? Object.fromEntries(
+                Object.entries(data.data).map(([k, v]) => [k, String(v)]),
+              )
+            : undefined,
+        })
+        .catch((err) =>
+          this.logger.warn(`FCM send failed (in create): ${err.message}`),
+        );
+    }
 
     return notification;
   }

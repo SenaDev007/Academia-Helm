@@ -30,12 +30,14 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { WhatsAppService } from './whatsapp.service';
 import { SmsService } from './sms.service';
 import { NotificationService } from '../../notifications/notification.service';
 import { ChatService } from './chat.service';
+// ⭐ V3-4: FCM sender for mobile push notifications
+import { FcmSenderService } from '../../notifications/fcm-sender.service';
 
 // ─── Types payloads ─────────────────────────────────────────────────────
 
@@ -102,6 +104,8 @@ export class HelmConnectNotificationBridgeService {
     private readonly smsService: SmsService,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
+    @Optional() @Inject(FcmSenderService)
+    private readonly fcmSender?: FcmSenderService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════════
@@ -243,6 +247,12 @@ export class HelmConnectNotificationBridgeService {
         result.channels.helmConnectMessage = { status: 'failed', error: e.message };
         this.logger.warn(`notifyAbsenceCreated: helm connect message failed: ${e.message}`);
       }
+
+      // ⭐ V3-4: FCM push to the staff's mobile devices is automatically sent
+      //    by NotificationService.create() (which now calls FcmSenderService.sendToUser).
+      //    For the parent, the Helm Connect chat message above triggers a socket event
+      //    on their mobile app, plus they already receive WhatsApp + SMS above.
+      //    So no extra FCM call is needed here — the bridge is multi-canal by design.
 
       this.logger.log(
         `notifyAbsenceCreated: absence ${payload.absenceId} — inApp=${result.channels.inApp?.status} whatsapp=${result.channels.whatsapp?.status} helm=${result.channels.helmConnectMessage?.status}`,

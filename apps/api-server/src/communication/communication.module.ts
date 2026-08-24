@@ -64,6 +64,8 @@ import { PollController } from './poll.controller';
 import { HelmConnectNotificationBridgeService } from './services/helm-connect-bridge.service';
 // ⭐ V3-3: ORION-powered chat conversation summaries
 import { ChatSummaryService } from './services/chat-summary.service';
+// ⭐ V3-2: Whisper-powered audio transcriptions
+import { ChatTranscriptionService } from './services/chat-transcription.service';
 
 @Module({
   imports: [
@@ -151,6 +153,8 @@ import { ChatSummaryService } from './services/chat-summary.service';
     HelmConnectNotificationBridgeService,
     // ⭐ V3-3 — ORION-powered chat conversation summaries
     ChatSummaryService,
+    // ⭐ V3-2 — Whisper-powered audio transcriptions
+    ChatTranscriptionService,
   ],
   exports: [
     EmailService,
@@ -180,6 +184,8 @@ import { ChatSummaryService } from './services/chat-summary.service';
     HelmConnectNotificationBridgeService,
     // ⭐ V3-3 — Chat summary service (exposed for ChatController)
     ChatSummaryService,
+    // ⭐ V3-2 — Chat transcription service (exposed for ChatController)
+    ChatTranscriptionService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

@@ -34,6 +34,8 @@ import { StorageService } from '../common/services/storage.service';
 import { PushNotificationService } from './services/push-notification.service';
 // ⭐ V3-3: ORION-powered conversation summaries
 import { ChatSummaryService } from './services/chat-summary.service';
+// ⭐ V3-2: Whisper-powered audio transcriptions
+import { ChatTranscriptionService } from './services/chat-transcription.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -58,6 +60,8 @@ export class ChatController {
     private readonly pushService: PushNotificationService,
     // ⭐ V3-3: ORION-powered conversation summaries
     private readonly summaryService: ChatSummaryService,
+    // ⭐ V3-2: Whisper-powered audio transcriptions
+    private readonly transcriptionService: ChatTranscriptionService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -727,5 +731,16 @@ export class ChatController {
       conversationId,
       { maxMessages: body.maxMessages },
     );
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V3-2: WHISPER-POWERED AUDIO TRANSCRIPTION
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:id/transcribe')
+  async transcribeMessage(
+    @TenantId() tenantId: string,
+    @Param('id') messageId: string,
+  ) {
+    return this.transcriptionService.transcribeMessage(tenantId, messageId);
   }
 }

@@ -29,7 +29,7 @@ import {
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
-  Sparkles, ListChecks, ClipboardList,
+  Sparkles, ListChecks, ClipboardList, AudioLines,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -265,6 +265,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showSummary, setShowSummary] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryData, setSummaryData] = useState<any>(null);
+  // ⭐ V3-2 — Whisper transcription state
+  const [transcribingMsgId, setTranscribingMsgId] = useState<string | null>(null);
+  const [transcriptions, setTranscriptions] = useState<Record<string, string>>({});
   // ⭐ Helm Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
   // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
@@ -350,6 +353,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       setShowSummary(false);
     } finally {
       setSummaryLoading(false);
+    }
+  };
+
+  // ⭐ V3-2: Whisper transcription — call POST /chat/messages/:id/transcribe
+  const handleTranscribeMessage = async (messageId: string) => {
+    // Si déjà transcrit dans le state → ne pas re-demander
+    if (transcriptions[messageId]) {
+      toast.success('Transcription déjà disponible', { description: transcriptions[messageId].substring(0, 200) + (transcriptions[messageId].length > 200 ? '...' : '') });
+      return;
+    }
+    setTranscribingMsgId(messageId);
+    try {
+      const res = await fetch(`/api/chat/messages/${messageId}/transcribe`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to transcribe audio');
+      const data = await res.json();
+      if (data.transcription) {
+        setTranscriptions(prev => ({ ...prev, [messageId]: data.transcription }));
+        toast.success('Transcription disponible', {
+          description: data.transcription.substring(0, 300) + (data.transcription.length > 300 ? '...' : ''),
+        });
+      } else {
+        toast.error('Aucune transcription disponible');
+      }
+    } catch (e: any) {
+      toast.error('Échec de la transcription: ' + e.message);
+    } finally {
+      setTranscribingMsgId(null);
     }
   };
 
@@ -2210,6 +2243,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             >
                               <Flag className="w-3.5 h-3.5" /> Signaler
                             </button>
+                            {/* ⭐ V3-2: Transcrire (audio messages only) */}
+                            {msg.type === 'AUDIO' && (
+                              <button
+                                onClick={() => handleTranscribeMessage(msg.id)}
+                                disabled={transcribingMsgId === msg.id}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+                              >
+                                {transcribingMsgId === msg.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <AudioLines className="w-3.5 h-3.5" />
+                                )}
+                                {transcribingMsgId === msg.id ? 'Transcription en cours...' : 'Transcrire (Whisper)'}
+                              </button>
+                            )}
                             {isMine && (
                               <button
                                 onClick={() => handleMessageDeleteForEveryone(msg.id)}

@@ -9026,3 +9026,51 @@ Stage Summary:
   app registers tokens server-side, but the actual push dispatch from server
   to FCM will be added when the project owner provides FCM credentials. The
   in-app bell (web + mobile) works end-to-end already.
+
+---
+Task ID: V3.5-Helm-Connect-Fixes
+Agent: main (Super Z, GLM-5.2)
+Task: Fix Helm Connect UX bugs reported by user — reactions, scroll, action menu, reply indicator, HTML strip, forward, call ringtone, caller name, video, speaker
+
+Work Log:
+- Updated git config: user.email = s.akpovitohou@gmail.com, user.name = SenaDev007
+- Committed 2 fix batches and pushed to main (6159b073, e07d99b5)
+
+Chat UX fixes (6159b073):
+- Reactions: replaced hover trigger with onContextMenu (desktop right-click) +
+  onTouchStart/onTouchEnd (mobile long-press 500ms). Added floating reaction bar
+  positioned at click point (fixed, z-100). Auto-closes on outside click.
+- Scroll: added isFirstLoadRef — on first load / conversation switch, uses
+  behavior:'auto' (instant) instead of 'smooth' (which showed top first).
+  Resets when activeConvId changes.
+- Action menu: changed CSS from top-full to bottom-full mb-1 (above bubble).
+  Replaced display:none toggle with React state activeMenuMsgId. Added
+  document mousedown listener for click-outside auto-close.
+- Reply quote: when msg.replyToId is set, a quote preview renders at the top
+  of the bubble with parent sender name + content (stripped HTML). Clicking
+  scrolls to parent + highlights (ring-2 ring-blue-400 for 1.5s).
+- stripHtml utility: converts <div>/<br> to newlines, strips other tags,
+  decodes entities. Applied to reply preview, reply quote, copy action,
+  edit mode, forward modal, handleMessageReply.
+- Forward modal: added click-outside-to-close, message preview at top,
+  loadConversations() after success, better error extraction.
+
+Call fixes (e07d99b5):
+- Ringtone: reduced volume 0.15→0.05-0.06. Outgoing = single G4 beep every 2s.
+  Incoming = double C5+E5 chord every 3s. Gentle attack/release envelope.
+  playRingtone accepts mode parameter.
+- Caller name: backend chat.gateway.ts forwards callerName + callerAvatarUrl
+  in call:offer event. Frontend handleStartCall includes them in the emit.
+  onCallOffer uses data.callerName (fallback to participants, then Utilisateur).
+- Video remote stream: added remoteStreamRef. pc.ontrack stores stream in ref.
+  useEffect re-attaches stream to remoteVideoRef.current on callState change
+  (fixes the bug where the active overlay renders a NEW video element that
+  starts with srcObject=null). Hidden video elements changed from hidden to
+  sr-only (display:none prevents audio in some browsers).
+- Speaker button: added speakerOn state. Button onClick toggles it. useEffect
+  applies to remoteVideoRef volume + muted. Label: Haut-parleur/Muet.
+
+Stage Summary:
+- All 11 user-reported bugs fixed and pushed to main
+- 2 commits, both with detailed commit messages
+- Deployment triggered via push to main

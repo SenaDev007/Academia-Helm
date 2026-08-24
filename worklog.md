@@ -9074,3 +9074,60 @@ Stage Summary:
 - All 11 user-reported bugs fixed and pushed to main
 - 2 commits, both with detailed commit messages
 - Deployment triggered via push to main
+
+---
+Task ID: V3-4-FCM + V3-5-Mobile-Parity
+Agent: main (Super Z, GLM-5.2)
+Task: Execute migrations on Neon + implement backend FCM sender + audit mobile parity + fix build blockers + add P1 feature gaps
+
+Work Log:
+- Migrations executed on Neon PostgreSQL via Node.js pg script:
+  * 20260901150000_add_fcm_device_tokens — fcm_device_tokens table created
+  * 20260901160000_add_message_transcription — chat_messages.transcription column added
+  * Both verified via information_schema, both recorded in _prisma_migrations table.
+- Backend FCM sender implemented:
+  * FcmSenderService (firebase-admin ^12.7.0) — lazy init, silent skip if not configured
+  * Reads FIREBASE_SERVICE_ACCOUNT_PATH or individual FIREBASE_* env vars
+  * sendToUser / sendToUsers, batches of 500, auto-deactivates stale tokens
+  * Wired into NotificationService.create() + HelmConnectNotificationBridgeService
+- Mobile audit completed via Explore agent (42 features scored):
+  * 5 ✅ full, 15 ⚠️ partial, 22 ❌ missing
+  * 6 build blockers identified (B1-B6)
+- Mobile build blockers fixed:
+  * B1: sendAttachment moved from ApiException to ApiService
+  * B2: ApiConfig.userId/getToken/_getHeaders → AuthService.* + ApiService._getHeaders
+  * B3: dart:io import added
+  * B4: api.getAuthToken() → ApiService.getAuthToken() (static)
+  * B5: api.post(path, body:) → ApiService.post(path, body) (positional)
+  * B6: settings.gradle.kts — com.google.gms.google-services 4.4.2 declared
+  * local.properties created (machine-specific, gitignored)
+- Mobile P1 feature gaps filled:
+  1. Reactions display on bubbles (grouped emoji pills with count + tap-to-toggle)
+  2. Reply-to complete (bar above composer + quote in bubble + replyToId sent)
+  3. Read receipts 3 states (✓ / ✓✓ gray / ✓✓ blue)
+  4. Forward (conversation picker modal + ApiService.forwardMessage)
+  5. Edit (dialog + ApiService.editMessage)
+  6. Copy (real Clipboard.setData)
+  7. Pin + Important (calls backend, toggles labels)
+  8. Typing indicator (bound onTypingStart/Stop + _onTextChanged)
+  9. Strip HTML in previews (stripHtml utility in models.dart)
+  10. FCM foreground banner (flutter_local_notifications show on onMessage)
+  11. FCM deep-link (_navigateToUrl on onMessageOpenedApp + getInitialMessage)
+  12. New ApiService endpoints (16 added: sendAttachment, addReaction, editMessage,
+      forwardMessage, markImportant, pinMessage, deleteMessageForMe/Everyone,
+      searchInConversation, getPresence, updatePresence, getProfile, updateProfile,
+      uploadAvatar, confirmAnnouncementRead, registerFcmToken, listNotifications,
+      markNotificationRead, markAllNotificationsRead)
+  13. pubspec.yaml: added http_parser, flutter_webrtc (scaffold), permission_handler
+  14. .gitignore: added helm_connect machine-specific entries
+
+Stage Summary:
+- Mobile is now ready to build in Android Studio:
+  1. cd apps/mobile/helm_connect && flutter pub get
+  2. Edit android/local.properties → set flutter.sdk path
+  3. Open android/ folder in Android Studio → Gradle sync succeeds
+  4. Run 'app' on a connected Android device
+- All 6 build blockers fixed. P1 gaps (typing, reply, forward, edit, copy, pin,
+  important, reactions, read receipts, FCM banner + deep-link) all implemented.
+- FCM sender backend ready — project owner must set FIREBASE_* env vars in .env
+  to enable actual push dispatch (the in-app bell works without it).

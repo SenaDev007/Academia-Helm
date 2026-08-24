@@ -22,8 +22,8 @@
  */
 
 import {
-  Controller, Get, Post, Body, Param, Query, Res, UseGuards,
-  UseInterceptors, UploadedFile, BadRequestException, ForbiddenException,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, Res, UseGuards,
+  UseInterceptors, UploadedFile, BadRequestException, ForbiddenException, NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';

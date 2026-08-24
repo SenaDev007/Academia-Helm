@@ -19,7 +19,7 @@
  * 1. CE1-CM2 : 1 fiche standard (5 semaines × champs de formation)
  * 2. CI-CP IMMERSION (T1 : Septembre → Décembre) — focus accueil/exploration
  * 3. CI-CP SYSTÉMATIQUE (T2+T3 : Janvier → Juin) — leçons structurées
- * 4. MATERNELLE : pas encore disponible
+ * 4. MATERNELLE : 5 domaines (D1-D5) × activités × 4 semaines (Tableau A officiel)
  * ============================================================================
  */
 
@@ -264,6 +264,36 @@ const FICHE_SYSTEMATIQUE: FicheChamp[] = [
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
 
+// ⭐ V3-6: FICHE MATERNELLE — Tableau A officiel (Planification des activités pédagogiques)
+//    5 Domaines (D1-D5) × activités × 4 semaines (1ère → 4ème)
+//    Conforme au PDF officiel "Planification mensuelle maternelle"
+//    Les codes correspondent aux domaines du annual-plan-seed-data.ts (I, II, III, IV, V)
+const FICHE_MATERNELLE: FicheChamp[] = [
+  {
+    code: "I", label: "D1 : Santé et environnement", color: "bg-emerald-600",
+    subRows: ["Education pour la santé", "Passage aux toilettes", "Lavage des mains", "Goûter"],
+  },
+  {
+    code: "II", label: "D2 : Expression corporelle", color: "bg-rose-600",
+    subRows: ["Expression corporelle"],
+  },
+  {
+    code: "III", label: "D3 : Pré-apprentissages", color: "bg-blue-600",
+    subRows: ["Pré-lecture", "Pré-écriture", "Pré-mathématique", "Observation", "Education sensorielle", "Travaux manuels", "Expression plastique"],
+  },
+  {
+    code: "IV", label: "D4 : Santé Emotionnelle", color: "bg-purple-600",
+    subRows: ["Expression émotionnelle"],
+  },
+  {
+    code: "V", label: "D5 : Relations et de l'Interaction Sociale et socio-affective", color: "bg-indigo-600",
+    subRows: ["Poésie", "Chant", "Devinette", "Comptine", "Conte", "Langage"],
+  },
+];
+
+// ⭐ V3-6: 4 semaines pour la maternelle (le Tableau A officiel a 4 semaines, pas 5)
+const WEEK_LABELS_MATERNELLE = ["1ère semaine", "2ème semaine", "3ème semaine", "4ème semaine"];
+
 const WEEK_LABELS = ["Première Semaine", "Deuxième Semaine", "Troisième Semaine", "Quatrième Semaine", "Cinquième Semaine"];
 const MONTH_NAMES = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
@@ -337,13 +367,17 @@ export function MonthlyPlanningTab({
   );
 
   const ficheStructure = isMaternelle
-    ? null
+    ? FICHE_MATERNELLE
     : showImmersionSheet ? FICHE_IMMERSION
     : showSystematicSheet ? FICHE_SYSTEMATIQUE
     : FICHE_STANDARD;
 
+  // ⭐ V3-6: La maternelle utilise 4 semaines (Tableau A officiel), les autres 5 semaines
+  const activeWeekLabels = isMaternelle ? WEEK_LABELS_MATERNELLE : WEEK_LABELS;
+  const activeWeekRanges = isMaternelle ? weekRanges.slice(0, 4) : weekRanges;
+
   const sheetLabel = isMaternelle
-    ? "Maternelle — Bientôt disponible"
+    ? "Maternelle — Tableau A (5 domaines × 4 semaines)"
     : showImmersionSheet
       ? "Période d'immersion (T1 — Septembre → Décembre)"
       : showSystematicSheet
@@ -722,7 +756,7 @@ export function MonthlyPlanningTab({
               <option key={m.value} value={m.value}>{m.value}</option>
             ))}
           </select>
-          {!isMaternelle && (
+          {(
             <>
               <button
                 onClick={autoPropose}
@@ -814,10 +848,10 @@ export function MonthlyPlanningTab({
           : <Calendar className="w-4 h-4 mt-0.5 flex-shrink-0" />}
         <div>
           <strong>{sheetLabel}</strong>
-          {isMaternelle && <span className="ml-2">— La planification mensuelle pour la Maternelle n'est pas encore disponible.</span>}
           {showImmersionSheet && <span className="ml-2">— Fiche d'immersion CI/CP pour le 1er trimestre (accueil, exploration, initiation).</span>}
           {showSystematicSheet && <span className="ml-2">— Fiche systématique CI/CP pour les 2e et 3e trimestres (leçons structurées).</span>}
           {!isMaternelle && !showImmersionSheet && !showSystematicSheet && <span className="ml-2">— Fiche standard CE1-CM2.</span>}
+          {isMaternelle && <span className="ml-2">— Tableau A officiel (5 domaines × 4 semaines).</span>}
           {/* ⭐ Message si soumis/validé */}
           {planStatus === "SUBMITTED" && (
             <div className="mt-1 text-blue-700 font-semibold">📋 Planification soumise au directeur — en attente de validation.</div>
@@ -833,41 +867,33 @@ export function MonthlyPlanningTab({
         </div>
       </div>
 
-      {/* ⭐ MATERNELLE — carte "pas encore disponible" */}
-      {isMaternelle ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
-            <Calendar className="h-8 w-8 text-slate-400" />
-          </div>
-          <h3 className="text-base font-bold text-slate-800 mb-2">Planification mensuelle — Maternelle</h3>
-          <p className="text-sm text-slate-600 max-w-md mx-auto">
-            Cette fonctionnalité n'est pas encore disponible pour la Maternelle. Le document officiel est en cours d'élaboration.
-          </p>
-        </div>
-      ) : ficheStructure && (
+      {/* ⭐ V3-6: TABLEAU (desktop + mobile) — rendered for ALL class levels including Maternelle */}
+      {ficheStructure && (
         <>
           {/* ⭐ TABLEAU DESKTOP (md+) — scrollable horizontalement */}
           <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
-            <table className="text-xs border-collapse w-full" style={{ minWidth: '1100px' }}>
+            <table className="text-xs border-collapse w-full" style={{ minWidth: isMaternelle ? '900px' : '1100px' }}>
               <colgroup>
                 <col style={{ width: "15%" }} />
-                {WEEK_LABELS.map((_, i) => (
-                  <col key={i} style={{ width: "17%" }} />
+                {activeWeekLabels.map((_, i) => (
+                  <col key={i} style={{ width: isMaternelle ? "21%" : "17%" }} />
                 ))}
               </colgroup>
               <thead>
                 {/* Ligne 1 : header semaines */}
                 <tr className="bg-slate-700 text-white">
-                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "15%" }}>Champ de Formation</th>
-                  {WEEK_LABELS.map((wk, i) => (
+                  <th className="p-2 border border-slate-400 text-center" rowSpan={2} style={{ width: "15%" }}>
+                    {isMaternelle ? "Domaines" : "Champ de Formation"}
+                  </th>
+                  {activeWeekLabels.map((wk, i) => (
                     <th key={wk} className="p-2 border border-slate-400 text-center">
-                      {wk}
+                      {isMaternelle ? "Activités / " : ""}{wk}
                     </th>
                   ))}
                 </tr>
                 {/* Ligne 2 : date ranges dynamiques */}
                 <tr className="bg-slate-600 text-white text-[9px]">
-                  {weekRanges.map((range, i) => (
+                  {activeWeekRanges.map((range, i) => (
                     <th key={i} className="p-1 border border-slate-400 text-center font-medium whitespace-nowrap">
                       Du {formatDateFRShort(range.start)} au {formatDateFRShort(range.end)}
                     </th>
@@ -881,12 +907,7 @@ export function MonthlyPlanningTab({
                     const cellKeyBase = `${selectedClass}|${selectedMonth}|${champ.code}|${subRow || ''}`;
                     return (
                       <tr key={`${champ.code}-${subIdx}`} className="hover:bg-purple-50/30">
-                        {/* ⭐ Column 1 : CHAMP DE FORMATION
-                            - Champs WITHOUT sub-rows: one cell with champ name (colored, centered)
-                            - Champs WITH sub-rows: one cell per sub-row
-                              * First sub-row: champ name (big) + sub-row name (small) below
-                              * Other sub-rows: just sub-row name (small)
-                            - NO rowSpan — each sub-row has its own cell in column 1 */}
+                        {/* ⭐ Column 1 : DOMAINE / CHAMP DE FORMATION */}
                         <td
                           className={cn(
                             "p-2 border border-slate-300 align-middle",
@@ -905,7 +926,7 @@ export function MonthlyPlanningTab({
                             <div className="text-[10px] font-medium pl-4">↳ {subRow}</div>
                           )}
                         </td>
-                        {WEEK_LABELS.map((wk, weekIdx) => {
+                        {activeWeekLabels.map((wk, weekIdx) => {
                           const cellKey = `${cellKeyBase}|${weekIdx + 1}`;
                           return renderCell(weekIdx + 1, champ.code, subRow || undefined, cellKey);
                         })}
@@ -919,11 +940,11 @@ export function MonthlyPlanningTab({
 
           {/* ⭐ MOBILE LAYOUT (sm et moins) — Layout en cartes empilées par semaine */}
           <div className="md:hidden space-y-4">
-            {weekRanges.map((range, weekIdx) => (
+            {activeWeekRanges.map((range, weekIdx) => (
               <div key={weekIdx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                 {/* En-tête semaine + dates dynamiques */}
                 <div className={cn("p-3 text-white font-bold", TRIMESTER_COLORS[trimester])}>
-                  <div className="text-sm">{WEEK_LABELS[weekIdx]}</div>
+                  <div className="text-sm">{activeWeekLabels[weekIdx]}</div>
                   <div className="text-[10px] opacity-90 mt-0.5">
                     Du {formatDateFRShort(range.start)} au {formatDateFRShort(range.end)}
                   </div>
@@ -1028,8 +1049,7 @@ export function MonthlyPlanningTab({
           </div>
 
           {/* ⭐ SECTION SIGNATURE (séparée du tableau, comme Cahier Journal) */}
-          {!isMaternelle && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
               <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-600" />
                 Signatures et validation
@@ -1101,7 +1121,6 @@ export function MonthlyPlanningTab({
                 </div>
               </div>
             </div>
-          )}
         </>
       )}
 
@@ -1120,8 +1139,7 @@ export function MonthlyPlanningTab({
       )}
 
       {/* Légende */}
-      {!isMaternelle && (
-        <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap items-center gap-4">
+      <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs flex flex-wrap items-center gap-4">
           <span className="font-bold text-slate-700">Légende :</span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-4 h-4 bg-purple-50 border border-purple-100 rounded"></span>
@@ -1131,8 +1149,7 @@ export function MonthlyPlanningTab({
             <span className="inline-block w-4 h-4 bg-amber-50 border border-amber-200 rounded"></span>
             <span className="text-slate-600">Personnalisé</span>
           </span>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

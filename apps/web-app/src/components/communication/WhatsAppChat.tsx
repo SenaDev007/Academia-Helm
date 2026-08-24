@@ -295,43 +295,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setVideoOff(false);
   }, []);
 
-  // ⭐ V2.5: WebRTC peer connection setup (shared by caller + callee)
-  const setupPeerConnection = useCallback((otherUserId: string, callId: string) => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
-    });
-
-    // Add local tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, localStreamRef.current!);
-      });
-    }
-
-    // ICE candidate → send to remote peer via Socket.io
-    pc.onicecandidate = (event) => {
-      if (event.candidate && socket) {
-        socket.emit('call:ice-candidate', { toUserId: otherUserId, callId, candidate: event.candidate });
-      }
-    };
-
-    // Remote track → render in video element
-    pc.ontrack = (event) => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-      }
-    };
-
-    // Connection state changes
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-        cleanupCall();
-      }
-    };
-
-    peerConnectionRef.current = pc;
-    return pc;
-  }, [socket, cleanupCall]);
+  // ⭐ V2.5: setupPeerConnection is declared AFTER `socket` to avoid TDZ
+  //    (useCallback deps array references `socket` — must be initialized first).
+  //    See the block after the socket declaration below.
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -382,6 +348,45 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       setOnlineUsers(prev => { const n = new Set(prev); n.delete(userId); return n; });
     }, []),
   });
+
+  // ⭐ V2.5: WebRTC peer connection setup (shared by caller + callee)
+  //    Declared AFTER `socket` to avoid TDZ — useCallback deps reference `socket`.
+  const setupPeerConnection = useCallback((otherUserId: string, callId: string) => {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+    });
+
+    // Add local tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
+      });
+    }
+
+    // ICE candidate → send to remote peer via Socket.io
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket) {
+        socket.emit('call:ice-candidate', { toUserId: otherUserId, callId, candidate: event.candidate });
+      }
+    };
+
+    // Remote track → render in video element
+    pc.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    // Connection state changes
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        cleanupCall();
+      }
+    };
+
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [socket, cleanupCall]);
 
   // ⭐ E2E ENCRYPTION: auto-generate key pair on mount + publish public key
   useEffect(() => {

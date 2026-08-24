@@ -6,9 +6,13 @@
 // ============================================================================
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 class ConversationDetailScreen extends StatefulWidget {
   final Conversation conversation;
@@ -22,6 +26,7 @@ class ConversationDetailScreen extends StatefulWidget {
 class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  final SocketService _socket = SocketService();
   List<Message> _messages = [];
   bool _loading = true;
   bool _sending = false;
@@ -31,12 +36,85 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   void initState() {
     super.initState();
     _loadMessages();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) => _loadMessages());
+    // ⭐ Socket.io: connect for realtime (replaces 10s polling)
+    _initSocket();
+    // Polling fallback (reduced to 30s — Socket.io should deliver instantly)
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
+  }
+
+  void _initSocket() async {
+    final api = ApiService();
+    final token = await api.getAuthToken();
+    final userId = await ApiConfig.userId;
+    if (token != null && userId != null) {
+      await _socket.connect(token: token, userId: userId);
+      _socket.onNewMessage = (data) {
+        if (data['conversationId'] == widget.conversation.id) {
+          _loadMessages(); // Refresh to get the new message
+        }
+      };
+      _socket.joinConversation(widget.conversation.id);
+    }
+  }
+
+  // ⭐ Send image attachment (from gallery or camera)
+  Future<void> _sendImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final xfile = await picker.pickImage(source: source, maxWidth: 1920, imageQuality: 85);
+      if (xfile == null) return;
+      final file = File(xfile.path);
+      final api = ApiService();
+      await api.sendAttachment(
+        conversationId: widget.conversation.id,
+        file: file,
+        type: 'IMAGE',
+        fileName: xfile.name,
+      );
+      _loadMessages();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image envoyée'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
+  }
+
+  // ⭐ Send document attachment
+  Future<void> _sendDocument() async {
+    try {
+      final result = await FilePicker.platform.pickFiles();
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.first.path!);
+      final api = ApiService();
+      await api.sendAttachment(
+        conversationId: widget.conversation.id,
+        file: file,
+        type: 'DOCUMENT',
+        fileName: result.files.first.name,
+      );
+      _loadMessages();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Document envoyé'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _socket.leaveConversation(widget.conversation.id);
+    _socket.disconnect();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -178,9 +256,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline, color: Color(0xFF667085)),
-                  onPressed: () {
-                    // V2: open attachment menu (image, document, audio)
-                  },
+                  onPressed: () => _showAttachmentMenu(),
                 ),
                 Expanded(
                   child: TextField(
@@ -449,6 +525,35 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         );
       }
     }
+  }
+
+  // ⭐ V2: Attachment menu (image gallery, camera, document)
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Color(0xFF0958D9)),
+              title: const Text('Galerie photo'),
+              onTap: () { Navigator.pop(context); _sendImage(ImageSource.gallery); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Color(0xFF0958D9)),
+              title: const Text('Appareil photo'),
+              onTap: () { Navigator.pop(context); _sendImage(ImageSource.camera); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.attach_file, color: Color(0xFF0958D9)),
+              title: const Text('Document'),
+              onTap: () { Navigator.pop(context); _sendDocument(); },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getInitials(String name) {

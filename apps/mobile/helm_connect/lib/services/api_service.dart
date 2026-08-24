@@ -379,4 +379,32 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
+
+  // ⭐ V2: Send attachment (image/document/audio) to a conversation
+  Future<void> sendAttachment({
+    required String conversationId,
+    required File file,
+    required String type,
+    required String fileName,
+  }) async {
+    final url = await ApiConfig.baseUrl;
+    final userId = await ApiConfig.getUserId() ?? '';
+    final headers = await ApiConfig._getHeaders(isMultipart: true);
+
+    final request = http.MultipartRequest('POST', Uri.parse('$url/api/chat/conversations/$conversationId/messages/attachment'));
+    request.files.add(await http.MultipartFile.fromPath('file', file.path));
+    request.fields['senderId'] = userId;
+    request.fields['type'] = type;
+    request.headers.addAll(headers);
+
+    final response = await request.send();
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw ApiException(statusCode: response.statusCode, message: 'Failed to send attachment');
+    }
+  }
+
+  // ⭐ V2: Get auth token
+  Future<String?> getAuthToken() async {
+    return await ApiConfig.getToken();
+  }
 }

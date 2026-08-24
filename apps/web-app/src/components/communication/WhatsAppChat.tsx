@@ -35,6 +35,23 @@ import { toast } from 'sonner';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useChatSocket } from '@/lib/chat/useChatSocket';
 import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
+// ⭐ V3-1: Offline-first chat — IndexedDB cache + send queue + retry on reconnect
+import {
+  getMessages as getOfflineMessages,
+  saveMessagesBulk,
+  saveMessage as saveOfflineMessage,
+  addPendingMessage,
+  getPendingMessages,
+  removePendingMessage,
+  incrementPendingAttempts,
+  markMessageSent,
+  markMessageFailed,
+  setLastSyncedAt,
+  generateLocalId,
+  isOfflineStoreAvailable,
+  type OfflineChatMessage,
+  type PendingMessage,
+} from '@/lib/chat/chat-offline-store';
 import AnnouncementsModal from './AnnouncementsModal';
 import NotificationPreferencesModal from './NotificationPreferencesModal';
 import GlobalSearchModal from './GlobalSearchModal';
@@ -605,6 +622,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ───────────────────────────────────────────────────────────────────
   const loadMessages = useCallback(async () => {
     if (!activeConvId) return;
+
+    // ⭐ V3-1: Lire le cache IndexedDB d'abord (affichage instantané)
+    if (isOfflineStoreAvailable()) {
+      try {
+        const cached = await getOfflineMessages(activeConvId);
+        if (cached.length > 0) {
+          // Afficher immédiatement les messages cache (avant le fetch backend)
+          setMessages(cached as any);
+        }
+      } catch (e) {
+        // silent — IndexedDB may be unavailable (private browsing)
+      }
+    }
+
     try {
       const res = await fetch(
         `/api/chat/conversations/${activeConvId}/messages?userId=${currentUserId}&limit=100`,
@@ -621,6 +652,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       });
       setMessages(unique);
 
+      // ⭐ V3-1: Sauvegarder dans le cache offline (bulk)
+      if (isOfflineStoreAvailable() && unique.length > 0) {
+        const offlineMsgs: OfflineChatMessage[] = unique.map((m: any) => ({
+          id: m.id,
+          conversationId: activeConvId,
+          senderId: m.senderId,
+          type: m.type || 'TEXT',
+          content: m.content,
+          replyToId: m.replyToId || null,
+          createdAt: m.createdAt,
+          status: 'sent' as const,
+        }));
+        saveMessagesBulk(offlineMsgs).catch(() => {});
+        setLastSyncedAt(activeConvId, new Date().toISOString()).catch(() => {});
+      }
+
       // Marquer comme lu
       await fetch(`/api/chat/conversations/${activeConvId}/mark-read`, {
         method: 'POST',
@@ -630,6 +677,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       });
     } catch (e: any) {
       console.error('loadMessages:', e);
+      // ⭐ V3-1: En cas d'échec réseau, on garde le cache offline affiché
     } finally {
       setLoadingMsgs(false);
     }
@@ -662,6 +710,76 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }, 15000);
     return () => clearInterval(interval);
   }, [loadConversations]);
+
+  // ⭐ V3-1: Flush la queue offline au (re)connect.
+  //    Quand le socket se reconnecte, on tente de renvoyer tous les messages
+  //    en attente. Au montage, on tente aussi (au cas où il y en a de la session
+  //    précédente, même si le socket n'est pas encore connecté on essaie en HTTP).
+  const flushPendingRef = useRef<(() => Promise<void>) | null>(null);
+
+  useEffect(() => {
+    // Build the flush function once
+    flushPendingRef.current = async () => {
+      if (!isOfflineStoreAvailable() || !currentUserId) return;
+      let pending: PendingMessage[] = [];
+      try {
+        pending = await getPendingMessages();
+      } catch {
+        return;
+      }
+      if (pending.length === 0) return;
+
+      // Tentative de renvoi de chaque message en parallèle (max 5 à la fois pour éviter le flood)
+      const chunks = [];
+      for (let i = 0; i < pending.length; i += 5) chunks.push(pending.slice(i, i + 5));
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(async (p) => {
+          try {
+            const res = await fetch(
+              `/api/chat/conversations/${p.conversationId}/messages/text`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  senderId: p.senderId,
+                  content: p.content,
+                  ...(p.replyToId ? { replyToId: p.replyToId } : {}),
+                }),
+                credentials: 'include',
+              },
+            );
+            if (res.ok) {
+              const newMsg = await res.json();
+              await markMessageSent(p.localId, newMsg.id, newMsg.createdAt).catch(() => {});
+              await removePendingMessage(p.localId).catch(() => {});
+              // Mettre à jour le state en remplaçant le message pending par le serveur
+              setMessages(prev => prev.map(m =>
+                (m as any).localId === p.localId ? newMsg : m
+              ));
+            } else {
+              await incrementPendingAttempts(p.localId, `HTTP ${res.status}`).catch(() => {});
+            }
+          } catch (e: any) {
+            await incrementPendingAttempts(p.localId, e.message).catch(() => {});
+          }
+        }));
+      }
+      // Rafraîchir la liste des convs si on a réussi à envoyer quelque chose
+      loadConversations();
+    };
+  }, [currentUserId, loadConversations]);
+
+  // Trigger flush au montage + au reconnect
+  useEffect(() => {
+    // Initial flush (au montage)
+    if (flushPendingRef.current) flushPendingRef.current();
+    // Flush au reconnect
+    if (socket.isConnected && flushPendingRef.current) {
+      // petite debounce pour laisser le socket se stabiliser
+      const t = setTimeout(() => flushPendingRef.current?.(), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [socket.isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⭐ PRESENCE HEARTBEAT : met à jour lastActiveAt toutes les 30s
   useEffect(() => {
@@ -928,6 +1046,37 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setText('');
     setReplyToMessage(null);
     setSending(true);
+
+    // ⭐ V3-1: Créer un message local "pending" pour affichage immédiat
+    const localId = generateLocalId();
+    const now = new Date().toISOString();
+    const localMessage: any = {
+      id: localId, // temporaire — remplacé par l'id serveur après envoi
+      conversationId: activeConvId,
+      senderId: currentUserId,
+      type: 'TEXT',
+      content,
+      replyToId: replyToId || null,
+      createdAt: now,
+      localId,
+      status: 'pending',
+    };
+
+    // Afficher immédiatement dans l'UI + sauvegarder dans le cache offline + queue
+    setMessages(prev => [...prev, localMessage]);
+    if (isOfflineStoreAvailable()) {
+      saveOfflineMessage(localMessage as OfflineChatMessage).catch(() => {});
+      addPendingMessage({
+        localId,
+        conversationId: activeConvId,
+        senderId: currentUserId,
+        content,
+        replyToId: replyToId || null,
+        queuedAt: now,
+        attempts: 0,
+      }).catch(() => {});
+    }
+
     try {
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/text`, {
         method: 'POST',
@@ -949,13 +1098,26 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         throw new Error(msg);
       }
       const newMsg = await res.json();
-      setMessages(prev => [...prev, newMsg]);
+
+      // ⭐ V3-1: Marquer comme envoyé dans le cache offline + retirer de la queue
+      if (isOfflineStoreAvailable()) {
+        markMessageSent(localId, newMsg.id, newMsg.createdAt).catch(() => {});
+        removePendingMessage(localId).catch(() => {});
+      }
+
+      // Remplacer le message local par le message serveur dans l'UI
+      setMessages(prev => prev.map(m => (m as any).localId === localId ? newMsg : m));
       // Rafraîchir la liste des convs pour updater le preview
       loadConversations();
     } catch (e: any) {
       toast.error("Échec d'envoi du message: " + e.message);
-      setText(content); // Restore le texte non envoyé
-      if (replyToId) setReplyToMessage({ id: replyToId, senderName: replyToMessage?.senderName || '', content: replyToMessage?.content || '' });
+      // ⭐ V3-1: Garder le message dans la queue offline pour retry au reconnect.
+      //    On le laisse affiché avec status "pending" (pas "failed") pour indiquer
+      //    que le retry est en cours. On ne restaure PAS le texte dans l'input car
+      //    le message est déjà affiché dans la conversation.
+      if (isOfflineStoreAvailable()) {
+        incrementPendingAttempts(localId, e.message).catch(() => {});
+      }
     } finally {
       setSending(false);
     }

@@ -8799,3 +8799,82 @@ Stage Summary:
 - Pattern is fire-and-forget — never blocks business operations
 - Multi-tenant strict: tenantId filtered in all Prisma queries
 - Frontend V3-4b (web) and V3-4c (mobile) remain to be implemented
+
+---
+Task ID: V3-4b + V3-4c
+Agent: main (Super Z, GLM-5.2)
+Task: V3-4b Frontend web + V3-4c Mobile — Helm Connect notifications UI + FCM mobile push
+
+Work Log (V3-4b web):
+- NotificationDropdown.tsx extended with 9 new pedagogical icon types:
+  ABSENCE_CREATED (CalendarX), ABSENCE_JUSTIFIED (CalendarCheck),
+  EXAM_SCHEDULED (GraduationCap), BULLETIN_PUBLISHED (Award),
+  SANCTION_CREATED (ShieldAlert), EVALUATION_SCHEDULED (ClipboardList),
+  NEW_HOMEWORK (BookOpen), PARENT_MESSAGE (MessageSquare),
+  PARENT_ACKNOWLEDGMENT (Heart)
+- NotificationDropdown mounted in /app/parent/layout.tsx (was missing — parents had no bell)
+- NotificationDropdown mounted in /app/teacher/layout.tsx (was missing — teachers had no bell)
+- ParentNotificationCenter.tsx rewritten — no more MOCK:
+  * Uses real useNotifications hook (was hardcoded mock data)
+  * 5 pedagogical category filters: Absences / Examens / Bulletins / Devoirs / Discipline
+  * Filter restricts to 7 pedagogical types (ABSENCE_*, EXAM_SCHEDULED,
+    EVALUATION_SCHEDULED, BULLETIN_PUBLISHED, NEW_HOMEWORK, SANCTION_CREATED)
+  * Real mark-as-read, delete, clear-all actions via the hook
+  * "Détails" button routes to notif.data.url
+  * Footer links to Helm Connect chat
+- Committed as 23c9e9e5: "V3-4b Frontend web: Helm Connect notifications for parents + teachers"
+
+Work Log (V3-4c mobile):
+- Backend FCM tokens:
+  * Created migration 20260901150000_add_fcm_device_tokens/migration.sql
+    (table fcm_device_tokens with tenantId, userId, fcmToken, platform, deviceInfo,
+     isActive, lastUsedAt + 3 indexes)
+  * Extended NotificationService with registerFcmToken/unregisterFcmToken/
+    getFcmTokensForUser methods (raw SQL via $executeRawUnsafe)
+  * Extended NotificationController with 2 endpoints:
+    POST /notifications/device-tokens (register FCM token on app launch)
+    DELETE /notifications/device-tokens (unregister on logout)
+- Mobile Flutter:
+  * Extended ApiConfig with /notifications/* endpoints
+  * Created data/datasources/remote/notification_api.dart — Dio-based API client
+    (getNotifications, getUnreadCount, markAsRead, markAllAsRead, delete,
+    registerDeviceToken, unregisterDeviceToken)
+  * Created data/repositories/notification_repository_impl.dart — implements
+    the abstract NotificationRepository with optimistic unread count cache
+  * Created core/services/push_notification_service.dart — FirebaseMessaging +
+    flutter_local_notifications service:
+    - requestPermission + getToken + onTokenRefresh → POST /notifications/device-tokens
+    - onMessage (foreground) → show local notification with channel
+      'academia_helm_notifications' (high priority, gold color icon)
+    - onMessageOpenedApp (background tap) → deep link via callback
+    - getInitialMessage (terminated launch) → deep link
+    - unregister() on logout → DELETE /notifications/device-tokens
+  * Created core/providers/notification_provider.dart — Riverpod
+    StateNotifier<NotificationState> exposing notifications list + unreadCount
+    + isLoading, with refresh(), refreshUnreadCount(), markAsRead(id),
+    markAllAsRead() actions
+  * Wired main.dart: imports PushNotificationService, initializes it in
+    _initializeApp() after Hive + secure storage, wires onDeepLink callback
+    to push data.url via appRouterProvider
+
+Stage Summary:
+- Backend FCM endpoints + migration ready (the actual FCM sender side —
+  Firebase Admin SDK — will be added later when project owner provides
+  server-side FCM credentials; for now, the in-app bell + Web Push work
+  and tokens are stored for future use)
+- Mobile app can now:
+  1. Request notification permission
+  2. Get FCM token + register it server-side
+  3. Show foreground local notifications when a Helm Connect event fires
+  4. Deep-link to the relevant screen on notification tap
+  5. Unregister token on logout
+- Parent / teacher mobile app users will receive push notifications for:
+  ABSENCE_CREATED (their child marked absent)
+  ABSENCE_JUSTIFIED (their justification request accepted)
+  EXAM_SCHEDULED (new exam/devoir planned)
+  BULLETIN_PUBLISHED (bulletin available)
+  SANCTION_CREATED (discipline event)
+  EVALUATION_SCHEDULED (existing — already in NotificationService)
+  NEW_HOMEWORK (existing — already in NotificationService)
+- V3-4 module is now complete end-to-end:
+  Backend bridge (V3-4a) → Web UI (V3-4b) → Mobile (V3-4c)

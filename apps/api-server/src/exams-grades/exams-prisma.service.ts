@@ -8,20 +8,25 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Optional, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicRulesEngine } from './academic-rules-engine.service';
 import { AcademicSettingsService } from './academic-settings.service';
 import { ReportCardsPrismaService } from './report-cards-prisma.service';
+import { HelmConnectNotificationBridgeService } from '../communication/services/helm-connect-bridge.service';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class ExamsPrismaService {
+  private readonly logger = new Logger(ExamsPrismaService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rulesEngine: AcademicRulesEngine,
     private readonly academicSettingsService: AcademicSettingsService,
     private readonly reportCardsService: ReportCardsPrismaService,
+    @Optional() @Inject(HelmConnectNotificationBridgeService)
+    private readonly bridge?: HelmConnectNotificationBridgeService,
   ) {}
 
   /**
@@ -56,6 +61,7 @@ export class ExamsPrismaService {
     maxScore?: number;
     coefficient?: number;
     description?: string;
+    triggeredByUserId?: string; // ⭐ V3-4: pour Helm Connect notification
   }) {
     // Vérifier que la matière existe
     const subject = await this.prisma.subject.findFirst({
@@ -90,7 +96,7 @@ export class ExamsPrismaService {
     // Déduire la langue depuis la matière si non fournie (mode bilingue)
     const examLanguage = data.language || subject.language || 'FR';
 
-    return this.prisma.exam.create({
+    const exam = await this.prisma.exam.create({
       data: {
         ...data,
         language: examLanguage,
@@ -105,6 +111,31 @@ export class ExamsPrismaService {
         schoolLevel: true,
       },
     });
+
+    // ⭐ V3-4: Helm Connect notification (fire-and-forget)
+    if (this.bridge && exam) {
+      this.bridge
+        .notifyExamScheduled({
+          tenantId: data.tenantId,
+          examId: exam.id,
+          classId: data.classId,
+          subjectId: data.subjectId,
+          examName: data.name,
+          examType: data.examType,
+          examDate: data.examDate,
+          triggeredByUserId: data.triggeredByUserId,
+        })
+        .then((r) =>
+          this.logger.log(
+            `notifyExamScheduled: inApp=${r.channels.inApp?.status} whatsapp=${r.channels.whatsapp?.status} helm=${r.channels.helmConnectMessage?.status}`,
+          ),
+        )
+        .catch((err) =>
+          this.logger.warn(`notifyExamScheduled non-bloquant échoué: ${err.message}`),
+        );
+    }
+
+    return exam;
   }
 
   /**
@@ -1728,6 +1759,7 @@ export class ExamsPrismaService {
     classId: string,
     periodId: string,
     academicYearId: string,
+    publishedByUserId?: string, // ⭐ V3-4: pour Helm Connect notification
   ) {
     const reportCards = await this.prisma.reportCard.findMany({
       where: {
@@ -1754,6 +1786,26 @@ export class ExamsPrismaService {
         generatedAt: new Date(),
       },
     });
+
+    // ⭐ V3-4: Helm Connect notification (fire-and-forget) — prévient tous les parents
+    if (this.bridge) {
+      this.bridge
+        .notifyBulletinPublished({
+          tenantId,
+          classId,
+          periodId,
+          academicYearId,
+          publishedByUserId,
+        })
+        .then((r) =>
+          this.logger.log(
+            `notifyBulletinPublished: inApp=${r.channels.inApp?.status} whatsapp=${r.channels.whatsapp?.status} helm=${r.channels.helmConnectMessage?.status}`,
+          ),
+        )
+        .catch((err) =>
+          this.logger.warn(`notifyBulletinPublished non-bloquant échoué: ${err.message}`),
+        );
+    }
 
     return { success: true };
   }

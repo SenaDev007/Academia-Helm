@@ -20,9 +20,10 @@ import { AcademicSettingsController } from './academic-settings.controller';
 import { AcademicSettingsService } from './academic-settings.service';
 import { AcademicRulesEngine } from './academic-rules-engine.service';
 import { ScoreEntrySchemaService } from './score-entry-schema.service';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, CommunicationModule],
   controllers: [
     // ⭐ AcademicSettingsController DOIT être avant ExamsPrismaController
     // pour éviter que GET /exams/settings soit intercepté par GET /exams/:id

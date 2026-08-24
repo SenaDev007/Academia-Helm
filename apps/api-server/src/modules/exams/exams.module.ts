@@ -4,6 +4,7 @@ import { UsersModule } from '../../users/users.module';
 import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
 import { ExamsGradesModule } from '../../exams-grades/exams-grades.module';
 import { CommonModule } from '../../common/common.module';
+import { CommunicationModule } from '../../communication/communication.module';
 import { ExamsDashboardController } from './exams-dashboard.controller';
 import { ExamsDashboardService } from './services/exams-dashboard.service';
 import { EvaluationsController } from './evaluations.controller';
@@ -26,7 +27,7 @@ import { ExamsLockController } from './exams-lock.controller';
 import { UnlockRequestsController } from './unlock-requests.controller';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,

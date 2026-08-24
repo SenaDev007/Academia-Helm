@@ -63,11 +63,16 @@ export class ExamsPrismaController {
   }
 
   @Post()
-  async create(@TenantId() tenantId: string, @Body() createDto: CreateExamPrismaDto) {
+  async create(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() createDto: CreateExamPrismaDto,
+  ) {
     return this.examsService.createExam({
       ...createDto,
       tenantId,
       examDate: new Date(createDto.examDate),
+      triggeredByUserId: user?.id,
     });
   }
 
@@ -256,6 +261,7 @@ export class ExamsPrismaController {
   @Post('bulletins/publish')
   async publishBulletins(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() body: PublishBulletinsDto,
   ) {
     return this.examsService.publishBulletinsForClass(
@@ -263,6 +269,7 @@ export class ExamsPrismaController {
       body.classId,
       body.periodId,
       body.academicYearId,
+      user?.id,
     );
   }
 

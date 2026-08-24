@@ -61,6 +61,7 @@ import { GlobalSearchService } from './services/global-search.service';
 import { ConversationDocumentCenterService } from './services/document-center.service';
 import { PollService } from './services/poll.service';
 import { PollController } from './poll.controller';
+import { HelmConnectNotificationBridgeService } from './services/helm-connect-bridge.service';
 
 @Module({
   imports: [
@@ -144,6 +145,8 @@ import { PollController } from './poll.controller';
     ConversationDocumentCenterService,
     // ⭐ Helm Connect V2.6 — Polls
     PollService,
+    // ⭐ V3-4 — Helm Connect Notification Bridge (Examens/Absences/Discipline → Helm Connect)
+    HelmConnectNotificationBridgeService,
   ],
   exports: [
     EmailService,
@@ -169,6 +172,8 @@ import { PollController } from './poll.controller';
     TemplatesPrismaService,
     // ⭐ Chat exports
     ChatService,
+    // ⭐ V3-4 — Bridge pour notifications multi-canal depuis Examens/Absences/Discipline
+    HelmConnectNotificationBridgeService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

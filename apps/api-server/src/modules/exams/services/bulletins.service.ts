@@ -16,10 +16,11 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { AcademicRulesEngine, SubjectAverageRule, AppreciationScale, PromotionRule } from '../../../exams-grades/academic-rules-engine.service';
 import { AcademicSettingsService } from '../../../exams-grades/academic-settings.service';
+import { HelmConnectNotificationBridgeService } from '../../../communication/services/helm-connect-bridge.service';
 
 @Injectable()
 export class BulletinsService {
@@ -29,6 +30,8 @@ export class BulletinsService {
     private readonly prisma: PrismaService,
     private readonly rulesEngine: AcademicRulesEngine,
     private readonly academicSettingsService: AcademicSettingsService,
+    @Optional() @Inject(HelmConnectNotificationBridgeService)
+    private readonly bridge?: HelmConnectNotificationBridgeService,
   ) {}
 
   /**
@@ -348,14 +351,37 @@ export class BulletinsService {
 
   /**
    * Publie les bulletins d'une classe (rend visible aux parents)
+   * ⭐ V3-4: Émet aussi une notification Helm Connect multi-canal aux parents.
    */
   async publishClassBulletins(tenantId: string, academicYearId: string, periodId: string, classId: string, publishedBy: string) {
-    return this.prisma.studentPeriodAverage.updateMany({
+    const result = await this.prisma.studentPeriodAverage.updateMany({
       where: { tenantId, academicYearId, periodId, classId },
       data: {
         isPublished: true,
       },
     });
+
+    // ⭐ V3-4: Helm Connect notification (fire-and-forget) — prévient tous les parents
+    if (this.bridge) {
+      this.bridge
+        .notifyBulletinPublished({
+          tenantId,
+          classId,
+          periodId,
+          academicYearId,
+          publishedByUserId: publishedBy,
+        })
+        .then((r) =>
+          this.logger.log(
+            `notifyBulletinPublished: inApp=${r.channels.inApp?.status} whatsapp=${r.channels.whatsapp?.status} helm=${r.channels.helmConnectMessage?.status}`,
+          ),
+        )
+        .catch((err) =>
+          this.logger.warn(`notifyBulletinPublished non-bloquant échoué: ${err.message}`),
+        );
+    }
+
+    return result;
   }
 
   /**

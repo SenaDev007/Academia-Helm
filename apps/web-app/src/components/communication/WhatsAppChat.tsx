@@ -3333,45 +3333,61 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       <video ref={localVideoRef} autoPlay playsInline muted className="sr-only" aria-hidden />
       <video ref={remoteVideoRef} autoPlay playsInline className="sr-only" aria-hidden />
 
-      {/* Incoming call — WhatsApp-style full-screen modal */}
+      {/* Incoming call — Helm Connect branded full-screen modal */}
       {callState === 'incoming' && callData && (
-        <div className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-900 to-black z-[60] flex flex-col items-center justify-between p-8">
+        <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between p-8">
           {/* Top: incoming label */}
           <div className="pt-8 text-center">
-            <p className="text-sm text-emerald-400 font-medium">Appel entrant Helm Connect</p>
+            <p className="text-sm text-[#FFE08A] font-medium tracking-wider uppercase">Appel entrant Helm Connect</p>
           </div>
           {/* Center: avatar + name */}
           <div className="text-center">
-            <div className={cn('w-28 h-28 rounded-full mx-auto mb-5 flex items-center justify-center text-white text-4xl font-bold ring-4 ring-white/10', getAvatarColor(callData.otherUserName))}>
-              {getInitials(callData.otherUserName)}
+            <div className="relative w-28 h-28 mx-auto mb-5">
+              {/* ⭐ V3-4: Pulsing gold halo (outer) — Academia Helm living gold */}
+              <div className="absolute -inset-3 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '2s' }}></div>
+              {/* ⭐ V3-4: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+              <div className="absolute -inset-1 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+              {/* Avatar with gold ring */}
+              <div className={cn('relative w-28 h-28 rounded-full flex items-center justify-center text-white text-4xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
+                {getInitials(callData.otherUserName)}
+              </div>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-1">{callData.otherUserName}</h2>
-            <p className="text-slate-400">{callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'}</p>
+            <h2 className="text-2xl font-bold text-white mb-2">{callData.otherUserName}</h2>
+            {/* ⭐ V3-4: Professional animated icon badge (replaces 📞/📹 emoji) */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-[#FFE08A]/30">
+              <span className="relative flex h-7 w-7">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFE08A] opacity-50"></span>
+                <span className="relative inline-flex rounded-full h-7 w-7 bg-[#FFE08A] items-center justify-center">
+                  {callData.callType === 'VIDEO' ? <Video className="w-4 h-4 text-[#0A2A5E]" /> : <Phone className="w-4 h-4 text-[#0A2A5E]" />}
+                </span>
+              </span>
+              <span className="text-sm font-semibold text-white">{callData.callType === 'VIDEO' ? 'Appel vidéo' : 'Appel audio'}</span>
+            </div>
           </div>
           {/* Bottom: Accept / Reject */}
           <div className="flex justify-center gap-16 pb-10">
             <button onClick={() => rejectCall(callData.otherUserId, callData.callId)} className="flex flex-col items-center gap-2">
-              <div className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg">
+              <div className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform hover:scale-110">
                 <Phone className="w-7 h-7 rotate-[135deg]" />
               </div>
-              <span className="text-xs text-slate-300">Refuser</span>
+              <span className="text-xs text-white/80">Refuser</span>
             </button>
             <button
               onClick={() => { const offer = (window as any)._pendingCallOffer?.offer; if (offer) acceptCall(callData.otherUserId, callData.callId, callData.callType, offer); }}
               className="flex flex-col items-center gap-2"
             >
-              <div className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center text-white shadow-lg animate-pulse">
+              <div className="w-16 h-16 rounded-full bg-[#FFE08A] hover:bg-[#CFA63A] flex items-center justify-center text-[#0A2A5E] shadow-lg animate-pulse">
                 <Phone className="w-7 h-7" />
               </div>
-              <span className="text-xs text-slate-300">Accepter</span>
+              <span className="text-xs text-white/80">Accepter</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Outgoing + Active call — WhatsApp-style overlay */}
+      {/* Outgoing + Active call — Helm Connect branded overlay */}
       {(callState === 'outgoing' || callState === 'active') && callData && (
-        <div className="fixed inset-0 bg-gradient-to-b from-slate-800 via-slate-900 to-black z-[60] flex flex-col items-center justify-between">
+        <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between">
           {/* Remote video (full screen for VIDEO calls when active) */}
           {callData.callType === 'VIDEO' && callState === 'active' && (
             <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
@@ -3380,7 +3396,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           <div className="absolute top-0 left-0 right-0 p-4 pt-6 flex items-center justify-center gap-2 z-10">
             <span className="text-white font-bold text-lg">{callData.otherUserName}</span>
             {callState === 'active' && (
-              <span className="flex items-center gap-1 text-xs text-emerald-400">
+              <span className="flex items-center gap-1 text-xs text-[#FFE08A]">
                 🔒 <span className="hidden sm:inline">Chiffré de bout en bout</span>
               </span>
             )}
@@ -3388,14 +3404,31 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {/* Center: avatar (for AUDIO calls or outgoing VIDEO) */}
           {(callData.callType === 'AUDIO' || callState !== 'active') && (
             <div className="text-center z-10 pt-20">
-              <div className={cn('w-32 h-32 rounded-full mx-auto mb-5 flex items-center justify-center text-white text-5xl font-bold ring-4 ring-white/10', getAvatarColor(callData.otherUserName))}>
-                {getInitials(callData.otherUserName)}
+              <div className="relative w-32 h-32 mx-auto mb-5">
+                {/* ⭐ V3-4: Pulsing gold halo (outer) — Academia Helm living gold */}
+                <div className="absolute -inset-4 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '2s' }}></div>
+                {/* ⭐ V3-4: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+                <div className="absolute -inset-2 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+                {/* Avatar with gold ring */}
+                <div className={cn('relative w-32 h-32 rounded-full flex items-center justify-center text-white text-5xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
+                  {getInitials(callData.otherUserName)}
+                </div>
               </div>
               <h2 className="text-2xl font-bold text-white mb-1">{callData.otherUserName}</h2>
-              <p className="text-slate-400">
+              <p className="text-[#FFE08A]/90">
                 {callState === 'outgoing' ? 'Appel en cours…' : `${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')}`}
               </p>
-              <p className="text-xs text-slate-500 mt-1">{callData.callType === 'VIDEO' ? '📹 Appel vidéo' : '📞 Appel audio'} — Helm Connect</p>
+              {/* ⭐ V3-4: Professional animated icon badge (replaces 📞/📹 emoji) */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 mt-2 rounded-full bg-white/10 backdrop-blur-sm border border-[#FFE08A]/30">
+                <span className="relative flex h-7 w-7">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFE08A] opacity-50"></span>
+                  <span className="relative inline-flex rounded-full h-7 w-7 bg-[#FFE08A] items-center justify-center">
+                    {callData.callType === 'VIDEO' ? <Video className="w-4 h-4 text-[#0A2A5E]" /> : <Phone className="w-4 h-4 text-[#0A2A5E]" />}
+                  </span>
+                </span>
+                <span className="text-sm font-semibold text-white">{callData.callType === 'VIDEO' ? 'Appel vidéo' : 'Appel audio'}</span>
+                <span className="text-xs text-[#FFE08A]/70 ml-1">— Helm Connect</span>
+              </div>
             </div>
           )}
           {/* Active call timer (for VIDEO when active — no avatar shown) */}
@@ -3419,14 +3452,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               </button>
             </div>
           )}
-          {/* Bottom control bar — WhatsApp-style pill */}
+          {/* Bottom control bar — Helm Connect branded pill */}
           <div className="w-full pb-10 flex justify-center z-30">
-            <div className="flex items-center gap-2 px-6 py-4 rounded-full bg-black/50 backdrop-blur-md">
+            <div className="flex items-center gap-2 px-6 py-4 rounded-full bg-[#0A2A5E]/70 backdrop-blur-md border border-[#FFE08A]/20">
               {/* Mute */}
               {callState === 'active' && (
                 <button onClick={toggleMute} className="flex flex-col items-center gap-1 px-3">
-                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', muted ? 'bg-white' : 'bg-white/20')}>
-                    {muted ? <MicOff className="w-5 h-5 text-slate-900" /> : <Mic className="w-5 h-5" />}
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', muted ? 'bg-[#FFE08A]' : 'bg-white/20')}>
+                    {muted ? <MicOff className="w-5 h-5 text-[#0A2A5E]" /> : <Mic className="w-5 h-5" />}
                   </div>
                   <span className="text-[10px] text-white/80">{muted ? 'Activer' : 'Micro'}</span>
                 </button>
@@ -3434,8 +3467,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               {/* Video toggle (VIDEO calls only) */}
               {callState === 'active' && callData.callType === 'VIDEO' && (
                 <button onClick={toggleVideo} className="flex flex-col items-center gap-1 px-3">
-                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', videoOff ? 'bg-white' : 'bg-white/20')}>
-                    {videoOff ? <VideoOff className="w-5 h-5 text-slate-900" /> : <Video className="w-5 h-5" />}
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', videoOff ? 'bg-[#FFE08A]' : 'bg-white/20')}>
+                    {videoOff ? <VideoOff className="w-5 h-5 text-[#0A2A5E]" /> : <Video className="w-5 h-5" />}
                   </div>
                   <span className="text-[10px] text-white/80">{videoOff ? 'Caméra' : 'Vidéo'}</span>
                 </button>
@@ -3443,15 +3476,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               {/* ⭐ FIX: Speaker toggle (wired) — mutes/unmutes the remote audio */}
               {callState === 'active' && (
                 <button onClick={() => setSpeakerOn(!speakerOn)} className="flex flex-col items-center gap-1 px-3">
-                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', speakerOn ? 'bg-white/20' : 'bg-white')}>
-                    {speakerOn ? <Volume2 className="w-5 h-5" /> : <Volume2 className="w-5 h-5 text-slate-900 opacity-40" />}
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', speakerOn ? 'bg-white/20' : 'bg-[#FFE08A]')}>
+                    {speakerOn ? <Volume2 className="w-5 h-5" /> : <Volume2 className="w-5 h-5 text-[#0A2A5E] opacity-40" />}
                   </div>
                   <span className="text-[10px] text-white/80">{speakerOn ? 'Haut-parleur' : 'Muet'}</span>
                 </button>
               )}
               {/* End call — red button */}
               <button onClick={hangup} className="flex flex-col items-center gap-1 px-3">
-                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg">
+                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform hover:scale-110">
                   <Phone className="w-6 h-6 rotate-[135deg]" />
                 </div>
                 <span className="text-[10px] text-white/80">Terminer</span>

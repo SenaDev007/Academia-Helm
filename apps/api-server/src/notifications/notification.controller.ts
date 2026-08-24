@@ -160,4 +160,50 @@ export class NotificationController {
     await this.notificationService.delete(id, user.id);
     return { success: true };
   }
+
+  // ═══ V3-4: FCM Device Tokens (mobile push) ═══
+
+  /**
+   * POST /notifications/device-tokens
+   * Body: { fcmToken, platform?, deviceInfo? }
+   * Enregistre un token FCM (Firebase Cloud Messaging) pour l'utilisateur courant.
+   * Appelé par l'app mobile Flutter après FirebaseMessaging.getToken().
+   */
+  @Post('device-tokens')
+  async registerDeviceToken(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: any,
+    @Req() req: Request,
+  ) {
+    if (!user?.id) throw new BadRequestException('Utilisateur non identifié');
+    if (!body?.fcmToken || typeof body.fcmToken !== 'string' || body.fcmToken.trim().length === 0) {
+      throw new BadRequestException('fcmToken est requis');
+    }
+    const userAgent = req.headers['user-agent'] || undefined;
+    return this.notificationService.registerFcmToken({
+      tenantId,
+      userId: user.id,
+      fcmToken: body.fcmToken.trim(),
+      platform: body.platform || 'ANDROID',
+      deviceInfo: body.deviceInfo || userAgent,
+    });
+  }
+
+  /**
+   * DELETE /notifications/device-tokens
+   * Body: { fcmToken }
+   * Désactive un token FCM (à l'appel de logout depuis l'app mobile).
+   */
+  @Delete('device-tokens')
+  async unregisterDeviceToken(
+    @CurrentUser() user: any,
+    @Body() body: any,
+  ) {
+    if (!user?.id) throw new BadRequestException('Utilisateur non identifié');
+    if (!body?.fcmToken) {
+      throw new BadRequestException('fcmToken est requis');
+    }
+    return this.notificationService.unregisterFcmToken(body.fcmToken);
+  }
 }

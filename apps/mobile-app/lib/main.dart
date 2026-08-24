@@ -10,6 +10,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/theme/ah_theme.dart';
 import 'core/router/app_router.dart';
 import 'core/widgets/ah_logo_circle.dart';
+// ⭐ V3-4: Helm Connect mobile push notifications (Examens/Absences/Discipline)
+import 'core/services/push_notification_service.dart';
 
 /// Background message handler for Firebase Messaging.
 /// MUST be a top-level function (not a class method or closure)
@@ -94,6 +96,21 @@ class _AcademiaHelmAppState extends ConsumerState<AcademiaHelmApp> {
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
+
+      // ⭐ V3-4: Initialize push notifications (FCM + local notifications + register token)
+      try {
+        final pushService = ref.read(pushNotificationServiceProvider);
+        // Wire deep link handler — taps on notifications navigate to data.url
+        pushService.onDeepLink = (String url) {
+          if (url.isNotEmpty) {
+            ref.read(appRouterProvider).push(url);
+          }
+        };
+        await pushService.initialize();
+      } catch (e) {
+        // Push init failed — app still works, just without push
+        debugPrint('⚠️ Push notification initialization failed (non-blocking): $e');
+      }
 
       if (mounted) {
         setState(() => _initialized = true);

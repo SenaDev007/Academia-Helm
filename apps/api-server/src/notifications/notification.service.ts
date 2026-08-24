@@ -141,6 +141,85 @@ export class NotificationService {
     });
   }
 
+  // ═══ V3-4: FCM Device Tokens (mobile push) ═══
+
+  /**
+   * Enregistre (ou réactive) un token FCM pour un utilisateur.
+   * Si le token existe déjà (réinstallation / autre utilisateur), on le rattache
+   * au nouvel utilisateur (un token FCM ne peut être associé qu'à un seul user
+   * à la fois côté Firebase).
+   */
+  async registerFcmToken(params: {
+    tenantId: string;
+    userId: string;
+    fcmToken: string;
+    platform?: string;
+    deviceInfo?: string;
+  }) {
+    try {
+      // Upsert : si le token existe déjà, on le met à jour (changement d'utilisateur possible)
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "fcm_device_tokens" ("tenantId", "userId", "fcmToken", "platform", "deviceInfo", "isActive", "lastUsedAt")
+         VALUES ($1, $2, $3, $4, $5, true, NOW())
+         ON CONFLICT ("fcmToken") DO UPDATE
+         SET "tenantId" = EXCLUDED."tenantId",
+             "userId" = EXCLUDED."userId",
+             "platform" = EXCLUDED."platform",
+             "deviceInfo" = EXCLUDED."deviceInfo",
+             "isActive" = true,
+             "lastUsedAt" = NOW(),
+             "updatedAt" = NOW()`,
+        params.tenantId,
+        params.userId,
+        params.fcmToken,
+        params.platform || 'ANDROID',
+        params.deviceInfo || null,
+      );
+      this.logger.log(
+        `registerFcmToken: token enregistré pour user ${params.userId} (platform=${params.platform || 'ANDROID'})`,
+      );
+      return { success: true };
+    } catch (err: any) {
+      this.logger.error(`registerFcmToken failed: ${err.message}`, err.stack);
+      throw err;
+    }
+  }
+
+  /**
+   * Désactive un token FCM (à l'appel de logout depuis l'app mobile).
+   * On ne supprime pas physiquement pour garder l'audit trail.
+   */
+  async unregisterFcmToken(fcmToken: string) {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "fcm_device_tokens" SET "isActive" = false, "updatedAt" = NOW()
+         WHERE "fcmToken" = $1`,
+        fcmToken,
+      );
+      this.logger.log(`unregisterFcmToken: token désactivé`);
+      return { success: true };
+    } catch (err: any) {
+      this.logger.error(`unregisterFcmToken failed: ${err.message}`, err.stack);
+      throw err;
+    }
+  }
+
+  /**
+   * Récupère tous les tokens FCM actifs d'un utilisateur (multi-device possible).
+   */
+  async getFcmTokensForUser(userId: string): Promise<string[]> {
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ fcmToken: string }>>(
+        `SELECT "fcmToken" FROM "fcm_device_tokens"
+         WHERE "userId" = $1 AND "isActive" = true`,
+        userId,
+      );
+      return rows.map((r) => r.fcmToken);
+    } catch {
+      return [];
+    }
+  }
+
   // ═══ Helpers métier ═══
 
   /**

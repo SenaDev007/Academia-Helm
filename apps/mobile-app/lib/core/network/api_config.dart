@@ -344,6 +344,16 @@ class ApiConfig {
   static String hrContractById(String id) => '/hr/contracts/$id';
   static String hrLeaveById(String id) => '/hr/leaves/$id';
   static String hrPayrollById(String id) => '/hr/payroll/$id';
+
+  // ── Notifications Endpoints (V3-4: in-app bell + FCM mobile push) ─────
+
+  static const String notifications = '/notifications';
+  static const String notificationsUnreadCount = '/notifications/unread-count';
+  static const String notificationsReadAll = '/notifications/read-all';
+  static const String notificationsDeviceTokens = '/notifications/device-tokens';
+
+  static String notificationById(String id) => '/notifications/$id';
+  static String notificationMarkAsRead(String id) => '/notifications/$id/read';
 }
 
 /// Enum representing the API environment.

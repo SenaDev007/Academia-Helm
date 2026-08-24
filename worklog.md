@@ -8939,3 +8939,90 @@ Stage Summary:
   3. Auto-retry queued messages on next reconnect
 - Pattern: messages display with status "pending" (not "failed") to indicate
   retry is in progress. On success, the localId is replaced with the server id.
+
+---
+Task ID: V3-3 + V3-2
+Agent: main (Super Z, GLM-5.2)
+Task: V3-3 ORION summaries + V3-2 Whisper transcription — backend services + endpoints + web + mobile UI
+
+Work Log (V3-3 ORION summaries):
+- Backend:
+  * Created apps/api-server/src/communication/services/chat-summary.service.ts
+    - ChatSummaryService.summarizeConversation() fetches last N messages,
+      resolves participant names, formats them, calls GLM-5.2 via NVIDIA API
+      (mirrors OrionAiService.callGlmModel pattern), parses JSON response
+    - Returns: summary (2-3 phrases), keyPoints (max 5), actionItems (max 3),
+      suggestedTitle (max 60 chars), messageCount, participantCount,
+      generatedAt, usingLLM flag
+    - Fallback without LLM: basic summary (message count, top sender, period)
+      when NVIDIA_API_KEY is not configured
+  * ChatController: new endpoint POST /chat/conversations/:id/summarize
+    Body: { userId, maxMessages? }
+  * CommunicationModule: ChatSummaryService added to providers + exports
+- Web (WhatsAppChat.tsx):
+  * New state: showSummary, summaryLoading, summaryData
+  * Handler handleSummarizeConversation: calls POST /api/chat/conversations/:id/summarize
+  * Sparkles button added in chat header next to MoreVertical
+  * SummaryModal inline (header with ORION gradient + body sections for Synthèse /
+    Points clés / Actions & décisions / Titre suggéré + stats footer with usingLLM badge)
+  * Modal supports click-outside dismiss (disabled while loading)
+  * New lucide imports: Sparkles, ListChecks, ClipboardList
+- Mobile (conversation_detail_screen.dart):
+  * AppBar.actions: IconButton(Icons.auto_awesome) triggers _summarizeConversation
+  * _summarizeConversation: loading dialog + POST /chat/conversations/:id/summarize
+  * _showSummaryDialog: AlertDialog with gradient ORION icon header, sections
+    for synthèse / points clés / actions / titre suggéré
+- Committed as b073e666: "V3-3 ORION summaries: backend service + endpoint + web UI"
+
+Work Log (V3-2 Whisper transcription):
+- Backend:
+  * Migration 20260901160000_add_message_transcription: 3 new columns on
+    chat_messages (transcription TEXT, transcribedAt TIMESTAMP,
+    transcriptionLanguage VARCHAR(10)) + index on has_transcription
+  * Created apps/api-server/src/communication/services/chat-transcription.service.ts
+    - ChatTranscriptionService.transcribeMessage() — fetches the audio message,
+      downloads file via direct HTTP (or StorageService fallback), sends to
+      OpenAI Whisper API (configurable via OPENAI_API_KEY / WHISPER_API_KEY +
+      WHISPER_BASE_URL / WHISPER_MODEL / WHISPER_LANGUAGE)
+    - Caches the transcription in chat_messages.transcription column
+    - Fallback without API key: stores informational message indicating that
+      transcription is unavailable (admin must configure the API key)
+    - Multi-tenant strict: tenantId verified via chat_conversations lookup
+    - Returns: { messageId, transcription, language, cached, usingWhisper }
+  * ChatController: new endpoint POST /chat/messages/:id/transcribe
+  * CommunicationModule: ChatTranscriptionService added to providers + exports
+- Web (WhatsAppChat.tsx):
+  * New state: transcribingMsgId, transcriptions (Record<messageId, text>)
+  * Handler handleTranscribeMessage: calls POST /api/chat/messages/:id/transcribe,
+    caches the result in transcriptions state, displays via toast.success with
+    the first 300 chars as description
+  * "Transcrire (Whisper)" button in the message action dropdown menu, visible
+    only when msg.type === 'AUDIO'. Uses AudioLines icon (lucide-react).
+    Loader2 spinner + "Transcription en cours..." while waiting.
+  * If transcription already in cache, re-displays it via toast (no new API call)
+- Mobile (conversation_detail_screen.dart):
+  * _showMessageActions: new "Transcrire (Whisper)" ListTile option, visible
+    only for messages with audio extensions (.mp3/.m4a/.wav/.ogg)
+  * _transcribeMessage: loading dialog + POST /chat/messages/:id/transcribe +
+    AlertDialog with transcription text + Whisper/fallback badge (emerald/amber)
+- Committed as 3ba3906f: "V3-2 Whisper transcription: backend service + endpoint + web UI"
+
+Stage Summary:
+- All 4 V3 modules are now complete end-to-end:
+  * V3-4 Integration Examens/Absences/Discipline → Helm Connect (committed in dc8b7d10, 23c9e9e5, 72007451)
+  * V3-1 Offline-first chat (web + mobile) (committed in 7603708d, ffa83716)
+  * V3-3 ORION conversation summaries (web + mobile) (committed in b073e666)
+  * V3-2 Whisper audio transcription (web + mobile) (committed in 3ba3906f + this commit)
+- All commits pushed to main.
+- Backend: 3 new services (HelmConnectNotificationBridgeService, ChatSummaryService,
+  ChatTranscriptionService) + 2 migrations (fcm_device_tokens, message_transcription)
+- Web: WhatsAppChat.tsx extended with offline-first store + Sparkles summary button
+  + modal + Transcribe button for audio messages
+- Mobile: 4 new Dart files (push_notification_service, notification_provider,
+  notification_repository_impl, notification_api, chat_local_storage) +
+  SocketService + ConversationDetailScreen extended with offline-first cache +
+  send queue + summary action + transcribe action + FCM wiring in main.dart
+- Backend FCM sender side (Firebase Admin SDK) not implemented — the mobile
+  app registers tokens server-side, but the actual push dispatch from server
+  to FCM will be added when the project owner provides FCM credentials. The
+  in-app bell (web + mobile) works end-to-end already.

@@ -319,6 +319,216 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
+  // ⭐ V3-3: ORION conversation summary — call POST /chat/conversations/:id/summarize
+  Future<void> _summarizeConversation() async {
+    final userId = await AuthService.getUserId() ?? '';
+    if (userId.isEmpty) return;
+    final api = ApiService();
+
+    // Loading dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Analyse ORION en cours...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final response = await api.post(
+        '/chat/conversations/${widget.conversation.id}/summarize',
+        body: {
+          'userId': userId,
+          'maxMessages': 50,
+        },
+      );
+      if (mounted) Navigator.of(context).pop(); // close loading
+
+      final data = response as Map<String, dynamic>;
+      _showSummaryDialog(data);
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // close loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec du résumé: $e')),
+        );
+      }
+    }
+  }
+
+  void _showSummaryDialog(Map<String, dynamic> data) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)]),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 8),
+            const Text('Résumé ORION'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (data['summary'] != null) ...[
+                const Text('Synthèse', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF6366F1))),
+                const SizedBox(height: 4),
+                Text(data['summary'], style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 12),
+              ],
+              if ((data['keyPoints'] as List?)?.isNotEmpty == true) ...[
+                const Text('Points clés', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF10B981))),
+                const SizedBox(height: 4),
+                ...((data['keyPoints'] as List).map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('• ', style: TextStyle(color: Color(0xFF10B981))),
+                      Expanded(child: Text(p.toString(), style: const TextStyle(fontSize: 13))),
+                    ],
+                  ),
+                ))),
+                const SizedBox(height: 12),
+              ],
+              if ((data['actionItems'] as List?)?.isNotEmpty == true) ...[
+                const Text('Actions & décisions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFF59E0B))),
+                const SizedBox(height: 4),
+                ...((data['actionItems'] as List).map((i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('→ ', style: TextStyle(color: Color(0xFFF59E0B))),
+                      Expanded(child: Text(i.toString(), style: const TextStyle(fontSize: 13))),
+                    ],
+                  ),
+                ))),
+                const SizedBox(height: 12),
+              ],
+              if (data['suggestedTitle'] != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Titre suggéré', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Color(0xFF64748B))),
+                      const SizedBox(height: 2),
+                      Text(data['suggestedTitle'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V3-2: Whisper transcription — call POST /chat/messages/:id/transcribe
+  Future<void> _transcribeMessage(Message msg) async {
+    final api = ApiService();
+
+    // Loading dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Transcription Whisper en cours...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final response = await api.post(
+        '/chat/messages/${msg.id}/transcribe',
+        body: {},
+      );
+      if (mounted) Navigator.of(context).pop(); // close loading
+
+      final data = response as Map<String, dynamic>;
+      final transcription = data['transcription'] as String? ?? '';
+      final usingWhisper = data['usingWhisper'] as bool? ?? false;
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.audio_file, color: Color(0xFF6366F1), size: 22),
+              const SizedBox(width: 8),
+              const Text('Transcription'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(transcription, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: usingWhisper ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  usingWhisper ? 'Propulsé par Whisper IA' : 'Transcription basique (fallback)',
+                  style: TextStyle(fontSize: 10, color: usingWhisper ? const Color(0xFF065F46) : const Color(0xFF92400E)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop(); // close loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Échec de la transcription: $e')),
+        );
+      }
+    }
+  }
+
   String _formatTime(DateTime dt) {
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
@@ -366,6 +576,14 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ],
         ),
+        // ⭐ V3-3: Sparkles button to trigger ORION conversation summary
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_awesome, color: Colors.white),
+            tooltip: 'Résumer la conversation (ORION IA)',
+            onPressed: _summarizeConversation,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -555,6 +773,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 _showReactionPicker(msg);
               },
             ),
+            // ⭐ V3-2: Transcrire (audio messages only)
+            if (msg.isAttachment && (msg.attachmentName?.toLowerCase().endsWith('.mp3') == true ||
+                msg.attachmentName?.toLowerCase().endsWith('.m4a') == true ||
+                msg.attachmentName?.toLowerCase().endsWith('.wav') == true ||
+                msg.attachmentName?.toLowerCase().endsWith('.ogg') == true))
+              ListTile(
+                leading: const Icon(Icons.audio_file, color: Color(0xFF6366F1)),
+                title: const Text('Transcrire (Whisper)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _transcribeMessage(msg);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.copy, color: Color(0xFF64748B)),
               title: const Text('Copier'),

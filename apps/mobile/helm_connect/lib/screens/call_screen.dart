@@ -35,15 +35,15 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
     super.initState();
     widget.callService.addListener(_onCallStateChanged);
 
-    // ⭐ V3-4: Gold halo pulsing animations — outer ring (ping) every 2s,
-    //    middle ring (pulse) every 1.5s. Mirrors the web animate-ping/pulse.
+    // ⭐ V3-6: Gold halo pulsing animations — outer ring (ping) every 1.8s,
+    //    middle ring (pulse) every 1.2s. Faster rhythm for a more lively feel.
     _haloPingController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
     _haloPulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
     _haloPingAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -125,7 +125,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
               // ─── For VIDEO calls in 'active' state, local video PiP (bottom-right) ───
               if (cs.isVideoCall && cs.state == CallState.active)
                 Positioned(
-                  bottom: 130,
+                  bottom: 140,
                   right: 16,
                   child: _buildLocalVideoPiP(),
                 ),
@@ -399,15 +399,22 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
   Widget _buildLocalVideoPiP() {
     final cs = widget.callService;
     return Container(
-      width: 112,
-      height: 160,
+      width: 140,
+      height: 200,
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: const Color(0xFFFFE08A).withOpacity(0.4),
-          width: 2,
+          width: 2.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 12,
+            spreadRadius: 1,
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -422,7 +429,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
             Container(
               color: Colors.black54,
               child: const Center(
-                child: Icon(Icons.videocam_off, color: Colors.white70, size: 28),
+                child: Icon(Icons.videocam_off, color: Colors.white70, size: 32),
               ),
             ),
         ],

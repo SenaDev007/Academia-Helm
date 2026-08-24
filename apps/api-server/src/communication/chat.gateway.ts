@@ -262,6 +262,66 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V3-6 — GROUP CALLS (mesh topology)
+  //    Events: group-call:invite, group-call:leave
+  //
+  //    Mesh approach (no SFU): the initiator sends a `group-call:invite`
+  //    to each participant. Each participant then establishes a 1-à-1
+  //    WebRTC peer connection with the initiator (and optionally with
+  //    each other for a true mesh). Uses the existing `call:offer`/
+  //    `call:answer`/`call:ice-candidate` events with a shared `callId`.
+  //
+  //    Works well for up to 4-5 participants. Beyond that, a SFU
+  //    (Selective Forwarding Unit) like mediasoup or Janus would be
+  //    needed to scale.
+  // ═════════════════════════════════════════════════════════════════
+
+  @SubscribeMessage('group-call:invite')
+  handleGroupCallInvite(
+    @MessageBody() data: {
+      toUserIds: string[];
+      callId: string;
+      callType: string;
+      conversationId: string;
+      callerName?: string;
+      callerAvatarUrl?: string;
+      participantNames?: Record<string, string>; // userId → name (for the recipient to display others)
+    },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const callerId = client.data.userId;
+    if (!callerId || !data.toUserIds || data.toUserIds.length === 0) return;
+
+    // ⭐ Forward the invite to each participant's socket room
+    for (const toUserId of data.toUserIds) {
+      this.server.to(`user:${toUserId}`).emit('group-call:invite', {
+        fromUserId: callerId,
+        callId: data.callId,
+        callType: data.callType,
+        conversationId: data.conversationId,
+        callerName: data.callerName || null,
+        callerAvatarUrl: data.callerAvatarUrl || null,
+        participantNames: data.participantNames || {},
+      });
+    }
+  }
+
+  @SubscribeMessage('group-call:leave')
+  handleGroupCallLeave(
+    @MessageBody() data: { toUserIds: string[]; callId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const fromUserId = client.data.userId;
+    if (!fromUserId) return;
+    for (const toUserId of data.toUserIds) {
+      this.server.to(`user:${toUserId}`).emit('group-call:leave', {
+        fromUserId,
+        callId: data.callId,
+      });
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
   //  Méthodes utilitaires publiques — appelées par ChatController pour
   //  broadcaster les events sans avoir à connaître les détails Socket.io.
   // ═════════════════════════════════════════════════════════════════

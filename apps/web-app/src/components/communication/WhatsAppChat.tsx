@@ -286,6 +286,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V3-2 — Whisper transcription state
   const [transcribingMsgId, setTranscribingMsgId] = useState<string | null>(null);
   const [transcriptions, setTranscriptions] = useState<Record<string, string>>({});
+  // ⭐ V3-6 — Group call state
+  const [showGroupCallModal, setShowGroupCallModal] = useState(false);
+  const [groupCallParticipants, setGroupCallParticipants] = useState<Set<string>>(new Set());
+  // Peer connections for group calls — Map<userId, RTCPeerConnection>
+  const groupPeerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const groupRemoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const [groupCallActive, setGroupCallActive] = useState(false);
+  const [groupCallData, setGroupCallData] = useState<{ callId: string; callType: 'AUDIO' | 'VIDEO'; conversationId: string; isInitiator: boolean; participants: Map<string, { name: string; stream?: MediaStream }> } | null>(null);
   // ⭐ Helm Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
   // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
@@ -1713,6 +1721,152 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   };
 
+  // ⭐ V3-6: Start a GROUP call (mesh topology) — invite selected participants
+  const handleStartGroupCall = async (callType: 'AUDIO' | 'VIDEO') => {
+    if (!activeConvId || !activeConv || activeConv.type !== 'GROUP') return;
+    const invitees = activeConv.participants.filter(
+      (p) => p.userId !== currentUserId && groupCallParticipants.has(p.userId)
+    );
+    if (invitees.length === 0) {
+      toast.error('Sélectionnez au moins un participant à appeler');
+      return;
+    }
+    setShowGroupCallModal(false);
+
+    try {
+      // 1. Get local media
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'VIDEO',
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      // 2. Generate a callId
+      const callId = `group-${Date.now()}`;
+      const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur';
+
+      // 3. Build the participant names map
+      const participantNames: Record<string, string> = { [currentUserId]: myName };
+      for (const p of invitees) {
+        participantNames[p.userId] = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.email || 'Utilisateur';
+      }
+
+      // 4. Initialize the group call state
+      const participantsMap = new Map();
+      participantsMap.set(currentUserId, { name: myName, stream });
+      for (const p of invitees) {
+        participantsMap.set(p.userId, { name: participantNames[p.userId] });
+      }
+      setGroupCallData({
+        callId,
+        callType,
+        conversationId: activeConvId,
+        isInitiator: true,
+        participants: participantsMap,
+      });
+      setGroupCallActive(true);
+
+      // 5. Emit group-call:invite to all selected participants
+      if (socket) {
+        socket.emit('group-call:invite', {
+          toUserIds: invitees.map((p) => p.userId),
+          callId,
+          callType,
+          conversationId: activeConvId,
+          callerName: myName,
+          callerAvatarUrl: (user as any)?.avatarUrl || null,
+          participantNames,
+        });
+      }
+
+      // 6. For each invitee, create a peer connection + send a call:offer
+      for (const invitee of invitees) {
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+        });
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        pc.onicecandidate = (event) => {
+          if (event.candidate && socket) {
+            socket.emit('call:ice-candidate', {
+              toUserId: invitee.userId,
+              callId,
+              candidate: event.candidate,
+            });
+          }
+        };
+        pc.ontrack = (event) => {
+          if (event.streams[0]) {
+            groupRemoteStreamsRef.current.set(invitee.userId, event.streams[0]);
+            setGroupCallData((prev) => {
+              if (!prev) return prev;
+              const newParticipants = new Map(prev.participants);
+              newParticipants.set(invitee.userId, {
+                ...newParticipants.get(invitee.userId)!,
+                stream: event.streams[0],
+              });
+              return { ...prev, participants: newParticipants };
+            });
+          }
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+            groupPeerConnectionsRef.current.delete(invitee.userId);
+            groupRemoteStreamsRef.current.delete(invitee.userId);
+            setGroupCallData((prev) => {
+              if (!prev) return prev;
+              const newParticipants = new Map(prev.participants);
+              newParticipants.delete(invitee.userId);
+              return { ...prev, participants: newParticipants };
+            });
+          }
+        };
+        groupPeerConnectionsRef.current.set(invitee.userId, pc);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        if (socket) {
+          socket.emit('call:offer', {
+            toUserId: invitee.userId,
+            callId,
+            callType,
+            offer,
+            callerName: myName,
+            callerAvatarUrl: (user as any)?.avatarUrl || null,
+          });
+        }
+      }
+      toast.success(`Appel ${callType === 'VIDEO' ? 'vidéo' : 'audio'} de groupe lancé avec ${invitees.length} participant(s)`);
+    } catch (e: any) {
+      toast.error('Échec appel de groupe: ' + e.message);
+      cleanupGroupCall();
+    }
+  };
+
+  // ⭐ V3-6: Cleanup group call resources
+  const cleanupGroupCall = useCallback(() => {
+    groupPeerConnectionsRef.current.forEach((pc) => pc.close());
+    groupPeerConnectionsRef.current.clear();
+    groupRemoteStreamsRef.current.clear();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+    setGroupCallActive(false);
+    setGroupCallData(null);
+    setGroupCallParticipants(new Set());
+  }, []);
+
+  // ⭐ V3-6: Hang up a group call
+  const hangupGroupCall = () => {
+    if (groupCallData && socket) {
+      const otherIds = Array.from(groupCallData.participants.keys()).filter((id) => id !== currentUserId);
+      for (const id of otherIds) {
+        socket.emit('group-call:leave', { toUserIds: [id], callId: groupCallData.callId });
+      }
+    }
+    cleanupGroupCall();
+  };
+
   // ⭐ V2.5: Accept incoming call
   const acceptCall = async (fromUserId: string, callId: string, callType: string, offer: any) => {
     try {
@@ -1830,14 +1984,116 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     socket.on('call:reject', onCallReject);
     socket.on('call:hangup', onCallHangup);
 
+    // ⭐ V3-6: Group call listeners
+    const onGroupCallInvite = async (data: { fromUserId: string; callId: string; callType: string; conversationId: string; callerName?: string; callerAvatarUrl?: string; participantNames?: Record<string, string> }) => {
+      if (groupCallActive || callState !== 'idle') return; // Already in a call
+
+      // For V3-6, we auto-accept the group call (the user can hang up if they don't want to join).
+      // A production version would show an incoming-call modal with Accept/Decline buttons.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: data.callType === 'VIDEO',
+        });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+        const participantsMap = new Map<string, { name: string; stream?: MediaStream }>();
+        participantsMap.set(currentUserId, { name: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Moi', stream });
+        if (data.participantNames) {
+          for (const [uid, name] of Object.entries(data.participantNames)) {
+            if (uid !== currentUserId) {
+              participantsMap.set(uid, { name });
+            }
+          }
+        }
+
+        setGroupCallData({
+          callId: data.callId,
+          callType: data.callType as 'AUDIO' | 'VIDEO',
+          conversationId: data.conversationId,
+          isInitiator: false,
+          participants: participantsMap,
+        });
+        setGroupCallActive(true);
+
+        // Establish a peer connection back to the initiator
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+        });
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        pc.onicecandidate = (event) => {
+          if (event.candidate && socket) {
+            socket.emit('call:ice-candidate', {
+              toUserId: data.fromUserId,
+              callId: data.callId,
+              candidate: event.candidate,
+            });
+          }
+        };
+        pc.ontrack = (event) => {
+          if (event.streams[0]) {
+            groupRemoteStreamsRef.current.set(data.fromUserId, event.streams[0]);
+            setGroupCallData((prev) => {
+              if (!prev) return prev;
+              const newParticipants = new Map(prev.participants);
+              newParticipants.set(data.fromUserId, {
+                ...newParticipants.get(data.fromUserId)!,
+                stream: event.streams[0],
+              });
+              return { ...prev, participants: newParticipants };
+            });
+          }
+        };
+        groupPeerConnectionsRef.current.set(data.fromUserId, pc);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('call:offer', {
+          toUserId: data.fromUserId,
+          callId: data.callId,
+          callType: data.callType,
+          offer,
+          callerName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur',
+        });
+        toast.info(`Appel de groupe entrant de ${data.callerName || 'Utilisateur'}`);
+      } catch (e: any) {
+        toast.error('Échec acceptation appel de groupe: ' + e.message);
+        cleanupGroupCall();
+      }
+    };
+
+    const onGroupCallLeave = (data: { fromUserId: string; callId: string }) => {
+      if (!groupCallData || data.callId !== groupCallData.callId) return;
+      const pc = groupPeerConnectionsRef.current.get(data.fromUserId);
+      if (pc) pc.close();
+      groupPeerConnectionsRef.current.delete(data.fromUserId);
+      groupRemoteStreamsRef.current.delete(data.fromUserId);
+      setGroupCallData((prev) => {
+        if (!prev) return prev;
+        const newParticipants = new Map(prev.participants);
+        newParticipants.delete(data.fromUserId);
+        if (newParticipants.size <= 1) {
+          // Only us left — end the call
+          cleanupGroupCall();
+          return null;
+        }
+        return { ...prev, participants: newParticipants };
+      });
+    };
+
+    socket.on('group-call:invite', onGroupCallInvite);
+    socket.on('group-call:leave', onGroupCallLeave);
+
     return () => {
       socket.off('call:offer', onCallOffer);
       socket.off('call:answer', onCallAnswer);
       socket.off('call:ice-candidate', onIceCandidate);
       socket.off('call:reject', onCallReject);
       socket.off('call:hangup', onCallHangup);
+      socket.off('group-call:invite', onGroupCallInvite);
+      socket.off('group-call:leave', onGroupCallLeave);
     };
-  }, [socket, callState, callData, activeConv, cleanupCall]);
+  }, [socket, callState, callData, activeConv, cleanupCall, groupCallActive, groupCallData, currentUserId, user]);
 
   // ⭐ V2: Generate group invite link (copies to clipboard)
   const handleGenerateInviteLink = async () => {
@@ -2290,16 +2546,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </div>
             {/* ⭐ V2: Call buttons (audio + video) + invite link (groups only) */}
             <button
-              onClick={() => handleStartCall('AUDIO')}
+              onClick={() => activeConv.type === 'GROUP' ? setShowGroupCallModal(true) : handleStartCall('AUDIO')}
               className="p-1.5 rounded hover:bg-[#0958D9]"
-              title="Appel audio"
+              title={activeConv.type === 'GROUP' ? 'Appel audio de groupe' : 'Appel audio'}
             >
               <Phone className="w-4 h-4" />
             </button>
             <button
-              onClick={() => handleStartCall('VIDEO')}
+              onClick={() => activeConv.type === 'GROUP' ? setShowGroupCallModal(true) : handleStartCall('VIDEO')}
               className="p-1.5 rounded hover:bg-[#0958D9]"
-              title="Appel vidéo"
+              title={activeConv.type === 'GROUP' ? 'Appel vidéo de groupe' : 'Appel vidéo'}
             >
               <Video className="w-4 h-4" />
             </button>
@@ -3069,6 +3325,143 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           onClose={() => setShowNotifPrefs(false)}
         />
       )}
+      {/* ⭐ V3-6 — Group call participant picker modal */}
+      {showGroupCallModal && activeConv?.type === 'GROUP' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowGroupCallModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Appel de groupe</h3>
+              <button onClick={() => setShowGroupCallModal(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-slate-100">
+              <p className="text-xs text-slate-500">Sélectionnez les participants à appeler :</p>
+            </div>
+            <div className="overflow-y-auto p-2 flex-1">
+              {activeConv.participants.filter((p) => p.userId !== currentUserId).length === 0 ? (
+                <div className="text-center py-8 text-sm text-slate-400">Aucun autre participant dans ce groupe</div>
+              ) : (
+                activeConv.participants.filter((p) => p.userId !== currentUserId).map((p) => {
+                  const isSelected = groupCallParticipants.has(p.userId);
+                  const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.email || 'Utilisateur';
+                  return (
+                    <button
+                      key={p.userId}
+                      onClick={() => {
+                        const newSet = new Set(groupCallParticipants);
+                        if (isSelected) newSet.delete(p.userId);
+                        else newSet.add(p.userId);
+                        setGroupCallParticipants(newSet);
+                      }}
+                      className={cn(
+                        'w-full flex items-center gap-3 p-2.5 rounded-lg transition text-left mb-1',
+                        isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
+                      )}
+                    >
+                      <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0', getAvatarColor(name))}>
+                        {getInitials(name)}
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 flex-1 truncate">{name}</span>
+                      {isSelected && <Check className="w-4 h-4 text-blue-600" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 flex gap-2">
+              <button
+                onClick={() => handleStartGroupCall('AUDIO')}
+                disabled={groupCallParticipants.size === 0}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#0A2A5E] text-white rounded-xl text-sm font-bold disabled:opacity-30 hover:bg-[#114FC4]"
+              >
+                <Phone className="w-4 h-4" /> Audio
+              </button>
+              <button
+                onClick={() => handleStartGroupCall('VIDEO')}
+                disabled={groupCallParticipants.size === 0}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#1C6FE8] text-white rounded-xl text-sm font-bold disabled:opacity-30 hover:bg-[#114FC4]"
+              >
+                <Video className="w-4 h-4" /> Vidéo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ⭐ V3-6 — Group call overlay (branded, multi-participant grid) */}
+      {groupCallActive && groupCallData && (
+        <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col">
+          {/* Top bar */}
+          <div className="absolute top-0 left-0 right-0 p-4 pt-6 flex items-center justify-center gap-2 z-10">
+            <span className="text-white font-bold text-lg">Appel de groupe</span>
+            <span className="text-[#FFE08A] text-sm">({groupCallData.participants.size} participant(s))</span>
+          </div>
+          {/* Duration */}
+          <div className="absolute top-14 left-0 right-0 text-center z-10">
+            <p className="text-[#FFE08A] text-base font-semibold">
+              {Math.floor(callDuration / 60)}:{(callDuration % 60).toString().padStart(2, '0')}
+            </p>
+          </div>
+          {/* Participant grid — 2 columns */}
+          <div className="flex-1 flex items-center justify-center p-4 pt-20">
+            <div className="grid grid-cols-2 gap-3 max-w-3xl w-full">
+              {Array.from(groupCallData.participants.entries()).map(([userId, info]) => (
+                <div key={userId} className="relative aspect-video rounded-2xl overflow-hidden bg-[#0A2A5E]/50 border border-[#FFE08A]/20 flex items-center justify-center">
+                  {groupCallData.callType === 'VIDEO' && info.stream ? (
+                    <video
+                      autoPlay
+                      playsInline
+                      muted={userId === currentUserId}
+                      ref={(el) => {
+                        if (el && info.stream) {
+                          el.srcObject = info.stream;
+                        }
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className={cn('w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold ring-4 ring-[#FFE08A]/60', getAvatarColor(info.name))}>
+                        {getInitials(info.name)}
+                      </div>
+                      <span className="text-white text-sm font-medium">{userId === currentUserId ? 'Vous' : info.name}</span>
+                    </div>
+                  )}
+                  {/* Name badge */}
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/50 text-white text-xs font-medium">
+                    {userId === currentUserId ? 'Vous' : info.name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Bottom control bar */}
+          <div className="w-full pb-10 flex justify-center z-30">
+            <div className="flex items-center gap-2 px-6 py-4 rounded-full bg-[#0A2A5E]/70 backdrop-blur-md border border-[#FFE08A]/20">
+              <button onClick={toggleMute} className="flex flex-col items-center gap-1 px-3">
+                <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', muted ? 'bg-[#FFE08A]' : 'bg-white/20')}>
+                  {muted ? <MicOff className="w-5 h-5 text-[#0A2A5E]" /> : <Mic className="w-5 h-5" />}
+                </div>
+                <span className="text-[10px] text-white/80">{muted ? 'Activer' : 'Micro'}</span>
+              </button>
+              {groupCallData.callType === 'VIDEO' && (
+                <button onClick={toggleVideo} className="flex flex-col items-center gap-1 px-3">
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', videoOff ? 'bg-[#FFE08A]' : 'bg-white/20')}>
+                    {videoOff ? <VideoOff className="w-5 h-5 text-[#0A2A5E]" /> : <Video className="w-5 h-5" />}
+                  </div>
+                  <span className="text-[10px] text-white/80">{videoOff ? 'Caméra' : 'Vidéo'}</span>
+                </button>
+              )}
+              <button onClick={hangupGroupCall} className="flex flex-col items-center gap-1 px-3">
+                <div className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white shadow-lg transition-transform hover:scale-110">
+                  <Phone className="w-6 h-6 rotate-[135deg]" />
+                </div>
+                <span className="text-[10px] text-white/80">Quitter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ⭐ V3-3 — ORION-powered conversation summary modal */}
       {showSummary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !summaryLoading && setShowSummary(false)}>
@@ -3355,10 +3748,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {/* Center: avatar + name */}
           <div className="text-center">
             <div className="relative w-28 h-28 mx-auto mb-5">
-              {/* ⭐ V3-4: Pulsing gold halo (outer) — Academia Helm living gold */}
-              <div className="absolute -inset-3 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '2s' }}></div>
-              {/* ⭐ V3-4: Pulsing royal-blue halo (middle) — Helm Connect azure */}
-              <div className="absolute -inset-1 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+              {/* ⭐ V3-6: Pulsing gold halo (outer) — Academia Helm living gold */}
+              <div className="absolute -inset-3 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '1.8s' }}></div>
+              {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+              <div className="absolute -inset-1 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.2s' }}></div>
               {/* Avatar with gold ring */}
               <div className={cn('relative w-28 h-28 rounded-full flex items-center justify-center text-white text-4xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
                 {getInitials(callData.otherUserName)}
@@ -3417,10 +3810,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {(callData.callType === 'AUDIO' || callState !== 'active') && (
             <div className="text-center z-10 pt-20">
               <div className="relative w-32 h-32 mx-auto mb-5">
-                {/* ⭐ V3-4: Pulsing gold halo (outer) — Academia Helm living gold */}
-                <div className="absolute -inset-4 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '2s' }}></div>
-                {/* ⭐ V3-4: Pulsing royal-blue halo (middle) — Helm Connect azure */}
-                <div className="absolute -inset-2 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.5s' }}></div>
+                {/* ⭐ V3-6: Pulsing gold halo (outer) — Academia Helm living gold */}
+                <div className="absolute -inset-4 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '1.8s' }}></div>
+                {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+                <div className="absolute -inset-2 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.2s' }}></div>
                 {/* Avatar with gold ring */}
                 <div className={cn('relative w-32 h-32 rounded-full flex items-center justify-center text-white text-5xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
                   {getInitials(callData.otherUserName)}
@@ -3453,7 +3846,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {callData.callType === 'VIDEO' && callState === 'active' && (
             <video
               ref={localVideoRef} autoPlay playsInline muted
-              className={cn('absolute bottom-32 right-4 w-28 h-40 rounded-2xl object-cover border-2 border-white/20 z-20', videoOff && 'opacity-30')}
+              className={cn('absolute bottom-32 right-4 w-32 h-48 rounded-2xl object-cover border-2 border-[#FFE08A]/40 z-20', videoOff && 'opacity-30')}
             />
           )}
           {/* Right-side controls (for VIDEO calls) */}

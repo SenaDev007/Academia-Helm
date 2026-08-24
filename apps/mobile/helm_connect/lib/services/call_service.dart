@@ -17,6 +17,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../services/socket_service.dart';
+// ⭐ V3-6: Soft phone ringtone (audioplayers, two distinct tones for caller/callee)
+import 'ringtone_service.dart';
 
 /// State of the call lifecycle.
 enum CallState { idle, outgoing, incoming, active }
@@ -46,6 +48,8 @@ class CallService extends ChangeNotifier {
   CallService(this._socket);
 
   final SocketService _socket;
+  // ⭐ V3-6: Soft phone ringtone (singleton)
+  final RingtoneService _ringtone = RingtoneService();
 
   // ─── State ───────────────────────────────────────────────────────────────
   CallState _state = CallState.idle;
@@ -199,6 +203,8 @@ class CallService extends ChangeNotifier {
       );
       _state = CallState.outgoing;
       notifyListeners();
+      // ⭐ V3-6: Start the outgoing ringtone (single gentle beep every 2s)
+      _ringtone.start(mode: 'outgoing');
 
       // 10. Emit call:offer with callerName + avatar (parity with web)
       _socket.emit('call:offer', {
@@ -240,6 +246,8 @@ class CallService extends ChangeNotifier {
     );
     _state = CallState.incoming;
     notifyListeners();
+    // ⭐ V3-6: Start the incoming ringtone (double C5+E5 chord every 3s)
+    _ringtone.start(mode: 'incoming');
   }
 
   /// Accept an incoming call (callee side).
@@ -333,6 +341,8 @@ class CallService extends ChangeNotifier {
       _startTimer();
       _pendingOffer = null;
       notifyListeners();
+      // ⭐ V3-6: Stop the ringtone when the call becomes active
+      _ringtone.stop();
     } catch (e) {
       debugPrint('❌ acceptIncomingCall failed: $e');
       await _cleanup();
@@ -365,6 +375,8 @@ class CallService extends ChangeNotifier {
       _state = CallState.active;
       _startTimer();
       notifyListeners();
+      // ⭐ V3-6: Stop the ringtone when the call becomes active (caller side)
+      _ringtone.stop();
     } catch (e) {
       debugPrint('❌ onCallAnswer failed: $e');
     }
@@ -457,6 +469,8 @@ class CallService extends ChangeNotifier {
     _state = CallState.idle;
     _callData = null;
     _pendingOffer = null;
+    // ⭐ V3-6: Stop the ringtone on cleanup (call ended or rejected)
+    _ringtone.stop();
 
     if (_peerConnection != null) {
       try {

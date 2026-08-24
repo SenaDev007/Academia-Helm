@@ -39,6 +39,8 @@ export function useChatSocket(options: UseChatSocketOptions) {
   const { token, userId, onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline } = options;
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  // ⭐ Pending listeners — queued when socket isn't ready yet, applied on connect
+  const pendingListenersRef = useRef<Array<{ event: string; listener: any }>>([]);
 
   // ⭐ Stable refs for callbacks
   const callbacksRef = useRef({ onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline });
@@ -63,6 +65,12 @@ export function useChatSocket(options: UseChatSocketOptions) {
     });
 
     socketRef.current = socket;
+
+    // ⭐ Process any pending listeners that were registered before socket connected
+    pendingListenersRef.current.forEach(({ event, listener }) => {
+      socket.on(event, listener);
+    });
+    pendingListenersRef.current = [];
 
     socket.on('connect', () => {
       setIsConnected(true);
@@ -121,8 +129,38 @@ export function useChatSocket(options: UseChatSocketOptions) {
     socketRef.current?.emit('typing:stop', { conversationId });
   }, []);
 
+  // ⭐ V2.5: Expose raw socket methods for WebRTC call signaling
+  //    The hook previously only returned wrapper functions (joinConversation, etc.)
+  //    but the WebRTC call UI needs direct access to socket.on() / socket.off()
+  //    for call:offer, call:answer, call:ice-candidate, call:reject, call:hangup.
+  //    These wrappers delegate to socketRef.current, with a pending-queue fallback
+  //    for listeners registered before the socket connects.
+  const on = useCallback((event: string, listener: any) => {
+    if (socketRef.current) {
+      socketRef.current.on(event, listener);
+    } else {
+      // Socket not ready — queue for when it connects
+      pendingListenersRef.current.push({ event, listener });
+    }
+  }, []);
+
+  const off = useCallback((event: string, listener: any) => {
+    socketRef.current?.off(event, listener);
+    // Also remove from pending if it was queued
+    pendingListenersRef.current = pendingListenersRef.current.filter(
+      p => !(p.event === event && p.listener === listener)
+    );
+  }, []);
+
+  const emit = useCallback((event: string, ...args: any[]) => {
+    socketRef.current?.emit(event, ...args);
+  }, []);
+
   return {
     isConnected,
+    on,
+    off,
+    emit,
     joinConversation,
     leaveConversation,
     startTyping,

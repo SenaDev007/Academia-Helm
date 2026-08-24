@@ -36,6 +36,8 @@ import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
+// ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
+import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
@@ -218,6 +220,8 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ V3-4: Cloche notifications enseignant (absences justifiées / évaluations / examens) */}
+            <NotificationDropdown />
             {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé */}
             {/* <SyncButton /> */}
             <span className="text-xs sm:text-sm text-slate-500">

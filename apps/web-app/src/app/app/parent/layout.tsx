@@ -36,6 +36,8 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
+// ⭐ V3-4: notifications Helm Connect pour parents (Examens/Absences/Discipline → cloche)
+import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 
 const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
@@ -226,6 +228,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ V3-4: Cloche notifications parents (absences/examens/bulletins/discipline) */}
+            <NotificationDropdown />
             {/* ⭐ Bouton sync offline (pull/push) — disponible aussi pour les parents */}
             {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé */}
             {/* <SyncButton /> */}

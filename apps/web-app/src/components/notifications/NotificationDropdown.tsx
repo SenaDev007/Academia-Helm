@@ -16,7 +16,11 @@
  */
 
 import { useRef, useEffect } from 'react';
-import { Bell, Check, CheckCheck, Trash2, X, FileText, UserPlus, AlertCircle, Info } from 'lucide-react';
+import {
+  Bell, Check, CheckCheck, Trash2, X, FileText, UserPlus, AlertCircle, Info,
+  CalendarX, CalendarCheck, GraduationCap, Award, ShieldAlert,
+  ClipboardList, BookOpen, MessageSquare, Heart,
+} from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -42,6 +46,25 @@ function getNotifIcon(type: string) {
       return <UserPlus className="w-4 h-4 text-violet-600" />;
     case 'SYSTEM':
       return <Info className="w-4 h-4 text-slate-600" />;
+    // ⭐ V3-4 — Helm Connect bridge events (Examens/Absences/Discipline → parents & staff)
+    case 'ABSENCE_CREATED':
+      return <CalendarX className="w-4 h-4 text-amber-600" />;
+    case 'ABSENCE_JUSTIFIED':
+      return <CalendarCheck className="w-4 h-4 text-emerald-600" />;
+    case 'EXAM_SCHEDULED':
+      return <GraduationCap className="w-4 h-4 text-blue-700" />;
+    case 'BULLETIN_PUBLISHED':
+      return <Award className="w-4 h-4 text-yellow-600" />;
+    case 'SANCTION_CREATED':
+      return <ShieldAlert className="w-4 h-4 text-red-600" />;
+    case 'EVALUATION_SCHEDULED':
+      return <ClipboardList className="w-4 h-4 text-indigo-600" />;
+    case 'NEW_HOMEWORK':
+      return <BookOpen className="w-4 h-4 text-violet-700" />;
+    case 'PARENT_MESSAGE':
+      return <MessageSquare className="w-4 h-4 text-emerald-600" />;
+    case 'PARENT_ACKNOWLEDGMENT':
+      return <Heart className="w-4 h-4 text-rose-600" />;
     default:
       return <FileText className="w-4 h-4 text-slate-500" />;
   }

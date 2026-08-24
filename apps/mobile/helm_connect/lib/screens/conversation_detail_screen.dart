@@ -13,6 +13,8 @@ import 'package:file_picker/file_picker.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
+// ⭐ V3-1: Offline-first chat — local cache + send queue
+import '../services/chat_local_storage.dart';
 
 class ConversationDetailScreen extends StatefulWidget {
   final Conversation conversation;
@@ -40,6 +42,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _initSocket();
     // Polling fallback (reduced to 30s — Socket.io should deliver instantly)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
+    // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
+    _flushPendingQueue();
   }
 
   void _initSocket() async {
@@ -53,7 +57,48 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           _loadMessages(); // Refresh to get the new message
         }
       };
+      // ⭐ V3-1: on every (re)connect, flush the offline pending queue
+      _socket.onConnectCallback = () {
+        _flushPendingQueue();
+      };
       _socket.joinConversation(widget.conversation.id);
+    }
+  }
+
+  // ⭐ V3-1: Flush the offline pending queue — try to send all messages that
+  //    were queued while the network was down.
+  Future<void> _flushPendingQueue() async {
+    try {
+      final pending = await ChatLocalStorage.getPendingMessages();
+      if (pending.isEmpty) return;
+
+      // Send in chunks of 5 to avoid flooding the server
+      for (var i = 0; i < pending.length; i += 5) {
+        final chunk = pending.skip(i).take(5).toList();
+        await Future.wait(chunk.map((p) async {
+          try {
+            await ApiService.sendTextMessage(
+              conversationId: p.conversationId,
+              content: p.content,
+            );
+            // Success — remove from queue + mark as sent in local cache
+            await ChatLocalStorage.removePendingMessage(p.localId);
+            await ChatLocalStorage.markMessageSent(
+              p.conversationId,
+              p.localId,
+              p.localId, // server id approximated by localId; the next _loadMessages will replace it
+              DateTime.now().toIso8601String(),
+            );
+          } catch (e) {
+            await ChatLocalStorage.incrementPendingAttempts(p.localId, e.toString());
+          }
+        }));
+      }
+
+      // Refresh the messages display for the active conversation
+      if (mounted) _loadMessages();
+    } catch (e) {
+      // silent — flush failures will be retried on next reconnect
     }
   }
 
@@ -121,6 +166,33 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   Future<void> _loadMessages() async {
+    // ⭐ V3-1: Read local cache first (instant display)
+    try {
+      final cached = await ChatLocalStorage.getMessages(widget.conversation.id);
+      if (cached.isNotEmpty && mounted) {
+        final userId = await AuthService.getUserId();
+        setState(() {
+          _messages = cached
+              .map((m) => Message.fromJson({
+                    'id': m.id,
+                    'conversationId': m.conversationId,
+                    'senderId': m.senderId,
+                    'type': m.type,
+                    'content': m.content,
+                    'replyToId': m.replyToId,
+                    'createdAt': m.createdAt,
+                    // Local-only fields are ignored by Message.fromJson
+                    if (m.status == 'pending') 'status': 'pending',
+                  }, userId ?? ''))
+              .toList();
+          _loading = false;
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {
+      // silent — cache read may fail if SharedPreferences unavailable
+    }
+
     try {
       final json = await ApiService.listMessages(widget.conversation.id);
       final userId = await AuthService.getUserId();
@@ -132,6 +204,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         // Mark as read
         ApiService.markConversationRead(widget.conversation.id);
         _scrollToBottom();
+      }
+      // ⭐ V3-1: Save the fresh messages to local cache
+      try {
+        final offlineMsgs = json.map<OfflineMessage>((m) => OfflineMessage(
+          id: m['id'] as String,
+          conversationId: widget.conversation.id,
+          senderId: m['senderId'] as String? ?? '',
+          type: m['type'] as String? ?? 'TEXT',
+          content: m['content'] as String? ?? '',
+          replyToId: m['replyToId'] as String?,
+          createdAt: m['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+          status: 'sent',
+        )).toList();
+        await ChatLocalStorage.saveMessages(widget.conversation.id, offlineMsgs);
+      } catch (_) {
+        // silent — cache write may fail
       }
     } catch (e) {
       if (mounted) {
@@ -161,17 +249,69 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
     setState(() => _sending = true);
+
+    // ⭐ V3-1: Create a local pending message — display immediately + queue for retry
+    final localId = ChatLocalStorage.generateLocalId();
+    final now = DateTime.now().toIso8601String();
+    final userId = await AuthService.getUserId() ?? '';
+    final localMsg = OfflineMessage(
+      id: localId,
+      conversationId: widget.conversation.id,
+      senderId: userId,
+      type: 'TEXT',
+      content: content,
+      createdAt: now,
+      status: 'pending',
+      localId: localId,
+    );
+
+    // Append to local cache + pending queue
+    await ChatLocalStorage.appendMessage(localMsg);
+    await ChatLocalStorage.addPendingMessage(PendingMessage(
+      localId: localId,
+      conversationId: widget.conversation.id,
+      senderId: userId,
+      content: content,
+      queuedAt: now,
+      attempts: 0,
+    ));
+
+    // Display immediately in UI
+    if (mounted) {
+      setState(() {
+        _messages = [..._messages, Message.fromJson({
+          'id': localId,
+          'conversationId': widget.conversation.id,
+          'senderId': userId,
+          'type': 'TEXT',
+          'content': content,
+          'createdAt': now,
+          'status': 'pending',
+        }, userId)];
+      });
+      _scrollToBottom();
+    }
+
+    // Clear the input
+    _messageController.clear();
+
     try {
       await ApiService.sendTextMessage(
         conversationId: widget.conversation.id,
         content: content,
       );
-      _messageController.clear();
+      // Success — remove from pending queue + reload from server (replaces localId with server id)
+      await ChatLocalStorage.removePendingMessage(localId);
       await _loadMessages();
     } catch (e) {
+      // Failure — keep in pending queue for retry on next reconnect
+      await ChatLocalStorage.incrementPendingAttempts(localId, e.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Échec : $e')),
+          SnackBar(
+            content: Text('Message en attente — sera renvoyé à la reconnexion'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     } finally {

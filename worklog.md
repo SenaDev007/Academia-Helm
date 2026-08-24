@@ -8878,3 +8878,64 @@ Stage Summary:
   NEW_HOMEWORK (existing — already in NotificationService)
 - V3-4 module is now complete end-to-end:
   Backend bridge (V3-4a) → Web UI (V3-4b) → Mobile (V3-4c)
+
+---
+Task ID: V3-1a + V3-1b
+Agent: main (Super Z, GLM-5.2)
+Task: V3-1 Offline-first chat — IndexedDB (web) + SharedPreferences (mobile) cache + send queue + sync on reconnect
+
+Work Log (V3-1a web):
+- Created apps/web-app/src/lib/chat/chat-offline-store.ts (~280 lines):
+  - Uses native indexedDB (no Dexie/idb-keyval dep, matches crypto.ts pattern)
+  - 3 object stores: messages (cache per conversation), pending (send queue), meta
+  - OfflineChatMessage type with status: pending | sent | failed + localId
+  - API: getMessages, saveMessage, saveMessagesBulk, clearConversation,
+    markMessageSent, markMessageFailed, addPendingMessage, getPendingMessages,
+    removePendingMessage, incrementPendingAttempts, getLastSyncedAt,
+    setLastSyncedAt, generateLocalId, isOfflineStoreAvailable
+  - All methods never-throw (log + fallback for private browsing)
+- Modified apps/web-app/src/components/communication/WhatsAppChat.tsx:
+  - Imports the offline store
+  - loadMessages: reads IndexedDB first (instant UI), then fetches backend,
+    saves result to cache, updates setLastSyncedAt
+  - handleSendText: creates a local pending message with generateLocalId,
+    adds it to UI + cache + queue, attempts HTTP send. On success:
+    markMessageSent (replaces localId with server id) + removePendingMessage.
+    On failure: leaves in queue with incremented attempts for retry
+  - New useEffect: flushPendingRef holds the flush function, called on mount
+    and on socket reconnect (1s debounce for socket stability)
+  - Pending messages batched in chunks of 5 to avoid API flooding
+- Committed as 7603708d: "V3-1a Frontend web: Offline-first chat — IndexedDB"
+
+Work Log (V3-1b mobile):
+- Created apps/mobile/helm_connect/lib/services/chat_local_storage.dart (~280 lines):
+  - Uses SharedPreferences (already in pubspec.yaml)
+  - Types: OfflineMessage, PendingMessage (mirrors the web types)
+  - API: getMessages, saveMessages (max 200 per conv, FIFO), appendMessage,
+    markMessageSent, markMessageFailed, clearConversation, getPendingMessages,
+    addPendingMessage, removePendingMessage, incrementPendingAttempts,
+    generateLocalId
+- Modified apps/mobile/helm_connect/lib/services/socket_service.dart:
+  - Added onConnectCallback field (fired on every connect + reconnect)
+  - Tracks _wasConnectedBefore to log reconnects
+- Modified apps/mobile/helm_connect/lib/screens/conversation_detail_screen.dart:
+  - _loadMessages: reads local cache first (instant display), then fetches
+    backend, saves fresh messages to cache
+  - _sendMessage: creates a local pending message, displays it immediately,
+    adds to cache + pending queue, attempts HTTP send. On success: removes
+    from queue + reloads. On failure: keeps in queue for retry + shows
+    "Message en attente — sera renvoyé à la reconnexion" snackbar
+  - _flushPendingQueue: called on initState + on socket reconnect, sends all
+    pending messages in chunks of 5 to avoid flooding the server
+  - SocketService.onConnectCallback wired to _flushPendingQueue
+
+Stage Summary:
+- V3-1 module is complete end-to-end:
+  - Web (V3-1a): IndexedDB cache + send queue + flush on socket reconnect
+  - Mobile (V3-1b): SharedPreferences cache + send queue + flush on socket reconnect
+- Both web and mobile users can now:
+  1. View cached messages instantly on app load (no spinner)
+  2. Send messages even when network is down (queued locally)
+  3. Auto-retry queued messages on next reconnect
+- Pattern: messages display with status "pending" (not "failed") to indicate
+  retry is in progress. On success, the localId is replaced with the server id.

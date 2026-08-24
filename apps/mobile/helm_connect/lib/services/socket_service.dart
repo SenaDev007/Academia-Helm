@@ -32,6 +32,7 @@ import 'package:socket_io_client/socket_io_client.dart' as IO;
 class SocketService {
   IO.Socket? _socket;
   bool _isConnected = false;
+  bool _wasConnectedBefore = false;
 
   // Callbacks
   void Function(Map<String, dynamic> message)? onNewMessage;
@@ -44,6 +45,8 @@ class SocketService {
   void Function(Map<String, dynamic> data)? onCallIceCandidate;
   void Function(Map<String, dynamic> data)? onCallReject;
   void Function(Map<String, dynamic> data)? onCallHangup;
+  // ⭐ V3-1: fired on every (re)connect — used to flush pending offline messages
+  void Function()? onConnectCallback;
 
   bool get isConnected => _isConnected;
 
@@ -64,6 +67,13 @@ class SocketService {
     _socket!.onConnect((_) {
       _isConnected = true;
       print('[SocketService] Connected to /chat namespace');
+      // ⭐ V3-1: fire onConnectCallback — on first connect OR on reconnect.
+      //    Used by ConversationDetailScreen to flush the offline pending queue.
+      if (_wasConnectedBefore) {
+        print('[SocketService] Reconnected — triggering pending flush');
+      }
+      _wasConnectedBefore = true;
+      onConnectCallback?.call();
     });
 
     _socket!.onDisconnect((_) {

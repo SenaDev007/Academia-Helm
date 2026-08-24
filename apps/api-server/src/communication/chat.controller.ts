@@ -637,4 +637,73 @@ export class ChatController {
     if (!body.userId) throw new BadRequestException('userId requis');
     return this.pushService.sendPushToUser(body.userId, { title: body.title, body: body.body, conversationId: body.conversationId });
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: MODERATION
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:msgId/report')
+  async reportMessage(@TenantId() tenantId: string, @Param('msgId') messageId: string, @Body() body: { reporterId: string; reason: string }) {
+    if (!body.reporterId) throw new BadRequestException('reporterId is required');
+    return this.chatService.reportMessage(tenantId, messageId, body.reporterId, body.reason || 'Signalement');
+  }
+
+  @Get('reports')
+  async listReports(@TenantId() tenantId: string) {
+    return this.chatService.listReports(tenantId);
+  }
+
+  @Post('reports/:reportId/resolve')
+  async resolveReport(@TenantId() tenantId: string, @Param('reportId') reportId: string, @Body() body: { resolvedBy: string; resolution: string }) {
+    return this.chatService.resolveReport(reportId, body.resolvedBy, body.resolution || 'Résolu');
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: USER PROFILE
+  // ═════════════════════════════════════════════════════════════════
+  @Get('profile/:userId')
+  async getProfile(@Param('userId') userId: string) {
+    return this.chatService.getUserProfile(userId);
+  }
+
+  @Put('profile')
+  async updateProfile(@Body() body: { userId: string; bio?: string; availabilityStatus?: string; availableFrom?: string; availableUntil?: string }) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    const { userId, ...data } = body;
+    return this.chatService.updateUserProfile(userId, data);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: IN-CONVERSATION SEARCH
+  // ═════════════════════════════════════════════════════════════════
+  @Get('conversations/:id/search')
+  async searchInConversation(@TenantId() tenantId: string, @Param('id') conversationId: string, @Query('userId') userId: string, @Query('q') q: string) {
+    if (!userId) throw new BadRequestException('userId is required');
+    if (!q || q.length < 2) throw new BadRequestException('Query must be at least 2 characters');
+    return this.chatService.searchInConversation(tenantId, conversationId, userId, q);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: DELIVERED RECEIPT
+  // ═════════════════════════════════════════════════════════════════
+  @Post('messages/:msgId/deliver')
+  async markDelivered(@Param('msgId') messageId: string) {
+    return this.chatService.markDelivered(messageId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: ANALYTICS
+  // ═════════════════════════════════════════════════════════════════
+  @Get('v2/analytics')
+  async getAnalytics(@TenantId() tenantId: string) {
+    return this.chatService.getAnalytics(tenantId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: PEDAGOGICAL CONVERSATIONS
+  // ═════════════════════════════════════════════════════════════════
+  @Post('conversations/pedagogical')
+  async createPedagogicalConversation(@TenantId() tenantId: string, @Body() body: { creatorId: string; classId: string; subjectId?: string; name?: string }) {
+    if (!body.creatorId) throw new BadRequestException('creatorId is required');
+    return this.chatService.createPedagogicalConversation(tenantId, body.creatorId, { classId: body.classId, subjectId: body.subjectId, name: body.name });
+  }
 }

@@ -1570,4 +1570,97 @@ export class ChatService {
     if (userIds.length === 0) return [];
     return await this.prisma.$queryRawUnsafe<any[]>(`SELECT id AS "userId", "publicKey" FROM "users" WHERE id = ANY($1::text[])`, userIds);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: MODERATION — report a message
+  // ═════════════════════════════════════════════════════════════════
+  async reportMessage(tenantId: string, messageId: string, reporterId: string, reason: string) {
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`INSERT INTO chat_message_reports ("id","messageId","reporterId","reason","status","createdAt") VALUES ($1,$2,$3,$4,'PENDING',NOW())`, id, messageId, reporterId, reason);
+    return { id, status: 'PENDING' };
+  }
+
+  async listReports(tenantId: string) {
+    return await this.prisma.$queryRawUnsafe<any[]>(`SELECT r.*, m.content, m."conversationId", u."firstName" AS "reporterFirstName", u."lastName" AS "reporterLastName" FROM chat_message_reports r JOIN chat_messages m ON m.id=r."messageId" JOIN "users" u ON u.id=r."reporterId" WHERE r.status='PENDING' ORDER BY r."createdAt" DESC LIMIT 100`);
+  }
+
+  async resolveReport(reportId: string, resolvedBy: string, resolution: string) {
+    await this.prisma.$executeRawUnsafe(`UPDATE chat_message_reports SET "status"='RESOLVED',"resolvedAt"=NOW(),"resolvedBy"=$2,"resolution"=$3 WHERE id=$1`, reportId, resolvedBy, resolution);
+    return { id: reportId, status: 'RESOLVED' };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: USER PROFILE — get + update
+  // ═════════════════════════════════════════════════════════════════
+  async getUserProfile(userId: string) {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(`SELECT id,"firstName","lastName",email,role,"avatarUrl","bio","availabilityStatus","availableFrom","availableUntil","lastActiveAt" FROM "users" WHERE id=$1`, userId);
+    return rows[0] || null;
+  }
+
+  async updateUserProfile(userId: string, data: { bio?: string; availabilityStatus?: string; availableFrom?: string; availableUntil?: string }) {
+    const sets: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (data.bio !== undefined) { sets.push(`"bio"=$${idx++}`); params.push(data.bio); }
+    if (data.availabilityStatus !== undefined) { sets.push(`"availabilityStatus"=$${idx++}`); params.push(data.availabilityStatus); }
+    if (data.availableFrom !== undefined) { sets.push(`"availableFrom"=$${idx++}`); params.push(data.availableFrom); }
+    if (data.availableUntil !== undefined) { sets.push(`"availableUntil"=$${idx++}`); params.push(data.availableUntil); }
+    if (sets.length === 0) return { success: true };
+    params.push(userId);
+    await this.prisma.$executeRawUnsafe(`UPDATE "users" SET ${sets.join(',')}, "updatedAt"=NOW() WHERE id=$${idx}`, ...params);
+    return { success: true };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: IN-CONVERSATION SEARCH
+  // ═════════════════════════════════════════════════════════════════
+  async searchInConversation(tenantId: string, conversationId: string, userId: string, query: string) {
+    await this.getConversation(tenantId, userId, conversationId);
+    const likeQuery = `%${query.trim().toLowerCase()}%`;
+    return await this.prisma.$queryRawUnsafe<any[]>(`SELECT id,content,"senderId","createdAt","type","attachmentUrl","attachmentName" FROM chat_messages WHERE "conversationId"=$1 AND "deletedAt" IS NULL AND LOWER(COALESCE("content",'')) LIKE $2 ORDER BY "createdAt" DESC LIMIT 50`, conversationId, likeQuery);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: DELIVERED RECEIPT
+  // ═════════════════════════════════════════════════════════════════
+  async markDelivered(messageId: string) {
+    await this.prisma.$executeRawUnsafe(`UPDATE chat_messages SET "deliveredAt"=NOW() WHERE id=$1 AND "deliveredAt" IS NULL`, messageId);
+    return { success: true };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: ANALYTICS — real stats
+  // ═════════════════════════════════════════════════════════════════
+  async getAnalytics(tenantId: string) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const msgs = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_messages m JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND m."createdAt" >= $2`, tenantId, today);
+    const activeUsers = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(DISTINCT m."senderId")::int AS cnt FROM chat_messages m JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND m."createdAt" >= $2`, tenantId, today);
+    const groups = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_conversations WHERE "tenantId"=$1 AND type='GROUP'`, tenantId);
+    const unread = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_participants p JOIN chat_conversations c ON c.id=p."conversationId" WHERE c."tenantId"=$1 AND p."lastReadAt" IS NULL`, tenantId);
+    const announcements = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_announcements WHERE "tenantId"=$1`, tenantId);
+    const filesShared = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_messages m JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND m."attachmentUrl" IS NOT NULL`, tenantId);
+    const reports = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_message_reports r JOIN chat_messages m ON m.id=r."messageId" JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND r.status='PENDING'`, tenantId);
+    return {
+      messagesToday: msgs[0]?.cnt || 0,
+      activeUsersToday: activeUsers[0]?.cnt || 0,
+      totalGroups: groups[0]?.cnt || 0,
+      totalUnread: unread[0]?.cnt || 0,
+      totalAnnouncements: announcements[0]?.cnt || 0,
+      filesShared: filesShared[0]?.cnt || 0,
+      pendingReports: reports[0]?.cnt || 0,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ GAP FILL: PEDAGOGICAL CONVERSATIONS — link to class/subject
+  // ═════════════════════════════════════════════════════════════════
+  async createPedagogicalConversation(tenantId: string, creatorId: string, data: { classId: string; subjectId?: string; name?: string }) {
+    // Use existing group creation but with a pedagogical name
+    const name = data.name || `Classe — ${data.classId}`;
+    return this.createGroupConversation(tenantId, creatorId, {
+      name,
+      description: `Conversation pédagogique${data.subjectId ? ` — ${data.subjectId}` : ''}`,
+      participantIds: [], // Will be filled by dynamic group sync
+    });
+  }
 }

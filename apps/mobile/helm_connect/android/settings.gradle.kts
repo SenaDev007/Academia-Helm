@@ -26,7 +26,8 @@ pluginManagement {
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.11.1" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    // ⭐ V3-11: Upgrade Kotlin to 2.2.20 (Flutter requires ≥2.2.20)
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
     // ⭐ FIX V3-4: Firebase Google Services plugin (required for Firebase + FCM)
     //    Without this declaration, the `id("com.google.gms.google-services")`
     //    line in app/build.gradle.kts fails at Gradle sync with AGP 8.x.

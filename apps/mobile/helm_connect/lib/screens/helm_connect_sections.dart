@@ -1395,10 +1395,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _totalConversations = conversations.length;
       _directConversations = conversations.where((c) => c['type'] == 'DIRECT').length;
       _groupConversations = conversations.where((c) => c['type'] == 'GROUP').length;
-      _totalUnread = conversations.fold<int>((sum, c) => sum + ((c['unreadCount'] as int?) ?? 0), 0);
-      _totalParticipants = conversations.fold<int>(
-        (sum, c) => sum + ((c['participants'] as List<dynamic>?)?.length ?? 0),
+      _totalUnread = conversations.fold<int>(
         0,
+        (sum, c) => sum + ((c['unreadCount'] as int?) ?? 0),
+      );
+      _totalParticipants = conversations.fold<int>(
+        0,
+        (sum, c) => sum + ((c['participants'] as List<dynamic>?)?.length ?? 0),
       );
 
       // Last 7 days message count (sample from first 20 conversations)

@@ -53,7 +53,8 @@ flutter {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.0")
+    // ⭐ V3-11: Match Kotlin 2.2.20
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.20")
     implementation("androidx.multidex:multidex:2.0.1")
     // Firebase Cloud Messaging
     implementation(platform("com.google.firebase:firebase-bom:32.3.1"))

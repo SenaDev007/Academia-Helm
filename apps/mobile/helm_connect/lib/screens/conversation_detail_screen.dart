@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart'; // ⭐ V3-5: for my
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart'; // ⭐ V3-11: voice message playback
+import 'package:url_launcher/url_launcher.dart'; // ⭐ V3-11: open attachments with system app
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
@@ -107,6 +108,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
     // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
     _flushPendingQueue();
+    // ⭐ V3-11: Track scroll position so we don't auto-scroll-to-bottom while
+    //    the user is reading older messages. The listener saves the current
+    //    offset so _scrollToBottom() can restore it after a ListView re-layout.
+    _scrollController.addListener(_onScrollChanged);
+  }
+
+  // ⭐ V3-11: Scroll listener — keeps _lastScrollOffset in sync with the user's
+  //    scroll position. Also sets _userIsScrolledUp so that future _scrollToBottom
+  //    calls know not to yank the user back to the bottom.
+  void _onScrollChanged() {
+    if (!_scrollController.hasClients) return;
+    final offset = _scrollController.position.pixels;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    _lastScrollOffset = offset;
+    _userIsScrolledUp = (maxExtent - offset).abs() > 200;
   }
 
   // ⭐ E2E: ensure this user has a key pair + fetch recipient public keys.
@@ -417,6 +433,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _socket.leaveConversation(widget.conversation.id);
     _socket.disconnect();
     _messageController.dispose();
+    // ⭐ V3-11: Remove the scroll listener before disposing the controller
+    _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     _editController.dispose();
     _typingDebounce?.cancel();
@@ -523,15 +541,42 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
-  void _scrollToBottom() {
+  // ⭐ V3-11: Smart scroll-to-bottom — only auto-scrolls if the user is already
+  //    near the bottom OR if it's the first load. This prevents the "jump to bottom"
+  //    loop that interrupted reading old messages. Also respects user scroll
+  //    when an inline edit/delete/reaction triggers _loadMessages() via socket.
+  bool _isInitialLoad = true;
+  bool _userIsScrolledUp = false; // true if user has scrolled away from bottom
+  double? _lastScrollOffset; // for restoring position after reload
+
+  void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+      if (!_scrollController.hasClients) return;
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      final currentOffset = _scrollController.position.pixels;
+      final distanceFromBottom = (maxExtent - currentOffset).abs();
+
+      // ⭐ V3-11: Auto-scroll ONLY if:
+      //   1. It's the initial load (first render), OR
+      //   2. force=true (e.g. user just sent a message), OR
+      //   3. User is already near the bottom (< 200px) — i.e. they're following the conversation
+      // Otherwise (user is reading old messages), keep their scroll position.
+      if (!_isInitialLoad && !force && distanceFromBottom > 200) {
+        // User is reading history — don't yank them back to the bottom.
+        // Restore their previous scroll offset if possible (to counter ListView re-layout).
+        if (_lastScrollOffset != null) {
+          _scrollController.jumpTo(_lastScrollOffset!);
+        }
+        return;
       }
+
+      _isInitialLoad = false;
+      _lastScrollOffset = maxExtent;
+      _scrollController.animateTo(
+        maxExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
     });
   }
 
@@ -595,7 +640,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           if (replyToId != null) 'replyToContent': replyContent,
         }, userId)];
       });
-      _scrollToBottom();
+      // ⭐ V3-11: Force scroll to bottom when the user sends a new message.
+      _scrollToBottom(force: true);
     }
 
     // Clear the input + reply-to state
@@ -1452,7 +1498,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               fontSize: 11,
               fontWeight: FontWeight.bold,
               color: Color(0xFF667085),
-              fontFeatures: [FontFeature.tabularFigures],
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
         ],
@@ -1460,50 +1506,101 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
-  // ⭐ V3-11: Image attachment — preview thumbnail (Royal Blue border)
+  // ⭐ V3-11: Image attachment — preview thumbnail (Royal Blue border) + tap-to-open
   Widget _buildImageAttachmentBubble(Message msg, bool isOwn) {
     final url = msg.attachmentUrl ?? '';
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+    if (url.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1.5),
+          color: const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              color: const Color(0xFFF1F5F9),
-              child: const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: HelmColors.primary),
-                ),
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: const Color(0xFFF1F5F9),
-              padding: const EdgeInsets.all(16),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.broken_image, size: 32, color: Color(0xFF94A3B8)),
-                  SizedBox(height: 4),
-                  Text('Image indisponible', style: TextStyle(fontSize: 11, color: Color(0xFF667085))),
-                ],
-              ),
-            );
-          },
+        child: const Row(
+          children: [
+            Icon(Icons.broken_image, color: Color(0xFF94A3B8)),
+            SizedBox(width: 8),
+            Text('Image indisponible', style: TextStyle(fontSize: 11, color: Color(0xFF667085))),
+          ],
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: () => _openAttachment(url),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Hero(
+          tag: 'image_${msg.id}',
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+            decoration: BoxDecoration(
+              border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Image.network(
+              url,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: const Color(0xFFF1F5F9),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: HelmColors.primary),
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: const Color(0xFFF1F5F9),
+                  padding: const EdgeInsets.all(16),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.broken_image, size: 32, color: Color(0xFF94A3B8)),
+                      SizedBox(height: 4),
+                      Text('Image indisponible', style: TextStyle(fontSize: 11, color: Color(0xFF667085))),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
+  }
+
+  // ⭐ V3-11: Open any attachment URL with the system's default app.
+  //   - Images → gallery / image viewer
+  //   - Audio  → music player
+  //   - PDF / Office docs → PDF viewer / Quickoffice
+  //   - Video  → video player
+  //   - URLs (http/https) → browser
+  Future<void> _openAttachment(String url) async {
+    if (url.isEmpty) return;
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        // Fallback: try platform default
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Impossible d\'ouvrir: $url')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur d\'ouverture: $e')),
+        );
+      }
+    }
   }
 
   // ⭐ V3-11: Document attachment — file card with icon
@@ -1539,47 +1636,50 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       icon = Icons.folder_zip;
       iconColor = const Color(0xFF8B5CF6);
     }
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: isOwn ? const Color(0xFFBAE0FF).withOpacity(0.4) : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: HelmColors.goldLight.withOpacity(0.2), width: 1),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
+    return GestureDetector(
+      onTap: () => _openAttachment(msg.attachmentUrl ?? ''),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isOwn ? const Color(0xFFBAE0FF).withOpacity(0.4) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: HelmColors.goldLight.withOpacity(0.2), width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
             ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF172033)),
-                ),
-                if (sizeLabel.isNotEmpty)
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    sizeLabel,
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF667085)),
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF172033)),
                   ),
-              ],
+                  if (sizeLabel.isNotEmpty)
+                    Text(
+                      sizeLabel,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF667085)),
+                    ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.download, color: HelmColors.primary, size: 18),
-        ],
+            const SizedBox(width: 8),
+            const Icon(Icons.open_in_new, color: HelmColors.primary, size: 18),
+          ],
+        ),
       ),
     );
   }

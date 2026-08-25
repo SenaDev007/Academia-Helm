@@ -1,14 +1,16 @@
 // ============================================================================
-// RINGTONE SERVICE — Soft phone ringtones for Helm Connect mobile (V3-6)
+// RINGTONE SERVICE — Soft phone ringtones for Helm Connect mobile (V3-11)
 // ============================================================================
 // Mirrors the web WhatsAppChat.tsx ringtone logic (Web Audio API) but for
 // Flutter using the audioplayers package. Two distinct soft tones:
 //   - Outgoing (caller): single gentle G4 beep every 2s ("calling... calling...")
 //   - Incoming (callee): classic double-ring C5+E5 chord every 3s (ring ring)
 //
-// The tones are generated as low-volume sine waves via AudioPlayer's setVolume
-// + repeated play. Since we don't have a bundled audio asset, we synthesize
-// the tones using a tiny WAV data URI generated in-memory.
+// ⭐ V3-11 FIX: Previous implementation used BytesSource + lowLatency mode
+//   which fails silently on many Android devices because the AudioTrack
+//   can't be reconfigured for repeated short clips. We now WRITE the WAV
+//   to a temp file and play it with the default (media player) mode, which
+//   is more reliable across Android 9-14.
 //
 // Pattern:
 //   - Singleton instance per CallService
@@ -16,10 +18,12 @@
 //   - Auto-stops when the call state transitions to active/idle
 // ============================================================================
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 class RingtoneService {
   static final RingtoneService _instance = RingtoneService._internal();
@@ -31,9 +35,9 @@ class RingtoneService {
   bool _isPlaying = false;
   String? _currentMode;
 
-  /// Pre-generated WAV bytes for the two ringtone modes.
-  Uint8List? _outgoingWav;
-  Uint8List? _incomingWav;
+  /// Pre-generated WAV file paths for the two ringtone modes.
+  String? _outgoingWavPath;
+  String? _incomingWavPath;
 
   /// Generate a short WAV file in memory with the given frequencies.
   Uint8List _generateWav({
@@ -43,10 +47,8 @@ class RingtoneService {
   }) {
     final numSamples = (totalDuration * sampleRate).round();
     final dataSize = numSamples * 2; // 16-bit mono
-    // Use a list of bytes instead of ByteData.setString (which doesn't exist)
     final bytes = <int>[];
 
-    // WAV header (44 bytes) — write strings as ASCII byte values
     void writeString(String s) {
       for (int i = 0; i < s.length; i++) {
         bytes.add(s.codeUnitAt(i));
@@ -77,7 +79,6 @@ class RingtoneService {
     writeString('data');
     writeUint32(dataSize);
 
-    // Generate samples
     for (int i = 0; i < numSamples; i++) {
       final t = i / sampleRate;
       double sample = 0;
@@ -85,12 +86,10 @@ class RingtoneService {
         if (t >= tone.start && t < tone.start + tone.duration) {
           final localT = t - tone.start;
           final progress = localT / tone.duration;
-          // Soft sine wave with gentle attack/release envelope
-          final envelope = math.sin(math.pi * progress); // 0 → 1 → 0
+          final envelope = math.sin(math.pi * progress);
           sample += math.sin(2 * math.pi * tone.freq * localT) * tone.volume * envelope;
         }
       }
-      // Clamp + convert to 16-bit signed
       final clamped = (sample * 32767).clamp(-32768, 32767).toInt();
       bytes.add(clamped & 0xFF);
       bytes.add((clamped >> 8) & 0xFF);
@@ -99,29 +98,46 @@ class RingtoneService {
     return Uint8List.fromList(bytes);
   }
 
+  /// ⭐ V3-11: Generate the WAV files ONCE and write them to temp dir.
+  ///   Subsequent plays reuse the same file path (no regeneration).
   Future<void> _ensureWavsGenerated() async {
-    if (_outgoingWav != null && _incomingWav != null) return;
+    if (_outgoingWavPath != null && _incomingWavPath != null &&
+        await File(_outgoingWavPath!).exists() && await File(_incomingWavPath!).exists()) {
+      return;
+    }
+    try {
+      final tempDir = await getTemporaryDirectory();
+      // Outgoing: single gentle G4 (392 Hz) beep, 0.5s, low volume
+      final outgoingWav = _generateWav(
+        tones: [
+          (freq: 392.0, start: 0.0, duration: 0.5, volume: 0.08),
+        ],
+        totalDuration: 0.5,
+        sampleRate: 22050,
+      );
+      final outgoingPath = '${tempDir.path}/helm_ringtone_outgoing.wav';
+      await File(outgoingPath).writeAsBytes(outgoingWav);
+      _outgoingWavPath = outgoingPath;
 
-    // Outgoing: single gentle G4 (392 Hz) beep, 0.5s, low volume
-    _outgoingWav = _generateWav(
-      tones: [
-        (freq: 392.0, start: 0.0, duration: 0.5, volume: 0.05),
-      ],
-      totalDuration: 0.5,
-      sampleRate: 22050,
-    );
+      // Incoming: two short rings (C5 + E5 chord) every 3s
+      final incomingWav = _generateWav(
+        tones: [
+          (freq: 523.25, start: 0.0, duration: 0.4, volume: 0.10),
+          (freq: 659.25, start: 0.0, duration: 0.4, volume: 0.08),
+          (freq: 523.25, start: 0.6, duration: 0.4, volume: 0.10),
+          (freq: 659.25, start: 0.6, duration: 0.4, volume: 0.08),
+        ],
+        totalDuration: 1.0,
+        sampleRate: 22050,
+      );
+      final incomingPath = '${tempDir.path}/helm_ringtone_incoming.wav';
+      await File(incomingPath).writeAsBytes(incomingWav);
+      _incomingWavPath = incomingPath;
 
-    // Incoming: two short rings (C5 + E5 chord) every 3s
-    _incomingWav = _generateWav(
-      tones: [
-        (freq: 523.25, start: 0.0, duration: 0.4, volume: 0.06),
-        (freq: 659.25, start: 0.0, duration: 0.4, volume: 0.04),
-        (freq: 523.25, start: 0.6, duration: 0.4, volume: 0.06),
-        (freq: 659.25, start: 0.6, duration: 0.4, volume: 0.04),
-      ],
-      totalDuration: 1.0,
-      sampleRate: 22050,
-    );
+      debugPrint('SUCCESS: Ringtone WAVs generated at $outgoingPath and $incomingPath');
+    } catch (e) {
+      debugPrint('WARN: Ringtone WAV generation failed: $e');
+    }
   }
 
   /// Start playing the ringtone in the given mode.
@@ -131,21 +147,26 @@ class RingtoneService {
 
     try {
       await _ensureWavsGenerated();
-      final wav = mode == 'incoming' ? _incomingWav! : _outgoingWav!;
+      final wavPath = mode == 'incoming' ? _incomingWavPath : _outgoingWavPath;
+      if (wavPath == null) {
+        debugPrint('WARN: Ringtone WAV path is null — cannot play');
+        return;
+      }
+
       final loopInterval = mode == 'incoming'
           ? const Duration(seconds: 3)
           : const Duration(seconds: 2);
 
-      await _player.setVolume(0.3);
+      // ⭐ V3-11: Use default media player mode (not lowLatency) for reliability
       await _player.setReleaseMode(ReleaseMode.stop);
-      await _player.setPlayerMode(PlayerMode.lowLatency);
-
-      await _player.play(BytesSource(wav));
+      await _player.setVolume(0.5);
+      // Use DeviceFileSource — reliable on Android 9-14
+      await _player.play(DeviceFileSource(wavPath));
 
       _timer = Timer.periodic(loopInterval, (_) async {
         try {
           await _player.stop();
-          await _player.play(BytesSource(wav));
+          await _player.play(DeviceFileSource(wavPath));
         } catch (e) {
           debugPrint('WARN: Ringtone loop play failed: $e');
         }
@@ -153,6 +174,7 @@ class RingtoneService {
 
       _isPlaying = true;
       _currentMode = mode;
+      debugPrint('SUCCESS: Ringtone started (mode=$mode)');
     } catch (e) {
       debugPrint('WARN: Ringtone start failed: $e');
     }

@@ -1282,29 +1282,52 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    'X' before initialization" if sendRecordedAudio appeared before
   //    handleSendAttachment in the source.
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
-
-  // ⭐ FIX: Instant scroll to bottom on first message load / conversation switch
-  //    The smooth scroll above shows the user the top of the conversation first
-  //    before scrolling down — WhatsApp goes straight to the bottom instantly.
+  // ⭐ V3-11: Smart scroll-to-bottom — only auto-scrolls if the user is already
+  //    near the bottom OR if it's the first load / conversation switch. This
+  //    prevents the "jump to bottom" loop that interrupted reading history.
+  //    We track the user's scroll position via a listener on the messages container.
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const userIsNearBottomRef = useRef(true); // true if user is within 200px of bottom
+  // ⭐ isFirstLoadRef — true on first render of each conversation; reset to true
+  //    when the user switches to a different conversation (effect below).
   const isFirstLoadRef = useRef(true);
   useEffect(() => {
-    if (messages.length > 0 && isFirstLoadRef.current) {
-      // Instant scroll on first load
+    isFirstLoadRef.current = true;
+    userIsNearBottomRef.current = true; // reset scroll-following when switching convs
+  }, [activeConvId]);
+
+  // Update userIsNearBottomRef on every scroll event (passive listener)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      userIsNearBottomRef.current = distanceFromBottom < 200;
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [activeConvId]); // re-bind when conversation changes (container may re-mount)
+
+  // ⭐ V3-11: Auto-scroll only when:
+  //   - user is already near the bottom (they're following the conversation), OR
+  //   - it's the first message load of a conversation (instant scroll, no animation)
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (isFirstLoadRef.current) {
+      // First load of this conversation → instant jump to bottom
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       });
       isFirstLoadRef.current = false;
+      return;
     }
+    // Subsequent message additions → only scroll if user is near bottom
+    if (userIsNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    // Otherwise: user is reading history — don't yank them back to the bottom.
   }, [messages.length]);
-
-  // ⭐ FIX: Reset first-load flag when conversation changes — next conv should also instant-scroll
-  useEffect(() => {
-    isFirstLoadRef.current = true;
-  }, [activeConvId]);
 
   // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar
   useEffect(() => {
@@ -2964,6 +2987,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
           {/* Messages */}
           <div
+            ref={messagesContainerRef}
             className="flex-1 overflow-y-auto p-4 space-y-2 relative"
             style={getHelmWatermarkStyle({ opacity: 0.05 })}
           >

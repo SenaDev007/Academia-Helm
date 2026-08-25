@@ -7,7 +7,8 @@
 // ============================================================================
 
 buildscript {
-    val kotlinVersion by extra("2.1.0")
+    // ⭐ V3-11: Upgrade Kotlin to 2.2.20 (Flutter requires ≥2.2.20)
+    val kotlinVersion by extra("2.2.20")
     repositories {
         google()
         mavenCentral()

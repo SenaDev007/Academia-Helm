@@ -34,7 +34,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   Future<void> _loadPrefs() async {
     try {
       final userId = await AuthService.getUserId();
-      final data = await ApiService.get('/api/chat/v2/notifications/preferences?userId=$userId');
+      final data = await ApiService.get('/chat/v2/notifications/preferences?userId=$userId');
       setState(() {
         _dndEnabled = data['dndEnabled'] as bool? ?? false;
         if (data['dndUntil'] != null) {
@@ -56,7 +56,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   Future<void> _enableDnd(String duration) async {
     try {
       final userId = await AuthService.getUserId();
-      await ApiService.post('/api/chat/v2/notifications/dnd/enable', {
+      await ApiService.post('/chat/v2/notifications/dnd/enable', {
         'userId': userId,
         'duration': duration,
         'exceptions': ['ANNOUNCEMENT'],
@@ -75,7 +75,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   Future<void> _disableDnd() async {
     try {
       final userId = await AuthService.getUserId();
-      await ApiService.post('/api/chat/v2/notifications/dnd/disable', {'userId': userId});
+      await ApiService.post('/chat/v2/notifications/dnd/disable', {'userId': userId});
       await _loadPrefs();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -90,7 +90,7 @@ class _NotificationPrefsScreenState extends State<NotificationPrefsScreen> {
   Future<void> _updatePref(String key, bool value) async {
     try {
       final userId = await AuthService.getUserId();
-      await ApiService.put('/api/chat/v2/notifications/preferences', {
+      await ApiService.put('/chat/v2/notifications/preferences', {
         'userId': userId,
         key: value,
       });

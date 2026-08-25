@@ -53,7 +53,9 @@ class SocketService {
   Future<void> connect({required String token, required String userId}) async {
     if (_socket != null) return;
 
-    const backendUrl = 'https://api.academiahelm.com';
+    // ⭐ V3-9: Use the BFF URL (academiahelm.com) instead of direct API
+    // The BFF proxies Socket.io connections to the NestJS backend.
+    const backendUrl = 'https://academiahelm.com';
 
     _socket = IO.io('$backendUrl/chat', IO.OptionBuilder()
       .setAuth({'token': token})

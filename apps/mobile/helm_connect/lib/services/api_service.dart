@@ -297,15 +297,16 @@ class ApiService {
       role: (user['role'] ?? data['role'] ?? '') as String? ?? '',
     );
 
-    // ⭐ Persist tenant info
+    // ⭐ Persist tenant info — but KEEP base URL as the BFF (academiahelm.com/api)
+    // The tenant subdomain is NOT used for API calls — the BFF proxies everything.
+    // Setting a tenant-specific URL would break chat endpoints (401/404).
     final prefs = await SharedPreferences.getInstance();
     final tenant = data['tenant'] as Map<String, dynamic>?;
     if (tenant != null) {
       await prefs.setString('tenant_id', (tenant['id'] ?? '') as String);
       await prefs.setString('tenant_slug', (tenant['slug'] ?? tenantSlug) as String? ?? tenantSlug);
       await prefs.setString('tenant_name', (tenant['name'] ?? '') as String? ?? '');
-      final subdomain = (tenant['subdomain'] ?? tenant['slug'] ?? tenantSlug) as String? ?? tenantSlug;
-      await ApiConfig.setTenantBaseUrl('https://$subdomain.academiahelm.com');
+      // ⭐ DO NOT setTenantBaseUrl — keep using the BFF for ALL API calls
     } else {
       // If no tenant object, use the slug we have
       await prefs.setString('tenant_slug', tenantSlug);
@@ -318,7 +319,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getCurrentUser() async {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
-    final response = await http.get(Uri.parse('$base/api/auth/me'), headers: headers);
+    final response = await http.get(Uri.parse('$base/auth/me'), headers: headers);
     final data = await _handleResponse(response);
     if (data is Map<String, dynamic>) return data;
     throw ApiException(statusCode: response.statusCode, message: 'Invalid response format');
@@ -455,7 +456,7 @@ class ApiService {
     required String messageId,
     required String emoji,
   }) async {
-    return post('/api/chat/messages/$messageId/react', {
+    return post('/chat/messages/$messageId/react', {
       'emoji': emoji,
       // userId is auto-injected by backend from JWT — but the web app sends it
       // explicitly so we keep it for backward compat.
@@ -468,7 +469,7 @@ class ApiService {
     required String newContent,
   }) async {
     final userId = await AuthService.getUserId() ?? '';
-    return put('/api/chat/messages/$messageId', {
+    return put('/chat/messages/$messageId', {
       'userId': userId,
       'content': newContent,
     });
@@ -481,7 +482,7 @@ class ApiService {
     required String targetConversationId,
   }) async {
     final userId = await AuthService.getUserId() ?? '';
-    return post('/api/chat/messages/$messageId/forward', {
+    return post('/chat/messages/$messageId/forward', {
       'userId': userId,
       'targetConversationId': targetConversationId,
     });
@@ -491,7 +492,7 @@ class ApiService {
   /// Backend: POST /chat/messages/:id/important with { userId }
   static Future<Map<String, dynamic>> markImportant(String messageId) async {
     final userId = await AuthService.getUserId() ?? '';
-    return post('/api/chat/messages/$messageId/important', {
+    return post('/chat/messages/$messageId/important', {
       'userId': userId,
     });
   }
@@ -500,7 +501,7 @@ class ApiService {
   /// Backend: POST /chat/v2/messages/:id/pin with { userId }
   static Future<Map<String, dynamic>> pinMessage(String messageId) async {
     final userId = await AuthService.getUserId() ?? '';
-    return post('/api/chat/v2/messages/$messageId/pin', {
+    return post('/chat/v2/messages/$messageId/pin', {
       'userId': userId,
     });
   }
@@ -513,7 +514,7 @@ class ApiService {
   }) async {
     final userId = await AuthService.getUserId() ?? '';
     await post(
-      '/api/chat/conversations/$conversationId/messages/$messageId/delete-for-me',
+      '/chat/conversations/$conversationId/messages/$messageId/delete-for-me',
       {'userId': userId},
     );
   }
@@ -526,7 +527,7 @@ class ApiService {
   }) async {
     final userId = await AuthService.getUserId() ?? '';
     await post(
-      '/api/chat/conversations/$conversationId/messages/$messageId/delete-for-everyone',
+      '/chat/conversations/$conversationId/messages/$messageId/delete-for-everyone',
       {'userId': userId},
     );
   }
@@ -577,7 +578,7 @@ class ApiService {
   /// [status] should be one of: 'online' | 'away' | 'dnd' | 'offline'
   static Future<Map<String, dynamic>> updatePresence(String status) async {
     final userId = await AuthService.getUserId() ?? '';
-    return post('/api/chat/presence', {
+    return post('/chat/presence', {
       'userId': userId,
       'status': status,
     });
@@ -588,7 +589,7 @@ class ApiService {
   /// Get the profile of a user (avatar, bio, role, email, status).
   /// Backend: GET /chat/profile/:userId
   static Future<Map<String, dynamic>> getProfile(String userId) async {
-    return get('/api/chat/profile/$userId');
+    return get('/chat/profile/$userId');
   }
 
   /// Update own profile (bio, availabilityStatus, etc.).
@@ -600,7 +601,7 @@ class ApiService {
     String? availableUntil,
   }) async {
     final userId = await AuthService.getUserId() ?? '';
-    return put('/api/chat/profile', {
+    return put('/chat/profile', {
       'userId': userId,
       if (bio != null) 'bio': bio,
       if (availabilityStatus != null) 'availabilityStatus': availabilityStatus,
@@ -657,7 +658,7 @@ class ApiService {
   /// Backend: POST /chat/announcements/:id/confirm with { userId }
   static Future<void> confirmAnnouncementRead(String announcementId) async {
     final userId = await AuthService.getUserId() ?? '';
-    await post('/api/chat/announcements/$announcementId/confirm', {
+    await post('/chat/announcements/$announcementId/confirm', {
       'userId': userId,
     });
   }
@@ -671,7 +672,7 @@ class ApiService {
     int maxMessages = 50,
   }) async {
     final userId = await AuthService.getUserId() ?? '';
-    return post('/api/chat/conversations/$conversationId/summarize', {
+    return post('/chat/conversations/$conversationId/summarize', {
       'userId': userId,
       'maxMessages': maxMessages,
     });
@@ -680,7 +681,7 @@ class ApiService {
   /// Transcribe an audio message to text using Whisper.
   /// Backend: POST /chat/messages/:id/transcribe
   static Future<Map<String, dynamic>> transcribeMessage(String messageId) async {
-    return post('/api/chat/messages/$messageId/transcribe', {});
+    return post('/chat/messages/$messageId/transcribe', {});
   }
 
   // ─── Search ────────────────────────────────────────────────────
@@ -705,7 +706,7 @@ class ApiService {
     String platform = 'ANDROID',
     String? deviceInfo,
   }) async {
-    return post('/api/notifications/device-tokens', {
+    return post('/notifications/device-tokens', {
       'fcmToken': fcmToken,
       'platform': platform,
       if (deviceInfo != null) 'deviceInfo': deviceInfo,

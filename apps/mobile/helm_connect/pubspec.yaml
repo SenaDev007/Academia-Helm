@@ -38,13 +38,13 @@ dependencies:
   # ─── State management
   provider: ^6.1.1
 
-  # ─── Local storage (offline-first V2)
+  # ─── Local storage (offline-first V3 — Hive)
   shared_preferences: ^2.2.2
-  # hive: ^2.2.3               # V2: offline-first sync
-  # hive_flutter: ^1.1.0       # V2: Hive Flutter bindings
+  hive: ^2.2.3               # ⭐ ACTIVE: V3 offline-first storage (replaces SharedPreferences for chat cache)
+  hive_flutter: ^1.1.0       # ⭐ ACTIVE: Hive Flutter bindings
 
-  # ─── Secure storage (auth token — V2)
-  # flutter_secure_storage: ^9.0.0  # V2: migrate JWT from SharedPreferences
+  # ─── Secure storage (auth token + E2E private key — Keystore/Keychain)
+    flutter_secure_storage: ^9.0.0  # ⭐ ACTIVE: stores RSA-OAEP private key for E2E
 
   # ─── Images + files
   image_picker: ^1.0.4        # photos + vidéos
@@ -66,9 +66,9 @@ dependencies:
   # ─── Permission handler (RECORD_AUDIO / CAMERA / POST_NOTIFICATIONS) ⭐ ACTIVE
   permission_handler: ^11.3.1
 
-  # ─── Crypto (E2E — V3)
+  # ─── Crypto (E2E encryption — RSA-OAEP 2048 via pointycastle) ⭐ ACTIVE
   # encrypt: ^5.0.3
-  # pointycastle: ^3.7.3
+    pointycastle: ^3.7.3
 
   # ─── Utilities
   intl: ^0.18.1
@@ -81,8 +81,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
-  # hive_generator: ^2.0.1   # V2: Hive adapters
-  # build_runner: ^2.4.7     # V2: code generation
+  # ⭐ Hive type adapter generators (optional — we use JSON for now)
+  # hive_generator: ^2.0.1
+  # build_runner: ^2.4.7
 
 flutter_launcher_icons:
   android: true

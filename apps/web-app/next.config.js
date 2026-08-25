@@ -282,6 +282,19 @@ const nextConfig = {
       },
     ];
   },
+  // ⭐ Next.js 16 + Turbopack compatibility fix (Vercel deployment blocker).
+  //    Next.js 16 defaults to Turbopack. If a `webpack` config is detected
+  //    (e.g., from @netlify/plugin-nextjs in devDependencies), Next.js refuses
+  //    to build unless either:
+  //      (a) `--turbopack` or `--webpack` flag is passed to `next build`, OR
+  //      (b) an empty `turbopack: {}` config is set here (silences the error).
+  //    On Vercel, PWA + bundle-analyzer are NOT loaded (guarded by !isVercel
+  //    and ANALYZE==='true'), so there's no actual webpack customization —
+  //    Turbopack works fine. This empty config tells Next.js "I'm OK with
+  //    Turbopack, please proceed".
+  //    On Docker/VPS (where PWA IS loaded), the `build:webpack` script
+  //    explicitly passes `--webpack` and bypasses Turbopack entirely.
+  turbopack: {},
 };
 
 // PWA en prod ; bundle analyzer si ANALYZE=true (audit poids JS pour la perf)

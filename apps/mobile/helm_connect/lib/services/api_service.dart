@@ -46,11 +46,10 @@ import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiConfig {
-  // ⭐ Backend API URL — same as web app (api.academiahelm.com)
+  // ⭐ Backend API URL — same as mobile-app (BFF proxy via academiahelm.com)
   // After tenant selection, the tenant-specific subdomain is used for auth.
-  // For API calls (chat, etc.), we always use api.academiahelm.com.
-  static const String _defaultBase = 'https://api.academiahelm.com';
-  static const String _defaultAuthBase = 'https://academiahelm.com';
+  // For API calls (chat, etc.), we always use the BFF.
+  static const String _defaultBase = 'https://academiahelm.com/api';
 
   static String? _tenantBase;
 
@@ -179,21 +178,40 @@ class ApiService {
 
   // ─── Auth ─────────────────────────────────────────────────────
 
+  /// ⭐ V3-9: Fetch public schools list (same as mobile-app SchoolService).
+  /// Uses the public endpoint /public/schools/list (no auth required).
+  /// The old /api/auth/available-tenants requires JWT → 401 for unauthenticated users.
   static Future<List<Map<String, dynamic>>> searchTenants(String query) async {
     final base = await ApiConfig.baseUrl;
+    // ⭐ Use the public schools endpoint (no auth header needed)
     final response = await http.get(
-      Uri.parse('$base/api/auth/available-tenants?q=${Uri.encodeQueryComponent(query)}'),
+      Uri.parse('$base/public/schools/list'),
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'AcademiaHelm-Mobile/1.0 (Flutter)',
+      },
     );
     final data = await _handleResponse(response);
-    // The endpoint returns { tenants: [...] } OR a raw array — handle both
-    if (data is Map<String, dynamic>) {
-      final tenants = data['tenants'] as List<dynamic>? ?? [];
-      return tenants.cast<Map<String, dynamic>>().toList();
-    }
+    // The endpoint returns a list of schools
+    List<Map<String, dynamic>> schools;
     if (data is List) {
-      return data.cast<Map<String, dynamic>>().toList();
+      schools = data.cast<Map<String, dynamic>>().toList();
+    } else if (data is Map<String, dynamic>) {
+      final list = data['data'] ?? data['schools'] ?? data['tenants'] ?? [];
+      schools = (list as List).cast<Map<String, dynamic>>().toList();
+    } else {
+      schools = [];
     }
-    return [];
+    // ⭐ Client-side filtering (matches mobile-app pattern)
+    if (query.trim().isEmpty) return schools;
+    final q = query.toLowerCase();
+    return schools.where((s) {
+      final name = (s['name'] as String? ?? '').toLowerCase();
+      final city = (s['city'] as String? ?? '').toLowerCase();
+      final slug = (s['slug'] as String? ?? '').toLowerCase();
+      final acronym = (s['acronym'] as String? ?? '').toLowerCase();
+      return name.contains(q) || city.contains(q) || slug.contains(q) || acronym.contains(q);
+    }).toList();
   }
 
   static Future<Map<String, dynamic>> login({

@@ -356,10 +356,13 @@ class _SplashScreenState extends State<SplashScreen>
                               width: 2,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.chat_bubble,
-                            color: Colors.white,
-                            size: 40,
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/icons/helm_connect.png',
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ),
                       ),

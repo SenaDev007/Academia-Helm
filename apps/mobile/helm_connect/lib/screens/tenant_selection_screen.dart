@@ -82,35 +82,69 @@ class _TenantSelectionScreenState extends State<TenantSelectionScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
+            // Header — Helm Connect branded (Royal Blue gradient + logo)
             Container(
               padding: const EdgeInsets.all(24),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF1677FF), Color(0xFF0958D9)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF0A2A5E),
+                    Color(0xFF114FC4),
+                    Color(0xFF1C6FE8),
+                  ],
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Helm Connect',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Communiquez. Collaborez. Restez connectés.',
-                    style: TextStyle(
-                      color: Color(0xFFBAE0FF),
-                      fontSize: 14,
-                      fontStyle: FontStyle.italic,
-                    ),
+                  // Logo + title row
+                  Row(
+                    children: [
+                      Image.asset(
+                        'assets/icons/helm_connect.png',
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(width: 12),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Helm',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Connect',
+                                style: TextStyle(
+                                  color: Color(0xFFF5B335),
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            'Communiquez • Collaborez • Restez connectés',
+                            style: TextStyle(
+                              color: Color(0xFFBBDEFB),
+                              fontSize: 11,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 32),
                   const Text(

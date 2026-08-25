@@ -17,12 +17,12 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 // ⭐ V3-1: Offline-first chat — local cache + send queue
 import '../services/chat_local_storage.dart';
-// ⭐ E2E encryption — DISABLED for now (pointycastle API incompatibility)
-// Will be re-enabled in V4 with proper Signal Protocol implementation.
 // ⭐ E2E encryption — DISABLED for now (pointycastle 3.x API incompatibility)
 // Will be re-enabled in V4 with proper Signal Protocol.
 // import '../services/crypto_service.dart';
-import 'dart:convert' as _dart_convert;
+// ⭐ V3-5: WebRTC calls + branded call screen
+import '../services/call_service.dart';
+import 'call_screen.dart';
 
 // Stub for CryptoService (all methods are no-ops, encryption falls back to plaintext)
 class CryptoService {
@@ -32,9 +32,6 @@ class CryptoService {
   static Future<bool> hasPrivateKey() async => false;
   static Future<String> generateKeyPair() async => '';
 }
-// ⭐ V3-5: WebRTC calls + branded call screen
-import '../services/call_service.dart';
-import 'call_screen.dart';
 
 class ConversationDetailScreen extends StatefulWidget {
   final Conversation conversation;

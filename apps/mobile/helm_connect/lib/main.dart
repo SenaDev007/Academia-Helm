@@ -55,26 +55,31 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ⭐ V3-4: Initialize flutter_local_notifications (foreground banner + channel)
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_notification');
-  const iosInit = DarwinInitializationSettings(
-    requestAlertPermission: false,
-    requestBadgePermission: false,
-    requestSoundPermission: false,
-  );
-  await _localNotifications.initialize(
-    const InitializationSettings(android: androidInit, iOS: iosInit),
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      // Tap on foreground notification → deep-link
-      final url = response.payload;
-      if (url != null && url.isNotEmpty) {
-        _navigateToUrl(url);
-      }
-    },
-  );
-  if (Platform.isAndroid) {
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_fcmChannel);
+  //    Wrapped in try/catch so the app doesn't crash if the notification icon
+  //    is missing or the initialization fails for any reason.
+  try {
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_notification');
+    const iosInit = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
+    await _localNotifications.initialize(
+      const InitializationSettings(android: androidInit, iOS: iosInit),
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        final url = response.payload;
+        if (url != null && url.isNotEmpty) {
+          _navigateToUrl(url);
+        }
+      },
+    );
+    if (Platform.isAndroid) {
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(_fcmChannel);
+    }
+  } catch (e) {
+    print('⚠️ Local notifications init failed (non-blocking): $e');
   }
 
   // ⭐ Initialiser Firebase AVANT runApp (obligatoire pour firebase_messaging)

@@ -211,7 +211,7 @@ export const PAGE_NAMES: Record<string, string> = {
   '/federis/compositions': 'Compositions',
   '/federis/deliberations': 'Délibérations',
   '/federis/exams': 'Examens',
-  '/federis/communication': 'Helm Connect',
+  '/federis/communication': 'Yeshua Connect',
   '/federis/settings': 'Paramètres',
 };
 

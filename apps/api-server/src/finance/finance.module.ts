@@ -155,9 +155,9 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     ReceiptFinanceService,
     ReceiptNotificationFinanceService,
     RecoveryNotificationFinanceService,
-    // ⭐ Helm Connect finance notifications — replaces SMS/WhatsApp for
+    // ⭐ Yeshua Connect finance notifications — replaces SMS/WhatsApp for
     //    receipt delivery and recovery reminders. Messages go to the
-    //    parent's Helm Connect account (auto-provisioned if needed).
+    //    parent's Yeshua Connect account (auto-provisioned if needed).
     HelmConnectFinanceNotificationService,
     ArrearAccumulationService,
     TenantPaymentConfigService,

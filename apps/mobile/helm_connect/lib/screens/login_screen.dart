@@ -124,9 +124,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              // Helm Connect branding
+              // Yeshua Connect branding
               const Text(
-                'Helm Connect',
+                'Yeshua Connect',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,

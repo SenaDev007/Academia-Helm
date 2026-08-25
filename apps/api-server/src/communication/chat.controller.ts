@@ -439,7 +439,7 @@ export class ChatController {
 
   /**
    * ⭐ NEW — POST /chat/invitations/guardian
-   *    Invite a guardian (without user account) to join Helm Connect via SMS/email.
+   *    Invite a guardian (without user account) to join Yeshua Connect via SMS/email.
    *    body: { senderId, guardianId, channel?, message? }
    */
   @Post('invitations/guardian')

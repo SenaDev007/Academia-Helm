@@ -46,7 +46,7 @@ function getNotifIcon(type: string) {
       return <UserPlus className="w-4 h-4 text-violet-600" />;
     case 'SYSTEM':
       return <Info className="w-4 h-4 text-slate-600" />;
-    // ⭐ V3-4 — Helm Connect bridge events (Examens/Absences/Discipline → parents & staff)
+    // ⭐ V3-4 — Yeshua Connect bridge events (Examens/Absences/Discipline → parents & staff)
     case 'ABSENCE_CREATED':
       return <CalendarX className="w-4 h-4 text-amber-600" />;
     case 'ABSENCE_JUSTIFIED':

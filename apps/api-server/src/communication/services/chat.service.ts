@@ -346,7 +346,7 @@ export class ChatService {
         `or guardian.userId was previously set to the wrong user.`
       );
       throw new BadRequestException(
-        "Impossible de créer une conversation avec ce parent : le compte Helm Connect lié au parent est le même que le vôtre. " +
+        "Impossible de créer une conversation avec ce parent : le compte Yeshua Connect lié au parent est le même que le vôtre. " +
         "Cela peut se produire si l'email du parent est le même que le vôtre. " +
         "Veuillez vérifier la fiche de l'élève (module Scolarité) et corriger l'email du parent."
       );
@@ -1262,7 +1262,7 @@ export class ChatService {
   }
 
   /**
-   * ⭐ NEW — Invite a guardian (without user account) to join Helm Connect via SMS/email.
+   * ⭐ NEW — Invite a guardian (without user account) to join Yeshua Connect via SMS/email.
    *    Used by teachers to start a communication channel with parents who don't have
    *    an Academia Helm account yet.
    *
@@ -1327,7 +1327,7 @@ export class ChatService {
     await this.prisma.$executeRawUnsafe(`
       INSERT INTO "chat_invitations" ("id", "senderId", "senderTenantId", "recipientEmail", "recipientName", "message", "status", "createdAt")
       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING_GUARDIAN', NOW())
-    `, invId, senderId, senderTenantId || g.tenantId, g.email || g.phone || '', `${g.firstName || ''} ${g.lastName || ''}`.trim(), data.message || `Invitation à rejoindre Helm Connect — Academia Helm`);
+    `, invId, senderId, senderTenantId || g.tenantId, g.email || g.phone || '', `${g.firstName || ''} ${g.lastName || ''}`.trim(), data.message || `Invitation à rejoindre Yeshua Connect — Academia Helm`);
 
     this.logger.log(`⭐ Guardian invitation created: guardian=${g.id}, channel=${channel}, hasPhone=${!!g.phone}, hasEmail=${!!g.email}`);
 

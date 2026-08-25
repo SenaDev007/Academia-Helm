@@ -3,7 +3,7 @@
  * CHAT OFFLINE STORE — IndexedDB local cache + send queue (V3-1)
  * ============================================================================
  *
- * Permet au chat Helm Connect de fonctionner hors-ligne :
+ * Permet au chat Yeshua Connect de fonctionner hors-ligne :
  *   1. Cache les messages par conversation dans IndexedDB (lecture instantanée
  *      au chargement, avant le fetch backend).
  *   2. Stocke une file d'attente des messages en attente d'envoi (pending)

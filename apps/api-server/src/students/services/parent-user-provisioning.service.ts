@@ -21,7 +21,7 @@
  * ⭐ When it's called:
  *   - Lazily: when a teacher wants to start a chat with a guardian
  *     (POST /api/chat/conversations/guardian-direct)
- *   - Lazily: when the finance module wants to send a Helm Connect message
+ *   - Lazily: when the finance module wants to send a Yeshua Connect message
  *     to a parent (ReceiptNotificationFinanceService)
  *   - Eagerly: when a guardian is created via student enrollment
  *     (hooked into GuardiansPrismaService.createGuardianForStudent)

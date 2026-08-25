@@ -1,5 +1,5 @@
 // ============================================================================
-// CALL SCREEN — Helm Connect branded full-screen call overlay
+// CALL SCREEN — Yeshua Connect branded full-screen call overlay
 // ============================================================================
 // Mirrors the web WhatsAppChat.tsx call overlays with:
 //   - Royal Blue gradient background (Academia Helm palette)
@@ -84,7 +84,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     return Scaffold(
       body: Container(
-        // ⭐ V3-4: Helm Connect Royal Blue gradient background
+        // ⭐ V3-4: Yeshua Connect Royal Blue gradient background
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -340,7 +340,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 8),
           Text(
-            '— Helm Connect',
+            '— Yeshua Connect',
             style: TextStyle(
               color: const Color(0xFFFFE08A).withOpacity(0.7),
               fontSize: 12,

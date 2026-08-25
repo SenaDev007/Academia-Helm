@@ -1,5 +1,5 @@
 // ============================================================================
-// CRYPTO SERVICE — E2E Encryption for Helm Connect (Flutter)
+// CRYPTO SERVICE — E2E Encryption for Yeshua Connect (Flutter)
 // ============================================================================
 //
 // ⭐ Mirrors apps/web-app/src/lib/chat/crypto.ts (RSA-OAEP 2048 via Web Crypto).

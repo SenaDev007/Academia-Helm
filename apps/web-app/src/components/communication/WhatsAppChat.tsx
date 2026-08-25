@@ -271,13 +271,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showInvitations, setShowInvitations] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
-  // ⭐ Helm Connect — Annonces officielles V1
+  // ⭐ Yeshua Connect — Annonces officielles V1
   const [showAnnouncements, setShowAnnouncements] = useState(false);
-  // ⭐ Helm Connect V2.3 — Notification Preferences
+  // ⭐ Yeshua Connect V2.3 — Notification Preferences
   const [showNotifPrefs, setShowNotifPrefs] = useState(false);
-  // ⭐ Helm Connect V2.4 — Global Search
+  // ⭐ Yeshua Connect V2.4 — Global Search
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
-  // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
+  // ⭐ Yeshua Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   // ⭐ V3-3 — ORION-powered conversation summary
   const [showSummary, setShowSummary] = useState(false);
@@ -294,9 +294,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const groupRemoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
   const [groupCallActive, setGroupCallActive] = useState(false);
   const [groupCallData, setGroupCallData] = useState<{ callId: string; callType: 'AUDIO' | 'VIDEO'; conversationId: string; isInitiator: boolean; participants: Map<string, { name: string; stream?: MediaStream }> } | null>(null);
-  // ⭐ Helm Connect V2.6 — Poll creation modal
+  // ⭐ Yeshua Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
-  // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
+  // ⭐ Yeshua Connect V2.7 — Format toolbar + reply-to-message + message actions
   const [showFormatToolbar, setShowFormatToolbar] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<{ id: string; senderName: string; content: string } | null>(null);
 
@@ -2301,11 +2301,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {/* Title — nowrap to prevent 2-line wrapping */}
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
               <img
-                src="/icons/modules/helm-connect.png"
-                alt="Helm Connect"
+                src="/icons/modules/yeshua-connect.png"
+                alt="Yeshua Connect"
                 className="w-4 h-4 object-contain"
               />
-              <span className="truncate">Helm Connect</span>
+              <span className="truncate">Yeshua Connect</span>
               {/* ⭐ Socket.io connection indicator */}
               <span
                 className={cn('w-2 h-2 rounded-full flex-shrink-0', socket.isConnected ? 'bg-green-400' : 'bg-slate-300')}
@@ -2353,7 +2353,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               </div>
             )}
           </div>
-          {/* ⭐ Helm Connect subtitle */}
+          {/* ⭐ Yeshua Connect subtitle */}
           <p className="text-[10px] text-slate-500 italic mt-1 truncate">
             Communiquez. Collaborez. Restez connectés.
           </p>
@@ -3223,20 +3223,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       ) : (
-        // Empty state when no conversation selected — uses Helm watermark background + Helm Connect icon
+        // Empty state when no conversation selected — uses Helm watermark background + Yeshua Connect icon
         // ⭐ Per user feedback: KEEP the watermark theme (asked for) but DO NOT replace
-        //    the Helm Connect icon with the AH SVG logo (was not asked for).
+        //    the Yeshua Connect icon with the AH SVG logo (was not asked for).
         <div
           className="hidden md:flex flex-1 items-center justify-center relative"
           style={getHelmWatermarkStyle({ opacity: 0.08 })}
         >
           <div className="text-center relative z-10">
             <img
-              src="/icons/modules/helm-connect.png"
-              alt="Helm Connect"
+              src="/icons/modules/yeshua-connect.png"
+              alt="Yeshua Connect"
               className="w-16 h-16 mx-auto mb-4 object-contain opacity-80"
             />
-            <h3 className="text-lg font-bold text-slate-700">Helm Connect</h3>
+            <h3 className="text-lg font-bold text-slate-700">Yeshua Connect</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-sm">
               Communiquez. Collaborez. Restez connectés.
             </p>
@@ -3311,14 +3311,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           }}
         />
       )}
-      {/* ⭐ Helm Connect — Announcements modal (V1) */}
+      {/* ⭐ Yeshua Connect — Announcements modal (V1) */}
       {showAnnouncements && (
         <AnnouncementsModal
           currentUserId={currentUserId}
           onClose={() => setShowAnnouncements(false)}
         />
       )}
-      {/* ⭐ Helm Connect V2.3 — Notification Preferences modal */}
+      {/* ⭐ Yeshua Connect V2.3 — Notification Preferences modal */}
       {showNotifPrefs && (
         <NotificationPreferencesModal
           currentUserId={currentUserId}
@@ -3594,7 +3594,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           ))}
         </div>
       )}
-      {/* ⭐ Helm Connect V2.4 — Global Search modal */}
+      {/* ⭐ Yeshua Connect V2.4 — Global Search modal */}
       {showGlobalSearch && (
         <GlobalSearchModal
           currentUserId={currentUserId}
@@ -3605,7 +3605,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           }}
         />
       )}
-      {/* ⭐ Helm Connect V2.6 — Categorized Attachment Menu */}
+      {/* ⭐ Yeshua Connect V2.6 — Categorized Attachment Menu */}
       {showAttachmentMenu && (
         <CategorizedAttachmentMenu
           currentUserId={currentUserId}
@@ -3615,7 +3615,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           onOpenPoll={() => setShowPollModal(true)}
         />
       )}
-      {/* ⭐ Helm Connect V2.6 — Poll creation modal */}
+      {/* ⭐ Yeshua Connect V2.6 — Poll creation modal */}
       {showPollModal && (
         <PollModal
           currentUserId={currentUserId}
@@ -3738,19 +3738,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       <video ref={localVideoRef} autoPlay playsInline muted className="sr-only" aria-hidden />
       <video ref={remoteVideoRef} autoPlay playsInline className="sr-only" aria-hidden />
 
-      {/* Incoming call — Helm Connect branded full-screen modal */}
+      {/* Incoming call — Yeshua Connect branded full-screen modal */}
       {callState === 'incoming' && callData && (
         <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between p-8">
           {/* Top: incoming label */}
           <div className="pt-8 text-center">
-            <p className="text-sm text-[#FFE08A] font-medium tracking-wider uppercase">Appel entrant Helm Connect</p>
+            <p className="text-sm text-[#FFE08A] font-medium tracking-wider uppercase">Appel entrant Yeshua Connect</p>
           </div>
           {/* Center: avatar + name */}
           <div className="text-center">
             <div className="relative w-28 h-28 mx-auto mb-5">
               {/* ⭐ V3-6: Pulsing gold halo (outer) — Academia Helm living gold */}
               <div className="absolute -inset-3 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '1.8s' }}></div>
-              {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+              {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Yeshua Connect azure */}
               <div className="absolute -inset-1 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.2s' }}></div>
               {/* Avatar with gold ring */}
               <div className={cn('relative w-28 h-28 rounded-full flex items-center justify-center text-white text-4xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
@@ -3790,7 +3790,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         </div>
       )}
 
-      {/* Outgoing + Active call — Helm Connect branded overlay */}
+      {/* Outgoing + Active call — Yeshua Connect branded overlay */}
       {(callState === 'outgoing' || callState === 'active') && callData && (
         <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between">
           {/* Remote video (full screen for VIDEO calls when active) */}
@@ -3812,7 +3812,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               <div className="relative w-32 h-32 mx-auto mb-5">
                 {/* ⭐ V3-6: Pulsing gold halo (outer) — Academia Helm living gold */}
                 <div className="absolute -inset-4 rounded-full bg-[#CFA63A] opacity-30 animate-ping" style={{ animationDuration: '1.8s' }}></div>
-                {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Helm Connect azure */}
+                {/* ⭐ V3-6: Pulsing royal-blue halo (middle) — Yeshua Connect azure */}
                 <div className="absolute -inset-2 rounded-full bg-[#FFE08A] opacity-50 animate-pulse" style={{ animationDuration: '1.2s' }}></div>
                 {/* Avatar with gold ring */}
                 <div className={cn('relative w-32 h-32 rounded-full flex items-center justify-center text-white text-5xl font-bold ring-4 ring-[#FFE08A]/80 shadow-2xl', getAvatarColor(callData.otherUserName))}>
@@ -3832,7 +3832,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   </span>
                 </span>
                 <span className="text-sm font-semibold text-white">{callData.callType === 'VIDEO' ? 'Appel vidéo' : 'Appel audio'}</span>
-                <span className="text-xs text-[#FFE08A]/70 ml-1">— Helm Connect</span>
+                <span className="text-xs text-[#FFE08A]/70 ml-1">— Yeshua Connect</span>
               </div>
             </div>
           )}
@@ -3857,7 +3857,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               </button>
             </div>
           )}
-          {/* Bottom control bar — Helm Connect branded pill */}
+          {/* Bottom control bar — Yeshua Connect branded pill */}
           <div className="w-full pb-10 flex justify-center z-30">
             <div className="flex items-center gap-2 px-6 py-4 rounded-full bg-[#0A2A5E]/70 backdrop-blur-md border border-[#FFE08A]/20">
               {/* Mute */}

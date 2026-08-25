@@ -4,10 +4,10 @@
  * ============================================================================
  *
  * ⭐ Purpose:
- * Replace SMS/WhatsApp notifications in the Finance module with Helm Connect
+ * Replace SMS/WhatsApp notifications in the Finance module with Yeshua Connect
  * chat messages. When an encaissement (payment receipt) is recorded, or when
  * a recovery reminder (relance/action/promesse) is triggered, this service
- * sends a chat message to the parent's Helm Connect account using the
+ * sends a chat message to the parent's Yeshua Connect account using the
  * EXACT SAME wording as the previous WhatsApp templates — so parents
  * receive a consistent notification regardless of channel.
  *
@@ -90,7 +90,7 @@ export class HelmConnectFinanceNotificationService {
   ) {}
 
   /**
-   * Send a payment receipt to the parent's Helm Connect account.
+   * Send a payment receipt to the parent's Yeshua Connect account.
    * Uses the EXACT same wording as the WhatsApp 'recu_paiement' template.
    * The PDF receipt is attached as a DOCUMENT message with the caption.
    */
@@ -106,7 +106,7 @@ export class HelmConnectFinanceNotificationService {
         .ensureUserForPrimaryGuardianOfStudent(payload.tenantId, payload.studentId);
       if (!provisioningResult) {
         this.logger.warn(
-          `No guardian found for student ${payload.studentId} (tenant ${payload.tenantId}). Skipping Helm Connect receipt notification.`,
+          `No guardian found for student ${payload.studentId} (tenant ${payload.tenantId}). Skipping Yeshua Connect receipt notification.`,
         );
         return { success: false, error: 'No guardian linked to this student' };
       }
@@ -133,7 +133,7 @@ export class HelmConnectFinanceNotificationService {
       //      Cordialement,
       //      La Direction
       //    Header: "Recu de paiement"
-      //    Footer: FOOTER (= "Academia Helm — Helm Connect")
+      //    Footer: FOOTER (= "Academia Helm — Yeshua Connect")
       const dateStr = payload.paymentDate.toLocaleDateString('fr-FR', {
         day: '2-digit', month: '2-digit', year: 'numeric',
       });
@@ -159,7 +159,7 @@ export class HelmConnectFinanceNotificationService {
         `Cordialement,`,
         `La Direction`,
         ``,
-        `<i>— Academia Helm — Helm Connect</i>`,
+        `<i>— Academia Helm — Yeshua Connect</i>`,
       ].filter(Boolean).join('\n');
 
       // 4. Send the PDF as a DOCUMENT message with the caption
@@ -197,7 +197,7 @@ export class HelmConnectFinanceNotificationService {
       };
     } catch (error: any) {
       this.logger.error(
-        `❌ Failed to send Helm Connect receipt notification: ${error.message}`,
+        `❌ Failed to send Yeshua Connect receipt notification: ${error.message}`,
         error.stack,
       );
       return { success: false, error: error.message };
@@ -205,7 +205,7 @@ export class HelmConnectFinanceNotificationService {
   }
 
   /**
-   * Send a recovery reminder to the parent's Helm Connect account.
+   * Send a recovery reminder to the parent's Yeshua Connect account.
    * Uses the EXACT same wording as the WhatsApp free-text message in
    * recovery-notification-finance.service.ts sendByWhatsApp().
    */
@@ -307,7 +307,7 @@ export class HelmConnectFinanceNotificationService {
       };
     } catch (error: any) {
       this.logger.error(
-        `❌ Failed to send Helm Connect recovery notification: ${error.message}`,
+        `❌ Failed to send Yeshua Connect recovery notification: ${error.message}`,
         error.stack,
       );
       return { success: false, error: error.message };
@@ -332,7 +332,7 @@ function escapeHtml(text: string): string {
  * Recovery level configuration — EXACT copy of the WhatsApp config
  * from recovery-notification-finance.service.ts getLevelConfig()
  * (lines 517-576). Keeping the same wording for consistency across
- * notification channels (WhatsApp + Helm Connect).
+ * notification channels (WhatsApp + Yeshua Connect).
  */
 function getRecoveryLevelConfig(level: 'PREMIERE_RELANCE' | 'DEUXIEME_RELANCE' | 'MISE_EN_DEMEURE'): {
   emoji: string;

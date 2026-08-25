@@ -7,7 +7,7 @@
 # ============================================================================
 
 name: helm_connect
-description: "Helm Connect — Academia Helm mobile chat app (Flutter)."
+description: "Yeshua Connect — Academia Helm mobile chat app (Flutter)."
 publish_to: "none"
 version: 1.0.0+1
 

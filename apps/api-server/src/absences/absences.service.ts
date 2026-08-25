@@ -24,7 +24,7 @@ export class AbsencesService {
       createdBy,
     });
 
-    // ⭐ V3-4: Helm Connect notification (fire-and-forget, never blocks)
+    // ⭐ V3-4: Yeshua Connect notification (fire-and-forget, never blocks)
     if (this.bridge && absence) {
       this.bridge
         .notifyAbsenceCreated({

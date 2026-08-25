@@ -3,7 +3,7 @@
  * HELM CONNECT V2.4 — Global Search Service
  * ============================================================================
  *
- * Recherche transversale dans Helm Connect :
+ * Recherche transversale dans Yeshua Connect :
  *   - Messages (contenu des messages de toutes mes conversations)
  *   - Personnes (users + guardians du tenant)
  *   - Groupes (conversations de groupe du tenant)

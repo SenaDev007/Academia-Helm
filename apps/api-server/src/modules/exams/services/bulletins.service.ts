@@ -351,7 +351,7 @@ export class BulletinsService {
 
   /**
    * Publie les bulletins d'une classe (rend visible aux parents)
-   * ⭐ V3-4: Émet aussi une notification Helm Connect multi-canal aux parents.
+   * ⭐ V3-4: Émet aussi une notification Yeshua Connect multi-canal aux parents.
    */
   async publishClassBulletins(tenantId: string, academicYearId: string, periodId: string, classId: string, publishedBy: string) {
     const result = await this.prisma.studentPeriodAverage.updateMany({
@@ -361,7 +361,7 @@ export class BulletinsService {
       },
     });
 
-    // ⭐ V3-4: Helm Connect notification (fire-and-forget) — prévient tous les parents
+    // ⭐ V3-4: Yeshua Connect notification (fire-and-forget) — prévient tous les parents
     if (this.bridge) {
       this.bridge
         .notifyBulletinPublished({

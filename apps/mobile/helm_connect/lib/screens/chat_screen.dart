@@ -2,7 +2,7 @@
 // HELM CONNECT — Main Chat Screen
 // ============================================================================
 // Écran principal après connexion. Affiche :
-//   - Header avec "Helm Connect" + slogan + indicateur de connexion Socket.io
+//   - Header avec "Yeshua Connect" + slogan + indicateur de connexion Socket.io
 //   - Liste des conversations (DIRECT + GROUP)
 //   - FAB "+" pour nouvelle conversation
 //
@@ -134,7 +134,7 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Helm Connect',
+              'Yeshua Connect',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,

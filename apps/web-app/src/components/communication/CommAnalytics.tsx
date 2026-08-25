@@ -67,7 +67,7 @@ export default function CommAnalytics() {
               <BarChart3 className="w-6 h-6 text-violet-400" /> Analytique des Communications
             </h2>
             <p className="text-slate-400 text-sm mt-2">
-              Statistiques en temps réel de Helm Connect — messages, utilisateurs actifs, groupes, fichiers.
+              Statistiques en temps réel de Yeshua Connect — messages, utilisateurs actifs, groupes, fichiers.
             </p>
           </div>
           <div className="text-right">
@@ -96,7 +96,7 @@ export default function CommAnalytics() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6">
-        <h3 className="text-sm font-bold text-slate-900 mb-4">Résumé Helm Connect</h3>
+        <h3 className="text-sm font-bold text-slate-900 mb-4">Résumé Yeshua Connect</h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-slate-500">Communication aujourd'hui</p>

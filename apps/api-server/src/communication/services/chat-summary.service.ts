@@ -3,7 +3,7 @@
  * CHAT SUMMARY SERVICE — ORION-powered conversation summaries (V3-3)
  * ============================================================================
  *
- * Génère un résumé structuré d'une conversation Helm Connect via GLM-5.2.
+ * Génère un résumé structuré d'une conversation Yeshua Connect via GLM-5.2.
  *
  * Rôle : appelé par `POST /chat/conversations/:id/summarize`, prend les N
  * derniers messages d'une conversation et demande au LLM de produire :

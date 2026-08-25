@@ -5,7 +5,7 @@ import { AbsencesRepository } from './absences.repository';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
-  imports: [CommunicationModule], // ⭐ V3-4: Helm Connect notification bridge
+  imports: [CommunicationModule], // ⭐ V3-4: Yeshua Connect notification bridge
   controllers: [AbsencesController],
   providers: [AbsencesService, AbsencesRepository],
   exports: [AbsencesService],

@@ -4,12 +4,12 @@
  * ============================================================================
  *
  * Pont unique entre les modules pédagogiques (Examens / Absences / Discipline)
- * et Helm Connect (chat + notifications in-app + Web Push + WhatsApp + SMS).
+ * et Yeshua Connect (chat + notifications in-app + Web Push + WhatsApp + SMS).
  *
  * Rôle : émettre UNE notification multi-canal à chaque événement pédagogique :
  *   1. In-app bell + Web Push  → pour les enseignants / surveillants / direction
  *   2. WhatsApp + fallback SMS → pour les parents (tuteur principal)
- *   3. Message dans une conversation Helm Connect auto-créée  → chat parent ↔ enseignant
+ *   3. Message dans une conversation Yeshua Connect auto-créée  → chat parent ↔ enseignant
  *
  * Patterns réutilisés :
  * - DisciplineNotificationService (WhatsApp + SMS fire-and-forget)
@@ -116,7 +116,7 @@ export class HelmConnectNotificationBridgeService {
    * Notifie les parents d'élèves + le staff qu'une absence a été saisie.
    * - In-app bell + Web Push : enseignant principal de la classe + surveillant
    * - WhatsApp + SMS : tuteur principal de l'élève
-   * - Helm Connect message : message dans la conversation parent ↔ enseignant
+   * - Yeshua Connect message : message dans la conversation parent ↔ enseignant
    */
   async notifyAbsenceCreated(payload: AbsenceCreatedPayload): Promise<BridgeNotificationResult> {
     const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
@@ -233,7 +233,7 @@ export class HelmConnectNotificationBridgeService {
         this.logger.warn(`notifyAbsenceCreated: parent channel failed: ${e.message}`);
       }
 
-      // 4. Helm Connect message : conversation parent ↔ enseignant principal
+      // 4. Yeshua Connect message : conversation parent ↔ enseignant principal
       try {
         await this.sendHelmConnectMessageToParent({
           tenantId: payload.tenantId,
@@ -250,7 +250,7 @@ export class HelmConnectNotificationBridgeService {
 
       // ⭐ V3-4: FCM push to the staff's mobile devices is automatically sent
       //    by NotificationService.create() (which now calls FcmSenderService.sendToUser).
-      //    For the parent, the Helm Connect chat message above triggers a socket event
+      //    For the parent, the Yeshua Connect chat message above triggers a socket event
       //    on their mobile app, plus they already receive WhatsApp + SMS above.
       //    So no extra FCM call is needed here — the bridge is multi-canal by design.
 
@@ -347,7 +347,7 @@ export class HelmConnectNotificationBridgeService {
 
   /**
    * Notifie les parents d'élèves de la classe qu'un nouvel examen / devoir est
-   * planifié. Multi-canal : in-app bell + Web Push + WhatsApp + SMS + Helm Connect.
+   * planifié. Multi-canal : in-app bell + Web Push + WhatsApp + SMS + Yeshua Connect.
    */
   async notifyExamScheduled(payload: ExamScheduledPayload): Promise<BridgeNotificationResult> {
     const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
@@ -498,7 +498,7 @@ export class HelmConnectNotificationBridgeService {
 
   /**
    * Notifie tous les parents d'élèves de la classe que les bulletins ont été
-   * publiés. Multi-canal : in-app bell + Web Push + WhatsApp + SMS + Helm Connect.
+   * publiés. Multi-canal : in-app bell + Web Push + WhatsApp + SMS + Yeshua Connect.
    */
   async notifyBulletinPublished(payload: BulletinPublishedPayload): Promise<BridgeNotificationResult> {
     const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
@@ -647,7 +647,7 @@ export class HelmConnectNotificationBridgeService {
         }
       }
 
-      // 6. Helm Connect message à chaque parent
+      // 6. Yeshua Connect message à chaque parent
       await Promise.all(
         parentRecipients.slice(0, 10).map((parent) =>
           this.sendHelmConnectMessageToParent({
@@ -870,7 +870,7 @@ export class HelmConnectNotificationBridgeService {
   }
 
   /**
-   * Envoie un message dans la conversation Helm Connect auto-créée entre le
+   * Envoie un message dans la conversation Yeshua Connect auto-créée entre le
    * parent de l'élève et le staff (l'enseignant principal ou le déclencheur).
    * Utilise ChatService.createOrGetDirectConversationWithGuardian().
    */

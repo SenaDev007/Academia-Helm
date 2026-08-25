@@ -36,7 +36,7 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
-// ⭐ V3-4: notifications Helm Connect pour parents (Examens/Absences/Discipline → cloche)
+// ⭐ V3-4: notifications Yeshua Connect pour parents (Examens/Absences/Discipline → cloche)
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 
 const PARENT_MODULES = [

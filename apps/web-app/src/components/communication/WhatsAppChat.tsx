@@ -30,8 +30,6 @@ import {
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines,
-  // ⭐ V3-11: Reaction icons (replacing emojis) + status icons
-  ThumbsUp, Heart, Smile, Meh, Frown, Hand, Lock, Circle, AlertTriangle, CheckCircle, Siren,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -310,24 +308,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V1.5: Quick-reaction emoji bar (shown on LONG-PRESS or right-click — WhatsApp style)
   const [showReactionBar, setShowReactionBar] = useState<string | null>(null);
   const [reactionBarPos, setReactionBarPos] = useState<{ x: number; y: number } | null>(null);
-  // ⭐ V3-11: Reactions — professional icons (no emojis).
-  //   The emoji string is kept as the reaction ID for backend storage compat.
-  //   Each reaction renders as a Lucide icon with a semantic color.
-  const QUICK_REACTIONS = [
-    { id: 'like', emoji: '👍', Icon: ThumbsUp, color: 'text-blue-500' },
-    { id: 'love', emoji: '❤️', Icon: Heart, color: 'text-pink-500' },
-    { id: 'laugh', emoji: '😂', Icon: Smile, color: 'text-amber-500' },
-    { id: 'wow', emoji: '😮', Icon: Meh, color: 'text-purple-500' },
-    { id: 'sad', emoji: '😢', Icon: Frown, color: 'text-cyan-500' },
-    { id: 'pray', emoji: '🙏', Icon: Hand, color: 'text-green-500' },
-  ];
+  // ⭐ V3-11: Reactions — keep real emojis for chat reactions (essential for chat UX).
+  //   Lucide icons are used for UI menus/navigation only, NOT for chat reactions.
+  //   The emoji string is the reaction ID stored in the backend.
+  const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
-  /// ⭐ V3-11: Render a reaction as a Lucide icon (used by both the quick bar and the bubble display).
-  /// Falls back to the original emoji string if unknown.
+  /// ⭐ V3-11: Render a reaction emoji (used by both the quick bar and the bubble display).
+  /// Always renders the original emoji — emojis are essential in chat contexts.
   const renderReactionIcon = (emoji: string, size: number = 14) => {
-    const r = QUICK_REACTIONS.find(q => q.emoji === emoji || q.id === emoji);
-    if (r) return <r.Icon className={size === 14 ? `w-3.5 h-3.5 ${r.color}` : `w-${Math.round(size/4)} h-${Math.round(size/4)} ${r.color}`} />;
-    return <span>{emoji}</span>;
+    return <span style={{ fontSize: size }}>{emoji}</span>;
   };
   // ⭐ FIX: Action menu state — React-driven instead of display:none toggle (so click-outside closes it)
   const [activeMenuMsgId, setActiveMenuMsgId] = useState<string | null>(null);
@@ -1282,7 +1271,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       if (parent) {
         newEntries[(m as any).replyToId] = {
           senderName: `${parent.senderFirstName || parent.sender?.firstName || ''} ${parent.senderLastName || parent.sender?.lastName || ''}`.trim() || 'Utilisateur',
-          content: stripHtml(parent.content) || (parent.type === 'AUDIO' ? 'Message vocal' : parent.type === 'IMAGE' ? 'Image' : parent.type === 'DOCUMENT' ? 'Document' : 'Message'),
+          content: stripHtml(parent.content) || (parent.type === 'AUDIO' ? '🎤 Message vocal' : parent.type === 'IMAGE' ? '📷 Image' : parent.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
         };
       }
     }
@@ -1418,7 +1407,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setReplyToMessage({
       id: messageId,
       senderName: `${msg.senderFirstName || ''} ${msg.senderLastName || ''}`.trim() || 'Utilisateur',
-      content: stripHtml(msg.content) || (msg.type === 'AUDIO' ? 'Message vocal' : msg.type === 'IMAGE' ? 'Image' : msg.type === 'DOCUMENT' ? 'Document' : 'Message'),
+      content: stripHtml(msg.content) || (msg.type === 'AUDIO' ? '🎤 Message vocal' : msg.type === 'IMAGE' ? '📷 Image' : msg.type === 'DOCUMENT' ? '📎 Document' : 'Message'),
     });
     // Focus the text input
     setTimeout(() => {
@@ -2714,7 +2703,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
-                              <Smile className="w-3.5 h-3.5 text-amber-500" /> Réagir
+                              <span className="text-sm">😊</span> Réagir
                             </button>
                             <button
                               onClick={() => {
@@ -3012,14 +3001,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             'absolute -top-7 right-0 flex items-center gap-0.5 bg-white rounded-full shadow-lg border border-slate-200 px-1 py-0.5 transition-opacity',
                             showReactionBar === msg.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
                           )}>
-                            {QUICK_REACTIONS.map(r => (
+                            {QUICK_EMOJIS.map(emoji => (
                               <button
-                                key={r.id}
-                                onClick={(e) => { e.stopPropagation(); handleToggleReaction(msg.id, r.emoji); }}
+                                key={emoji}
+                                onClick={(e) => { e.stopPropagation(); handleToggleReaction(msg.id, emoji); }}
                                 className="text-sm hover:scale-125 transition-transform p-1 rounded-full hover:bg-slate-100"
-                                title={`Réagir avec ${r.id}`}
+                                title={`Réagir avec ${emoji}`}
                               >
-                                <r.Icon className={`w-4 h-4 ${r.color}`} />
+                                {emoji}
                               </button>
                             ))}
                           </div>
@@ -3594,14 +3583,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             top: `${Math.max(reactionBarPos.y - 50, 10)}px`,
           }}
         >
-          {QUICK_REACTIONS.map((r) => (
+          {QUICK_EMOJIS.map((emoji) => (
             <button
-              key={r.id}
-              onClick={() => handleToggleReaction(showReactionBar, r.emoji)}
+              key={emoji}
+              onClick={() => handleToggleReaction(showReactionBar, emoji)}
               className="text-xl hover:scale-125 transition-transform p-1.5 rounded-full hover:bg-slate-100"
-              title={`Réagir avec ${r.id}`}
+              title={`Réagir avec ${emoji}`}
             >
-              <r.Icon className={`w-5 h-5 ${r.color}`} />
+              {emoji}
             </button>
           ))}
         </div>
@@ -3673,7 +3662,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {(() => {
               const fwdMsg = messages.find(m => m.id === forwardMessageId);
               if (!fwdMsg) return null;
-              const preview = stripHtml(fwdMsg.content) || (fwdMsg.type === 'AUDIO' ? 'Message vocal' : fwdMsg.type === 'IMAGE' ? 'Image' : fwdMsg.type === 'DOCUMENT' ? 'Document' : 'Message');
+              const preview = stripHtml(fwdMsg.content) || (fwdMsg.type === 'AUDIO' ? '🎤 Message vocal' : fwdMsg.type === 'IMAGE' ? '📷 Image' : fwdMsg.type === 'DOCUMENT' ? '📎 Document' : 'Message');
               return (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Message à transférer</p>
@@ -3814,7 +3803,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <span className="text-white font-bold text-lg">{callData.otherUserName}</span>
             {callState === 'active' && (
               <span className="flex items-center gap-1 text-xs text-[#FFE08A]">
-                <Lock className="w-3 h-3" /> <span className="hidden sm:inline">Chiffré de bout en bout</span>
+                🔒 <span className="hidden sm:inline">Chiffré de bout en bout</span>
               </span>
             )}
           </div>
@@ -3941,22 +3930,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               <h3 className="text-lg font-bold text-slate-900">{profileUser.name}</h3>
               <p className="text-sm text-slate-500">{profileData?.role || '—'}</p>
               <p className="text-xs text-slate-400">{profileData?.email || ''}</p>
-              <div className="mt-2"><span className={cn('inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold', profileData?.availabilityStatus === 'online' ? 'bg-green-100 text-green-700' : profileData?.availabilityStatus === 'away' ? 'bg-amber-100 text-amber-700' : profileData?.availabilityStatus === 'dnd' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500')}>
-                {profileData?.availabilityStatus === 'online' ? <><Circle className="w-2 h-2 fill-green-500 text-green-500" /> En ligne</> : profileData?.availabilityStatus === 'away' ? <><Circle className="w-2 h-2 fill-amber-500 text-amber-500" /> Absent</> : profileData?.availabilityStatus === 'dnd' ? <><Siren className="w-2.5 h-2.5" /> Ne pas déranger</> : <><Circle className="w-2 h-2 fill-slate-400 text-slate-400" /> Hors ligne</>}
-              </span></div>
+              <div className="mt-2"><span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold', profileData?.availabilityStatus === 'online' ? 'bg-green-100 text-green-700' : profileData?.availabilityStatus === 'away' ? 'bg-amber-100 text-amber-700' : profileData?.availabilityStatus === 'dnd' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500')}>{profileData?.availabilityStatus === 'online' ? '🟢 En ligne' : profileData?.availabilityStatus === 'away' ? '🟡 Absent' : profileData?.availabilityStatus === 'dnd' ? '🔴 Ne pas déranger' : '⚫ Hors ligne'}</span></div>
             </div>
             {profileData?.bio && <div className="p-4 border-b border-slate-100"><p className="text-xs font-semibold text-slate-500 uppercase mb-1">Bio</p><p className="text-sm text-slate-700">{profileData.bio}</p></div>}
             {profileUser.userId === currentUserId && (
               <div className="p-4 border-b border-slate-100">
                 <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Mon statut</p>
                 <div className="flex gap-2">
-                  {[
-                    { value: 'online', label: 'En ligne', icon: <Circle className="w-2.5 h-2.5 fill-green-500 text-green-500" /> },
-                    { value: 'away', label: 'Absent', icon: <Circle className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /> },
-                    { value: 'dnd', label: 'DND', icon: <Siren className="w-3 h-3" /> },
-                    { value: 'offline', label: 'Hors ligne', icon: <Circle className="w-2.5 h-2.5 fill-slate-400 text-slate-400" /> },
-                  ].map(s => (
-                    <button key={s.value} onClick={() => handleUpdateMyStatus(s.value)} className={cn('inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-semibold border', myStatus === s.value ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500')}>{s.icon}{s.label}</button>
+                  {[{value:'online',label:'🟢 En ligne'},{value:'away',label:'🟡 Absent'},{value:'dnd',label:'🔴 DND'},{value:'offline',label:'⚫ Hors ligne'}].map(s => (
+                    <button key={s.value} onClick={() => handleUpdateMyStatus(s.value)} className={cn('px-2 py-1 rounded-full text-[10px] font-semibold border', myStatus === s.value ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500')}>{s.label}</button>
                   ))}
                 </div>
               </div>
@@ -4147,20 +4129,20 @@ function NewChatModal({
                   )}
                   {/* ⭐ Distinction intra-école vs cross-école vs guardian-without-account */}
                   {user.canStartDirectConversation ? (
-                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5 flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> Même école — discussion directe
+                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5">
+                      ✓ Même école — discussion directe
                     </div>
                   ) : user.source === 'guardians' && user.guardianId ? (
-                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5 flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> Parent d'élève — cliquez pour démarrer la conversation
+                    <div className="text-[10px] text-[#1677FF] font-semibold mt-0.5">
+                      ✓ Parent d'élève — cliquez pour démarrer la conversation
                     </div>
                   ) : user.tenantName ? (
-                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Autre école : {user.tenantName} — invitation requise
+                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                      ⚠ Autre école : {user.tenantName} — invitation requise
                     </div>
                   ) : (
-                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Autre école — invitation requise
+                    <div className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                      ⚠ Autre école — invitation requise
                     </div>
                   )}
                 </div>

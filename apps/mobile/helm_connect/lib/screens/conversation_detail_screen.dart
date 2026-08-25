@@ -1343,8 +1343,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 runSpacing: 2,
                 children: reactionCounts.entries.map((entry) {
                   final isMine = myReactions[entry.key] == true;
-                  // Map reaction string to icon
-                  final reactionIcon = _getReactionIcon(entry.key);
+                  // ⭐ V3-11: Render reaction as real emoji (essential for chat UX)
                   return GestureDetector(
                     onTap: () => _sendReaction(msg, entry.key),
                     child: Container(
@@ -1357,7 +1356,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(reactionIcon, size: 14, color: isMine ? const Color(0xFF1677FF) : const Color(0xFF64748B)),
+                          Text(entry.key, style: const TextStyle(fontSize: 12)),
                           if (entry.value > 1) ...[
                             const SizedBox(width: 2),
                             Text('${entry.value}', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
@@ -1586,18 +1585,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-4: 3-state read receipt (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
-  // Map reaction string to professional icon (no emojis)
-  IconData _getReactionIcon(String reaction) {
-    switch (reaction) {
-      case 'like': case '👍': return Icons.thumb_up;
-      case 'love': case '❤️': return Icons.favorite;
-      case 'laugh': case '😂': return Icons.sentiment_very_satisfied;
-      case 'wow': case '😮': return Icons.sentiment_neutral;
-      case 'sad': case '😢': return Icons.sentiment_dissatisfied;
-      case 'pray': case '🙏': return Icons.volunteer_activism;
-      default: return Icons.thumb_up;
-    }
-  }
+  // (Reaction emojis are rendered directly as Text — emojis are essential for chat UX.)
 
   Widget _buildReadReceiptIcon(Message msg) {
     if (msg.readBy.isNotEmpty) {
@@ -1627,7 +1615,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.emoji_emotions, color: Color(0xFFF59E0B)),
+              leading: const Text('😊', style: TextStyle(fontSize: 20)),
               title: const Text('Réagir'),
               onTap: () {
                 Navigator.pop(context);
@@ -1754,19 +1742,34 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   void _showReactionPicker(Message msg) {
+    // ⭐ V3-11: Use real emojis for chat reactions (essential for chat UX).
+    //   The emoji string is the reaction ID stored in the backend.
     final reactions = [
-      {'emoji': 'like', 'icon': Icons.thumb_up, 'color': const Color(0xFF3B82F6)},
-      {'emoji': 'love', 'icon': Icons.favorite, 'color': const Color(0xFFEC4899)},
-      {'emoji': 'laugh', 'icon': Icons.sentiment_very_satisfied, 'color': const Color(0xFFF59E0B)},
-      {'emoji': 'wow', 'icon': Icons.sentiment_neutral, 'color': const Color(0xFF8B5CF6)},
-      {'emoji': 'sad', 'icon': Icons.sentiment_dissatisfied, 'color': const Color(0xFF06B6D4)},
-      {'emoji': 'pray', 'icon': Icons.volunteer_activism, 'color': const Color(0xFF10B981)},
+      {'emoji': '👍', 'label': 'J\'aime'},
+      {'emoji': '❤️', 'label': 'J\'adore'},
+      {'emoji': '😂', 'label': 'Rigolo'},
+      {'emoji': '😮', 'label': 'Surpris'},
+      {'emoji': '😢', 'label': 'Triste'},
+      {'emoji': '🙏', 'label': 'Merci'},
     ];
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        child: Container(
+          margin: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: reactions.map((r) {
@@ -1775,14 +1778,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   Navigator.pop(context);
                   _sendReaction(msg, r['emoji'] as String);
                 },
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: (r['color'] as Color).withOpacity(0.1),
+                child: Tooltip(
+                  message: r['label'] as String,
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFF1F5F9),
+                    ),
+                    child: Center(
+                      child: Text(
+                        r['emoji'] as String,
+                        style: const TextStyle(fontSize: 28),
+                      ),
+                    ),
                   ),
-                  child: Icon(r['icon'] as IconData, color: r['color'] as Color, size: 24),
                 ),
               );
             }).toList(),

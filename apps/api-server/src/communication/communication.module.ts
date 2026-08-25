@@ -66,6 +66,8 @@ import { HelmConnectNotificationBridgeService } from './services/helm-connect-br
 import { ChatSummaryService } from './services/chat-summary.service';
 // ⭐ V3-2: Whisper-powered audio transcriptions
 import { ChatTranscriptionService } from './services/chat-transcription.service';
+// ⭐ V3-11: Auto-groups (Communautés) auto-creation per academic year
+import { AutoGroupService } from './services/auto-group.service';
 
 @Module({
   imports: [
@@ -155,6 +157,8 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     ChatSummaryService,
     // ⭐ V3-2 — Whisper-powered audio transcriptions
     ChatTranscriptionService,
+    // ⭐ V3-11 — Auto-groups (Communautés) auto-creation per academic year
+    AutoGroupService,
   ],
   exports: [
     EmailService,
@@ -186,6 +190,8 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     ChatSummaryService,
     // ⭐ V3-2 — Chat transcription service (exposed for ChatController)
     ChatTranscriptionService,
+    // ⭐ V3-11 — Auto-groups service (Communautés)
+    AutoGroupService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

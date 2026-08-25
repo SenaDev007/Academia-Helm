@@ -585,6 +585,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [channelMessages, setChannelMessages] = useState<any[]>([]);
 
+  // ⭐ V3-11: Annonces (official announcements list — fetched lazily when the
+  //   user switches to the Annonces section, kept in state to avoid refetching)
+  const [annonces, setAnnonces] = useState<any[]>([]);
+  const [annoncesLoading, setAnnoncesLoading] = useState(false);
+  const [annoncesLoaded, setAnnoncesLoaded] = useState(false);
+
+  // ⭐ V3-11: Communautés auto-group sync state
+  const [communautesSyncing, setCommunautesSyncing] = useState(false);
+  const [communautesSyncMessage, setCommunautesSyncMessage] = useState<string | null>(null);
+
   // ⭐ AVATAR
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
 
@@ -973,6 +983,60 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       return () => clearTimeout(t);
     }
   }, [socket.isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ⭐ V3-11: Lazy-fetch annonces when the user switches to the Annonces section.
+  //   Keeps the fetched list in state so subsequent visits don't refetch.
+  useEffect(() => {
+    if (activeHelmSection !== 'annonces' || annoncesLoaded) return;
+    setAnnoncesLoading(true);
+    fetch('/api/chat/announcements?userId=' + encodeURIComponent(currentUserId) + '&limit=50')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const items = Array.isArray(data) ? data : (data?.items || data?.announcements || []);
+        setAnnonces(items);
+        setAnnoncesLoaded(true);
+      })
+      .catch(() => {
+        // silent — the section shows an empty state
+        setAnnoncesLoaded(true);
+      })
+      .finally(() => setAnnoncesLoading(false));
+  }, [activeHelmSection, currentUserId, annoncesLoaded]);
+
+  // ⭐ V3-11: Sync auto-groups (Communautés) when the user opens the Communautés section.
+  //   This calls the backend's AutoGroupService.syncAutoGroups() to create
+  //   CLASS/SUBJECT/ROLE/STAFF groups for the current academic year (archiving
+  //   the previous year's groups). The backend dedupes — safe to call every time.
+  const syncAutoGroups = useCallback(async () => {
+    if (communautesSyncing) return;
+    setCommunautesSyncing(true);
+    setCommunautesSyncMessage(null);
+    try {
+      const res = await fetch('/api/chat/auto-groups/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCommunautesSyncMessage(data?.message || 'Communautés synchronisées pour l\'année scolaire.');
+        // Refresh conversations to show the newly created groups
+        loadConversations();
+      } else {
+        setCommunautesSyncMessage('Synchronisation échouée — réessayez plus tard.');
+      }
+    } catch (e) {
+      setCommunautesSyncMessage('Erreur réseau — réessayez plus tard.');
+    } finally {
+      setCommunautesSyncing(false);
+    }
+  }, [communautesSyncing, loadConversations]);
+
+  useEffect(() => {
+    // Auto-sync when the user first opens the Communautés section (once per session)
+    if (activeHelmSection === 'communautes' && !communautesSyncing && !communautesSyncMessage) {
+      syncAutoGroups();
+    }
+  }, [activeHelmSection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⭐ PRESENCE HEARTBEAT : met à jour lastActiveAt toutes les 30s
   useEffect(() => {
@@ -2341,13 +2405,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         ] as const).map((section) => {
           const isActive = activeHelmSection === section.id;
           // Sections that open a modal instead of changing the list content
-          const opensModal = ['annonces', 'recherche', 'notifications', 'parametres'].includes(section.id);
+          const opensModal = ['recherche', 'notifications', 'parametres'].includes(section.id);
           return (
             <button
               key={section.id}
               onClick={() => {
-                if (section.id === 'annonces') setShowAnnouncements(true);
-                else if (section.id === 'recherche') setShowGlobalSearch(true);
+                if (section.id === 'recherche') setShowGlobalSearch(true);
                 else if (section.id === 'notifications') setShowNotifPrefs(true);
                 else if (section.id === 'parametres') setShowProfile(true);
                 else setActiveHelmSection(section.id as HelmSection);
@@ -2423,10 +2486,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 title={socket.isConnected ? 'Connecté (temps réel)' : 'Déconnecté (polling)'}
               />
             </h2>
-            {/* Actions — only 3 buttons to fit on mobile */}
+            {/* ⭐ V3-11: Context-aware actions — changes per active section.
+                Removed the redundant "More options" dropdown (3-dot) since the
+                Discord icon rail now handles navigation to all 12 sections.
+                Kept only: Profile + 2 contextual action buttons (Nouveau groupe +
+                Invitations for Discussions; specific CTA per section). */}
             {!readOnly && (
               <div className="flex items-center gap-1 flex-shrink-0">
-                {/* Primary actions always visible */}
+                {/* Profile (always visible) */}
                 <button
                   onClick={() => setShowProfile(true)}
                   className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
@@ -2434,51 +2501,94 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 >
                   <Settings className="w-4 h-4" />
                 </button>
-                {/* ⭐ New message (primary CTA) */}
-                <button
-                  onClick={() => setShowNewChat(true)}
-                  className="p-1.5 rounded-lg bg-[#1677FF] text-white hover:bg-[#0958D9]"
-                  title="Nouveau message"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-                {/* ⭐ "More" dropdown — groups secondary actions */}
-                <DropdownMenu
-                  trigger={
+
+                {/* ⭐ Context-aware primary CTA — changes per active section */}
+                {activeHelmSection === 'discussions' && (
+                  <>
                     <button
+                      onClick={() => setShowNewGroup(true)}
                       className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                      title="Plus d'options"
+                      title="Nouveau groupe"
                     >
-                      <MoreVertical className="w-4 h-4" />
+                      <Users className="w-4 h-4" />
                     </button>
-                  }
-                  items={[
-                    { label: 'Notifications', icon: <BellOff className="w-4 h-4" />, onClick: () => setShowNotifPrefs(true) },
-                    { label: 'Nouveau canal', icon: <Megaphone className="w-4 h-4" />, onClick: () => setShowNewChannel(true) },
-                    { label: 'Annonces officielles', icon: <Bell className="w-4 h-4" />, onClick: () => setShowAnnouncements(true) },
-                    { label: 'Recherche globale', icon: <Search className="w-4 h-4" />, onClick: () => setShowGlobalSearch(true) },
-                    { label: 'Nouveau groupe', icon: <Users className="w-4 h-4" />, onClick: () => setShowNewGroup(true) },
-                    { label: 'Invitations', icon: <UserPlus className="w-4 h-4" />, onClick: () => setShowInvitations(true) },
-                  ]}
-                />
+                    <button
+                      onClick={() => setShowInvitations(true)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                      title="Invitations"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowNewChat(true)}
+                      className="p-1.5 rounded-lg bg-[#1677FF] text-white hover:bg-[#0958D9]"
+                      title="Nouvelle conversation"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+                {activeHelmSection === 'communautes' && (
+                  <button
+                    onClick={() => setShowNewGroup(true)}
+                    className="p-1.5 rounded-lg bg-[#10B981] text-white hover:bg-[#059669]"
+                    title="Nouvelle communauté"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                )}
+                {activeHelmSection === 'canaux' && (
+                  <button
+                    onClick={() => setShowNewChannel(true)}
+                    className="p-1.5 rounded-lg bg-[#8B5CF6] text-white hover:bg-[#7C3AED]"
+                    title="Nouveau canal"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                )}
+                {activeHelmSection === 'annonces' && (
+                  <button
+                    onClick={() => setShowAnnouncements(true)}
+                    className="p-1.5 rounded-lg bg-[#F59E0B] text-white hover:bg-[#D97706]"
+                    title="Nouvelle annonce"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                )}
+                {/* Fichiers / Vocaux / Appels / Modération / Analytics — no primary CTA */}
               </div>
             )}
           </div>
-          {/* ⭐ Helm Connect subtitle */}
+          {/* ⭐ Helm Connect subtitle — adapts to the active section */}
           <p className="text-[10px] text-slate-500 italic mt-1 truncate">
-            Communiquez. Collaborez. Restez connectés.
+            {activeHelmSection === 'discussions' ? 'Communiquez. Collaborez. Restez connectés.'
+              : activeHelmSection === 'communautes' ? 'Groupes automatiques par classe, matière, rôle et personnel.'
+              : activeHelmSection === 'canaux' ? 'Canaux de diffusion (style Telegram).'
+              : activeHelmSection === 'fichiers' ? 'Centre documentaire partagé.'
+              : activeHelmSection === 'vocaux' ? 'Messages vocaux avec transcription Whisper.'
+              : activeHelmSection === 'appels' ? 'Historique des appels audio et vidéo.'
+              : activeHelmSection === 'annonces' ? 'Communications officielles de l\'établissement.'
+              : activeHelmSection === 'moderation' ? 'Messages épinglés, importants et signalés.'
+              : activeHelmSection === 'analytics' ? 'Tableau de bord de la communication.'
+              : 'Communiquez. Collaborez. Restez connectés.'}
           </p>
-          {/* Search (filtre local des convs) */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Rechercher une conversation..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
-              value={''}
-              onChange={() => {}}
-            />
-          </div>
+          {/* Search — only shown on sections that have a list to filter (Discussions, Communautés, Canaux) */}
+          {['discussions', 'communautes', 'canaux'].includes(activeHelmSection) && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder={
+                  activeHelmSection === 'discussions' ? 'Rechercher une conversation...'
+                  : activeHelmSection === 'communautes' ? 'Rechercher une communauté...'
+                  : 'Rechercher un canal...'
+                }
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
+                value={''}
+                onChange={() => {}}
+              />
+            </div>
+          )}
         </div>
 
         {/* List */}
@@ -2504,6 +2614,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <VocauxSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
           ) : activeHelmSection === 'appels' ? (
             <AppelsSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+          ) : activeHelmSection === 'annonces' ? (
+            <AnnoncesSection
+              currentUserId={currentUserId}
+              annonces={annonces}
+              loading={annoncesLoading}
+              onNew={() => setShowAnnouncements(true)}
+            />
           ) : activeHelmSection === 'moderation' ? (
             <ModerationSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
           ) : activeHelmSection === 'analytics' ? (
@@ -2558,7 +2675,30 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                         <Users className="w-12 h-12 text-slate-300 mb-2" />
                         <p className="text-sm font-medium text-slate-700">Aucune communauté</p>
-                        <p className="text-xs text-slate-500 mt-1">Les groupes automatiques (Classes, Matières, Rôles, Personnel) apparaîtront ici.</p>
+                        <p className="text-xs text-slate-500 mt-1 mb-3">
+                          Les groupes automatiques (Classes, Matières, Rôles, Personnel) seront créés pour l'année scolaire en cours.
+                        </p>
+                        {communautesSyncMessage && (
+                          <p className="text-[11px] text-slate-600 mb-3 italic">{communautesSyncMessage}</p>
+                        )}
+                        {!readOnly && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={syncAutoGroups}
+                              disabled={communautesSyncing}
+                              className="px-3 py-1.5 bg-[#10B981] text-white text-xs font-semibold rounded-lg hover:bg-[#059669] disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                              {communautesSyncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              Synchroniser
+                            </button>
+                            <button
+                              onClick={() => setShowNewGroup(true)}
+                              className="px-3 py-1.5 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
+                            >
+                              + Nouvelle communauté
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   }
@@ -2567,6 +2707,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                         <Users className="w-3 h-3" /> Communautés ({groupConvs.length})
                       </div>
+                      {/* ⭐ V3-11: Sync status banner (shown during/after auto-group sync) */}
+                      {(communautesSyncing || communautesSyncMessage) && (
+                        <div className={cn(
+                          'px-3 py-2 text-[11px] flex items-center gap-2 border-b',
+                          communautesSyncing ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        )}>
+                          {communautesSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                          <span className="flex-1 truncate">
+                            {communautesSyncing ? 'Synchronisation des communautés pour l\'année scolaire…' : communautesSyncMessage}
+                          </span>
+                          {!communautesSyncing && (
+                            <button onClick={syncAutoGroups} className="text-blue-600 hover:underline font-semibold">
+                              Re-sync
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {groupConvs.map(conv => renderConversationItem(conv))}
                     </>
                   );
@@ -4824,20 +4981,52 @@ function _getConvDisplay(conv: ChatConversation, currentUserId: string) {
   return { name, subtitle: other?.role_label || '' };
 }
 
-// ─── 1. FICHIERS — shared files across conversations ──────────────────────
+// ─── 1. FICHIERS — shared files across conversations, with type filters ────
 function FichiersSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
-  const files = conversations
+  const [filter, setFilter] = useState<'all' | 'image' | 'document' | 'audio'>('all');
+  const allFiles = conversations
     .filter(c => c.lastMessagePreview && (c.lastMessagePreview.startsWith('[Image]') || c.lastMessagePreview.startsWith('[Document]') || c.lastMessagePreview.startsWith('[Audio]')))
     .slice(0, 50);
+  const files = allFiles.filter(c => {
+    if (filter === 'all') return true;
+    if (filter === 'image') return c.lastMessagePreview!.startsWith('[Image]');
+    if (filter === 'document') return c.lastMessagePreview!.startsWith('[Document]');
+    if (filter === 'audio') return c.lastMessagePreview!.startsWith('[Audio]');
+    return true;
+  });
   return (
     <div className="p-3">
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
         <FileText className="w-3 h-3" /> Fichiers partagés ({files.length})
       </div>
+      {/* ⭐ V3-11: Type filter chips */}
+      <div className="flex gap-1 mb-3">
+        {([
+          { id: 'all', label: 'Tous', icon: <FileText className="w-3 h-3" /> },
+          { id: 'image', label: 'Images', icon: <ImageIcon className="w-3 h-3" /> },
+          { id: 'document', label: 'Documents', icon: <FileText className="w-3 h-3" /> },
+          { id: 'audio', label: 'Audio', icon: <Mic className="w-3 h-3" /> },
+        ] as const).map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition flex items-center gap-1',
+              filter === f.id
+                ? 'bg-[#1677FF] text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            )}
+          >
+            {f.icon} {f.label}
+          </button>
+        ))}
+      </div>
       {files.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
           <FileText className="w-12 h-12 text-slate-300 mb-2" />
-          <p className="text-sm font-medium text-slate-700">Aucun fichier partagé</p>
+          <p className="text-sm font-medium text-slate-700">
+            {filter === 'all' ? 'Aucun fichier partagé' : `Aucun ${filter === 'image' ? 'image' : filter === 'document' ? 'document' : 'fichier audio'}`}
+          </p>
           <p className="text-xs text-slate-500 mt-1">Les fichiers envoyés dans vos conversations apparaîtront ici.</p>
         </div>
       ) : (
@@ -4868,6 +5057,80 @@ function FichiersSection({ conversations, currentUserId, onOpenConversation }: S
             </button>
           );
         })
+      )}
+    </div>
+  );
+}
+
+// ─── 1b. ANNONCES — official announcements list (with create button) ──────
+function AnnoncesSection({ currentUserId, annonces, loading, onNew }: {
+  currentUserId: string;
+  annonces: any[];
+  loading: boolean;
+  onNew: () => void;
+}) {
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <Bell className="w-3 h-3" /> Annonces officielles ({annonces.length})
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : annonces.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <Bell className="w-12 h-12 text-slate-300 mb-2" />
+          <p className="text-sm font-medium text-slate-700">Aucune annonce pour le moment</p>
+          <p className="text-xs text-slate-500 mt-1 mb-3">Publiez une annonce officielle à destination de toute l'école.</p>
+          <button
+            onClick={onNew}
+            className="px-3 py-1.5 bg-[#F59E0B] text-white text-xs font-semibold rounded-lg hover:bg-[#D97706] flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nouvelle annonce
+          </button>
+        </div>
+      ) : (
+        <>
+          {annonces.map(a => {
+            const priority = a.priority || 'NORMAL';
+            const isUrgent = priority === 'URGENT';
+            const isHigh = priority === 'HIGH';
+            const color = isUrgent ? 'bg-red-100 text-red-700 border-red-200' : isHigh ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200';
+            return (
+              <div key={a.id} className={cn('p-3 rounded-lg border mb-2', color)}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className={cn(
+                        'px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider',
+                        isUrgent ? 'bg-red-600 text-white' : isHigh ? 'bg-amber-500 text-white' : 'bg-slate-400 text-white'
+                      )}>
+                        {priority}
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 truncate">{a.title}</span>
+                    </div>
+                    <p className="text-xs text-slate-600 line-clamp-2">{a.body || a.preview || ''}</p>
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
+                      <span>de {a.authorName || a.author || 'Administration'}</span>
+                      {a.publishedAt && <span>• {formatTime(a.publishedAt)}</span>}
+                      {a.requiresConfirmation && (
+                        <span className="text-amber-600 font-semibold">• confirmation requise</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {/* New announcement button at the bottom of the list */}
+          <button
+            onClick={onNew}
+            className="w-full mt-3 py-2 bg-[#F59E0B] text-white text-xs font-semibold rounded-lg hover:bg-[#D97706] flex items-center justify-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" /> Nouvelle annonce
+          </button>
+        </>
       )}
     </div>
   );

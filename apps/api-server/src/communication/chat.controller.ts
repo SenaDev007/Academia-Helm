@@ -36,6 +36,10 @@ import { PushNotificationService } from './services/push-notification.service';
 import { ChatSummaryService } from './services/chat-summary.service';
 // ⭐ V3-2: Whisper-powered audio transcriptions
 import { ChatTranscriptionService } from './services/chat-transcription.service';
+// ⭐ V3-11: Auto-groups (Communautés) — auto-create per academic year
+import { AutoGroupService } from './services/auto-group.service';
+// ⭐ V3-11: PrismaService — for direct academicYear lookup in auto-groups endpoints
+import { PrismaService } from '../database/prisma.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -62,6 +66,10 @@ export class ChatController {
     private readonly summaryService: ChatSummaryService,
     // ⭐ V3-2: Whisper-powered audio transcriptions
     private readonly transcriptionService: ChatTranscriptionService,
+    // ⭐ V3-11: Auto-groups (Communautés) auto-creation per academic year
+    private readonly autoGroupService: AutoGroupService,
+    // ⭐ V3-11: PrismaService — for academicYear lookup in auto-groups endpoints
+    private readonly prisma: PrismaService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -742,5 +750,44 @@ export class ChatController {
     @Param('id') messageId: string,
   ) {
     return this.transcriptionService.transcribeMessage(tenantId, messageId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V3-11: AUTO-GROUPS SYNC (Communautés auto-creation per academic year)
+  //     Called by the frontend when the user opens the Communautés section.
+  //     Creates CLASS / SUBJECT / ROLE / STAFF groups for the current academic
+  //     year (dedupes — safe to call multiple times). Archives previous year
+  //     groups instead of deleting them.
+  // ═════════════════════════════════════════════════════════════════
+  @Post('auto-groups/sync')
+  async syncAutoGroups(@TenantId() tenantId: string) {
+    // Find the current academic year for this tenant
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!academicYear) {
+      return {
+        message: 'Aucune année scolaire active trouvée. Activez une année scolaire pour générer les communautés automatiques.',
+        created: 0, updated: 0, skipped: 0, total: 0,
+      };
+    }
+    const result = await this.autoGroupService.syncAutoGroups(tenantId, academicYear.id);
+    return {
+      message: `${result.created} communauté(s) créée(s), ${result.updated} mise(s) à jour, ${result.skipped} déjà à jour pour l'année ${academicYear.name}.`,
+      ...result,
+      academicYear: academicYear.name,
+    };
+  }
+
+  @Get('auto-groups')
+  async listAutoGroups(@TenantId() tenantId: string) {
+    // Returns all auto-group conversations for the current academic year
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!academicYear) return [];
+    return this.autoGroupService.listAutoGroups(tenantId, academicYear.id);
   }
 }

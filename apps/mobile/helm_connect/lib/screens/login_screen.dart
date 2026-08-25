@@ -6,17 +6,20 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import 'chat_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String tenantSlug;
   final String tenantName;
+  final String portal; // 'parent', 'teacher', or 'school'
 
   const LoginScreen({
     super.key,
     required this.tenantSlug,
     required this.tenantName,
+    required this.portal,
   });
 
   @override
@@ -49,6 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
         password: password,
         tenantSlug: widget.tenantSlug,
       );
+      // ⭐ V3-9: Persist the portal type for session restoration
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_portal', widget.portal);
       if (mounted) {
         // Replace route — don't allow back to login
         Navigator.pushReplacement(

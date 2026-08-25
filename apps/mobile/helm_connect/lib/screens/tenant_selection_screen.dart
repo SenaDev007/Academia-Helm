@@ -13,7 +13,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
-import 'login_screen.dart';
+import 'portal_select_screen.dart';
 
 class TenantSelectionScreen extends StatefulWidget {
   const TenantSelectionScreen({super.key});
@@ -193,7 +193,7 @@ class _TenantSelectionScreenState extends State<TenantSelectionScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => LoginScreen(
+                                    builder: (context) => PortalSelectScreen(
                                       tenantSlug: tenant['slug'] as String? ?? '',
                                       tenantName: tenant['name'] as String? ?? '',
                                     ),

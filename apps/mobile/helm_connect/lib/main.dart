@@ -1,40 +1,35 @@
 // ============================================================================
 // HELM CONNECT — Flutter Mobile App Entry Point
 // ============================================================================
-// Identité visuelle : Azure + Cyan (cf. theme/helm_theme.dart)
-//
-// ⭐ Flux au lancement :
-//   1. Initialiser Firebase (firebase_core + firebase_messaging)
-//   2. Si session valide (token + tenant stockés) → ChatScreen
-//   3. Sinon → TenantSelectionScreen (sélection école) → LoginScreen
-//   4. Après login → ChatScreen (chat principale)
-//
-// ⭐ Architecture :
-//   - Theme : HelmThemes.lightTheme() / darkTheme()
-//   - State : Provider (V2: ChangeNotifier for chat state)
-//   - Real-time : socket_io_client (Socket.io backend)
-//   - Offline : Hive (V2: offline-first sync)
-//   - Push : firebase_messaging + HelmConnectFirebaseMessagingService (Android)
+// ⭐ V3-9: Complete startup flow rewrite:
+//   1. Branded splash screen (Royal Blue + gold halo + Helm Connect logo)
+//   2. Auto-check session (token + tenant in SharedPreferences)
+//   3. If logged in → ChatScreen directly (auto-login, no re-auth)
+//   4. If not logged in → TenantSelectionScreen → PortalSelectScreen
+//      → LoginScreen → ChatScreen
+//   5. Session persists across app restarts (one-time login)
 // ============================================================================
 
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// ⭐ Firebase — initialisation au démarrage
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-// ⭐ V3-4: foreground banner + deep-link via flutter_local_notifications
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
 import 'theme/helm_theme.dart';
 import 'services/api_service.dart';
 import 'screens/tenant_selection_screen.dart';
+import 'screens/portal_select_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/chat_screen.dart';
 
-// ⭐ V3-4: Global navigator key for deep-link navigation from FCM taps
+// ⭐ Global navigator key for deep-link navigation from FCM taps
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-// ⭐ V3-4: Channel + plugin for foreground notifications
+// ⭐ Notification channel + plugin
 const AndroidNotificationChannel _fcmChannel = AndroidNotificationChannel(
   'academia_helm_notifications',
   'Academia Helm Notifications',
@@ -43,20 +38,22 @@ const AndroidNotificationChannel _fcmChannel = AndroidNotificationChannel(
 );
 final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
-// ⭐ Background message handler — doit être top-level (pas dans une classe)
-//    Appelé par Firebase quand l'app est tuée et qu'un message arrive.
 Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print('🔔 Background message: ${message.notification?.title} / ${message.data}');
 }
 
 void main() async {
-  // ⭐ Initialiser les bindings Flutter avant tout await
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ⭐ V3-4: Initialize flutter_local_notifications (foreground banner + channel)
-  //    Wrapped in try/catch so the app doesn't crash if the notification icon
-  //    is missing or the initialization fails for any reason.
+  // ⭐ V3-9: Initialize Hive for offline chat storage
+  try {
+    await Hive.initFlutter();
+  } catch (e) {
+    print('⚠️ Hive init failed (non-blocking): $e');
+  }
+
+  // ⭐ V3-4: Initialize flutter_local_notifications (wrapped in try/catch)
   try {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_notification');
     const iosInit = DarwinInitializationSettings(
@@ -82,10 +79,9 @@ void main() async {
     print('⚠️ Local notifications init failed (non-blocking): $e');
   }
 
-  // ⭐ Initialiser Firebase AVANT runApp (obligatoire pour firebase_messaging)
+  // ⭐ Initialize Firebase
   try {
     await Firebase.initializeApp();
-    // Register background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
     print('✅ Firebase initialisé');
   } catch (e) {
@@ -95,27 +91,9 @@ void main() async {
   runApp(const HelmConnectApp());
 }
 
-// ⭐ V3-4: Deep-link navigation helper — parses a URL like '/chat' or '/chat?conversationId=xxx'
-//    and pushes the corresponding screen via the global navigatorKey.
 void _navigateToUrl(String url) {
   final nav = navigatorKey.currentState;
   if (nav == null) return;
-  if (url == '/chat' || url == '/app/parent/messages' || url == '/app/teacher/communication') {
-    nav.pushNamedAndRemoveUntil('/chat', (route) => false);
-    return;
-  }
-  // Extract conversationId from query if present
-  if (url.contains('conversationId=')) {
-    final uri = Uri.parse(url);
-    final conversationId = uri.queryParameters['conversationId'];
-    if (conversationId != null) {
-      // For V3-4, just navigate to /chat — the user can open the conversation manually
-      // (V3-5 will add direct navigation to ConversationDetailScreen)
-      nav.pushNamedAndRemoveUntil('/chat', (route) => false);
-      return;
-    }
-  }
-  // Default fallback
   nav.pushNamedAndRemoveUntil('/chat', (route) => false);
 }
 
@@ -127,13 +105,12 @@ class HelmConnectApp extends StatelessWidget {
     return MaterialApp(
       title: 'Helm Connect',
       debugShowCheckedModeBanner: false,
-      navigatorKey: navigatorKey, // ⭐ V3-4: for deep-link navigation from FCM
+      navigatorKey: navigatorKey,
       theme: HelmThemes.lightTheme(),
       darkTheme: HelmThemes.darkTheme(),
-      themeMode: ThemeMode.system, // ⭐ Light/Dark selon préférence système
-      home: const StartupGate(),
+      themeMode: ThemeMode.system,
+      home: const SplashScreen(),
       routes: {
-        '/': (context) => const StartupGate(),
         '/tenant-selection': (context) => const TenantSelectionScreen(),
         '/chat': (context) => const ChatScreen(),
       },
@@ -141,72 +118,106 @@ class HelmConnectApp extends StatelessWidget {
   }
 }
 
-/// Détermine l'écran d'entrée en fonction de l'état de session.
-class StartupGate extends StatefulWidget {
-  const StartupGate({super.key});
+// ============================================================================
+// SPLASH SCREEN — Branded loading with Helm Connect logo + gold halo
+// ============================================================================
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
 
   @override
-  State<StartupGate> createState() => _StartupGateState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _StartupGateState extends State<StartupGate> {
-  bool? _isLoggedIn;
-  String? _tenantSlug;
-  // StreamSubscription for FCM token refresh
-  StreamSubscription<String?>? _fcmTokenSub;
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _haloController;
+  late AnimationController _logoController;
+  late Animation<double> _haloAnimation;
+  late Animation<double> _logoScale;
 
   @override
   void initState() {
     super.initState();
-    _checkSession();
-    _setupFirebaseMessaging();
+
+    // Gold halo pulse animation (1.8s loop)
+    _haloController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _haloAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _haloController, curve: Curves.easeInOut),
+    );
+    _haloController.repeat(reverse: true);
+
+    // Logo entrance animation
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _logoScale = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.elasticOut),
+    );
+    _logoController.forward();
+
+    // ⭐ Check session after 2 seconds (show splash for at least 2s)
+    _checkSessionAndNavigate();
   }
 
   @override
   void dispose() {
-    _fcmTokenSub?.cancel();
+    _haloController.dispose();
+    _logoController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkSession() async {
-    final loggedIn = await AuthService.isLoggedIn();
-    final prefs = await SharedPreferences.getInstance();
-    final slug = prefs.getString('tenant_slug');
-    if (mounted) {
-      setState(() {
-        _isLoggedIn = loggedIn;
-        _tenantSlug = slug;
-      });
+  Future<void> _checkSessionAndNavigate() async {
+    // Wait at least 2 seconds for the splash to be visible
+    await Future.delayed(const Duration(seconds: 2));
+
+    try {
+      final isLoggedIn = await AuthService.isLoggedIn();
+      final prefs = await SharedPreferences.getInstance();
+      final hasToken = prefs.getString('auth_token') != null;
+      final hasTenant = prefs.getString('tenant_slug') != null;
+
+      if (!mounted) return;
+
+      if (isLoggedIn == true && hasToken && hasTenant) {
+        // ⭐ Auto-login: session is valid → go directly to chat
+        _setupFirebaseMessaging();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ChatScreen()),
+        );
+      } else {
+        // ⭐ Not logged in → go to tenant selection
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const TenantSelectionScreen()),
+        );
+      }
+    } catch (e) {
+      print('⚠️ Session check failed: $e');
+      if (!mounted) return;
+      // On error, go to tenant selection
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const TenantSelectionScreen()),
+      );
     }
   }
 
-  /// ⭐ Configure Firebase Cloud Messaging (push notifications)
-  ///    - Request permission (iOS + Android 13+)
-  ///    - Listen for foreground messages
-  ///    - Send token to backend when refreshed
-  Future<void> _setupFirebaseMessaging() async {
+  void _setupFirebaseMessaging() {
     try {
       final messaging = FirebaseMessaging.instance;
+      messaging.requestPermission(alert: true, badge: true, sound: true);
 
-      // Request permission (iOS + Android 13+)
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        criticalAlert: true,
-      );
-      print('🔔 FCM permission status: ${settings.authorizationStatus}');
-
-      // Listen for foreground messages — show a local notification (whatsapp-style banner)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         final notification = message.notification;
-        final title = notification?.title ?? message.data['title'] as String? ?? 'Academia Helm';
+        final title = notification?.title ?? message.data['title'] as String? ?? 'Helm Connect';
         final body = notification?.body ?? message.data['body'] as String? ?? '';
         final url = message.data['url'] as String?;
 
-        print('🔔 Foreground message: $title / $body');
-
-        // ⭐ V3-4: Show a foreground banner via flutter_local_notifications
         _localNotifications.show(
           DateTime.now().millisecondsSinceEpoch ~/ 1000,
           title,
@@ -219,7 +230,7 @@ class _StartupGateState extends State<StartupGate> {
               importance: Importance.high,
               priority: Priority.high,
               icon: '@mipmap/ic_notification',
-              color: const Color(0xFFCFA63A), // Academia Helm gold
+              color: const Color(0xFFCFA63A),
             ),
             iOS: const DarwinNotificationDetails(
               presentAlert: true,
@@ -231,81 +242,184 @@ class _StartupGateState extends State<StartupGate> {
         );
       });
 
-      // Listen for notification opens (when user taps the notification in background)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        final url = message.data['url'] as String?;
-        final conversationId = message.data['conversationId'] as String?;
-        print('🔔 Opened from notification — url: $url, conversation: $conversationId');
-        if (url != null && url.isNotEmpty) {
-          _navigateToUrl(url);
-        } else {
-          // Fallback: navigate to chat list
-          _navigateToUrl('/chat');
+        _navigateToUrl(message.data['url'] as String? ?? '/chat');
+      });
+
+      messaging.getToken().then((token) async {
+        if (token != null) {
+          try {
+            await ApiService.registerFcmToken(
+              fcmToken: token,
+              platform: 'ANDROID',
+              deviceInfo: 'Helm Connect Flutter',
+            );
+            print('✅ FCM token registered');
+          } catch (e) {
+            print('⚠️ FCM token registration failed: $e');
+          }
         }
       });
 
-      // Get the initial message (app launched from terminated state via notification)
-      final initialMessage = await messaging.getInitialMessage();
-      if (initialMessage != null) {
-        final url = initialMessage.data['url'] as String?;
-        final conversationId = initialMessage.data['conversationId'] as String?;
-        print('🔔 Launched from notification — url: $url, conversation: $conversationId');
-        // Wait a moment for the app to initialize, then navigate
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (url != null && url.isNotEmpty) {
-            _navigateToUrl(url);
-          }
-        });
-      }
-
-      // Listen for token refresh
-      _fcmTokenSub = messaging.onTokenRefresh.listen((String token) async {
-        print('🔔 FCM token refreshed: $token');
-        await _sendTokenToBackend(token);
+      messaging.onTokenRefresh.listen((token) async {
+        try {
+          await ApiService.registerFcmToken(
+            fcmToken: token,
+            platform: 'ANDROID',
+            deviceInfo: 'Helm Connect Flutter',
+          );
+        } catch (e) {
+          print('⚠️ FCM token refresh failed: $e');
+        }
       });
-
-      // Get initial token and send to backend
-      final token = await messaging.getToken();
-      if (token != null) {
-        print('🔔 Initial FCM token: $token');
-        await _sendTokenToBackend(token);
-      }
     } catch (e) {
-      print('⚠️ FCM setup échoué: $e');
-    }
-  }
-
-  /// Send the FCM token to the backend so the user can receive push notifications.
-  /// ⭐ V3-4: Uses the new /notifications/device-tokens endpoint (with fcm_token field)
-  ///    instead of the legacy /api/chat/push/subscribe.
-  Future<void> _sendTokenToBackend(String token) async {
-    try {
-      final userId = await AuthService.getUserId();
-      if (userId == null) {
-        print('🔔 No userId — token not sent to backend');
-        return;
-      }
-      // ⭐ V3-4: New endpoint POST /notifications/device-tokens with { fcmToken, platform, deviceInfo }
-      await ApiService.registerFcmToken(
-        fcmToken: token,
-        platform: 'ANDROID',
-        deviceInfo: 'Helm Connect Flutter',
-      );
-      print('✅ FCM token envoyé au backend (/notifications/device-tokens)');
-    } catch (e) {
-      print('⚠️ Échec envoi token FCM: $e');
+      print('⚠️ FCM setup failed (non-blocking): $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoggedIn == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    if (_isLoggedIn == true) {
-      return const ChatScreen();
-    }
-    // Not logged in — go to tenant selection
-    return const TenantSelectionScreen();
+    return Scaffold(
+      body: Container(
+        // ⭐ Royal Blue gradient background (Academia Helm palette)
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF0A2A5E), // Royal Blue night
+              Color(0xFF114FC4), // Royal Blue mid
+              Color(0xFF1C6FE8), // Royal Blue vivid
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ⭐ Logo with pulsing gold halo
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer gold halo (pulsing)
+                      AnimatedBuilder(
+                        animation: _haloAnimation,
+                        builder: (context, child) {
+                          return Opacity(
+                            opacity: _haloAnimation.value * 0.3,
+                            child: Container(
+                              width: 140,
+                              height: 140,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(0xFFCFA63A),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Inner gold ring
+                      AnimatedBuilder(
+                        animation: _haloAnimation,
+                        builder: (context, child) {
+                          return Opacity(
+                            opacity: _haloAnimation.value * 0.5,
+                            child: Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFFE08A),
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Logo (speech bubble icon)
+                      ScaleTransition(
+                        scale: _logoScale,
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.15),
+                            border: Border.all(
+                              color: const Color(0xFFFFE08A),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.chat_bubble,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // "Helm Connect" wordmark
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Helm',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Connect',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFF5B335),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Subtitle
+                const Text(
+                  'COMMUNIQUEZ • COLLABOREZ • RESTEZ CONNECTÉS',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    letterSpacing: 2.5,
+                    color: Color(0xFFBBDEFB),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                // Loading indicator
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    color: const Color(0xFFF5B335),
+                    strokeWidth: 2.5,
+                    value: null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

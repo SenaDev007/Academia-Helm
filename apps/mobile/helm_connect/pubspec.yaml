@@ -32,11 +32,14 @@ dependencies:
 
   # ─── Local storage (offline-first)
   shared_preferences: ^2.3.0
-  # hive: ^2.2.3               # V2: offline-first sync (not yet activated)
-  # hive_flutter: ^1.1.0       # V2: Hive Flutter bindings
+  # ⭐ V3-8: Hive for offline chat storage (used by chat_local_storage.dart + signal/)
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
 
-  # ─── Secure storage (auth token — V2)
-  # flutter_secure_storage: ^9.0.0  # V2: migrate JWT from SharedPreferences
+  # ⭐ V3-8: E2E encryption — DISABLED for now (pointycastle 3.x API incompatibility)
+  # Will be re-enabled in V4 with proper Signal Protocol.
+  # flutter_secure_storage: ^9.2.2
+  # pointycastle: ^3.9.1
 
   # ─── Images + files
   image_picker: ^1.1.0
@@ -57,10 +60,6 @@ dependencies:
   # ─── Permission handler (RECORD_AUDIO / CAMERA / POST_NOTIFICATIONS)
   permission_handler: ^11.3.1
 
-  # ─── Crypto (E2E — V3)
-  # encrypt: ^5.0.3
-  # pointycastle: ^3.7.3
-
   # ─── Utilities
   intl: ^0.19.0
   uuid: ^4.4.0
@@ -70,8 +69,9 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
-  # hive_generator: ^2.0.1   # V2: Hive adapters
-  # build_runner: ^2.4.7     # V2: code generation
+  # ⭐ V3-8: Hive code generator (for type adapters if needed later)
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.7
 
 flutter_launcher_icons:
   android: true

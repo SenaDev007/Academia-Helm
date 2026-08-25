@@ -239,12 +239,12 @@ class ApiService {
   }) async {
     final base = await ApiConfig.baseUrl;
 
-    // ⭐ Determine endpoint URL based on portal
+    // ⭐ Determine endpoint URL based on portal (NO /api prefix — base URL already includes it)
     String endpoint;
     Map<String, dynamic> body;
 
     if (portal == 'teacher') {
-      endpoint = '/api/portal/auth/teacher';
+      endpoint = '/portal/auth/teacher';
       body = {
         'teacherIdentifier': identifier,
         'password': password ?? '',
@@ -252,7 +252,7 @@ class ApiService {
         'tenantId': tenantSlug,
       };
     } else if (portal == 'parent') {
-      endpoint = '/api/portal/auth/parent';
+      endpoint = '/portal/auth/parent';
       final isPhone = !identifier.contains('@');
       body = {
         'identifierType': isPhone ? 'PHONE' : 'EMAIL',
@@ -269,7 +269,7 @@ class ApiService {
       }
     } else {
       // school (default)
-      endpoint = '/api/auth/login';
+      endpoint = '/auth/login';
       body = {
         'email': identifier,
         'password': password ?? '',

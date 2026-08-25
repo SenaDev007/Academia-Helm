@@ -210,36 +210,128 @@ class _TenantSelectionScreenState extends State<TenantSelectionScreen> {
                           itemCount: _results.length,
                           itemBuilder: (context, index) {
                             final tenant = _results[index];
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: const Color(0xFFE6F4FF),
-                                child: Text(
-                                  (tenant['name'] as String?)?.isNotEmpty == true
-                                      ? (tenant['name'] as String)[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(color: Color(0xFF0958D9), fontWeight: FontWeight.bold),
+                            final name = tenant['name'] as String? ?? '';
+                            final city = tenant['city'] as String? ?? '';
+                            final logoUrl = tenant['logoUrl'] as String? ?? '';
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF0A2A5E).withOpacity(0.04),
+                                    const Color(0xFF1C6FE8).withOpacity(0.02),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFF0A2A5E).withOpacity(0.1)),
+                              ),
+                              child: InkWell(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PortalSelectScreen(
+                                        tenantSlug: tenant['slug'] as String? ?? '',
+                                        tenantName: name,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Row(
+                                    children: [
+                                      // School logo or fallback school icon
+                                      _buildSchoolLogo(logoUrl, name),
+                                      const SizedBox(width: 12),
+                                      // Name + city
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              name,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF0A2A5E),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (city.isNotEmpty) ...[
+                                              const SizedBox(height: 2),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.location_on, size: 12, color: Colors.grey[400]),
+                                                  const SizedBox(width: 2),
+                                                  Flexible(
+                                                    child: Text(
+                                                      city,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.grey[500],
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(Icons.chevron_right, color: Color(0xFF1C6FE8)),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              title: Text(tenant['name'] as String? ?? ''),
-                              subtitle: Text(tenant['subdomain'] as String? ?? ''),
-                              trailing: const Icon(Icons.chevron_right, color: Color(0xFF1677FF)),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PortalSelectScreen(
-                                      tenantSlug: tenant['slug'] as String? ?? '',
-                                      tenantName: tenant['name'] as String? ?? '',
-                                    ),
-                                  ),
-                                );
-                              },
                             );
                           },
                         ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Build school logo: if logoUrl is a valid URL, show the image;
+  /// otherwise show a fallback school icon (matches mobile-app pattern).
+  Widget _buildSchoolLogo(String logoUrl, String name) {
+    if (logoUrl.isNotEmpty && (logoUrl.startsWith('http://') || logoUrl.startsWith('https://'))) {
+      return ClipOval(
+        child: Image.network(
+          logoUrl,
+          width: 40,
+          height: 40,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _buildLogoFallback(),
+        ),
+      );
+    }
+    return _buildLogoFallback();
+  }
+
+  Widget _buildLogoFallback() {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF0A2A5E).withOpacity(0.14),
+            const Color(0xFF1C6FE8).withOpacity(0.08),
+          ],
+        ),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.school,
+        color: Color(0xFF0A2A5E),
+        size: 20,
       ),
     );
   }

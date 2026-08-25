@@ -14,6 +14,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../services/call_service.dart';
+import '../theme/helm_theme.dart';
 
 class CallScreen extends StatefulWidget {
   final CallService callService;
@@ -84,18 +85,8 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
 
     return Scaffold(
       body: Container(
-        // ⭐ V3-4: Helm Connect Royal Blue gradient background
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF0A2A5E), // Royal Blue night
-              Color(0xFF114FC4), // Royal Blue mid
-              Color(0xFF1C6FE8), // Royal Blue vivid
-            ],
-          ),
-        ),
+        // ⭐ V3-11: Use shared HelmGradients.royalBlue (3-stop gradient matching splash + chat + drawer)
+        decoration: const BoxDecoration(gradient: HelmGradients.royalBlue),
         child: SafeArea(
           child: Stack(
             children: [
@@ -174,7 +165,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         height: 130,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFFCFA63A), // Academia Helm gold
+                          color: HelmColors.gold, // Academia Helm gold #CFA63A
                         ),
                       ),
                     ),
@@ -194,7 +185,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                         height: 120,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFFFFE08A), // Academia Helm bright gold
+                          color: HelmColors.goldLight, // Academia Helm bright gold #FFE08A
                         ),
                       ),
                     ),
@@ -212,7 +203,7 @@ class _CallScreenState extends State<CallScreen> with TickerProviderStateMixin {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  border: Border.all(color: const Color(0xFFFFE08A), width: 4),
+                  border: Border.all(color: HelmColors.goldLight, width: 4),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.4),

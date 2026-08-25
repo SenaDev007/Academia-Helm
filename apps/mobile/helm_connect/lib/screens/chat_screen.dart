@@ -1,5 +1,5 @@
 // ============================================================================
-// HELM CONNECT — Main Chat Screen (Discord-like structure, V3-10)
+// HELM CONNECT — Main Chat Screen (Discord-like structure, V3-11)
 // ============================================================================
 // Structure conforme à la spec Helm Connect :
 //
@@ -25,12 +25,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../theme/helm_theme.dart';
 import 'conversation_detail_screen.dart';
 import 'announcements_screen.dart';
 import 'notification_prefs_screen.dart';
 import 'global_search_screen.dart';
+import 'helm_connect_sections.dart';
 
-// ⭐ V3-10: 12 sections Helm Connect (conformes à la spec)
+// ⭐ V3-11: 12 sections Helm Connect (conformes à la spec)
 enum HelmConnectSection {
   discussions,
   communautes,
@@ -124,7 +126,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ⭐ V3-10: Section metadata (icon, label, color)
+  // ⭐ V3-11: Section metadata (icon, label, color)
   static const _sections = <HelmConnectSection, ({IconData icon, String label, Color color})>{
     HelmConnectSection.discussions: (icon: Icons.chat, label: 'Discussions', color: Color(0xFF1677FF)),
     HelmConnectSection.communautes: (icon: Icons.groups, label: 'Communautés', color: Color(0xFF10B981)),
@@ -146,14 +148,9 @@ class _ChatScreenState extends State<ChatScreen> {
       // ⭐ Drawer: Discord-like sidebar with 12 sections
       drawer: _buildDrawer(),
       appBar: AppBar(
+        // ⭐ V3-11: Royal Blue 3-stop gradient (same as splash + call screen)
         flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0A2A5E), Color(0xFF1C6FE8)],
-            ),
-          ),
+          decoration: const BoxDecoration(gradient: HelmGradients.royalBlue),
         ),
         title: Row(
           children: [
@@ -168,7 +165,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 Text(
                   _currentUser?.tenantName ?? 'Academia Helm',
-                  style: const TextStyle(fontSize: 10, color: Color(0xFFBBDEFB)),
+                  style: const TextStyle(fontSize: 10, color: HelmColors.goldLight, letterSpacing: 0.5),
                 ),
               ],
             ),
@@ -195,12 +192,15 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: _buildSectionBody(),
       floatingActionButton: _activeSection == HelmConnectSection.discussions
-          ? FloatingActionButton(
+          ? HelmBrandedFab(
+              icon: Icons.add,
+              tooltip: 'Nouvelle discussion',
               onPressed: () {
-                // TODO: new conversation
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Nouvelle discussion — utilisez la recherche pour démarrer une conversation')),
+                );
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const GlobalSearchScreen()));
               },
-              backgroundColor: const Color(0xFF0A2A5E),
-              child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
     );
@@ -210,13 +210,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildDrawer() {
     return Drawer(
       child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0A2A5E), Color(0xFF114FC4)],
-          ),
-        ),
+        decoration: const BoxDecoration(gradient: HelmGradients.royalBlueVertical),
         child: SafeArea(
           child: Column(
             children: [
@@ -235,16 +229,16 @@ class _ChatScreenState extends State<ChatScreen> {
                           children: [
                             Text('Helm', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                             SizedBox(width: 3),
-                            Text('Connect', style: TextStyle(color: Color(0xFFF5B335), fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('Connect', style: TextStyle(color: HelmColors.goldBright, fontSize: 18, fontWeight: FontWeight.bold)),
                           ],
                         ),
-                        Text('Communiquez • Collaborez', style: TextStyle(color: Color(0xFFBBDEFB), fontSize: 9, letterSpacing: 1)),
+                        Text('Communiquez • Collaborez', style: TextStyle(color: HelmColors.goldLight, fontSize: 9, letterSpacing: 1)),
                       ],
                     ),
                   ],
                 ),
               ),
-              const Divider(color: Color(0xFF1C6FE8), height: 1),
+              const Divider(color: HelmColors.primaryVivid, height: 1),
               // Sections list
               Expanded(
                 child: ListView.builder(
@@ -275,10 +269,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
               // User info at bottom
-              const Divider(color: Color(0xFF1C6FE8), height: 1),
+              const Divider(color: HelmColors.primaryVivid, height: 1),
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: const Color(0xFF1C6FE8),
+                  backgroundColor: HelmColors.primaryVivid,
                   child: Text(
                     (_currentUser?.firstName?.isNotEmpty == true ? _currentUser!.firstName![0] : '?'),
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -305,36 +299,42 @@ class _ChatScreenState extends State<ChatScreen> {
     switch (_activeSection) {
       case HelmConnectSection.discussions:
         return _buildDiscussionsBody();
+      case HelmConnectSection.communautes:
+        return const CommunitiesScreen();
       case HelmConnectSection.annonces:
-        return _buildAnnoncesBody();
+        return const AnnouncementsScreen();
+      case HelmConnectSection.canaux:
+        return const ChannelsScreen();
+      case HelmConnectSection.fichiers:
+        return const FilesScreen();
+      case HelmConnectSection.vocaux:
+        return const VoiceMessagesScreen();
+      case HelmConnectSection.appels:
+        return const CallsScreen();
       case HelmConnectSection.recherche:
-        return _buildRechercheBody();
+        return const GlobalSearchScreen();
       case HelmConnectSection.notifications:
-        return _buildNotificationsBody();
+        return const NotificationPrefsScreen();
+      case HelmConnectSection.moderation:
+        return const ModerationScreen();
+      case HelmConnectSection.analytics:
+        return const AnalyticsScreen();
       case HelmConnectSection.parametres:
         return _buildParametresBody();
-      case HelmConnectSection.communautes:
-      case HelmConnectSection.canaux:
-      case HelmConnectSection.fichiers:
-      case HelmConnectSection.vocaux:
-      case HelmConnectSection.appels:
-      case HelmConnectSection.moderation:
-      case HelmConnectSection.analytics:
-        return _buildPlaceholderBody();
     }
   }
 
   // Discussions — liste des conversations (existing code)
   Widget _buildDiscussionsBody() {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF0A2A5E)));
+      return const Center(child: CircularProgressIndicator(color: HelmColors.primary));
     }
     if (_error != null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
             const SizedBox(height: 16),
             Text(_error!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
             const SizedBox(height: 16),
@@ -350,17 +350,15 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
     if (_conversations.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            const Text('Aucune conversation', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF172033))),
-            const SizedBox(height: 4),
-            const Text('Démarrez une nouvelle conversation avec le bouton +', style: TextStyle(fontSize: 13, color: Color(0xFF667085))),
-          ],
-        ),
+      // ⭐ V3-11: Branded empty state with gold CTA
+      return HelmEmptyState(
+        icon: Icons.chat_bubble_outline,
+        title: 'Aucune conversation',
+        subtitle: 'Démarrez une nouvelle discussion avec le bouton + en bas à droite.',
+        ctaLabel: 'Nouvelle discussion',
+        onCta: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const GlobalSearchScreen()));
+        },
       );
     }
     return RefreshIndicator(
@@ -397,7 +395,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: const Color(0xFF1677FF), borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [HelmColors.primaryVivid, HelmColors.gold]),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     child: Text(
                       '${conv.unreadCount}',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
@@ -415,58 +416,55 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // Annonces
-  Widget _buildAnnoncesBody() {
-    return const AnnouncementsScreen();
-  }
-
-  // Recherche
-  Widget _buildRechercheBody() {
-    return const GlobalSearchScreen();
-  }
-
-  // Notifications
-  Widget _buildNotificationsBody() {
-    return const NotificationPrefsScreen();
-  }
-
   // Paramètres
   Widget _buildParametresBody() {
-    return Center(
+    return Container(
+      color: HelmColors.background,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.settings, size: 64, color: Color(0xFF64748B)),
-          const SizedBox(height: 16),
-          const Text('Paramètres', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-          ListTile(
-            leading: const Icon(Icons.person, color: Color(0xFF1677FF)),
-            title: const Text('Profil'),
-            onTap: () { /* TODO: profile screen */ },
+          const HelmSectionHeader(
+            title: 'Paramètres',
+            subtitle: 'PROFIL + PRÉFÉRENCES',
           ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Déconnexion'),
-            onTap: _logout,
+          Expanded(
+            child: ListView(
+              children: [
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: HelmColors.primary.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.person, color: HelmColors.primary),
+                  ),
+                  title: const Text('Profil'),
+                  subtitle: Text(_currentUser?.fullName ?? 'Utilisateur'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Profil — bientôt disponible')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: HelmColors.danger.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.logout, color: HelmColors.danger),
+                  ),
+                  title: const Text('Déconnexion'),
+                  subtitle: const Text('Se déconnecter de Helm Connect'),
+                  onTap: _logout,
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-    );
-  }
-
-  // Placeholder for sections not yet implemented
-  Widget _buildPlaceholderBody() {
-    final info = _sections[_activeSection]!;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(info.icon, size: 64, color: info.color.withOpacity(0.5)),
-          const SizedBox(height: 16),
-          Text(info.label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: info.color)),
-          const SizedBox(height: 8),
-          const Text('Bientôt disponible', style: TextStyle(fontSize: 14, color: Color(0xFF667085))),
         ],
       ),
     );

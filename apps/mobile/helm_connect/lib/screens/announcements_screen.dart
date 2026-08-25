@@ -168,7 +168,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   Future<void> _confirmRead(Announcement a) async {
     // V2: call /api/chat/announcements/:id/confirm
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Annonce marquée comme lue ✓')),
+      const SnackBar(content: Text('Annonce marquée comme lue')),
     );
     _load();
   }

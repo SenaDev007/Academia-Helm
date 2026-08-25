@@ -12,11 +12,16 @@ import 'package:flutter/services.dart'; // ⭐ V3-4: Clipboard.setData for copy 
 import 'package:shared_preferences/shared_preferences.dart'; // ⭐ V3-5: for myName lookup
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:audioplayers/audioplayers.dart'; // ⭐ V3-11: voice message playback
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
 // ⭐ V3-1: Offline-first chat — local cache + send queue
 import '../services/chat_local_storage.dart';
+// ⭐ V3-11: Voice message recording + playback
+import '../services/voice_message_service.dart';
+// ⭐ V3-11: Helm Connect theme helpers (Royal Blue + gold)
+import '../theme/helm_theme.dart';
 // ⭐ E2E encryption — DISABLED for now (pointycastle 3.x API incompatibility)
 // Will be re-enabled in V4 with proper Signal Protocol.
 // import '../services/crypto_service.dart';
@@ -67,6 +72,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   late final CallService _callService;
   // ⭐ E2E: cache of userId → base64 SPKI public key (fetched once per conversation)
   final Map<String, String> _recipientPublicKeys = {};
+  // ⭐ V3-11: Voice message recording state
+  final VoiceMessageService _voiceService = VoiceMessageService();
+  bool _isRecording = false;
+  bool _isRecordingPaused = false;
+  int _recordingDuration = 0;
+  bool _isUploadingVoice = false;
+  // ⭐ V3-11: Voice message playback state (for audio bubbles)
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _currentlyPlayingId;
+  bool _isAudioPlaying = false;
+  // ⭐ V3-11: Image preview before send (matches web's preview)
+  File? _pendingImage;
+  String? _pendingImageName;
 
   @override
   void initState() {
@@ -280,6 +298,119 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
+  // ⭐ V3-11: Voice message recording — start
+  Future<void> _startVoiceRecording() async {
+    final started = await _voiceService.startRecording();
+    if (!started) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossible d\'accéder au microphone. Vérifiez les autorisations.')),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _isRecording = true;
+      _isRecordingPaused = false;
+      _recordingDuration = 0;
+    });
+    // Set the tick callback to update the UI each second
+    _voiceService.onTick = (seconds) {
+      if (mounted) setState(() => _recordingDuration = seconds);
+    };
+  }
+
+  // ⭐ V3-11: Pause/resume the active recording
+  Future<void> _togglePauseRecording() async {
+    if (_isRecordingPaused) {
+      await _voiceService.resumeRecording();
+      if (mounted) setState(() => _isRecordingPaused = false);
+    } else {
+      await _voiceService.pauseRecording();
+      if (mounted) setState(() => _isRecordingPaused = true);
+    }
+  }
+
+  // ⭐ V3-11: Stop + upload the recorded voice message
+  Future<void> _stopAndSendVoiceRecording() async {
+    final recording = await _voiceService.stopRecording();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isRecordingPaused = false;
+        _recordingDuration = 0;
+        _isUploadingVoice = true;
+      });
+    }
+    if (recording == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enregistrement vide — annulé')),
+        );
+        setState(() => _isUploadingVoice = false);
+      }
+      return;
+    }
+    try {
+      await _voiceService.uploadVoice(
+        conversationId: widget.conversation.id,
+        recording: recording,
+      );
+      _loadMessages();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Message vocal envoyé'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingVoice = false);
+    }
+  }
+
+  // ⭐ V3-11: Cancel the active recording (deletes the temp file)
+  Future<void> _cancelVoiceRecording() async {
+    await _voiceService.cancelRecording();
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isRecordingPaused = false;
+        _recordingDuration = 0;
+      });
+    }
+  }
+
+  // ⭐ V3-11: Play a voice message audio bubble
+  Future<void> _playAudioMessage(Message msg) async {
+    if (_currentlyPlayingId == msg.id && _isAudioPlaying) {
+      await _audioPlayer.pause();
+      setState(() => _isAudioPlaying = false);
+      return;
+    }
+    if (_currentlyPlayingId != msg.id) {
+      await _audioPlayer.stop();
+      final url = msg.attachmentUrl;
+      if (url == null) return;
+      try {
+        await _audioPlayer.play(UrlSource(url));
+        setState(() {
+          _currentlyPlayingId = msg.id;
+          _isAudioPlaying = true;
+        });
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lecture audio échouée: $e')));
+        }
+      }
+    } else {
+      await _audioPlayer.resume();
+      setState(() => _isAudioPlaying = true);
+    }
+  }
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
@@ -292,6 +423,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // ⭐ V3-5: Cleanup the call service
     _callService.removeListener(_onCallStateChanged);
     _callService.dispose();
+    // ⭐ V3-11: Cleanup voice recording + audio player
+    _voiceService.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -712,6 +846,10 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        // ⭐ V3-11: Royal Blue 3-stop gradient (matching splash + chat screen)
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(gradient: HelmGradients.royalBlue),
+        ),
         title: Row(
           children: [
             CircleAvatar(
@@ -733,7 +871,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     widget.conversation.type == 'GROUP'
                         ? '${widget.conversation.participants.length} membres'
                         : 'en ligne',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFFBAE0FF)),
+                    style: const TextStyle(fontSize: 11, color: HelmColors.goldLight),
                   ),
                 ],
               ),
@@ -742,21 +880,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ),
         // ⭐ V3-3: Sparkles button to trigger ORION conversation summary
         // ⭐ V3-5: Phone + Video call buttons (DIRECT conversations only)
+        // ⭐ V3-11: Action icons use gold accent (Helm Connect palette)
         actions: [
           if (widget.conversation.type != 'GROUP')
             IconButton(
-              icon: const Icon(Icons.phone, color: Colors.white),
+              icon: const Icon(Icons.phone, color: HelmColors.goldLight),
               tooltip: 'Appel audio',
               onPressed: () => _startCall('AUDIO'),
             ),
           if (widget.conversation.type != 'GROUP')
             IconButton(
-              icon: const Icon(Icons.videocam, color: Colors.white),
+              icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
               tooltip: 'Appel vidéo',
               onPressed: () => _startCall('VIDEO'),
             ),
           IconButton(
-            icon: const Icon(Icons.auto_awesome, color: Colors.white),
+            icon: const Icon(Icons.auto_awesome, color: HelmColors.goldLight),
             tooltip: 'Résumer la conversation (ORION IA)',
             onPressed: _summarizeConversation,
           ),
@@ -766,19 +905,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : Container(
-                    color: const Color(0xFFF5F7FA),
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final msg = _messages[index];
-                        return _buildMessageBubble(msg);
-                      },
-                    ),
-                  ),
+                ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
+                : _messages.isEmpty
+                    ? _buildEmptyConversationState()
+                    : Container(
+                        color: const Color(0xFFF5F7FA),
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = _messages[index];
+                            return _buildMessageBubble(msg);
+                          },
+                        ),
+                      ),
           ),
           // ⭐ V3-4: Typing indicator (whatsapp-style)
           if (_isOtherTyping)
@@ -836,57 +977,248 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ],
               ),
             ),
-          // Input bar
+          // Input bar — switches between normal composer and recording UI
           Container(
             padding: const EdgeInsets.all(8),
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
             ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline, color: Color(0xFF667085)),
-                  onPressed: () => _showAttachmentMenu(),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: InputDecoration(
-                      hintText: 'Tapez un message...',
-                      filled: true,
-                      fillColor: const Color(0xFFF5F7FA),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+            child: _buildInputBarContent(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V3-11: Smart input bar — handles 4 states:
+  //   1. _isRecording (active) — recording timer + pause/stop/cancel
+  //   2. _isUploadingVoice — spinner overlay
+  //   3. Default (idle) — attach + text field + mic (when empty) + send button
+  Widget _buildInputBarContent() {
+    // Voice recording active
+    if (_isRecording) {
+      return Row(
+        children: [
+          // Cancel button
+          GestureDetector(
+            onTap: _cancelVoiceRecording,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Recording indicator (pulsing red dot) + duration
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: _isRecordingPaused ? const Color(0xFFFEF3C7) : const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: _isRecordingPaused ? const Color(0xFFF59E0B) : const Color(0xFFEF4444), width: 1),
+              ),
+              child: Row(
+                children: [
+                  // Pulsing red dot
+                  if (!_isRecordingPaused)
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0.4, end: 1.0),
+                      duration: const Duration(milliseconds: 800),
+                      builder: (context, value, child) => Opacity(opacity: value, child: child),
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(color: Color(0xFFEF4444), shape: BoxShape.circle),
                       ),
+                    )
+                  else
+                    const Icon(Icons.pause_circle, size: 14, color: Color(0xFFF59E0B)),
+                  const SizedBox(width: 8),
+                  Text(
+                    VoiceMessageService.formatDuration(_recordingDuration),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF7F1D1D),
+                      fontFeatures: [FontFeature.tabularFigures()],
                     ),
-                    onChanged: _onTextChanged,
-                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _isRecordingPaused ? 'en pause' : 'enregistrement…',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF7F1D1D)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Pause/resume
+          GestureDetector(
+            onTap: _togglePauseRecording,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _isRecordingPaused ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _isRecordingPaused ? Icons.play_arrow : Icons.pause,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Stop + send
+          GestureDetector(
+            onTap: _stopAndSendVoiceRecording,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                gradient: HelmGradients.royalBlue,
+                shape: BoxShape.circle,
+                border: Border.all(color: HelmColors.goldLight, width: 1.5),
+              ),
+              child: const Icon(Icons.check, color: Colors.white, size: 22),
+            ),
+          ),
+        ],
+      );
+    }
+    // Voice uploading
+    if (_isUploadingVoice) {
+      return Row(
+        children: [
+          const SizedBox(width: 16),
+          const SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2, color: HelmColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: const Text(
+              'Envoi du message vocal…',
+              style: TextStyle(color: Colors.grey, fontSize: 13, fontStyle: FontStyle.italic),
+            ),
+          ),
+        ],
+      );
+    }
+    // Default: attach + text field + mic (if empty) + send
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, color: HelmColors.primary),
+          onPressed: () => _showAttachmentMenu(),
+        ),
+        Expanded(
+          child: TextField(
+            controller: _messageController,
+            decoration: InputDecoration(
+              hintText: 'Tapez un message...',
+              filled: true,
+              fillColor: const Color(0xFFF5F7FA),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(24),
+                borderSide: const BorderSide(color: HelmColors.primaryVivid, width: 1.5),
+              ),
+            ),
+            onChanged: _onTextChanged,
+            onSubmitted: (_) => _sendMessage(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Mic button — visible only when text field is empty (otherwise send button shows)
+        if (_messageController.text.trim().isEmpty)
+          GestureDetector(
+            onLongPress: _startVoiceRecording,
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Maintenez le bouton pour enregistrer un message vocal'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: HelmColors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.mic, color: HelmColors.primary, size: 22),
+            ),
+          )
+        else
+          HelmSendButton(
+            onPressed: _sendMessage,
+            disabled: _sending,
+            isLoading: _sending,
+          ),
+      ],
+    );
+  }
+
+  // ⭐ V3-11: Branded empty conversation state — Helm Connect logo + tagline
+  Widget _buildEmptyConversationState() {
+    return Container(
+      decoration: const BoxDecoration(gradient: HelmGradients.royalBlueVertical),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Helm Connect logo in gold ring
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.1),
+                    border: Border.all(color: HelmColors.goldLight, width: 2),
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/icons/helm_connect.png',
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF1677FF),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.send, color: Colors.white),
-                    onPressed: _sending ? null : _sendMessage,
-                  ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Démarrez la conversation',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Aucun message dans cette discussion.\nEnvoyez le premier message pour débuter l\'échange.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: HelmColors.goldLight, fontSize: 12, height: 1.4),
                 ),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -986,25 +1318,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ),
               ),
             // Content (V3-4: strip HTML before display)
-            if (msg.content != null && msg.content!.isNotEmpty)
+            if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO')
               Text(stripHtml(msg.content), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
-            // Attachment
-            if (msg.isAttachment) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6F4FF).withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.attach_file, size: 16, color: Color(0xFF0958D9)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(msg.attachmentName ?? 'Fichier', style: const TextStyle(fontSize: 12, color: Color(0xFF0958D9)))),
-                  ],
-                ),
-              ),
+            // ⭐ V3-11: Audio message bubble — play button + waveform + duration
+            if (msg.isAttachment && msg.type == 'AUDIO') ...[
+              const SizedBox(height: 4),
+              _buildAudioMessageBubble(msg, isOwn),
+            ]
+            // ⭐ V3-11: Image attachment — preview thumbnail
+            else if (msg.isAttachment && msg.type == 'IMAGE') ...[
+              const SizedBox(height: 4),
+              _buildImageAttachmentBubble(msg, isOwn),
+            ]
+            // ⭐ V3-11: Other attachments — document card
+            else if (msg.isAttachment) ...[
+              const SizedBox(height: 4),
+              _buildDocumentAttachmentBubble(msg, isOwn),
             ],
             // ⭐ V3-4: Reactions display (grouped by reaction type with count)
             if (reactionCounts.isNotEmpty) ...[
@@ -1071,6 +1400,191 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  // ⭐ V3-11: Audio message bubble — branded play button + waveform + duration
+  Widget _buildAudioMessageBubble(Message msg, bool isOwn) {
+    final isCurrentlyPlaying = _currentlyPlayingId == msg.id && _isAudioPlaying;
+    final duration = msg.duration ?? 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isOwn ? const Color(0xFFBAE0FF).withOpacity(0.4) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          // Branded play/pause button — Royal Blue circle with gold accent
+          GestureDetector(
+            onTap: () => _playAudioMessage(msg),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: HelmGradients.royalBlue,
+                shape: BoxShape.circle,
+                border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1),
+              ),
+              child: Icon(
+                isCurrentlyPlaying ? Icons.pause : Icons.play_arrow,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Waveform (decorative bars)
+          Expanded(
+            child: SizedBox(
+              height: 28,
+              child: CustomPaint(
+                size: const Size.fromHeight(28),
+                painter: _WaveformPainter(
+                  barsCount: 24,
+                  isOwn: isOwn,
+                  progress: isCurrentlyPlaying ? 0.4 : 0.0, // No actual position tracking yet
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Duration
+          Text(
+            VoiceMessageService.formatDuration(duration),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF667085),
+              fontFeatures: [FontFeature.tabularFigures],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V3-11: Image attachment — preview thumbnail (Royal Blue border)
+  Widget _buildImageAttachmentBubble(Message msg, bool isOwn) {
+    final url = msg.attachmentUrl ?? '';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+        decoration: BoxDecoration(
+          border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: const Color(0xFFF1F5F9),
+              child: const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: HelmColors.primary),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: const Color(0xFFF1F5F9),
+              padding: const EdgeInsets.all(16),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, size: 32, color: Color(0xFF94A3B8)),
+                  SizedBox(height: 4),
+                  Text('Image indisponible', style: TextStyle(fontSize: 11, color: Color(0xFF667085))),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ⭐ V3-11: Document attachment — file card with icon
+  Widget _buildDocumentAttachmentBubble(Message msg, bool isOwn) {
+    final name = msg.attachmentName ?? 'Fichier';
+    final size = msg.attachmentSize;
+    String sizeLabel = '';
+    if (size != null) {
+      if (size < 1024) {
+        sizeLabel = '${size}o';
+      } else if (size < 1024 * 1024) {
+        sizeLabel = '${(size / 1024).toStringAsFixed(1)} Ko';
+      } else {
+        sizeLabel = '${(size / (1024 * 1024)).toStringAsFixed(1)} Mo';
+      }
+    }
+    IconData icon = Icons.insert_drive_file;
+    Color iconColor = HelmColors.primary;
+    final nameLower = name.toLowerCase();
+    if (nameLower.endsWith('.pdf')) {
+      icon = Icons.picture_as_pdf;
+      iconColor = const Color(0xFFEF4444);
+    } else if (nameLower.endsWith('.doc') || nameLower.endsWith('.docx')) {
+      icon = Icons.description;
+      iconColor = const Color(0xFF2563EB);
+    } else if (nameLower.endsWith('.xls') || nameLower.endsWith('.xlsx')) {
+      icon = Icons.table_chart;
+      iconColor = const Color(0xFF16A34A);
+    } else if (nameLower.endsWith('.ppt') || nameLower.endsWith('.pptx')) {
+      icon = Icons.slideshow;
+      iconColor = const Color(0xFFEA580C);
+    } else if (nameLower.endsWith('.zip') || nameLower.endsWith('.rar') || nameLower.endsWith('.7z')) {
+      icon = Icons.folder_zip;
+      iconColor = const Color(0xFF8B5CF6);
+    }
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isOwn ? const Color(0xFFBAE0FF).withOpacity(0.4) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: HelmColors.goldLight.withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF172033)),
+                ),
+                if (sizeLabel.isNotEmpty)
+                  Text(
+                    sizeLabel,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF667085)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.download, color: HelmColors.primary, size: 18),
+        ],
+      ),
+    );
+  }
+
   // ⭐ V3-4: 3-state read receipt (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
   // Map reaction string to professional icon (no emojis)
   IconData _getReactionIcon(String reaction) {
@@ -1113,7 +1627,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               },
             ),
             ListTile(
-              leading: const Text('😊', style: TextStyle(fontSize: 20)),
+              leading: const Icon(Icons.emoji_emotions, color: Color(0xFFF59E0B)),
               title: const Text('Réagir'),
               onTap: () {
                 Navigator.pop(context);
@@ -1325,30 +1839,170 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
-  // ⭐ V2: Attachment menu (image gallery, camera, document)
+  // ⭐ V3-11: Branded categorized attachment menu — matches web's style (Royal Blue + gold)
   void _showAttachmentMenu() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library, color: Color(0xFF0958D9)),
-              title: const Text('Galerie photo'),
-              onTap: () { Navigator.pop(context); _sendImage(ImageSource.gallery); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt, color: Color(0xFF0958D9)),
-              title: const Text('Appareil photo'),
-              onTap: () { Navigator.pop(context); _sendImage(ImageSource.camera); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.attach_file, color: Color(0xFF0958D9)),
-              title: const Text('Document'),
-              onTap: () { Navigator.pop(context); _sendDocument(); },
-            ),
-          ],
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Drag handle
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Title with Helm Connect branding
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    Image.asset('assets/icons/helm_connect.png', width: 20, height: 20, fit: BoxFit.contain),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Joindre un fichier',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: HelmColors.primary),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Attachment options — branded cards (image gallery, camera, document, audio)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    _buildAttachmentOption(
+                      icon: Icons.photo_library,
+                      label: 'Galerie',
+                      color: const Color(0xFF10B981),
+                      onTap: () { Navigator.pop(context); _sendImage(ImageSource.gallery); },
+                    ),
+                    const SizedBox(width: 10),
+                    _buildAttachmentOption(
+                      icon: Icons.camera_alt,
+                      label: 'Photo',
+                      color: const Color(0xFF06B6D4),
+                      onTap: () { Navigator.pop(context); _sendImage(ImageSource.camera); },
+                    ),
+                    const SizedBox(width: 10),
+                    _buildAttachmentOption(
+                      icon: Icons.insert_drive_file,
+                      label: 'Document',
+                      color: HelmColors.primary,
+                      onTap: () { Navigator.pop(context); _sendDocument(); },
+                    ),
+                  ],
+                ),
+              ),
+              // Second row — voice recording hint
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: HelmColors.goldLight.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: HelmColors.gold.withOpacity(0.3), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: const BoxDecoration(
+                          color: HelmColors.gold,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.mic, color: Colors.white, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Message vocal',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: HelmColors.primary),
+                            ),
+                            Text(
+                              'Maintenez le bouton micro dans la barre de saisie pour enregistrer.',
+                              style: TextStyle(fontSize: 10, color: Color(0xFF667085)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ⭐ V3-11: Helper — single attachment option card with branded styling
+  Widget _buildAttachmentOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.2), width: 1),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1527,6 +2181,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   // ⭐ V3-4: Typing indicator — called when the user types in the composer
   void _onTextChanged(String value) {
+    // ⭐ V3-11: Rebuild input bar to toggle mic/send button based on text content
+    setState(() {});
     if (value.isEmpty) {
       _stopTyping();
       return;
@@ -1556,4 +2212,57 @@ class _ReplyQuote {
   final String senderName;
   final String content;
   _ReplyQuote({required this.senderName, required this.content});
+}
+
+/// ⭐ V3-11: Decorative waveform painter for audio message bubbles.
+/// Draws vertical bars with varying heights (no actual audio analysis — purely decorative).
+/// Bars before [progress * barsCount] use the active color; bars after use the inactive color.
+class _WaveformPainter extends CustomPainter {
+  final int barsCount;
+  final bool isOwn;
+  final double progress; // 0.0 to 1.0
+
+  _WaveformPainter({
+    this.barsCount = 24,
+    required this.isOwn,
+    required this.progress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paintActive = Paint()
+      ..color = isOwn ? const Color(0xFF0958D9) : HelmColors.primary
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final paintInactive = Paint()
+      ..color = (isOwn ? const Color(0xFF0958D9) : HelmColors.primary).withOpacity(0.3)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    final barWidth = 2.0;
+    final gap = (size.width - barsCount * barWidth) / (barsCount - 1);
+    final centerY = size.height / 2;
+    // Pseudo-random heights (deterministic, no audio analysis)
+    final heights = <double>[];
+    for (var i = 0; i < barsCount; i++) {
+      final seed = (i * 1.7).abs();
+      final h = 4 + (seed % 1) * (size.height - 6);
+      heights.add(h.clamp(2.0, size.height));
+    }
+
+    for (var i = 0; i < barsCount; i++) {
+      final x = i * (barWidth + gap);
+      final h = heights[i];
+      final isActive = (i / barsCount) < progress;
+      canvas.drawLine(
+        Offset(x, centerY - h / 2),
+        Offset(x, centerY + h / 2),
+        isActive ? paintActive : paintInactive,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter old) =>
+      old.progress != progress || old.isOwn != isOwn || old.barsCount != barsCount;
 }

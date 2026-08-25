@@ -2,25 +2,28 @@
 
 /**
  * ============================================================================
- * TEACHER COMMUNICATION — Yeshua Connect (messagerie type WhatsApp)
+ * TEACHER COMMUNICATION — Messagerie interne type WhatsApp
  * ============================================================================
  *
- * Page "Communication" pour les enseignants. Affiche Yeshua Connect directement
- * (pas d'en-tête dédié — WhatsAppChat a déjà le sien).
+ * Page "Communication" pour les enseignants. Affiche l'interface WhatsApp Chat
+ * avec :
+ *   - Liste des conversations (sidebar)
+ *   - Vue conversation avec bulles de messages
+ *   - Discussion avec les collègues enseignants de la même école
+ *   - Discussion avec la direction
+ *   - Création de groupe d'enseignants
+ *   - Recherche d'enseignants d'autres écoles (inter-écoles) + invitations
  *
  * Les enseignants peuvent échanger :
  *   - Des messages texte
  *   - Des fichiers (documents, images, audio)
- *   - Des audios enregistrés
- *   - Avec leurs collègues enseignants de la même école
- *   - Avec la direction
- *   - Avec les parents d'élèves de leurs classes
+ *   - Des audios enregistrés (MediaRecorder — non implémenté ici, V2)
  * ============================================================================
  */
 
 import { useAppSession } from '@/contexts/AppSessionContext';
 import WhatsAppChat from '@/components/communication/WhatsAppChat';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MessageSquare } from 'lucide-react';
 
 export default function TeacherCommunicationPage() {
   const { user } = useAppSession();
@@ -35,12 +38,25 @@ export default function TeacherCommunicationPage() {
     );
   }
 
-  // Pas d'en-tête dédié — WhatsAppChat a déjà le sien.
-  // Hauteur = viewport - top bar (h-16 = 64px) - padding layout.
   return (
-    <WhatsAppChat
-      currentUserId={currentUserId}
-      heightClass="h-[calc(100vh-128px)]"
-    />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-50 rounded-lg">
+            <MessageSquare className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">Messagerie enseignant</h2>
+            <p className="text-xs text-slate-500">
+              Échangez avec vos collègues, la direction et vos contacts Academia Helm
+            </p>
+          </div>
+        </div>
+      </div>
+      <WhatsAppChat
+        currentUserId={currentUserId}
+        heightClass="h-[calc(100vh-280px)]"
+      />
+    </div>
   );
 }

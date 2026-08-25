@@ -53,7 +53,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
           controller: _searchController,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: 'Rechercher dans Yeshua Connect...',
+            hintText: 'Rechercher dans Helm Connect...',
             border: InputBorder.none,
             hintStyle: TextStyle(color: Colors.white70),
           ),

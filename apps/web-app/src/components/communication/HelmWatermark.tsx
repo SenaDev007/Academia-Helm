@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * Creates a subtle, beautiful background pattern like WhatsApp's doodle
- * background, but with Yeshua Connect branding :
+ * background, but with Helm Connect branding :
  *   - Academia Helm official SVG crest (centered, filled) — inlined from
  *     /public/images/logo-Academia-Helm.svg (the same logo used on the
  *     /portal page inside the Benin map school pins)
@@ -50,7 +50,7 @@ function generateWatermarkSvg(color: string, opacity: number): string {
 
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'>
     <g fill='none' stroke='${color}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' opacity='${opacity}'>
-      <!-- Top-left : Speech bubble (Yeshua Connect logo) -->
+      <!-- Top-left : Speech bubble (Helm Connect logo) -->
       <g transform='translate(20, 20) scale(0.9)'>
         <path d='M3 4 h18 a3 3 0 0 1 3 3 v8 a3 3 0 0 1 -3 3 h-9 l-5 4 v-4 h-4 a3 3 0 0 1 -3 -3 v-8 a3 3 0 0 1 3 -3 z'/>
         <circle cx='8' cy='11' r='0.8' fill='${color}'/>

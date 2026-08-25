@@ -110,8 +110,8 @@ export class AutoRecoveryService {
     this.logger.log(`Relance auto pour tenant ${settings.tenantId}`);
 
     // Parser les canaux
-    // ⭐ Issue #?: replace WhatsApp + SMS with Yeshua Connect for recovery reminders.
-    //    The parent receives the reminder directly in their Yeshua Connect chat account.
+    // ⭐ Issue #?: replace WhatsApp + SMS with Helm Connect for recovery reminders.
+    //    The parent receives the reminder directly in their Helm Connect chat account.
     //    Email is kept for archival; helm_connect replaces the WhatsApp + SMS channels.
     let channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[] = ['email', 'helm_connect'];
     try {

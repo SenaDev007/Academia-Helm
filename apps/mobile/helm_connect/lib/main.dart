@@ -40,7 +40,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 const AndroidNotificationChannel _fcmChannel = AndroidNotificationChannel(
   'academia_helm_notifications',
   'Academia Helm Notifications',
-  description: 'Notifications Yeshua Connect (absences, examens, bulletins, discipline)',
+  description: 'Notifications Helm Connect (absences, examens, bulletins, discipline)',
   importance: Importance.high,
 );
 final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
@@ -127,7 +127,7 @@ class HelmConnectApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Yeshua Connect',
+      title: 'Helm Connect',
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey, // ⭐ V3-4: for deep-link navigation from FCM
       theme: HelmThemes.lightTheme(),
@@ -291,7 +291,7 @@ class _StartupGateState extends State<StartupGate> {
       await ApiService.registerFcmToken(
         fcmToken: token,
         platform: 'ANDROID',
-        deviceInfo: 'Yeshua Connect Flutter',
+        deviceInfo: 'Helm Connect Flutter',
       );
       print('✅ FCM token envoyé au backend (/notifications/device-tokens)');
     } catch (e) {

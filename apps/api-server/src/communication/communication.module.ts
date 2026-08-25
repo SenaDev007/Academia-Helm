@@ -104,13 +104,13 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     // ⭐ Chat — File serving controller (streams public/* files via NestJS route
     //    to bypass the express.static not being invoked issue). See file-serving.controller.ts.
     FileServingController,
-    // ⭐ Yeshua Connect — Annonces officielles V1
+    // ⭐ Helm Connect — Annonces officielles V1
     AnnouncementController,
-    // ⭐ Yeshua Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
+    // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
     HelmConnectV2Controller,
     // ⭐ V3: Signal Protocol pre-key endpoints (POST/GET /api/chat/signal/*)
     SignalPreKeysController,
-    // ⭐ Yeshua Connect V2.6 — Polls (Telegram-style)
+    // ⭐ Helm Connect V2.6 — Polls (Telegram-style)
     PollController,
   ],
   providers: [
@@ -142,19 +142,19 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     ChatService,
     ChatGateway,
     PushNotificationService,
-    // ⭐ Yeshua Connect — Annonces officielles V1
+    // ⭐ Helm Connect — Annonces officielles V1
     AnnouncementService,
-    // ⭐ Yeshua Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
+    // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
     DynamicGroupService,
     NotificationPreferencesService,
     ScheduledAnnouncementDispatcher,
-    // ⭐ Yeshua Connect V2.4 — Global Search
+    // ⭐ Helm Connect V2.4 — Global Search
     GlobalSearchService,
-    // ⭐ Yeshua Connect V2.5 — Conversation Document Center
+    // ⭐ Helm Connect V2.5 — Conversation Document Center
     ConversationDocumentCenterService,
-    // ⭐ Yeshua Connect V2.6 — Polls
+    // ⭐ Helm Connect V2.6 — Polls
     PollService,
-    // ⭐ V3-4 — Yeshua Connect Notification Bridge (Examens/Absences/Discipline → Yeshua Connect)
+    // ⭐ V3-4 — Helm Connect Notification Bridge (Examens/Absences/Discipline → Helm Connect)
     HelmConnectNotificationBridgeService,
     // ⭐ V3-3 — ORION-powered chat conversation summaries
     ChatSummaryService,

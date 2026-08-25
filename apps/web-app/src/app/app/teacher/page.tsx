@@ -64,7 +64,7 @@ export default function TeacherDashboardPage() {
     { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos pédagogiques, podcasts", color: "bg-pink-50 text-pink-700 border-pink-200" },
     { href: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources pédagogiques", color: "bg-slate-50 text-slate-700 border-slate-200" },
     { href: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes pédagogiques", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-    { href: "/app/teacher/communication", label: "Yeshua Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", color: "bg-teal-50 text-teal-700 border-teal-200" },
+    { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", color: "bg-teal-50 text-teal-700 border-teal-200" },
   ];
 
   return (

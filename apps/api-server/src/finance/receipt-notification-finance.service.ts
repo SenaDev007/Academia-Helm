@@ -37,9 +37,9 @@ export class ReceiptNotificationFinanceService {
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
     private readonly configService: ConfigService,
-    // ⭐ Yeshua Connect finance notification service — replaces WhatsApp+SMS
+    // ⭐ Helm Connect finance notification service — replaces WhatsApp+SMS
     //    for receipt delivery. The parent receives the PDF receipt directly
-    //    in their Yeshua Connect chat account.
+    //    in their Helm Connect chat account.
     private readonly helmConnectFinanceNotificationService: HelmConnectFinanceNotificationService,
   ) {}
 
@@ -52,7 +52,7 @@ export class ReceiptNotificationFinanceService {
    *   - 'whatsapp'       — WhatsApp message with PDF (kept for backward compat,
    *                       but no longer called by default — see finance-transaction.service.ts)
    *   - 'sms'            — Plain SMS (kept for backward compat)
-   *   - 'helm_connect'   — ⭐ NEW: sends a Yeshua Connect message to the parent's
+   *   - 'helm_connect'   — ⭐ NEW: sends a Helm Connect message to the parent's
    *                       account with the PDF receipt attached. Replaces SMS+WhatsApp.
    */
   async sendReceiptNotifications(
@@ -228,7 +228,7 @@ export class ReceiptNotificationFinanceService {
             changeGiven: tx.changeGiven != null ? Number(tx.changeGiven) : undefined,
           });
         } else if (channel === 'helm_connect') {
-          // ⭐ NEW: Yeshua Connect — send a chat message to the parent's account
+          // ⭐ NEW: Helm Connect — send a chat message to the parent's account
           //    with the PDF receipt attached. The message uses the EXACT same
           //    wording as the WhatsApp 'recu_paiement' template (see
           //    whatsapp-template.registry.ts line 738).

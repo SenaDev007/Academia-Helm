@@ -1,5 +1,5 @@
 // ============================================================================
-// RINGTONE SERVICE — Soft phone ringtones for Yeshua Connect mobile (V3-6)
+// RINGTONE SERVICE — Soft phone ringtones for Helm Connect mobile (V3-6)
 // ============================================================================
 // Mirrors the web WhatsAppChat.tsx ringtone logic (Web Audio API) but for
 // Flutter using the audioplayers package. Two distinct soft tones:

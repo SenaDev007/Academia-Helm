@@ -154,8 +154,8 @@ class FinanceService {
   }
 
   /**
-   * Renvoie le reçu par email/WhatsApp/SMS/Yeshua Connect au parent de l'élève.
-   * ⭐ 'helm_connect' remplace WhatsApp+SMS : envoie un message Yeshua Connect
+   * Renvoie le reçu par email/WhatsApp/SMS/Helm Connect au parent de l'élève.
+   * ⭐ 'helm_connect' remplace WhatsApp+SMS : envoie un message Helm Connect
    *    au parent avec le PDF reçu en pièce jointe.
    */
   async resendReceipt(transactionId: string, channels: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[]): Promise<any> {

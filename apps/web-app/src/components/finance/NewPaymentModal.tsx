@@ -620,18 +620,18 @@ export default function NewPaymentModal({
                 <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
               </Button>
-              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Yeshua Connect) */}
+              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
               <Button
                 size="sm"
                 variant="outline"
                 disabled
                 className="opacity-40 cursor-not-allowed"
-                title="WhatsApp désactivé — utilisez Yeshua Connect"
+                title="WhatsApp désactivé — utilisez Helm Connect"
               >
                 <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5 grayscale" />
                 WhatsApp
               </Button>
-              {/* ⭐ Yeshua Connect — REPLACES SMS */}
+              {/* ⭐ Helm Connect — REPLACES SMS */}
               <Button
                 size="sm"
                 variant="outline"
@@ -639,7 +639,7 @@ export default function NewPaymentModal({
                 disabled={sendingChannel === 'helm_connect'}
               >
                 <HelmConnectIcon className="w-3.5 h-3.5 mr-1.5" />
-                {sendingChannel === 'helm_connect' ? 'Envoi...' : 'Yeshua Connect'}
+                {sendingChannel === 'helm_connect' ? 'Envoi...' : 'Helm Connect'}
               </Button>
               <Button size="sm" variant="ghost" onClick={handleNewPayment}>
                 Nouveau paiement

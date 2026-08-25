@@ -1,5 +1,5 @@
 // ============================================================================
-// CALL SERVICE — WebRTC calls (audio + video) for Yeshua Connect mobile
+// CALL SERVICE — WebRTC calls (audio + video) for Helm Connect mobile
 // ============================================================================
 // Mirrors the web WhatsAppChat.tsx WebRTC logic:
 //   1. getUserMedia (audio + optional video)

@@ -3,7 +3,7 @@
  * HELM CONNECT V2.6 — Poll Controller
  * ============================================================================
  *
- * Endpoints REST pour les sondages Yeshua Connect.
+ * Endpoints REST pour les sondages Helm Connect.
  *
  *   POST   /chat/v2/polls                          — créer un sondage
  *   GET    /chat/v2/polls/:id                       — détails d'un sondage (avec résultats)

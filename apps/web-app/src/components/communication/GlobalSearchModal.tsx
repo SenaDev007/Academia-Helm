@@ -5,7 +5,7 @@
  * HELM CONNECT V2.4 — Global Search Modal
  * ============================================================================
  *
- * Recherche transversale dans Yeshua Connect :
+ * Recherche transversale dans Helm Connect :
  *   - Messages (contenu de mes conversations)
  *   - Personnes (users + guardians)
  *   - Groupes (mes groupes)
@@ -322,7 +322,7 @@ export default function GlobalSearchModal({
             <input
               autoFocus
               type="text"
-              placeholder="Rechercher dans Yeshua Connect..."
+              placeholder="Rechercher dans Helm Connect..."
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#1677FF]/30"
               value={query}
               onChange={e => setQuery(e.target.value)}

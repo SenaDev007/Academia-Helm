@@ -407,9 +407,9 @@ export default function RecoveryContent() {
           description: 'Aucun arriéré FeeArrear trouvé pour cet élève. Relance basique envoyée par SMS.',
         });
       } else {
-        // ⭐ NOUVEAU système : envoi multi-canal (email + Yeshua Connect) au parent
-        //    Yeshua Connect remplace WhatsApp + SMS — le parent reçoit la relance
-        //    directement dans son compte Yeshua Connect.
+        // ⭐ NOUVEAU système : envoi multi-canal (email + Helm Connect) au parent
+        //    Helm Connect remplace WhatsApp + SMS — le parent reçoit la relance
+        //    directement dans son compte Helm Connect.
         const result = await financeService.sendRecoveryNotification(
           matchingArrear.id,
           ['email', 'helm_connect'],
@@ -1178,7 +1178,7 @@ function SettingsTab() {
                     className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
                   <span className="text-sm text-slate-700 capitalize">
-                    {channel === 'email' ? 'Email' : 'Yeshua Connect'}
+                    {channel === 'email' ? 'Email' : 'Helm Connect'}
                   </span>
                 </label>
               ))}
@@ -1684,23 +1684,23 @@ function ArrearsTab({
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        {/* ⭐ WhatsApp — GRAYED OUT (replaced by Yeshua Connect) */}
+                        {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
                         <Button
                           variant="ghost"
                           size="icon"
                           disabled
                           className="h-7 w-7 opacity-30 cursor-not-allowed"
-                          title="WhatsApp désactivé — utilisez Yeshua Connect"
+                          title="WhatsApp désactivé — utilisez Helm Connect"
                         >
                           <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
                         </Button>
-                        {/* ⭐ Yeshua Connect — REPLACES SMS */}
+                        {/* ⭐ Helm Connect — REPLACES SMS */}
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
                           onClick={() => onSendChannel(a.id, 'helm_connect')}
-                          title="Envoyer relance par Yeshua Connect"
+                          title="Envoyer relance par Helm Connect"
                         >
                           <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>
@@ -1852,23 +1852,23 @@ function RemindersTab({
                           >
                             <GmailIcon className="w-3.5 h-3.5" />
                           </Button>
-                          {/* ⭐ WhatsApp — GRAYED OUT (replaced by Yeshua Connect) */}
+                          {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
                           <Button
                             variant="ghost"
                             size="icon"
                             disabled
                             className="h-7 w-7 opacity-30 cursor-not-allowed"
-                            title="WhatsApp désactivé — utilisez Yeshua Connect"
+                            title="WhatsApp désactivé — utilisez Helm Connect"
                           >
                             <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
                           </Button>
-                          {/* ⭐ Yeshua Connect — REPLACES SMS */}
+                          {/* ⭐ Helm Connect — REPLACES SMS */}
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
                             onClick={() => onSendChannel(matchingArrear.id, 'helm_connect')}
-                            title="Renvoyer par Yeshua Connect"
+                            title="Renvoyer par Helm Connect"
                           >
                             <HelmConnectIcon className="w-3.5 h-3.5" />
                           </Button>

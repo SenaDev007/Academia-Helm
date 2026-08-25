@@ -84,7 +84,7 @@ export class RecoveryReminderController {
     @Body() body: { channels?: string[]; level?: string },
   ) {
     // ⭐ Issue #?: default channels = ['email', 'helm_connect']
-    //    Yeshua Connect replaces WhatsApp + SMS for recovery reminders.
+    //    Helm Connect replaces WhatsApp + SMS for recovery reminders.
     const channels = (body?.channels ?? ['email', 'helm_connect']) as (
       'email' | 'whatsapp' | 'sms' | 'helm_connect'
     )[];

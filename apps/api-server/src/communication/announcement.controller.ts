@@ -3,7 +3,7 @@
  * HELM CONNECT — Announcement Controller
  * ============================================================================
  *
- * Endpoints REST pour les annonces officielles Yeshua Connect.
+ * Endpoints REST pour les annonces officielles Helm Connect.
  *
  *   GET    /chat/announcements                  — liste paginée des annonces
  *   GET    /chat/announcements/:id              — détails d'une annonce

@@ -3,7 +3,7 @@
  * HELM CONNECT V2.2 — Dynamic Groups Service
  * ============================================================================
  *
- * Génère et synchronise automatiquement des conversations Yeshua Connect pour :
+ * Génère et synchronise automatiquement des conversations Helm Connect pour :
  *   - Classes (ex: "6ème A — 2026/2027" avec élèves, enseignants, parents)
  *   - Niveaux (ex: "Tous les enseignants - Maternelle")
  *   - Matières (ex: "Enseignants de mathématiques")

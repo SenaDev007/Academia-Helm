@@ -3,7 +3,7 @@
  * HELM CONNECT — Theme System (Azure/Cyan branding)
  * ============================================================================
  *
- * Identité visuelle Yeshua Connect :
+ * Identité visuelle Helm Connect :
  *   Primary:   #1677FF (Azure blue)
  *   Dark:      #0958D9 (États actifs / hover)
  *   Light:     #E6F4FF (Bulles, arrière-plans légers)
@@ -185,7 +185,7 @@ export const HELM_THEMES: Record<HelmThemeName, HelmTheme> = {
 export const HELM_DEFAULT_THEME: HelmThemeName = 'azure';
 
 /**
- * Récupère le thème Yeshua Connect pour l'utilisateur courant.
+ * Récupère le thème Helm Connect pour l'utilisateur courant.
  * V1: toujours Azure (défaut). V2: lira localStorage 'helm-theme' ou la
  * préférence utilisateur côté backend.
  */
@@ -242,7 +242,7 @@ export function setDarkMode(enabled: boolean): void {
 
 /**
  * Génère les variables CSS à injecter dans un container pour appliquer
- * le thème Yeshua Connect.
+ * le thème Helm Connect.
  *
  * Usage:
  *   <div style={getHelmThemeStyle()}>

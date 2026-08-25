@@ -61,7 +61,7 @@ export class ExamsPrismaService {
     maxScore?: number;
     coefficient?: number;
     description?: string;
-    triggeredByUserId?: string; // ⭐ V3-4: pour Yeshua Connect notification
+    triggeredByUserId?: string; // ⭐ V3-4: pour Helm Connect notification
   }) {
     // Vérifier que la matière existe
     const subject = await this.prisma.subject.findFirst({
@@ -112,7 +112,7 @@ export class ExamsPrismaService {
       },
     });
 
-    // ⭐ V3-4: Yeshua Connect notification (fire-and-forget)
+    // ⭐ V3-4: Helm Connect notification (fire-and-forget)
     if (this.bridge && exam) {
       this.bridge
         .notifyExamScheduled({
@@ -1759,7 +1759,7 @@ export class ExamsPrismaService {
     classId: string,
     periodId: string,
     academicYearId: string,
-    publishedByUserId?: string, // ⭐ V3-4: pour Yeshua Connect notification
+    publishedByUserId?: string, // ⭐ V3-4: pour Helm Connect notification
   ) {
     const reportCards = await this.prisma.reportCard.findMany({
       where: {
@@ -1787,7 +1787,7 @@ export class ExamsPrismaService {
       },
     });
 
-    // ⭐ V3-4: Yeshua Connect notification (fire-and-forget) — prévient tous les parents
+    // ⭐ V3-4: Helm Connect notification (fire-and-forget) — prévient tous les parents
     if (this.bridge) {
       this.bridge
         .notifyBulletinPublished({

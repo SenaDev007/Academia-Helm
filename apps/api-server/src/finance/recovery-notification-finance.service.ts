@@ -43,9 +43,9 @@ export class RecoveryNotificationFinanceService {
     private readonly emailService: EmailService,
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
-    // ⭐ Yeshua Connect finance notification service — replaces WhatsApp+SMS
+    // ⭐ Helm Connect finance notification service — replaces WhatsApp+SMS
     //    for recovery reminders. The parent receives the reminder directly
-    //    in their Yeshua Connect chat account.
+    //    in their Helm Connect chat account.
     private readonly helmConnectFinanceNotificationService: HelmConnectFinanceNotificationService,
   ) {}
 
@@ -180,9 +180,9 @@ export class RecoveryNotificationFinanceService {
             isPreviousYearArrear,
           });
         } else if (channel === 'helm_connect') {
-          // ⭐ NEW: Yeshua Connect — send a chat message to the parent's account
+          // ⭐ NEW: Helm Connect — send a chat message to the parent's account
           //    with the recovery reminder. The parent can read the message in
-          //    their Yeshua Connect chat (they login to the parent portal with
+          //    their Helm Connect chat (they login to the parent portal with
           //    their phone number).
           //
           //    We need a directorId (the user sending the reminder).

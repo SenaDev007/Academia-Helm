@@ -79,9 +79,9 @@ export function SmsIcon({ className = 'w-4 h-4' }: IconProps) {
 }
 
 /**
- * ⭐ Icône Yeshua Connect (bulle de discussion bleu dégradé + point de notification).
+ * ⭐ Icône Helm Connect (bulle de discussion bleu dégradé + point de notification).
  * Remplace les boutons WhatsApp + SMS dans le module Finance pour envoyer les
- * notifications directement dans le compte Yeshua Connect du parent.
+ * notifications directement dans le compte Helm Connect du parent.
  */
 export function HelmConnectIcon({ className = 'w-4 h-4' }: IconProps) {
   return (

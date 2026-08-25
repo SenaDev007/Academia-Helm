@@ -14,7 +14,7 @@
  *   - Accusé de lecture (click "Marquer comme lu" ou "Confirmer avoir lu")
  *   - Statistiques de lecture (pourcentage lu/total destinataires)
  *
- * Slogan Yeshua Connect : « Communiquez. Collaborez. Restez connectés. »
+ * Slogan Helm Connect : « Communiquez. Collaborez. Restez connectés. »
  * ============================================================================
  */
 
@@ -183,7 +183,7 @@ export default function AnnouncementsModal({
               Annonces officielles
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Yeshua Connect — communication institutionnelle
+              Helm Connect — communication institutionnelle
             </p>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">

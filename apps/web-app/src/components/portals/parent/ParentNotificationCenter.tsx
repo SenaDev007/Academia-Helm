@@ -5,7 +5,7 @@
  * ParentNotificationCenter — Centre de notifications pédagogiques (V3-4)
  * ============================================================================
  *
- * Affiche les notifications Yeshua Connect envoyées aux parents par les modules
+ * Affiche les notifications Helm Connect envoyées aux parents par les modules
  * pédagogiques : Absences / Examens / Bulletins / Devoirs / Discipline.
  *
  * Wired to the real useNotifications hook (no more MOCK).
@@ -139,7 +139,7 @@ export default function ParentNotificationCenter() {
             )}
           </h2>
           <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest font-bold">
-            Suivi Pédagogique — Yeshua Connect
+            Suivi Pédagogique — Helm Connect
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -285,14 +285,14 @@ export default function ParentNotificationCenter() {
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-slate-400" />
           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-            Notifications Yeshua Connect
+            Notifications Helm Connect
           </span>
         </div>
         <button
           onClick={() => router.push('/app/parent/messages')}
           className="text-indigo-600 text-xs font-bold flex items-center gap-1 hover:gap-2 transition-all"
         >
-          Ouvrir Yeshua Connect <ChevronRight className="w-3.5 h-3.5" />
+          Ouvrir Helm Connect <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

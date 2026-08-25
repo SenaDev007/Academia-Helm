@@ -96,7 +96,7 @@ class _TenantSelectionScreenState extends State<TenantSelectionScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Yeshua Connect',
+                    'Helm Connect',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 28,

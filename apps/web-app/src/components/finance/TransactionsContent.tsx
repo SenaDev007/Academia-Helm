@@ -355,7 +355,7 @@ export default function TransactionsContent() {
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        {/* ⭐ WhatsApp button — GRAYED OUT (replaced by Yeshua Connect below)
+                        {/* ⭐ WhatsApp button — GRAYED OUT (replaced by Helm Connect below)
                               Per user request: "Tu vas masquer le bouton WhatsApp qui est là
                               pour le moment, tu vas le masquer ou bien il faut le griser." */}
                         <Button
@@ -363,13 +363,13 @@ export default function TransactionsContent() {
                           size="icon"
                           disabled
                           className="h-7 w-7 opacity-30 cursor-not-allowed"
-                          title="WhatsApp désactivé — utilisez Yeshua Connect"
+                          title="WhatsApp désactivé — utilisez Helm Connect"
                         >
                           <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
                         </Button>
-                        {/* ⭐ Yeshua Connect button — REPLACES the SMS button
+                        {/* ⭐ Helm Connect button — REPLACES the SMS button
                               Sends the receipt PDF + the same WhatsApp template wording
-                              directly to the parent's Yeshua Connect chat account. */}
+                              directly to the parent's Helm Connect chat account. */}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -380,10 +380,10 @@ export default function TransactionsContent() {
                               const s = r?.channels?.helm_connect;
                               if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.error || 'Aucun parent lié à cet élève', variant: 'destructive' });
                               else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
-                              else toast({ title: 'Reçu envoyé', description: `Yeshua Connect envoyé au parent${s?.to ? ` (conv ${s.to.substring(0, 8)}...)` : ''}` });
+                              else toast({ title: 'Reçu envoyé', description: `Helm Connect envoyé au parent${s?.to ? ` (conv ${s.to.substring(0, 8)}...)` : ''}` });
                             } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
                           }}
-                          title="Envoyer par Yeshua Connect"
+                          title="Envoyer par Helm Connect"
                         >
                           <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>

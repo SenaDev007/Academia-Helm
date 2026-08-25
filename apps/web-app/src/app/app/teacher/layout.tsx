@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
-// ⭐ V3-4: notifications Yeshua Connect pour enseignants (absences justifiées / évaluations / bulletins)
+// ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 
 const TEACHER_MODULES = [
@@ -49,7 +49,7 @@ const TEACHER_MODULES = [
   { path: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources et documents" },
   { path: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques" },
   { path: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques" },
-  { path: "/app/teacher/communication", label: "Yeshua Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés." },
+  { path: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés." },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {

@@ -15,8 +15,8 @@
  *   - Boutons :
  *     • Télécharger PDF (window.open receipt.pdf)
  *     • Email (renvoyer à soi-même)
- *     • WhatsApp (GRISÉ — remplacé par Yeshua Connect)
- *     • Yeshua Connect (remplace SMS — envoie le reçu PDF + template WhatsApp au parent)
+ *     • WhatsApp (GRISÉ — remplacé par Helm Connect)
+ *     • Helm Connect (remplace SMS — envoie le reçu PDF + template WhatsApp au parent)
  *     • Fermer
  *
  * Le PDF généré est EXACTEMENT le même que celui de l'admin :
@@ -93,9 +93,9 @@ export function PaymentSuccessBanner({
     }
   };
 
-  // ⭐ Yeshua Connect — replaces both WhatsApp and SMS.
+  // ⭐ Helm Connect — replaces both WhatsApp and SMS.
   //    Sends the receipt PDF + the exact WhatsApp 'recu_paiement' template
-  //    wording as a Yeshua Connect chat message to the parent's account.
+  //    wording as a Helm Connect chat message to the parent's account.
   const handleHelmConnect = async () => {
     setSending("helm_connect");
     try {
@@ -109,7 +109,7 @@ export function PaymentSuccessBanner({
         toast.error("Échec d'envoi", { description: s.error || "Échec de l'envoi" });
       } else {
         toast.success("Reçu envoyé", {
-          description: `Yeshua Connect envoyé au parent`,
+          description: `Helm Connect envoyé au parent`,
         });
       }
     } catch (e: any) {
@@ -158,23 +158,23 @@ export function PaymentSuccessBanner({
                 <Mail className="h-3.5 w-3.5" />
                 Email
               </button>
-              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Yeshua Connect) */}
+              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
               <button
                 disabled
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-400 bg-slate-50 border border-slate-200 rounded-lg cursor-not-allowed opacity-50"
-                title="WhatsApp désactivé — utilisez Yeshua Connect"
+                title="WhatsApp désactivé — utilisez Helm Connect"
               >
                 <MessageSquare className="h-3.5 w-3.5 grayscale" />
                 WhatsApp
               </button>
-              {/* ⭐ Yeshua Connect — REPLACES SMS */}
+              {/* ⭐ Helm Connect — REPLACES SMS */}
               <button
                 onClick={handleHelmConnect}
                 disabled={sending === "helm_connect"}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 disabled:opacity-50 transition-colors"
               >
                 <HelmConnectIcon className="h-3.5 w-3.5" />
-                {sending === "helm_connect" ? "Envoi..." : "Yeshua Connect"}
+                {sending === "helm_connect" ? "Envoi..." : "Helm Connect"}
               </button>
             </div>
           </div>

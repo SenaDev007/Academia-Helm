@@ -5,12 +5,12 @@ import WhatsAppChat from '@/components/communication/WhatsAppChat';
 import { Loader2 } from 'lucide-react';
 
 /**
- * ⭐ Yeshua Connect — page de messagerie (renommée depuis "Communication")
+ * ⭐ Helm Connect — page de messagerie (renommée depuis "Communication")
  *    Rend le chat WhatsApp-like directement.
  *    Pas de ModuleHeader, pas d'onglets, pas de ModuleContentArea wrapper.
  *    Le chat remplit tout l'écran (moins la sidebar 64px).
  *
- *    Yeshua Connect = système nerveux communicationnel d'Academia Helm.
+ *    Helm Connect = système nerveux communicationnel d'Academia Helm.
  *    Slogan : « Communiquez. Collaborez. Restez connectés. »
  */
 

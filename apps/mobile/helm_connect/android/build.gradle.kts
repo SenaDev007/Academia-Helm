@@ -1,11 +1,32 @@
 // ============================================================================
 // Helm Connect — Project-level Gradle build file (Kotlin DSL)
 // ============================================================================
+// ⭐ FIX V3-7: Added buildscript block (matching apps/mobile-app pattern)
+//    so that subprojects like audioplayers_android can resolve
+//    kotlin-gradle-plugin + android-junit5 from the correct repos.
+// ============================================================================
+
+buildscript {
+    val kotlinVersion by extra("2.1.0")
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://maven.google.com") }
+        maven { url = uri("https://repo1.maven.org/maven2") }
+    }
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+        classpath("com.android.tools.build:gradle:8.11.1")
+        classpath("com.google.gms:google-services:4.4.2")
+    }
+}
 
 allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://maven.google.com") }
+        maven { url = uri("https://repo1.maven.org/maven2") }
     }
 }
 

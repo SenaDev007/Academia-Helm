@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.academiahelm.helmconnect"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -32,7 +32,7 @@ android {
     defaultConfig {
         applicationId = "com.academiahelm.helmconnect"
         minSdk = 21
-        targetSdk = 35
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true

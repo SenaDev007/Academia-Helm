@@ -1,17 +1,9 @@
 # ============================================================================
 # Helm Connect — Flutter dependencies
 # ============================================================================
-# ⭐ Note sur Firebase :
-#   Les packages Firebase (firebase_core, firebase_messaging) nécessitent
-#   google-services.json (Android) et GoogleService-Info.plist (iOS) pour
-#   compiler. Ils sont commentés ici pour que le projet build out-of-the-box.
-#   Pour activer les push notifications en V2 :
-#     1. Créer un projet Firebase : https://console.firebase.google.com
-#     2. Ajouter une app Android (package: com.academiahelm.helmconnect)
-#     3. Télécharger google-services.json dans android/app/
-#     4. Décommenter les 3 lignes firebase_* ci-dessous
-#     5. Décommenter la dépendance classpath dans android/build.gradle
-#     6. Décommenter le bloc <service> dans AndroidManifest.xml
+# ⭐ V3-7: All package versions aligned with the user's Flutter version
+#   to fix build failures (file_picker v1 embedding, flutter_local_notifications
+#   ambiguous method, record missing implementations, etc.)
 # ============================================================================
 
 name: helm_connect
@@ -28,62 +20,47 @@ dependencies:
     sdk: flutter
 
   # ─── Material + Cupertino icons
-  cupertino_icons: ^1.0.6
+  cupertino_icons: ^1.0.8
 
   # ─── HTTP + WebSocket (chat real-time)
-  http: ^1.1.0
+  http: ^1.2.0
   http_parser: ^4.0.2
   socket_io_client: ^2.0.3
 
   # ─── State management
-  provider: ^6.1.1
+  provider: ^6.1.2
 
-  # ─── Local storage (offline-first V3 — Hive)
-  shared_preferences: ^2.2.2
-  hive: ^2.2.3               # ⭐ ACTIVE: V3 offline-first storage (replaces SharedPreferences for chat cache)
-  hive_flutter: ^1.1.0       # ⭐ ACTIVE: Hive Flutter bindings
-
-  # ─── Secure storage (auth token + E2E private key — Keystore/Keychain)
-    flutter_secure_storage: ^9.0.0  # ⭐ ACTIVE: stores RSA-OAEP private key for E2E
+  # ─── Local storage (offline-first V2)
+  shared_preferences: ^2.3.0
 
   # ─── Images + files
-  image_picker: ^1.0.4        # photos + vidéos
-  file_picker: ^6.1.1        # documents
-  cached_network_image: ^3.3.0  # cache images
+  image_picker: ^1.1.0
+  file_picker: ^8.0.0        # ⭐ V3-7: upgraded from 6.1.1 to fix v1 embedding removal
+  cached_network_image: ^3.4.0
 
   # ─── Audio recording (voice messages)
-  record: ^5.0.4              # messages vocaux
-  audioplayers: ^5.2.0        # lecture audio
+  record: ^5.1.0              # ⭐ V3-7: pinned to 5.1.x (6.x requires Dart 3.5+)
+  audioplayers: ^5.2.0        # ⭐ V3-7: pinned to 5.2.x (6.x requires Dart 3.5+)
 
   # ─── Push notifications (Firebase Cloud Messaging) ⭐ ACTIVE ───
-  # google-services.json is in android/app/ — registered in Firebase project academia-helm-35536
-  firebase_core: ^2.24.2
-  firebase_messaging: ^14.7.9
-  flutter_local_notifications: ^16.0.0
+  firebase_core: ^3.2.0       # ⭐ V3-7: aligned with mobile-app
+  firebase_messaging: ^15.0.3 # ⭐ V3-7: aligned with mobile-app
+  flutter_local_notifications: ^17.2.2 # ⭐ V3-7: aligned with mobile-app (fixes bigLargeIcon ambiguous)
 
   # ─── WebRTC (audio/video calls — V3-4 P1) ⭐ ACTIVE
   flutter_webrtc: ^0.10.4
   # ─── Permission handler (RECORD_AUDIO / CAMERA / POST_NOTIFICATIONS) ⭐ ACTIVE
   permission_handler: ^11.3.1
 
-  # ─── Crypto (E2E encryption — RSA-OAEP 2048 via pointycastle) ⭐ ACTIVE
-  # encrypt: ^5.0.3
-    pointycastle: ^3.7.3
-
   # ─── Utilities
-  intl: ^0.18.1
-  uuid: ^4.2.0
-  # flutter_svg: ^2.0.9       # V2: SVG icons
-  # google_fonts: ^6.1.4     # V2: web fonts (Inter, etc.)
+  intl: ^0.19.0
+  uuid: ^4.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
-  # ⭐ Hive type adapter generators (optional — we use JSON for now)
-  # hive_generator: ^2.0.1
-  # build_runner: ^2.4.7
 
 flutter_launcher_icons:
   android: true
@@ -98,6 +75,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
-    # Add app-specific assets here:
-    # - assets/images/
-    # - assets/fonts/

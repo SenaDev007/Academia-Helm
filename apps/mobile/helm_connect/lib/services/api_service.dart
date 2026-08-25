@@ -201,39 +201,101 @@ class ApiService {
     required String password,
     required String tenantSlug,
   }) async {
-    final base = await ApiConfig.baseUrl;
-    final response = await http.post(
-      Uri.parse('$base/api/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-        'tenantSlug': tenantSlug,
-      }),
+    return loginByPortal(
+      portal: 'school',
+      identifier: email,
+      password: password,
+      tenantSlug: tenantSlug,
     );
+  }
+
+  /// ⭐ V3-9: Portal-aware login — adapts endpoint + payload per portal:
+  ///   - school:   POST /auth/login           {email, password, tenant_id, portal_type}
+  ///   - teacher:  POST /portal/auth/teacher    {teacherIdentifier, password, tenantId, portal_type}
+  ///   - parent:   POST /portal/auth/parent     {identifierType, email|phone, password?, tenantId, portal_type}
+  static Future<Map<String, dynamic>> loginByPortal({
+    required String portal, // 'school', 'teacher', 'parent'
+    required String identifier,
+    String? password,
+    required String tenantSlug,
+  }) async {
+    final base = await ApiConfig.baseUrl;
+
+    // ⭐ Determine endpoint URL based on portal
+    String endpoint;
+    Map<String, dynamic> body;
+
+    if (portal == 'teacher') {
+      endpoint = '/api/portal/auth/teacher';
+      body = {
+        'teacherIdentifier': identifier,
+        'password': password ?? '',
+        'portal_type': 'TEACHER',
+        'tenantId': tenantSlug,
+      };
+    } else if (portal == 'parent') {
+      endpoint = '/api/portal/auth/parent';
+      final isPhone = !identifier.contains('@');
+      body = {
+        'identifierType': isPhone ? 'PHONE' : 'EMAIL',
+        'portal_type': 'PARENT',
+        'tenantId': tenantSlug,
+      };
+      if (isPhone) {
+        body['phone'] = identifier;
+      } else {
+        body['email'] = identifier;
+      }
+      if (password != null && password.isNotEmpty) {
+        body['password'] = password;
+      }
+    } else {
+      // school (default)
+      endpoint = '/api/auth/login';
+      body = {
+        'email': identifier,
+        'password': password ?? '',
+        'tenant_id': tenantSlug,
+        'portal_type': 'SCHOOL',
+      };
+    }
+
+    final response = await http.post(
+      Uri.parse('$base$endpoint'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
     final data = await _handleResponse(response) as Map<String, dynamic>;
-    // Persist token + user info
-    final token = data['token'] as String;
-    final user = data['user'] as Map<String, dynamic>;
+
+    // ⭐ Persist token + user info (defensive parsing — keys may vary)
+    final token = (data['token'] ?? data['accessToken'] ?? data['access_token']) as String?;
+    if (token == null) throw ApiException(statusCode: 401, message: 'Token non reçu');
+    final user = (data['user'] ?? data['data']) as Map<String, dynamic>? ?? {};
     await AuthService.saveSession(
       token: token,
-      userId: user['id'] as String,
-      email: user['email'] as String,
-      role: user['role'] as String? ?? '',
+      userId: (user['id'] ?? data['userId'] ?? '') as String,
+      email: (user['email'] ?? data['email'] ?? identifier) as String,
+      role: (user['role'] ?? data['role'] ?? '') as String? ?? '',
     );
-    // Persist tenant info
+
+    // ⭐ Persist tenant info
     final prefs = await SharedPreferences.getInstance();
     final tenant = data['tenant'] as Map<String, dynamic>?;
     if (tenant != null) {
-      await prefs.setString('tenant_id', tenant['id'] as String);
-      await prefs.setString('tenant_slug', tenant['slug'] as String? ?? tenantSlug);
-      await prefs.setString('tenant_name', tenant['name'] as String? ?? '');
-      // Update base URL with tenant subdomain for subsequent requests
-      final subdomain = tenant['subdomain'] as String? ?? tenant['slug'] as String? ?? tenantSlug;
+      await prefs.setString('tenant_id', (tenant['id'] ?? '') as String);
+      await prefs.setString('tenant_slug', (tenant['slug'] ?? tenantSlug) as String? ?? tenantSlug);
+      await prefs.setString('tenant_name', (tenant['name'] ?? '') as String? ?? '');
+      final subdomain = (tenant['subdomain'] ?? tenant['slug'] ?? tenantSlug) as String? ?? tenantSlug;
       await ApiConfig.setTenantBaseUrl('https://$subdomain.academiahelm.com');
+    } else {
+      // If no tenant object, use the slug we have
+      await prefs.setString('tenant_slug', tenantSlug);
     }
+
     return data;
   }
+
 
   static Future<Map<String, dynamic>> getCurrentUser() async {
     final base = await ApiConfig.baseUrl;

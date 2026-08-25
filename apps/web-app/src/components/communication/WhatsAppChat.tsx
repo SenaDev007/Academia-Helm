@@ -265,6 +265,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ Compat: keep isRecording boolean for old code that checks it
   const isRecording = recordingState === 'recording' || recordingState === 'paused';
 
+  // ⭐ V3-11: Discord-like 12-section navigation state.
+  //   The far-left icon rail switches between sections. Each section
+  //   changes the conversation list content (Discussions/Communautés/Canaux/...)
+  //   or opens a modal (Annonces/Recherche/Notifications/Paramètres).
+  type HelmSection =
+    | 'discussions' | 'communautes' | 'annonces' | 'canaux' | 'fichiers'
+    | 'vocaux' | 'appels' | 'notifications' | 'recherche' | 'moderation'
+    | 'analytics' | 'parametres';
+  const [activeHelmSection, setActiveHelmSection] = useState<HelmSection>('discussions');
+
   // Modals
   const [showNewChat, setShowNewChat] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -2298,23 +2308,115 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,.xml"
       />
 
+      {/* ═════ DISCORD-LIKE LEFT ICON RAIL — 12 sections ═════ */}
+      {/* ⭐ V3-11: Far-left vertical icon rail (72px) — switches between the 12
+          Helm Connect sections. Branded with Royal Blue + gold accents.
+          On mobile (<md) this rail collapses to a hidden state; the sections
+          remain accessible via the MoreVertical dropdown in the sidebar header. */}
+      <div className="hidden md:flex flex-col items-center gap-1 py-3 w-[72px] flex-shrink-0 bg-gradient-to-b from-[#0A2A5E] to-[#114FC4] border-r border-[#1C6FE8]/30">
+        {/* Helm Connect logo at top */}
+        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mb-2 border border-[#FFE08A]/30">
+          <img
+            src="/icons/modules/helm-connect.png"
+            alt="Helm Connect"
+            className="w-6 h-6 object-contain"
+          />
+        </div>
+        <div className="w-8 h-px bg-[#1C6FE8]/40 mb-1" />
+
+        {/* 12 section icons */}
+        {([
+          { id: 'discussions', icon: <MessageSquare className="w-5 h-5" />, label: 'Discussions' },
+          { id: 'communautes', icon: <Users className="w-5 h-5" />, label: 'Communautés' },
+          { id: 'annonces', icon: <Bell className="w-5 h-5" />, label: 'Annonces' },
+          { id: 'canaux', icon: <Megaphone className="w-5 h-5" />, label: 'Canaux' },
+          { id: 'fichiers', icon: <FileText className="w-5 h-5" />, label: 'Fichiers' },
+          { id: 'vocaux', icon: <Mic className="w-5 h-5" />, label: 'Vocaux' },
+          { id: 'appels', icon: <Phone className="w-5 h-5" />, label: 'Appels' },
+          { id: 'notifications', icon: <BellOff className="w-5 h-5" />, label: 'Notifications' },
+          { id: 'recherche', icon: <Search className="w-5 h-5" />, label: 'Recherche' },
+          { id: 'moderation', icon: <Flag className="w-5 h-5" />, label: 'Modération' },
+          { id: 'analytics', icon: <BarChart3 className="w-5 h-5" />, label: 'Analytics' },
+          { id: 'parametres', icon: <Settings className="w-5 h-5" />, label: 'Paramètres' },
+        ] as const).map((section) => {
+          const isActive = activeHelmSection === section.id;
+          // Sections that open a modal instead of changing the list content
+          const opensModal = ['annonces', 'recherche', 'notifications', 'parametres'].includes(section.id);
+          return (
+            <button
+              key={section.id}
+              onClick={() => {
+                if (section.id === 'annonces') setShowAnnouncements(true);
+                else if (section.id === 'recherche') setShowGlobalSearch(true);
+                else if (section.id === 'notifications') setShowNotifPrefs(true);
+                else if (section.id === 'parametres') setShowProfile(true);
+                else setActiveHelmSection(section.id as HelmSection);
+              }}
+              title={section.label}
+              className={cn(
+                'relative w-11 h-11 rounded-xl flex items-center justify-center transition-all group',
+                isActive
+                  ? 'bg-[#FFE08A] text-[#0A2A5E] shadow-lg shadow-[#FFE08A]/30'
+                  : opensModal
+                    ? 'text-white/70 hover:bg-white/10 hover:text-white'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+              )}
+            >
+              {/* Active indicator bar (left side, gold) */}
+              {isActive && (
+                <span className="absolute -left-[12px] top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-[#FFE08A]" />
+              )}
+              {section.icon}
+              {/* Tooltip on hover */}
+              <span className="absolute left-full ml-3 px-2 py-1 bg-slate-900 text-white text-[11px] rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                {section.label}
+              </span>
+            </button>
+          );
+        })}
+
+        {/* Spacer + user avatar at bottom */}
+        <div className="flex-1" />
+        <div className="w-8 h-px bg-[#1C6FE8]/40 my-1" />
+        <button
+          onClick={() => setShowProfile(true)}
+          className="w-10 h-10 rounded-full bg-[#1C6FE8] flex items-center justify-center text-white text-xs font-bold border-2 border-[#FFE08A]/40 hover:border-[#FFE08A] transition-colors"
+          title="Mon profil"
+        >
+          {(() => {
+            const me = conversations.flatMap(c => c.participants).find(p => p.userId === currentUserId);
+            return me ? getInitials(`${me.firstName || ''} ${me.lastName || ''}`) : '?';
+          })()}
+        </button>
+      </div>
+
       {/* ═════ LEFT SIDEBAR — Conversation List ═════ */}
       <div className={cn(
         'border-r border-slate-100 flex flex-col bg-white',
         activeConvId ? 'hidden md:flex' : 'flex',
         'w-full md:w-80'
       )}>
-        {/* Header — compact, single-line title + actions */}
-        <div className="px-3 py-2 border-b border-slate-100 bg-[#E6F4FF]/30">
+        {/* Header — shows the active section name (Discord-like) + actions */}
+        <div className="px-3 py-2 border-b border-slate-100 bg-gradient-to-r from-[#E6F4FF]/50 to-white">
           <div className="flex items-center justify-between gap-2">
-            {/* Title — nowrap to prevent 2-line wrapping */}
+            {/* Title — shows the active section name */}
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
               <img
                 src="/icons/modules/helm-connect.png"
                 alt="Helm Connect"
                 className="w-4 h-4 object-contain"
               />
-              <span className="truncate">Helm Connect</span>
+              <span className="truncate">
+                {activeHelmSection === 'discussions' ? 'Discussions'
+                  : activeHelmSection === 'communautes' ? 'Communautés'
+                  : activeHelmSection === 'canaux' ? 'Canaux'
+                  : activeHelmSection === 'fichiers' ? 'Fichiers'
+                  : activeHelmSection === 'vocaux' ? 'Vocaux'
+                  : activeHelmSection === 'appels' ? 'Appels'
+                  : activeHelmSection === 'moderation' ? 'Modération'
+                  : activeHelmSection === 'analytics' ? 'Analytics'
+                  : 'Helm Connect'}
+              </span>
               {/* ⭐ Socket.io connection indicator */}
               <span
                 className={cn('w-2 h-2 rounded-full flex-shrink-0', socket.isConnected ? 'bg-green-400' : 'bg-slate-300')}
@@ -2381,11 +2483,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
         {/* List */}
         <div className="flex-1 overflow-y-auto">
+          {/* ⭐ V3-11: Discord-like section content — switches based on activeHelmSection.
+              - 'discussions' (default) → existing conversation list with role filters
+              - 'communautes' → only GROUP conversations (auto-groups: classes/matieres/roles)
+              - 'canaux' → only broadcast channels
+              - 'fichiers' → shared files across conversations (placeholder: shows pinned/file attachments)
+              - 'vocaux' → audio messages (placeholder)
+              - 'appels' → call history (placeholder)
+              - 'moderation' → flagged messages (placeholder)
+              - 'analytics' → KPIs (placeholder)
+              - 'annonces', 'recherche', 'notifications', 'parametres' → open modals (handled by icon rail)
+          */}
           {loadingConvs ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
             </div>
-          ) : conversations.length === 0 ? (
+          ) : activeHelmSection === 'fichiers' ? (
+            <FichiersSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+          ) : activeHelmSection === 'vocaux' ? (
+            <VocauxSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+          ) : activeHelmSection === 'appels' ? (
+            <AppelsSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+          ) : activeHelmSection === 'moderation' ? (
+            <ModerationSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+          ) : activeHelmSection === 'analytics' ? (
+            <AnalyticsSection conversations={conversations} currentUserId={currentUserId} />
+          ) : conversations.length === 0 && activeHelmSection === 'discussions' ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MessageSquare className="w-12 h-12 text-slate-300 mb-2" />
               <p className="text-sm font-medium text-slate-700">Aucune conversation</p>
@@ -2401,26 +2524,105 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </div>
           ) : (
             <>
-              {/* ⭐ ROLE-BASED CATEGORY FILTERS (Tout / Enseignants / Parents / Administration) */}
-              <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto">
-                {(['all', 'enseignants', 'parents', 'admin'] as const).map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategoryFilter(cat)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
-                      categoryFilter === cat
-                        ? 'bg-[#1677FF] text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    )}
-                  >
-                    {cat === 'all' ? 'Tout' : cat === 'enseignants' ? 'Enseignants' : cat === 'parents' ? 'Parents' : 'Administration'}
-                  </button>
-                ))}
-              </div>
+              {/* ⭐ ROLE-BASED CATEGORY FILTERS (Tout / Enseignants / Parents / Administration)
+                  — only shown on the 'discussions' section */}
+              {activeHelmSection === 'discussions' && (
+                <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto">
+                  {(['all', 'enseignants', 'parents', 'admin'] as const).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategoryFilter(cat)}
+                      className={cn(
+                        'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
+                        categoryFilter === cat
+                          ? 'bg-[#1677FF] text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      )}
+                    >
+                      {cat === 'all' ? 'Tout' : cat === 'enseignants' ? 'Enseignants' : cat === 'parents' ? 'Parents' : 'Administration'}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              {/* ⭐ CATEGORIZE: Discussions (filtered by role) + Canaux + Groupes */}
+              {/* ⭐ CATEGORIZE: section-specific content */}
               {(() => {
+                // ⭐ V3-11: Filter conversations based on activeHelmSection.
+                //   - 'discussions' → DIRECT convs (with role category filter)
+                //   - 'communautes' → GROUP convs only (auto-groups)
+                //   - 'canaux' → broadcast channels only
+                if (activeHelmSection === 'communautes') {
+                  const groupConvs = conversations.filter(c => c.type === 'GROUP');
+                  if (groupConvs.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                        <Users className="w-12 h-12 text-slate-300 mb-2" />
+                        <p className="text-sm font-medium text-slate-700">Aucune communauté</p>
+                        <p className="text-xs text-slate-500 mt-1">Les groupes automatiques (Classes, Matières, Rôles, Personnel) apparaîtront ici.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                        <Users className="w-3 h-3" /> Communautés ({groupConvs.length})
+                      </div>
+                      {groupConvs.map(conv => renderConversationItem(conv))}
+                    </>
+                  );
+                }
+                if (activeHelmSection === 'canaux') {
+                  if (channels.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                        <Megaphone className="w-12 h-12 text-slate-300 mb-2" />
+                        <p className="text-sm font-medium text-slate-700">Aucun canal</p>
+                        <p className="text-xs text-slate-500 mt-1 mb-3">Créez un canal de diffusion (style Telegram).</p>
+                        {!readOnly && (
+                          <button
+                            onClick={() => setShowNewChannel(true)}
+                            className="px-3 py-1.5 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
+                          >
+                            + Nouveau canal
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                        <Megaphone className="w-3 h-3" /> Canaux ({channels.length})
+                      </div>
+                      {channels.map((ch: any) => (
+                        <button
+                          key={ch.id}
+                          onClick={() => setActiveChannelId(ch.id)}
+                          className={cn(
+                            'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
+                            activeChannelId === ch.id && 'bg-[#E6F4FF]'
+                          )}
+                        >
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0">
+                            <Megaphone className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="text-sm font-semibold text-slate-900 truncate">{ch.name}</span>
+                              {ch.lastMessageAt && (
+                                <span className="text-[10px] text-slate-400">{formatTime(ch.lastMessageAt)}</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-slate-500 truncate block">
+                              {ch.lastMessagePreview || `${ch.subscriberCount || 0} abonné(s)`}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </>
+                  );
+                }
+                // Default: 'discussions' section
                 // ⭐ Filter DIRECT conversations by role category
                 const directConvs = conversations.filter(c => {
                   if (c.type !== 'DIRECT') return false;
@@ -2437,10 +2639,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   }
                   if (categoryFilter === 'admin') {
                     return role === 'PROMOTER' || role === 'SCHOOL_OWNER' || role === 'SCHOOL_ADMIN' ||
-                           role === 'DIRECTOR_GENERAL' || role === 'DIRECTEUR_GENERAL' ||
-                           role === 'SCHOOL_DIRECTOR' || role === 'DIRECTEUR_ETABLISSEMENT' ||
-                           role === 'ADMIN' || role === 'COMPTABLE' || role === 'CAISSIER' ||
-                           role === 'SUPER_ADMIN' || role === 'PLATFORM_OWNER';
+                         role === 'DIRECTOR_GENERAL' || role === 'DIRECTEUR_GENERAL' ||
+                         role === 'SCHOOL_DIRECTOR' || role === 'DIRECTEUR_ETABLISSEMENT' ||
+                         role === 'ADMIN' || role === 'COMPTABLE' || role === 'CAISSIER' ||
+                         role === 'SUPER_ADMIN' || role === 'PLATFORM_OWNER';
                   }
                   return true;
                 });
@@ -4592,6 +4794,283 @@ function NewChannelModal({
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Créer le canal'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ V3-11: Discord-like section components (Fichiers / Vocaux / Appels / Modération / Analytics)
+//   These replace the conversation list when the user clicks the corresponding
+//   icon in the far-left rail. They use the Helm Connect Royal Blue + gold theme.
+//   Each is a read-only view that lists data derived from the already-loaded
+//   conversations (no extra API calls — they derive their data from what was
+//   fetched for the Discussions section).
+// ============================================================================
+
+interface SectionSharedProps {
+  conversations: ChatConversation[];
+  currentUserId: string;
+  onOpenConversation: (convId: string) => void;
+}
+
+function _getConvDisplay(conv: ChatConversation, currentUserId: string) {
+  if (conv.type === 'GROUP') {
+    return { name: conv.name || 'Groupe', subtitle: `${conv.participants.length} membres` };
+  }
+  const other = conv.participants.find(p => p.userId !== currentUserId);
+  const name = other ? `${other.firstName || ''} ${other.lastName || ''}`.trim() || 'Utilisateur' : 'Utilisateur';
+  return { name, subtitle: other?.role_label || '' };
+}
+
+// ─── 1. FICHIERS — shared files across conversations ──────────────────────
+function FichiersSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
+  const files = conversations
+    .filter(c => c.lastMessagePreview && (c.lastMessagePreview.startsWith('[Image]') || c.lastMessagePreview.startsWith('[Document]') || c.lastMessagePreview.startsWith('[Audio]')))
+    .slice(0, 50);
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <FileText className="w-3 h-3" /> Fichiers partagés ({files.length})
+      </div>
+      {files.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <FileText className="w-12 h-12 text-slate-300 mb-2" />
+          <p className="text-sm font-medium text-slate-700">Aucun fichier partagé</p>
+          <p className="text-xs text-slate-500 mt-1">Les fichiers envoyés dans vos conversations apparaîtront ici.</p>
+        </div>
+      ) : (
+        files.map(c => {
+          const display = _getConvDisplay(c, currentUserId);
+          const isImage = c.lastMessagePreview!.startsWith('[Image]');
+          const isAudio = c.lastMessagePreview!.startsWith('[Audio]');
+          const Icon = isImage ? ImageIcon : isAudio ? Mic : FileText;
+          const color = isImage ? 'text-emerald-600 bg-emerald-50' : isAudio ? 'text-pink-600 bg-pink-50' : 'text-blue-600 bg-blue-50';
+          return (
+            <button
+              key={c.id}
+              onClick={() => onOpenConversation(c.id)}
+              className="w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', color)}>
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">
+                  {c.lastMessagePreview!.replace(/^\[(Image|Document|Audio)\]\s*/, '')}
+                </div>
+                <div className="text-xs text-slate-500 truncate">
+                  {display.name} • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}
+                </div>
+              </div>
+              <Download className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ─── 2. VOCAUX — audio messages ────────────────────────────────────────────
+function VocauxSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
+  const voiceConvs = conversations.filter(c => c.lastMessagePreview && c.lastMessagePreview.startsWith('[Audio]'));
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <Mic className="w-3 h-3" /> Messages vocaux ({voiceConvs.length})
+      </div>
+      {voiceConvs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <Mic className="w-12 h-12 text-slate-300 mb-2" />
+          <p className="text-sm font-medium text-slate-700">Aucun message vocal</p>
+          <p className="text-xs text-slate-500 mt-1">Les messages vocaux échangés apparaîtront ici, avec transcription Whisper.</p>
+        </div>
+      ) : (
+        voiceConvs.map(c => {
+          const display = _getConvDisplay(c, currentUserId);
+          return (
+            <button
+              key={c.id}
+              onClick={() => onOpenConversation(c.id)}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#CFA63A] to-[#FFE08A] flex items-center justify-center text-white flex-shrink-0">
+                <Mic className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
+                <div className="text-xs text-slate-500 truncate">Message vocal • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}</div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenConversation(c.id); }}
+                className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
+              >
+                <Play className="w-3.5 h-3.5" />
+              </button>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ─── 3. APPELS — call history ─────────────────────────────────────────────
+function AppelsSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
+  const callConvs = conversations
+    .filter(c => c.type === 'DIRECT')
+    .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
+    .slice(0, 30);
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <Phone className="w-3 h-3" /> Historique d'appels ({callConvs.length})
+      </div>
+      {callConvs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <Phone className="w-12 h-12 text-slate-300 mb-2" />
+          <p className="text-sm font-medium text-slate-700">Aucun appel</p>
+          <p className="text-xs text-slate-500 mt-1">Votre historique d'appels audio et vidéo apparaîtra ici.</p>
+        </div>
+      ) : (
+        callConvs.map(c => {
+          const display = _getConvDisplay(c, currentUserId);
+          return (
+            <button
+              key={c.id}
+              onClick={() => onOpenConversation(c.id)}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0', getAvatarColor(display.name))}>
+                {getInitials(display.name)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
+                <div className="text-xs text-slate-500 truncate flex items-center gap-1">
+                  <Phone className="w-3 h-3 text-blue-500 rotate-180" />
+                  Appel récent • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenConversation(c.id); }}
+                className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
+                title="Rappeler"
+              >
+                <Phone className="w-3.5 h-3.5" />
+              </button>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ─── 4. MODÉRATION — flagged content ──────────────────────────────────────
+function ModerationSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
+  const groupConvs = conversations.filter(c => c.type === 'GROUP');
+  return (
+    <div className="p-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <Flag className="w-3 h-3" /> Modération ({groupConvs.length})
+      </div>
+      {groupConvs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <Flag className="w-12 h-12 text-slate-300 mb-2" />
+          <p className="text-sm font-medium text-slate-700">Aucun contenu à modérer</p>
+          <p className="text-xs text-slate-500 mt-1">Les messages signalés ou épinglés par les administrateurs apparaîtront ici.</p>
+        </div>
+      ) : (
+        groupConvs.map(c => {
+          const display = _getConvDisplay(c, currentUserId);
+          return (
+            <div
+              key={c.id}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className="w-9 h-9 rounded-full bg-slate-400 flex items-center justify-center text-white flex-shrink-0">
+                <Users className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
+                <div className="text-xs text-slate-500 truncate">{c.participants.length} membres • {c.lastMessagePreview || 'Aucun message'}</div>
+              </div>
+              <button
+                onClick={() => onOpenConversation(c.id)}
+                className="px-2 py-1 text-[10px] font-bold rounded bg-slate-100 text-slate-600 hover:bg-slate-200"
+              >
+                Examiner
+              </button>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+// ─── 5. ANALYTICS — KPI dashboard ──────────────────────────────────────────
+function AnalyticsSection({ conversations, currentUserId }: { conversations: ChatConversation[]; currentUserId: string }) {
+  const total = conversations.length;
+  const direct = conversations.filter(c => c.type === 'DIRECT').length;
+  const group = conversations.filter(c => c.type === 'GROUP').length;
+  const unread = conversations.reduce((sum, c) => {
+    const me = c.participants.find(p => p.userId === currentUserId);
+    return sum + (me?.lastReadAt && c.lastMessageAt && me.lastReadAt < c.lastMessageAt ? 1 : 0);
+  }, 0);
+  const totalParticipants = conversations.reduce((sum, c) => sum + c.participants.length, 0);
+
+  return (
+    <div className="p-3 space-y-3">
+      <div className="flex items-center gap-1.5 px-1 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <BarChart3 className="w-3 h-3" /> Tableau de bord
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="p-3 rounded-lg bg-gradient-to-br from-[#0A2A5E] to-[#1C6FE8] text-white">
+          <div className="flex items-center gap-2 mb-1">
+            <MessageSquare className="w-4 h-4 text-[#FFE08A]" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#FFE08A]">Conversations</span>
+          </div>
+          <div className="text-2xl font-bold">{total}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-white border border-slate-200">
+          <div className="flex items-center gap-2 mb-1">
+            <Bell className="w-4 h-4 text-red-500" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Non lus</span>
+          </div>
+          <div className="text-2xl font-bold text-red-600">{unread}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-white border border-slate-200">
+          <div className="flex items-center gap-2 mb-1">
+            <MessageSquare className="w-4 h-4 text-blue-500" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Directs</span>
+          </div>
+          <div className="text-2xl font-bold text-blue-600">{direct}</div>
+        </div>
+        <div className="p-3 rounded-lg bg-white border border-slate-200">
+          <div className="flex items-center gap-2 mb-1">
+            <Users className="w-4 h-4 text-emerald-500" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Groupes</span>
+          </div>
+          <div className="text-2xl font-bold text-emerald-600">{group}</div>
+        </div>
+      </div>
+      <div className="p-3 rounded-lg bg-white border border-slate-200">
+        <div className="flex items-center gap-2 mb-1">
+          <Users className="w-4 h-4 text-[#CFA63A]" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Participants totaux</span>
+        </div>
+        <div className="text-2xl font-bold text-[#CFA63A]">{totalParticipants}</div>
+      </div>
+      <div className="p-3 rounded-lg bg-gradient-to-br from-[#0A2A5E] to-[#1C6FE8] text-white">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-[#FFE08A]" />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold">Helm Connect Analytics</div>
+            <div className="text-[10px] text-[#FFE08A]">Statistiques de communication en temps réel.</div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Helm Connect — Adaptive launcher icon (round variant)
-  Same as ic_launcher.xml but for round icon mask.
+  Helm Connect — Adaptive launcher icon (Android 8.0+ Oreo) V3-11
+  Combines the Royal Blue background + Helm Connect logo foreground.
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />

@@ -36,7 +36,6 @@ class RingtoneService {
   Uint8List? _incomingWav;
 
   /// Generate a short WAV file in memory with the given frequencies.
-  /// [frequencies] : list of (freq, startTimeSec, durationSec, volume) tuples
   Uint8List _generateWav({
     required List<({double freq, double start, double duration, double volume})> tones,
     required double totalDuration,
@@ -44,22 +43,39 @@ class RingtoneService {
   }) {
     final numSamples = (totalDuration * sampleRate).round();
     final dataSize = numSamples * 2; // 16-bit mono
-    final byteData = ByteData(44 + dataSize);
+    // Use a list of bytes instead of ByteData.setString (which doesn't exist)
+    final bytes = <int>[];
 
-    // WAV header (44 bytes)
-    byteData.setString(0, 'RIFF');
-    byteData.setUint32(4, 36 + dataSize, Endian.little);
-    byteData.setString(8, 'WAVE');
-    byteData.setString(12, 'fmt ');
-    byteData.setUint32(16, 16, Endian.little); // fmt chunk size
-    byteData.setUint16(20, 1, Endian.little); // PCM
-    byteData.setUint16(22, 1, Endian.little); // mono
-    byteData.setUint32(24, sampleRate, Endian.little);
-    byteData.setUint32(28, sampleRate * 2, Endian.little); // byte rate
-    byteData.setUint16(32, 2, Endian.little); // block align
-    byteData.setUint16(34, 16, Endian.little); // bits per sample
-    byteData.setString(36, 'data');
-    byteData.setUint32(40, dataSize, Endian.little);
+    // WAV header (44 bytes) — write strings as ASCII byte values
+    void writeString(String s) {
+      for (int i = 0; i < s.length; i++) {
+        bytes.add(s.codeUnitAt(i));
+      }
+    }
+    void writeUint32(int v) {
+      bytes.add(v & 0xFF);
+      bytes.add((v >> 8) & 0xFF);
+      bytes.add((v >> 16) & 0xFF);
+      bytes.add((v >> 24) & 0xFF);
+    }
+    void writeUint16(int v) {
+      bytes.add(v & 0xFF);
+      bytes.add((v >> 8) & 0xFF);
+    }
+
+    writeString('RIFF');
+    writeUint32(36 + dataSize);
+    writeString('WAVE');
+    writeString('fmt ');
+    writeUint32(16); // fmt chunk size
+    writeUint16(1);  // PCM
+    writeUint16(1);  // mono
+    writeUint32(sampleRate);
+    writeUint32(sampleRate * 2); // byte rate
+    writeUint16(2);  // block align
+    writeUint16(16); // bits per sample
+    writeString('data');
+    writeUint32(dataSize);
 
     // Generate samples
     for (int i = 0; i < numSamples; i++) {
@@ -76,10 +92,11 @@ class RingtoneService {
       }
       // Clamp + convert to 16-bit signed
       final clamped = (sample * 32767).clamp(-32768, 32767).toInt();
-      byteData.setInt16(44 + i * 2, clamped, Endian.little);
+      bytes.add(clamped & 0xFF);
+      bytes.add((clamped >> 8) & 0xFF);
     }
 
-    return byteData.buffer.asUint8List();
+    return Uint8List.fromList(bytes);
   }
 
   Future<void> _ensureWavsGenerated() async {
@@ -95,13 +112,12 @@ class RingtoneService {
     );
 
     // Incoming: two short rings (C5 + E5 chord) every 3s
-    // First ring: 0 to 0.4s. Second ring: 0.6 to 1.0s.
     _incomingWav = _generateWav(
       tones: [
-        (freq: 523.25, start: 0.0, duration: 0.4, volume: 0.06),  // C5
-        (freq: 659.25, start: 0.0, duration: 0.4, volume: 0.04),  // E5 (chord)
-        (freq: 523.25, start: 0.6, duration: 0.4, volume: 0.06),  // C5
-        (freq: 659.25, start: 0.6, duration: 0.4, volume: 0.04),  // E5 (chord)
+        (freq: 523.25, start: 0.0, duration: 0.4, volume: 0.06),
+        (freq: 659.25, start: 0.0, duration: 0.4, volume: 0.04),
+        (freq: 523.25, start: 0.6, duration: 0.4, volume: 0.06),
+        (freq: 659.25, start: 0.6, duration: 0.4, volume: 0.04),
       ],
       totalDuration: 1.0,
       sampleRate: 22050,
@@ -109,10 +125,9 @@ class RingtoneService {
   }
 
   /// Start playing the ringtone in the given mode.
-  /// [mode] : 'outgoing' (single gentle beep every 2s) or 'incoming' (double ring every 3s)
   Future<void> start({required String mode}) async {
-    if (_isPlaying && _currentMode == mode) return; // Already playing same mode
-    await stop(); // Stop any current ringtone before switching modes
+    if (_isPlaying && _currentMode == mode) return;
+    await stop();
 
     try {
       await _ensureWavsGenerated();
@@ -121,15 +136,12 @@ class RingtoneService {
           ? const Duration(seconds: 3)
           : const Duration(seconds: 2);
 
-      // Set volume low for a soft, professional tone
       await _player.setVolume(0.3);
       await _player.setReleaseMode(ReleaseMode.stop);
       await _player.setPlayerMode(PlayerMode.lowLatency);
 
-      // Play the WAV once immediately
       await _player.play(BytesSource(wav));
 
-      // Schedule loop playback (without overlap)
       _timer = Timer.periodic(loopInterval, (_) async {
         try {
           await _player.stop();

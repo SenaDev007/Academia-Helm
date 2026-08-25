@@ -154,7 +154,7 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'notifications', child: ListTile(leading: Icon(Icons.bell), title: Text('Notifications'))),
+              const PopupMenuItem(value: 'notifications', child: ListTile(leading: Icon(Icons.notifications), title: Text('Notifications'))),
               const PopupMenuItem(value: 'logout', child: ListTile(leading: Icon(Icons.logout), title: Text('Déconnexion'))),
             ],
           ),

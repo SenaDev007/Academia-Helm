@@ -425,7 +425,7 @@ class CallService extends ChangeNotifier {
 
   /// Toggle microphone mute.
   void toggleMute() {
-    final audioTrack = _localStream?.getAudioTracks().firstOrNull;
+    final audioTrack = _localStream?.getAudioTracks().isNotEmpty == true ? _localStream!.getAudioTracks().first : null;
     if (audioTrack != null) {
       audioTrack.enabled = !audioTrack.enabled;
       _muted = !audioTrack.enabled;
@@ -435,7 +435,7 @@ class CallService extends ChangeNotifier {
 
   /// Toggle camera on/off (video calls only).
   void toggleVideo() {
-    final videoTrack = _localStream?.getVideoTracks().firstOrNull;
+    final videoTrack = _localStream?.getVideoTracks().isNotEmpty == true ? _localStream!.getVideoTracks().first : null;
     if (videoTrack != null) {
       videoTrack.enabled = !videoTrack.enabled;
       _videoOff = !videoTrack.enabled;

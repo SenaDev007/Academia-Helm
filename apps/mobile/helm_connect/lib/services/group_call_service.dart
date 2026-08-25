@@ -419,7 +419,7 @@ class GroupCallService extends ChangeNotifier {
     _removeParticipant(leavingUserId);
 
     // If the initiator left and we're a recipient, end the call
-    if (!_isInitiator && leavingUserId == _participants.keys.firstOrNull) {
+    if (!_isInitiator && leavingUserId == (_participants.keys.isNotEmpty ? _participants.keys.first : null)) {
       _cleanup();
     }
     notifyListeners();
@@ -427,7 +427,7 @@ class GroupCallService extends ChangeNotifier {
 
   // ─── Local controls ──────────────────────────────────────────────────────
   void toggleMute() {
-    final audioTrack = _localStream?.getAudioTracks().firstOrNull;
+    final audioTrack = _localStream?.getAudioTracks().isNotEmpty == true ? _localStream!.getAudioTracks().first : null;
     if (audioTrack != null) {
       audioTrack.enabled = !audioTrack.enabled;
       _muted = !audioTrack.enabled;
@@ -436,7 +436,7 @@ class GroupCallService extends ChangeNotifier {
   }
 
   void toggleVideo() {
-    final videoTrack = _localStream?.getVideoTracks().firstOrNull;
+    final videoTrack = _localStream?.getVideoTracks().isNotEmpty == true ? _localStream!.getVideoTracks().first : null;
     if (videoTrack != null) {
       videoTrack.enabled = !videoTrack.enabled;
       _videoOff = !videoTrack.enabled;

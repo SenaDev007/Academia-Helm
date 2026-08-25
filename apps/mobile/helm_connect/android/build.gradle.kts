@@ -42,6 +42,27 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// ⭐ FIX: Force all subprojects' buildscript repositories to include our repos
+//    This is needed because flutter_webrtc + audioplayers_android have their own
+//    build.gradle files with buildscript blocks that reference Maven Central
+//    (repo.maven.apache.org) which may fail DNS resolution.
+subprojects {
+    project.buildscript {
+        repositories {
+            google()
+            mavenCentral()
+            maven { url = uri("https://maven.google.com") }
+            maven { url = uri("https://repo1.maven.org/maven2") }
+        }
+    }
+    project.repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://maven.google.com") }
+        maven { url = uri("https://repo1.maven.org/maven2") }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

@@ -12,6 +12,7 @@
 // and the local video is a small PiP rectangle (bottom-right).
 // ============================================================================
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../services/call_service.dart';
 
 class CallScreen extends StatefulWidget {

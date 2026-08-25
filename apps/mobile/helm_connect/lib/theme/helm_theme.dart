@@ -96,7 +96,7 @@ class HelmThemes {
           borderSide: const BorderSide(color: HelmColors.primary, width: 2),
         ),
       ),
-      cardTheme: const CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: HelmColors.surface,
@@ -130,7 +130,7 @@ class HelmThemes {
         backgroundColor: HelmColors.darkPrimary,
         foregroundColor: Colors.white,
       ),
-      cardTheme: const CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: HelmColors.darkSurface,

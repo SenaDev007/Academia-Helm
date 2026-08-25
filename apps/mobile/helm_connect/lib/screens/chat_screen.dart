@@ -16,8 +16,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
-// ⭐ Real-time conversation list updates via Socket.io
-import '../services/socket_service.dart';
 import 'conversation_detail_screen.dart';
 import 'announcements_screen.dart';
 import 'notification_prefs_screen.dart';
@@ -36,38 +34,19 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _error;
   Timer? _refreshTimer;
   User? _currentUser;
-  // ⭐ Socket.io for real-time conversation list updates
-  final SocketService _socket = SocketService();
-  bool _socketConnected = false;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentUser();
     _loadConversations();
-    _initSocket();
-    // Polling fallback — reduced to 30s since Socket.io delivers instantly
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadConversations());
-  }
-
-  // ⭐ Socket.io: connect for real-time conversation list updates
-  //    (new message → bump conversation to top, increment unread count)
-  void _initSocket() async {
-    final token = await ApiService.getAuthToken();
-    final userId = await AuthService.getUserId();
-    if (token == null || userId == null) return;
-    await _socket.connect(token: token, userId: userId);
-    _socket.onNewMessage = (data) {
-      // Refresh the conversation list when any new message arrives
-      _loadConversations();
-    };
-    if (mounted) setState(() => _socketConnected = _socket.isConnected);
+    // Polling fallback (Socket.io real-time will be added in V2)
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => _loadConversations());
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    _socket.disconnect();
     super.dispose();
   }
 

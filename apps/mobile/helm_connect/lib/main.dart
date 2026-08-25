@@ -24,8 +24,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 // ⭐ Firebase — initialisation au démarrage
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-// ⭐ V3: Hive for offline-first chat storage (replaces SharedPreferences)
-import 'package:hive_flutter/hive_flutter.dart';
 // ⭐ V3-4: foreground banner + deep-link via flutter_local_notifications
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'theme/helm_theme.dart';
@@ -55,11 +53,6 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 void main() async {
   // ⭐ Initialiser les bindings Flutter avant tout await
   WidgetsFlutterBinding.ensureInitialized();
-
-  // ⭐ V3: Initialize Hive for offline-first chat storage.
-  //    Must run BEFORE any Hive.openBox() call (chat_local_storage.dart,
-  //    ratchet_store.dart). Lazy box opening is fine — no boxes are opened here.
-  await Hive.initFlutter();
 
   // ⭐ V3-4: Initialize flutter_local_notifications (foreground banner + channel)
   const androidInit = AndroidInitializationSettings('@mipmap/ic_notification');

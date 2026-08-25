@@ -17,8 +17,6 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 // ⭐ V3-1: Offline-first chat — local cache + send queue
 import '../services/chat_local_storage.dart';
-// ⭐ E2E encryption (RSA-OAEP via pointycastle)
-import '../services/crypto_service.dart';
 // ⭐ V3-5: WebRTC calls + branded call screen
 import '../services/call_service.dart';
 import 'call_screen.dart';
@@ -55,8 +53,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   final Map<String, _ReplyQuote> _replyQuoteCache = {};
   // ⭐ V3-5: WebRTC call service (audio + video)
   late final CallService _callService;
-  // ⭐ E2E: cache of userId → base64 SPKI public key (fetched once per conversation)
-  final Map<String, String> _recipientPublicKeys = {};
 
   @override
   void initState() {
@@ -79,56 +75,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
     // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
     _flushPendingQueue();
-  }
-
-  // ⭐ E2E: ensure this user has a key pair + fetch recipient public keys.
-  //    Called on first message send. Best-effort — falls back to plaintext
-  //    if the recipient has no key, mirroring the web client.
-  Future<void> _ensureE2EKeys() async {
-    try {
-      // 1. Generate our own key pair if missing + upload to backend
-      final hasKey = await CryptoService.hasPrivateKey();
-      if (!hasKey) {
-        final publicKey = await CryptoService.generateKeyPair();
-        final userId = await AuthService.getUserId();
-        if (userId != null && userId.isNotEmpty) {
-          await ApiService.setPublicKey(userId, publicKey);
-        }
-      }
-
-      // 2. Fetch public keys for all other participants (DIRECT + GROUP)
-      final otherUserIds = widget.conversation.participants
-          .where((p) => p.userId != _currentUserId)
-          .map((p) => p.userId)
-          .where((id) => id.isNotEmpty)
-          .toList();
-      if (otherUserIds.isEmpty) return;
-
-      // Only fetch keys we don't already have cached
-      final missing = otherUserIds.where((id) => !_recipientPublicKeys.containsKey(id)).toList();
-      if (missing.isEmpty) return;
-
-      final fetched = await ApiService.getPublicKeys(missing);
-      _recipientPublicKeys.addAll(fetched);
-    } catch (_) {
-      // silent — encryption is best-effort; will fall back to plaintext
-    }
-  }
-
-  // ⭐ E2E: get the public key for the "primary" recipient (DIRECT conv)
-  //    or the first available key (GROUP conv — V2 limitation, V3 will use
-  //    a per-conversation symmetric key wrapped for each member).
-  String? _primaryRecipientPublicKey() {
-    if (_recipientPublicKeys.isEmpty) return null;
-    if (widget.conversation.type == 'DIRECT') {
-      final other = widget.conversation.participants.firstWhere(
-        (p) => p.userId != _currentUserId,
-        orElse: () => widget.conversation.participants.first,
-      );
-      return _recipientPublicKeys[other.userId];
-    }
-    // GROUP: use the first available key
-    return _recipientPublicKeys.values.first;
   }
 
   Future<void> _loadCurrentUserId() async {
@@ -344,14 +290,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     try {
       final json = await ApiService.listMessages(widget.conversation.id);
       final userId = await AuthService.getUserId();
-      // ⭐ E2E: decrypt any `E2E:`-prefixed messages in-place before rendering.
-      //    Decryption is async + best-effort (returns a placeholder on failure).
-      for (final m in json) {
-        final content = m['content'] as String?;
-        if (content != null && CryptoService.isEncrypted(content)) {
-          m['content'] = await CryptoService.decryptMessage(content);
-        }
-      }
       if (mounted) {
         setState(() {
           _messages = json.map((m) => Message.fromJson(m, userId ?? '')).toList();
@@ -424,17 +362,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   Future<void> _sendMessage() async {
-    final rawContent = _messageController.text.trim();
-    if (rawContent.isEmpty) return;
+    final content = _messageController.text.trim();
+    if (content.isEmpty) return;
     setState(() => _sending = true);
-
-    // ⭐ E2E: ensure we have a key pair + recipient public key, then encrypt.
-    //    Falls back to plaintext if the recipient has no key (mirrors web client).
-    await _ensureE2EKeys();
-    final recipientKey = _primaryRecipientPublicKey();
-    final content = recipientKey != null
-        ? await CryptoService.encryptMessage(rawContent, recipientKey)
-        : rawContent;
 
     // ⭐ V3-4: Capture the replyToId if user is replying to a message
     final replyToId = _replyToMessage?.id;

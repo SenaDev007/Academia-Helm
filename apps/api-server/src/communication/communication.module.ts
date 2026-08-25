@@ -57,9 +57,6 @@ import { DynamicGroupService } from './services/dynamic-group.service';
 import { NotificationPreferencesService } from './services/notification-preferences.service';
 import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
 import { HelmConnectV2Controller } from './helm-connect-v2.controller';
-// ⭐ V3: Signal Protocol (X3DH + Double Ratchet) — pre-key bundles
-import { SignalPreKeysController } from './signal-prekeys.controller';
-import { SignalPreKeysService } from './services/signal-prekeys.service';
 import { GlobalSearchService } from './services/global-search.service';
 import { ConversationDocumentCenterService } from './services/document-center.service';
 import { PollService } from './services/poll.service';
@@ -108,8 +105,6 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     AnnouncementController,
     // ⭐ Helm Connect V2 — Dynamic Groups + Notifications + Scheduled Announcements
     HelmConnectV2Controller,
-    // ⭐ V3: Signal Protocol pre-key endpoints (POST/GET /api/chat/signal/*)
-    SignalPreKeysController,
     // ⭐ Helm Connect V2.6 — Polls (Telegram-style)
     PollController,
   ],
@@ -160,9 +155,7 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
     ChatSummaryService,
     // ⭐ V3-2 — Whisper-powered audio transcriptions
     ChatTranscriptionService,
-    // ⭐ V3: Signal Protocol
-    SignalPreKeysService,
-    ],
+  ],
   exports: [
     EmailService,
     EmailLogService,

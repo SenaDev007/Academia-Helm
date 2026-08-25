@@ -1,29 +1,25 @@
 // ============================================================================
-// CHAT LOCAL STORAGE — Offline cache + send queue (Hive-backed, V3)
+// CHAT LOCAL STORAGE — Offline cache + send queue (V3-1)
 // ============================================================================
 //
-// ⭐ MIGRATED FROM SharedPreferences TO HIVE (V3).
+// Offline-first pour Helm Connect mobile. Permet :
+//   1. Affichage instantané des messages au chargement (cache local)
+//   2. Envoi de messages hors-ligne (queue pending) + retry au reconnect
 //
-// Hive gives us:
-//   - Per-key storage (no full-string rewrite on every append)
-//   - Binary efficiency (Hive uses a custom binary format)
-//   - Lazy box loading (only loaded conversations are in memory)
-//   - Type-safe adapters via @HiveType (V3.1 — currently using JSON for simplicity)
+// Utilise SharedPreferences (déjà présent dans pubspec.yaml). Deux clés :
+//   - 'chat_messages_<conversationId>' : JSON array des messages
+//   - 'chat_pending_queue' : JSON array des messages en attente d'envoi
 //
-// Public API is unchanged from V2 — call sites in conversation_detail_screen.dart
-// work without modification.
-//
-// On first launch after the V3 upgrade, the migration helper reads any old
-// SharedPreferences data and writes it to Hive, then clears the old keys.
+// Pattern :
+//   - Toutes les méthodes sont async et never-throw (log + fallback).
+//   - Le cache est limité à 200 messages par conversation (FIFO).
 // ============================================================================
 
 import 'dart:convert';
-
-import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-// ─── Types (unchanged from V2) ─────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────
 
 class OfflineMessage {
   final String id;
@@ -122,93 +118,21 @@ class PendingMessage {
   }
 }
 
-// ─── Hive-backed storage ───────────────────────────────────────────────
+// ─── Storage ───────────────────────────────────────────────────────────
 
 class ChatLocalStorage {
   static const _maxMessagesPerConversation = 200;
+  static const _pendingQueueKey = 'chat_pending_queue';
 
-  // Hive box names
-  static const _messagesBoxName = 'helm_chat_messages'; // key: conversationId, value: JSON list
-  static const _pendingBoxName = 'helm_chat_pending';   // key: localId, value: JSON object
-
-  // Old SharedPreferences keys (for one-time migration)
-  static const _legacyPendingKey = 'chat_pending_queue';
-  static String _legacyMessagesKey(String conversationId) =>
+  static String _messagesKey(String conversationId) =>
       'chat_messages_$conversationId';
-  static const _migrationDoneKey = 'chat_hive_migration_done';
-
-  static bool _migrationChecked = false;
-
-  static Future<Box<String>> _openMessagesBox() async {
-    if (Hive.isBoxOpen(_messagesBoxName)) {
-      return Hive.box<String>(_messagesBoxName);
-    }
-    return Hive.openBox<String>(_messagesBoxName);
-  }
-
-  static Future<Box<String>> _openPendingBox() async {
-    if (Hive.isBoxOpen(_pendingBoxName)) {
-      return Hive.box<String>(_pendingBoxName);
-    }
-    return Hive.openBox<String>(_pendingBoxName);
-  }
-
-  /// One-time migration: read old SharedPreferences data, write to Hive,
-  /// then clear the old keys. Idempotent — guarded by a flag in SharedPreferences.
-  static Future<void> _migrateFromSharedPreferencesIfNeeded() async {
-    if (_migrationChecked) return;
-    _migrationChecked = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_migrationDoneKey) ?? false) return;
-
-      final messagesBox = await _openMessagesBox();
-      final pendingBox = await _openPendingBox();
-
-      // 1. Migrate pending queue (single key → multiple keys)
-      final legacyPending = prefs.getString(_legacyPendingKey);
-      if (legacyPending != null && legacyPending.isNotEmpty) {
-        try {
-          final list = jsonDecode(legacyPending) as List<dynamic>;
-          for (final item in list) {
-            final pending = PendingMessage.fromJson(item as Map<String, dynamic>);
-            await pendingBox.put(pending.localId, jsonEncode(pending.toJson()));
-          }
-          await prefs.remove(_legacyPendingKey);
-        } catch (_) {
-          // silent — keep legacy data for retry on next launch
-        }
-      }
-
-      // 2. Migrate per-conversation messages
-      final allKeys = prefs.getKeys();
-      final legacyConvKeys = allKeys
-          .where((k) => k.startsWith('chat_messages_'))
-          .toList();
-      for (final key in legacyConvKeys) {
-        final raw = prefs.getString(key);
-        if (raw == null || raw.isEmpty) continue;
-        final convId = key.substring('chat_messages_'.length);
-        await messagesBox.put(convId, raw);
-        await prefs.remove(key);
-      }
-
-      await prefs.setBool(_migrationDoneKey, true);
-    } catch (_) {
-      // silent — migration will retry on next launch
-      _migrationChecked = false;
-    }
-  }
-
-  // ─── Messages cache (per conversation) ───────────────────────────────
 
   /// Get cached messages for a conversation, sorted by createdAt asc.
+  /// Returns [] if not found / error.
   static Future<List<OfflineMessage>> getMessages(String conversationId) async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openMessagesBox();
-      final raw = box.get(conversationId);
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_messagesKey(conversationId));
       if (raw == null || raw.isEmpty) return [];
       final list = jsonDecode(raw) as List<dynamic>;
       final items = list
@@ -228,13 +152,13 @@ class ChatLocalStorage {
   ) async {
     if (messages.isEmpty) return;
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
+      // Limite à 200 derniers (FIFO)
       final trimmed = messages.length > _maxMessagesPerConversation
           ? messages.sublist(messages.length - _maxMessagesPerConversation)
           : messages;
-      final box = await _openMessagesBox();
-      await box.put(
-        conversationId,
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _messagesKey(conversationId),
         jsonEncode(trimmed.map((m) => m.toJson()).toList()),
       );
     } catch (_) {
@@ -270,6 +194,7 @@ class ChatLocalStorage {
   ) async {
     try {
       final existing = await getMessages(conversationId);
+      // Trouver le message avec localId et le remplacer
       final updated = <OfflineMessage>[];
       for (final m in existing) {
         if (m.localId == localId) {
@@ -325,32 +250,25 @@ class ChatLocalStorage {
   /// Clear all messages for a conversation.
   static Future<void> clearConversation(String conversationId) async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openMessagesBox();
-      await box.delete(conversationId);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_messagesKey(conversationId));
     } catch (_) {
       // silent
     }
   }
 
-  // ─── Pending queue (send retry) ──────────────────────────────────────
+  // ─── Pending queue (send retry) ───────────────────────────────────────
 
   /// Get all pending messages, sorted by queuedAt asc.
   static Future<List<PendingMessage>> getPendingMessages() async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openPendingBox();
-      final items = <PendingMessage>[];
-      for (final key in box.keys) {
-        final raw = box.get(key);
-        if (raw == null) continue;
-        try {
-          final json = jsonDecode(raw) as Map<String, dynamic>;
-          items.add(PendingMessage.fromJson(json));
-        } catch (_) {
-          // skip corrupt entries
-        }
-      }
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_pendingQueueKey);
+      if (raw == null || raw.isEmpty) return [];
+      final list = jsonDecode(raw) as List<dynamic>;
+      final items = list
+          .map((e) => PendingMessage.fromJson(e as Map<String, dynamic>))
+          .toList();
       items.sort((a, b) => a.queuedAt.compareTo(b.queuedAt));
       return items;
     } catch (_) {
@@ -361,9 +279,20 @@ class ChatLocalStorage {
   /// Add a message to the pending queue.
   static Future<void> addPendingMessage(PendingMessage pending) async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openPendingBox();
-      await box.put(pending.localId, jsonEncode(pending.toJson()));
+      final existing = await getPendingMessages();
+      // Dédoubler par localId
+      final seen = <String>{};
+      final dedup = <PendingMessage>[];
+      for (final p in [...existing, pending]) {
+        if (seen.contains(p.localId)) continue;
+        seen.add(p.localId);
+        dedup.add(p);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _pendingQueueKey,
+        jsonEncode(dedup.map((p) => p.toJson()).toList()),
+      );
     } catch (_) {
       // silent
     }
@@ -372,9 +301,13 @@ class ChatLocalStorage {
   /// Remove a message from the pending queue (after successful send).
   static Future<void> removePendingMessage(String localId) async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openPendingBox();
-      await box.delete(localId);
+      final existing = await getPendingMessages();
+      final filtered = existing.where((p) => p.localId != localId).toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _pendingQueueKey,
+        jsonEncode(filtered.map((p) => p.toJson()).toList()),
+      );
     } catch (_) {
       // silent
     }
@@ -386,42 +319,36 @@ class ChatLocalStorage {
     String? error,
   ) async {
     try {
-      await _migrateFromSharedPreferencesIfNeeded();
-      final box = await _openPendingBox();
-      final raw = box.get(localId);
-      if (raw == null) return;
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      final pending = PendingMessage.fromJson(json);
-      final updated = PendingMessage(
-        localId: pending.localId,
-        conversationId: pending.conversationId,
-        senderId: pending.senderId,
-        content: pending.content,
-        replyToId: pending.replyToId,
-        queuedAt: pending.queuedAt,
-        attempts: pending.attempts + 1,
-        lastError: error,
+      final existing = await getPendingMessages();
+      final updated = existing.map((p) {
+        if (p.localId == localId) {
+          return PendingMessage(
+            localId: p.localId,
+            conversationId: p.conversationId,
+            senderId: p.senderId,
+            content: p.content,
+            replyToId: p.replyToId,
+            queuedAt: p.queuedAt,
+            attempts: p.attempts + 1,
+            lastError: error,
+          );
+        }
+        return p;
+      }).toList();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _pendingQueueKey,
+        jsonEncode(updated.map((p) => p.toJson()).toList()),
       );
-      await box.put(localId, jsonEncode(updated.toJson()));
     } catch (_) {
       // silent
     }
   }
 
-  // ─── Utilities ───────────────────────────────────────────────────────
+  // ─── Utilities ────────────────────────────────────────────────────────
 
   /// Generate a UUID for local pending messages.
   static String generateLocalId() {
     return const Uuid().v4();
-  }
-
-  /// Close all open Hive boxes (for app shutdown / testing).
-  static Future<void> closeBoxes() async {
-    if (Hive.isBoxOpen(_messagesBoxName)) {
-      await Hive.box(_messagesBoxName).close();
-    }
-    if (Hive.isBoxOpen(_pendingBoxName)) {
-      await Hive.box(_pendingBoxName).close();
-    }
   }
 }

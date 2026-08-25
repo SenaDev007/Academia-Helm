@@ -9,6 +9,7 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import 'login_screen.dart';
 
 enum PortalType { parent, teacher, school }
 
@@ -32,11 +33,11 @@ class _PortalSelectScreenState extends State<PortalSelectScreen> {
   void _continue() {
     if (_selectedPortal == null) return;
 
-    final portalLabel = switch (_selectedPortal) {
-      PortalType.parent => 'parent',
-      PortalType.teacher => 'teacher',
-      PortalType.school => 'school',
-    };
+    final portalLabel = _selectedPortal == PortalType.parent
+        ? 'parent'
+        : _selectedPortal == PortalType.teacher
+            ? 'teacher'
+            : 'school';
 
     Navigator.push(
       context,

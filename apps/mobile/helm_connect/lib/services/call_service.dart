@@ -101,7 +101,7 @@ class CallService extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      debugPrint('⚠️ Permission request failed: $e');
+      debugPrint('WARN: Permission request failed: $e');
       return false;
     }
   }
@@ -118,14 +118,14 @@ class CallService extends ChangeNotifier {
     String? myAvatarUrl,
   }) async {
     if (_state != CallState.idle) {
-      debugPrint('⚠️ Already in a call — ignoring startCall');
+      debugPrint('WARN: Already in a call — ignoring startCall');
       return;
     }
 
     final video = callType == 'VIDEO';
     final hasPerms = await _requestPermissions(video: video);
     if (!hasPerms) {
-      debugPrint('⚠️ Permissions denied — cannot start call');
+      debugPrint('WARN: Permissions denied — cannot start call');
       notifyListeners();
       return;
     }
@@ -216,7 +216,7 @@ class CallService extends ChangeNotifier {
         'callerAvatarUrl': myAvatarUrl,
       });
     } catch (e) {
-      debugPrint('❌ startCall failed: $e');
+      debugPrint('ERROR: startCall failed: $e');
       await _cleanup();
       notifyListeners();
     }
@@ -344,7 +344,7 @@ class CallService extends ChangeNotifier {
       // ⭐ V3-6: Stop the ringtone when the call becomes active
       _ringtone.stop();
     } catch (e) {
-      debugPrint('❌ acceptIncomingCall failed: $e');
+      debugPrint('ERROR: acceptIncomingCall failed: $e');
       await _cleanup();
       notifyListeners();
     }
@@ -378,7 +378,7 @@ class CallService extends ChangeNotifier {
       // ⭐ V3-6: Stop the ringtone when the call becomes active (caller side)
       _ringtone.stop();
     } catch (e) {
-      debugPrint('❌ onCallAnswer failed: $e');
+      debugPrint('ERROR: onCallAnswer failed: $e');
     }
   }
 
@@ -394,7 +394,7 @@ class CallService extends ChangeNotifier {
       );
       await _peerConnection!.addCandidate(candidate);
     } catch (e) {
-      debugPrint('⚠️ onIceCandidate failed (non-blocking): $e');
+      debugPrint('WARN: onIceCandidate failed (non-blocking): $e');
     }
   }
 

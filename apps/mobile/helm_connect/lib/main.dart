@@ -40,7 +40,7 @@ final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotifica
 
 Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('🔔 Background message: ${message.notification?.title} / ${message.data}');
+  print('NOTIF: Background message: ${message.notification?.title} / ${message.data}');
 }
 
 void main() async {
@@ -50,7 +50,7 @@ void main() async {
   try {
     await Hive.initFlutter();
   } catch (e) {
-    print('⚠️ Hive init failed (non-blocking): $e');
+    print('WARN: Hive init failed (non-blocking): $e');
   }
 
   // ⭐ V3-4: Initialize flutter_local_notifications (wrapped in try/catch)
@@ -76,16 +76,16 @@ void main() async {
           ?.createNotificationChannel(_fcmChannel);
     }
   } catch (e) {
-    print('⚠️ Local notifications init failed (non-blocking): $e');
+    print('WARN: Local notifications init failed (non-blocking): $e');
   }
 
   // ⭐ Initialize Firebase
   try {
     await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
-    print('✅ Firebase initialisé');
+    print('SUCCESS: Firebase initialisé');
   } catch (e) {
-    print('⚠️ Firebase init échoué: $e (continuons sans Firebase)');
+    print('WARN: Firebase init échoué: $e (continuons sans Firebase)');
   }
 
   runApp(const HelmConnectApp());
@@ -197,7 +197,7 @@ class _SplashScreenState extends State<SplashScreen>
         );
       }
     } catch (e) {
-      print('⚠️ Session check failed: $e');
+      print('WARN: Session check failed: $e');
       if (!mounted) return;
       // On error, go to tenant selection
       Navigator.pushReplacement(
@@ -254,9 +254,9 @@ class _SplashScreenState extends State<SplashScreen>
               platform: 'ANDROID',
               deviceInfo: 'Helm Connect Flutter',
             );
-            print('✅ FCM token registered');
+            print('SUCCESS: FCM token registered');
           } catch (e) {
-            print('⚠️ FCM token registration failed: $e');
+            print('WARN: FCM token registration failed: $e');
           }
         }
       });
@@ -269,11 +269,11 @@ class _SplashScreenState extends State<SplashScreen>
             deviceInfo: 'Helm Connect Flutter',
           );
         } catch (e) {
-          print('⚠️ FCM token refresh failed: $e');
+          print('WARN: FCM token refresh failed: $e');
         }
       });
     } catch (e) {
-      print('⚠️ FCM setup failed (non-blocking): $e');
+      print('WARN: FCM setup failed (non-blocking): $e');
     }
   }
 

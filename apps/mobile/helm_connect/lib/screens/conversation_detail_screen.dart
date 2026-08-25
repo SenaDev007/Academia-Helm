@@ -1006,7 +1006,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ),
               ),
             ],
-            // ⭐ V3-4: Reactions display (grouped by emoji with count)
+            // ⭐ V3-4: Reactions display (grouped by reaction type with count)
             if (reactionCounts.isNotEmpty) ...[
               const SizedBox(height: 4),
               Wrap(
@@ -1014,6 +1014,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 runSpacing: 2,
                 children: reactionCounts.entries.map((entry) {
                   final isMine = myReactions[entry.key] == true;
+                  // Map reaction string to icon
+                  final reactionIcon = _getReactionIcon(entry.key);
                   return GestureDetector(
                     onTap: () => _sendReaction(msg, entry.key),
                     child: Container(
@@ -1026,7 +1028,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(entry.key, style: const TextStyle(fontSize: 12)),
+                          Icon(reactionIcon, size: 14, color: isMine ? const Color(0xFF1677FF) : const Color(0xFF64748B)),
                           if (entry.value > 1) ...[
                             const SizedBox(width: 2),
                             Text('${entry.value}', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
@@ -1070,6 +1072,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-4: 3-state read receipt (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
+  // Map reaction string to professional icon (no emojis)
+  IconData _getReactionIcon(String reaction) {
+    switch (reaction) {
+      case 'like': case '👍': return Icons.thumb_up;
+      case 'love': case '❤️': return Icons.favorite;
+      case 'laugh': case '😂': return Icons.sentiment_very_satisfied;
+      case 'wow': case '😮': return Icons.sentiment_neutral;
+      case 'sad': case '😢': return Icons.sentiment_dissatisfied;
+      case 'pray': case '🙏': return Icons.volunteer_activism;
+      default: return Icons.thumb_up;
+    }
+  }
+
   Widget _buildReadReceiptIcon(Message msg) {
     if (msg.readBy.isNotEmpty) {
       return const Icon(Icons.done_all, size: 12, color: Color(0xFF13C2C2)); // blue = read
@@ -1225,7 +1240,14 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   void _showReactionPicker(Message msg) {
-    final emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+    final reactions = [
+      {'emoji': 'like', 'icon': Icons.thumb_up, 'color': const Color(0xFF3B82F6)},
+      {'emoji': 'love', 'icon': Icons.favorite, 'color': const Color(0xFFEC4899)},
+      {'emoji': 'laugh', 'icon': Icons.sentiment_very_satisfied, 'color': const Color(0xFFF59E0B)},
+      {'emoji': 'wow', 'icon': Icons.sentiment_neutral, 'color': const Color(0xFF8B5CF6)},
+      {'emoji': 'sad', 'icon': Icons.sentiment_dissatisfied, 'color': const Color(0xFF06B6D4)},
+      {'emoji': 'pray', 'icon': Icons.volunteer_activism, 'color': const Color(0xFF10B981)},
+    ];
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -1233,13 +1255,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           padding: const EdgeInsets.all(16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: emojis.map((emoji) {
+            children: reactions.map((r) {
               return GestureDetector(
                 onTap: () {
                   Navigator.pop(context);
-                  _sendReaction(msg, emoji);
+                  _sendReaction(msg, r['emoji'] as String);
                 },
-                child: Text(emoji, style: const TextStyle(fontSize: 32)),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: (r['color'] as Color).withOpacity(0.1),
+                  ),
+                  child: Icon(r['icon'] as IconData, color: r['color'] as Color, size: 24),
+                ),
               );
             }).toList(),
           ),

@@ -4,18 +4,18 @@
 // Structure conforme à la spec Helm Connect :
 //
 //   HELM CONNECT
-//   ├── 💬 Discussions (Privées + Groupes + Scolaires)
-//   ├── 👥 Communautés (Classes + Enseignants + Parents + Administration)
-//   ├── 📢 Annonces (Communication officielle)
-//   ├── 📡 Canaux (Telegram-style broadcast)
-//   ├── 📁 Fichiers (Centre documentaire)
-//   ├── 🎙️ Vocaux (Messages vocaux)
-//   ├── 📞 Appels (Historique des appels)
-//   ├── 🔔 Notifications (Centre de notifications)
-//   ├── 🔎 Recherche (Recherche globale)
-//   ├── 🛡️ Modération (Messages signalés)
-//   ├── 📊 Analytics (Tableau de bord communication)
-//   └── ⚙️ Paramètres (Profil + préférences)
+//   ├── Discussions (Privées + Groupes + Scolaires)
+//   ├── Communautés (Classes + Enseignants + Parents + Administration)
+//   ├── Annonces (Communication officielle)
+//   ├── Canaux (Telegram-style broadcast)
+//   ├── Fichiers (Centre documentaire)
+//   ├── Vocaux (Messages vocaux)
+//   ├── Appels (Historique des appels)
+//   ├── Notifications (Centre de notifications)
+//   ├── Recherche (Recherche globale)
+//   ├── Modération (Messages signalés)
+//   ├── Analytics (Tableau de bord communication)
+//   └── Paramètres (Profil + préférences)
 //
 // Sur mobile : un drawer (navigation drawer) avec les 12 sections.
 // Chaque section ouvre l'écran correspondant.
@@ -324,7 +324,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // 💬 Discussions — liste des conversations (existing code)
+  // Discussions — liste des conversations (existing code)
   Widget _buildDiscussionsBody() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: Color(0xFF0A2A5E)));
@@ -415,22 +415,22 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // 📢 Annonces
+  // Annonces
   Widget _buildAnnoncesBody() {
     return const AnnouncementsScreen();
   }
 
-  // 🔎 Recherche
+  // Recherche
   Widget _buildRechercheBody() {
     return const GlobalSearchScreen();
   }
 
-  // 🔔 Notifications
+  // Notifications
   Widget _buildNotificationsBody() {
     return const NotificationPrefsScreen();
   }
 
-  // ⚙️ Paramètres
+  // Paramètres
   Widget _buildParametresBody() {
     return Center(
       child: Column(

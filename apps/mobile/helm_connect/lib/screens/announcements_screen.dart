@@ -71,23 +71,23 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   Widget _buildAnnouncementCard(Announcement a) {
     Color badgeColor;
     String badgeText;
-    String emoji;
+    IconData badgeIcon;
     switch (a.priority) {
       case 'URGENT':
         badgeColor = const Color(0xFFDC2626);
         badgeText = 'URGENT';
-        emoji = '🔴';
+        badgeIcon = Icons.priority_high;
         break;
       case 'HIGH':
         badgeColor = const Color(0xFFF59E0B);
         badgeText = 'IMPORTANT';
-        emoji = '⚠️';
+        badgeIcon = Icons.warning_amber;
         break;
       case 'NORMAL':
       default:
         badgeColor = const Color(0xFF1677FF);
         badgeText = 'ANNONCE';
-        emoji = '📢';
+        badgeIcon = Icons.campaign;
     }
 
     return Card(
@@ -105,9 +105,16 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                     color: badgeColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text(
-                    '$emoji $badgeText',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(badgeIcon, size: 12, color: badgeColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        badgeText,
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
+                      ),
+                    ],
                   ),
                 ),
                 const Spacer(),

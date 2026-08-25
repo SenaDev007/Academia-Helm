@@ -147,14 +147,14 @@ class RingtoneService {
           await _player.stop();
           await _player.play(BytesSource(wav));
         } catch (e) {
-          debugPrint('⚠️ Ringtone loop play failed: $e');
+          debugPrint('WARN: Ringtone loop play failed: $e');
         }
       });
 
       _isPlaying = true;
       _currentMode = mode;
     } catch (e) {
-      debugPrint('⚠️ Ringtone start failed: $e');
+      debugPrint('WARN: Ringtone start failed: $e');
     }
   }
 
@@ -165,7 +165,7 @@ class RingtoneService {
     try {
       await _player.stop();
     } catch (e) {
-      debugPrint('⚠️ Ringtone stop failed: $e');
+      debugPrint('WARN: Ringtone stop failed: $e');
     }
     _isPlaying = false;
     _currentMode = null;

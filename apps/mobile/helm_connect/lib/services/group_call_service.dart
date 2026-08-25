@@ -106,7 +106,7 @@ class GroupCallService extends ChangeNotifier {
       }
       return true;
     } catch (e) {
-      debugPrint('⚠️ Permission request failed: $e');
+      debugPrint('WARN: Permission request failed: $e');
       return false;
     }
   }
@@ -408,7 +408,7 @@ class GroupCallService extends ChangeNotifier {
     try {
       await pc.addCandidate(candidate);
     } catch (e) {
-      debugPrint('⚠️ addCandidate failed (non-blocking): $e');
+      debugPrint('WARN: addCandidate failed (non-blocking): $e');
     }
   }
 

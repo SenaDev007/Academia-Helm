@@ -6983,6 +6983,14 @@ export class PedagogicalSpaceService {
          GROUP BY "status"`,
         tenantId, academicYearId,
       ),
+      // ⭐ V3-12: Also count pending monthly plans (planification mensuelle)
+      this.prisma.$queryRawUnsafe(
+        `SELECT "status", COUNT(DISTINCT ("classLevel", "month", "teacherId"))::int as count FROM "monthly_plans"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2
+           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+         GROUP BY "status"`,
+        tenantId, academicYearId,
+      ),
     ]);
 
     // ⭐ Helper : extrait le count d'un statut donné depuis une requête GROUP BY
@@ -6990,6 +6998,12 @@ export class PedagogicalSpaceService {
       const row = (rows as any[])?.find(r => r.status === status);
       return row?.count || 0;
     };
+
+    // ⭐ V3-12: Extract monthly plans counts (results[8])
+    const monthlyPlansByStatus = results[8] as any[];
+    const monthlyPlansPending = extractCount(monthlyPlansByStatus, 'SUBMITTED');
+    const monthlyPlansValidated = extractCount(monthlyPlansByStatus, 'VALIDATED');
+    const monthlyPlansRejected = extractCount(monthlyPlansByStatus, 'REJECTED');
 
     // Compteurs par statut pour chaque catégorie
     const cahierCount = extractCount(cahierJournalsByStatus, 'SUBMITTED');
@@ -7022,10 +7036,10 @@ export class PedagogicalSpaceService {
     const weeklySummariesCount = extractCount(weeklySummariesByStatus, 'SUBMITTED');
     const cahierTestsCount = extractCount(cahierTestsByStatus, 'SUBMITTED');
 
-    // Totaux globaux (toutes catégories confondues)
-    const totalPending = cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount + cahierTestsCount;
-    const totalValidated = cahierValidated + fichesValidated + registersValidated + evaluationsValidated;
-    const totalRejected = cahierRejected + fichesRejected + registersRejected + evaluationsRejected;
+    // Totaux globaux (toutes catégories confondues, y compris monthly plans)
+    const totalPending = cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount + cahierTestsCount + monthlyPlansPending;
+    const totalValidated = cahierValidated + fichesValidated + registersValidated + evaluationsValidated + monthlyPlansValidated;
+    const totalRejected = cahierRejected + fichesRejected + registersRejected + evaluationsRejected + monthlyPlansRejected;
     const totalProcessed = totalPending + totalValidated + totalRejected;
 
     return {
@@ -7054,6 +7068,11 @@ export class PedagogicalSpaceService {
       pendingWeeklyLogs: weeklyLogsCount,
       pendingWeeklySummaries: weeklySummariesCount,
       pendingCahierTests: cahierTestsCount,
+
+      // ⭐ V3-12: Monthly plans counts
+      pendingMonthlyPlans: monthlyPlansPending,
+      validatedMonthlyPlans: monthlyPlansValidated,
+      rejectedMonthlyPlans: monthlyPlansRejected,
 
       // ⭐ Totaux globaux (toutes catégories)
       totalPending,

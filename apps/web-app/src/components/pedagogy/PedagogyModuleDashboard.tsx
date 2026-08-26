@@ -15,13 +15,13 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-  ShieldCheck,
-  Sparkles,
-  Target,
   Users,
-  Building2,
+  Package,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  CalendarRange,
   TrendingUp,
-  Activity,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -29,6 +29,7 @@ import {
   usePedagogyDashboardQueries,
   useInvalidatePedagogyDashboard,
 } from '@/hooks/usePedagogyDashboardQueries';
+import { useDirectorPedagogyDashboard } from '@/lib/query/pedagogy-hooks';
 import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import ParentTasksView from '@/components/pedagogy/tasks/ParentTasksView';
 import { cn } from '@/lib/utils';
@@ -36,206 +37,148 @@ import { cn } from '@/lib/utils';
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
 
-interface ControlDashboard {
-  lessonPlanRate: number;
-  journalRate: number;
-  classLogRate: number;
-  weeklyReportRate: number;
-  overallRate: number;
-  totalActiveAssignments: number;
-  totalActiveProfiles: number;
-  lastCalculatedAt: string | null;
-  snapshotsCount: number;
-}
-
-interface OrionKpisPayload {
-  documents?: {
-    total: number;
-    submitted: number;
-    approved: number;
-    rejected: number;
-    submissionRate?: number;
-    approvalRate?: number;
-  };
-  semainier?: {
-    total: number;
-    submitted: number;
-    validated: number;
-    validationRate?: number;
-    totalIncidents?: number;
-    criticalIncidents?: number;
-  };
-  alerts?: unknown[];
-}
-
-interface OrionAdvancedSummary {
-  insightsCount: number;
-  riskFlagsCount: number;
-  criticalRisks: number;
-  warningRisks: number;
-  forecastsCount: number;
-}
-
-interface OrionRiskFlag {
-  id: string;
-  entityType?: string | null;
-  level?: string | null;
-  message?: string | null;
-  createdAt: string;
-}
-
-interface OrionAdvancedDash {
-  summary: OrionAdvancedSummary | null;
-  riskFlags: OrionRiskFlag[];
-}
-
-interface KpiSnapshot {
-  id: string;
-  calculatedAt: string;
-  lessonPlanRate: number;
-  journalRate: number;
-  classLogRate: number;
-  weeklyReportRate: number;
-  teacherId?: string | null;
-  classId?: string | null;
-}
-
+// ─── KPI Card ──────────────────────────────────────────────────────────
 function KpiCard({
   title,
   value,
+  subtitle,
   icon: Icon,
-  trend,
-  color = 'indigo',
+  color = 'blue',
   index = 0,
+  href,
 }: {
   title: string;
   value: string | number;
+  subtitle?: string;
   icon: ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  trend?: string;
-  color?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple';
+  color?: 'blue' | 'emerald' | 'amber' | 'rose' | 'purple' | 'cyan';
   index?: number;
+  href?: string;
 }) {
-  const colors = {
-    indigo: 'from-blue-500/10 to-indigo-500/5 text-blue-800 border-slate-200',
-    emerald: 'from-emerald-500/10 to-teal-500/5 text-emerald-600 border-slate-200',
-    amber: 'from-amber-500/10 to-orange-500/5 text-amber-600 border-slate-200',
-    rose: 'from-rose-500/10 to-pink-500/5 text-rose-600 border-slate-200',
-    purple: 'from-purple-500/10 to-fuchsia-500/5 text-purple-600 border-slate-200',
+  const colors: Record<string, string> = {
+    blue: 'text-blue-600 bg-blue-50 border-blue-100',
+    emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+    amber: 'text-amber-600 bg-amber-50 border-amber-100',
+    rose: 'text-rose-600 bg-rose-50 border-rose-100',
+    purple: 'text-purple-600 bg-purple-50 border-purple-100',
+    cyan: 'text-cyan-600 bg-cyan-50 border-cyan-100',
   };
 
-  return (
+  const content = (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.1 }}
+      transition={{ duration: 0.4, delay: index * 0.08 }}
       className={cn(
         'relative overflow-hidden rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5',
         colors[color]
       )}
     >
-      <div className={cn('absolute -right-4 -top-4 opacity-5')}>
-        <Icon className="h-24 w-24" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className={cn('rounded-lg bg-slate-50 p-2.5 border border-slate-200')}>
+      <div className="flex items-center justify-between mb-3">
+        <div className={cn('rounded-lg p-2.5 border', colors[color])}>
           <Icon className="h-5 w-5" style={{ color: PRIMARY }} />
         </div>
-        {trend && (
-          <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-            <TrendingUp className="h-3 w-3" />
-            {trend}
-          </span>
-        )}
       </div>
-      <div className="mt-4">
+      <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
         <h3 className="text-2xl font-bold text-slate-900 mt-1">{value}</h3>
+        {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
       </div>
+    </motion.div>
+  );
+
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+  return content;
+}
+
+// ─── Status Badge ─────────────────────────────────────────────────────
+function StatusBadge({ count, type }: { count: number; type: 'pending' | 'validated' | 'rejected' }) {
+  const config = {
+    pending: { icon: Clock, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'En attente' },
+    validated: { icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 border-emerald-200', label: 'Validés' },
+    rejected: { icon: XCircle, color: 'text-rose-600 bg-rose-50 border-rose-200', label: 'Rejetés' },
+  };
+  const { icon: Icon, color, label } = config[type];
+  return (
+    <div className={cn('flex items-center justify-between p-3 rounded-lg border', color)}>
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4" />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <span className="text-lg font-bold">{count}</span>
+    </div>
+  );
+}
+
+// ─── Quick Access Card ────────────────────────────────────────────────
+function QuickAccessCard({
+  href,
+  icon: Icon,
+  label,
+  description,
+  badge,
+  index,
+}: {
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  description?: string;
+  badge?: number;
+  index: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3 + index * 0.06 }}
+    >
+      <Link
+        href={href}
+        className="group flex flex-col items-center justify-center gap-3 rounded-xl border bg-white p-5 text-center transition-all border-slate-200 hover:border-slate-300 hover:shadow-sm active:scale-98"
+      >
+        <div className="relative rounded-lg bg-slate-50 p-3 text-slate-400 transition-colors group-hover:bg-slate-100 group-hover:text-slate-900">
+          <Icon className="h-6 w-6" />
+          {badge !== undefined && badge > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white shadow-sm">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+        </div>
+        <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{label}</span>
+        {description && <span className="text-[11px] text-slate-400 leading-tight">{description}</span>}
+      </Link>
     </motion.div>
   );
 }
 
-function ProgressCircle({
-  rate,
-  label,
-}: {
-  rate: number;
-  label: string;
+// ─── Section Wrapper ──────────────────────────────────────────────────
+function Section({ title, subtitle, children, delay = 0 }: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  delay?: number;
 }) {
-  const percentage = Math.round(rate * 100);
-  const strokeColor = percentage < 35 ? '#ef4444' : percentage < 55 ? '#f59e0b' : '#10b981';
-
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative h-20 w-20">
-        <svg className="h-full w-full" viewBox="0 0 36 36">
-          <path
-            className="text-gray-100"
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="none"
-            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-          />
-          <motion.path
-            initial={{ strokeDasharray: '0, 100' }}
-            animate={{ strokeDasharray: `${percentage}, 100` }}
-            transition={{ duration: 1, ease: 'easeOut' }}
-            stroke={strokeColor}
-            strokeWidth="3"
-            strokeLinecap="round"
-            fill="none"
-            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm font-bold text-gray-900">{percentage}%</span>
-        </div>
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="rounded-xl border bg-white p-6 shadow-sm border-slate-200"
+    >
+      <div className="mb-4">
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
       </div>
-      <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider text-center leading-tight">
-        {label}
-      </span>
-    </div>
+      {children}
+    </motion.section>
   );
 }
 
-function CompletionTrendChart({ snapshots }: { snapshots: any[] }) {
-  if (snapshots.length < 2) return null;
-
-  const max = Math.max(...snapshots.map((s) => s.lessonPlanRate), 0.1);
-  const points = snapshots
-    .slice(-10)
-    .map((s, i) => `${(i * 100) / 9},${100 - (s.lessonPlanRate / max) * 100}`)
-    .join(' ');
-
-  return (
-    <div className="h-16 w-full mt-4">
-      <svg viewBox="0 0 100 100" className="h-full w-full" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={PRIMARY} stopOpacity="0.2" />
-            <stop offset="100%" stopColor={PRIMARY} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path
-          d={`M ${points} V 100 H 0 Z`}
-          fill="url(#gradient)"
-        />
-        <motion.path
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 1.5 }}
-          d={`M ${points}`}
-          fill="none"
-          stroke={PRIMARY}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </div>
-  );
-}
-
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════
 export function PedagogyModuleDashboard() {
   const searchParams = useSearchParams();
   const { user, tenant } = useAppSession();
@@ -250,22 +193,22 @@ export function PedagogyModuleDashboard() {
     return (cross ? searchParams.get('tenant_id') : null) || tenant?.id || '';
   }, [user?.role, searchParams, tenant?.id]);
 
+  // Existing queries (structure, timetables, rooms, control dashboard, ORION)
   const {
     control,
-    orionKpis,
-    advancedOrion,
-    snapshots,
+    structure,
     timetableCount,
     roomCount,
-    isLoading,
-    isError,
-    error,
-    isFetching,
+    orionKpis,
+    isLoading: isLoadingQueries,
   } = usePedagogyDashboardQueries(tenantId, academicYear?.id);
+
+  // Director dashboard (for validation counts — cahier journal, fiches, registres, evaluations, monthly plans)
+  const { data: directorDashboard, isLoading: isLoadingDirector } = useDirectorPedagogyDashboard(academicYear?.id);
 
   if (!academicYear) {
     return (
-      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-xl border-2 border-dashed bg-gray-50/50 p-12 text-center animate-in fade-in zoom-in duration-500 border-slate-200">
+      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-xl border-2 border-dashed bg-gray-50/50 p-12 text-center border-slate-200">
         <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
           <Calendar className="h-12 w-12 text-slate-300" />
         </div>
@@ -279,234 +222,252 @@ export function PedagogyModuleDashboard() {
     );
   }
 
-  if (isError) {
-    return (
-      <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-rose-800 animate-in slide-in-from-top duration-300">
-        <div className="flex items-center gap-3">
-          <AlertCircle className="h-6 w-6 shrink-0" />
-          <div>
-            <h3 className="font-bold">Erreur de chargement</h3>
-            <p className="text-sm opacity-90">{(error as Error)?.message || 'Impossible de récupérer les données du dashboard.'}</p>
-          </div>
-        </div>
-        <button
-          onClick={() => invalidate()}
-          className="mt-4 flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Réessayer
-        </button>
-      </div>
-    );
-  }
-
-  const userRole = user?.role || '';
-  
   if (isParent) {
     return <ParentTasksView />;
   }
 
-  // Filtrage permissif (fail-open) — voir tabMatchesRole dans pedagogy-tabs.tsx
-  const shortcuts = getVisiblePedagogyTabs(userRole)
-    .filter((tab) => tab.id !== 'dashboard')
-    .slice(0, 6);
+  const userRole = user?.role || '';
+  const shortcuts = getVisiblePedagogyTabs(userRole).filter((tab) => tab.id !== 'dashboard').slice(0, 8);
+
+  const isLoading = isLoadingQueries || isLoadingDirector;
+
+  // Extract data safely
+  const levelsCount = structure?.ok ? (structure.data as any)?.levels ?? 0 : 0;
+  const cyclesCount = structure?.ok ? (structure.data as any)?.cycles ?? 0 : 0;
+  const ttCount = timetableCount?.ok ? timetableCount.data : 0;
+  const rooms = roomCount?.ok ? roomCount.data : 0;
+
+  // Director dashboard data (validation direction)
+  const dir = directorDashboard as any;
+  const pendingCahierJournals = dir?.pendingCahierJournals ?? 0;
+  const pendingFiches = dir?.pendingFiches ?? 0;
+  const pendingRegisters = dir?.pendingAttendanceRegisters ?? 0;
+  const pendingEvaluations = dir?.pendingMonthlyEvaluations ?? 0;
+  const pendingMonthlyPlans = dir?.pendingMonthlyPlans ?? 0;
+  const totalPending = dir?.totalPending ?? (pendingCahierJournals + pendingFiches + pendingRegisters + pendingEvaluations);
+  const totalValidated = dir?.totalValidated ?? 0;
+  const totalRejected = dir?.totalRejected ?? 0;
+
+  // Teacher control data
+  const activeProfiles = control?.ok ? (control.data as any)?.totalActiveProfiles ?? 0 : 0;
+  const activeAssignments = control?.ok ? (control.data as any)?.totalActiveAssignments ?? 0 : 0;
 
   return (
     <div className="space-y-6 pb-12">
-      {/* ⭐ Refactor Issue B: removed the duplicate motion.h1 + motion.p title block
-          (was lines 316-342). The page title is now provided by the parent
-          ModuleContainer.header.title ('Organisation Pédagogique & Études'),
-          consistent with CahierJournalTab, MonthlyPlanningTab and other tabs
-          that never render their own page title.
-          Only the compact 'Actualiser' button is kept, right-aligned. */}
-      <div className="flex justify-end">
+      {/* Header bar */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Tableau de bord pédagogique</h1>
+          <p className="text-sm text-slate-500">
+            Année {academicYear.label} · {isTeacher ? 'Vue enseignant' : 'Vue direction'}
+          </p>
+        </div>
         <button
           onClick={() => invalidate()}
-          disabled={isFetching}
+          disabled={isLoading}
           className="group flex items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-gray-50 border-slate-200 disabled:opacity-50"
         >
-          <RefreshCw className={cn('h-3.5 w-3.5 transition-transform duration-500', isFetching && 'animate-spin')} style={{ color: PRIMARY }} />
-          {isFetching ? 'Synchronisation...' : 'Actualiser'}
+          <RefreshCw className={cn('h-3.5 w-3.5 transition-transform duration-500', isLoading && 'animate-spin')} style={{ color: PRIMARY }} />
+          {isLoading ? 'Synchronisation...' : 'Actualiser'}
         </button>
       </div>
 
+      {isLoading && (
+        <div className="flex items-center justify-center py-12 gap-3 text-slate-400">
+          <Loader2 className="h-6 w-6 animate-spin" style={{ color: PRIMARY }} />
+          <span className="text-sm">Chargement des indicateurs...</span>
+        </div>
+      )}
 
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-8">
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="rounded-xl border bg-white p-6 shadow-sm overflow-hidden relative border-slate-200"
-          >
-            <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
-              <Activity className="h-32 w-32" style={{ color: PRIMARY }} />
-            </div>
-            
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{isTeacher ? 'Ma Production Pédagogique' : 'Production Documentaire'}</h2>
-                <p className="text-sm text-slate-500">{isTeacher ? 'Suivi de mes soumissions' : 'Taux de complétion par type de document'}</p>
-              </div>
-              <Link href={isTeacher ? "/app/pedagogy/production" : "/app/pedagogy/control"} className="text-sm font-semibold hover:underline flex items-center gap-1" style={{ color: PRIMARY }}>
-                Détails <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-
-            {isLoading ? (
-              <div className="flex h-32 items-center justify-center gap-3 text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin" style={{ color: PRIMARY }} />
-                <span>Chargement des indicateurs...</span>
-              </div>
-            ) : (
-              control?.ok && control.data && (
-                <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <ProgressCircle rate={control.data.lessonPlanRate} label="Cahiers de texte" />
-                  <ProgressCircle rate={control.data.journalRate} label="Journaux classe" />
-                  <ProgressCircle rate={control.data.classLogRate} label="Cahiers d'appel" />
-                  <ProgressCircle rate={control.data.weeklyReportRate} label="Rapports hebdo" />
-                </div>
-              )
+      {!isLoading && (
+        <>
+          {/* ═══ KPIs Row 1 — Structure & Infrastructure ═══ */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
+              title="Niveaux scolaires"
+              value={levelsCount}
+              subtitle={cyclesCount > 0 ? `${cyclesCount} cycles` : undefined}
+              icon={Layers}
+              color="blue"
+              index={0}
+              href="/app/pedagogy/academic-structure"
+            />
+            <KpiCard
+              title="Emplois du temps"
+              value={ttCount}
+              subtitle={ttCount > 0 ? 'Configurés' : 'Non configurés'}
+              icon={Calendar}
+              color={ttCount > 0 ? 'emerald' : 'amber'}
+              index={1}
+              href="/app/pedagogy/timetables"
+            />
+            <KpiCard
+              title="Salles de classe"
+              value={rooms}
+              subtitle={rooms > 0 ? 'Disponibles' : 'Non configurées'}
+              icon={BookOpen}
+              color={rooms > 0 ? 'emerald' : 'amber'}
+              index={2}
+              href="/app/pedagogy/academic-structure"
+            />
+            {!isTeacher && (
+              <KpiCard
+                title="En attente validation"
+                value={totalPending}
+                subtitle={`${totalValidated} validés · ${totalRejected} rejetés`}
+                icon={ClipboardList}
+                color={totalPending > 0 ? 'rose' : 'emerald'}
+                index={3}
+                href="/app/pedagogy/control"
+              />
             )}
-
-            {snapshots?.ok && snapshots.data && snapshots.data.length > 0 && (
-              <div className="mt-8 pt-6 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tendance (10 derniers jours)</span>
-                  <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" /> Croissance stable
-                  </span>
-                </div>
-                <CompletionTrendChart snapshots={snapshots.data} />
-              </div>
+            {isTeacher && (
+              <KpiCard
+                title="Profil enseignant"
+                value={activeProfiles > 0 ? 'Actif' : '—'}
+                subtitle={activeAssignments > 0 ? `${activeAssignments} affectation(s)` : undefined}
+                icon={Users}
+                color={activeProfiles > 0 ? 'emerald' : 'amber'}
+                index={3}
+                href="/app/pedagogy/teachers"
+              />
             )}
-          </motion.section>
+          </div>
 
-          <motion.section
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-          >
-            <h2 className="mb-4 text-lg font-bold text-slate-900 px-1">Accès Rapides</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {shortcuts.map((tab) => {
+          {/* ═══ KPIs Row 2 — Validation Direction (non-teacher only) ═══ */}
+          {!isTeacher && totalPending > 0 && (
+            <Section
+              title="Validations en attente"
+              subtitle="Documents soumis par les enseignants en attente de validation"
+              delay={0.3}
+            >
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {pendingCahierJournals > 0 && (
+                  <Link href="/app/pedagogy/control" className="block">
+                    <div className="p-4 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        <span className="text-xs font-semibold text-blue-700">Cahiers Journal</span>
+                      </div>
+                      <span className="text-2xl font-bold text-blue-900">{pendingCahierJournals}</span>
+                    </div>
+                  </Link>
+                )}
+                {pendingFiches > 0 && (
+                  <Link href="/app/pedagogy/control" className="block">
+                    <div className="p-4 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 transition">
+                      <div className="flex items-center gap-2 mb-1">
+                        <BookOpen className="h-4 w-4 text-purple-600" />
+                        <span className="text-xs font-semibold text-purple-700">Fiches Péd.</span>
+                      </div>
+                      <span className="text-2xl font-bold text-purple-900">{pendingFiches}</span>
+                    </div>
+                  </Link>
+                )}
+                {pendingRegisters > 0 && (
+                  <Link href="/app/pedagogy/control" className="block">
+                    <div className="p-4 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ClipboardList className="h-4 w-4 text-amber-600" />
+                        <span className="text-xs font-semibold text-amber-700">Registres</span>
+                      </div>
+                      <span className="text-2xl font-bold text-amber-900">{pendingRegisters}</span>
+                    </div>
+                  </Link>
+                )}
+                {pendingEvaluations > 0 && (
+                  <Link href="/app/pedagogy/control" className="block">
+                    <div className="p-4 rounded-lg border border-cyan-200 bg-cyan-50 hover:bg-cyan-100 transition">
+                      <div className="flex items-center gap-2 mb-1">
+                        <BarChart3 className="h-4 w-4 text-cyan-600" />
+                        <span className="text-xs font-semibold text-cyan-700">Évaluations</span>
+                      </div>
+                      <span className="text-2xl font-bold text-cyan-900">{pendingEvaluations}</span>
+                    </div>
+                  </Link>
+                )}
+                {pendingMonthlyPlans > 0 && (
+                  <Link href="/app/pedagogy/control" className="block">
+                    <div className="p-4 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 transition">
+                      <div className="flex items-center gap-2 mb-1">
+                        <CalendarRange className="h-4 w-4 text-rose-600" />
+                        <span className="text-xs font-semibold text-rose-700">Planif. Mens.</span>
+                      </div>
+                      <span className="text-2xl font-bold text-rose-900">{pendingMonthlyPlans}</span>
+                    </div>
+                  </Link>
+                )}
+                {totalPending === 0 && (
+                  <div className="col-span-5 flex items-center justify-center py-8">
+                    <CheckCircle2 className="h-8 w-8 text-emerald-500 mr-2" />
+                    <span className="text-sm font-semibold text-emerald-700">Toutes les soumissions ont été traitées</span>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* ═══ KPIs Row 3 — Synthèse globale (non-teacher) ═══ */}
+          {!isTeacher && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Section title="Documents validés" delay={0.4}>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 border border-emerald-200">
+                    <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-slate-900">{totalValidated}</h3>
+                    <p className="text-xs text-slate-500">Documents validés au total</p>
+                  </div>
+                </div>
+              </Section>
+              <Section title="Documents rejetés" delay={0.5}>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-50 border border-rose-200">
+                    <XCircle className="h-8 w-8 text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-slate-900">{totalRejected}</h3>
+                    <p className="text-xs text-slate-500">Documents rejetés (à corriger)</p>
+                  </div>
+                </div>
+              </Section>
+              <Section title="Total traités" delay={0.6}>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 border border-blue-200">
+                    <BarChart3 className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-slate-900">{totalPending + totalValidated + totalRejected}</h3>
+                    <p className="text-xs text-slate-500">Documents traités (toutes catégories)</p>
+                  </div>
+                </div>
+              </Section>
+            </div>
+          )}
+
+          {/* ═══ Quick Access ═══ */}
+          <Section title="Accès rapides" subtitle="Naviguez vers les sous-modules" delay={0.7}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {shortcuts.map((tab, i) => {
                 const Icon = tab.icon;
+                // Show badge for "Validation Direction" if there are pending items
+                const badge = tab.id === 'director-space' && !isTeacher && totalPending > 0 ? totalPending : undefined;
                 return (
-                  <Link
+                  <QuickAccessCard
                     key={tab.id}
                     href={tab.path}
-                    className="group flex flex-col items-center justify-center gap-3 rounded-xl border bg-white p-5 text-center transition-all border-slate-200 hover:border-slate-300 hover:shadow-sm active:scale-98"
-                  >
-                    <div className="rounded-lg bg-slate-50 p-3 text-slate-400 transition-colors group-hover:bg-slate-100 group-hover:text-slate-900">
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">{tab.label}</span>
-                  </Link>
+                    icon={Icon}
+                    label={tab.label}
+                    badge={badge}
+                    index={i}
+                  />
                 );
               })}
             </div>
-          </motion.section>
-        </div>
-
-        <div className="space-y-8">
-          <motion.section
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.6 }}
-            className="rounded-xl border bg-slate-900 p-6 shadow-sm text-white relative overflow-hidden"
-          >
-            <div className="absolute -right-12 -bottom-12 opacity-10">
-              <Target className="h-48 w-48" />
-            </div>
-
-            <div className="flex items-center gap-2 mb-6">
-              <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-              <h2 className="text-lg font-bold">{isTeacher ? 'Sarah AI Pédagogie' : 'Cockpit ORION'}</h2>
-            </div>
-
-            <div className="space-y-4">
-              {isTeacher ? (
-                <div className="space-y-4">
-                   <div className="rounded-lg bg-white/5 border border-white/10 p-3">
-                     <p className="text-xs text-white/80 leading-relaxed italic">
-                       &quot;Bonjour, je peux vous aider à structurer votre prochaine fiche pédagogique ou à renseigner votre cahier journal.&quot;
-                     </p>
-                   </div>
-                   <div className="grid grid-cols-1 gap-2">
-                     <button className="text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs text-blue-300">
-                       Structurer une leçon...
-                     </button>
-                     <button className="text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-xs text-blue-300">
-                       Proposer des activités...
-                     </button>
-                   </div>
-                </div>
-              ) : (
-                advancedOrion?.ok && advancedOrion.data?.riskFlags && advancedOrion.data.riskFlags.length > 0 ? (
-                  advancedOrion.data.riskFlags.slice(0, 3).map((risk: any) => (
-                    <div key={risk.id} className="rounded-lg bg-white/5 border border-white/10 p-3 flex gap-3">
-                      <div className={cn(
-                        "mt-1 h-2 w-2 shrink-0 rounded-full",
-                        risk.level === 'RED' ? 'bg-rose-500 shadow-[0_0_8px_#f43f5e]' : 'bg-amber-500 shadow-[0_0_8px_#f59e0b]'
-                      )} />
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-white/90 leading-snug">{risk.message}</p>
-                        <p className="text-[10px] text-white/40">{new Date(risk.createdAt).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-8 text-center space-y-2">
-                    <BarChart3 className="h-8 w-8 text-white/20 mx-auto" />
-                    <p className="text-xs text-white/40 font-semibold">Aucun risque critique détecté par l'IA.</p>
-                  </div>
-                )
-              )}
-            </div>
-
-            <Link
-              href="/app/pedagogy/orion"
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg py-3 text-sm font-bold text-white transition-all hover:opacity-95 bg-blue-600 shadow-md shadow-blue-900/10"
-            >
-              Consulter Orion Intelligence
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </motion.section>
-
-          <motion.section
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.7 }}
-            className="rounded-xl border bg-white p-6 shadow-sm border-slate-200"
-          >
-            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Building2 className="h-5 w-5" style={{ color: PRIMARY }} />
-              Infrastructure
-            </h2>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
-                <span className="text-sm font-medium text-slate-600">Emplois du temps</span>
-                <span className={cn(
-                  "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                  timetableCount?.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-                )}>
-                  {timetableCount?.ok ? "Opérationnel" : "Manquant"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
-                <span className="text-sm font-medium text-slate-600">Salles de classe</span>
-                <span className={cn(
-                  "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                  roomCount?.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-                )}>
-                  {roomCount?.ok ? `${roomCount.data} salles` : "0 salles"}
-                </span>
-              </div>
-            </div>
-          </motion.section>
-        </div>
-      </div>
+          </Section>
+        </>
+      )}
     </div>
   );
 }

@@ -1292,12 +1292,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const isFirstLoadRef = useRef(true);
   // Track previous messages length to detect new message arrivals
   const prevMessagesLengthRef = useRef(0);
+  // Track the last scrollHeight we scrolled to — used by the ResizeObserver to
+  // detect when new content (images loading, new messages) increases the
+  // scrollHeight, so we can re-scroll to the bottom.
+  const lastScrolledHeightRef = useRef(0);
+  // If the user has manually scrolled up (away from bottom), we stop auto-
+  // scrolling until they scroll back near the bottom.
+  const userScrolledAwayRef = useRef(false);
 
   // Reset scroll-following when switching conversations
   useEffect(() => {
     isFirstLoadRef.current = true;
     userIsNearBottomRef.current = true;
     prevMessagesLengthRef.current = 0;
+    lastScrolledHeightRef.current = 0;
+    userScrolledAwayRef.current = false;
   }, [activeConvId]);
 
   // ⭐ V3-11: Scroll the messages container to the bottom (NOT the page).
@@ -1313,65 +1322,99 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         }
         return;
       }
+      const targetScroll = container.scrollHeight - container.clientHeight;
       if (behavior === 'auto') {
-        container.scrollTop = container.scrollHeight;
+        container.scrollTop = targetScroll;
       } else {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        container.scrollTo({ top: targetScroll, behavior: 'smooth' });
       }
+      lastScrolledHeightRef.current = container.scrollHeight;
+      userIsNearBottomRef.current = true;
     };
     tryScroll();
   }, []);
 
-  // Track user scroll position via passive listener on the messages container
+  // Track user scroll position via passive listener on the messages container.
+  // ⭐ V3-11: This is the KEY fix — we track whether the user has manually
+  //   scrolled away from the bottom. If they did, we NEVER auto-scroll (even
+  //   when scrollHeight changes from images loading). This prevents the
+  //   "yank back to bottom" feeling while reading history.
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      userIsNearBottomRef.current = distanceFromBottom < 200;
+      userIsNearBottomRef.current = distanceFromBottom < 100;
+      if (distanceFromBottom > 100) {
+        userScrolledAwayRef.current = true;
+      } else {
+        userScrolledAwayRef.current = false;
+      }
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [activeConvId]);
 
-  // ⭐ V3-11: Auto-scroll logic:
-  //   - First load OR conversation switch → instant jump to bottom (with retries
-  //     via scrollToBottom's polling, so the container ref being null on first
-  //     render is handled).
-  //   - New messages arrived (length increased) + user near bottom → smooth scroll
-  //   - User reading history → don't yank them back to the bottom
+  // ⭐ V3-11: ResizeObserver — watches the messages container for scrollHeight
+  //   changes (caused by images loading, new messages, polls). When the height
+  //   grows AND the user hasn't scrolled away, we re-scroll to the bottom.
+  //   This is the robust fix for the oscillation bug (scrollHeight going
+  //   2554 → 2062 → 2554 as images load).
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const newHeight = entry.contentRect.height;
+        // Only auto-scroll if:
+        // 1. The container grew (new content appeared), AND
+        // 2. The user hasn't manually scrolled away from the bottom
+        if (newHeight > lastScrolledHeightRef.current && !userScrolledAwayRef.current) {
+          // Use a microtask to ensure the DOM has settled before scrolling
+          queueMicrotask(() => {
+            const c = messagesContainerRef.current;
+            if (c) {
+              c.scrollTop = c.scrollHeight - c.clientHeight;
+              lastScrolledHeightRef.current = c.scrollHeight;
+            }
+          });
+        }
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeConvId]);
+
+  // ⭐ V3-11: Auto-scroll on first load / conversation switch
   useEffect(() => {
     if (messages.length === 0) return;
-    const isNewMessage = messages.length > prevMessagesLengthRef.current;
-    prevMessagesLengthRef.current = messages.length;
-
     if (isFirstLoadRef.current) {
-      // First load → instant jump to bottom. Use multiple rAF passes to ensure
-      // the DOM has fully rendered (including images that may change scrollHeight).
-      // Three passes handle: 1) initial render, 2) layout, 3) image load kickoff.
+      // First load → instant jump to bottom. Use multiple rAF passes + a
+      // setTimeout to catch slow-loading images.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             scrollToBottom('auto');
-            // Some images load slower — re-scroll 500ms later to catch them
-            setTimeout(() => scrollToBottom('auto'), 500);
+            setTimeout(() => scrollToBottom('auto'), 300);
+            setTimeout(() => scrollToBottom('auto'), 800);
+            setTimeout(() => scrollToBottom('auto'), 1500);
           });
         });
       });
       isFirstLoadRef.current = false;
+      prevMessagesLengthRef.current = messages.length;
       return;
     }
-    // Subsequent message additions — only scroll if user is near the bottom
-    if (isNewMessage && userIsNearBottomRef.current) {
+    // New messages arrived (length increased)
+    const isNewMessage = messages.length > prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+    if (isNewMessage && !userScrolledAwayRef.current) {
       scrollToBottom('smooth');
     }
-    // Otherwise: user is reading history — don't yank them back to the bottom.
   }, [messages.length, scrollToBottom]);
 
   // ⭐ V3-11: Also scroll to bottom when loadingMsgs transitions from true→false
-  //   (covers the case where messages.length didn't change but the content
-  //   reloaded from the server with the same count — e.g. polling refresh).
   useEffect(() => {
     if (!loadingMsgs && messages.length > 0 && isFirstLoadRef.current) {
       requestAnimationFrame(() => {

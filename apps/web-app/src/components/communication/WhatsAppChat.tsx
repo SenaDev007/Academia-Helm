@@ -275,6 +275,101 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     | 'analytics' | 'parametres';
   const [activeHelmSection, setActiveHelmSection] = useState<HelmSection>('discussions');
 
+  // ⭐ V3-11: Multi-select conversations for bulk deletion.
+  //   - selectionMode: true when the user has entered selection mode (long-press
+  //     or shift+click on a conversation, or via a toolbar button)
+  //   - selectedConvIds: set of conversation IDs that are currently selected
+  //   - When in selection mode, clicking a conversation toggles its selection
+  //     instead of opening it. A floating action bar at the bottom of the
+  //     sidebar lets the user delete the selected conversations (delete-for-me
+  //     hides them locally; delete-all calls the backend to archive them).
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
+
+  const toggleConversationSelection = useCallback((convId: string) => {
+    setSelectedConvIds(prev => {
+      const next = new Set(prev);
+      if (next.has(convId)) {
+        next.delete(convId);
+      } else {
+        next.add(convId);
+      }
+      // If we just deselected the last one, exit selection mode
+      if (next.size === 0) {
+        setSelectionMode(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const enterSelectionMode = useCallback((convId: string) => {
+    setSelectionMode(true);
+    setSelectedConvIds(new Set([convId]));
+  }, []);
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedConvIds(new Set());
+  }, []);
+
+  const selectAllConversations = useCallback(() => {
+    setSelectedConvIds(new Set(conversations.map(c => c.id)));
+  }, [conversations]);
+
+  // ⭐ V3-11: Delete selected conversations (delete-for-me = hide locally).
+  //   We hide them from the conversations array in local state + persist the
+  //   hidden IDs in localStorage so they stay hidden on reload.
+  const hiddenConversationsKey = `helm_connect_hidden_conv_${currentUserId}`;
+  const [hiddenConvIds, setHiddenConvIds] = useState<Set<string>>(new Set());
+
+  // Load hidden conversation IDs from localStorage on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(hiddenConversationsKey);
+      if (stored) {
+        setHiddenConvIds(new Set(JSON.parse(stored)));
+      }
+    } catch { /* silent */ }
+  }, [hiddenConversationsKey]);
+
+  const deleteSelectedConversations = useCallback(async (mode: 'me' | 'all') => {
+    if (selectedConvIds.size === 0) return;
+    const idsToDelete = Array.from(selectedConvIds);
+    if (mode === 'me') {
+      // Hide locally — add to hiddenConvIds + persist to localStorage
+      const newHidden = new Set([...hiddenConvIds, ...idsToDelete]);
+      setHiddenConvIds(newHidden);
+      try {
+        localStorage.setItem(hiddenConversationsKey, JSON.stringify(Array.from(newHidden)));
+      } catch { /* silent */ }
+      toast.success(`${idsToDelete.length} conversation(s) supprimée(s) pour vous`);
+    } else {
+      // 'all' — try to archive via backend (best effort)
+      try {
+        await Promise.all(idsToDelete.map(id =>
+          fetch(`/api/chat/conversations/${id}`, { method: 'DELETE', credentials: 'include' }).catch(() => {})
+        ));
+        toast.success(`${idsToDelete.length} conversation(s) supprimée(s) pour tous`);
+      } catch {
+        toast.error('Échec de la suppression pour tous');
+      }
+    }
+    // Clear selection + reload conversations
+    exitSelectionMode();
+    // Remove from local state immediately
+    setConversations(prev => prev.filter(c => !idsToDelete.includes(c.id)));
+  }, [selectedConvIds, hiddenConvIds, hiddenConversationsKey, exitSelectionMode]);
+
+  // ⭐ V3-11: visibleConversations — conversations with hidden ones filtered out.
+  //   Used everywhere we render the conversation list. The `conversations` state
+  //   still holds the full list (so we can restore hidden ones if needed), but
+  //   the UI only shows the non-hidden subset.
+  const visibleConversations = useMemo(
+    () => conversations.filter(c => !hiddenConvIds.has(c.id)),
+    [conversations, hiddenConvIds]
+  );
+
   // Modals
   const [showNewChat, setShowNewChat] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
@@ -1636,9 +1731,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           : [...existing, { emoji, userId: currentUserId, firstName: user?.firstName, lastName: user?.lastName }];
         return { ...m, reactions: updatedReactions };
       }));
-      // Close the reaction bar after applying
-      setShowReactionBar(null);
-      setReactionBarPos(null);
+      // ⭐ V3-11: Don't close the reaction bar after applying — keep it visible
+      //   so the user can react with multiple emojis. The bar closes via the
+      //   click-outside listener (defined below) when the user clicks elsewhere.
     } catch (e: any) {
       toast.error('Échec réaction: ' + e.message);
     }
@@ -2410,22 +2505,55 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // Render conversation item (shared between Groups and Direct lists)
   // ┭ Telegram-style: avatar, name, last message preview, time, unread badge,
   //    role label for DIRECT convs, member count for GROUP convs
+  //    ⭐ V3-11: supports multi-select mode (checkbox overlay) — when the user
+  //    long-presses (mobile) or shift-clicks (desktop) a conversation, it enters
+  //    selection mode; further clicks toggle selection. A floating action bar
+  //    appears at the bottom to delete the selected conversations.
   // ───────────────────────────────────────────────────────────────────
   const renderConversationItem = (conv: ChatConversation) => {
     const display = getConversationDisplay(conv, currentUserId);
     const isActive = conv.id === activeConvId;
+    const isSelected = selectedConvIds.has(conv.id);
     // ⭐ Check if the other participant is online (DIRECT only)
     const otherUser = conv.type === 'DIRECT' ? conv.participants.find(p => p.userId !== currentUserId) : null;
     const isOnline = otherUser && onlineUsers.has(otherUser.userId);
     return (
-      <button
+      <div
         key={conv.id}
-        onClick={() => setActiveConvId(conv.id)}
         className={cn(
-          'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
-          isActive && 'bg-[#E6F4FF]'
+          'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition cursor-pointer',
+          isActive && !selectionMode && 'bg-[#E6F4FF]',
+          isSelected && 'bg-blue-50 border-l-4 border-l-blue-500'
         )}
+        onClick={(e) => {
+          if (selectionMode) {
+            // In selection mode, toggle selection
+            e.stopPropagation();
+            toggleConversationSelection(conv.id);
+          } else if (e.shiftKey) {
+            // Shift+click → enter selection mode with this conv
+            e.preventDefault();
+            enterSelectionMode(conv.id);
+          } else {
+            // Normal click → open conversation
+            setActiveConvId(conv.id);
+          }
+        }}
+        onContextMenu={(e) => {
+          // Right-click on a conversation → enter selection mode (mobile long-press)
+          e.preventDefault();
+          enterSelectionMode(conv.id);
+        }}
       >
+        {/* ⭐ V3-11: Selection checkbox (only shown in selection mode) */}
+        {selectionMode && (
+          <div className={cn(
+            'w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-1',
+            isSelected ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300'
+          )}>
+            {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+          </div>
+        )}
         {/* Avatar */}
         <div className={cn(
           'w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 relative',
@@ -2470,7 +2598,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <span className="text-[10px] text-slate-400 block mt-0.5">{display.subtitle}</span>
           )}
         </div>
-      </button>
+      </div>
     );
   };
 
@@ -2498,14 +2626,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           On mobile (<md) this rail collapses to a hidden state; the sections
           remain accessible via the MoreVertical dropdown in the sidebar header. */}
       <div className="hidden md:flex flex-col items-center gap-1 py-3 w-[72px] flex-shrink-0 bg-gradient-to-b from-[#0A2A5E] to-[#114FC4] border-r border-[#1C6FE8]/30">
-        {/* Helm Connect logo at top */}
-        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center mb-2 border border-[#FFE08A]/30">
-          <img
-            src="/icons/modules/helm-connect.png"
-            alt="Helm Connect"
-            className="w-6 h-6 object-contain"
-          />
-        </div>
+        {/* ⭐ V3-11: Helm Connect logo at top — NO square container, just the
+            logo image larger (was 24px in a 40x40 box, now 40px standalone). */}
+        <img
+          src="/icons/modules/helm-connect.png"
+          alt="Helm Connect"
+          className="w-10 h-10 object-contain mb-3 drop-shadow-[0_0_8px_rgba(255,224,138,0.4)]"
+        />
         <div className="w-8 h-px bg-[#1C6FE8]/40 mb-1" />
 
         {/* 12 section icons */}
@@ -2582,13 +2709,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         {/* Header — shows the active section name (Discord-like) + actions */}
         <div className="px-3 py-2 border-b border-slate-100 bg-gradient-to-r from-[#E6F4FF]/50 to-white">
           <div className="flex items-center justify-between gap-2">
-            {/* Title — shows the active section name */}
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap">
-              <img
-                src="/icons/modules/helm-connect.png"
-                alt="Helm Connect"
-                className="w-4 h-4 object-contain"
-              />
+            {/* Title — shows the active section name (no logo — the Discord
+                icon rail on the far left already shows the Helm Connect logo) */}
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2 flex-shrink-0 whitespace-nowrap">
               <span className="truncate">
                 {activeHelmSection === 'discussions' ? 'Discussions'
                   : activeHelmSection === 'communautes' ? 'Communautés'
@@ -2621,6 +2744,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 >
                   <Settings className="w-4 h-4" />
                 </button>
+
+                {/* ⭐ V3-11: Multi-select toggle button (only on discussions/communautes/canaux) */}
+                {['discussions', 'communautes', 'canaux'].includes(activeHelmSection) && (
+                  <button
+                    onClick={() => selectionMode ? exitSelectionMode() : setSelectionMode(true)}
+                    className={cn(
+                      'p-1.5 rounded-lg transition-colors',
+                      selectionMode
+                        ? 'bg-blue-500 text-white'
+                        : 'hover:bg-slate-100 text-slate-500'
+                    )}
+                    title={selectionMode ? 'Quitter la sélection' : 'Sélection multiple'}
+                  >
+                    <ListChecks className="w-4 h-4" />
+                  </button>
+                )}
 
                 {/* ⭐ Context-aware primary CTA — changes per active section */}
                 {activeHelmSection === 'discussions' && (
@@ -2789,7 +2928,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 //   - 'communautes' → GROUP convs only (auto-groups)
                 //   - 'canaux' → broadcast channels only
                 if (activeHelmSection === 'communautes') {
-                  const groupConvs = conversations.filter(c => c.type === 'GROUP');
+                  const groupConvs = visibleConversations.filter(c => c.type === 'GROUP');
                   if (groupConvs.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -2901,7 +3040,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 }
                 // Default: 'discussions' section
                 // ⭐ Filter DIRECT conversations by role category
-                const directConvs = conversations.filter(c => {
+                const directConvs = visibleConversations.filter(c => {
                   if (c.type !== 'DIRECT') return false;
                   if (categoryFilter === 'all') return true;
                   // Find the other participant
@@ -2923,7 +3062,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   }
                   return true;
                 });
-                const groupConvs = conversations.filter(c => c.type === 'GROUP');
+                const groupConvs = visibleConversations.filter(c => c.type === 'GROUP');
                 return (
                   <>
                     {directConvs.length > 0 && (
@@ -2981,6 +3120,51 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </>
           )}
         </div>
+
+        {/* ⭐ V3-11: Floating action bar for multi-select deletion.
+            Shown at the bottom of the sidebar when selectionMode is active. */}
+        {selectionMode && (
+          <div className="bg-gradient-to-r from-[#0A2A5E] to-[#114FC4] text-white p-3 border-t border-[#1C6FE8]/30 flex items-center justify-between gap-2 shadow-lg">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="bg-[#FFE08A] text-[#0A2A5E] px-2 py-0.5 rounded-full text-xs font-bold">
+                {selectedConvIds.size} sélectionnée(s)
+              </span>
+              <button
+                onClick={selectAllConversations}
+                className="text-[11px] text-white/80 hover:text-white underline"
+              >
+                Tout sélectionner
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => deleteSelectedConversations('me')}
+                disabled={selectedConvIds.size === 0}
+                className="px-3 py-1.5 bg-slate-600 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg disabled:opacity-40 flex items-center gap-1.5"
+                title="Supprimer pour moi (masque localement)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Pour moi
+              </button>
+              <button
+                onClick={() => deleteSelectedConversations('all')}
+                disabled={selectedConvIds.size === 0}
+                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg disabled:opacity-40 flex items-center gap-1.5"
+                title="Supprimer pour tous (archive côté backend)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Pour tous
+              </button>
+              <button
+                onClick={exitSelectionMode}
+                className="px-2 py-1.5 text-white/80 hover:text-white text-xs"
+                title="Annuler"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ═════ RIGHT PANE — Chat View ═════ */}
@@ -3120,6 +3304,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             ? 'bg-[#3B9EFF] text-white rounded-br-sm'
                             : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
                         )}
+                        // ⭐ V3-11: LEFT click on the message toggles the quick
+                        //   reaction bar (no more hover — was too cluttered).
+                        //   Right-click + long-press still work for context menu.
+                        onClick={(e) => {
+                          if (isReadOnly) return;
+                          e.stopPropagation();
+                          setShowReactionBar(prev => prev === msg.id ? null : msg.id);
+                        }}
                         // ⭐ FIX: Long-press (mobile) + right-click (desktop) → show reaction bar (WhatsApp style)
                         onContextMenu={(e) => {
                           if (isReadOnly) return;
@@ -3483,11 +3675,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           <span className="text-[10px]">{formatTime(msg.createdAt)}</span>
                           {isMine && getReceiptIcon(msg, true)}
                         </div>
-                        {/* ⭐ V1.5: Quick reaction bar (appears on hover) */}
+                        {/* ⭐ V3-11: Quick reaction bar — only shown on EXPLICIT click
+                            (no longer on hover, which was too cluttered). The bar stays
+                            visible until the user clicks elsewhere, so they can react
+                            with multiple emojis without re-opening it. */}
                         {!isReadOnly && (
                           <div className={cn(
                             'absolute -top-7 right-0 flex items-center gap-0.5 bg-white rounded-full shadow-lg border border-slate-200 px-1 py-0.5 transition-opacity',
-                            showReactionBar === msg.id ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                            showReactionBar === msg.id
+                              ? 'opacity-100 pointer-events-auto'
+                              : 'opacity-0 pointer-events-none'
                           )}>
                             {QUICK_EMOJIS.map(emoji => (
                               <button

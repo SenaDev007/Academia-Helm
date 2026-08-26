@@ -298,22 +298,25 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ⭐ V3-11: Logo with subtle gold halo (reduced size — was too big)
+                // ⭐ V3-12: Logo with subtle gold halo (smaller, no truncation).
+                //   The logo image (helm_connect.png) has its own white/blue background,
+                //   so we display it directly at a smaller size — no padding that
+                //   would create a gap. The halo is behind it as a circle.
                 SizedBox(
-                  width: 120,
-                  height: 120,
+                  width: 100,
+                  height: 100,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Outer gold halo (pulsing) — smaller, less opaque
+                      // Outer gold halo (pulsing) — small, subtle
                       AnimatedBuilder(
                         animation: _haloAnimation,
                         builder: (context, child) {
                           return Opacity(
-                            opacity: _haloAnimation.value * 0.2,
+                            opacity: _haloAnimation.value * 0.15,
                             child: Container(
-                              width: 120,
-                              height: 120,
+                              width: 100,
+                              height: 100,
                               decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: Color(0xFFCFA63A),
@@ -322,39 +325,35 @@ class _SplashScreenState extends State<SplashScreen>
                           );
                         },
                       ),
-                      // Inner gold ring — smaller, thinner
+                      // Inner gold ring — thin
                       AnimatedBuilder(
                         animation: _haloAnimation,
                         builder: (context, child) {
                           return Opacity(
-                            opacity: _haloAnimation.value * 0.35,
+                            opacity: _haloAnimation.value * 0.3,
                             child: Container(
-                              width: 96,
-                              height: 96,
+                              width: 80,
+                              height: 80,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: const Color(0xFFFFE08A),
-                                  width: 2,
+                                  width: 1.5,
                                 ),
                               ),
                             ),
                           );
                         },
                       ),
-                      // ⭐ V3-11: Logo — fit.contain on the actual image, no ClipOval
-                      //   (the previous ClipOval was truncating the logo). The logo
-                      //   itself is the Helm Connect branded icon, no need to clip.
+                      // ⭐ V3-12: Logo at 60×60 (smaller than before, centered,
+                      //   no padding — the logo image fills the space naturally)
                       ScaleTransition(
                         scale: _logoScale,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Image.asset(
-                            'assets/icons/helm_connect.png',
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.contain,
-                          ),
+                        child: Image.asset(
+                          'assets/icons/helm_connect.png',
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.contain,
                         ),
                       ),
                     ],

@@ -6,6 +6,7 @@
 // ============================================================================
 
 import 'dart:async';
+import 'dart:convert'; // ⭐ V3-12: JSON parsing for poll messages
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // ⭐ V3-4: Clipboard.setData for copy action
@@ -14,6 +15,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart'; // ⭐ V3-11: voice message playback
 import 'package:url_launcher/url_launcher.dart'; // ⭐ V3-11: open attachments with system app
+import 'package:open_filex/open_filex.dart'; // ⭐ V3-12: open downloaded files
+import 'package:http/http.dart' as http; // ⭐ V3-12: download attachments
+import 'package:path_provider/path_provider.dart'; // ⭐ V3-12: temp dir for downloads
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
@@ -83,6 +87,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   String? _currentlyPlayingId;
   bool _isAudioPlaying = false;
+  Duration _audioPosition = Duration.zero;
+  Duration _audioDuration = Duration.zero;
+  // ⭐ V3-12: Voice preview state (before sending)
+  VoiceRecording? _pendingVoiceRecording;
+  bool _isPreviewingVoice = false;
   // ⭐ V3-11: Image preview before send (matches web's preview)
   File? _pendingImage;
   String? _pendingImageName;
@@ -115,14 +124,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _scrollController.addListener(_onScrollChanged);
   }
 
-  // ⭐ V3-11: Scroll listener — tracks whether the user is at the bottom of the
-  //    conversation. Used by _scrollToBottom to decide whether to auto-scroll
-  //    when new messages arrive (socket event, polling).
+  // ⭐ V3-12: Scroll listener — tracks whether the user is at the bottom of the
+  //    conversation AND whether maxScrollExtent grew (new content / images loaded).
+  //    When maxScrollExtent grows AND the user is at the bottom, we re-scroll.
   void _onScrollChanged() {
     if (!_scrollController.hasClients) return;
     final offset = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
     _userAtBottom = (maxExtent - offset).abs() < 100;
+    // ⭐ V3-12: If maxExtent grew AND user is at bottom → re-scroll to bottom
+    if (_userAtBottom && maxExtent > _lastMaxScrollExtent + 5) {
+      _lastMaxScrollExtent = maxExtent;
+      _scrollToBottom();
+    } else {
+      _lastMaxScrollExtent = maxExtent;
+    }
   }
 
   // ⭐ E2E: ensure this user has a key pair + fetch recipient public keys.
@@ -347,7 +363,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
-  // ⭐ V3-11: Stop + upload the recorded voice message
+  // ⭐ V3-12: Stop recording → show preview (don't send immediately)
   Future<void> _stopAndSendVoiceRecording() async {
     final recording = await _voiceService.stopRecording();
     if (mounted) {
@@ -355,7 +371,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         _isRecording = false;
         _isRecordingPaused = false;
         _recordingDuration = 0;
-        _isUploadingVoice = true;
       });
     }
     if (recording == null) {
@@ -363,10 +378,31 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Enregistrement vide — annulé')),
         );
-        setState(() => _isUploadingVoice = false);
       }
       return;
     }
+    // ⭐ V3-12: Show a preview bar with playback + send/cancel buttons
+    if (mounted) {
+      setState(() {
+        _pendingVoiceRecording = recording;
+        _isPreviewingVoice = true;
+      });
+    }
+  }
+
+  // ⭐ V3-12: Send the previewed voice recording
+  Future<void> _sendPreviewedVoiceRecording() async {
+    if (_pendingVoiceRecording == null) return;
+    final recording = _pendingVoiceRecording!;
+    if (mounted) {
+      setState(() {
+        _isPreviewingVoice = false;
+        _isUploadingVoice = true;
+        _pendingVoiceRecording = null;
+      });
+    }
+    // Stop preview playback if running
+    await _audioPlayer.stop();
     try {
       await _voiceService.uploadVoice(
         conversationId: widget.conversation.id,
@@ -387,6 +423,62 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
+  // ⭐ V3-12: Cancel the previewed voice recording
+  Future<void> _cancelPreviewedVoiceRecording() async {
+    await _audioPlayer.stop();
+    if (_pendingVoiceRecording != null) {
+      try {
+        final file = _pendingVoiceRecording!.file;
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _isPreviewingVoice = false;
+        _pendingVoiceRecording = null;
+        _currentlyPlayingId = null;
+        _isAudioPlaying = false;
+      });
+    }
+  }
+
+  // ⭐ V3-12: Play the preview voice recording
+  Future<void> _playPreviewVoice() async {
+    if (_pendingVoiceRecording == null) return;
+    if (_isAudioPlaying && _currentlyPlayingId == 'preview') {
+      await _audioPlayer.pause();
+      if (mounted) setState(() => _isAudioPlaying = false);
+      return;
+    }
+    try {
+      await _audioPlayer.play(DeviceFileSource(_pendingVoiceRecording!.path));
+      if (mounted) {
+        setState(() {
+          _currentlyPlayingId = 'preview';
+          _isAudioPlaying = true;
+          _audioPosition = Duration.zero;
+          _audioDuration = Duration(seconds: _pendingVoiceRecording!.durationSeconds);
+        });
+      }
+      _audioPlayer.onPositionChanged.listen((pos) {
+        if (mounted) setState(() => _audioPosition = pos);
+      });
+      _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (mounted && state == PlayerState.completed) {
+          setState(() {
+            _isAudioPlaying = false;
+            _currentlyPlayingId = null;
+            _audioPosition = Duration.zero;
+          });
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lecture échouée: $e')));
+      }
+    }
+  }
+
   // ⭐ V3-11: Cancel the active recording (deletes the temp file)
   Future<void> _cancelVoiceRecording() async {
     await _voiceService.cancelRecording();
@@ -400,31 +492,64 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-11: Play a voice message audio bubble
+  // ⭐ V3-12: Audio playback with position tracking + seek + replay
   Future<void> _playAudioMessage(Message msg) async {
-    if (_currentlyPlayingId == msg.id && _isAudioPlaying) {
-      await _audioPlayer.pause();
-      setState(() => _isAudioPlaying = false);
+    final url = msg.attachmentUrl;
+    if (url == null) return;
+
+    // If same message is playing → toggle pause/resume
+    if (_currentlyPlayingId == msg.id) {
+      if (_isAudioPlaying) {
+        await _audioPlayer.pause();
+        if (mounted) setState(() => _isAudioPlaying = false);
+      } else {
+        await _audioPlayer.resume();
+        if (mounted) setState(() => _isAudioPlaying = true);
+      }
       return;
     }
-    if (_currentlyPlayingId != msg.id) {
-      await _audioPlayer.stop();
-      final url = msg.attachmentUrl;
-      if (url == null) return;
-      try {
-        await _audioPlayer.play(UrlSource(url));
+
+    // Different message → stop current + play new
+    await _audioPlayer.stop();
+    try {
+      await _audioPlayer.play(UrlSource(url));
+      if (mounted) {
         setState(() {
           _currentlyPlayingId = msg.id;
           _isAudioPlaying = true;
+          _audioPosition = Duration.zero;
+          _audioDuration = Duration(seconds: msg.duration ?? 0);
         });
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lecture audio échouée: $e')));
-        }
       }
-    } else {
-      await _audioPlayer.resume();
-      setState(() => _isAudioPlaying = true);
+      // Listen to position updates
+      _audioPlayer.onPositionChanged.listen((pos) {
+        if (mounted) setState(() => _audioPosition = pos);
+      });
+      _audioPlayer.onDurationChanged.listen((dur) {
+        if (mounted) setState(() => _audioDuration = dur);
+      });
+      _audioPlayer.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          if (state == PlayerState.completed) {
+            setState(() {
+              _isAudioPlaying = false;
+              _currentlyPlayingId = null;
+              _audioPosition = Duration.zero;
+            });
+          }
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lecture audio échouée: $e')));
+      }
     }
+  }
+
+  // ⭐ V3-12: Seek to a position in the audio
+  Future<void> _seekAudio(Duration position) async {
+    await _audioPlayer.seek(position);
+    if (mounted) setState(() => _audioPosition = position);
   }
 
   @override
@@ -541,13 +666,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
-  // ⭐ V3-11: Smart scroll-to-bottom — only auto-scrolls if the user is already
-  //    near the bottom OR if it's the first load / force. This prevents the
-  //    "jump to top and flicker" loop. Does NOT try to restore _lastScrollOffset
-  //    (that was the cause of the flicker — the old offset was invalid after a
-  //    ListView rebuild).
+  // ⭐ V3-12: Smart scroll-to-bottom — uses the same logic as the web ResizeObserver
+  //    approach. We add a listener that re-scrolls to the bottom whenever the
+  //    maxScrollExtent increases (caused by images loading, new messages, polls)
+  //    AND the user hasn't scrolled away. This prevents the "stuck at top" bug.
   bool _isInitialLoad = true;
   bool _userAtBottom = true; // updated by _onScrollChanged
+  double _lastMaxScrollExtent = 0;
 
   void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -564,13 +689,16 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         // First load OR user sent a message → instant jump to bottom
         _scrollController.jumpTo(maxExtent);
         _isInitialLoad = false;
-      } else if (_userAtBottom) {
-        // User was at the bottom when a new message arrived → smooth scroll
+        _lastMaxScrollExtent = maxExtent;
+      } else if (_userAtBottom && maxExtent > _lastMaxScrollExtent) {
+        // ⭐ V3-12: maxExtent grew (images loaded / new messages) and user is
+        //   near the bottom → re-scroll to catch the new content
         _scrollController.animateTo(
           maxExtent,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
+        _lastMaxScrollExtent = maxExtent;
       }
       // Otherwise: user is reading history — do nothing (Flutter's ScrollController
       // preserves the position across rebuilds automatically).
@@ -1157,6 +1285,76 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ],
       );
     }
+    // ⭐ V3-12: Voice preview state — play/seek + send/cancel buttons
+    if (_isPreviewingVoice && _pendingVoiceRecording != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE6F4FF),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1),
+        ),
+        child: Row(
+          children: [
+            // Play/pause preview
+            GestureDetector(
+              onTap: _playPreviewVoice,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: HelmGradients.royalBlue,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isAudioPlaying && _currentlyPlayingId == 'preview' ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Duration / progress
+            Expanded(
+              child: Text(
+                _isAudioPlaying && _currentlyPlayingId == 'preview'
+                    ? '${_audioPosition.inMinutes}:${(_audioPosition.inSeconds % 60).toString().padLeft(2, '0')} / ${_audioDuration.inMinutes}:${(_audioDuration.inSeconds % 60).toString().padLeft(2, '0')}'
+                    : 'Message vocal (${VoiceMessageService.formatDuration(_pendingVoiceRecording!.durationSeconds)})',
+                style: const TextStyle(fontSize: 12, color: HelmColors.primary, fontWeight: FontWeight.w600),
+              ),
+            ),
+            // Cancel
+            GestureDetector(
+              onTap: _cancelPreviewedVoiceRecording,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, color: Colors.red, size: 20),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Send
+            GestureDetector(
+              onTap: _sendPreviewedVoiceRecording,
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: HelmGradients.royalBlue,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: HelmColors.goldLight, width: 1),
+                ),
+                child: const Icon(Icons.send, color: Colors.white, size: 18),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     // Default: attach + text field + mic (if empty) + send
     return Row(
       children: [
@@ -1361,7 +1559,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ),
               ),
             // Content (V3-4: strip HTML before display)
-            if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO')
+            // ⭐ V3-12: Poll messages (type=POLL) have JSON content — parse + render
+            //   as a poll card instead of raw JSON text.
+            if (msg.type == 'POLL' && msg.content != null && msg.content!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _buildPollBubble(msg, isOwn),
+            ]
+            else if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO')
               Text(stripHtml(msg.content), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
             // ⭐ V3-11: Audio message bubble — play button + waveform + duration
             if (msg.isAttachment && msg.type == 'AUDIO') ...[
@@ -1473,31 +1677,73 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          // Waveform (decorative bars)
+          // ⭐ V3-12: Progress bar with seek (slider) + time display
           Expanded(
-            child: SizedBox(
-              height: 28,
-              child: CustomPaint(
-                size: const Size.fromHeight(28),
-                painter: _WaveformPainter(
-                  barsCount: 24,
-                  isOwn: isOwn,
-                  progress: isCurrentlyPlaying ? 0.4 : 0.0, // No actual position tracking yet
-                ),
-              ),
-            ),
+            child: isCurrentlyPlaying
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                          activeTrackColor: HelmColors.primary,
+                          inactiveTrackColor: Colors.grey[300],
+                          thumbColor: HelmColors.primary,
+                        ),
+                        child: Slider(
+                          value: _audioDuration.inMilliseconds > 0
+                              ? _audioPosition.inMilliseconds.toDouble().clamp(0, _audioDuration.inMilliseconds.toDouble())
+                              : 0,
+                          min: 0,
+                          max: _audioDuration.inMilliseconds.toDouble() > 0
+                              ? _audioDuration.inMilliseconds.toDouble()
+                              : 1,
+                          onChanged: (value) {
+                            _seekAudio(Duration(milliseconds: value.toInt()));
+                          },
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${_audioPosition.inMinutes}:${(_audioPosition.inSeconds % 60).toString().padLeft(2, '0')}',
+                            style: const TextStyle(fontSize: 9, color: Color(0xFF667085)),
+                          ),
+                          Text(
+                            '${_audioDuration.inMinutes}:${(_audioDuration.inSeconds % 60).toString().padLeft(2, '0')}',
+                            style: const TextStyle(fontSize: 9, color: Color(0xFF667085)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  )
+                : SizedBox(
+                    height: 28,
+                    child: CustomPaint(
+                      size: const Size.fromHeight(28),
+                      painter: _WaveformPainter(
+                        barsCount: 24,
+                        isOwn: isOwn,
+                        progress: 0.0,
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: 8),
-          // Duration
-          Text(
-            VoiceMessageService.formatDuration(duration),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF667085),
-              fontFeatures: [FontFeature.tabularFigures()],
+          // Duration (shown when not playing)
+          if (!isCurrentlyPlaying)
+            Text(
+              VoiceMessageService.formatDuration(duration),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF667085),
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1575,21 +1821,28 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   //   - Images → gallery / image viewer
   //   - Audio  → music player
   //   - PDF / Office docs → PDF viewer / Quickoffice
-  //   - Video  → video player
-  //   - URLs (http/https) → browser
+  // ⭐ V3-12: Open attachment — fix relative URLs by prefixing with API base.
+  //   The backend returns relative paths like "chat/document/xxx" — we need
+  //   to prepend "https://academiahelm.com/api/" to make it a full URL.
   Future<void> _openAttachment(String url) async {
     if (url.isEmpty) return;
+    // ⭐ V3-12: If the URL is relative (starts with "chat/"), prefix with API base
+    String fullUrl = url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      // Relative path → prefix with API base URL
+      const apiBase = 'https://academiahelm.com/api/';
+      fullUrl = url.startsWith('/') ? '$apiBase${url.substring(1)}' : '$apiBase$url';
+    }
     try {
-      final uri = Uri.parse(url);
+      final uri = Uri.parse(fullUrl);
+      // ⭐ V3-12: Add Authorization header via url_launcher won't work directly.
+      //   Use open_filex to download the file first, then open it. For now,
+      //   try launching the URL — if it fails, download + open via open_filex.
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        // Fallback: try platform default
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Impossible d\'ouvrir: $url')),
-          );
-        }
+        // Fallback: download the file locally + open with open_filex
+        await _downloadAndOpenAttachment(fullUrl, uri.pathSegments.last);
       }
     } catch (e) {
       if (mounted) {
@@ -1600,10 +1853,148 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
+  // ⭐ V3-12: Download an attachment locally + open with the system app
+  //   (used when the URL requires authentication that url_launcher can't provide)
+  Future<void> _downloadAndOpenAttachment(String url, String filename) async {
+    try {
+      // Show loading
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Téléchargement de $filename…'), duration: const Duration(seconds: 1)),
+        );
+      }
+      // Get auth token
+      final token = await AuthService.getToken();
+      // Download the file
+      final response = await http.get(Uri.parse(url), headers: {
+        if (token != null) 'Authorization': 'Bearer $token',
+      });
+      if (response.statusCode != 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Téléchargement échoué (${response.statusCode})')),
+          );
+        }
+        return;
+      }
+      // Save to temp directory
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/$filename';
+      final file = File(filePath);
+      await file.writeAsBytes(response.bodyBytes);
+      // Open with open_filex
+      final result = await OpenFilex.open(filePath);
+      if (result.type != ResultType.done) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ouverture échouée: ${result.message}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Téléchargement échoué: $e')),
+        );
+      }
+    }
+  }
+
+  // ⭐ V3-12: Poll bubble — parses JSON content + renders as a poll card
+  //   (prevents raw JSON characters from showing in the chat)
+  Widget _buildPollBubble(Message msg, bool isOwn) {
+    try {
+      final poll = jsonDecode(msg.content!) as Map<String, dynamic>;
+      final question = poll['question'] as String? ?? 'Sondage';
+      final options = (poll['options'] as List<dynamic>?) ?? [];
+      final totalVotes = options.fold<int>(0, (sum, o) {
+        final opt = o as Map<String, dynamic>;
+        return sum + ((opt['voteCount'] as num?)?.toInt() ?? 0);
+      });
+
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isOwn ? Colors.white.withOpacity(0.15) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: HelmColors.goldLight.withOpacity(0.3), width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Question header with poll icon
+            Row(
+              children: [
+                Icon(Icons.bar_chart, size: 14, color: HelmColors.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    question,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF172033)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Options with progress bars
+            ...options.map((optObj) {
+              final opt = optObj as Map<String, dynamic>;
+              final label = opt['label'] as String? ?? '';
+              final voteCount = (opt['voteCount'] as num?)?.toInt() ?? 0;
+              final percentage = totalVotes > 0 ? (voteCount / totalVotes * 100).round() : 0;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
+                        ),
+                        Text(
+                          '$voteCount (${percentage}%)',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: percentage / 100.0,
+                        minHeight: 4,
+                        backgroundColor: const Color(0xFFE2E8F0),
+                        valueColor: AlwaysStoppedAnimation<Color>(HelmColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            const SizedBox(height: 4),
+            Text(
+              '$totalVotes vote(s)',
+              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // If JSON parsing fails, show the content as text (stripped)
+      return Text(stripHtml(msg.content), style: const TextStyle(fontSize: 12, color: Color(0xFF667085)));
+    }
+  }
+
   // ⭐ V3-11: Document attachment — file card with icon
+  // ⭐ V3-12: Use MIME type as fallback if the file extension doesn't match.
+  //   Also use more specific icons: Word → Icons.article, Excel → Icons.table_view.
   Widget _buildDocumentAttachmentBubble(Message msg, bool isOwn) {
     final name = msg.attachmentName ?? 'Fichier';
     final size = msg.attachmentSize;
+    final mime = msg.attachmentMime ?? '';
     String sizeLabel = '';
     if (size != null) {
       if (size < 1024) {
@@ -1617,16 +2008,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     IconData icon = Icons.insert_drive_file;
     Color iconColor = HelmColors.primary;
     final nameLower = name.toLowerCase();
-    if (nameLower.endsWith('.pdf')) {
+    // ⭐ V3-12: Check file extension FIRST, then MIME type as fallback
+    if (nameLower.endsWith('.pdf') || mime.contains('pdf')) {
       icon = Icons.picture_as_pdf;
       iconColor = const Color(0xFFEF4444);
-    } else if (nameLower.endsWith('.doc') || nameLower.endsWith('.docx')) {
-      icon = Icons.description;
+    } else if (nameLower.endsWith('.doc') || nameLower.endsWith('.docx') || mime.contains('word') || mime.contains('msword')) {
+      icon = Icons.article;
       iconColor = const Color(0xFF2563EB);
-    } else if (nameLower.endsWith('.xls') || nameLower.endsWith('.xlsx')) {
-      icon = Icons.table_chart;
+    } else if (nameLower.endsWith('.xls') || nameLower.endsWith('.xlsx') || mime.contains('sheet') || mime.contains('excel') || mime.contains('spreadsheet')) {
+      icon = Icons.table_view;
       iconColor = const Color(0xFF16A34A);
-    } else if (nameLower.endsWith('.ppt') || nameLower.endsWith('.pptx')) {
+    } else if (nameLower.endsWith('.ppt') || nameLower.endsWith('.pptx') || mime.contains('presentation') || mime.contains('powerpoint')) {
       icon = Icons.slideshow;
       iconColor = const Color(0xFFEA580C);
     } else if (nameLower.endsWith('.zip') || nameLower.endsWith('.rar') || nameLower.endsWith('.7z')) {

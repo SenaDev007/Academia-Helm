@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Helm Connect — Splash screen background (light mode)
-  White background with Helm Connect Azure color splash.
+  Helm Connect — Splash screen background (Royal Blue gradient)
+  ⭐ V3-12: Was white — now uses the Helm Connect Royal Blue gradient so the
+  native Android cold-start splash matches the Flutter splash screen.
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
-    <!-- Optional: add app logo as splash
+    <!-- Royal Blue solid background -->
+    <item>
+        <color android:color="#0A2A5E" />
+    </item>
+    <!-- Optional: Helm Connect logo as splash -->
     <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/helm_connect_logo" />
     </item>
-    -->
 </layer-list>

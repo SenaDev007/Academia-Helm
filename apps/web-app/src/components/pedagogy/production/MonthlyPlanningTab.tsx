@@ -463,6 +463,16 @@ export function MonthlyPlanningTab({
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
+  // ⭐ V3-12: Auto-refresh every 30s so the teacher sees status updates
+  //    (VALIDATED/REJECTED) from the director in real-time — same pattern
+  //    as the Cahier Journal which refetches via React Query staleTime.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadPlan();
+    }, 30000); // 30 seconds
+    return () => clearInterval(interval);
+  }, [loadPlan]);
+
   // ───────────────────────────────────────────────────────────────────
   // Save
   // ───────────────────────────────────────────────────────────────────

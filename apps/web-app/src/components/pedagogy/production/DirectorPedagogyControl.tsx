@@ -4957,6 +4957,8 @@ function PendingMonthlyPlansTab({
   const [rejectObservation, setRejectObservation] = useState("");
   const [validating, setValidating] = useState(false);
   const [modalPlan, setModalPlan] = useState<any | null>(null);
+  // ⭐ V3-12: Confirmation modal (same pattern as CahierJournal director view)
+  const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: 'VALIDATE' | 'REJECT' | null }>({ open: false, action: null });
 
   // Collapse states for hierarchy
   const [collapsedSchoolLevels, setCollapsedSchoolLevels] = useState<Set<string>>(new Set());
@@ -5003,6 +5005,31 @@ function PendingMonthlyPlansTab({
     })();
   }, [userId]);
 
+  // ⭐ V3-12: openConfirmModal — same pattern as CahierJournal director view
+  const openConfirmModal = (action: 'VALIDATE' | 'REJECT') => {
+    if (action === 'VALIDATE' && !directorSignature) {
+      toast.error("Signature du directeur requise", {
+        description: "Configurez votre signature dans votre profil avant de valider.",
+      });
+      return;
+    }
+    setConfirmModal({ open: true, action });
+  };
+
+  // ⭐ V3-12: handleConfirmValidation — called when user confirms in the modal
+  const handleConfirmValidation = () => {
+    const action = confirmModal.action;
+    if (!action || !selectedPlan) return;
+    setConfirmModal({ open: false, action: null });
+    if (action === 'VALIDATE') {
+      handleValidate(selectedPlan);
+    } else {
+      // For reject, open the observation modal
+      setModalPlan(selectedPlan);
+      setRejectObservation("");
+    }
+  };
+
   const handleValidate = async (plan: any) => {
     if (!directorSignature) {
       toast.error("Signature du directeur requise. Configurez votre signature dans votre profil.");
@@ -5029,7 +5056,10 @@ function PendingMonthlyPlansTab({
         const err = await res.json().catch(() => ({}));
         throw new Error((err as any)?.backendError?.message || (err as any)?.error || `Échec (${res.status})`);
       }
-      toast.success(`Planification ${plan.classLevel} — ${plan.month} validée`);
+      toast.success(`✅ Planification ${plan.classLevel} — ${plan.month} validée`, {
+        description: "L'enseignant sera notifié et verra le statut « Validé » dans son espace pédagogique.",
+      });
+      setSelectedPlan(null);
       setModalPlan(null);
       onRefresh();
       loadPending();
@@ -5066,9 +5096,12 @@ function PendingMonthlyPlansTab({
         const err = await res.json().catch(() => ({}));
         throw new Error((err as any)?.backendError?.message || (err as any)?.error || `Échec (${res.status})`);
       }
-      toast.success(`Planification ${plan.classLevel} — ${plan.month} rejetée`);
+      toast.success(`Planification ${plan.classLevel} — ${plan.month} rejetée`, {
+        description: "L'enseignant sera notifié et verra le statut « Rejeté » avec vos observations.",
+      });
       setRejectObservation("");
       setModalPlan(null);
+      setSelectedPlan(null);
       onRefresh();
       loadPending();
     } catch (e: any) {
@@ -5132,6 +5165,42 @@ function PendingMonthlyPlansTab({
   const findPlanCell = (week: number, domain: string, subDomain?: string) =>
     planDetailCells.find(c => c.weekNumber === week && c.domain === domain && (c.subDomain || "") === (subDomain || ""));
 
+  // ⭐ V3-12: Compute week date ranges for the selected plan (same as teacher view)
+  const MONTH_NAMES_PLAN = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+  function getNthMondayOfMonth(year: number, monthIdx: number, n: number): Date {
+    const firstDay = new Date(year, monthIdx, 1);
+    const dayOfWeek = firstDay.getDay();
+    let firstMonday = new Date(firstDay);
+    if (dayOfWeek === 1) firstMonday = firstDay;
+    else { const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek; firstMonday.setDate(firstMonday.getDate() + daysUntilMonday); }
+    const nthMonday = new Date(firstMonday); nthMonday.setDate(nthMonday.getDate() + (n - 1) * 7);
+    return nthMonday;
+  }
+  function computeWeekRangesForMonth(monthName: string, year: number): { start: Date; end: Date }[] {
+    const monthIdx = MONTH_NAMES_PLAN.indexOf(monthName);
+    if (monthIdx === -1) return [];
+    const weeks: { start: Date; end: Date }[] = [];
+    let weekStart: Date;
+    if (monthName === "Septembre") weekStart = getNthMondayOfMonth(year, monthIdx, 2);
+    else {
+      const firstDay = new Date(year, monthIdx, 1);
+      const dayOfWeek = firstDay.getDay();
+      const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      weekStart = new Date(firstDay); weekStart.setDate(weekStart.getDate() + offsetToMonday);
+    }
+    for (let i = 0; i < 5; i++) {
+      const start = new Date(weekStart);
+      const end = new Date(weekStart); end.setDate(end.getDate() + 4);
+      weeks.push({ start, end });
+      weekStart = new Date(end); weekStart.setDate(weekStart.getDate() + 3);
+    }
+    return weeks;
+  }
+  function formatDateFRShort(date: Date): string { return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }); }
+
+  const planDetailWeekRanges = selectedPlan ? computeWeekRangesForMonth(selectedPlan.month, new Date().getFullYear()) : [];
+  const planDetailActiveRanges = planDetailIsMaternelle ? planDetailWeekRanges.slice(0, 4) : planDetailWeekRanges;
+
   // ⭐ In-page detail view (Étape D — replaces modal)
   //    V3-12: Now renders the FULL planning table (like the teacher sees),
   //    not just basic metadata. The director can see all domains × weeks × content.
@@ -5168,21 +5237,30 @@ function PendingMonthlyPlansTab({
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { setModalPlan(selectedPlan); setRejectObservation(""); }}
+                onClick={() => openConfirmModal('REJECT')}
                 disabled={validating}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
               >
-                <XCircle className="h-4 w-4" /> Rejeter
+                {validating ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Rejeter
               </button>
               <button
-                onClick={() => handleValidate(selectedPlan)}
+                onClick={() => openConfirmModal('VALIDATE')}
                 disabled={validating || !directorSignature}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                title={!directorSignature ? "Signature obligatoire" : "Valider la planification"}
               >
                 {validating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {directorSignature ? 'Valider' : 'Signature requise'}
               </button>
             </div>
+          </div>
+        )}
+        {(statusTab === 'VALIDATED' || statusTab === 'REJECTED') && (
+          <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+            <span className={cn('px-3 py-2 rounded-lg text-sm font-bold', statusTab === 'VALIDATED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
+              {statusTab === 'VALIDATED' ? '✓ Validé' : '✗ Rejeté'}
+            </span>
           </div>
         )}
 
@@ -5214,6 +5292,14 @@ function PendingMonthlyPlansTab({
                     </th>
                     {planDetailWeekLabels.map((wk, i) => (
                       <th key={i} className="p-2 border border-slate-400 text-center">{wk}</th>
+                    ))}
+                  </tr>
+                  {/* ⭐ V3-12: Date ranges row (same as teacher view) */}
+                  <tr className="bg-slate-600 text-white text-[9px]">
+                    {planDetailActiveRanges.map((range, i) => (
+                      <th key={i} className="p-1 border border-slate-400 text-center font-medium whitespace-nowrap">
+                        Du {formatDateFRShort(range.start)} au {formatDateFRShort(range.end)}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -5336,7 +5422,80 @@ function PendingMonthlyPlansTab({
           </div>
         )}
 
-        {/* Reject modal (still uses modal for the observation textarea) */}
+        {/* ⭐ V3-12: Confirmation modal (same pattern as CahierJournal director view) */}
+        {confirmModal.open && confirmModal.action && (() => {
+          const isValidate = confirmModal.action === 'VALIDATE';
+          const modalConfig = {
+            title: isValidate ? 'Valider la planification mensuelle' : 'Rejeter la planification mensuelle',
+            icon: isValidate
+              ? <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+              : <XCircle className="h-10 w-10 text-red-500" />,
+            message: isValidate
+              ? "Vous êtes sur le point de valider cette planification mensuelle."
+              : "Vous êtes sur le point de rejeter cette planification mensuelle.",
+            details: isValidate
+              ? [
+                  "L'enseignant verra le statut « Validé » dans son espace pédagogique",
+                  "Votre signature sera apposée sur la planification",
+                ]
+              : [
+                  "L'enseignant verra le statut « Rejeté » dans son espace pédagogique",
+                  "Vous pourrez indiquer une observation pour expliquer le rejet",
+                  "L'enseignant devra corriger et resoumettre la planification",
+                ],
+            confirmLabel: isValidate ? '✓ Valider la planification' : '✗ Rejeter la planification',
+            confirmClass: isValidate ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700',
+          };
+          return (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className={cn('px-6 py-4 border-b', isValidate ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200')}>
+                  <div className="flex items-center gap-3">
+                    {modalConfig.icon}
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">{modalConfig.title}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Action de validation direction</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-3">
+                  <p className="text-sm text-slate-700 font-medium">{modalConfig.message}</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">Conséquences :</p>
+                    {modalConfig.details.map((d, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-slate-700">
+                        <ChevronRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+                        <span>{d}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                    <strong>ℹ️ Planification :</strong> {selectedPlan?.classLevel} · {selectedPlan?.month}
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                  <button
+                    onClick={() => setConfirmModal({ open: false, action: null })}
+                    disabled={validating}
+                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleConfirmValidation}
+                    disabled={validating}
+                    className={cn('flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50', modalConfig.confirmClass)}
+                  >
+                    {validating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {modalConfig.confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Reject modal (for the observation textarea — same as before) */}
         {modalPlan && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">

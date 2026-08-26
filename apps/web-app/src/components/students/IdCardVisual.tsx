@@ -5,23 +5,18 @@
  * ID CARD VISUAL — Carte scolaire premium (recto + verso)
  * ============================================================================
  *
- * Design conforme au template "Carte Scolaire - Recto Verso" validé par Claude AI.
- * Référence visuelle : /home/z/my-project/upload/spec-carte-scolaire-zai.md
+ * Design hybride :
+ *   - EN-TÊTE RECTO : style ANCIEN conservé (République du Bénin + drapeau +
+ *     ministère + nom école + slogan + logo). La bande est CONTINUE (pas de
+ *     clip-path) pour que toutes les informations restent lisibles.
+ *   - EN-TÊTE VERSO : bande continue (pas de clip-path) avec "CONDITIONS
+ *     D'UTILISATION" + dates émise/expire clairement visibles.
+ *   - CORPS + FOOTER : design Claude AI (photo + 6 champs, footer gradient
+ *     avec clip-path diagonal + signature Directeur, verso avec conditions
+ *     + bloc contact + QR code).
  *
- * RECTO :
- *   - Bande accentuelle (gradient) en haut
- *   - Header deux-tons : logo+tagline à gauche (clip-path diagonal) + nom école + slogan à droite (gradient)
- *   - Corps : photo élève à gauche + champs à droite (Matricule / ID / Nom / Tuteur / Classe / Urgence)
- *   - Footer : adresse+tél école à gauche + signature Directeur à droite (clip-path diagonal)
- *
- * VERSO :
- *   - Header gradient : "CONDITIONS D'UTILISATION" + dates (émise/expire) — clip-path diagonal
- *   - Corps : conditions (puce ■) + bloc contact (Tél / Email / Web)
- *   - Footer : logo+tagline à gauche + QR code à droite (clip-path diagonal)
- *
- * ⚠️ La corde (lanyard) au-dessus de la carte a été SUPPRIMÉE conformément à la
- *    demande utilisateur. Seul le point d'attache (clip circulaire) est conservé
- *    pour indiquer l'emplacement où la carte serait tenue par un lanyard.
+ * ⚠️ La corde (lanyard) au-dessus de la carte a été SUPPRIMÉE. Seul le point
+ *    d'attache (clip circulaire) est conservé.
  *
  * Toutes les dimensions sont en `cqw` (container query width) ce qui permet
  * à la carte de scaling proportionnellement avec la largeur du conteneur.
@@ -91,9 +86,8 @@ export interface TenantInfo {
   cardShowSchoolAddress?: boolean;
   cardConditionsText?: string;
   cardFooterText?: string;
-  // ⚠️ Les champs suivants sont conservés pour compatibilité avec l'ancien
-  //    moteur (Puppeteer) et CardDesignTab, mais ne sont plus utilisés par
-  //    le nouveau design Claude AI (le rendu ne varie plus selon ces options).
+  // ⚠️ Champs conservés pour compatibilité avec CardDesignTab,
+  //    mais non utilisés par ce design hybride.
   cardShowBarcode?: boolean;
   cardShowMatricule?: boolean;
   cardShowBirthInfo?: boolean;
@@ -110,7 +104,7 @@ function formatDate(d?: string) {
   }
 }
 
-// ⭐ QR code réel — génère une image base64 depuis le qrPayload.
+// ⭐ QR code réel — génère une image base64 depuis le qrPayload
 function RealQRCode({ payload }: { payload?: string }) {
   const [dataUrl, setDataUrl] = useState<string>('');
 
@@ -128,7 +122,6 @@ function RealQRCode({ payload }: { payload?: string }) {
   }, [payload]);
 
   if (!payload || !dataUrl) {
-    // Fallback : fausse grille 7×7 simulant un QR code
     return (
       <div className="w-full h-full grid grid-cols-7 grid-rows-7 gap-px bg-white">
         {Array.from({ length: 49 }).map((_, i) => (
@@ -156,7 +149,6 @@ export function IdCardVisual({
   const slogan = identity?.slogan || 'Excellence • Discipline • Travail';
   const tagline = identity?.tagline || identity?.slogan || 'Éducation • Avenir • Réussite';
   const logoUrl = identity?.logoUrl || '';
-  // Sigle/acronyme de l'école pour le placeholder logo
   const logoText = identity?.logoText ||
     (schoolName.split(/\s+/).filter(w => w.length > 2).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
     'AH';
@@ -178,6 +170,69 @@ export function IdCardVisual({
   const conditionsText = identity?.cardConditionsText ||
     "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration. La carte doit être restituée en cas de départ de l'établissement.";
 
+  // ─── Ministère adapté au niveau scolaire (Bénin) ─────────────────────────
+  const levelUpper = (card.levelCode || '').toUpperCase();
+  const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
+  const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
+  const ministry = isSuperieur
+    ? "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique"
+    : isSecondaire
+    ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
+    : 'Ministère des Enseignements Maternel et Primaire';
+
+  // ─── Composant : Drapeau du Bénin (vert à gauche, jaune/rouge à droite) ──
+  const BeninFlag = ({ sizeCqw = 3.5 }: { sizeCqw?: number }) => (
+    <div
+      style={{
+        width: `${sizeCqw * 1.3}cqw`,
+        height: `${sizeCqw}cqw`,
+        display: 'flex',
+        border: '0.1cqw solid rgba(255,255,255,0.3)',
+        borderRadius: '0.2cqw',
+        overflow: 'hidden',
+      }}
+      className="shrink-0"
+    >
+      <div style={{ width: '50%', height: '100%', background: '#15803d' }} />
+      <div style={{ width: '50%', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ height: '50%', background: '#facc15' }} />
+        <div style={{ height: '50%', background: '#dc2626' }} />
+      </div>
+    </div>
+  );
+
+  // ─── Composant : Logo école (image ou sigle/acronym en fallback) ──────────
+  const SchoolLogo = ({ sizeCqw = 6.5 }: { sizeCqw?: number }) => {
+    if (logoUrl) {
+      return (
+        <img
+          src={logoUrl}
+          alt="Logo"
+          style={{
+            width: `${sizeCqw}cqw`,
+            height: `${sizeCqw}cqw`,
+            objectFit: 'contain',
+          }}
+          className="rounded-md bg-white p-0.5 shrink-0"
+        />
+      );
+    }
+    return (
+      <div
+        style={{
+          width: `${sizeCqw}cqw`,
+          height: `${sizeCqw}cqw`,
+          color: primaryColor,
+          fontSize: `${sizeCqw * 0.35}cqw`,
+          fontWeight: 800,
+        }}
+        className="rounded-md bg-white flex items-center justify-center shrink-0"
+      >
+        {logoText.substring(0, 3)}
+      </div>
+    );
+  };
+
   // ═══════════════════════════════════════════════════════════════════════
   // RECTO — Face avant
   // ═══════════════════════════════════════════════════════════════════════
@@ -198,90 +253,83 @@ export function IdCardVisual({
 
         {/* Carte */}
         <div
-          className="relative bg-white overflow-hidden"
+          className="relative bg-white overflow-hidden flex flex-col"
           style={{
             width: '100%',
             aspectRatio: '400 / 250',
             borderRadius: '3.5cqw',
             border: '1.5cqw solid #f4f4f5',
             boxShadow: '0 2.5cqw 6.25cqw rgba(0,0,0,0.18)',
-            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontFamily: 'Inter, Poppins, Arial, sans-serif',
           }}
         >
-          {/* accent-bar — gradient pleine largeur en haut */}
-          <div style={{
-            height: '1.25cqw',
-            background: `linear-gradient(90deg, ${primaryColor}, ${secondaryColor})`,
-          }} />
-
-          {/* ─── HEADER (2-tons avec clip-path diagonal) ─── */}
-          <div className="relative flex" style={{ height: '17.5cqw' }}>
-            {/* header-left : blanc, clip-path diagonal en bas à droite */}
-            <div
-              className="flex flex-col justify-center"
-              style={{
-                width: '42%',
-                background: '#ffffff',
-                paddingLeft: '4.5cqw',
-                clipPath: 'polygon(0 0, 100% 0, 82% 100%, 0% 100%)',
-              }}
-            >
-              {logoUrl ? (
-                <img src={logoUrl} alt="Logo"
-                  style={{ height: '8cqw', width: 'auto', objectFit: 'contain' }} />
-              ) : (
-                <div style={{
-                  fontWeight: 800,
-                  fontSize: '3.5cqw',
-                  color: '#1a1a2e',
-                  letterSpacing: '0.05cqw',
-                  lineHeight: 1.1,
-                }}>
-                  {logoText}
-                </div>
-              )}
+          {/* ═══ HEADER BLEU (style ancien — Republic + flag + ministry + school + slogan + logo) ═══ */}
+          {/* BANDE CONTINUE : pas de clip-path, pas d'accent-bar séparée */}
+          <div
+            className="shrink-0 flex items-center text-white"
+            style={{
+              height: '24%',
+              background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
+              padding: '0 1.6cqw',
+              gap: '0.6cqw',
+            }}
+          >
+            {/* Drapeau du Bénin à gauche */}
+            <BeninFlag sizeCqw={3.5} />
+            {/* Centre : République + Ministère + École + Slogan */}
+            <div className="flex-1 text-center min-w-0" style={{ padding: '0 0.5cqw' }}>
               <div style={{
-                fontSize: '2cqw',
-                color: '#555',
-                letterSpacing: '0.25cqw',
-                marginTop: '0.5cqw',
-              }}>
-                {tagline}
-              </div>
-            </div>
-
-            {/* header-right : gradient, margin-left négatif pour chevauchement */}
-            <div
-              className="flex flex-col justify-center flex-1"
-              style={{
-                background: `linear-gradient(100deg, ${primaryColor} 0%, ${primaryColor} 55%, ${secondaryColor} 100%)`,
-                marginLeft: '-14%',
-                paddingLeft: '8.5cqw',
-              }}
-            >
-              <div style={{
-                color: '#fff',
-                fontWeight: 800,
-                fontSize: '4cqw',
-                letterSpacing: '0.075cqw',
+                fontSize: '1.25cqw',
+                fontWeight: 700,
                 lineHeight: 1.1,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1cqw',
+              }}>
+                RÉPUBLIQUE DU BÉNIN
+              </div>
+              <div style={{
+                fontSize: '0.75cqw',
+                lineHeight: 1.1,
+                opacity: 0.85,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {ministry}
+              </div>
+              <div style={{
+                fontSize: '1cqw',
+                fontWeight: 700,
+                lineHeight: 1.1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}>
                 {schoolName}
               </div>
               <div style={{
-                color: '#dff0ff',
-                fontSize: '2.25cqw',
-                letterSpacing: '0.25cqw',
-                marginTop: '0.5cqw',
+                fontSize: '0.75cqw',
+                fontStyle: 'italic',
                 lineHeight: 1.1,
+                opacity: 0.75,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}>
                 {slogan}
               </div>
             </div>
+            {/* Logo école à droite */}
+            <SchoolLogo sizeCqw={6.5} />
           </div>
 
-          {/* ─── CORPS : photo + champs ─── */}
-          <div className="flex" style={{ padding: '3.5cqw 4cqw 0 4cqw', gap: '3.5cqw' }}>
+          {/* ═══ CORPS (Claude AI style : photo + 6 champs) ═══ */}
+          <div className="flex" style={{
+            padding: '3.5cqw 4cqw 0 4cqw',
+            gap: '3.5cqw',
+            flex: 1,
+            minHeight: 0,
+          }}>
             {/* photo-box */}
             {identity?.cardShowPhoto !== false && (
               <div style={{
@@ -297,7 +345,7 @@ export function IdCardVisual({
                   <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`}
                     className="w-full h-full object-cover" />
                 ) : (
-                  // Damier placeholder (cf. spec Claude AI .photo-box)
+                  // Damier placeholder
                   <div className="w-full h-full" style={{
                     backgroundColor: '#f2f2f2',
                     backgroundImage:
@@ -331,7 +379,7 @@ export function IdCardVisual({
             </div>
           </div>
 
-          {/* ─── FOOTER (gradient + clip-path diagonal en haut à droite) ─── */}
+          {/* ═══ FOOTER (Claude AI style : gradient + clip-path + adresse + signature) ═══ */}
           <div
             className="absolute left-0 right-0 flex items-center justify-between"
             style={{
@@ -342,7 +390,7 @@ export function IdCardVisual({
               clipPath: 'polygon(0 25%, 100% 0, 100% 100%, 0 100%)',
             }}
           >
-            {/* footer-address (left) */}
+            {/* footer-address */}
             <div style={{
               color: '#fff',
               fontSize: '2cqw',
@@ -355,7 +403,7 @@ export function IdCardVisual({
               {schoolPhone && <div>Tél : {schoolPhone}</div>}
             </div>
 
-            {/* footer-sign (right) */}
+            {/* footer-sign */}
             <div className="text-center" style={{ paddingTop: '1cqw' }}>
               <div style={{
                 fontFamily: '"Brush Script MT", cursive',
@@ -399,48 +447,55 @@ export function IdCardVisual({
 
       {/* Carte */}
       <div
-        className="relative bg-white overflow-hidden"
+        className="relative bg-white overflow-hidden flex flex-col"
         style={{
           width: '100%',
           aspectRatio: '400 / 250',
           borderRadius: '3.5cqw',
           border: '1.5cqw solid #f4f4f5',
           boxShadow: '0 2.5cqw 6.25cqw rgba(0,0,0,0.18)',
-          fontFamily: 'Arial, Helvetica, sans-serif',
+          fontFamily: 'Inter, Poppins, Arial, sans-serif',
         }}
       >
-        {/* ─── BACK-HEADER (gradient + clip-path diagonal en bas à droite) ─── */}
+        {/* ═══ BACK-HEADER (BANDE CONTINUE — pas de clip-path, dates clairement visibles) ═══ */}
         <div
-          className="flex items-center justify-between"
+          className="shrink-0 flex items-center justify-between text-white"
           style={{
-            height: '15cqw',
-            background: `linear-gradient(100deg, ${primaryColor} 0%, ${primaryColor} 55%, ${secondaryColor} 100%)`,
-            padding: '0 4cqw 0 4.5cqw',
-            clipPath: 'polygon(0 0, 88% 0, 100% 100%, 0% 100%)',
+            height: '22%',
+            background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
+            padding: '0 4cqw',
           }}
         >
           <div style={{
-            color: '#fff',
             fontWeight: 800,
-            fontSize: '3.25cqw',
-            letterSpacing: '0.075cqw',
+            fontSize: '1.25cqw',
+            letterSpacing: '0.1cqw',
             lineHeight: 1.1,
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}>
             CONDITIONS D'UTILISATION
           </div>
           <div style={{
-            color: '#eaf3ff',
-            fontSize: '2cqw',
+            fontSize: '1cqw',
             textAlign: 'right',
             lineHeight: 1.6,
+            flexShrink: 0,
+            paddingLeft: '2cqw',
           }}>
             <div>Émise le : {formatDate(card.generatedAt)}</div>
             {card.validUntil && <div>Expire le : {formatDate(card.validUntil)}</div>}
           </div>
         </div>
 
-        {/* ─── BACK-BODY : conditions + contact ─── */}
-        <div style={{ padding: '3cqw 4.5cqw 0 4.5cqw' }}>
+        {/* ═══ BACK-BODY (Claude AI style : conditions + contact) ═══ */}
+        <div style={{
+          padding: '3cqw 4.5cqw 0 4.5cqw',
+          flex: 1,
+          minHeight: 0,
+        }}>
           {/* term-item (puce ■ + texte) */}
           <div className="flex" style={{
             gap: '2cqw',
@@ -464,7 +519,7 @@ export function IdCardVisual({
           </div>
         </div>
 
-        {/* ─── BACK-FOOTER (gradient + clip-path diagonal en haut à droite) ─── */}
+        {/* ═══ BACK-FOOTER (Claude AI style : gradient + clip-path + logo + QR) ═══ */}
         <div
           className="absolute left-0 right-0 flex items-center justify-between"
           style={{

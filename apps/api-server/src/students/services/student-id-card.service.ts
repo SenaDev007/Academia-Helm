@@ -980,6 +980,17 @@ export class StudentIdCardService {
     const schoolLevel = student.schoolLevel;
     const tenant = student.tenant;
 
+    // ── Ministère adapté au niveau scolaire (Bénin) ────────────────────────────
+    // Affiché dans l'en-tête de la carte recto (entre République et nom école).
+    const levelUpper = (schoolLevel?.code || '').toUpperCase();
+    const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
+    const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
+    const ministry = isSuperieur
+      ? "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique"
+      : isSecondaire
+      ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
+      : 'Ministère des Enseignements Maternel et Primaire';
+
     // ── Design tokens (issus de TenantIdentityProfile ou valeurs par défaut) ──
     // Couleurs par défaut : bleu marine institutionnel Academia Helm.
     const NAVY = identityProfile?.cardPrimaryColor || '#0D1F6E';
@@ -1100,13 +1111,8 @@ export class StudentIdCardService {
       this.logger.warn(`QR code generation failed: ${(err as Error).message}`);
     }
 
-    // Générer un code-barres visuel simple (barres verticales basées sur le matricule)
-    const barcodeBars = Array.from(matricule).map((char, i) => {
-      const code = char.charCodeAt(0);
-      const width = 1 + (code % 3); // 1, 2 ou 3 px
-      const isBlack = i % 2 === 0;
-      return `<div style="width:${width}px;height:100%;background:${isBlack ? '#000' : '#fff'};"></div>`;
-    }).join('');
+    // ⭐ barcodeBars supprimé — le nouveau template hybride n'affiche plus de
+    //    code-barres (le QR code remplace cette fonctionnalité au verso).
 
     // Dates joined/expire
     const joinedDate = formatDate(student.createdAt || new Date());
@@ -1126,7 +1132,7 @@ export class StudentIdCardService {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: 'Inter', 'Poppins', Arial, sans-serif;
       background: #e9e9ec;
       display: flex;
       flex-wrap: wrap;
@@ -1142,7 +1148,7 @@ export class StudentIdCardService {
       align-items: center;
       page-break-inside: avoid;
     }
-    /* ⭐ Clip circulaire seul — corde (lanyard) supprimée conformément à la demande */
+    /* ⭐ Clip circulaire seul — pas de lanyard */
     .clip {
       width: 8mm;
       height: 8mm;
@@ -1162,74 +1168,105 @@ export class StudentIdCardService {
       overflow: hidden;
       position: relative;
       border: 1.6mm solid #f4f4f5;
-    }
-
-    /* ===== Bande accentuelle en haut ===== */
-    .accent-bar {
-      height: 1.3mm;
-      width: 100%;
-      background: linear-gradient(90deg, ${NAVY}, ${NAVY_LIGHT});
-    }
-
-    /* ===== HEADER (2-tons avec clip-path diagonal) ===== */
-    .header {
-      position: relative;
-      height: 15mm;
-      display: flex;
-      align-items: stretch;
-    }
-    .header-left {
-      width: 42%;
-      background: #ffffff;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      padding-left: 4.8mm;
-      clip-path: polygon(0 0, 100% 0, 82% 100%, 0% 100%);
     }
-    .header-right {
-      flex: 1;
-      background: linear-gradient(100deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding-left: 9mm;
-      margin-left: -14%;
-    }
-    .logo-text {
-      font-weight: 800;
-      font-size: 11pt;
-      color: #1a1a2e;
-      letter-spacing: 0.13pt;
-      line-height: 1.1;
-    }
-    .tagline-text {
-      font-size: 6pt;
-      color: #555;
-      letter-spacing: 2.5pt;
-      margin-top: 1pt;
-      line-height: 1.1;
-    }
-    .school-name {
+
+    /* ===== HEADER BLEU (style ancien — bande continue, pas de clip-path) ===== */
+    /* République + drapeau Bénin + ministère + nom école + slogan + logo */
+    .card-header {
+      flex-shrink: 0;
+      height: 24%;
+      background: linear-gradient(135deg, ${NAVY} 0%, ${NAVY_LIGHT} 100%);
       color: #fff;
-      font-weight: 800;
-      font-size: 12pt;
-      letter-spacing: 0.75pt;
-      line-height: 1.1;
+      padding: 0 1.6mm;
+      gap: 0.6mm;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .school-slogan {
-      color: #dff0ff;
-      font-size: 7pt;
-      letter-spacing: 2.5pt;
-      margin-top: 1pt;
+    .header-flag {
+      width: 4.5mm;
+      height: 3.5mm;
+      display: flex;
+      border: 0.13mm solid rgba(255,255,255,0.3);
+      border-radius: 0.2mm;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .header-flag .flag-green { width: 50%; height: 100%; background: #15803d; }
+    .header-flag .flag-right { width: 50%; display: flex; flex-direction: column; }
+    .header-flag .flag-yellow { height: 50%; background: #facc15; }
+    .header-flag .flag-red { height: 50%; background: #dc2626; }
+    .header-center {
+      flex: 1;
+      text-align: center;
+      padding: 0 0.5mm;
+      min-width: 0;
+    }
+    .header-republic {
+      font-size: 5pt;
+      font-weight: 700;
       line-height: 1.1;
+      text-transform: uppercase;
+      letter-spacing: 0.4pt;
+    }
+    .header-ministry {
+      font-size: 3pt;
+      line-height: 1.1;
+      opacity: 0.85;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-school-name {
+      font-size: 4pt;
+      font-weight: 700;
+      line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-slogan {
+      font-size: 3pt;
+      font-style: italic;
+      line-height: 1.1;
+      opacity: 0.75;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .header-logo {
+      width: 6.5mm;
+      height: 6.5mm;
+      flex-shrink: 0;
+      background: #fff;
+      border-radius: 0.8mm;
+      padding: 0.2mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .header-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .header-logo .acronym {
+      font-size: 4pt;
+      font-weight: 800;
+      color: ${NAVY};
+      letter-spacing: 0.2pt;
     }
 
-    /* ===== FRONT BODY (photo + champs) ===== */
+    /* ===== FRONT BODY (Claude AI style : photo + 6 champs) ===== */
     .front-body {
       display: flex;
       padding: 3.7mm 4.2mm 0 4.2mm;
       gap: 3.7mm;
+      flex: 1;
+      min-height: 0;
     }
     .photo-box {
       width: 19mm;
@@ -1282,7 +1319,7 @@ export class StudentIdCardService {
       font-weight: 700;
     }
 
-    /* ===== FOOTER (gradient + clip-path diagonal) ===== */
+    /* ===== FOOTER (Claude AI style : gradient + clip-path diagonal) ===== */
     .footer {
       position: absolute;
       bottom: 0;
@@ -1317,34 +1354,43 @@ export class StudentIdCardService {
       color: #fff;
       font-size: 7pt;
       font-weight: 700;
-      margin-top: 1pt;
+      margin-top: 0.5pt;
     }
 
-    /* ===== VERSO — Back header ===== */
+    /* ===== VERSO — Back header (BANDE CONTINUE, pas de clip-path, dates visibles) ===== */
     .back-header {
-      background: linear-gradient(100deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
-      height: 13mm;
+      flex-shrink: 0;
+      height: 22%;
+      background: linear-gradient(135deg, ${NAVY} 0%, ${NAVY_LIGHT} 100%);
+      color: #fff;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 4.2mm 0 4.8mm;
-      clip-path: polygon(0 0, 88% 0, 100% 100%, 0% 100%);
+      padding: 0 4mm;
     }
     .terms-title {
-      color: #fff;
       font-weight: 800;
-      font-size: 10pt;
-      letter-spacing: 0.75pt;
+      font-size: 5pt;
+      letter-spacing: 0.4pt;
       line-height: 1.1;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .dates {
-      color: #eaf3ff;
-      font-size: 6pt;
+      font-size: 4pt;
       text-align: right;
       line-height: 1.6;
+      flex-shrink: 0;
+      padding-left: 2mm;
     }
+
+    /* ===== VERSO — Back body (Claude AI style) ===== */
     .back-body {
-      padding: 3.2mm 4.8mm 0 4.8mm;
+      padding: 3mm 4.5mm 0 4.5mm;
+      flex: 1;
+      min-height: 0;
     }
     .term-item {
       display: flex;
@@ -1383,7 +1429,7 @@ export class StudentIdCardService {
       white-space: nowrap;
     }
 
-    /* ===== VERSO — Back footer (QR + logo) ===== */
+    /* ===== VERSO — Back footer (Claude AI style : gradient + clip-path) ===== */
     .back-footer {
       position: absolute;
       bottom: 0;
@@ -1394,7 +1440,7 @@ export class StudentIdCardService {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 4.2mm;
+      padding: 0 4mm;
       clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 100%);
     }
     .back-logo {
@@ -1409,8 +1455,8 @@ export class StudentIdCardService {
     .back-logo .tagline-text-w {
       color: #cfe6ff;
       font-size: 5.5pt;
-      letter-spacing: 2.5pt;
-      margin-top: 1pt;
+      letter-spacing: 0.7pt;
+      margin-top: 0.5pt;
       line-height: 1.1;
     }
     .qr {
@@ -1441,20 +1487,32 @@ export class StudentIdCardService {
   <div class="card-wrap">
     <div class="clip"></div>
     <div class="card">
-      <div class="accent-bar"></div>
-      <div class="header">
-        <div class="header-left">
-          ${logoSrc
-            ? `<img src="${logoSrc}" alt="Logo" style="height:8mm;width:auto;object-fit:contain;" />`
-            : `<div class="logo-text">${schoolAcronym}</div>`}
-          <div class="tagline-text">${schoolTagline}</div>
+      <!-- ═══ HEADER BLEU (style ancien — bande continue, pas de clip-path) ═══ -->
+      <div class="card-header">
+        <!-- Drapeau du Bénin à gauche -->
+        <div class="header-flag">
+          <div class="flag-green"></div>
+          <div class="flag-right">
+            <div class="flag-yellow"></div>
+            <div class="flag-red"></div>
+          </div>
         </div>
-        <div class="header-right">
-          <div class="school-name">${schoolName}</div>
-          <div class="school-slogan">${schoolSlogan}</div>
+        <!-- Centre : République + Ministère + École + Slogan -->
+        <div class="header-center">
+          <div class="header-republic">RÉPUBLIQUE DU BÉNIN</div>
+          <div class="header-ministry">${ministry}</div>
+          <div class="header-school-name">${schoolName}</div>
+          <div class="header-slogan">${schoolSlogan}</div>
+        </div>
+        <!-- Logo école à droite -->
+        <div class="header-logo">
+          ${logoSrc
+            ? `<img src="${logoSrc}" alt="Logo" />`
+            : `<span class="acronym">${schoolAcronym}</span>`}
         </div>
       </div>
 
+      <!-- ═══ CORPS (Claude AI style : photo + 6 champs) ═══ -->
       <div class="front-body">
         ${showPhoto ? `<div class="photo-box">${photoHtml}</div>` : ''}
         <div class="fields">
@@ -1467,6 +1525,7 @@ export class StudentIdCardService {
         </div>
       </div>
 
+      <!-- ═══ FOOTER (Claude AI style : gradient + clip-path + adresse + signature) ═══ -->
       <div class="footer">
         <div class="footer-address">
           ${showSchoolAddress && schoolAddress ? schoolAddress : ''}
@@ -1485,6 +1544,7 @@ export class StudentIdCardService {
   <div class="card-wrap">
     <div class="clip"></div>
     <div class="card">
+      <!-- ═══ BACK-HEADER (bande continue, pas de clip-path, dates visibles) ═══ -->
       <div class="back-header">
         <div class="terms-title">CONDITIONS D'UTILISATION</div>
         <div class="dates">
@@ -1493,6 +1553,7 @@ export class StudentIdCardService {
         </div>
       </div>
 
+      <!-- ═══ BACK-BODY (Claude AI style : conditions + contact) ═══ -->
       <div class="back-body">
         <div class="term-item">
           <span class="bullet">■</span>
@@ -1506,6 +1567,7 @@ export class StudentIdCardService {
         </div>
       </div>
 
+      <!-- ═══ BACK-FOOTER (Claude AI style : gradient + clip-path + logo + QR) ═══ -->
       <div class="back-footer">
         <div class="back-logo">
           ${logoSrc

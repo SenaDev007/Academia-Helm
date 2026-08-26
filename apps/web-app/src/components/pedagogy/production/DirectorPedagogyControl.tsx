@@ -30,7 +30,7 @@ import {
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
   Download, Save, Activity, School, ChevronsDownUp, ChevronsUpDown,
-  CalendarDays, CalendarRange, Folder, FolderOpen,
+  CalendarDays, CalendarRange, Folder, FolderOpen, LayoutDashboard, BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -64,7 +64,7 @@ interface DirectorPedagogyControlProps {
 //    ⭐ Cahier du Semainier est visible pour TOUS les niveaux (maternelle + primaire
 //       + secondaire) car le semainier est une responsabilité transverse.
 const TABS = [
-  { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle, maternellePrimaireOnly: false },
+  { id: "dashboard", label: "Tableau de bord", icon: LayoutDashboard, maternellePrimaireOnly: false },
   { id: "monthly-plans", label: "Planifications Mensuelles", icon: CalendarRange, maternellePrimaireOnly: true },
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
@@ -215,7 +215,19 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate, isSeco
   }
 
   if (!dashboard) {
-    return <div className="text-center py-8 text-slate-500">Impossible de charger le tableau de bord.</div>;
+    return (
+      <div className="text-center py-8 space-y-3">
+        <AlertCircle className="h-10 w-10 text-amber-400 mx-auto" />
+        <p className="text-slate-600 font-medium">Impossible de charger le tableau de bord.</p>
+        <p className="text-xs text-slate-400">Vérifiez que le backend est accessible et que l'année académique est active.</p>
+        <button
+          onClick={() => refetch()}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold"
+        >
+          <RefreshCw className="h-4 w-4" /> Réessayer
+        </button>
+      </div>
+    );
   }
 
   const cards = [

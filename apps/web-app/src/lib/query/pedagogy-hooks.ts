@@ -33,14 +33,15 @@ export function useDirectorPedagogyDashboard(academicYearId: string | null | und
       try {
         return await pedagogySpaceService.getDirectorPedagogyDashboard(academicYearId);
       } catch (err: any) {
-        console.warn('[useDirectorPedagogyDashboard] Error:', err.message);
+        console.error('[useDirectorPedagogyDashboard] Error:', err?.message || err, err?.code || '', err?.timeout ? '(timeout)' : '');
         return null;
       }
     },
     enabled: !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: 2, // ⭐ V3-12: retry twice instead of once (dashboard is critical)
+    retryDelay: 2000, // 2s between retries
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });

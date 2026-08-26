@@ -21,6 +21,7 @@ export const pedagogySpaceService = {
   async getDirectorPedagogyDashboard(academicYearId: string) {
     const res = await apiClient.get('/pedagogy-space/director/pedagogy-dashboard', {
       params: { academicYearId },
+      timeout: 30000, // ⭐ V3-12: 30s timeout for dashboard (8 parallel SQL queries can be slow)
     });
     return res.data;
   },

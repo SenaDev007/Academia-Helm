@@ -1290,25 +1290,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIsNearBottomRef = useRef(true); // true if user is within 200px of bottom
   const isFirstLoadRef = useRef(true);
+  // Track previous messages length to detect new message arrivals
+  const prevMessagesLengthRef = useRef(0);
 
   // Reset scroll-following when switching conversations
   useEffect(() => {
     isFirstLoadRef.current = true;
     userIsNearBottomRef.current = true;
+    prevMessagesLengthRef.current = 0;
   }, [activeConvId]);
 
   // ⭐ V3-11: Scroll the messages container to the bottom (NOT the page).
-  //   Uses container.scrollTop = container.scrollHeight which only affects the
-  //   messages container, never the parent page.
+  //   Polls for the container up to 500ms in case the ref isn't attached yet
+  //   (the messages div is conditionally rendered when activeConv is set).
   const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'smooth') => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    if (behavior === 'auto') {
-      // Instant jump — no animation, no flicker
-      container.scrollTop = container.scrollHeight;
-    } else {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    }
+    const tryScroll = (attempts = 0) => {
+      const container = messagesContainerRef.current;
+      if (!container) {
+        // Ref not attached yet — retry up to 10 times (500ms total)
+        if (attempts < 10) {
+          requestAnimationFrame(() => tryScroll(attempts + 1));
+        }
+        return;
+      }
+      if (behavior === 'auto') {
+        container.scrollTop = container.scrollHeight;
+      } else {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }
+    };
+    tryScroll();
   }, []);
 
   // Track user scroll position via passive listener on the messages container
@@ -1325,30 +1336,52 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, [activeConvId]);
 
   // ⭐ V3-11: Auto-scroll logic:
-  //   - First load of a conversation → instant jump to bottom (double rAF to
-  //     ensure the new messages are fully laid out before scrolling)
-  //   - Subsequent message additions → only scroll if user is near the bottom
+  //   - First load OR conversation switch → instant jump to bottom (with retries
+  //     via scrollToBottom's polling, so the container ref being null on first
+  //     render is handled).
+  //   - New messages arrived (length increased) + user near bottom → smooth scroll
   //   - User reading history → don't yank them back to the bottom
   useEffect(() => {
     if (messages.length === 0) return;
+    const isNewMessage = messages.length > prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+
     if (isFirstLoadRef.current) {
-      // Double requestAnimationFrame ensures the DOM has fully rendered the
-      // new messages BEFORE we read scrollHeight. Without this, scrollHeight
-      // may still be the old value, causing the scroll to land mid-conversation.
+      // First load → instant jump to bottom. Use multiple rAF passes to ensure
+      // the DOM has fully rendered (including images that may change scrollHeight).
+      // Three passes handle: 1) initial render, 2) layout, 3) image load kickoff.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          scrollToBottom('auto');
+          requestAnimationFrame(() => {
+            scrollToBottom('auto');
+            // Some images load slower — re-scroll 500ms later to catch them
+            setTimeout(() => scrollToBottom('auto'), 500);
+          });
         });
       });
       isFirstLoadRef.current = false;
       return;
     }
     // Subsequent message additions — only scroll if user is near the bottom
-    if (userIsNearBottomRef.current) {
+    if (isNewMessage && userIsNearBottomRef.current) {
       scrollToBottom('smooth');
     }
     // Otherwise: user is reading history — don't yank them back to the bottom.
   }, [messages.length, scrollToBottom]);
+
+  // ⭐ V3-11: Also scroll to bottom when loadingMsgs transitions from true→false
+  //   (covers the case where messages.length didn't change but the content
+  //   reloaded from the server with the same count — e.g. polling refresh).
+  useEffect(() => {
+    if (!loadingMsgs && messages.length > 0 && isFirstLoadRef.current) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom('auto');
+        });
+      });
+      isFirstLoadRef.current = false;
+    }
+  }, [loadingMsgs, messages.length, scrollToBottom]);
 
   // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar
   useEffect(() => {

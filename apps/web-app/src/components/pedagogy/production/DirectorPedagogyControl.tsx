@@ -5412,15 +5412,48 @@ function PendingMonthlyPlansTab({
             )}
           </div>
           <div className="space-y-2">
-            <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-            <div className="text-xs text-slate-500">Signature et cachet</div>
-            {selectedPlan.directorSignature ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+                <div className="text-xs text-slate-500">Signature et cachet {statusTab === 'SUBMITTED' ? '(obligatoire)' : ''}</div>
+              </div>
+              {directorSignature && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                  <CheckCircle2 className="h-3 w-3" /> Signé
+                </span>
+              )}
+            </div>
+            {selectedPlan.directorSignature && statusTab !== 'SUBMITTED' ? (
+              // Already validated/rejected — show the saved signature
               <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
                 <img src={selectedPlan.directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
               </div>
+            ) : directorSignature ? (
+              // Signature loaded from school-directors profile (or drawn inline)
+              <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative">
+                <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                {statusTab === 'SUBMITTED' && (
+                  <button
+                    type="button"
+                    onClick={() => setDirectorSignature(null)}
+                    className="absolute top-1 right-1 text-xs text-red-500 hover:underline"
+                  >
+                    Effacer
+                  </button>
+                )}
+              </div>
+            ) : statusTab === 'SUBMITTED' ? (
+              // No signature yet — show SignatureCanvas so the director can sign
+              <SignatureCanvas
+                width={400}
+                height={120}
+                disabled={validating}
+                placeholder="Signature du Directeur (obligatoire pour valider)"
+                onSignatureChange={(data) => setDirectorSignature(data)}
+              />
             ) : (
               <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
-                {statusTab === 'SUBMITTED' ? 'En attente de validation' : '—'}
+                —
               </div>
             )}
           </div>

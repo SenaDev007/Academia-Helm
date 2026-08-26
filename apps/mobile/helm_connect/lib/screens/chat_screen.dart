@@ -381,8 +381,13 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             title: Text(displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             subtitle: Text(
-              // ⭐ V3-11: strip HTML tags from the preview (was showing raw HTML)
-              stripHtml(conv.lastMessagePreview) || 'Aucun message',
+              // ⭐ V3-11: strip HTML tags from the preview (was showing raw HTML).
+              //   stripHtml returns '' for null/empty input — show 'Aucun message'
+              //   in that case.
+              (() {
+                final preview = stripHtml(conv.lastMessagePreview);
+                return preview.isEmpty ? 'Aucun message' : preview;
+              })(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 13, color: Colors.grey[600]),

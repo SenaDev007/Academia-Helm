@@ -5078,7 +5078,63 @@ function PendingMonthlyPlansTab({
     }
   };
 
+  // ⭐ V3-12: Load the full planning cells when "Voir" is clicked, so the
+  //    director sees the actual table with all domains, weeks, and content —
+  //    not just basic metadata. Same pattern as CahierJournal director view.
+  const [planDetailCells, setPlanDetailCells] = useState<any[]>([]);
+  const [planDetailLoading, setPlanDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!selectedPlan) { setPlanDetailCells([]); return; }
+    setPlanDetailLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pedagogy/monthly-plans?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(selectedPlan.classLevel)}&month=${encodeURIComponent(selectedPlan.month)}&teacherId=${encodeURIComponent(selectedPlan.teacherId || '')}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) throw new Error("Failed to load plan detail");
+        const data = await res.json();
+        setPlanDetailCells(data.cells || []);
+      } catch (e) {
+        console.error("Failed to load plan detail:", e);
+        setPlanDetailCells([]);
+      } finally {
+        setPlanDetailLoading(false);
+      }
+    })();
+  }, [selectedPlan, academicYearId]);
+
+  // ⭐ V3-12: Determine the fiche structure for the selected plan's class level
+  const planDetailIsMaternelle = selectedPlan?.classLevel === "MATERNELLE_GRANDS";
+  const planDetailFiche = planDetailIsMaternelle
+    ? [
+        { code: "I", label: "D1 : Santé et environnement", color: "bg-emerald-600", subRows: ["Education pour la santé", "Passage aux toilettes", "Lavage des mains", "Goûter"] },
+        { code: "II", label: "D2 : Expression corporelle", color: "bg-rose-600", subRows: ["Expression corporelle"] },
+        { code: "III", label: "D3 : Pré-apprentissages", color: "bg-blue-600", subRows: ["Pré-lecture", "Pré-écriture", "Pré-mathématique", "Observation", "Education sensorielle", "Travaux manuels", "Expression plastique"] },
+        { code: "IV", label: "D4 : Santé Emotionnelle", color: "bg-purple-600", subRows: ["Expression émotionnelle"] },
+        { code: "V", label: "D5 : Relations et de l'Interaction Sociale et socio-affective", color: "bg-indigo-600", subRows: ["Poésie", "Chant", "Devinette", "Comptine", "Conte", "Langage"] },
+      ]
+    : [
+        { code: "FRANÇAIS", label: "FRANÇAIS", color: "bg-blue-600", subRows: ["Vocab théma", "Comm Orale", "Lecture", "Expression Écrite", "Dictée", "Vocab", "Grammaire", "Orthographe", "Écriture", "Conjugaison"] },
+        { code: "MATH", label: "MATH", color: "bg-emerald-600", subRows: ["Arithmétique", "Mesure", "Géométrie"] },
+        { code: "EST", label: "EST", color: "bg-amber-600", subRows: [] },
+        { code: "EA", label: "ÉA", color: "bg-purple-600", subRows: ["Chant", "Atelier", "Dessin", "Contes", "Poésie"] },
+        { code: "ES", label: "ÉS", color: "bg-indigo-600", subRows: ["Morale", "Civisme", "Compétence 2 (Histoire)", "Compétence 3 (Géographie)"] },
+        { code: "EPS", label: "EPS", color: "bg-rose-600", subRows: [] },
+        { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
+      ];
+  const planDetailWeekLabels = planDetailIsMaternelle
+    ? ["1ère semaine", "2ème semaine", "3ème semaine", "4ème semaine"]
+    : ["Première Semaine", "Deuxième Semaine", "Troisième Semaine", "Quatrième Semaine", "Cinquième Semaine"];
+
+  // Find a cell by week + domain + subDomain
+  const findPlanCell = (week: number, domain: string, subDomain?: string) =>
+    planDetailCells.find(c => c.weekNumber === week && c.domain === domain && (c.subDomain || "") === (subDomain || ""));
+
   // ⭐ In-page detail view (Étape D — replaces modal)
+  //    V3-12: Now renders the FULL planning table (like the teacher sees),
+  //    not just basic metadata. The director can see all domains × weeks × content.
   if (selectedPlan) {
     return (
       <div className="space-y-4">
@@ -5088,67 +5144,197 @@ function PendingMonthlyPlansTab({
         >
           <ChevronRight className="h-4 w-4 rotate-180" /> Retour à la liste
         </button>
-        <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-          <div className="flex items-center gap-3 mb-4">
-            <CalendarRange className="h-8 w-8 text-blue-600" />
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">
-                Planification {selectedPlan.classLevel} — {selectedPlan.month}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {selectedPlan.teacherFirstName} {selectedPlan.teacherLastName} · {selectedPlan.cellCount} cellules
-              </p>
-            </div>
+
+        {/* Header — same style as Cahier Journal director view */}
+        <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+          <h2 className="text-lg font-bold text-slate-900">
+            PLANIFICATION MENSUELLE — {selectedPlan.classLevel}
+          </h2>
+          <div className="text-sm text-slate-600 mt-1">
+            Mois de <strong>{selectedPlan.month}</strong>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-xs text-slate-500">Enseignant</div>
-              <div className="font-semibold">{selectedPlan.teacherFirstName} {selectedPlan.teacherLastName}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Statut</div>
-              <div className="font-semibold text-blue-700">{statusTab === 'SUBMITTED' ? 'Soumis (en attente)' : statusTab === 'VALIDATED' ? 'Validé' : 'Rejeté'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Cellules</div>
-              <div className="font-semibold">{selectedPlan.cellCount} ({selectedPlan.customCount} personnalisées)</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Soumis le</div>
-              <div className="font-semibold">{selectedPlan.submittedAt ? new Date(selectedPlan.submittedAt).toLocaleString('fr-FR') : '—'}</div>
-            </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Enseignant : {selectedPlan.teacherFirstName} {selectedPlan.teacherLastName}
+            {" · "}Statut : <strong>{statusTab === 'SUBMITTED' ? 'Soumis' : statusTab === 'VALIDATED' ? 'Validé' : 'Rejeté'}</strong>
+            {selectedPlan.submittedAt && ` · Soumis le ${new Date(selectedPlan.submittedAt).toLocaleDateString('fr-FR')}`}
           </div>
-          {selectedPlan.teacherSignature && (
-            <div className="border-t border-slate-100 pt-4">
-              <div className="text-xs font-semibold text-slate-700 mb-1">Signature du titulaire :</div>
-              <img src={selectedPlan.teacherSignature} alt="Signature" className="max-h-20 border border-slate-200 rounded p-1" />
+        </div>
+
+        {/* Action bar */}
+        {statusTab === 'SUBMITTED' && (
+          <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+            <div className="text-sm text-slate-600">
+              {selectedPlan.cellCount} cellule(s) · {selectedPlan.customCount} personnalisée(s)
             </div>
-          )}
-          {selectedPlan.directorObservation && (
-            <div className="border-t border-slate-100 pt-4">
-              <div className="text-xs font-semibold text-slate-700 mb-1">Observation du directeur :</div>
-              <p className="text-sm text-slate-600 p-3 bg-amber-50 rounded-lg">{selectedPlan.directorObservation}</p>
-            </div>
-          )}
-          {statusTab === 'SUBMITTED' && (
-            <div className="border-t border-slate-100 pt-4 flex gap-2">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => { setModalPlan(selectedPlan); setRejectObservation(""); }}
                 disabled={validating}
-                className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
               >
-                Rejeter
+                <XCircle className="h-4 w-4" /> Rejeter
               </button>
               <button
                 onClick={() => handleValidate(selectedPlan)}
                 disabled={validating || !directorSignature}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
               >
-                {validating ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Valider'}
+                {validating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {directorSignature ? 'Valider' : 'Signature requise'}
               </button>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* ⭐ V3-12: Full planning table (read-only) — same structure as the teacher's MonthlyPlanningTab */}
+        {planDetailLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+            <span className="ml-2 text-sm text-slate-500">Chargement de la planification…</span>
+          </div>
+        ) : planDetailCells.length === 0 ? (
+          <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center text-sm text-slate-500">
+            Aucune cellule de planification trouvée pour cette planification.
+          </div>
+        ) : (
+          <>
+            {/* Desktop table (md+) */}
+            <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-x-auto shadow-sm">
+              <table className="text-xs border-collapse w-full" style={{ minWidth: planDetailIsMaternelle ? '900px' : '1100px' }}>
+                <colgroup>
+                  <col style={{ width: "15%" }} />
+                  {planDetailWeekLabels.map((_, i) => (
+                    <col key={i} style={{ width: planDetailIsMaternelle ? "21%" : "17%" }} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr className="bg-slate-700 text-white">
+                    <th className="p-2 border border-slate-400 text-center" rowSpan={2}>
+                      {planDetailIsMaternelle ? "Domaines" : "Champ de Formation"}
+                    </th>
+                    {planDetailWeekLabels.map((wk, i) => (
+                      <th key={i} className="p-2 border border-slate-400 text-center">{wk}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {planDetailFiche.map(champ => {
+                    const rows = champ.subRows.length > 0 ? champ.subRows : [null];
+                    return rows.map((subRow, subIdx) => (
+                      <tr key={`${champ.code}-${subIdx}`} className="hover:bg-purple-50/30">
+                        <td className={cn(
+                          "p-2 border border-slate-300 align-middle",
+                          subIdx === 0 ? cn(champ.color, "text-white text-center") : "bg-slate-50 text-slate-600 text-left pl-3"
+                        )}>
+                          {subIdx === 0 ? (
+                            <div>
+                              <div className="font-bold text-sm">{champ.label}</div>
+                              {subRow && <div className="text-[10px] opacity-90 mt-0.5">{subRow}</div>}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] font-medium pl-4">↳ {subRow}</div>
+                          )}
+                        </td>
+                        {planDetailWeekLabels.map((_, weekIdx) => {
+                          const cell = findPlanCell(weekIdx + 1, champ.code, subRow || undefined);
+                          return (
+                            <td key={weekIdx} className="p-1 border border-slate-200 align-top">
+                              {cell ? (
+                                <div
+                                  className={cn(
+                                    "text-[9px] leading-tight p-1 rounded min-h-[60px]",
+                                    cell.isCustom ? "bg-amber-50 text-amber-900 border border-amber-200"
+                                      : cell.isAutoProposed ? "bg-purple-50 text-purple-900 border border-purple-100"
+                                      : "text-slate-700"
+                                  )}
+                                  dangerouslySetInnerHTML={{ __html: cell.content }}
+                                />
+                              ) : (
+                                <div className="text-[9px] text-slate-300 p-1 min-h-[60px]">—</div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ));
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile layout (cards per week) */}
+            <div className="md:hidden space-y-4">
+              {planDetailWeekLabels.map((wk, weekIdx) => (
+                <div key={weekIdx} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <div className="p-3 bg-slate-700 text-white font-bold text-sm">{wk}</div>
+                  <div className="divide-y divide-slate-100">
+                    {planDetailFiche.map(champ => {
+                      const rows = champ.subRows.length > 0 ? champ.subRows : [null];
+                      return rows.map((subRow, subIdx) => {
+                        const cell = findPlanCell(weekIdx + 1, champ.code, subRow || undefined);
+                        if (!cell) return null;
+                        return (
+                          <div key={`${champ.code}-${subIdx}`} className="p-3">
+                            <div className={cn("inline-block px-2 py-0.5 rounded text-[10px] font-bold text-white mb-1", champ.color)}>
+                              {champ.label}{subRow ? ` · ${subRow}` : ''}
+                            </div>
+                            <div
+                              className={cn(
+                                "text-xs leading-tight p-2 rounded min-h-[40px]",
+                                cell.isCustom ? "bg-amber-50 text-amber-900 border border-amber-200"
+                                  : cell.isAutoProposed ? "bg-purple-50 text-purple-900 border border-purple-100"
+                                  : "text-slate-700 bg-slate-50"
+                              )}
+                              dangerouslySetInnerHTML={{ __html: cell.content }}
+                            />
+                          </div>
+                        );
+                      });
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Signatures */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+          <div className="space-y-2">
+            <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+            <div className="text-xs text-slate-500">{selectedPlan.teacherFirstName} {selectedPlan.teacherLastName} — Signature</div>
+            {selectedPlan.teacherSignature ? (
+              <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                <img src={selectedPlan.teacherSignature} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+                Non signé par l'enseignant
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+            <div className="text-xs text-slate-500">Signature et cachet</div>
+            {selectedPlan.directorSignature ? (
+              <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                <img src={selectedPlan.directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+                {statusTab === 'SUBMITTED' ? 'En attente de validation' : '—'}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Director observation (if rejected) */}
+        {selectedPlan.directorObservation && (
+          <div className="border-t border-slate-100 pt-4">
+            <div className="text-xs font-semibold text-slate-700 mb-1">Observation du directeur :</div>
+            <p className="text-sm text-slate-600 p-3 bg-amber-50 rounded-lg">{selectedPlan.directorObservation}</p>
+          </div>
+        )}
 
         {/* Reject modal (still uses modal for the observation textarea) */}
         {modalPlan && (

@@ -29,7 +29,7 @@ import {
   UserPlus, MessageSquare, Phone, Video, Clock, Settings, Megaphone,
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
-  Sparkles, ListChecks, ClipboardList, AudioLines,
+  Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -2437,7 +2437,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           { id: 'discussions', icon: <MessageSquare className="w-5 h-5" />, label: 'Discussions' },
           { id: 'communautes', icon: <Users className="w-5 h-5" />, label: 'Communautés' },
           { id: 'annonces', icon: <Bell className="w-5 h-5" />, label: 'Annonces' },
-          { id: 'canaux', icon: <Megaphone className="w-5 h-5" />, label: 'Canaux' },
+          { id: 'canaux', icon: <Rss className="w-5 h-5" />, label: 'Canaux' },
           { id: 'fichiers', icon: <FileText className="w-5 h-5" />, label: 'Fichiers' },
           { id: 'vocaux', icon: <Mic className="w-5 h-5" />, label: 'Vocaux' },
           { id: 'appels', icon: <Phone className="w-5 h-5" />, label: 'Appels' },
@@ -2607,7 +2607,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           <p className="text-[10px] text-slate-500 italic mt-1 truncate">
             {activeHelmSection === 'discussions' ? 'Communiquez. Collaborez. Restez connectés.'
               : activeHelmSection === 'communautes' ? 'Groupes automatiques par classe, matière, rôle et personnel.'
-              : activeHelmSection === 'canaux' ? 'Canaux de diffusion (style Telegram).'
+              : activeHelmSection === 'canaux' ? 'Canaux de diffusion (broadcast unidirectionnel).'
               : activeHelmSection === 'fichiers' ? 'Centre documentaire partagé.'
               : activeHelmSection === 'vocaux' ? 'Messages vocaux avec transcription Whisper.'
               : activeHelmSection === 'appels' ? 'Historique des appels audio et vidéo.'
@@ -2778,7 +2778,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                         <Megaphone className="w-12 h-12 text-slate-300 mb-2" />
                         <p className="text-sm font-medium text-slate-700">Aucun canal</p>
-                        <p className="text-xs text-slate-500 mt-1 mb-3">Créez un canal de diffusion (style Telegram).</p>
+                        <p className="text-xs text-slate-500 mt-1 mb-3">Créez un canal de diffusion (broadcast unidirectionnel).</p>
                         {!readOnly && (
                           <button
                             onClick={() => setShowNewChannel(true)}
@@ -4975,7 +4975,7 @@ function NewChannelModal({
         </div>
         <div className="p-4 space-y-3">
           <p className="text-xs text-slate-500">
-            Un canal permet de diffuser des messages à tous les abonnés (broadcast unidirectionnel, comme Telegram).
+            Un canal permet de diffuser des messages à tous les abonnés (broadcast unidirectionnel).
           </p>
           <input
             type="text"

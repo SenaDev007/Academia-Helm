@@ -342,7 +342,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
         children: [
           HelmSectionHeader(
             title: 'Canaux',
-            subtitle: 'CANAUX DE DIFFUSION (TYPE TELEGRAM)',
+            subtitle: 'CANAUX DE DIFFUSION (BROADCAST UNIDIRECTIONNEL)',
             actionIcon: Icons.add,
             onAction: () {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -371,7 +371,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                       )
                     : _channels.isEmpty
                         ? const HelmEmptyState(
-                            icon: Icons.radio,
+                            icon: Icons.feed,
                             title: 'Aucun canal',
                             subtitle: 'Les canaux de diffusion apparaîtront ici. Créez un canal pour diffuser des annonces à grande audience.',
                           )
@@ -386,7 +386,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                                 child: ListTile(
                                   leading: CircleAvatar(
                                     backgroundColor: const Color(0xFF8B5CF6),
-                                    child: const Icon(Icons.radio, color: Colors.white, size: 20),
+                                    child: const Icon(Icons.feed, color: Colors.white, size: 20),
                                   ),
                                   title: Text(channel.name ?? 'Canal', style: const TextStyle(fontWeight: FontWeight.w600)),
                                   subtitle: Text('${channel.participants.length} abonnés', style: const TextStyle(fontSize: 12, color: Colors.grey)),

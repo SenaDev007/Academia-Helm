@@ -131,7 +131,7 @@ class _ChatScreenState extends State<ChatScreen> {
     HelmConnectSection.discussions: (icon: Icons.chat, label: 'Discussions', color: Color(0xFF1677FF)),
     HelmConnectSection.communautes: (icon: Icons.groups, label: 'Communautés', color: Color(0xFF10B981)),
     HelmConnectSection.annonces: (icon: Icons.campaign, label: 'Annonces', color: Color(0xFFF59E0B)),
-    HelmConnectSection.canaux: (icon: Icons.radio, label: 'Canaux', color: Color(0xFF8B5CF6)),
+    HelmConnectSection.canaux: (icon: Icons.feed, label: 'Canaux', color: Color(0xFF8B5CF6)),
     HelmConnectSection.fichiers: (icon: Icons.folder, label: 'Fichiers', color: Color(0xFF06B6D4)),
     HelmConnectSection.vocaux: (icon: Icons.mic, label: 'Vocaux', color: Color(0xFFEC4899)),
     HelmConnectSection.appels: (icon: Icons.phone, label: 'Appels', color: Color(0xFF3B82F6)),
@@ -232,7 +232,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             Text('Connect', style: TextStyle(color: HelmColors.goldBright, fontSize: 18, fontWeight: FontWeight.bold)),
                           ],
                         ),
-                        Text('Communiquez • Collaborez', style: TextStyle(color: HelmColors.goldLight, fontSize: 9, letterSpacing: 1)),
+                        Text('Communiquez • Collaborez • Restez connectés', style: TextStyle(color: HelmColors.goldLight, fontSize: 9, letterSpacing: 1)),
                       ],
                     ),
                   ],
@@ -381,7 +381,8 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             title: Text(displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             subtitle: Text(
-              conv.lastMessagePreview ?? 'Aucun message',
+              // ⭐ V3-11: strip HTML tags from the preview (was showing raw HTML)
+              stripHtml(conv.lastMessagePreview) || 'Aucun message',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 13, color: Colors.grey[600]),

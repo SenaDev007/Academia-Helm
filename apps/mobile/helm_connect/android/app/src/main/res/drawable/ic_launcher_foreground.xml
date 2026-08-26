@@ -1,9 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Helm Connect — Launcher icon foreground (V3-11)
-  Uses the actual Helm Connect logo (bitmap) on a transparent background.
-  The background (Royal Blue gradient) is provided by ic_launcher_background.xml.
--->
 <bitmap xmlns:android="http://schemas.android.com/apk/res/android"
     android:src="@drawable/helm_connect_logo"
     android:gravity="center" />

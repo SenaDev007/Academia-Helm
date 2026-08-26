@@ -298,71 +298,62 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ⭐ Logo with pulsing gold halo
+                // ⭐ V3-11: Logo with subtle gold halo (reduced size — was too big)
                 SizedBox(
-                  width: 140,
-                  height: 140,
+                  width: 120,
+                  height: 120,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      // Outer gold halo (pulsing)
+                      // Outer gold halo (pulsing) — smaller, less opaque
                       AnimatedBuilder(
                         animation: _haloAnimation,
                         builder: (context, child) {
                           return Opacity(
-                            opacity: _haloAnimation.value * 0.3,
+                            opacity: _haloAnimation.value * 0.2,
                             child: Container(
-                              width: 140,
-                              height: 140,
-                              decoration: BoxDecoration(
+                              width: 120,
+                              height: 120,
+                              decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: const Color(0xFFCFA63A),
+                                color: Color(0xFFCFA63A),
                               ),
                             ),
                           );
                         },
                       ),
-                      // Inner gold ring
+                      // Inner gold ring — smaller, thinner
                       AnimatedBuilder(
                         animation: _haloAnimation,
                         builder: (context, child) {
                           return Opacity(
-                            opacity: _haloAnimation.value * 0.5,
+                            opacity: _haloAnimation.value * 0.35,
                             child: Container(
-                              width: 120,
-                              height: 120,
+                              width: 96,
+                              height: 96,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: const Color(0xFFFFE08A),
-                                  width: 3,
+                                  width: 2,
                                 ),
                               ),
                             ),
                           );
                         },
                       ),
-                      // Logo (speech bubble icon)
+                      // ⭐ V3-11: Logo — fit.contain on the actual image, no ClipOval
+                      //   (the previous ClipOval was truncating the logo). The logo
+                      //   itself is the Helm Connect branded icon, no need to clip.
                       ScaleTransition(
                         scale: _logoScale,
-                        child: Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.15),
-                            border: Border.all(
-                              color: const Color(0xFFFFE08A),
-                              width: 2,
-                            ),
-                          ),
-                          child: ClipOval(
-                            child: Image.asset(
-                              'assets/icons/helm_connect.png',
-                              width: 50,
-                              height: 50,
-                              fit: BoxFit.contain,
-                            ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Image.asset(
+                            'assets/icons/helm_connect.png',
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.contain,
                           ),
                         ),
                       ),

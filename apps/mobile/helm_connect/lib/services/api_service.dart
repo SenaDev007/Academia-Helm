@@ -317,11 +317,20 @@ class ApiService {
 
 
   static Future<Map<String, dynamic>> getCurrentUser() async {
+    // ⭐ V3-11: Use /users/me (NestJS backend, JWT bearer auth) instead of
+    //   /auth/me (which is a Next.js route that reads session cookies — not
+    //   available on mobile). Returns { user: {...}, tenant: {...} }.
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
-    final response = await http.get(Uri.parse('$base/auth/me'), headers: headers);
+    final response = await http.get(Uri.parse('$base/users/me'), headers: headers);
     final data = await _handleResponse(response);
-    if (data is Map<String, dynamic>) return data;
+    if (data is Map<String, dynamic>) {
+      // Normalize: the NestJS /users/me endpoint returns the user object
+      // directly (not wrapped in { user: ... }). Wrap it for compatibility
+      // with the web app's /api/auth/me response shape.
+      if (data.containsKey('user')) return data;
+      return {'user': data, 'tenant': null};
+    }
     throw ApiException(statusCode: response.statusCode, message: 'Invalid response format');
   }
 
@@ -337,7 +346,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/chat/conversations?userId=$userId'),
+      Uri.parse('$base/chat/conversations?userId=$userId'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -352,7 +361,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.post(
-      Uri.parse('$base/api/chat/conversations/direct'),
+      Uri.parse('$base/chat/conversations/direct'),
       headers: headers,
       body: jsonEncode({'currentUserId': userId, 'otherUserId': otherUserId}),
     );
@@ -364,7 +373,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/chat/conversations/$conversationId/messages?userId=$userId&limit=$limit'),
+      Uri.parse('$base/chat/conversations/$conversationId/messages?userId=$userId&limit=$limit'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -383,7 +392,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.post(
-      Uri.parse('$base/api/chat/conversations/$conversationId/messages/text'),
+      Uri.parse('$base/chat/conversations/$conversationId/messages/text'),
       headers: headers,
       body: jsonEncode({
         'senderId': userId,
@@ -399,7 +408,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     await http.post(
-      Uri.parse('$base/api/chat/conversations/$conversationId/mark-read'),
+      Uri.parse('$base/chat/conversations/$conversationId/mark-read'),
       headers: headers,
       body: jsonEncode({'userId': userId}),
     );
@@ -424,7 +433,7 @@ class ApiService {
 
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('$base/api/chat/conversations/$conversationId/messages/attachment'),
+      Uri.parse('$base/chat/conversations/$conversationId/messages/attachment'),
     );
     request.files.add(await http.MultipartFile.fromPath(
       'file',
@@ -545,7 +554,7 @@ class ApiService {
     final userId = await AuthService.getUserId() ?? '';
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/chat/conversations/$conversationId/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
+      Uri.parse('$base/chat/conversations/$conversationId/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -567,7 +576,7 @@ class ApiService {
     final headers = await _getHeaders();
     final ids = userIds.join(',');
     final response = await http.get(
-      Uri.parse('$base/api/chat/presence?userIds=$ids'),
+      Uri.parse('$base/chat/presence?userIds=$ids'),
       headers: headers,
     );
     return _handleResponse(response) as Map<String, dynamic>;
@@ -619,7 +628,7 @@ class ApiService {
 
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('$base/api/chat/avatar'),
+      Uri.parse('$base/chat/avatar'),
     );
     request.files.add(await http.MultipartFile.fromPath('file', file.path));
     request.fields['userId'] = userId;
@@ -640,7 +649,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/chat/announcements?userId=$userId&limit=50'),
+      Uri.parse('$base/chat/announcements?userId=$userId&limit=50'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -691,7 +700,7 @@ class ApiService {
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/chat/v2/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
+      Uri.parse('$base/chat/v2/search?userId=$userId&q=${Uri.encodeQueryComponent(query)}'),
       headers: headers,
     );
     return _handleResponse(response) as Map<String, dynamic>;
@@ -719,7 +728,7 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     await http.delete(
-      Uri.parse('$base/api/notifications/device-tokens'),
+      Uri.parse('$base/notifications/device-tokens'),
       headers: headers,
       body: jsonEncode({'fcmToken': fcmToken}),
     );
@@ -738,7 +747,7 @@ class ApiService {
     final headers = await _getHeaders();
     final params = 'limit=$limit&offset=$offset${onlyUnread ? '&unread=true' : ''}';
     final response = await http.get(
-      Uri.parse('$base/api/notifications?$params'),
+      Uri.parse('$base/notifications?$params'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -757,7 +766,7 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     final response = await http.get(
-      Uri.parse('$base/api/notifications/unread-count'),
+      Uri.parse('$base/notifications/unread-count'),
       headers: headers,
     );
     final data = await _handleResponse(response) as Map<String, dynamic>;
@@ -770,7 +779,7 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     await http.patch(
-      Uri.parse('$base/api/notifications/$notificationId/read'),
+      Uri.parse('$base/notifications/$notificationId/read'),
       headers: headers,
     );
   }
@@ -781,7 +790,7 @@ class ApiService {
     final base = await ApiConfig.baseUrl;
     final headers = await _getHeaders();
     await http.patch(
-      Uri.parse('$base/api/notifications/read-all'),
+      Uri.parse('$base/notifications/read-all'),
       headers: headers,
     );
   }

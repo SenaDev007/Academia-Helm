@@ -131,6 +131,8 @@ export class StudentIdCardService {
       student.identifier.globalMatricule,
       qrPayload,
       identityProfile,
+      cardNumber,
+      student.academicYear?.endDate,
     );
 
     // Générer le PDF
@@ -474,12 +476,16 @@ export class StudentIdCardService {
       if (!student.identifier?.globalMatricule) continue;
 
       const qrPayload = this.generateQRPayload(student.identifier.globalMatricule, tenantId, student.id);
+      // ⭐ N° de carte pour cet élève — génère le format CARD-YY-NNNN
+      const studentCardNumber = await this.generateCardNumber(tenantId, enr.academicYearId || academicYearId);
       const cardHtml = await this.generateCardHtml(
         student,
         enr.class,
         student.identifier.globalMatricule,
         qrPayload,
         identityProfile,
+        studentCardNumber,
+        enr.academicYear?.endDate,
       );
       // Extraire uniquement le contenu de <body>...</body> (la card-container)
       const bodyMatch = cardHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -875,7 +881,15 @@ export class StudentIdCardService {
       schoolLevel: card.schoolLevel,
     };
 
-    return this.generateCardHtml(student, currentClass, matricule, qrPayload, identityProfile);
+    return this.generateCardHtml(
+      student,
+      currentClass,
+      matricule,
+      qrPayload,
+      identityProfile,
+      card.cardNumber,
+      card.validUntil,
+    );
   }
 
   /**
@@ -951,6 +965,11 @@ export class StudentIdCardService {
     matricule: string,
     qrPayload: string,
     identityProfile?: any | null,
+    // ⭐ Paramètres optionnels pour le nouveau template Claude AI :
+    //    - cardNumber : N° de carte affiché en haut des champs (fallback: matricule)
+    //    - validUntil : date d'expiration affichée au verso (fallback: fin d'année scolaire)
+    cardNumber?: string,
+    validUntil?: Date | string | null,
   ): Promise<string> {
     const formatDate = (date: Date | null) => {
       if (!date) return 'N/A';
@@ -1032,6 +1051,24 @@ export class StudentIdCardService {
       ? `<div class="photo-box">${photoHtml}</div>`
       : '';
 
+    // Contact parent (si disponible)
+    const guardian = student.studentGuardians?.[0]?.guardian;
+    const guardianName = guardian ? `${guardian.firstName || ''} ${guardian.lastName || ''}`.trim() : 'N/A';
+    const guardianPhone = guardian?.phone || 'N/A';
+
+    // Adresse école (si disponible) — priorité au TenantIdentityProfile
+    const schoolAddress = identityProfile?.address || tenant?.address || 'Cotonou, Bénin';
+    const schoolPhone = identityProfile?.phonePrimary || tenant?.phone || '+229 01 00 00 00 00';
+    const schoolEmail = identityProfile?.email || tenant?.email || 'contact@ecole.bj';
+    const schoolWebsite = identityProfile?.website || tenant?.website || '';
+
+    // Slogan / type d'établissement — priorité au TenantIdentityProfile
+    // ⚠️ schoolName DOIT être défini avant schoolAcronym (qui l'utilise pour calculer un sigle).
+    const schoolName = identityProfile?.schoolName || tenant?.name || 'Établissement Scolaire';
+    const schoolSlogan = identityProfile?.slogan || tenant?.slogan || 'Excellence • Discipline • Travail';
+    // ⭐ Tagline (sous-titre du logo) — peut être différente du slogan
+    const schoolTagline = identityProfile?.tagline || schoolSlogan || 'Éducation • Avenir • Réussite';
+
     // ⭐ Logo école (pour header recto + verso) : URL résolue en absolu si relative.
     //    Si pas de logo, on affiche un placeholder avec les initiales (acronym).
     const rawLogoUrl = identityProfile?.logoUrl || tenant?.logoUrl || '';
@@ -1071,23 +1108,14 @@ export class StudentIdCardService {
       return `<div style="width:${width}px;height:100%;background:${isBlack ? '#000' : '#fff'};"></div>`;
     }).join('');
 
-    // Contact parent (si disponible)
-    const guardian = student.studentGuardians?.[0]?.guardian;
-    const guardianName = guardian ? `${guardian.firstName || ''} ${guardian.lastName || ''}`.trim() : 'N/A';
-    const guardianPhone = guardian?.phone || 'N/A';
-
-    // Adresse école (si disponible) — priorité au TenantIdentityProfile
-    const schoolAddress = identityProfile?.address || tenant?.address || 'Cotonou, Bénin';
-    const schoolPhone = identityProfile?.phonePrimary || tenant?.phone || '+229 01 00 00 00 00';
-    const schoolEmail = identityProfile?.email || tenant?.email || 'contact@ecole.bj';
-
-    // Slogan / type d'établissement — priorité au TenantIdentityProfile
-    const schoolName = identityProfile?.schoolName || tenant?.name || 'Établissement Scolaire';
-    const schoolSlogan = identityProfile?.slogan || tenant?.slogan || 'Excellence • Discipline • Travail';
-
     // Dates joined/expire
     const joinedDate = formatDate(student.createdAt || new Date());
-    const expireDate = formatDate(academicYear?.endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
+    // ⭐ Si validUntil est fourni (carte existante), on l'utilise ; sinon fallback fin d'année scolaire
+    const expireDate = formatDate(
+      validUntil ? new Date(validUntil as any) : (academicYear?.endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000))
+    );
+    // ⭐ N° carte : si pas fourni, on fallback sur le matricule
+    const displayCardNumber = cardNumber || matricule || 'N/A';
 
     return `
 <!DOCTYPE html>
@@ -1098,415 +1126,397 @@ export class StudentIdCardService {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: '${fontFamily}', Arial, sans-serif;
-      background: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #e9e9ec;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20mm;
+      justify-content: center;
+      padding: 20mm 10mm;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
-      font-size: ${fontSizeMultiplier * 100}%;
     }
-    .card-container {
+    .card-wrap {
       display: flex;
-      gap: 6mm;
+      flex-direction: column;
+      align-items: center;
       page-break-inside: avoid;
-      margin: 4mm;
+    }
+    /* ⭐ Clip circulaire seul — corde (lanyard) supprimée conformément à la demande */
+    .clip {
+      width: 8mm;
+      height: 8mm;
+      border: 1.3mm solid #b7bcc4;
+      border-radius: 50%;
+      background: #e9e9ec;
+      margin-bottom: -4.8mm;
+      z-index: 2;
+      position: relative;
     }
     .card {
       width: 85.6mm;
       height: 53.98mm;
-      border: 1px solid #e5e7eb;
-      border-radius: 10px;
+      background: #ffffff;
+      border-radius: 3.7mm;
+      box-shadow: 0 2.6mm 6.6mm rgba(0,0,0,0.18);
       overflow: hidden;
-      background: #fff;
       position: relative;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
-    /* En-tête bleu marine — logo à gauche, nom école centré, titre à droite */
-    .card-header {
-      background: ${headerBackground};
-      color: #fff;
-      padding: 3px 6px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 12mm;
-      gap: 4px;
-      position: relative;
-    }
-    /* Ligne diagonale décorative séparant header du body */
-    .card-header::after {
-      content: '';
-      position: absolute;
-      left: 0; right: 0; bottom: -1px;
-      height: 2px;
-      background: linear-gradient(90deg, transparent 0%, ${NAVY_LIGHT} 50%, transparent 100%);
-      opacity: 0.6;
-    }
-    .header-logo {
-      width: ${logoDimensions};
-      height: ${logoDimensions};
-      background: #fff;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      flex-shrink: 0;
-      padding: 1px;
-    }
-    .header-school {
-      flex: 1;
-      text-align: center;
-      padding: 0 2px;
-      min-width: 0;
-    }
-    .header-school-name {
-      font-size: 8.5pt;
-      font-weight: 800;
-      line-height: 1.1;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      word-break: break-word;
-      hyphens: auto;
-    }
-    .header-school-slogan {
-      font-size: 5.5pt;
-      opacity: 0.85;
-      margin-top: 1px;
-      font-style: italic;
-      line-height: 1.1;
-    }
-    .header-card-title {
-      font-size: 6pt;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      opacity: 0.95;
-      padding: 2px 4px;
-      background: rgba(255,255,255,0.18);
-      border-radius: 3px;
-      flex-shrink: 0;
+      border: 1.6mm solid #f4f4f5;
     }
 
-    /* Corps de la carte — photo à gauche, infos à droite */
-    .card-body {
-      flex: 1;
+    /* ===== Bande accentuelle en haut ===== */
+    .accent-bar {
+      height: 1.3mm;
+      width: 100%;
+      background: linear-gradient(90deg, ${NAVY}, ${NAVY_LIGHT});
+    }
+
+    /* ===== HEADER (2-tons avec clip-path diagonal) ===== */
+    .header {
+      position: relative;
+      height: 15mm;
       display: flex;
-      padding: 4px 6px;
-      gap: 5px;
-      background: #fff;
       align-items: stretch;
     }
-    .photo-box {
-      width: ${photoDimensions.w};
-      height: ${photoDimensions.h};
-      border: 2px solid ${NAVY};
-      border-radius: ${photoBorderRadius};
-      overflow: hidden;
-      background: #f3f4f6;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      align-self: center;
-    }
-    .info-list {
-      flex: 1;
+    .header-left {
+      width: 42%;
+      background: #ffffff;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 1.8px;
-      min-width: 0;
+      padding-left: 4.8mm;
+      clip-path: polygon(0 0, 100% 0, 82% 100%, 0% 100%);
     }
-    .info-row {
-      display: flex;
-      align-items: baseline;
-      line-height: 1.25;
-    }
-    .info-label {
-      font-weight: 700;
-      color: ${NAVY};
-      min-width: 22mm;
-      font-size: 6.5pt;
-      text-transform: uppercase;
-      letter-spacing: 0.2px;
-    }
-    .info-value {
-      color: #1f2937;
+    .header-right {
       flex: 1;
-      font-size: 7.5pt;
-      font-weight: 500;
-      word-break: break-word;
+      background: linear-gradient(100deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-left: 9mm;
+      margin-left: -14%;
     }
-    .info-value.bold {
-      font-weight: 700;
-      font-size: 8pt;
-    }
-    .matricule-box {
-      margin-top: 3px;
-      padding: 2.5px 4px;
-      background: ${NAVY};
-      color: #fff;
-      font-size: 7pt;
+    .logo-text {
       font-weight: 800;
-      text-align: center;
-      border-radius: 3px;
-      letter-spacing: 0.5px;
+      font-size: 11pt;
+      color: #1a1a2e;
+      letter-spacing: 0.13pt;
+      line-height: 1.1;
+    }
+    .tagline-text {
+      font-size: 6pt;
+      color: #555;
+      letter-spacing: 2.5pt;
+      margin-top: 1pt;
+      line-height: 1.1;
+    }
+    .school-name {
+      color: #fff;
+      font-weight: 800;
+      font-size: 12pt;
+      letter-spacing: 0.75pt;
+      line-height: 1.1;
+    }
+    .school-slogan {
+      color: #dff0ff;
+      font-size: 7pt;
+      letter-spacing: 2.5pt;
+      margin-top: 1pt;
+      line-height: 1.1;
     }
 
-    /* Pied de carte bleu marine — adresse + téléphone */
-    .card-footer {
-      background: ${NAVY};
-      color: #fff;
-      padding: 3px 6px;
+    /* ===== FRONT BODY (photo + champs) ===== */
+    .front-body {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 6pt;
-      min-height: 5.5mm;
-      gap: 4px;
+      padding: 3.7mm 4.2mm 0 4.2mm;
+      gap: 3.7mm;
     }
-    .footer-address {
-      opacity: 0.9;
+    .photo-box {
+      width: 19mm;
+      height: 23mm;
+      border: 0.5mm solid ${NAVY};
+      border-radius: 1mm;
+      flex-shrink: 0;
+      overflow: hidden;
+      background-color: #f2f2f2;
+      background-image:
+        linear-gradient(45deg, #d9d9d9 25%, transparent 25%),
+        linear-gradient(-45deg, #d9d9d9 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #d9d9d9 75%),
+        linear-gradient(-45deg, transparent 75%, #d9d9d9 75%);
+      background-size: 3.7mm 3.7mm;
+      background-position: 0 0, 0 1.85mm, 1.85mm -1.85mm, -1.85mm 0;
+    }
+    .photo-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .fields {
       flex: 1;
+      font-size: 7pt;
+      color: #1a1a2e;
       min-width: 0;
+    }
+    .field-row {
+      display: flex;
+      margin-bottom: 1.6mm;
       line-height: 1.2;
     }
-    .footer-phone {
-      opacity: 0.95;
+    .field-label {
       font-weight: 700;
+      width: 21mm;
       flex-shrink: 0;
     }
-
-    /* === VERSO === */
-    .verso-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      padding: 4px 6px;
-      background: #fff;
-      font-size: 6pt;
-      color: #424242;
+    .field-colon {
+      width: 3mm;
+      flex-shrink: 0;
     }
-    .verso-section {
-      display: flex;
-      flex: 1;
-      gap: 6px;
+    .field-value {
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .verso-left {
-      flex: 1.4;
-      display: flex;
-      flex-direction: column;
-    }
-    .verso-terms-title {
-      font-size: 7pt;
-      font-weight: 800;
-      color: ${NAVY};
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-bottom: 2px;
-      padding-bottom: 1px;
-      border-bottom: 1px solid ${NAVY_LIGHT};
-    }
-    .verso-terms {
-      font-size: 5pt;
-      line-height: 1.3;
-      color: #6b7280;
-      margin-bottom: 3px;
-    }
-    .verso-terms p {
-      font-size: 5pt;
-      line-height: 1.3;
-      color: #6b7280;
-    }
-    .verso-contact {
-      font-size: 6pt;
-      margin-top: auto;
-      padding-top: 2px;
-      border-top: 1px dashed #e5e7eb;
-    }
-    .verso-contact div {
-      line-height: 1.4;
-    }
-    .verso-contact-label {
-      color: ${NAVY};
+    .field-value.bold {
       font-weight: 700;
-      display: inline-block;
-      min-width: 12mm;
     }
-    .verso-right {
-      flex: 1;
+
+    /* ===== FOOTER (gradient + clip-path diagonal) ===== */
+    .footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 10mm;
+      background: linear-gradient(90deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      gap: 3px;
+      padding: 0 4.2mm;
+      clip-path: polygon(0 25%, 100% 0, 100% 100%, 0 100%);
     }
-    .verso-dates {
-      font-size: 5.5pt;
-      color: #424242;
+    .footer-address {
+      color: #fff;
+      font-size: 6pt;
+      line-height: 1.5;
+      max-width: 60%;
+      overflow: hidden;
+    }
+    .footer-sign {
       text-align: center;
-      line-height: 1.4;
-      width: 100%;
+      padding-top: 1mm;
     }
-    .verso-dates strong {
-      color: ${NAVY};
-      font-size: 5.5pt;
+    .sign-line {
+      font-family: 'Brush Script MT', cursive;
+      font-size: 12pt;
+      color: #fff;
+      line-height: 1;
     }
-    /* QR code avec logo intégré au centre — taille configurable */
-    .verso-qr {
-      width: ${qrDimensions};
-      height: ${qrDimensions};
-      border: 1px solid ${NAVY_LIGHT};
-      border-radius: 4px;
+    .sign-label {
+      color: #fff;
+      font-size: 7pt;
+      font-weight: 700;
+      margin-top: 1pt;
+    }
+
+    /* ===== VERSO — Back header ===== */
+    .back-header {
+      background: linear-gradient(100deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
+      height: 13mm;
       display: flex;
       align-items: center;
-      justify-content: center;
-      background: #fff;
-      padding: 1px;
+      justify-content: space-between;
+      padding: 0 4.2mm 0 4.8mm;
+      clip-path: polygon(0 0, 88% 0, 100% 100%, 0% 100%);
     }
-    .verso-qr img {
+    .terms-title {
+      color: #fff;
+      font-weight: 800;
+      font-size: 10pt;
+      letter-spacing: 0.75pt;
+      line-height: 1.1;
+    }
+    .dates {
+      color: #eaf3ff;
+      font-size: 6pt;
+      text-align: right;
+      line-height: 1.6;
+    }
+    .back-body {
+      padding: 3.2mm 4.8mm 0 4.8mm;
+    }
+    .term-item {
+      display: flex;
+      gap: 2mm;
+      font-size: 6pt;
+      color: #444;
+      line-height: 1.5;
+      margin-bottom: 2mm;
+    }
+    .bullet {
+      color: ${NAVY};
+      font-weight: 900;
+      flex-shrink: 0;
+    }
+    .contact-block {
+      margin-top: 2.5mm;
+      font-size: 7pt;
+      color: #1a1a2e;
+    }
+    .contact-row {
+      display: flex;
+      margin-bottom: 1mm;
+      line-height: 1.3;
+    }
+    .contact-label {
+      font-weight: 700;
+      width: 16mm;
+      flex-shrink: 0;
+    }
+    .contact-colon {
+      margin-right: 0.5mm;
+    }
+    .contact-value {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ===== VERSO — Back footer (QR + logo) ===== */
+    .back-footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 12mm;
+      background: linear-gradient(90deg, ${NAVY} 0%, ${NAVY} 55%, ${NAVY_LIGHT} 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4.2mm;
+      clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 100%);
+    }
+    .back-logo {
+      padding-top: 1.5mm;
+    }
+    .back-logo .logo-text-w {
+      color: #fff;
+      font-weight: 800;
+      font-size: 9pt;
+      line-height: 1.1;
+    }
+    .back-logo .tagline-text-w {
+      color: #cfe6ff;
+      font-size: 5.5pt;
+      letter-spacing: 2.5pt;
+      margin-top: 1pt;
+      line-height: 1.1;
+    }
+    .qr {
+      width: 10mm;
+      height: 10mm;
+      background: #fff;
+      border-radius: 0.8mm;
+      padding: 0.8mm;
+      box-shadow: 0 0.3mm 0.5mm rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .qr img {
       width: 100%;
       height: 100%;
       object-fit: contain;
-    }
-    .verso-signature {
-      text-align: center;
-      font-size: 5.5pt;
-      color: #6b7280;
-      width: 100%;
-    }
-    .verso-signature-line {
-      font-family: 'Brush Script MT', cursive;
-      font-size: 10pt;
-      color: ${NAVY};
-      font-style: italic;
-      border-bottom: 1px solid #9ca3af;
-      padding-bottom: 1px;
-      margin-bottom: 1px;
-    }
-    .verso-barcode {
-      display: flex;
-      align-items: center;
-      height: 5mm;
-      width: 100%;
-      gap: 0;
-      padding: 0 2px;
+      display: block;
     }
 
     @media print {
-      .card-container { page-break-inside: avoid; }
+      body { background: #fff; padding: 4mm; gap: 6mm; }
+      .card-wrap { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
-  <div class="card-container">
-    <!-- ============ RECTO ============ -->
-    <div class="card card-front">
-      <div class="card-header">
-        <div class="header-logo">${headerLogoHtml}</div>
-        <div class="header-school">
-          <div class="header-school-name">${schoolName}</div>
-          <div class="header-school-slogan">${schoolSlogan}</div>
-        </div>
-        <div class="header-card-title">Carte Scolaire</div>
-      </div>
 
-      <div class="card-body"${photoPosition === 'right' ? ' style="flex-direction: row-reverse;"' : ''}>
-        ${photoBoxHtml}
-        <div class="info-list">
-          ${showMatricule ? `<div class="info-row">
-            <span class="info-label">Matricule</span>
-            <span class="info-value bold">${matricule}</span>
-          </div>` : ''}
-          <div class="info-row">
-            <span class="info-label">Nom</span>
-            <span class="info-value ${studentNameStyle === 'bold' ? 'bold' : ''}"${studentNameStyle === 'uppercase' ? ' style="text-transform: uppercase;"' : ''}>${student.lastName}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Prénom(s)</span>
-            <span class="info-value ${studentNameStyle === 'bold' ? 'bold' : ''}"${studentNameStyle === 'uppercase' ? ' style="text-transform: uppercase;"' : ''}>${student.firstName}</span>
-          </div>
-          ${showBirthInfo ? `<div class="info-row">
-            <span class="info-label">Né(e) le</span>
-            <span class="info-value">${formatDate(student.dateOfBirth)}${student.placeOfBirth ? ' à ' + student.placeOfBirth : ''}</span>
-          </div>` : ''}
-          ${showGender ? `<div class="info-row">
-            <span class="info-label">Sexe</span>
-            <span class="info-value">${student.gender === 'M' ? 'Masculin' : student.gender === 'F' ? 'Féminin' : 'N/A'}</span>
-          </div>` : ''}
-          <div class="info-row">
-            <span class="info-label">Classe</span>
-            <span class="info-value">${currentClass?.name || 'N/A'}</span>
-          </div>
-          ${showLevel ? `<div class="info-row">
-            <span class="info-label">Niveau</span>
-            <span class="info-value">${schoolLevel?.label || schoolLevel?.name || schoolLevel?.code || 'N/A'}</span>
-          </div>` : ''}
-          ${showGuardian ? `<div class="info-row">
-            <span class="info-label">Parent/Tuteur</span>
-            <span class="info-value">${guardianName}</span>
-          </div>` : ''}
-          ${showEmergencyCall ? `<div class="info-row">
-            <span class="info-label">Urgence</span>
-            <span class="info-value">${guardianPhone}</span>
-          </div>` : ''}
+  <!-- ═══ RECTO ═══ -->
+  <div class="card-wrap">
+    <div class="clip"></div>
+    <div class="card">
+      <div class="accent-bar"></div>
+      <div class="header">
+        <div class="header-left">
+          ${logoSrc
+            ? `<img src="${logoSrc}" alt="Logo" style="height:8mm;width:auto;object-fit:contain;" />`
+            : `<div class="logo-text">${schoolAcronym}</div>`}
+          <div class="tagline-text">${schoolTagline}</div>
+        </div>
+        <div class="header-right">
+          <div class="school-name">${schoolName}</div>
+          <div class="school-slogan">${schoolSlogan}</div>
         </div>
       </div>
 
-      <div class="card-footer">
-        ${showSchoolAddress ? `<div class="footer-address">${schoolAddress}</div>` : '<div></div>'}
-        <div class="footer-phone">Tél. ${schoolPhone}</div>
-      </div>
-    </div>
-
-    <!-- ============ VERSO ============ -->
-    <div class="card card-back">
-      <div class="card-header">
-        <div class="header-card-title" style="background:transparent;">${footerText}</div>
-        <div class="header-school">
-          <div class="header-school-name" style="font-size:8pt;">${schoolName}</div>
-          <div class="header-school-slogan">Année ${academicYear?.name || ''}</div>
-        </div>
-        <div class="header-logo" style="width:9mm;height:9mm;">${headerLogoHtml}</div>
-      </div>
-
-      <div class="verso-body">
-        <div class="verso-section">
-          <div class="verso-left">
-            <div class="verso-terms-title">Conditions d'utilisation</div>
-            <div class="verso-terms">
-              <p>${conditionsText}</p>
-            </div>
-            <div class="verso-contact">
-              <div><span class="verso-contact-label">Téléphone</span> ${schoolPhone}</div>
-              <div><span class="verso-contact-label">Email</span> ${schoolEmail}</div>
-              <div><span class="verso-contact-label">Adresse</span> ${schoolAddress}</div>
-            </div>
-          </div>
-          <div class="verso-right">
-            <div class="verso-dates">
-              <div><strong>Émise le</strong></div>
-              <div>${joinedDate}</div>
-              <div style="margin-top:2px;"><strong>Expire le</strong></div>
-              <div>${expireDate}</div>
-            </div>
-            ${showQRCode && qrCodeDataUrl ? `<div class="verso-qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
-            <div class="verso-signature">
-              <div class="verso-signature-line">Le Directeur</div>
-              <div>Signature & Cachet</div>
-            </div>
-            ${showBarcode ? `<div class="verso-barcode">${barcodeBars}</div>` : ''}
-          </div>
+      <div class="front-body">
+        ${showPhoto ? `<div class="photo-box">${photoHtml}</div>` : ''}
+        <div class="fields">
+          <div class="field-row"><span class="field-label">N° Carte</span><span class="field-colon">:</span><span class="field-value">${displayCardNumber}</span></div>
+          ${showMatricule ? `<div class="field-row"><span class="field-label">Matricule</span><span class="field-colon">:</span><span class="field-value">${matricule}</span></div>` : ''}
+          <div class="field-row"><span class="field-label">Nom</span><span class="field-colon">:</span><span class="field-value bold">${student.lastName} ${student.firstName}</span></div>
+          ${showGuardian ? `<div class="field-row"><span class="field-label">Tuteur</span><span class="field-colon">:</span><span class="field-value">${guardianName}</span></div>` : ''}
+          <div class="field-row"><span class="field-label">Classe</span><span class="field-colon">:</span><span class="field-value">${currentClass?.name || 'N/A'}</span></div>
+          ${showEmergencyCall ? `<div class="field-row"><span class="field-label">Urgence</span><span class="field-colon">:</span><span class="field-value">${guardianPhone}</span></div>` : ''}
         </div>
       </div>
 
-      <div class="card-footer">
-        <div class="footer-address">${footerText}</div>
-        <div class="footer-phone">Vérifiable via QR code</div>
+      <div class="footer">
+        <div class="footer-address">
+          ${showSchoolAddress && schoolAddress ? schoolAddress : ''}
+          ${showSchoolAddress && schoolAddress && schoolPhone ? '<br>' : ''}
+          ${schoolPhone ? 'Tél : ' + schoolPhone : ''}
+        </div>
+        <div class="footer-sign">
+          <div class="sign-line">Signature</div>
+          <div class="sign-label">Directeur</div>
+        </div>
       </div>
     </div>
   </div>
+
+  <!-- ═══ VERSO ═══ -->
+  <div class="card-wrap">
+    <div class="clip"></div>
+    <div class="card">
+      <div class="back-header">
+        <div class="terms-title">CONDITIONS D'UTILISATION</div>
+        <div class="dates">
+          Émise le : ${joinedDate}<br>
+          ${expireDate && expireDate !== 'N/A' ? 'Expire le : ' + expireDate : ''}
+        </div>
+      </div>
+
+      <div class="back-body">
+        <div class="term-item">
+          <span class="bullet">■</span>
+          <span>${conditionsText}</span>
+        </div>
+        <div class="contact-block">
+          ${schoolPhone ? `<div class="contact-row"><span class="contact-label">Tél</span><span class="contact-colon">:</span><span class="contact-value">${schoolPhone}</span></div>` : ''}
+          ${schoolEmail ? `<div class="contact-row"><span class="contact-label">Email</span><span class="contact-colon">:</span><span class="contact-value">${schoolEmail}</span></div>` : ''}
+          ${schoolWebsite ? `<div class="contact-row"><span class="contact-label">Web</span><span class="contact-colon">:</span><span class="contact-value">${schoolWebsite}</span></div>` : ''}
+          ${showSchoolAddress && schoolAddress ? `<div class="contact-row"><span class="contact-label">Adresse</span><span class="contact-colon">:</span><span class="contact-value">${schoolAddress}</span></div>` : ''}
+        </div>
+      </div>
+
+      <div class="back-footer">
+        <div class="back-logo">
+          ${logoSrc
+            ? `<img src="${logoSrc}" alt="Logo" style="height:6mm;width:auto;object-fit:contain;" />`
+            : `<div class="logo-text-w">${schoolAcronym}</div><div class="tagline-text-w">${schoolTagline}</div>`}
+        </div>
+        ${showQRCode && qrCodeDataUrl ? `<div class="qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
     `;

@@ -19,7 +19,7 @@
  * 1. CE1-CM2 : 1 fiche standard (5 semaines × champs de formation)
  * 2. CI-CP IMMERSION (T1 : Septembre → Décembre) — focus accueil/exploration
  * 3. CI-CP SYSTÉMATIQUE (T2+T3 : Janvier → Juin) — leçons structurées
- * 4. MATERNELLE : 5 domaines (D1-D5) × activités × 4 semaines (Tableau A officiel)
+ * 4. MATERNELLE : 5 domaines (D1-D5) × activités × 4 semaines
  * ============================================================================
  */
 
@@ -264,7 +264,7 @@ const FICHE_SYSTEMATIQUE: FicheChamp[] = [
   { code: "PETIT_PROJET", label: "Petit Projet", color: "bg-slate-600", subRows: [] },
 ];
 
-// ⭐ V3-6: FICHE MATERNELLE — Tableau A officiel (Planification des activités pédagogiques)
+// ⭐ FICHE MATERNELLE — Planification des activités pédagogiques
 //    5 Domaines (D1-D5) × activités × 4 semaines (1ère → 4ème)
 //    Conforme au PDF officiel "Planification mensuelle maternelle"
 //    Les codes correspondent aux domaines du annual-plan-seed-data.ts (I, II, III, IV, V)
@@ -291,7 +291,7 @@ const FICHE_MATERNELLE: FicheChamp[] = [
   },
 ];
 
-// ⭐ V3-6: 4 semaines pour la maternelle (le Tableau A officiel a 4 semaines, pas 5)
+// ⭐ 4 semaines pour la maternelle (conforme au document officiel)
 const WEEK_LABELS_MATERNELLE = ["1ère semaine", "2ème semaine", "3ème semaine", "4ème semaine"];
 
 const WEEK_LABELS = ["Première Semaine", "Deuxième Semaine", "Troisième Semaine", "Quatrième Semaine", "Cinquième Semaine"];
@@ -372,12 +372,12 @@ export function MonthlyPlanningTab({
     : showSystematicSheet ? FICHE_SYSTEMATIQUE
     : FICHE_STANDARD;
 
-  // ⭐ V3-6: La maternelle utilise 4 semaines (Tableau A officiel), les autres 5 semaines
+  // ⭐ La maternelle utilise 4 semaines, les autres 5 semaines
   const activeWeekLabels = isMaternelle ? WEEK_LABELS_MATERNELLE : WEEK_LABELS;
   const activeWeekRanges = isMaternelle ? weekRanges.slice(0, 4) : weekRanges;
 
   const sheetLabel = isMaternelle
-    ? "Maternelle — Tableau A (5 domaines × 4 semaines)"
+    ? "Maternelle (5 domaines × 4 semaines)"
     : showImmersionSheet
       ? "Période d'immersion (T1 — Septembre → Décembre)"
       : showSystematicSheet
@@ -851,7 +851,7 @@ export function MonthlyPlanningTab({
           {showImmersionSheet && <span className="ml-2">— Fiche d'immersion CI/CP pour le 1er trimestre (accueil, exploration, initiation).</span>}
           {showSystematicSheet && <span className="ml-2">— Fiche systématique CI/CP pour les 2e et 3e trimestres (leçons structurées).</span>}
           {!isMaternelle && !showImmersionSheet && !showSystematicSheet && <span className="ml-2">— Fiche standard CE1-CM2.</span>}
-          {isMaternelle && <span className="ml-2">— Tableau A officiel (5 domaines × 4 semaines).</span>}
+          {isMaternelle && <span className="ml-2">— Planification des activités pédagogiques (5 domaines × 4 semaines).</span>}
           {/* ⭐ Message si soumis/validé */}
           {planStatus === "SUBMITTED" && (
             <div className="mt-1 text-blue-700 font-semibold">📋 Planification soumise au directeur — en attente de validation.</div>
@@ -887,7 +887,7 @@ export function MonthlyPlanningTab({
                   </th>
                   {activeWeekLabels.map((wk, i) => (
                     <th key={wk} className="p-2 border border-slate-400 text-center">
-                      {isMaternelle ? "Activités / " : ""}{wk}
+                      {wk}
                     </th>
                   ))}
                 </tr>

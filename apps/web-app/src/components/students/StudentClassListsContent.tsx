@@ -388,14 +388,7 @@ export default function StudentClassListsContent() {
             {isGlobalPdfExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
             {isGlobalPdfExporting ? '...' : 'PDF global'}
           </button>
-          {/* ⭐ Bouton Importer — même modal que l'onglet Inscriptions */}
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition whitespace-nowrap"
-            title="Importer des élèves depuis un fichier Excel (template multi-feuilles par classe physique)"
-          >
-            <Upload className="w-4 h-4" /> Importer
-          </button>
+          {/* ⭐ V3-12: Import button removed — use the Inscriptions tab for importing students */}
           {/* ⭐ Bouton Génération en masse — matricule + compte financier + admission */}
           <button
             onClick={async () => {

@@ -54,7 +54,6 @@ import StudentIdCardsSection from '@/components/students/StudentIdCardsSection';
 import StudentsModuleDashboard from '@/components/students/StudentsModuleDashboard';
 import StudentIdentityContent from '@/components/students/StudentIdentityContent';
 import StudentHistoryContent from '@/components/students/StudentHistoryContent';
-import StudentDossierSection from '@/components/students/StudentDossierSection';
 import StudentInteropContent from '@/components/students/StudentInteropContent';
 import StudentFamiliesContent from '@/components/students/StudentFamiliesContent';
 import StudentAssignmentsContent from '@/components/students/StudentAssignmentsContent';
@@ -65,8 +64,6 @@ import StudentAnalyticsContent from '@/components/students/StudentAnalyticsConte
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
 import StudentClassListsContent from '@/components/students/StudentClassListsContent';
-// ⭐ AbsencesContent supprimé — l'onglet Absences a été retiré du module Élèves
-import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
 import { ArrowRightLeft, BarChart3 } from 'lucide-react';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';

@@ -108,21 +108,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
     // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
     _flushPendingQueue();
-    // ⭐ V3-11: Track scroll position so we don't auto-scroll-to-bottom while
-    //    the user is reading older messages. The listener saves the current
-    //    offset so _scrollToBottom() can restore it after a ListView re-layout.
+    // ⭐ V3-11: Track scroll position so we know whether to auto-scroll when
+    //    new messages arrive (socket event, polling). Only auto-scrolls if the
+    //    user is already at the bottom — never yanks the user back to the
+    //    bottom when they're reading history.
     _scrollController.addListener(_onScrollChanged);
   }
 
-  // ⭐ V3-11: Scroll listener — keeps _lastScrollOffset in sync with the user's
-  //    scroll position. Also sets _userIsScrolledUp so that future _scrollToBottom
-  //    calls know not to yank the user back to the bottom.
+  // ⭐ V3-11: Scroll listener — tracks whether the user is at the bottom of the
+  //    conversation. Used by _scrollToBottom to decide whether to auto-scroll
+  //    when new messages arrive (socket event, polling).
   void _onScrollChanged() {
     if (!_scrollController.hasClients) return;
     final offset = _scrollController.position.pixels;
     final maxExtent = _scrollController.position.maxScrollExtent;
-    _lastScrollOffset = offset;
-    _userIsScrolledUp = (maxExtent - offset).abs() > 200;
+    _userAtBottom = (maxExtent - offset).abs() < 100;
   }
 
   // ⭐ E2E: ensure this user has a key pair + fetch recipient public keys.
@@ -542,41 +542,38 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-11: Smart scroll-to-bottom — only auto-scrolls if the user is already
-  //    near the bottom OR if it's the first load. This prevents the "jump to bottom"
-  //    loop that interrupted reading old messages. Also respects user scroll
-  //    when an inline edit/delete/reaction triggers _loadMessages() via socket.
+  //    near the bottom OR if it's the first load / force. This prevents the
+  //    "jump to top and flicker" loop. Does NOT try to restore _lastScrollOffset
+  //    (that was the cause of the flicker — the old offset was invalid after a
+  //    ListView rebuild).
   bool _isInitialLoad = true;
-  bool _userIsScrolledUp = false; // true if user has scrolled away from bottom
-  double? _lastScrollOffset; // for restoring position after reload
+  bool _userAtBottom = true; // updated by _onScrollChanged
 
   void _scrollToBottom({bool force = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       final maxExtent = _scrollController.position.maxScrollExtent;
-      final currentOffset = _scrollController.position.pixels;
-      final distanceFromBottom = (maxExtent - currentOffset).abs();
 
-      // ⭐ V3-11: Auto-scroll ONLY if:
-      //   1. It's the initial load (first render), OR
-      //   2. force=true (e.g. user just sent a message), OR
-      //   3. User is already near the bottom (< 200px) — i.e. they're following the conversation
-      // Otherwise (user is reading old messages), keep their scroll position.
-      if (!_isInitialLoad && !force && distanceFromBottom > 200) {
-        // User is reading history — don't yank them back to the bottom.
-        // Restore their previous scroll offset if possible (to counter ListView re-layout).
-        if (_lastScrollOffset != null) {
-          _scrollController.jumpTo(_lastScrollOffset!);
-        }
+      // If maxExtent is 0, layout isn't done yet — retry on next frame
+      if (maxExtent == 0 && _messages.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(force: force));
         return;
       }
 
-      _isInitialLoad = false;
-      _lastScrollOffset = maxExtent;
-      _scrollController.animateTo(
-        maxExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      if (_isInitialLoad || force) {
+        // First load OR user sent a message → instant jump to bottom
+        _scrollController.jumpTo(maxExtent);
+        _isInitialLoad = false;
+      } else if (_userAtBottom) {
+        // User was at the bottom when a new message arrived → smooth scroll
+        _scrollController.animateTo(
+          maxExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+      // Otherwise: user is reading history — do nothing (Flutter's ScrollController
+      // preserves the position across rebuilds automatically).
     });
   }
 

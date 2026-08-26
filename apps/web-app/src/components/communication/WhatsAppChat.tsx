@@ -1282,21 +1282,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    'X' before initialization" if sendRecordedAudio appeared before
   //    handleSendAttachment in the source.
 
-  // ⭐ V3-11: Smart scroll-to-bottom — only auto-scrolls if the user is already
-  //    near the bottom OR if it's the first load / conversation switch. This
-  //    prevents the "jump to bottom" loop that interrupted reading history.
-  //    We track the user's scroll position via a listener on the messages container.
+  // ⭐ V3-11: Smart scroll-to-bottom — uses container.scrollTop directly
+  //    (NOT scrollIntoView, which scrolls ALL scrollable ancestors including the
+  //    page itself — causing the chat to get stuck at the top of the viewport on
+  //    teacher/parent pages where the page is taller than the viewport).
+  //    Only auto-scrolls if the user is near the bottom OR on first load.
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const userIsNearBottomRef = useRef(true); // true if user is within 200px of bottom
-  // ⭐ isFirstLoadRef — true on first render of each conversation; reset to true
-  //    when the user switches to a different conversation (effect below).
   const isFirstLoadRef = useRef(true);
+
+  // Reset scroll-following when switching conversations
   useEffect(() => {
     isFirstLoadRef.current = true;
-    userIsNearBottomRef.current = true; // reset scroll-following when switching convs
+    userIsNearBottomRef.current = true;
   }, [activeConvId]);
 
-  // Update userIsNearBottomRef on every scroll event (passive listener)
+  // ⭐ V3-11: Scroll the messages container to the bottom (NOT the page).
+  //   Uses container.scrollTop = container.scrollHeight which only affects the
+  //   messages container, never the parent page.
+  const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    if (behavior === 'auto') {
+      // Instant jump — no animation, no flicker
+      container.scrollTop = container.scrollHeight;
+    } else {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  }, []);
+
+  // Track user scroll position via passive listener on the messages container
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -1307,27 +1322,33 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [activeConvId]); // re-bind when conversation changes (container may re-mount)
+  }, [activeConvId]);
 
-  // ⭐ V3-11: Auto-scroll only when:
-  //   - user is already near the bottom (they're following the conversation), OR
-  //   - it's the first message load of a conversation (instant scroll, no animation)
+  // ⭐ V3-11: Auto-scroll logic:
+  //   - First load of a conversation → instant jump to bottom (double rAF to
+  //     ensure the new messages are fully laid out before scrolling)
+  //   - Subsequent message additions → only scroll if user is near the bottom
+  //   - User reading history → don't yank them back to the bottom
   useEffect(() => {
     if (messages.length === 0) return;
     if (isFirstLoadRef.current) {
-      // First load of this conversation → instant jump to bottom
+      // Double requestAnimationFrame ensures the DOM has fully rendered the
+      // new messages BEFORE we read scrollHeight. Without this, scrollHeight
+      // may still be the old value, causing the scroll to land mid-conversation.
       requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+        requestAnimationFrame(() => {
+          scrollToBottom('auto');
+        });
       });
       isFirstLoadRef.current = false;
       return;
     }
-    // Subsequent message additions → only scroll if user is near bottom
+    // Subsequent message additions — only scroll if user is near the bottom
     if (userIsNearBottomRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom('smooth');
     }
     // Otherwise: user is reading history — don't yank them back to the bottom.
-  }, [messages.length]);
+  }, [messages.length, scrollToBottom]);
 
   // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar
   useEffect(() => {
@@ -3042,10 +3063,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               : 'bg-slate-100 border-[#1677FF] text-slate-600'
                           )}
                           onClick={() => {
-                            // Scroll to the parent message
-                            const el = document.querySelector(`[data-msg-id="${(msg as any).replyToId}"]`);
-                            if (el) {
-                              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            // ⭐ V3-11: Scroll to the parent message WITHIN the messages
+                            //   container (not the page — scrollIntoView would also scroll
+                            //   the parent page, pushing the chat to the top on teacher/parent
+                            //   pages). We compute the target offset and use container.scrollTo.
+                            const el = document.querySelector(`[data-msg-id="${(msg as any).replyToId}"]`) as HTMLElement;
+                            const container = messagesContainerRef.current;
+                            if (el && container) {
+                              const elTop = el.offsetTop;
+                              const elHeight = el.offsetHeight;
+                              const containerHeight = container.clientHeight;
+                              const targetScroll = elTop - (containerHeight - elHeight) / 2;
+                              container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
                               el.classList.add('ring-2', 'ring-blue-400');
                               setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 1500);
                             }

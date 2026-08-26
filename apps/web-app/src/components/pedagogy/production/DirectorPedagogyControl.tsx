@@ -5073,8 +5073,10 @@ function PendingMonthlyPlansTab({
       });
       setSelectedPlan(null);
       setModalPlan(null);
+      // ⭐ V3-12: Switch to VALIDATED tab — the useEffect on [loadPending, refreshKey]
+      //    will automatically refetch with the new statusTab value
+      setStatusTab('VALIDATED');
       onRefresh();
-      loadPending();
     } catch (e: any) {
       toast.error("Échec validation: " + e.message);
     } finally {
@@ -5114,8 +5116,9 @@ function PendingMonthlyPlansTab({
       setRejectObservation("");
       setModalPlan(null);
       setSelectedPlan(null);
+      // ⭐ V3-12: Switch to REJECTED tab — the useEffect will auto-refetch
+      setStatusTab('REJECTED');
       onRefresh();
-      loadPending();
     } catch (e: any) {
       toast.error("Échec rejet: " + e.message);
     } finally {

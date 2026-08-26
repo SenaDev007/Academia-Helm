@@ -5666,24 +5666,10 @@ function PendingMonthlyPlansTab({
     );
   }
 
-  if (pendingPlans.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <CalendarRange className="h-12 w-12 mx-auto text-slate-300 mb-2" />
-        <p className="text-sm font-bold text-slate-700">
-          {statusTab === 'SUBMITTED' ? 'Aucune planification en attente' : statusTab === 'VALIDATED' ? 'Aucune planification validée' : 'Aucune planification rejetée'}
-        </p>
-        <p className="text-xs text-slate-500 mt-1">
-          Les planifications mensuelles {statusTab === 'SUBMITTED' ? 'soumises' : statusTab === 'VALIDATED' ? 'validées' : 'rejetées'} par les enseignants apparaîtront ici.
-        </p>
-      </div>
-    );
-  }
-
-  // ⭐ In-page detail view (Étape D) — if selectedPlan is set, render detail instead of list
+  // ⭐ V3-12: In-page detail view (Étape D) — if selectedPlan is set, render detail instead of list
   return (
     <div className="space-y-4">
-      {/* Header + status sub-tabs (Étape A) */}
+      {/* Header + status sub-tabs (Étape A) — ALWAYS visible, even when empty */}
       <div className="flex items-center gap-2 border-b border-slate-200">
         {(Object.keys(tabConfig) as Array<keyof typeof tabConfig>).map(s => {
           const cfg = tabConfig[s];
@@ -5716,7 +5702,21 @@ function PendingMonthlyPlansTab({
         </div>
       </div>
 
-      {/* ⭐ Collapsible hierarchy (Étape B) */}
+      {/* ⭐ V3-12: Empty state (shown below the sub-tabs when pendingPlans is empty) */}
+      {pendingPlans.length === 0 && (
+        <div className="text-center py-12">
+          <CalendarRange className="h-12 w-12 mx-auto text-slate-300 mb-2" />
+          <p className="text-sm font-bold text-slate-700">
+            {statusTab === 'SUBMITTED' ? 'Aucune planification en attente' : statusTab === 'VALIDATED' ? 'Aucune planification validée' : 'Aucune planification rejetée'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Les planifications mensuelles {statusTab === 'SUBMITTED' ? 'soumises' : statusTab === 'VALIDATED' ? 'validées' : 'rejetées'} par les enseignants apparaîtront ici.
+          </p>
+        </div>
+      )}
+
+      {/* ⭐ Collapsible hierarchy (Étape B) — only rendered when pendingPlans.length > 0 */}
+      {pendingPlans.length > 0 && (
       <div className="space-y-3">
         {sortedLevels.map(schoolLevel => {
           const months = hierarchy[schoolLevel];
@@ -5826,6 +5826,7 @@ function PendingMonthlyPlansTab({
           );
         })}
       </div>
+      )}
 
       {/* ⭐ Validation modal (Étape D — for reject with observation) */}
       {modalPlan && (

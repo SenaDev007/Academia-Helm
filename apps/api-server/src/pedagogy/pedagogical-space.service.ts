@@ -6950,10 +6950,15 @@ export class PedagogicalSpaceService {
         tenantId, academicYearId,
       ),
       // ⭐ Aussi compter les évaluations du Module Examen
+      //    ⭐ V3-12 FIX: The evaluations table uses enum EvaluationStatus which does
+      //    NOT include 'REJECTED' (values: PLANNED, OPEN_FOR_GRADING, SUBMITTED,
+      //    VALIDATED, LOCKED, CANCELLED, DRAFT). Including 'REJECTED' in the IN clause
+      //    causes a PostgreSQL error (22P02: invalid input value for enum).
+      //    Fix: only query for statuses that exist in the enum.
       this.prisma.$queryRawUnsafe(
         `SELECT "status", COUNT(*)::int as count FROM "evaluations"
          WHERE "tenantId" = $1 AND "academicYearId" = $2
-           AND "status" IN ('SUBMITTED', 'VALIDATED', 'REJECTED')
+           AND "status" IN ('SUBMITTED', 'VALIDATED')
          GROUP BY "status"`,
         tenantId, academicYearId,
       ),

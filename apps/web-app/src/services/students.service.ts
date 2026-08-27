@@ -537,10 +537,31 @@ class StudentsService {
     studentId: string,
     data: { guardians: any[] },
   ): Promise<any> {
-    return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
-      method: "POST",
-      body: data,
-    });
+    // ⭐ FIX : le backend POST /students/:id/guardians attend un guardian PLAT
+    //    (CreateGuardianDto), pas un objet { guardians: [...] }.
+    //    Avant ce fix, le frontend envoyait { guardians: [{ firstName, ... }] }
+    //    → le backend rejetait avec 400 "property guardians should not exist"
+    //    + "firstName must be a string" (car firstName est dans le tableau, pas au top-level).
+    //    Maintenant on envoie le guardian PLAT pour chaque guardian du tableau.
+    //    Si plusieurs guardians, on envoie plusieurs POST en parallèle.
+    const guardians = data.guardians || [];
+    if (guardians.length === 0) return null;
+    if (guardians.length === 1) {
+      const g = guardians[0];
+      return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
+        method: "POST",
+        body: g, // ⭐ PLAT, pas { guardians: [g] }
+      });
+    }
+    // Plusieurs guardians → POST en parallèle
+    return Promise.all(
+      guardians.map(g =>
+        apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
+          method: "POST",
+          body: g,
+        })
+      )
+    );
   }
 
   /**

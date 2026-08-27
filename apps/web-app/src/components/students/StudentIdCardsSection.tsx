@@ -985,11 +985,17 @@ export default function StudentIdCardsSection() {
         </div>
       )}
 
-      {/* ⭐ Modal de visualisation de carte (plein écran) */}
+      {/* ⭐ Modal de visualisation de carte — disposition PAYSAGE
+          Recto + Verso côte à côte pour que tout tienne dans l'écran :
+          header en haut, cartes au milieu (scrollable si besoin), boutons en bas. */}
       {previewCard && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setPreviewCard(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setPreviewCard(null)}>
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header — fixe en haut */}
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Eye className="w-4 h-4 text-indigo-600" />
                 Carte scolaire — {previewCard.student.lastName.toUpperCase()} {previewCard.student.firstName}
@@ -998,11 +1004,13 @@ export default function StudentIdCardsSection() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              {/* Recto */}
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Recto</p>
-                <div className="max-w-md mx-auto">
+
+            {/* Corps — recto + verso côte à côte (scrollable si écran petit) */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6 bg-slate-50">
+              <div className="flex flex-col lg:flex-row gap-4 sm:gap-8 items-start justify-center max-w-5xl mx-auto">
+                {/* Recto */}
+                <div className="flex-1 w-full max-w-md">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 text-center">Recto</p>
                   <IdCardVisual
                     card={{
                       cardNumber: previewCard.cardNumber,
@@ -1020,11 +1028,9 @@ export default function StudentIdCardsSection() {
                     identity={identity}
                   />
                 </div>
-              </div>
-              {/* Verso */}
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Verso</p>
-                <div className="max-w-md mx-auto">
+                {/* Verso */}
+                <div className="flex-1 w-full max-w-md">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 text-center">Verso</p>
                   <IdCardVisual
                     card={{
                       cardNumber: previewCard.cardNumber,
@@ -1044,10 +1050,16 @@ export default function StudentIdCardsSection() {
                 </div>
               </div>
             </div>
-            <div className="px-4 py-3 bg-slate-50 flex justify-end gap-2 border-t border-slate-100">
-              <button onClick={() => setPreviewCard(null)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg">Fermer</button>
-              <button onClick={() => { setPreviewCard(null); handleDownloadCardPdf(previewCard); }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200">
+
+            {/* Footer — boutons toujours visibles en bas */}
+            <div className="px-4 py-3 bg-white flex flex-wrap justify-end gap-2 border-t border-slate-100 shrink-0">
+              <button onClick={() => setPreviewCard(null)} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition">
+                Fermer
+              </button>
+              <button
+                onClick={() => { setPreviewCard(null); handleDownloadCardPdf(previewCard); }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
+              >
                 <Download className="w-4 h-4" /> Télécharger PDF
               </button>
             </div>

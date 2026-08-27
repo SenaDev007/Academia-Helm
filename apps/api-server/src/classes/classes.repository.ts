@@ -48,7 +48,9 @@ export class ClassesRepository {
           name: true,
           code: true,
           isActive: true,
-          level: { select: { id: true, name: true, code: true } },
+          // ⭐ AcademicLevel n'a pas de champ 'code' (uniquement name, orderIndex, etc.)
+          // Ne pas sélectionner 'code' sur level — Prisma lèverait une erreur.
+          level: { select: { id: true, name: true } },
         },
       },
     };

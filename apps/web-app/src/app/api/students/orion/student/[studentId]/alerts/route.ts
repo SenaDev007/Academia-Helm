@@ -14,13 +14,15 @@ const API_URL = getApiBaseUrlForRoutes();
  * Le backend renvoie `{ alerts: [...], student: {...} }` avec 8 catégories
  * d'alertes (MATRICULE, STATUS, IDENTITY NPI, PHOTO, GUARDIAN, CARD,
  * ENROLLMENT) + recommandations actionnables.
+ *
+ * ⚠️ Next.js 15+ : `params` est une Promise qu'il faut await.
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { studentId: string } },
+  { params }: { params: Promise<{ studentId: string }> },
 ) {
   try {
-    const studentId = params.studentId;
+    const { studentId } = await params;
     if (!studentId) {
       return NextResponse.json({ error: 'Missing studentId' }, { status: 400 });
     }

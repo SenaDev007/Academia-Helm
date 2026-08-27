@@ -276,6 +276,161 @@ export class StudentsOrionService {
       return severityOrder[a.severity] - severityOrder[b.severity];
     });
   }
+
+  /**
+   * ⭐ Génère les alertes ORION pour UN élève spécifique (pas tenant-wide).
+   * Utilisé par l'onglet "Alertes ORION" du dossier élève — remplace le
+   * calcul local frontend par un appel API backend.
+   *
+   * Alertes générées :
+   *   - CRITICAL : élève sans matricule / statut non actif
+   *   - HIGH : matricule temporaire non synchronisé / pas de carte active
+   *   - MEDIUM : NPI manquant / pas de photo / pas de parent/tuteur principal
+   *   - LOW : pas de carte active pour l'année en cours
+   *
+   * @returns { alerts: Array<{severity, category, title, description, recommendation?}> }
+   */
+  async generateStudentAlerts(tenantId: string, studentId: string, academicYearId?: string) {
+    const alerts: Array<{
+      severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+      category: string;
+      title: string;
+      description: string;
+      recommendation?: string;
+    }> = [];
+
+    // Charger l'élève avec relations nécessaires (1 seule requête)
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, tenantId },
+      include: {
+        identifier: true,
+        studentGuardians: {
+          where: { isPrimary: true },
+          take: 1,
+        },
+        studentIdCards: {
+          where: {
+            isActive: true,
+            isRevoked: false,
+            ...(academicYearId ? { academicYearId } : {}),
+          },
+          take: 1,
+        },
+        studentEnrollments: {
+          where: {
+            ...(academicYearId ? { academicYearId } : {}),
+            status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] },
+          },
+          take: 1,
+        },
+      },
+    });
+
+    if (!student) {
+      return { alerts: [{
+        severity: 'CRITICAL',
+        category: 'IDENTITY',
+        title: 'Élève introuvable',
+        description: `Aucun élève trouvé avec l'ID ${studentId} pour ce tenant.`,
+      }] };
+    }
+
+    // 1. Élève sans matricule (CRITICAL)
+    if (!student.identifier?.globalMatricule) {
+      alerts.push({
+        severity: 'CRITICAL',
+        category: 'MATRICULE',
+        title: 'Matricule manquant',
+        description: "L'élève n'a pas de matricule global attribué.",
+        recommendation: "Générer un matricule pour cet élève via le workflow d'identification.",
+      });
+    } else if (student.identifier.isOfflineGenerated && !student.identifier.synchronizedAt) {
+      // 2. Matricule temporaire non synchronisé (HIGH)
+      alerts.push({
+        severity: 'HIGH',
+        category: 'MATRICULE',
+        title: 'Matricule temporaire non synchronisé',
+        description: `Le matricule "${student.identifier.globalMatricule}" est temporaire (offline) et n'a pas encore été synchronisé.`,
+        recommendation: 'Synchroniser le matricule via le workflow d\'identification pour obtenir un matricule définitif.',
+      });
+    }
+
+    // 3. Statut non actif (CRITICAL)
+    if (student.status !== 'ACTIVE') {
+      alerts.push({
+        severity: 'CRITICAL',
+        category: 'STATUS',
+        title: `Statut non actif : ${student.status}`,
+        description: `Le statut actuel de l'élève est "${student.status}", ce qui peut bloquer les opérations administratives.`,
+        recommendation: 'Vérifier le statut et le passer à ACTIVE si l\'élève est bien scolarisé.',
+      });
+    }
+
+    // 4. NPI manquant (MEDIUM)
+    if (!student.npi) {
+      alerts.push({
+        severity: 'MEDIUM',
+        category: 'IDENTITY',
+        title: 'NPI non renseigné',
+        description: "Le numéro d'identification personnel (NPI) n'est pas renseigné pour cet élève.",
+        recommendation: 'Compléter le NPI dans la fiche d\'identité de l\'élève.',
+      });
+    }
+
+    // 5. Pas de photo (MEDIUM)
+    if (!student.photoUrl) {
+      alerts.push({
+        severity: 'MEDIUM',
+        category: 'PHOTO',
+        title: 'Aucune photo de l\'élève',
+        description: "Aucune photo n'est associée au dossier de l'élève. La carte scolaire ne pourra pas être générée correctement.",
+        recommendation: 'Ajouter une photo d\'identité de l\'élève.',
+      });
+    }
+
+    // 6. Pas de parent/tuteur principal (MEDIUM)
+    if (student.studentGuardians.length === 0) {
+      alerts.push({
+        severity: 'MEDIUM',
+        category: 'GUARDIAN',
+        title: 'Aucun responsable légal principal',
+        description: "Aucun parent ou tuteur principal n'est défini pour cet élève. Le champ 'Urgence' de la carte scolaire sera vide.",
+        recommendation: 'Ajouter au moins un responsable légal et le marquer comme principal.',
+      });
+    }
+
+    // 7. Pas de carte active pour l'année en cours (LOW)
+    if (student.studentIdCards.length === 0) {
+      alerts.push({
+        severity: 'LOW',
+        category: 'CARD',
+        title: 'Aucune carte scolaire active',
+        description: academicYearId
+          ? "Aucune carte scolaire active n'a été générée pour cet élève pour l'année sélectionnée."
+          : "Aucune carte scolaire active n'a été générée pour cet élève.",
+        recommendation: 'Générer une carte scolaire via le module Élèves > Cartes Scolaires.',
+      });
+    }
+
+    // 8. Pas d'inscription pour l'année en cours (HIGH)
+    if (student.studentEnrollments.length === 0) {
+      alerts.push({
+        severity: 'HIGH',
+        category: 'ENROLLMENT',
+        title: 'Aucune inscription active',
+        description: academicYearId
+          ? "L'élève n'est pas inscrit pour l'année scolaire sélectionnée."
+          : "L'élève n'a aucune inscription active. Il n'est pas rattaché à une classe.",
+        recommendation: 'Inscrire l\'élève dans une classe pour l\'année scolaire en cours.',
+      });
+    }
+
+    // Trier par sévérité
+    alerts.sort((a, b) => {
+      const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+      return severityOrder[a.severity] - severityOrder[b.severity];
+    });
+
+    return { alerts, student: { id: student.id, firstName: student.firstName, lastName: student.lastName, status: student.status } };
+  }
 }
-
-

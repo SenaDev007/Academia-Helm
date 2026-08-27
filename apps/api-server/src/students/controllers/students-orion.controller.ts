@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -50,7 +50,7 @@ export class StudentsOrionController {
   }
 
   /**
-   * Récupère les alertes ORION pour matricule et cartes
+   * Récupère les alertes ORION pour matricule et cartes (tenant-wide)
    */
   @Get('alerts')
   @Roles(...ORION_VIEWER_ROLES)
@@ -59,6 +59,23 @@ export class StudentsOrionController {
     @Query('academicYearId') academicYearId?: string,
   ) {
     return this.orionService.generateAlerts(tenant.id, academicYearId);
+  }
+
+  /**
+   * ⭐ Récupère les alertes ORION pour UN élève spécifique (par studentId).
+   * Utilisé par l'onglet "Alertes ORION" du dossier élève — remplace le
+   * calcul local frontend par un appel API backend.
+   *
+   * GET /students/orion/student/:studentId/alerts?academicYearId=...
+   */
+  @Get('student/:studentId/alerts')
+  @Roles(...ORION_VIEWER_ROLES)
+  async getStudentAlerts(
+    @GetTenant() tenant: any,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.orionService.generateStudentAlerts(tenant.id, studentId, academicYearId);
   }
 }
 

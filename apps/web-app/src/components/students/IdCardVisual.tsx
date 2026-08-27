@@ -249,17 +249,7 @@ export function IdCardVisual({
   if (face === 'recto') {
     return (
       <div className="w-full flex flex-col items-center" style={{ containerType: 'inline-size' }}>
-        {/* Point d'attache (clip circulaire) — SANS corde/lanyard au-dessus */}
-        <div aria-hidden style={{
-          width: '7.5cqw',
-          height: '7.5cqw',
-          borderRadius: '50%',
-          border: '1.25cqw solid #b7bcc4',
-          background: '#e9e9ec',
-          marginBottom: '-4.5cqw',
-          position: 'relative',
-          zIndex: 2,
-        }} />
+        {/* ⭐ Clip circulaire SUPPRIMÉ — la carte est maintenant un bloc unique continue */}
 
         {/* Carte */}
         <div
@@ -451,17 +441,7 @@ export function IdCardVisual({
   // ═══════════════════════════════════════════════════════════════════════
   return (
     <div className="w-full flex flex-col items-center" style={{ containerType: 'inline-size' }}>
-      {/* Point d'attache (clip circulaire) — SANS corde/lanyard au-dessus */}
-      <div aria-hidden style={{
-        width: '7.5cqw',
-        height: '7.5cqw',
-        borderRadius: '50%',
-        border: '1.25cqw solid #b7bcc4',
-        background: '#e9e9ec',
-        marginBottom: '-4.5cqw',
-        position: 'relative',
-        zIndex: 2,
-      }} />
+      {/* ⭐ Clip circulaire SUPPRIMÉ — la carte est maintenant un bloc unique continue */}
 
       {/* Carte */}
       <div
@@ -476,7 +456,7 @@ export function IdCardVisual({
         }}
       >
         {/* ═══ BACK-HEADER (BANDE CONTINUE) ═══ */}
-        {/* ⭐ Maternelle : "CONDITIONS D'UTILISATION" + heures de sortie (matin/après-midi) */}
+        {/* ⭐ Maternelle : "CONDITIONS D'UTILISATION" (taille réduite) + heures de sortie (matin/après-midi) */}
         {/* ⭐ Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) */}
         <div
           className="shrink-0 flex items-center justify-between text-white"
@@ -488,7 +468,8 @@ export function IdCardVisual({
         >
           <div style={{
             fontWeight: 800,
-            fontSize: '2cqw',
+            // ⭐ Maternelle : taille réduite pour que "CONDITIONS D'UTILISATION" tienne à côté des heures
+            fontSize: isMaternelle ? '1.4cqw' : '2cqw',
             letterSpacing: '0.15cqw',
             lineHeight: 1.1,
             flex: 1,
@@ -501,9 +482,10 @@ export function IdCardVisual({
           {/* Maternelle uniquement : heures de sortie maternelle (à la place des dates) */}
           {isMaternelle && (
             <div style={{
-              fontSize: '1.5cqw',
+              // ⭐ Taille réduite pour la lisibilité (les deux lignes tiennent à côté du titre)
+              fontSize: '1.25cqw',
               textAlign: 'right',
-              lineHeight: 1.4,
+              lineHeight: 1.35,
               flexShrink: 0,
               paddingLeft: '2cqw',
             }}>
@@ -514,7 +496,7 @@ export function IdCardVisual({
               ) : (
                 <>
                   <div>Sortie Matin : {maternellePickupMorning}</div>
-                  <div>Sortie Aprèm : {maternellePickupAfternoon}</div>
+                  <div>Sortie Après-midi : {maternellePickupAfternoon}</div>
                 </>
               )}
             </div>
@@ -601,26 +583,36 @@ export function IdCardVisual({
             clipPath: 'polygon(0 30%, 100% 0, 100% 100%, 0 100%)',
           }}
         >
-          {/* back-logo (left) */}
-          <div style={{ paddingTop: '1.5cqw' }}>
+          {/* back-logo (left) — ⭐ Affiche le NOM COMPLET de l'école (au lieu de l'acronyme) */}
+          <div style={{ paddingTop: '1.5cqw', maxWidth: '40%' }}>
             {logoUrl ? (
               <img src={logoUrl} alt="Logo"
                 style={{ height: '6cqw', width: 'auto', objectFit: 'contain' }} />
             ) : (
               <>
+                {/* ⭐ Nom complet école (taille réduite pour permettre
+                    "CSPEB-Eveil d'Afrique Education" de tenir sur 1-2 lignes) */}
                 <div style={{
                   color: '#fff',
-                  fontWeight: 800,
-                  fontSize: '3cqw',
-                  lineHeight: 1.1,
+                  fontWeight: 700,
+                  fontSize: '1.8cqw',
+                  lineHeight: 1.15,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
                 }}>
-                  {logoText}
+                  {schoolName}
                 </div>
                 <div style={{
                   color: '#cfe6ff',
-                  fontSize: '1.75cqw',
-                  letterSpacing: '0.25cqw',
-                  marginTop: '0.5cqw',
+                  fontSize: '1.2cqw',
+                  letterSpacing: '0.15cqw',
+                  marginTop: '0.4cqw',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}>
                   {tagline}
                 </div>

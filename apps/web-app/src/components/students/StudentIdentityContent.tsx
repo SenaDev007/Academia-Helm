@@ -79,7 +79,11 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   PROMOTE: { label: 'Promotion', color: 'text-green-600' },
 };
 
-type DetailTab = 'identite' | 'admin' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins' | 'observations' | 'orion' | 'audit';
+// ⭐ Tabs : 'observations' et 'audit' SUPPRIMÉS — ils dupliquaient 'scolarite'.
+//    La traçabilité des mouvements est désormais visible uniquement dans l'onglet
+//    'scolarite' (qui contient déjà l'historique complet : admissions, transferts,
+//    changements de classe, etc.).
+type DetailTab = 'identite' | 'admin' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins' | 'orion';
 
 const NAVY = '#0D1F6E';
 const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, MAT: 1, PRIMAIRE: 2, PRIMARY: 2, SECONDAIRE: 3, SECONDARY: 3 };
@@ -496,9 +500,7 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
     { id: 'frais', label: 'Frais & Paiements', icon: Wallet },
     { id: 'medical', label: 'Médical', icon: HeartPulse },
     { id: 'bulletins', label: 'Bulletins', icon: BookOpen },
-    { id: 'observations', label: 'Observations', icon: FileText },
     { id: 'orion', label: 'Alertes ORION', icon: AlertTriangle },
-    { id: 'audit', label: 'Audit', icon: Shield },
   ];
 
   return (
@@ -804,100 +806,14 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
               </div>
             </div>
           </div>
-        ) : activeTab === 'observations' ? (
-          /* ⭐ Onglet Observations (MODULE ELEVES.md §14) */
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Observations</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <p className="text-xs text-blue-800">Types : administrative, pédagogique, disciplinaire, financière, familiale, générale. Les observations sensibles sont protégées par permission.</p>
-            </div>
-            {movementHistory && movementHistory.length > 0 ? (
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-500 uppercase">Historique des mouvements</p>
-                {movementHistory.map((m: any, i: number) => (
-                  <div key={i} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-slate-600 uppercase">{m.actionType || m.type || 'Mouvement'}</span>
-                      <span className="text-[10px] text-slate-400">{m.date ? new Date(m.date).toLocaleDateString('fr-FR') : '—'}</span>
-                    </div>
-                    <p className="text-xs text-slate-600">{m.description || m.reason || m.comment || ''}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-400 text-sm italic">Aucune observation enregistrée.</p>
-            )}
-          </div>
         ) : activeTab === 'orion' ? (
-          /* ⭐ Onglet Alertes ORION (MODULE ELEVES.md §15) */
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Alertes ORION — Dossier Élève
-            </h3>
-            {(() => {
-              const alerts: Array<{ severity: string; message: string }> = [];
-              if (!student.matricule) alerts.push({ severity: 'HIGH', message: 'Matricule manquant — l\'élève n\'a pas de matricule attribué.' });
-              if (!student.npi) alerts.push({ severity: 'MEDIUM', message: 'NPI non renseigné — numéro d\'identification personnel manquant.' });
-              if (!student.photoUrl) alerts.push({ severity: 'LOW', message: 'Aucune photo de l\'élève dans le dossier.' });
-              if (student.status !== 'ACTIVE') alerts.push({ severity: 'MEDIUM', message: `Statut non actif : ${student.status}.` });
-              if (alerts.length === 0) {
-                return (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
-                    <span className="text-xl">✅</span>
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-800">Dossier complet</p>
-                      <p className="text-xs text-emerald-700">Aucune alerte détectée par ORION.</p>
-                    </div>
-                  </div>
-                );
-              }
-              return alerts.map((alert, i) => (
-                <div key={i} className={cn('rounded-lg p-3 border flex items-start gap-3',
-                  alert.severity === 'HIGH' ? 'bg-rose-50 border-rose-200' :
-                  alert.severity === 'MEDIUM' ? 'bg-amber-50 border-amber-200' :
-                  'bg-blue-50 border-blue-200'
-                )}>
-                  <AlertTriangle className={cn('w-4 h-4 shrink-0 mt-0.5',
-                    alert.severity === 'HIGH' ? 'text-rose-600' :
-                    alert.severity === 'MEDIUM' ? 'text-amber-600' : 'text-blue-600'
-                  )} />
-                  <div>
-                    <span className={cn('text-[9px] font-bold uppercase tracking-wider',
-                      alert.severity === 'HIGH' ? 'text-rose-700' :
-                      alert.severity === 'MEDIUM' ? 'text-amber-700' : 'text-blue-700'
-                    )}>{alert.severity}</span>
-                    <p className="text-xs text-slate-700 mt-0.5">{alert.message}</p>
-                  </div>
-                </div>
-              ));
-            })()}
-          </div>
-        ) : activeTab === 'audit' ? (
-          /* ⭐ Onglet Audit (MODULE ELEVES.md §22) */
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
-              <Shield className="w-4 h-4 text-slate-500" />
-              Audit du dossier
-            </h3>
-            <p className="text-xs text-slate-400">Traçabilité complète des modifications apportées au dossier de l'élève. Aucune suppression destructive n'est autorisée.</p>
-            {movementHistory && movementHistory.length > 0 ? (
-              <div className="space-y-2">
-                {movementHistory.map((log: any, i: number) => (
-                  <div key={i} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{log.actionType || log.type || 'ACTION'}</span>
-                      <span className="text-[10px] text-slate-400">{log.date ? new Date(log.date).toLocaleString('fr-FR') : '—'}</span>
-                    </div>
-                    {log.userId && <p className="text-[10px] text-slate-400">Par : {log.userId}</p>}
-                    {(log.description || log.reason || log.comment) && <p className="text-xs text-slate-600 mt-1">{log.description || log.reason || log.comment}</p>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-400 text-sm italic">Aucune entrée d'audit disponible.</p>
-            )}
-          </div>
+          /* ⭐ Onglet Alertes ORION — données chargées depuis le backend
+           *    (remplace l'ancien calcul local qui n'utilisait pas l'API).
+           *    Endpoint : GET /api/students/orion/student/:studentId/alerts
+           *    Avantages : alertes cohérentes avec le tableau de bord tenant-wide,
+           *    recommandations actionnables, support de academicYearId.
+           */
+          <OrionAlertsTab studentId={student.id} academicYearId={academicYear?.id} />
         ) : null}
       </div>
 
@@ -1006,6 +922,158 @@ function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
     <div className="flex flex-col items-center justify-center py-8 text-center">
       <Icon className="w-10 h-10 text-slate-300 mb-2" />
       <p className="text-sm text-slate-500">{text}</p>
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ OrionAlertsTab — Remplace l'ancien calcul local ORION par un appel API
+//    backend (GET /api/students/orion/student/:studentId/alerts).
+//
+//    Avantages :
+//      - Alertes cohérentes avec le tableau de bord tenant-wide ORION
+//      - Reco actionnable pour chaque alerte
+//      - 8 catégories : MATRICULE, STATUS, IDENTITY (NPI), PHOTO, GUARDIAN,
+//        CARD, ENROLLMENT (+ sous-catégories)
+//      - Support de academicYearId pour filtrer les alertes carte/inscription
+//
+//    Sévérités : CRITICAL > HIGH > MEDIUM > LOW
+// ============================================================================
+interface OrionAlert {
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  category: string;
+  title: string;
+  description: string;
+  recommendation?: string;
+}
+
+function OrionAlertsTab({ studentId, academicYearId }: { studentId: string; academicYearId?: string }) {
+  const [alerts, setAlerts] = useState<OrionAlert[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    const url = `/api/students/orion/student/${encodeURIComponent(studentId)}/alerts` +
+      (academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '');
+    fetch(url, { credentials: 'include' })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        if (cancelled) return;
+        setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setError(err.message || 'Erreur lors du chargement des alertes');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [studentId, academicYearId]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          Alertes ORION — Dossier Élève
+        </h3>
+        <div className="flex items-center gap-2 text-slate-500 py-8">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <p className="text-sm">Chargement des alertes depuis le backend…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          Alertes ORION — Dossier Élève
+        </h3>
+        <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-rose-800">Erreur de chargement</p>
+            <p className="text-xs text-rose-700 mt-0.5">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-500" />
+        Alertes ORION — Dossier Élève
+      </h3>
+
+      {alerts.length === 0 ? (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-xl">✅</span>
+          <div>
+            <p className="text-sm font-semibold text-emerald-800">Dossier complet</p>
+            <p className="text-xs text-emerald-700">Aucune alerte détectée par ORION. Le dossier de l'élève est conforme à toutes les règles d'identification.</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-slate-500">
+            {alerts.length} alerte{alerts.length > 1 ? 's' : ''} détectée{alerts.length > 1 ? 's' : ''} par ORION — données fournies par le backend.
+          </p>
+          {alerts.map((alert, i) => {
+            const colorClasses = alert.severity === 'CRITICAL' || alert.severity === 'HIGH'
+              ? 'bg-rose-50 border-rose-200'
+              : alert.severity === 'MEDIUM'
+              ? 'bg-amber-50 border-amber-200'
+              : 'bg-blue-50 border-blue-200';
+            const iconColor = alert.severity === 'CRITICAL' || alert.severity === 'HIGH'
+              ? 'text-rose-600'
+              : alert.severity === 'MEDIUM'
+              ? 'text-amber-600'
+              : 'text-blue-600';
+            const labelColor = alert.severity === 'CRITICAL' || alert.severity === 'HIGH'
+              ? 'text-rose-700'
+              : alert.severity === 'MEDIUM'
+              ? 'text-amber-700'
+              : 'text-blue-700';
+            return (
+              <div key={i} className={cn('rounded-lg p-3 border', colorClasses)}>
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className={cn('w-4 h-4 shrink-0 mt-0.5', iconColor)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={cn('text-[9px] font-bold uppercase tracking-wider', labelColor)}>
+                        {alert.severity}
+                      </span>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider">
+                        {alert.category}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800">{alert.title}</p>
+                    <p className="text-xs text-slate-600 mt-0.5">{alert.description}</p>
+                    {alert.recommendation && (
+                      <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-start gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase shrink-0">Reco :</span>
+                        <p className="text-xs text-slate-700 italic">{alert.recommendation}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

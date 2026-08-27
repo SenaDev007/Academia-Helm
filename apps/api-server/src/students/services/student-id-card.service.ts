@@ -1388,6 +1388,9 @@ export class StudentIdCardService {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .terms-title.maternelle {
+      font-size: 3.5pt;
+    }
     .dates, .maternelle-hours {
       font-size: 6pt;
       text-align: right;
@@ -1396,7 +1399,9 @@ export class StudentIdCardService {
       padding-left: 2mm;
     }
     .maternelle-hours {
-      font-weight: 700;
+      font-size: 4pt;
+      line-height: 1.35;
+      font-weight: 600;
     }
 
     /* ===== VERSO — Back body (Claude AI style) ===== */
@@ -1491,19 +1496,28 @@ export class StudentIdCardService {
     }
     .back-logo {
       padding-top: 1.5mm;
+      max-width: 40%;
     }
     .back-logo .logo-text-w {
       color: #fff;
-      font-weight: 800;
-      font-size: 9pt;
-      line-height: 1.1;
+      font-weight: 700;
+      font-size: 5pt;
+      line-height: 1.15;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
     .back-logo .tagline-text-w {
       color: #cfe6ff;
-      font-size: 5.5pt;
-      letter-spacing: 0.7pt;
-      margin-top: 0.5pt;
+      font-size: 3.5pt;
+      letter-spacing: 0.5pt;
+      margin-top: 0.4pt;
       line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .qr {
       width: 10mm;
@@ -1531,8 +1545,7 @@ export class StudentIdCardService {
 
   <!-- ═══ RECTO ═══ -->
   <div class="card-wrap">
-    <div class="clip"></div>
-    <div class="card">
+        <div class="card">
       <!-- ═══ HEADER BLEU (style ancien — bande continue, pas de clip-path) ═══ -->
       <div class="card-header">
         <!-- Drapeau du Bénin à gauche -->
@@ -1588,18 +1601,17 @@ export class StudentIdCardService {
 
   <!-- ═══ VERSO ═══ -->
   <div class="card-wrap">
-    <div class="clip"></div>
-    <div class="card">
+        <div class="card">
       <!-- ═══ BACK-HEADER (bande continue) ═══ -->
       <!-- Maternelle : "CONDITIONS D'UTILISATION" + heures de sortie (matin/après-midi) -->
       <!-- Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) -->
       <div class="back-header">
-        <div class="terms-title">CONDITIONS D'UTILISATION</div>
+        <div class="terms-title${isMaternelle ? ' maternelle' : ''}">CONDITIONS D'UTILISATION</div>
         ${isMaternelle ? `
         <div class="maternelle-hours">
           ${maternelleSingleExit
             ? `Sortie unique : ${maternelleSingleExitTime}`
-            : `Sortie Matin : ${maternellePickupMorning}<br>Sortie Aprèm : ${maternellePickupAfternoon}`}
+            : `Sortie Matin : ${maternellePickupMorning}<br>Sortie Après-midi : ${maternellePickupAfternoon}`}
         </div>` : ''}
       </div>
 
@@ -1628,7 +1640,7 @@ export class StudentIdCardService {
         <div class="back-logo">
           ${logoSrc
             ? `<img src="${logoSrc}" alt="Logo" style="height:6mm;width:auto;object-fit:contain;" />`
-            : `<div class="logo-text-w">${schoolAcronym}</div><div class="tagline-text-w">${schoolTagline}</div>`}
+            : `<div class="logo-text-w">${schoolName}</div><div class="tagline-text-w">${schoolTagline}</div>`}
         </div>
         <div class="back-dates">
           Émise le : ${joinedDate}<br>

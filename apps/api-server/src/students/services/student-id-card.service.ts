@@ -1012,6 +1012,12 @@ export class StudentIdCardService {
     const conditionsText = identityProfile?.cardConditionsText ||
       "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.";
 
+    // ⭐ Mention spécifique MATERNELLE — paragraphe complémentaire rappelant
+    //    que la carte est OBLIGATOIRE pour récupérer l'enfant. Affichée
+    //    uniquement si le niveau scolaire est MATERNELLE.
+    const maternellePickupClause =
+      "En cas de maternelle, la personne autorisée venue chercher l'enfant doit obligatoirement présenter cette carte. Sans présentation de la carte, la remise de l'enfant ne sera pas effectuée.";
+
     // ⭐ Options design configurables (Phase 5 — Task 22-b)
     const fontFamily = identityProfile?.cardFontFamily || 'Helvetica, Arial, sans-serif';
     const fontSizeScale = identityProfile?.cardFontSizeScale || 'medium'; // small/medium/large
@@ -1626,6 +1632,11 @@ export class StudentIdCardService {
             <span class="bullet">■</span>
             <span>${conditionsText}</span>
           </div>
+          ${isMaternelle ? `
+          <div class="term-item">
+            <span class="bullet">■</span>
+            <span>${maternellePickupClause}</span>
+          </div>` : ''}
           <div class="contact-block">
             ${schoolPhone ? `<div class="contact-row"><span class="contact-label">Tél</span><span class="contact-colon">:</span><span class="contact-value">${schoolPhone}</span></div>` : ''}
             ${schoolEmail ? `<div class="contact-row"><span class="contact-label">Email</span><span class="contact-colon">:</span><span class="contact-value">${schoolEmail}</span></div>` : ''}

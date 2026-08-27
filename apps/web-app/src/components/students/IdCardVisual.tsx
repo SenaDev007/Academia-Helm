@@ -167,8 +167,19 @@ export function IdCardVisual({
   const secondaryColor = identity?.cardSecondaryColor || '#29c2e8';
 
   // ─── Conditions d'utilisation ─────────────────────────────────────────────
+  // ⭐ Texte par défaut — la phrase "La carte doit être restituée en cas de
+  //    départ de l'établissement" a été SUPPRIMÉE car la carte reste pour
+  //    l'élève (l'école ne reprend pas la carte).
+  //    Si l'admin a personnalisé cardConditionsText dans TenantIdentityProfile,
+  //    on l'utilise tel quel (l'admin peut y mettre ce qu'il veut).
   const conditionsText = identity?.cardConditionsText ||
-    "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration. La carte doit être restituée en cas de départ de l'établissement.";
+    "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.";
+
+  // ⭐ Mention spécifique MATERNELLE : ajoutée APRÈS le conditionsText
+  //    Paragraphe complémentaire qui rappelle que la carte est OBLIGATOIRE
+  //    pour récupérer l'enfant — sans la carte, l'enfant n'est pas remis.
+  const maternellePickupClause =
+    "En cas de maternelle, la personne autorisée venue chercher l'enfant doit obligatoirement présenter cette carte. Sans présentation de la carte, la remise de l'enfant ne sera pas effectuée.";
 
   // ─── Ministère adapté au niveau scolaire (Bénin) ─────────────────────────
   const levelUpper = (card.levelCode || '').toUpperCase();
@@ -555,6 +566,22 @@ export function IdCardVisual({
             <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
             <span>{conditionsText}</span>
           </div>
+
+          {/* ⭐ Mention spécifique MATERNELLE — paragraphe complémentaire
+              rappelant que la carte est OBLIGATOIRE pour récupérer l'enfant */}
+          {isMaternelle && (
+            <div className="flex relative" style={{
+              gap: '2cqw',
+              fontSize: '2cqw',
+              color: '#444',
+              lineHeight: 1.5,
+              marginBottom: '2cqw',
+              zIndex: 1,
+            }}>
+              <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
+              <span>{maternellePickupClause}</span>
+            </div>
+          )}
 
           {/* contact-block */}
           <div className="relative" style={{

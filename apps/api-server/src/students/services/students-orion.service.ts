@@ -300,6 +300,7 @@ export class StudentsOrionService {
     }> = [];
 
     // Charger l'élève avec relations nécessaires (1 seule requête)
+    // ⚠️ Relation Prisma sur Student = 'idCards' (pas 'studentIdCards')
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, tenantId },
       include: {
@@ -308,7 +309,7 @@ export class StudentsOrionService {
           where: { isPrimary: true },
           take: 1,
         },
-        studentIdCards: {
+        idCards: {
           where: {
             isActive: true,
             isRevoked: false,
@@ -400,7 +401,7 @@ export class StudentsOrionService {
     }
 
     // 7. Pas de carte active pour l'année en cours (LOW)
-    if (student.studentIdCards.length === 0) {
+    if (student.idCards.length === 0) {
       alerts.push({
         severity: 'LOW',
         category: 'CARD',

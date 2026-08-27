@@ -443,37 +443,83 @@ export class StudentsPrismaService {
    * les élèves actifs avec les pré-inscrits/acceptés/archivés.
    */
   async getStudentStatistics(tenantId: string, academicYearId: string, schoolLevelId?: string) {
-    const where: any = {
+    // ⭐ FIX : les statistiques de l'année scolaire DOIVENT être comptées sur
+    //    StudentEnrollment (qui porte le statut par année : ACTIVE, ADMITTED,
+    //    PROMOTED, PRE_REGISTERED, RE_ENROLLED, WITHDRAWN, etc.) — et NON sur
+    //    Student.status qui est le statut permanent de l'élève (qui peut être
+    //    WITHDRAWN même s'il a été actif les années précédentes).
+    //
+    //    Sans ce fix, le dashboard "Vue d'ensemble" affichait 0 élèves pour
+    //    l'année 2025-2026 alors que byClass/byGenderByLevel (comptés via
+    //    StudentEnrollment) affichaient bien des élèves. Incohérence visible
+    //    côté utilisateur.
+    //
+    //    Maintenant : toutes les stats (total, active, preRegistered, admitted,
+    //    pending, archived, withdrawn) sont comptées via StudentEnrollment
+    //    avec academicYearId — ce qui est cohérent avec byClass/byGenderByLevel.
+    const enrollmentWhere: any = {
       tenantId,
       academicYearId,
     };
-
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      where.schoolLevelId = schoolLevelId;
+      enrollmentWhere.schoolLevelId = schoolLevelId;
     }
 
-    // Comptes séparés par statut
-    const [active, preRegistered, admitted, pending, archived, withdrawn, byGenderRaw, byStatus] = await Promise.all([
-      this.prisma.student.count({ where: { ...where, status: 'ACTIVE', isActive: true } }),
-      this.prisma.student.count({ where: { ...where, status: 'PRE_REGISTERED' } }),
-      this.prisma.student.count({ where: { ...where, status: 'ADMITTED' } }),
-      this.prisma.student.count({ where: { ...where, status: 'PENDING' } }),
-      this.prisma.student.count({ where: { ...where, status: 'ARCHIVED' } }),
-      this.prisma.student.count({ where: { ...where, status: 'WITHDRAWN' } }),
-      this.prisma.student.groupBy({
-        by: ['gender'],
-        where,
-        _count: true,
+    // ⭐ Statuts sur StudentEnrollment (cohérents avec byClass/byGenderByLevel)
+    //    ACTIVE = élève officiellement inscrit pour cette année
+    //    PRE_REGISTERED = pré-inscrit (n'a pas encore été admis)
+    //    ADMITTED = admis mais pas encore classé en section physique
+    //    PENDING = dossier en attente de validation
+    //    PROMOTED = élève promu depuis l'année précédente (équivalent actif)
+    //    RE_ENROLLED = élève réinscrit
+    //    WITHDRAWN = élève retiré/abandon pour cette année
+    const activeEnrollmentStatuses = ['ACTIVE', 'PROMOTED', 'RE_ENROLLED'];
+
+    const [active, preRegistered, admitted, pending, withdrawn, byGenderRaw, byStatus] = await Promise.all([
+      // ⭐ 'active' = élèves officiellement inscrits pour CETTE année (ACTIVE + PROMOTED + RE_ENROLLED)
+      this.prisma.studentEnrollment.count({
+        where: { ...enrollmentWhere, status: { in: activeEnrollmentStatuses } },
       }),
-      this.prisma.student.groupBy({
+      this.prisma.studentEnrollment.count({
+        where: { ...enrollmentWhere, status: 'PRE_REGISTERED' },
+      }),
+      this.prisma.studentEnrollment.count({
+        where: { ...enrollmentWhere, status: 'ADMITTED' },
+      }),
+      this.prisma.studentEnrollment.count({
+        where: { ...enrollmentWhere, status: 'PENDING' },
+      }),
+      this.prisma.studentEnrollment.count({
+        where: { ...enrollmentWhere, status: 'WITHDRAWN' },
+      }),
+      // ⭐ byGender : regroupé par sexe via StudentEnrollment.student
+      this.prisma.studentEnrollment.findMany({
+        where: enrollmentWhere,
+        select: {
+          student: { select: { gender: true } },
+        },
+      }).then(enrs => {
+        // Grouper manuellement par gender
+        const map = new Map<string, number>();
+        for (const e of enrs) {
+          const g = (e.student?.gender || 'UNKNOWN').toUpperCase();
+          map.set(g, (map.get(g) || 0) + 1);
+        }
+        return Array.from(map.entries()).map(([gender, _count]) => ({ gender, _count }));
+      }),
+      // ⭐ byStatus : regroupé par statut d'inscription
+      this.prisma.studentEnrollment.groupBy({
         by: ['status'],
-        where,
+        where: enrollmentWhere,
         _count: true,
       }),
     ]);
 
-    // Total = élèves actifs uniquement (officiellement inscrits)
-    const total = active;
+    // Total = tous les élèves ayant une inscription cette année (tous statuts confondus)
+    const total = active + preRegistered + admitted + pending + withdrawn;
+
+    // Archived =WITHDRAWN (= retirés cette année)
+    const archived = withdrawn;
 
     // ⭐ Mapper byGender au format attendu par le frontend :
     //    [{ label: 'Garçons', count: N }, { label: 'Filles', count: N }]
@@ -491,11 +537,7 @@ export class StudentsPrismaService {
     let byGenderByLevel: Array<{ level: string; boys: number; girls: number; total: number }> = [];
     try {
       const enrollmentsWithLevel = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId,
-          academicYearId,
-          status: { in: ['ACTIVE', 'VALIDATED', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] },
-        },
+        where: enrollmentWhere,
         select: {
           student: { select: { gender: true } },
           schoolLevel: { select: { name: true, code: true } },
@@ -527,11 +569,7 @@ export class StudentsPrismaService {
     try {
       const enrollmentsByClass = await this.prisma.studentEnrollment.groupBy({
         by: ['classId'],
-        where: {
-          tenantId,
-          academicYearId,
-          status: { in: ['ACTIVE', 'VALIDATED', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] },
-        },
+        where: enrollmentWhere,
         _count: true,
       });
 
@@ -782,7 +820,7 @@ export class StudentsPrismaService {
       throw new NotFoundException('Aucun élève trouvé pour les IDs fournis.');
     }
 
-    const existingIds = new Set(existing.map((s) => s.id));
+    const existingIds = new Set<string>(existing.map((s: any) => s.id));
     const skipped = studentIds.filter((id) => !existingIds.has(id));
 
     // 2) Appliquer le updateMany (1 seule requête SQL)

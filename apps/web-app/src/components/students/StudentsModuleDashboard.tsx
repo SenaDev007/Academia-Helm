@@ -207,19 +207,54 @@ export default function StudentsModuleDashboard({
         </div>
       </div>
 
-      {/* Répartition par statut (si dispo) */}
+      {/* ⭐ Répartition par statut — Cartes stats (statuts en français)
+          Le promoteur ne parle pas anglais : on traduit les statuts techniques
+          StudentEnrollment.status en libellés compréhensibles :
+            PROMOTED     → Promu       (élève envoyé en classe supérieure)
+            ADMITTED     → Admis       (nouvel élève admis pour la 1ère fois)
+            RE_ENROLLED  → Réinscrit   (élève existant qui reste au même niveau)
+            ACTIVE       → Actif       (inscrit officiellement)
+            PRE_REGISTERED → Pré-inscrit
+            PENDING      → En attente
+            WITHDRAWN    → Abandon     (élève retiré)
+            ARCHIVED     → Archivé
+            EXCLUDED     → Exclu
+            TRANSFERRED  → Transféré   */}
       {statistics?.byStatus && statistics.byStatus.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Répartition par statut</h3>
-          <div className="flex flex-wrap gap-2">
-            {statistics.byStatus.map((s) => (
-              <span
-                key={s.status}
-                className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-              >
-                {s.status} : {s._count}
-              </span>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {statistics.byStatus.map((s) => {
+              // ⭐ Mapping statut technique → libellé français + couleur
+              const STATUS_LABELS: Record<string, { label: string; color: string; bg: string; text: string }> = {
+                PROMOTED:     { label: 'Promu',       color: 'emerald', bg: 'bg-emerald-50',     text: 'text-emerald-700' },
+                ADMITTED:     { label: 'Admis',       color: 'blue',    bg: 'bg-blue-50',        text: 'text-blue-700' },
+                RE_ENROLLED:  { label: 'Réinscrit',   color: 'indigo',  bg: 'bg-indigo-50',      text: 'text-indigo-700' },
+                ACTIVE:       { label: 'Actif',      color: 'green',   bg: 'bg-green-50',       text: 'text-green-700' },
+                PRE_REGISTERED: { label: 'Pré-inscrit', color: 'cyan',  bg: 'bg-cyan-50',        text: 'text-cyan-700' },
+                PENDING:      { label: 'En attente', color: 'amber',   bg: 'bg-amber-50',       text: 'text-amber-700' },
+                WITHDRAWN:    { label: 'Abandon',    color: 'rose',    bg: 'bg-rose-50',        text: 'text-rose-700' },
+                ARCHIVED:     { label: 'Archivé',    color: 'slate',   bg: 'bg-slate-100',      text: 'text-slate-700' },
+                EXCLUDED:     { label: 'Exclu',      color: 'red',     bg: 'bg-red-50',         text: 'text-red-700' },
+                TRANSFERRED:  { label: 'Transféré',  color: 'violet',  bg: 'bg-violet-50',      text: 'text-violet-700' },
+              };
+              const info = STATUS_LABELS[s.status] || { label: s.status, color: 'gray', bg: 'bg-gray-100', text: 'text-gray-700' };
+              return (
+                <div key={s.status} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs sm:text-sm font-medium text-gray-500">{info.label}</p>
+                      <p className={`text-xl sm:text-2xl font-bold mt-1 ${info.text}`}>
+                        {s._count.toLocaleString('fr-FR')}
+                      </p>
+                    </div>
+                    <div className={`p-2 sm:p-3 rounded-lg ${info.bg}`}>
+                      <Users className={`w-5 h-5 sm:w-6 sm:h-6 ${info.text}`} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

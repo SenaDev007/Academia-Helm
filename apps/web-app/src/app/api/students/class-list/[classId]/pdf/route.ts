@@ -41,10 +41,14 @@ export async function GET(
     // ⭐ Forward le paramètre mode (official | physical) au backend.
     // Sans cela, le backend default à 'physical' même pour l'onglet Inscriptions (qui attend 'official').
     const mode = request.nextUrl.searchParams.get('mode') || 'physical';
+    // ⭐ Forward le paramètre status au backend (ex: 'WITHDRAWN' pour liste d'abandons).
+    // Sans ce paramètre, le backend exclut WITHDRAWN+TRANSFERRED (listes d'élèves actifs).
+    const status = request.nextUrl.searchParams.get('status');
 
     const url = new URL(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf`);
     url.searchParams.append('academicYearId', academicYearId);
     url.searchParams.append('mode', mode);
+    if (status) url.searchParams.append('status', status);
 
     const headers = await getProxyAuthHeaders(request);
     // On ne veut pas forcer Accept: application/json pour une réponse binaire

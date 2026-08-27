@@ -367,7 +367,8 @@ export class StudentsLifecycleController {
     @Query('academicYearId') academicYearId: string,
     @Query('code') code?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
-    @Res() res: Response,
+    @Query('status') status: string = '',
+    @Res() res?: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est obligatoire');
@@ -380,6 +381,7 @@ export class StudentsLifecycleController {
       academicYearId,
       code,
       schoolLevelId,
+      status,
     );
     const safeName = filename
       .normalize('NFD')
@@ -591,7 +593,8 @@ export class StudentsLifecycleController {
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('mode') mode?: string,
-    @Res() res: Response,
+    @Query('status') status: string = '',
+    @Res() res?: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
@@ -602,6 +605,7 @@ export class StudentsLifecycleController {
       tenantId,
       academicYearId,
       pdfMode,
+      status,
     );
 
     // Nettoyer le nom de la classe pour le nom de fichier (ASCII-safe)
@@ -713,8 +717,8 @@ export class StudentsLifecycleController {
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
-    @Query('mode') mode?: string,
-    @Res() res: Response,
+    @Query('mode') mode: string = '',
+    @Res() res?: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');

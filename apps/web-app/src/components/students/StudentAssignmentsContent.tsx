@@ -110,7 +110,7 @@ export default function StudentAssignmentsContent() {
     setIsLoading(true);
     try {
       const [classesRes, enrollmentsData] = await Promise.all([
-        fetch(`/api/all-classes`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }),
       ]);
       setClasses(Array.isArray(classesRes) ? classesRes : []);

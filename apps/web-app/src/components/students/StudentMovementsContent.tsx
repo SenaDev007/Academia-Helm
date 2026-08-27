@@ -27,6 +27,8 @@ import {
   ChevronLeft, ChevronRight, MoreHorizontal,
   // ⭐ P1.5 — Icônes pour les nouveaux statuts
   Ban, UserX, GraduationCap, Clock,
+  // ⭐ Boutons PDF abandons
+  FileDown,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -246,7 +248,10 @@ export default function StudentMovementsContent() {
       .then(data => setAcademicYears(Array.isArray(data) ? data : []))
       .catch(() => setAcademicYears([]));
     // Charger les classes
-    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+    // ⭐ FIX : passer academicYearId pour récupérer les classes de l'année
+    //    sélectionnée (et non l'année active par défaut).
+    const yearId = academicYear?.id || '';
+    fetch(`/api/all-classes${yearId ? `?academicYearId=${encodeURIComponent(yearId)}` : ''}`, { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(data => setClasses(Array.isArray(data) ? data : []))
       .catch(() => setClasses([]));
@@ -506,6 +511,74 @@ export default function StudentMovementsContent() {
     setSearchQuery('');
   };
 
+  // ⭐ État pour les exports PDF abandons
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  // ⭐ PDF Abandons par classe — génère le PDF des abandons de la classe sélectionnée
+  // dans le filtre. Utilise l'endpoint class-list/:classId/pdf avec status=WITHDRAWN.
+  const handleExportClassPdf = async () => {
+    if (!filterClassId || !effectiveYearId) {
+      toast({ title: 'Sélection requise', description: 'Veuillez sélectionner une classe dans le filtre.', variant: 'error' });
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const { url, fileName } = await studentsService.generateClassListPdf(
+        filterClassId,
+        effectiveYearId,
+        'physical',
+        'WITHDRAWN',
+      );
+      // Télécharger le PDF
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `abandons_${filterClassId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Nettoyer la blob URL après un court délai
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast({ title: '✅ PDF généré', description: 'Liste des abandons de la classe téléchargée.', variant: 'success' });
+    } catch (e: any) {
+      toast({ title: 'Erreur PDF', description: e.message || 'Génération échouée', variant: 'error' });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // ⭐ PDF Abandons global — génère un PDF par niveau (MATERNELLE, PRIMAIRE, SECONDAIRE)
+  // contenant tous les abandons de chaque classe du niveau. Utilise l'endpoint
+  // export/all-classes-pdf avec status=WITHDRAWN. Si un niveau est sélectionné dans
+  // le filtre, génère uniquement ce niveau. Sinon, génère tous les niveaux.
+  const handleExportGlobalPdf = async () => {
+    if (!effectiveYearId) return;
+    setIsExportingPdf(true);
+    try {
+      // Si un niveau est sélectionné, générer uniquement ce niveau
+      const levelsToExport = filterLevelId
+        ? levels.filter(l => l.id === filterLevelId)
+        : levels;
+
+      if (levelsToExport.length === 0) {
+        toast({ title: 'Aucun niveau', description: 'Aucun niveau scolaire disponible pour l\'export.', variant: 'error' });
+        return;
+      }
+
+      for (const level of levelsToExport) {
+        // L'endpoint exportAllClassesPdf attend un code (MATERNELLE/PRIMAIRE/SECONDAIRE)
+        // On récupère le code depuis le schoolLevel
+        const levelCode = level.code || level.name?.toUpperCase() || '';
+        if (!levelCode) continue;
+        await studentsService.exportAllClassesPdf(effectiveYearId, levelCode, 'WITHDRAWN');
+      }
+      toast({ title: '✅ PDF générés', description: `${levelsToExport.length} PDF d'abandons téléchargé(s).`, variant: 'success' });
+    } catch (e: any) {
+      toast({ title: 'Erreur PDF', description: e.message || 'Génération échouée', variant: 'error' });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* Stats — calculées sur la liste filtrée */}
@@ -604,8 +677,33 @@ export default function StudentMovementsContent() {
               ✕ Réinitialiser
             </button>
           )}
-          <div className="ml-auto text-xs text-slate-400">
-            {pagination.total} élève(s) au total · page {pagination.page}/{pagination.totalPages}
+          {/* ⭐ Boutons PDF Abandons */}
+          <div className="flex items-center gap-2 ml-auto">
+            {/* PDF par classe — visible uniquement quand une classe est sélectionnée */}
+            {filterClassId && (
+              <button
+                onClick={handleExportClassPdf}
+                disabled={isExportingPdf}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition disabled:opacity-50"
+                title="Générer le PDF des abandons de la classe sélectionnée"
+              >
+                {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                PDF Abandons (classe)
+              </button>
+            )}
+            {/* PDF Global — génère un PDF par niveau */}
+            <button
+              onClick={handleExportGlobalPdf}
+              disabled={isExportingPdf}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition disabled:opacity-50"
+              title="Générer le PDF global des abandons (toutes classes, par niveau)"
+            >
+              {isExportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              PDF Abandons (global)
+            </button>
+            <div className="text-xs text-slate-400">
+              {pagination.total} élève(s) · page {pagination.page}/{pagination.totalPages}
+            </div>
           </div>
         </div>
       </div>

@@ -177,7 +177,13 @@ export default function StudentClassListsContent() {
     try {
       const [classesRes, enrollmentsData] = await Promise.all([
         // ⭐ Classes PHYSIQUES (table `classes`) — sections CE1-A, CE1-B, etc.
-        fetch(`/api/all-classes`, { cache: 'no-store' })
+        // ⭐ FIX : passer academicYearId=academicYear.id pour récupérer les
+        //    classes physiques de l'année sélectionnée (et non l'année active
+        //    par défaut 2026-2027). Sans ce paramètre, le BFF résout l'année
+        //    active = 2026-2027 → renvoie les classes 2026-2027 qui ne
+        //    correspondent PAS aux classId des inscriptions 2025-2026 → tous
+        //    les élèves apparaissent comme non affectés.
+        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : []).catch(() => []),
         studentsService.getEnrollments({ academicYearId: academicYear.id }).catch(() => []),
       ]);

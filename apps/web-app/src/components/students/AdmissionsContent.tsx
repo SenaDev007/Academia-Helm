@@ -86,7 +86,9 @@ export default function AdmissionsContent() {
   const { data: schoolLevelsData = [] } = useSchoolLevelsQuery();
   const schoolLevels = schoolLevelsData;
 
-  const { classes: allClassesData = [] } = useAllClasses();
+  // ⭐ FIX : passer academicYear.id pour récupérer les classes physiques de
+  //    l'année sélectionnée (et non l'année active 2026-2027 par défaut).
+  const { classes: allClassesData = [] } = useAllClasses({ academicYearId: academicYear?.id });
   // Dédupliquer par officialClass.id pour n'avoir que les classes officielles créées
   const schoolClasses = useMemo(() => {
     const officialMap = new Map<string, any>();

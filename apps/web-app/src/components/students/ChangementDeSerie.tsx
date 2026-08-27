@@ -97,7 +97,7 @@ export default function ChangementDeSerie() {
     try {
       const [enrollmentsData, classesRes] = await Promise.all([
         studentsService.getEnrollments({ academicYearId: academicYear.id }).catch(() => []),
-        fetch('/api/all-classes', { cache: 'no-store' })
+        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
       ]);

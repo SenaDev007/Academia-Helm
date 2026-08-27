@@ -226,12 +226,15 @@ export default function StudentIdCardsSection() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Charger les classes une fois (pour le modal de génération)
+  // ⭐ FIX : passer academicYearId pour récupérer les classes de l'année
+  //    sélectionnée (et non l'année active par défaut).
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+    if (!academicYear?.id) return;
+    fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(data => setAllClasses(Array.isArray(data) ? data : []))
       .catch(() => setAllClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // Charger stats + cartes groupées
   useEffect(() => {

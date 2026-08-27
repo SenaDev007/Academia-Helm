@@ -914,9 +914,15 @@ class StudentsService {
     classId: string,
     academicYearId: string,
     mode: 'physical' | 'official' = 'physical',
+    status?: string,
   ): Promise<{ url: string; fileName: string }> {
+    const params = new URLSearchParams({
+      academicYearId,
+      mode,
+    });
+    if (status) params.set('status', status);
     const res = await fetch(
-      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}&mode=${mode}`,
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?${params.toString()}`,
       { credentials: 'include' },
     );
     if (!res.ok) {
@@ -1506,9 +1512,15 @@ class StudentsService {
   async exportAllClassesPdf(
     academicYearId: string,
     levelCode: string,
+    status?: string,
   ): Promise<void> {
+    const params = new URLSearchParams({
+      academicYearId,
+      code: levelCode,
+    });
+    if (status) params.set('status', status);
     const res = await fetch(
-      `/api/students/export/all-classes-pdf?academicYearId=${encodeURIComponent(academicYearId)}&code=${encodeURIComponent(levelCode)}`,
+      `/api/students/export/all-classes-pdf?${params.toString()}`,
       {
         credentials: 'include',
         headers: {

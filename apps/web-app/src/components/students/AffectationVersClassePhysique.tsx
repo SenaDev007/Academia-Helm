@@ -101,10 +101,10 @@ export default function AffectationVersClassePhysique() {
       // Pattern inspiré de EnrollmentsContent.tsx (lignes 266-269).
       const [studentsData, classesRes, academicClassesRes] = await Promise.all([
         studentsService.getStudentsWithoutPhysicalClass(academicYear.id).catch(() => []),
-        fetch('/api/all-classes', { cache: 'no-store' })
+        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
-        fetch('/api/academic-classes?isActive=true', { cache: 'no-store' })
+        fetch(`/api/academic-classes?isActive=true&academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
           .catch(() => []),

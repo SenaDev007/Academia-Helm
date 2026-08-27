@@ -51,9 +51,10 @@ export class ClassListPdfService {
     tenantId: string,
     academicYearId: string,
     mode: ClassListPdfMode = 'physical',
+    statusFilter?: string,
   ): Promise<{ buffer: Buffer; className: string; schoolName: string; studentsCount: number }> {
     // 1. Récupérer les données selon le mode
-    const ctx = await this.resolveClassContext(classId, tenantId, academicYearId, mode);
+    const ctx = await this.resolveClassContext(classId, tenantId, academicYearId, mode, statusFilter);
 
     // 2. Récupérer le branding du tenant
     const branding = await this.getTenantBranding(tenantId);
@@ -127,6 +128,7 @@ export class ClassListPdfService {
     academicYearId: string,
     code?: string,
     schoolLevelId?: string,
+    statusFilter?: string,
   ): Promise<{ buffer: Buffer; filename: string }> {
     // 1. Résoudre le SchoolLevel
     const schoolLevel = await this.resolveSchoolLevelForAllClasses(tenantId, code, schoolLevelId);
@@ -174,7 +176,11 @@ export class ClassListPdfService {
           tenantId,
           academicClassId: ac.id,
           academicYearId,
-          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+          // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
+          //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (comportement par défaut).
+          ...(statusFilter
+            ? { status: statusFilter }
+            : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
         },
         include: {
           student: {
@@ -581,6 +587,7 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
     tenantId: string,
     academicYearId: string,
     mode: ClassListPdfMode,
+    statusFilter?: string,
   ): Promise<{
     className: string;
     classNameSubtitle?: string;
@@ -614,7 +621,12 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
           tenantId,
           academicClassId: classId,
           academicYearId,
-          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+          // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN' pour liste d'abandons),
+          //    filtrer uniquement ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED
+          //    (comportement par défaut : listes d'élèves actifs).
+          ...(statusFilter
+            ? { status: statusFilter }
+            : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
         },
         include: {
           student: {
@@ -675,7 +687,11 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
         tenantId,
         classId,
         academicYearId,
-        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
+        //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (comportement par défaut).
+        ...(statusFilter
+          ? { status: statusFilter }
+          : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
       },
       include: {
         student: {

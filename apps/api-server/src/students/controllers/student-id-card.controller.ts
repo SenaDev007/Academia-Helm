@@ -375,7 +375,7 @@ export class StudentIdCardController {
    */
   @Delete('all')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async deleteAllCards(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,
@@ -389,7 +389,7 @@ export class StudentIdCardController {
    */
   @Delete('by-class/:classId')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async deleteCardsByClass(
     @GetTenant() tenant: any,
     @Param('classId') classId: string,
@@ -404,7 +404,7 @@ export class StudentIdCardController {
    */
   @Delete('by-level/:levelId')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async deleteCardsByLevel(
     @GetTenant() tenant: any,
     @Param('levelId') levelId: string,

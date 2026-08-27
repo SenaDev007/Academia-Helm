@@ -1307,13 +1307,13 @@ export class StudentIdCardService {
     }
     .fields {
       flex: 1;
-      font-size: 7pt;
+      font-size: 6.5pt;
       color: #1a1a2e;
       min-width: 0;
     }
     .field-row {
       display: flex;
-      margin-bottom: 1.6mm;
+      margin-bottom: 0.5mm;
       line-height: 1.2;
     }
     .field-label {
@@ -1496,7 +1496,7 @@ export class StudentIdCardService {
       font-size: 5.5pt;
       text-align: right;
       line-height: 1.4;
-      padding-right: 2mm;
+      padding-right: 0.6mm;
       padding-top: 1mm;
       opacity: 0.95;
     }
@@ -1506,14 +1506,12 @@ export class StudentIdCardService {
     }
     .back-logo .logo-text-w {
       color: #fff;
-      font-weight: 700;
-      font-size: 5pt;
+      font-weight: 800;
+      font-size: 7pt;
       line-height: 1.15;
       overflow: hidden;
       text-overflow: ellipsis;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
+      white-space: nowrap;
     }
     .back-logo .tagline-text-w {
       color: #cfe6ff;
@@ -1583,7 +1581,8 @@ export class StudentIdCardService {
         <div class="fields">
           <div class="field-row"><span class="field-label">N° Carte</span><span class="field-colon">:</span><span class="field-value">${displayCardNumber}</span></div>
           ${showMatricule ? `<div class="field-row"><span class="field-label">Matricule</span><span class="field-colon">:</span><span class="field-value">${matricule}</span></div>` : ''}
-          <div class="field-row"><span class="field-label">Nom</span><span class="field-colon">:</span><span class="field-value bold">${student.lastName} ${student.firstName}</span></div>
+          <div class="field-row"><span class="field-label">Nom</span><span class="field-colon">:</span><span class="field-value bold">${student.lastName}</span></div>
+          <div class="field-row"><span class="field-label">Prénom</span><span class="field-colon">:</span><span class="field-value bold">${student.firstName}</span></div>
           ${showGuardian ? `<div class="field-row"><span class="field-label">Tuteur</span><span class="field-colon">:</span><span class="field-value">${guardianName}</span></div>` : ''}
           <div class="field-row"><span class="field-label">Classe</span><span class="field-colon">:</span><span class="field-value">${currentClass?.name || 'N/A'}</span></div>
           ${showEmergencyCall ? `<div class="field-row"><span class="field-label">Urgence</span><span class="field-colon">:</span><span class="field-value">${guardianPhone}</span></div>` : ''}
@@ -1599,7 +1598,7 @@ export class StudentIdCardService {
         </div>
         <div class="footer-sign">
           <div class="sign-line">Signature</div>
-          <div class="sign-label">Directeur</div>
+          <div class="sign-label">Directeur(trice)</div>
         </div>
       </div>
     </div>
@@ -1649,9 +1648,8 @@ export class StudentIdCardService {
       <!-- ═══ BACK-FOOTER (logo + dates à côté du QR code) ═══ -->
       <div class="back-footer">
         <div class="back-logo">
-          ${logoSrc
-            ? `<img src="${logoSrc}" alt="Logo" style="height:6mm;width:auto;object-fit:contain;" />`
-            : `<div class="logo-text-w">${schoolName}</div><div class="tagline-text-w">${schoolTagline}</div>`}
+          <div class="logo-text-w">${schoolAcronym}</div>
+          <div class="tagline-text-w">${schoolTagline}</div>
         </div>
         <div class="back-dates">
           Émise le : ${joinedDate}<br>

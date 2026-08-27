@@ -379,15 +379,18 @@ export function IdCardVisual({
               </div>
             )}
 
-            {/* fields */}
+            {/* fields — ⭐ Espacement réduit + Nom et Prénom sur 2 lignes */}
             <div className="flex-1 flex flex-col" style={{
-              fontSize: '2.375cqw',
+              fontSize: '2.2cqw',
               color: '#1a1a2e',
               minWidth: 0,
+              gap: 0,
             }}>
               <FieldRow label="N° Carte" value={card.cardNumber || '—'} />
               <FieldRow label="Matricule" value={s.matricule || s.studentCode || '—'} />
-              <FieldRow label="Nom" value={`${s.lastName} ${s.firstName}`.trim() || '—'} bold />
+              {/* ⭐ Nom sur 1 ligne + Prénom sur 2e ligne (si nom long) */}
+              <FieldRow label="Nom" value={s.lastName || '—'} bold />
+              <FieldRow label="Prénom" value={s.firstName || '—'} bold />
               {identity?.cardShowGuardian !== false && (
                 <FieldRow label="Tuteur" value={guardianName} />
               )}
@@ -438,7 +441,7 @@ export function IdCardVisual({
                 fontWeight: 700,
                 marginTop: '0.5cqw',
               }}>
-                Directeur
+                Directeur(trice)
               </div>
             </div>
           </div>
@@ -599,7 +602,7 @@ export function IdCardVisual({
           </div>
         </div>
 
-        {/* ═══ BACK-FOOTER (Claude AI style + DATES à côté du QR code) ═══ */}
+        {/* ═══ BACK-FOOTER (acronyme + dates + QR) ═══ */}
         <div
           className="absolute left-0 right-0 flex items-center justify-between"
           style={{
@@ -610,50 +613,40 @@ export function IdCardVisual({
             clipPath: 'polygon(0 30%, 100% 0, 100% 100%, 0 100%)',
           }}
         >
-          {/* back-logo (left) — ⭐ Affiche le NOM COMPLET de l'école (au lieu de l'acronyme) */}
+          {/* ⭐ Logo SUPPRIMÉ du back-footer — seul l'acronyme de l'école est conservé */}
           <div style={{ paddingTop: '1.5cqw', maxWidth: '40%' }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo"
-                style={{ height: '6cqw', width: 'auto', objectFit: 'contain' }} />
-            ) : (
-              <>
-                {/* ⭐ Nom complet école (taille réduite pour permettre
-                    "CSPEB-Eveil d'Afrique Education" de tenir sur 1-2 lignes) */}
-                <div style={{
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: '1.8cqw',
-                  lineHeight: 1.15,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}>
-                  {schoolName}
-                </div>
-                <div style={{
-                  color: '#cfe6ff',
-                  fontSize: '1.2cqw',
-                  letterSpacing: '0.15cqw',
-                  marginTop: '0.4cqw',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {tagline}
-                </div>
-              </>
-            )}
+            {/* ⭐ Acronyme école (taille réduite pour lisibilité sur fond navy) */}
+            <div style={{
+              color: '#fff',
+              fontWeight: 800,
+              fontSize: '2.5cqw',
+              lineHeight: 1.15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {logoText}
+            </div>
+            <div style={{
+              color: '#cfe6ff',
+              fontSize: '1.2cqw',
+              letterSpacing: '0.15cqw',
+              marginTop: '0.4cqw',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {tagline}
+            </div>
           </div>
 
-          {/* ⭐ DATES (centre-droite) — déplacées du back-header vers ici, à côté du QR code */}
+          {/* ⭐ DATES — rapprochées du QR code (paddingRight réduit) */}
           <div style={{
             color: '#fff',
             fontSize: '1.4cqw',
             textAlign: 'right',
             lineHeight: 1.4,
-            paddingRight: '2cqw',
+            paddingRight: '0.6cqw',
             paddingTop: '1cqw',
             opacity: 0.95,
           }}>
@@ -684,7 +677,7 @@ export function IdCardVisual({
 // ─── Sous-composant : ligne de champ (label : value) ──────────────────────
 function FieldRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex" style={{ marginBottom: '1.5cqw' }}>
+    <div className="flex" style={{ marginBottom: '0.5cqw' }}>
       <span style={{
         fontWeight: 700,
         width: '19.5cqw',

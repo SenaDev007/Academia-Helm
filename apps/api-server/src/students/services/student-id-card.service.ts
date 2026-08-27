@@ -991,6 +991,13 @@ export class StudentIdCardService {
       ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
       : 'Ministère des Enseignements Maternel et Primaire';
 
+    // ── Heures de sortie maternelle (affichées dans le back-header du verso) ──
+    const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
+    const maternelleSingleExit = identityProfile?.maternelleSingleExit ?? false;
+    const maternellePickupMorning = identityProfile?.maternellePickupMorning || '12:00';
+    const maternellePickupAfternoon = identityProfile?.maternellePickupAfternoon || '16:30';
+    const maternelleSingleExitTime = identityProfile?.maternelleSingleExitTime || '15:30';
+
     // ── Design tokens (issus de TenantIdentityProfile ou valeurs par défaut) ──
     // Couleurs par défaut : bleu marine institutionnel Academia Helm.
     const NAVY = identityProfile?.cardPrimaryColor || '#0D1F6E';
@@ -1176,11 +1183,11 @@ export class StudentIdCardService {
     /* République + drapeau Bénin + ministère + nom école + slogan + logo */
     .card-header {
       flex-shrink: 0;
-      height: 24%;
+      height: 28%;
       background: linear-gradient(135deg, ${NAVY} 0%, ${NAVY_LIGHT} 100%);
       color: #fff;
       padding: 0 1.6mm;
-      gap: 0.6mm;
+      gap: 0.8mm;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1205,40 +1212,43 @@ export class StudentIdCardService {
       min-width: 0;
     }
     .header-republic {
-      font-size: 5pt;
-      font-weight: 700;
-      line-height: 1.1;
+      font-size: 10pt;
+      font-weight: 800;
+      line-height: 1.05;
       text-transform: uppercase;
-      letter-spacing: 0.4pt;
+      letter-spacing: 0.6pt;
+      margin-bottom: 2pt;
     }
     .header-ministry {
-      font-size: 3pt;
-      line-height: 1.1;
-      opacity: 0.85;
+      font-size: 5pt;
+      line-height: 1.15;
+      opacity: 0.9;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      margin-bottom: 2pt;
     }
     .header-school-name {
-      font-size: 4pt;
+      font-size: 7pt;
       font-weight: 700;
       line-height: 1.1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      margin-bottom: 1.5pt;
     }
     .header-slogan {
-      font-size: 3pt;
+      font-size: 4.5pt;
       font-style: italic;
       line-height: 1.1;
-      opacity: 0.75;
+      opacity: 0.8;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .header-logo {
-      width: 6.5mm;
-      height: 6.5mm;
+      width: 8mm;
+      height: 8mm;
       flex-shrink: 0;
       background: #fff;
       border-radius: 0.8mm;
@@ -1378,12 +1388,15 @@ export class StudentIdCardService {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .dates {
-      font-size: 4pt;
+    .dates, .maternelle-hours {
+      font-size: 6pt;
       text-align: right;
-      line-height: 1.6;
+      line-height: 1.4;
       flex-shrink: 0;
       padding-left: 2mm;
+    }
+    .maternelle-hours {
+      font-weight: 700;
     }
 
     /* ===== VERSO — Back body (Claude AI style) ===== */
@@ -1391,6 +1404,30 @@ export class StudentIdCardService {
       padding: 3mm 4.5mm 0 4.5mm;
       flex: 1;
       min-height: 0;
+      position: relative;
+    }
+    .back-body-watermark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 30mm;
+      height: 30mm;
+      opacity: 0.08;
+      pointer-events: none;
+      z-index: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .back-body-watermark img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .back-body-content {
+      position: relative;
+      z-index: 1;
     }
     .term-item {
       display: flex;
@@ -1442,6 +1479,15 @@ export class StudentIdCardService {
       justify-content: space-between;
       padding: 0 4mm;
       clip-path: polygon(0 30%, 100% 0, 100% 100%, 0 100%);
+    }
+    .back-dates {
+      color: #fff;
+      font-size: 5.5pt;
+      text-align: right;
+      line-height: 1.4;
+      padding-right: 2mm;
+      padding-top: 1mm;
+      opacity: 0.95;
     }
     .back-logo {
       padding-top: 1.5mm;
@@ -1544,35 +1590,49 @@ export class StudentIdCardService {
   <div class="card-wrap">
     <div class="clip"></div>
     <div class="card">
-      <!-- ═══ BACK-HEADER (bande continue, pas de clip-path, dates visibles) ═══ -->
+      <!-- ═══ BACK-HEADER (bande continue) ═══ -->
+      <!-- Maternelle : "CONDITIONS D'UTILISATION" + heures de sortie (matin/après-midi) -->
+      <!-- Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) -->
       <div class="back-header">
         <div class="terms-title">CONDITIONS D'UTILISATION</div>
-        <div class="dates">
-          Émise le : ${joinedDate}<br>
-          ${expireDate && expireDate !== 'N/A' ? 'Expire le : ' + expireDate : ''}
-        </div>
+        ${isMaternelle ? `
+        <div class="maternelle-hours">
+          ${maternelleSingleExit
+            ? `Sortie unique : ${maternelleSingleExitTime}`
+            : `Sortie Matin : ${maternellePickupMorning}<br>Sortie Aprèm : ${maternellePickupAfternoon}`}
+        </div>` : ''}
       </div>
 
-      <!-- ═══ BACK-BODY (Claude AI style : conditions + contact) ═══ -->
+      <!-- ═══ BACK-BODY (conditions + contact + logo filigrane) ═══ -->
       <div class="back-body">
-        <div class="term-item">
-          <span class="bullet">■</span>
-          <span>${conditionsText}</span>
-        </div>
-        <div class="contact-block">
-          ${schoolPhone ? `<div class="contact-row"><span class="contact-label">Tél</span><span class="contact-colon">:</span><span class="contact-value">${schoolPhone}</span></div>` : ''}
-          ${schoolEmail ? `<div class="contact-row"><span class="contact-label">Email</span><span class="contact-colon">:</span><span class="contact-value">${schoolEmail}</span></div>` : ''}
-          ${schoolWebsite ? `<div class="contact-row"><span class="contact-label">Web</span><span class="contact-colon">:</span><span class="contact-value">${schoolWebsite}</span></div>` : ''}
-          ${showSchoolAddress && schoolAddress ? `<div class="contact-row"><span class="contact-label">Adresse</span><span class="contact-colon">:</span><span class="contact-value">${schoolAddress}</span></div>` : ''}
+        ${logoSrc ? `
+        <div class="back-body-watermark">
+          <img src="${logoSrc}" alt="" />
+        </div>` : ''}
+        <div class="back-body-content">
+          <div class="term-item">
+            <span class="bullet">■</span>
+            <span>${conditionsText}</span>
+          </div>
+          <div class="contact-block">
+            ${schoolPhone ? `<div class="contact-row"><span class="contact-label">Tél</span><span class="contact-colon">:</span><span class="contact-value">${schoolPhone}</span></div>` : ''}
+            ${schoolEmail ? `<div class="contact-row"><span class="contact-label">Email</span><span class="contact-colon">:</span><span class="contact-value">${schoolEmail}</span></div>` : ''}
+            ${schoolWebsite ? `<div class="contact-row"><span class="contact-label">Web</span><span class="contact-colon">:</span><span class="contact-value">${schoolWebsite}</span></div>` : ''}
+            ${showSchoolAddress && schoolAddress ? `<div class="contact-row"><span class="contact-label">Adresse</span><span class="contact-colon">:</span><span class="contact-value">${schoolAddress}</span></div>` : ''}
+          </div>
         </div>
       </div>
 
-      <!-- ═══ BACK-FOOTER (Claude AI style : gradient + clip-path + logo + QR) ═══ -->
+      <!-- ═══ BACK-FOOTER (logo + dates à côté du QR code) ═══ -->
       <div class="back-footer">
         <div class="back-logo">
           ${logoSrc
             ? `<img src="${logoSrc}" alt="Logo" style="height:6mm;width:auto;object-fit:contain;" />`
             : `<div class="logo-text-w">${schoolAcronym}</div><div class="tagline-text-w">${schoolTagline}</div>`}
+        </div>
+        <div class="back-dates">
+          Émise le : ${joinedDate}<br>
+          ${expireDate && expireDate !== 'N/A' ? 'Expire le : ' + expireDate : ''}
         </div>
         ${showQRCode && qrCodeDataUrl ? `<div class="qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
       </div>

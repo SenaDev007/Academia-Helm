@@ -172,6 +172,7 @@ export function IdCardVisual({
 
   // ─── Ministère adapté au niveau scolaire (Bénin) ─────────────────────────
   const levelUpper = (card.levelCode || '').toUpperCase();
+  const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
   const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
   const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
   const ministry = isSuperieur
@@ -179,6 +180,15 @@ export function IdCardVisual({
     : isSecondaire
     ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
     : 'Ministère des Enseignements Maternel et Primaire';
+
+  // ─── Heures de sortie maternelle (configurées dans TenantIdentityProfile) ──
+  // Affichées dans le back-header du verso POUR LA MATERNELLE UNIQUEMENT,
+  // à la place des dates d'émission/expiration (qui sont déplacées vers le
+  // back-footer, à côté du QR code).
+  const maternelleSingleExit = identity?.maternelleSingleExit ?? false;
+  const maternellePickupMorning = identity?.maternellePickupMorning || '12:00';
+  const maternellePickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
+  const maternelleSingleExitTime = identity?.maternelleSingleExitTime || '15:30';
 
   // ─── Composant : Drapeau du Bénin (vert à gauche, jaune/rouge à droite) ──
   const BeninFlag = ({ sizeCqw = 3.5 }: { sizeCqw?: number }) => (
@@ -265,53 +275,61 @@ export function IdCardVisual({
         >
           {/* ═══ HEADER BLEU (style ancien — Republic + flag + ministry + school + slogan + logo) ═══ */}
           {/* BANDE CONTINUE : pas de clip-path, pas d'accent-bar séparée */}
+          {/* ⭐ Hauteur 28% (au lieu de 24%) + tailles de police agrandies + interlignes */}
           <div
             className="shrink-0 flex items-center text-white"
             style={{
-              height: '24%',
+              height: '28%',
               background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
               padding: '0 1.6cqw',
-              gap: '0.6cqw',
+              gap: '0.8cqw',
             }}
           >
             {/* Drapeau du Bénin à gauche */}
-            <BeninFlag sizeCqw={3.5} />
+            <BeninFlag sizeCqw={4.5} />
             {/* Centre : République + Ministère + École + Slogan */}
             <div className="flex-1 text-center min-w-0" style={{ padding: '0 0.5cqw' }}>
+              {/* République — taille correspondant à la hauteur du logo */}
               <div style={{
-                fontSize: '1.25cqw',
-                fontWeight: 700,
-                lineHeight: 1.1,
+                fontSize: '2.5cqw',
+                fontWeight: 800,
+                lineHeight: 1.05,
                 textTransform: 'uppercase',
-                letterSpacing: '0.1cqw',
+                letterSpacing: '0.15cqw',
+                marginBottom: '0.5cqw',
               }}>
                 RÉPUBLIQUE DU BÉNIN
               </div>
+              {/* Ministère — agrandi pour lisibilité */}
               <div style={{
-                fontSize: '0.75cqw',
-                lineHeight: 1.1,
-                opacity: 0.85,
+                fontSize: '1.25cqw',
+                lineHeight: 1.15,
+                opacity: 0.9,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                marginBottom: '0.5cqw',
               }}>
                 {ministry}
               </div>
+              {/* Nom école — taille intermédiaire */}
               <div style={{
-                fontSize: '1cqw',
+                fontSize: '1.75cqw',
                 fontWeight: 700,
                 lineHeight: 1.1,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                marginBottom: '0.4cqw',
               }}>
                 {schoolName}
               </div>
+              {/* Devise/Slogan — agrandi */}
               <div style={{
-                fontSize: '0.75cqw',
+                fontSize: '1.15cqw',
                 fontStyle: 'italic',
                 lineHeight: 1.1,
-                opacity: 0.75,
+                opacity: 0.8,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -319,8 +337,8 @@ export function IdCardVisual({
                 {slogan}
               </div>
             </div>
-            {/* Logo école à droite */}
-            <SchoolLogo sizeCqw={6.5} />
+            {/* Logo école à droite — agrandi pour matcher la hauteur République */}
+            <SchoolLogo sizeCqw={8} />
           </div>
 
           {/* ═══ CORPS (Claude AI style : photo + 6 champs) ═══ */}
@@ -457,7 +475,9 @@ export function IdCardVisual({
           fontFamily: 'Inter, Poppins, Arial, sans-serif',
         }}
       >
-        {/* ═══ BACK-HEADER (BANDE CONTINUE — pas de clip-path, dates clairement visibles) ═══ */}
+        {/* ═══ BACK-HEADER (BANDE CONTINUE) ═══ */}
+        {/* ⭐ Maternelle : "CONDITIONS D'UTILISATION" + heures de sortie (matin/après-midi) */}
+        {/* ⭐ Autres niveaux : "CONDITIONS D'UTILISATION" uniquement (dates déplacées au footer) */}
         <div
           className="shrink-0 flex items-center justify-between text-white"
           style={{
@@ -468,8 +488,8 @@ export function IdCardVisual({
         >
           <div style={{
             fontWeight: 800,
-            fontSize: '1.25cqw',
-            letterSpacing: '0.1cqw',
+            fontSize: '2cqw',
+            letterSpacing: '0.15cqw',
             lineHeight: 1.1,
             flex: 1,
             overflow: 'hidden',
@@ -478,38 +498,89 @@ export function IdCardVisual({
           }}>
             CONDITIONS D'UTILISATION
           </div>
-          <div style={{
-            fontSize: '1cqw',
-            textAlign: 'right',
-            lineHeight: 1.6,
-            flexShrink: 0,
-            paddingLeft: '2cqw',
-          }}>
-            <div>Émise le : {formatDate(card.generatedAt)}</div>
-            {card.validUntil && <div>Expire le : {formatDate(card.validUntil)}</div>}
-          </div>
+          {/* Maternelle uniquement : heures de sortie maternelle (à la place des dates) */}
+          {isMaternelle && (
+            <div style={{
+              fontSize: '1.5cqw',
+              textAlign: 'right',
+              lineHeight: 1.4,
+              flexShrink: 0,
+              paddingLeft: '2cqw',
+            }}>
+              {maternelleSingleExit ? (
+                <div style={{ fontWeight: 700 }}>
+                  Sortie unique : {maternelleSingleExitTime}
+                </div>
+              ) : (
+                <>
+                  <div>Sortie Matin : {maternellePickupMorning}</div>
+                  <div>Sortie Aprèm : {maternellePickupAfternoon}</div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* ═══ BACK-BODY (Claude AI style : conditions + contact) ═══ */}
-        <div style={{
-          padding: '3cqw 4.5cqw 0 4.5cqw',
-          flex: 1,
-          minHeight: 0,
-        }}>
+        {/* ═══ BACK-BODY (Claude AI style : conditions + contact + logo filigrane) ═══ */}
+        <div
+          className="relative"
+          style={{
+            padding: '3cqw 4.5cqw 0 4.5cqw',
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          {/* ⭐ LOGO FILIGRANE — semi-transparent au centre de la section blanche */}
+          {logoUrl && (
+            <div
+              aria-hidden
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '35cqw',
+                height: '35cqw',
+                opacity: 0.08,
+                pointerEvents: 'none',
+                zIndex: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <img
+                src={logoUrl}
+                alt=""
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
+          )}
+
           {/* term-item (puce ■ + texte) */}
-          <div className="flex" style={{
+          <div className="flex relative" style={{
             gap: '2cqw',
             fontSize: '2cqw',
             color: '#444',
             lineHeight: 1.5,
             marginBottom: '2cqw',
+            zIndex: 1,
           }}>
             <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
             <span>{conditionsText}</span>
           </div>
 
           {/* contact-block */}
-          <div style={{ marginTop: '2.5cqw', fontSize: '2.25cqw', color: '#1a1a2e' }}>
+          <div className="relative" style={{
+            marginTop: '2.5cqw',
+            fontSize: '2.25cqw',
+            color: '#1a1a2e',
+            zIndex: 1,
+          }}>
             {schoolPhone && <ContactRow label="Tél" value={schoolPhone} />}
             {schoolEmail && <ContactRow label="Email" value={schoolEmail} />}
             {schoolWebsite && <ContactRow label="Web" value={schoolWebsite} />}
@@ -519,7 +590,7 @@ export function IdCardVisual({
           </div>
         </div>
 
-        {/* ═══ BACK-FOOTER (Claude AI style : gradient + clip-path + logo + QR) ═══ */}
+        {/* ═══ BACK-FOOTER (Claude AI style + DATES à côté du QR code) ═══ */}
         <div
           className="absolute left-0 right-0 flex items-center justify-between"
           style={{
@@ -555,6 +626,20 @@ export function IdCardVisual({
                 </div>
               </>
             )}
+          </div>
+
+          {/* ⭐ DATES (centre-droite) — déplacées du back-header vers ici, à côté du QR code */}
+          <div style={{
+            color: '#fff',
+            fontSize: '1.4cqw',
+            textAlign: 'right',
+            lineHeight: 1.4,
+            paddingRight: '2cqw',
+            paddingTop: '1cqw',
+            opacity: 0.95,
+          }}>
+            <div>Émise le : {formatDate(card.generatedAt)}</div>
+            {card.validUntil && <div>Expire le : {formatDate(card.validUntil)}</div>}
           </div>
 
           {/* QR code (right) */}

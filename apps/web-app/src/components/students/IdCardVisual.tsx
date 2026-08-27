@@ -379,14 +379,13 @@ export function IdCardVisual({
               </div>
             )}
 
-            {/* fields — ⭐ Espacement réduit + Nom et Prénom sur 2 lignes */}
+            {/* fields — ⭐ N° Carte supprimé du recto (déplacé au verso) + espacement réduit */}
             <div className="flex-1 flex flex-col" style={{
               fontSize: '2.2cqw',
               color: '#1a1a2e',
               minWidth: 0,
               gap: 0,
             }}>
-              <FieldRow label="N° Carte" value={card.cardNumber || '—'} />
               <FieldRow label="Matricule" value={s.matricule || s.studentCode || '—'} />
               {/* ⭐ Nom sur 1 ligne + Prénom sur 2e ligne (si nom long) */}
               <FieldRow label="Nom" value={s.lastName || '—'} bold />
@@ -517,15 +516,30 @@ export function IdCardVisual({
           )}
         </div>
 
-        {/* ═══ BACK-BODY (Claude AI style : conditions + contact + logo filigrane) ═══ */}
+        {/* ═══ BACK-BODY (Claude AI style : N° Carte + conditions + contact + logo filigrane) ═══ */}
         <div
           className="relative"
           style={{
-            padding: '3cqw 4.5cqw 0 4.5cqw',
+            padding: '1.5cqw 4.5cqw 0 4.5cqw',
             flex: 1,
             minHeight: 0,
           }}
         >
+          {/* ⭐ N° CARTE — déplacé du recto vers le verso, taille réduite,
+              affiché au-dessus de 'Conditions d'utilisation'. */}
+          <div
+            className="relative"
+            style={{
+              fontSize: '1.4cqw',
+              fontWeight: 700,
+              color: primaryColor,
+              marginBottom: '1.5cqw',
+              textAlign: 'right',
+              zIndex: 1,
+            }}
+          >
+            N° Carte : {card.cardNumber || '—'}
+          </div>
           {/* ⭐ LOGO FILIGRANE — semi-transparent au centre de la section blanche */}
           {logoUrl && (
             <div
@@ -602,9 +616,13 @@ export function IdCardVisual({
           </div>
         </div>
 
-        {/* ═══ BACK-FOOTER (acronyme + dates + QR) ═══ */}
+        {/* ═══ BACK-FOOTER (dates + QR) ═══ */}
+        {/* ⭐ Acronyme école + tagline SUPPRIMÉS du back-footer (déjà affichés
+            dans le header du recto : nom école + slogan). Le back-footer ne
+            contient plus que les dates (émise/expire) à gauche et le QR code
+            à droite. */}
         <div
-          className="absolute left-0 right-0 flex items-center justify-between"
+          className="absolute left-0 right-0 flex items-center justify-end gap-4"
           style={{
             bottom: 0,
             height: '14.5cqw',
@@ -613,34 +631,7 @@ export function IdCardVisual({
             clipPath: 'polygon(0 30%, 100% 0, 100% 100%, 0 100%)',
           }}
         >
-          {/* ⭐ Logo SUPPRIMÉ du back-footer — seul l'acronyme de l'école est conservé */}
-          <div style={{ paddingTop: '1.5cqw', maxWidth: '40%' }}>
-            {/* ⭐ Acronyme école (taille réduite pour lisibilité sur fond navy) */}
-            <div style={{
-              color: '#fff',
-              fontWeight: 800,
-              fontSize: '2.5cqw',
-              lineHeight: 1.15,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              {logoText}
-            </div>
-            <div style={{
-              color: '#cfe6ff',
-              fontSize: '1.2cqw',
-              letterSpacing: '0.15cqw',
-              marginTop: '0.4cqw',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              {tagline}
-            </div>
-          </div>
-
-          {/* ⭐ DATES — rapprochées du QR code (paddingRight réduit) */}
+          {/* ⭐ DATES — à droite, à côté du QR code */}
           <div style={{
             color: '#fff',
             fontSize: '1.4cqw',

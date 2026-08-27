@@ -1440,6 +1440,13 @@ export class StudentIdCardService {
       position: relative;
       z-index: 1;
     }
+    .card-number-verso {
+      font-size: 5.5pt;
+      font-weight: 700;
+      color: ${NAVY};
+      margin-bottom: 3pt;
+      text-align: right;
+    }
     .term-item {
       display: flex;
       gap: 2mm;
@@ -1579,7 +1586,6 @@ export class StudentIdCardService {
       <div class="front-body">
         ${showPhoto ? `<div class="photo-box">${photoHtml}</div>` : ''}
         <div class="fields">
-          <div class="field-row"><span class="field-label">N° Carte</span><span class="field-colon">:</span><span class="field-value">${displayCardNumber}</span></div>
           ${showMatricule ? `<div class="field-row"><span class="field-label">Matricule</span><span class="field-colon">:</span><span class="field-value">${matricule}</span></div>` : ''}
           <div class="field-row"><span class="field-label">Nom</span><span class="field-colon">:</span><span class="field-value bold">${student.lastName}</span></div>
           <div class="field-row"><span class="field-label">Prénom</span><span class="field-colon">:</span><span class="field-value bold">${student.firstName}</span></div>
@@ -1627,6 +1633,7 @@ export class StudentIdCardService {
           <img src="${logoSrc}" alt="" />
         </div>` : ''}
         <div class="back-body-content">
+          <div class="card-number-verso">N° Carte : ${displayCardNumber}</div>
           <div class="term-item">
             <span class="bullet">■</span>
             <span>${conditionsText}</span>
@@ -1645,13 +1652,9 @@ export class StudentIdCardService {
         </div>
       </div>
 
-      <!-- ═══ BACK-FOOTER (logo + dates à côté du QR code) ═══ -->
-      <div class="back-footer">
-        <div class="back-logo">
-          <div class="logo-text-w">${schoolAcronym}</div>
-          <div class="tagline-text-w">${schoolTagline}</div>
-        </div>
-        <div class="back-dates">
+      <!-- ═══ BACK-FOOTER (dates + QR) — acronyme école + tagline SUPPRIMÉS ═══ -->
+      <div class="back-footer" style="justify-content: flex-end;">
+        <div class="back-dates" style="padding-right: 2mm;">
           Émise le : ${joinedDate}<br>
           ${expireDate && expireDate !== 'N/A' ? 'Expire le : ' + expireDate : ''}
         </div>

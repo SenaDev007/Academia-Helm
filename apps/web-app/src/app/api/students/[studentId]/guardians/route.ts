@@ -11,6 +11,11 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
+// ⭐ NO CACHE — guardians (phone, email) sont fréquemment modifiés via
+//    l'onglet Inscriptions (PUT /students/:id/guardians/:guardianId).
+//    Sans 'no-store', Vercel CDN sert une réponse stale jusqu'à 60s + 5min.
+const NO_CACHE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string }> }
@@ -20,10 +25,10 @@ export async function GET(
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(
       normalizeApiUrl(`${API_URL}/students/${studentId}/guardians`),
-      { headers }
+      { headers, cache: 'no-store' }
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Error fetching guardians:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -43,7 +48,7 @@ export async function POST(
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Error creating guardian:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

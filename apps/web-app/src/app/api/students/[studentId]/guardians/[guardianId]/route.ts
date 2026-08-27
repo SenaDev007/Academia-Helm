@@ -4,6 +4,10 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_URL = getApiBaseUrlForRoutes();
 
+// ⭐ NO CACHE — guardian (phone, email) est modifié via PUT ; sans 'no-store',
+//    Vercel CDN sert une réponse stale jusqu'à 60s + 5min stale-while-revalidate.
+const NO_CACHE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' };
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ studentId: string; guardianId: string }> }
@@ -17,7 +21,7 @@ export async function PUT(
       { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Error updating guardian:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -37,7 +41,7 @@ export async function DELETE(
     );
     if (response.status === 204) return new NextResponse(null, { status: 204 });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {
     console.error('Error deleting guardian:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

@@ -275,7 +275,13 @@ export default function EnrollmentsContent() {
         // de la "classe officielle" dans la table inscriptions.
         // On garde aussi /api/all-classes en parallèle pour le modal "Changer de classe"
         // qui a besoin des classes physiques (sections CI/A, CE1-B…).
-        fetch(`/api/academic-classes?isActive=true`, { cache: 'no-store' })
+        // ⭐ FIX : passer academicYearId=academicYear.id pour récupérer les
+        //    AcademicClasses de l'année sélectionnée (pas l'année courante par
+        //    défaut). Sans ce paramètre, l'API renvoie les AcademicClasses de
+        //    l'année en cours (2026-2027), qui ne correspondent PAS aux
+        //    academicClassId des inscriptions 2025-2026 → tous les élèves
+        //    apparaissent comme "orphelins" dans la section non-affectés.
+        fetch(`/api/academic-classes?isActive=true&academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
           .catch(() => []),

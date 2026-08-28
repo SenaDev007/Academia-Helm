@@ -25,7 +25,6 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
-import { TeacherLevelAssignment } from './TeacherLevelAssignment';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import Link from 'next/link';
@@ -50,7 +49,7 @@ interface HistoryEntry {
 
 export function CollaboratorsWorkspace() {
   const { tenant } = useModuleContext();
-  const [activeTab, setActiveTab] = useState<'staff' | 'contracts' | 'assignments' | 'history' | 'org_chart'>('staff');
+  const [activeTab, setActiveTab] = useState<'staff' | 'contracts' | 'history' | 'org_chart'>('staff');
   const [staffList, setStaffList] = useState<any[]>([]);
   const [contractsList, setContractsList] = useState<any[]>([]);
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
@@ -101,7 +100,6 @@ export function CollaboratorsWorkspace() {
   const SUB_TABS = [
     { id: 'staff', label: 'Personnel', icon: Users },
     { id: 'contracts', label: 'Contrats', icon: FileText },
-    { id: 'assignments', label: 'Affectations', icon: Briefcase },
     { id: 'history', label: 'Historique', icon: History },
     { id: 'org_chart', label: 'Organigramme', icon: Network },
   ] as const;
@@ -185,14 +183,6 @@ export function CollaboratorsWorkspace() {
             >
               <Icon className="h-4 w-4" />
               {tab.label}
-              {tab.id === 'assignments' && (
-                <span className={cn(
-                  'text-[10px] px-1.5 py-0.5 rounded-md font-bold',
-                  isActive ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
-                )}>
-                  Niveaux
-                </span>
-              )}
             </button>
           );
         })}
@@ -208,12 +198,6 @@ export function CollaboratorsWorkspace() {
         {activeTab === 'contracts' && (
           <motion.div key="contracts" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ContractsWorkspace />
-          </motion.div>
-        )}
-
-        {activeTab === 'assignments' && (
-          <motion.div key="assignments" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <TeacherLevelAssignment />
           </motion.div>
         )}
 

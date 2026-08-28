@@ -171,15 +171,6 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                   ],
                             ),
                 ModuleDataTab(
-                  endpoint: '/hr/contract-document-config',
-                  icon: Icons.settings,
-                  showCreateButton: false,
-                  rowActions: const [
-                    RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
-                    RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
-                  ],
-                            ),
-                ModuleDataTab(
                   endpoint: '/hr/contracts',
                   titleField: 'staffName',
                   tableColumns: const ['type', 'startDate', 'endDate', 'status'],

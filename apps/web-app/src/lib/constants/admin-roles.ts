@@ -8,7 +8,7 @@
  *
  * Source unique de vérité pour tous les rôles administratifs d'une école.
  * Utilisé par :
- *   - AdministrativeStaffWorkspace.tsx (affectations par niveau)
+ *   - UnifiedAdministrationWorkspace.tsx (affectations par niveau — point d'entrée centralisé)
  *   - StampDesigner.tsx (génération de signatures/cachets)
  *   - Tout composant frontend qui a besoin de filtrer les postes admin par niveau
  *

@@ -18,10 +18,8 @@ import {
   Calendar,
   DollarSign,
   CreditCard,
-  Shield,
   BarChart3,
   Settings,
-  FileEdit,
   Landmark,
   UserPlus,
 } from 'lucide-react';
@@ -63,12 +61,6 @@ export const HR_SUBMODULE_TABS = [
     label: 'Personnel',
     path: '/app/hr/staff',
     icon: UserCircle,
-  },
-  {
-    id: 'contract-config',
-    label: 'Config. Contrats',
-    path: '/app/hr/contracts/document-config',
-    icon: FileEdit,
   },
   {
     id: 'contracts',

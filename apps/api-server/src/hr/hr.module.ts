@@ -50,8 +50,6 @@ import { OrionModule } from '../orion/orion.module';
 import { CommunicationModule } from '../communication/communication.module';
 import { StaffCredentialService } from './services/staff-credential.service';
 import { RecruitmentDailySummaryService } from './services/recruitment-daily-summary.service';
-import { ContractDocumentConfigService } from './services/contract-document-config.service';
-import { ContractDocumentConfigController } from './contract-document-config.controller';
 import { TestQuestionnaireService } from './services/test-questionnaire.service';
 import { TestQuestionnaireController, TestPublicController } from './test-questionnaire.controller';
 import { DocumentUploadService } from './services/document-upload.service';
@@ -93,7 +91,6 @@ import { BillingModule } from '../billing/billing.module';
     OrganigramPrismaService,
     StaffCredentialService,
     RecruitmentDailySummaryService,
-    ContractDocumentConfigService,
     TestQuestionnaireService,
     DocumentUploadService,
     StaffCardService,
@@ -115,7 +112,6 @@ import { BillingModule } from '../billing/billing.module';
     SchedulesPrismaController,
     IaPrismaController,
     OrganigramPrismaController,
-    ContractDocumentConfigController,
     TestQuestionnaireController,
     TestPublicController,
     DocumentUploadController,
@@ -150,7 +146,6 @@ import { BillingModule } from '../billing/billing.module';
     OrganigramPrismaService,
     StaffCredentialService,
     RecruitmentDailySummaryService,
-    ContractDocumentConfigService,
     TestQuestionnaireService,
     DocumentUploadService,
     StaffCardService,

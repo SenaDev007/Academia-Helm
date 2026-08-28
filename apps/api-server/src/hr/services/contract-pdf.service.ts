@@ -16,7 +16,6 @@ import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.servi
 import { StorageService } from '../../common/services/storage.service';
 import { StaffCredentialService } from './staff-credential.service';
 import { RecruitmentNotificationService } from '../recruitment-notification.service';
-import { ContractDocumentConfigService } from './contract-document-config.service';
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -63,7 +62,6 @@ export class ContractPdfService {
     private readonly credentialService: StaffCredentialService,
     @Inject(forwardRef(() => RecruitmentNotificationService))
     private readonly notificationService: RecruitmentNotificationService,
-    private readonly documentConfigService: ContractDocumentConfigService,
   ) {
     this.loadDependencies();
   }
@@ -249,9 +247,8 @@ export class ContractPdfService {
     if (templateSource.trim().startsWith('[')) {
       try {
         const articles = JSON.parse(templateSource);
-        // Récupérer la config visuelle du tenant pour personnaliser le template
-        const docConfig = await this.documentConfigService.getConfig(tenantId);
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, docConfig);
+        // La configuration visuelle des contrats a été supprimée — utilisation des valeurs par défaut.
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
       } catch (err) {
         this.logger.error('Failed to parse articles JSON template, falling back to legacy HTML template', err);
         templateSource = this.getDefaultTemplate(contract.contractType);
@@ -524,8 +521,8 @@ export class ContractPdfService {
     if (templateSource.trim().startsWith('[')) {
       try {
         const articles = JSON.parse(templateSource);
-        const docConfig = await this.documentConfigService.getConfig(tenantId);
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, docConfig);
+        // La configuration visuelle des contrats a été supprimée — utilisation des valeurs par défaut.
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
       } catch {
         templateSource = this.getDefaultTemplate(contract.contractType);
       }

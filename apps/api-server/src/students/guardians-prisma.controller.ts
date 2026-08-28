@@ -20,6 +20,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
 import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto } from './dto';
 
 /**
@@ -35,6 +36,11 @@ const MANAGEMENT_ROLES = [
 
 @Controller('students/:studentId/guardians')
 @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@SkipAcademicYear() // ⭐ Les guardians ne sont pas liés à une année scolaire.
+//    Sans ce décorateur, l'AcademicYearEnforcementInterceptor injecte
+//    academicYearId dans request.body → le ValidationPipe rejette avec
+//    "property academicYearId should not exist" (CreateGuardianDto
+//    n'a pas de champ academicYearId, et forbidNonWhitelisted=true).
 export class GuardiansPrismaController {
   constructor(private readonly guardiansService: GuardiansPrismaService) {}
 

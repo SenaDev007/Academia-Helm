@@ -26,6 +26,7 @@ import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
 import { IMAGE_ONLY_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
 import {
   CreateStudentPrismaDto,
@@ -39,6 +40,11 @@ import {
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, TenantGuard)
+@SkipAcademicYear() // ⭐ Les routes CRUD de StudentsPrismaController gèrent
+//    elles-mêmes les champs (dateOfBirth, gender, etc.) sans avoir besoin
+//    de l'AcademicYearEnforcementInterceptor qui injecte academicYearId
+//    dans le body. Cet intercepteur casse le PUT /students/:id en
+//    injectant academicYearId qui peut changer l'année de l'élève.
 export class StudentsPrismaController {
   constructor(private readonly studentsService: StudentsPrismaService) {}
 

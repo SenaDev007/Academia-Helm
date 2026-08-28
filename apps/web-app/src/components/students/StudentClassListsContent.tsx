@@ -33,6 +33,8 @@ import ImportElevesModal from './ImportElevesModal';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { useAllClasses, useEnrollments } from '@/lib/query/student-queries';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Enrollment {
   id: string;
@@ -150,9 +152,23 @@ export default function StudentClassListsContent() {
   // ⭐ Import en masse (même modal que l'onglet Inscriptions)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
+  // ⭐ React Query — cache partagé, pas de re-fetch au remontage
+  const allClassesQuery = useAllClasses(academicYear?.id);
+  const enrollmentsQuery = useEnrollments(academicYear?.id);
+  const queryClient = useQueryClient();
+
+  // Synchronisation React Query → state local
   useEffect(() => {
-    if (academicYear) loadData();
-  }, [academicYear, schoolLevel]);
+    setClasses(allClassesQuery.data || []);
+    setEnrollments(enrollmentsQuery.data || []);
+    setIsLoading(allClassesQuery.isLoading || enrollmentsQuery.isLoading);
+  }, [allClassesQuery.data, enrollmentsQuery.data, allClassesQuery.isLoading, enrollmentsQuery.isLoading]);
+
+  const loadData = async () => {
+    if (!academicYear) return;
+    queryClient.invalidateQueries({ queryKey: ['all-classes', academicYear.id] });
+    queryClient.invalidateQueries({ queryKey: ['enrollments', academicYear.id] });
+  };
 
   // Vérifier quels PDFs existent déjà (mode physique)
   useEffect(() => {
@@ -170,31 +186,6 @@ export default function StudentClassListsContent() {
     };
     checkAll();
   }, [academicYear, classes]);
-
-  const loadData = async () => {
-    if (!academicYear) return;
-    setIsLoading(true);
-    try {
-      const [classesRes, enrollmentsData] = await Promise.all([
-        // ⭐ Classes PHYSIQUES (table `classes`) — sections CE1-A, CE1-B, etc.
-        // ⭐ FIX : passer academicYearId=academicYear.id pour récupérer les
-        //    classes physiques de l'année sélectionnée (et non l'année active
-        //    par défaut 2026-2027). Sans ce paramètre, le BFF résout l'année
-        //    active = 2026-2027 → renvoie les classes 2026-2027 qui ne
-        //    correspondent PAS aux classId des inscriptions 2025-2026 → tous
-        //    les élèves apparaissent comme non affectés.
-        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : []).catch(() => []),
-        studentsService.getEnrollments({ academicYearId: academicYear.id }).catch(() => []),
-      ]);
-      setClasses(Array.isArray(classesRes) ? classesRes : []);
-      setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
-    } catch (e: any) {
-      console.error('[StudentClassListsContent] loadData error:', e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   // ─── Arborescence niveau → classe physique → élèves ──────────────────
   const treeData = useMemo(() => {

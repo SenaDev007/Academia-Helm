@@ -42,6 +42,8 @@ import { apiFetch } from '@/lib/api/client';
 import { financeService } from '@/services/finance.service';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { useEnrollments, useAcademicClasses, useAcademicYears } from '@/lib/query/student-queries';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Enrollment {
   id: string;
@@ -191,6 +193,12 @@ const getLevelDisplayName = (name: string) => {
 export default function EnrollmentsContent() {
   const { academicYear, schoolLevel, tenantId } = useModuleContext();
   const router = useRouter();
+
+  // ⭐ React Query — cache partagé entre onglets, pas de re-fetch au remontage
+  const enrollmentsQuery = useEnrollments(academicYear?.id);
+  const classesQuery = useAcademicClasses(academicYear?.id);
+  const yearsQuery = useAcademicYears();
+
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -241,10 +249,41 @@ export default function EnrollmentsContent() {
   const [orionCollapsed, setOrionCollapsed] = useState(false);
   const [orionLoading, setOrionLoading] = useState(false);
 
-  // ─── Chargement ─────────────────────────────────────────────────────
+  // ─── Synchronisation React Query → state local ─────────────────────────
+  // ⭐ Au lieu de faire 5 fetch() à chaque montage, on utilise les données
+  //    mises en cache par React Query. Le premier chargement fait les fetch,
+  //    les montages suivants (changement d'onglet) servent le cache instantanément.
   useEffect(() => {
-    if (academicYear) loadData();
-  }, [academicYear, schoolLevel]);
+    // Classes officielles
+    const academicClasses: ClassInfo[] = (classesQuery.data || [])
+      .filter((ac: any) => ac && ac.id && ac.name)
+      .map((ac: any) => ({
+        id: ac.id,
+        name: ac.name,
+        schoolLevelId: ac.level?.id || ac.schoolLevelId || 'unknown',
+        schoolLevel: ac.level ? { id: ac.level.id, name: ac.level.name, code: ac.level.code } : undefined,
+        level: ac.level ? { id: ac.level.id, name: ac.level.name } : undefined,
+      }));
+    setClasses(academicClasses);
+
+    // Enrollments
+    setEnrollments(enrollmentsQuery.data || []);
+
+    // Academic years
+    setAcademicYears(yearsQuery.data || []);
+
+    // Loading state
+    setIsLoading(enrollmentsQuery.isLoading || classesQuery.isLoading);
+  }, [enrollmentsQuery.data, classesQuery.data, yearsQuery.data, enrollmentsQuery.isLoading, classesQuery.isLoading]);
+
+  // ⭐ loadData conservé pour les rechargements manuels (après création/modification)
+  const queryClient = useQueryClient();
+  const loadData = async () => {
+    if (!academicYear) return;
+    // Invalider le cache React Query pour forcer un refresh
+    queryClient.invalidateQueries({ queryKey: ['enrollments', academicYear.id] });
+    queryClient.invalidateQueries({ queryKey: ['academic-classes', academicYear.id] });
+  };
 
   // ─── Vérifier quels PDFs existent déjà en DB ─────────────────────────
   // Permet d'afficher un check ✅ sur les classes qui ont déjà un PDF généré

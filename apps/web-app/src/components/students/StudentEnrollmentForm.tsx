@@ -204,7 +204,7 @@ export default function StudentEnrollmentForm({
     if (!file) return;
     setPhotoUploading(true);
     try {
-      const dataUrl = await compressImageFileToDataUrl(file, 600, 0.8);
+      const dataUrl = await compressImageFileToDataUrl(file, { maxEdge: 600, quality: 0.8 });
       setPhotoPreview(dataUrl);
       setFormData(prev => ({ ...prev, photoUrl: dataUrl }));
     } catch (err) {

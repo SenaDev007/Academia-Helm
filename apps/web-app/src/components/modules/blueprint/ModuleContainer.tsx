@@ -10,7 +10,7 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import ModuleHeader, { ModuleHeaderProps } from './ModuleHeader';
 import SubModuleNavigation, { SubModule, SubModuleTab } from './SubModuleNavigation';
 import ModuleContentArea, { ModuleContentAreaProps } from './ModuleContentArea';
@@ -66,26 +66,22 @@ export default function ModuleContainer({
         </motion.div>
       )}
 
-      {/* 3. Zone de contenu */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
+      {/* 3. Zone de contenu — sans animation de transition pour préserver les données */}
+      <div>
         <ModuleContentArea {...content}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={subModules?.activeModuleId || 'main-content'}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              {content.children}
-            </motion.div>
-          </AnimatePresence>
+          {/* ⭐ FIX : AnimatePresence + motion.div retirés pour éviter la
+              destruction/re-création des composants à chaque changement d'onglet.
+              Avant : chaque changement d'onglet détruisait l'ancien composant
+              (perte de toutes les données en mémoire) et créait le nouveau
+              (rechargement depuis le backend → délai + données vides temporaires).
+              Maintenant : le contenu est rendu directement sans animation de
+              transition, ce qui préserve les données et accélère la navigation.
+              Les animations peuvent être réactivées plus tard avec une approche
+              qui préserve l'état (ex: garder les composants montés avec
+              display:none au lieu de les détruire). */}
+          {content.children}
         </ModuleContentArea>
-      </motion.div>
+      </div>
     </div>
   );
 }

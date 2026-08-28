@@ -8,7 +8,7 @@ export default function RecruitmentPage() {
     <HRShell
       activeId="recruitment"
       title="Recrutement"
-      description="Helm Talent Intelligence Platform (HTIP) — Publiez des offres, gérez les candidatures et planifiez les entretiens."
+      description="Plateforme d'Intelligence de Talents Helm (HTIP) — Publiez des offres, gérez les candidatures et planifiez les entretiens."
     >
       <RecruitmentWorkspace />
     </HRShell>

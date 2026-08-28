@@ -8,7 +8,7 @@ export default function IaPage() {
     <HRShell
       activeId="ia"
       title="IA RH"
-      description="Helm Document Intelligence Engine (HDIE) — Analyse CV/Lettres, scoring, matching intelligent et Copilote RH."
+      description="Moteur d'Intelligence Documentaire Helm (HDIE) — Analyse CV/Lettres, notation, correspondance intelligente et Copilote RH."
     >
       <IaWorkspace />
     </HRShell>

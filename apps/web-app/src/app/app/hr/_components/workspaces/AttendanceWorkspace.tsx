@@ -292,7 +292,7 @@ export function AttendanceWorkspace() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">H. supp. validées</p>
-                    <p className="text-lg font-bold text-slate-800">{totalValidatedOvertimeHours} hrs</p>
+                    <p className="text-lg font-bold text-slate-800">{totalValidatedOvertimeHours} h</p>
                   </div>
                 </div>
 
@@ -302,7 +302,7 @@ export function AttendanceWorkspace() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">H. supp. en attente</p>
-                    <p className="text-lg font-bold text-slate-800">{totalPendingOvertimeHours} hrs</p>
+                    <p className="text-lg font-bold text-slate-800">{totalPendingOvertimeHours} h</p>
                   </div>
                 </div>
               </div>
@@ -455,7 +455,7 @@ export function AttendanceWorkspace() {
                               {att.status === 'PRESENT' ? 'Présent' : att.status === 'ABSENT' ? 'Absent' : att.status === 'LATE' ? 'En retard' : att.status}
                             </span>
                           </td>
-                          <td className="px-5 py-3.5 text-slate-600">{att.hoursWorked || 0} hrs</td>
+                          <td className="px-5 py-3.5 text-slate-600">{att.hoursWorked || 0} h</td>
                           <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate">{att.notes || '-'}</td>
                         </tr>
                       ))
@@ -474,10 +474,10 @@ export function AttendanceWorkspace() {
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">
-                    {totalValidatedOvertimeHours} hrs validées
+                    {totalValidatedOvertimeHours} h validées
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100 font-bold">
-                    {totalPendingOvertimeHours} hrs en attente
+                    {totalPendingOvertimeHours} h en attente
                   </span>
                 </div>
               </div>
@@ -505,7 +505,7 @@ export function AttendanceWorkspace() {
                           </td>
                           <td className="px-5 py-3.5">
                             <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                              {Number(ot.hours)} hrs
+                              {Number(ot.hours)} h
                             </span>
                           </td>
                           <td className="px-5 py-3.5 text-slate-600 max-w-[250px] truncate">{ot.notes || '-'}</td>

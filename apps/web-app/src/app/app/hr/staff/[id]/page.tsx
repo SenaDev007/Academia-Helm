@@ -134,6 +134,18 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   ON_LEAVE:  { label: 'En congé',   className: 'text-blue-600' },
 };
 
+// Libellés français pour les statuts de compte utilisateur (User.status)
+// renvoyés par /api/hr/staff/:id. Les valeurs sont en minuscules côté backend.
+const USER_ACCOUNT_STATUS_LABELS: Record<string, string> = {
+  active: 'Actif',
+  inactive: 'Inactif',
+  pending: 'En attente',
+  suspended: 'Suspendu',
+  disabled: 'Désactivé',
+  archived: 'Archivé',
+  locked: 'Verrouillé',
+};
+
 const TERMINATION_TYPE_LABELS: Record<string, string> = {
   RESIGNATION: 'Démission',
   DISMISSAL: 'Licenciement',
@@ -1232,7 +1244,7 @@ export default function StaffDetailPage() {
                 )}
                 {/* Exit Checklist Summary */}
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Checklist de sortie</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Liste de contrôle de sortie</p>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { label: 'Entretien de sortie', value: terminationDetails?.exitInterviewConducted, icon: FileText },
@@ -1390,7 +1402,7 @@ export default function StaffDetailPage() {
                           <span className="text-xs text-slate-500">
                             Compte : <strong className="text-slate-700">{member.userAccount.email}</strong>
                             <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-medium ${member.userAccount.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-                              {member.userAccount.status === 'active' ? 'Actif' : member.userAccount.status}
+                              {USER_ACCOUNT_STATUS_LABELS[member.userAccount.status] || member.userAccount.status}
                             </span>
                           </span>
                         </div>
@@ -1441,7 +1453,7 @@ export default function StaffDetailPage() {
                       <div>
                         <p className="text-sm font-semibold text-slate-700">Demande de documents</p>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Envoyez un lien au candidat pour qu'il uploade ses documents (CNI, diplôme, attestations...).
+                          Envoyez un lien au candidat pour qu'il téléverse ses documents (CNI, diplôme, attestations...).
                           Les documents seront automatiquement catégorisés dans l'onglet Documents.
                         </p>
                       </div>

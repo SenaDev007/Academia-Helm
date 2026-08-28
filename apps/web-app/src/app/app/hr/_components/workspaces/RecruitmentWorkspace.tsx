@@ -342,12 +342,12 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
       colorLight: 'bg-violet-50 border-violet-100',
       textColor: 'text-violet-700',
       tab: 'interviews',
-      description: 'L\'entretien est l\'étape clé où le recruteur (ou l\'équipe de direction) rencontre le candidat pour évaluer sa personnalité, sa motivation, son fit culturel et ses compétences communicationnelles.',
+      description: 'L\'entretien est l\'étape clé où le recruteur (ou l\'équipe de direction) rencontre le candidat pour évaluer sa personnalité, sa motivation, son adéquation culturelle et ses compétences communicationnelles.',
       details: [
         { label: 'Types d\'entretien', text: 'Le système supporte plusieurs types : RH (évaluation générale et motivation), Technique (compétences spécifiques au poste), et Direction (validation finale par la direction de l\'établissement).' },
         { label: 'Formats', text: 'L\'entretien peut se dérouler en Présentiel, en Visioconférence ou par Téléphone. Le format est choisi lors de la planification et affiché sur la carte de l\'entretien.' },
         { label: 'Planification', text: 'L\'entretien est planifié avec une date, une heure, un évaluateur désigné et un format. Il commence au statut PLANIFIÉ, passe à EN_COURS le jour J, puis est validé avec un résultat.' },
-        { label: 'Validation', text: 'Après l\'entretien, le recruteur saisit le résultat (Réussi, Échoué ou En attente), un score sur 100, et un feedback détaillé. Si le résultat est "Réussi", la candidature avance automatiquement à l\'étape Entretien dans le pipeline.' },
+        { label: 'Validation', text: 'Après l\'entretien, le recruteur saisit le résultat (Réussi, Échoué ou En attente), un score sur 100, et un retour détaillé. Si le résultat est "Réussi", la candidature avance automatiquement à l\'étape Entretien dans le pipeline.' },
         { label: 'Filtrage', text: 'Les entretiens sont organisés par statut : Planifiés, En cours, Terminés. Vous pouvez facilement filtrer pour voir uniquement les entretiens à venir ou ceux déjà complétés.' },
       ],
     },
@@ -1972,7 +1972,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     <div>
                                       <p className="font-bold text-slate-800 text-xs">{app.jobTitle || 'Poste non spécifié'}</p>
                                       <p className="text-[10px] text-slate-500 mt-1">
-                                        Statut: <span className="font-bold">{app.status}</span> · Score: {app.score}%
+                                        Statut: <span className="font-bold">{STATUS_LABELS[app.status] || app.status}</span> · Score: {app.score}%
                                       </p>
                                       {app.createdAt && (
                                         <p className="text-[9px] text-slate-400 mt-1">
@@ -2084,7 +2084,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                       selectedCandidate.status === 'ÉLIGIBLE' ? 'bg-violet-50 text-violet-600 border border-violet-100' :
                                       selectedCandidate.status === 'REJETÉ' ? 'bg-red-50 text-red-600 border border-red-100' :
                                       'bg-amber-50 text-amber-600 border border-amber-100'
-                                    )}>{selectedCandidate.status}</span>
+                                    )}>{STATUS_LABELS[selectedCandidate.status] || selectedCandidate.status}</span>
                                   </div>
                                 </div>
                               </>
@@ -2165,7 +2165,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-[10px] text-slate-400 font-bold uppercase">Score Documents</p>
                               <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.docScore}%</p>
-                              <p className="text-[9px] text-slate-400 mt-0.5">CV / Lettre / Matching</p>
+                              <p className="text-[9px] text-slate-400 mt-0.5">CV / Lettre / Correspondance</p>
                             </div>
                             <div className="p-3 bg-violet-50 rounded-lg border border-violet-100">
                               <p className="text-[10px] text-violet-400 font-bold uppercase">Score Entretien</p>
@@ -2189,12 +2189,12 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                               <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.scoreLetter}%</p>
                             </div>
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                              <p className="text-[10px] text-slate-400 font-bold uppercase">Matching</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">Correspondance</p>
                               <p className="text-sm font-bold text-[#1A2BA6] mt-1">{selectedCandidate.scoreMatching}%</p>
                             </div>
                           </div>
                           <div>
-                            <p className="font-bold text-slate-700">Détail du matching :</p>
+                            <p className="font-bold text-slate-700">Détail de la correspondance :</p>
                             <p className="text-slate-600 mt-1">{selectedCandidate.matchDetail || "En attente d'évaluation IA."}</p>
                           </div>
                           {selectedCandidate.risks !== 'Aucun' && (
@@ -2279,7 +2279,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                       <div>
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type}</span>
+                            <span className="px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-100">{int.type === 'RH' ? 'Entretien RH' : int.type === 'TECHNIQUE' ? 'Technique' : int.type === 'DIRECTION' ? 'Direction' : int.type === 'PEDAGOGIQUE' ? 'Pédagogique' : int.type}</span>
                             <span className={cn(
                               'px-2 py-0.5 rounded-full text-[9px] font-bold uppercase',
                               int.status === 'TERMINÉ'
@@ -2516,7 +2516,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                             </div>
                           </div>
                           <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Feedback</label>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retour / Commentaires</label>
                             <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs h-16" placeholder="Commentaires sur l'entretien, points forts, points à améliorer..." value={newInterview.feedback} onChange={(e) => setNewInterview({ ...newInterview, feedback: e.target.value })} />
                           </div>
                         </>

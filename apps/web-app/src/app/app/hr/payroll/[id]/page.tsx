@@ -34,6 +34,27 @@ import { useParams } from 'next/navigation';
 import { toast } from '@/components/ui/toast';
 import { HRShell } from '../../_components/HRShell';
 
+// ─── Maps de libellés français pour les statuts (alignés sur PayrollWorkspace STATUS_CONFIG) ───
+const PERIOD_STATUS_LABELS: Record<string, string> = {
+  OPEN: 'Ouvert',
+  CALCULATED: 'Calculé',
+  VALIDATED: 'Validé',
+  PAID: 'Payé',
+  CLOSED: 'Clôturé',
+  DRAFT: 'Brouillon',
+};
+
+const PAYROLL_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Brouillon',
+  CALCULATED: 'Calculé',
+  VALIDATED: 'Validé',
+  PAID: 'Payé',
+  PENDING: 'En attente',
+  FAILED: 'Échec',
+  COMPLETED: 'Terminé',
+  CANCELLED: 'Annulé',
+};
+
 export default function PayrollDetailPage() {
   const { id } = useParams();
   const { tenant, academicYear } = useModuleContext();
@@ -333,7 +354,7 @@ export default function PayrollDetailPage() {
         icon="rh"
         kpis={[
           { label: 'Total Net', value: formatCurrency(totalNet), unit: '' },
-          { label: 'Statut', value: period.status, unit: '' },
+          { label: 'Statut', value: PERIOD_STATUS_LABELS[period.status] || period.status, unit: '' },
           { label: 'Agents', value: period.payrolls?.length?.toString() || '0', unit: '' },
         ]}
       />
@@ -342,7 +363,7 @@ export default function PayrollDetailPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-50">
           <div className="flex items-center gap-3">
             <Badge className={period.status === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}>
-              {period.status}
+              {PERIOD_STATUS_LABELS[period.status] || period.status}
             </Badge>
           </div>
           
@@ -455,7 +476,7 @@ export default function PayrollDetailPage() {
                       payroll.status === 'DRAFT' ? 'bg-amber-50 text-amber-600' :
                       'bg-gray-50 text-gray-400'
                     }>
-                      {payroll.status}
+                      {PAYROLL_STATUS_LABELS[payroll.status] || payroll.status}
                     </Badge>
                   </td>
                   <td className="px-3 sm:px-6 py-3 sm:py-4">

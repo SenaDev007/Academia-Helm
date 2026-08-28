@@ -82,7 +82,7 @@ export default function HRSaraAssistant() {
                         <Bot className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                        <h3 className="text-xl font-black italic tracking-tighter">Sarah AI RH</h3>
+                        <h3 className="text-xl font-black italic tracking-tighter">Sarah IA RH</h3>
                         <div className="flex items-center gap-2">
                            <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                            <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest">Intelligence RH</span>

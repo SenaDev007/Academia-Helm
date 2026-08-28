@@ -34,7 +34,7 @@ export default function OrionHRVigilance() {
             <div className="max-w-xl">
                <div className="flex items-center gap-2 mb-4">
                   <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Orion RH Vigilance System</span>
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Système de Vigilance RH ORION</span>
                </div>
                <h2 className="text-4xl font-black tracking-tighter leading-none mb-4">Pilotage Prédictif du Capital Humain</h2>
                <p className="text-slate-400 text-sm leading-relaxed">
@@ -89,7 +89,7 @@ export default function OrionHRVigilance() {
          {/* Predictive Insights */}
          <div className="space-y-6">
             <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">Risque de Turnover (Prévision)</h4>
+               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">Risque de Départ (Prévision)</h4>
                <div className="space-y-6">
                   {[
                     { label: 'Primaire', risk: 8, color: 'bg-emerald-500' },

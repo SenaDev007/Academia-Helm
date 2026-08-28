@@ -139,7 +139,7 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error("Check-out impossible", { description: data.message });
+        toast.error("Dépointage impossible", { description: data.message });
         return;
       }
       toast.success("🏁 Fin de journée enregistrée", {

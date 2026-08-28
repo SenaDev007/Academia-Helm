@@ -215,7 +215,7 @@ export function HROverview() {
           </div>
           <div className="flex items-center gap-2 mb-6">
             <div className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-            <h2 className="text-lg font-bold">Cockpit ORION & IA Alerts</h2>
+            <h2 className="text-lg font-bold">Cockpit ORION & Alertes IA</h2>
           </div>
 
           <div className="space-y-3">

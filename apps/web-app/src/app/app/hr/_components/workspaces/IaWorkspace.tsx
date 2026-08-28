@@ -375,7 +375,7 @@ export function IaWorkspace() {
               }
             } else if (chunk.type === 'error') {
               if (!fullText) {
-                fullText = chunk.text || 'Une erreur est survenue pendant le streaming.';
+                fullText = chunk.text || 'Une erreur est survenue pendant le flux.';
                 setStreamingText(fullText);
               }
               break;
@@ -477,7 +477,7 @@ export function IaWorkspace() {
                   </div>
                   {isTopPick && (
                     <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                      <Sparkles className="h-2.5 w-2.5" /> Top pick
+                      <Sparkles className="h-2.5 w-2.5" /> Top choix
                     </span>
                   )}
                 </div>
@@ -677,7 +677,7 @@ export function IaWorkspace() {
         )}
 
         <p className="text-[10px] text-slate-400 text-center pt-2">
-          Détecté par HDIE Engine · Scan du {fraudData.scanTimestamp ? new Date(fraudData.scanTimestamp).toLocaleString('fr-FR') : '—'}
+          Détecté par le moteur HDIE · Scan du {fraudData.scanTimestamp ? new Date(fraudData.scanTimestamp).toLocaleString('fr-FR') : '—'}
         </p>
       </div>
     );
@@ -713,7 +713,7 @@ export function IaWorkspace() {
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {[
           { id: 'parse', label: 'Analyse CV & Lettres', icon: FileText },
-          { id: 'matching', label: 'Matching & Classement (XAI)', icon: Sparkles },
+          { id: 'matching', label: 'Correspondance & Classement (XAI)', icon: Sparkles },
           { id: 'fraud', label: 'Détection Fraude', icon: ShieldAlert },
           { id: 'copilot', label: 'Copilote RH', icon: MessageSquare },
         ].map((tab) => {

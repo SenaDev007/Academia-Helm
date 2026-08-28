@@ -29,7 +29,7 @@ const PREDEFINED_ALLOWANCE_TYPES: Array<{ name: string; code: string; descriptio
   { name: 'Indemnité de Repas', code: 'REPAS', description: 'Indemnité pour les repas du personnel' },
   { name: 'Indemnité de Communication', code: 'COMMUNICATION', description: 'Indemnité téléphone/internet professionnel' },
   { name: 'Prime de Performance', code: 'PERFORMANCE', description: 'Prime basée sur l\'évaluation des performances' },
-  { name: 'Indemnité de Risk / Travail Pénible', code: 'RISQUE', description: 'Indemnité pour conditions de travail difficiles' },
+  { name: 'Indemnité de Risque / Travail Pénible', code: 'RISQUE', description: 'Indemnité pour conditions de travail difficiles' },
   { name: 'Prime de Fin d\'Année', code: 'FIN_ANNEE', description: 'Prime de fin d\'année (13ème mois)' },
   { name: 'Indemnité de Congé Annuel', code: 'CONGE_ANNUEL', description: 'Indemnité compensatrice de congé annuel' },
 ];

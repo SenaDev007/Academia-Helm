@@ -312,15 +312,24 @@ export default function UnifiedAdministrationWorkspace() {
         }
       }
 
-      // 3. Liste du personnel actif
+      // 3. Liste du personnel actif + en cours d'embauche
+      //    On inclut ACTIVE (en poste), PENDING_SIGNATURE (contrat pas encore signé)
+      //    et PENDING_HIRE (embauche initiée mais pas finalisée) pour permettre à
+      //    l'utilisateur de les affecter à un niveau dès la phase d'embauche.
+      //    ⚠️ Sans PENDING_HIRE, les enseignants anglophones fraîchement recrutés
+      //    via le flux public n'apparaissent pas dans l'onglet Administration.
       try {
+        // On récupère TOUT le staff (pas de filtre status) et on filtre côté frontend
+        // car l'API /api/hr/staff accepte un seul paramètre status à la fois.
         const staffData = await authedFetch<StaffOption[] | { items?: StaffOption[]; data?: StaffOption[] }>(
-          `/api/hr/staff?status=ACTIVE&limit=500`,
+          `/api/hr/staff?limit=500`,
         );
         const allStaff = Array.isArray(staffData)
           ? staffData
           : (staffData?.items ?? staffData?.data ?? []);
-        setStaffList(allStaff);
+        // Filtrer côté frontend : ne garder que les statuts exploitables
+        const VALID_STATUSES = new Set(['ACTIVE', 'PENDING_SIGNATURE', 'PENDING_HIRE', 'active']);
+        setStaffList(allStaff.filter((s) => !s.status || VALID_STATUSES.has(s.status)));
       } catch (err) {
         console.warn('Failed to load staff list:', err);
         setStaffList([]);
@@ -563,7 +572,7 @@ export default function UnifiedAdministrationWorkspace() {
       const name = assignment.staff
         ? `${assignment.staff.firstName} ${assignment.staff.lastName}`.trim()
         : 'du staff';
-      setSuccess(`Identifiants envoyés à ${name}. Un email avec login + mot de passe temporaire a été envoyé.`);
+      setSuccess(`Identifiants envoyés à ${name}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'envoi des identifiants');
     } finally {
@@ -1494,7 +1503,7 @@ export default function UnifiedAdministrationWorkspace() {
                   )}
                   style={signatureMode === 'upload' ? { background: PRIMARY } : {}}
                 >
-                  <Upload className="w-3 h-3" /> Upload PNG
+                  <Upload className="w-3 h-3" /> Téléverser PNG
                 </button>
                 <button
                   type="button"
@@ -1592,7 +1601,7 @@ export default function UnifiedAdministrationWorkspace() {
                   <Send className="w-3 h-3" /> Envoyer les identifiants de connexion
                 </strong>
                 Crée un compte User avec un mot de passe temporaire et envoie un email au titulaire
-                (login + mot de passe + lien du portail école). Le titulaire pourra modifier son mot de passe après connexion.
+                (identifiant + mot de passe + lien du portail école). Le titulaire pourra modifier son mot de passe après connexion.
               </label>
             </div>
           </div>

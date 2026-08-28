@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import IdCardVisual, { type TenantInfo } from './IdCardVisual';
 
 interface StudentIdentity {
   id: string;
@@ -434,6 +435,37 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
   const [feeProfile, setFeeProfile] = useState<any>(null);
   const [cardFace, setCardFace] = useState<'recto' | 'verso'>('recto');
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  // ⭐ Identité du tenant pour IdCardVisual (même composant que l'onglet Cartes Scolaires)
+  const [identity, setIdentity] = useState<TenantInfo | null>(null);
+
+  // Charger l'identité du tenant une fois
+  useEffect(() => {
+    fetch('/api/settings/identity', { credentials: 'include', cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          const p = Array.isArray(data) ? data[0] : data;
+          setIdentity({
+            schoolName: p?.schoolName || p?.name || 'Établissement Scolaire',
+            slogan: p?.slogan || 'Excellence • Discipline • Travail',
+            address: p?.address || '',
+            city: p?.city || '',
+            phonePrimary: p?.phonePrimary || p?.phone || '',
+            email: p?.email || '',
+            website: p?.website || '',
+            logoUrl: p?.logoUrl || '',
+            cardPrimaryColor: p?.cardPrimaryColor || '#17348f',
+            cardSecondaryColor: p?.cardSecondaryColor || '#29c2e8',
+            cardShowQRCode: p?.cardShowQRCode ?? true,
+            cardShowPhoto: p?.cardShowPhoto ?? true,
+            cardShowGuardian: p?.cardShowGuardian ?? true,
+            cardShowEmergencyCall: p?.cardShowEmergencyCall ?? true,
+            cardShowSchoolAddress: p?.cardShowSchoolAddress ?? true,
+            cardConditionsText: p?.cardConditionsText || '',
+          } as TenantInfo);
+        }
+      }).catch(() => {});
+  }, []);
 
   useEffect(() => { loadDetail(student.id); }, [student.id]);
 
@@ -645,9 +677,37 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
           <div className="flex flex-col items-center gap-4">
             {studentCard ? (
               <>
-                {/* ⭐ Rendu React de la carte (pas d'iframe) */}
+                {/* ⭐ Utilisation d'IdCardVisual (même composant que l'onglet Cartes Scolaires) */}
                 <div className="bg-slate-100 p-4 rounded-xl relative w-full max-w-md">
-                  <CardPreview student={student} card={studentCard} face={cardFace} />
+                  <IdCardVisual
+                    card={{
+                      cardNumber: studentCard.cardNumber,
+                      qrPayload: studentCard.qrPayload,
+                      qrHash: studentCard.qrHash,
+                      generatedAt: studentCard.generatedAt,
+                      validUntil: studentCard.validUntil,
+                      student: {
+                        firstName: student.firstName,
+                        lastName: student.lastName,
+                        matricule: student.matricule,
+                        studentCode: student.studentCode,
+                        photoUrl: student.photoUrl,
+                        dateOfBirth: student.dateOfBirth,
+                        gender: student.gender,
+                      },
+                      guardian: student.studentGuardians?.[0] ? {
+                        firstName: student.studentGuardians[0].guardian?.firstName || '',
+                        lastName: student.studentGuardians[0].guardian?.lastName || '',
+                        phone: student.studentGuardians[0].guardian?.phone || '',
+                        address: student.studentGuardians[0].guardian?.address || '',
+                      } : null,
+                      className: student.studentEnrollments?.[0]?.class?.name || '',
+                      levelName: '',
+                      levelCode: (student as any).schoolLevel?.code || '',
+                    }}
+                    face={cardFace}
+                    identity={identity}
+                  />
                   <button onClick={() => setCardFace(cardFace === 'recto' ? 'verso' : 'recto')} className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 text-[9px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm">
                     <RotateCw className="w-2.5 h-2.5" />{cardFace === 'recto' ? 'Verso' : 'Recto'}
                   </button>
@@ -807,13 +867,23 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
             </div>
           </div>
         ) : activeTab === 'orion' ? (
-          /* ⭐ Onglet Alertes ORION — données chargées depuis le backend
-           *    (remplace l'ancien calcul local qui n'utilisait pas l'API).
-           *    Endpoint : GET /api/students/orion/student/:studentId/alerts
-           *    Avantages : alertes cohérentes avec le tableau de bord tenant-wide,
-           *    recommandations actionnables, support de academicYearId.
+          /* ⭐ Onglet Alertes ORION — en cours d'implémentation.
+           *    Le composant OrionAlertsTab est conservé en arrière-plan
+           *    (commenté) pour pouvoir le réactiver plus tard.
            */
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="p-4 bg-blue-50 rounded-full mb-3">
+              <AlertTriangle className="w-10 h-10 text-blue-400" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-700 mb-1">En cours d'implémentation</h3>
+            <p className="text-xs text-slate-500 max-w-md">
+              Les alertes ORION pour ce dossier élève seront bientôt disponibles.
+              Cette fonctionnalité est en cours de développement.
+            </p>
+          </div>
+          /* OrionAlertsTab conservé pour réactivation future :
           <OrionAlertsTab studentId={student.id} academicYearId={academicYear?.id} />
+          */
         ) : null}
       </div>
 

@@ -73,6 +73,20 @@ export default function StudentAnalyticsContent() {
 
   return (
     <div className="space-y-4">
+      {/* ⭐ En cours d'implémentation — overlay au-dessus du contenu existant.
+          Le contenu original est conservé en arrière-plan pour réactivation future. */}
+      <div className="bg-white rounded-xl border border-blue-200 shadow-sm p-8 flex flex-col items-center text-center">
+        <div className="p-4 bg-blue-50 rounded-full mb-4">
+          <Activity className="w-10 h-10 text-blue-400" />
+        </div>
+        <h3 className="text-base font-bold text-slate-700 mb-2">En cours d'implémentation</h3>
+        <p className="text-sm text-slate-500 max-w-md">
+          Les fonctionnalités ORION, Stats &amp; Audit sont en cours de développement.
+          Elles seront disponibles prochainement.
+        </p>
+      </div>
+      {/* Contenu original — conservé en arrière-plan (commenté pour réactivation future)
+      <div style={{ display: 'none' }}>
       {/* Header — white card cohérent avec les autres onglets */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -322,6 +336,7 @@ export default function StudentAnalyticsContent() {
           </div>
         </div>
       </div>
+      </div> */}
     </div>
   );
 }

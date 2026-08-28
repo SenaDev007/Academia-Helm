@@ -128,9 +128,9 @@ apiClient.interceptors.response.use(
         || (error.message && (error.message.includes('timeout') || error.message.includes('timeout of')));
 
       if (isTimeout) {
-        console.warn('[API Client] Timeout (délai d\\'attente dépassé) :', error.message);
+        console.warn("[API Client] Timeout (délai d'attente dépassé) :", error.message);
         const timeoutError: any = new Error(
-          'Délai d\\'attente dépassé. Le serveur a mis trop de temps à répondre. Réessayez.'
+          "Délai d'attente dépassé. Le serveur a mis trop de temps à répondre. Réessayez."
         );
         timeoutError.isTimeout = true;
         timeoutError.originalError = error;

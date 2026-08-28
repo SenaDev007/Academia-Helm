@@ -120,6 +120,23 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     // Erreur réseau (pas de réponse = hors ligne ou timeout)
     if (!error.response) {
+      // ⭐ Distinguer timeout (ECONNABORTED / ETIMEDOUT) de hors ligne.
+      //    Un timeout ne signifie PAS que l'utilisateur est hors ligne —
+      //    juste que le serveur a mis trop de temps à répondre. Dans ce cas,
+      //    on ne dit PAS "Connexion indisponible" mais "Délai d'attente dépassé".
+      const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT'
+        || (error.message && (error.message.includes('timeout') || error.message.includes('timeout of')));
+
+      if (isTimeout) {
+        console.warn('[API Client] Timeout (délai d\\'attente dépassé) :', error.message);
+        const timeoutError: any = new Error(
+          'Délai d\\'attente dépassé. Le serveur a mis trop de temps à répondre. Réessayez.'
+        );
+        timeoutError.isTimeout = true;
+        timeoutError.originalError = error;
+        return Promise.reject(timeoutError);
+      }
+
       // Ne PAS rediriger vers login quand hors ligne
       // L'utilisateur a simplement perdu la connexion, pas sa session
       console.warn('[API Client] Erreur réseau (connexion indisponible) :', error.message);

@@ -359,6 +359,7 @@ class StudentsService {
       return await apiFetch(`${BASE_URL}/${encodeURIComponent(id)}`, {
         method: "PUT",
         body: cleaned,
+        timeout: 30000,
       });
     } catch (err: any) {
       // Axios range les détails du backend dans err.response.data
@@ -464,9 +465,16 @@ class StudentsService {
    * Body: { photoDataUrl: string }
    */
   async uploadPhoto(studentId: string, photoDataUrl: string): Promise<any> {
+    // ⭐ FIX : timeout de 60s pour l'upload de photo (au lieu du défaut 8s).
+    //    Les data URLs base64 de photos compressées peuvent faire 100KB-5MB.
+    //    Avec un timeout de 8s, axios lance "Network Error" → l'intercepteur
+    //    axios interprète ça comme "Connexion indisponible" → l'utilisateur
+    //    voit "Vérifiez votre connexion Internet" même si sa connexion est OK.
+    //    60s est suffisant pour uploader une photo même sur une connexion 3G lente.
     return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/upload-photo`, {
       method: "POST",
       body: { photoDataUrl },
+      timeout: 60000,
     });
   }
 
@@ -551,6 +559,7 @@ class StudentsService {
       return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
         method: "POST",
         body: g, // ⭐ PLAT, pas { guardians: [g] }
+        timeout: 30000,
       });
     }
     // Plusieurs guardians → POST en parallèle
@@ -559,6 +568,7 @@ class StudentsService {
         apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
           method: "POST",
           body: g,
+          timeout: 30000,
         })
       )
     );

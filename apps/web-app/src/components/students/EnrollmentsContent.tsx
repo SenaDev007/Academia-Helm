@@ -1872,9 +1872,11 @@ export default function EnrollmentsContent() {
                 lastName: sg.guardian?.lastName || '',
                 phone: sg.guardian?.phone || '',
                 email: sg.guardian?.email || '',
+                address: sg.guardian?.address || '',
                 relationship: sg.relationship || sg.guardian?.relationship || 'PÈRE',
                 isPrimary: sg.isPrimary ?? false,
               })),
+              address: editEnrollment.student.address || '',
             }}
             onSubmit={async (data) => {
               try {
@@ -1930,6 +1932,7 @@ export default function EnrollmentsContent() {
                           lastName: g.lastName,
                           phone: g.phone || null,
                           email: g.email || null,
+                          address: g.address || null,
                         },
                       }).catch((e: any) => console.warn('updateGuardian:', e?.message));
                       // Update aussi la relation (relationship + isPrimary)
@@ -1950,7 +1953,9 @@ export default function EnrollmentsContent() {
                           guardians: [{
                             firstName: g.firstName, lastName: g.lastName,
                             relationship: g.relationship || 'GUARDIAN',
-                            phone: g.phone || undefined, email: g.email || undefined, isPrimary: g.isPrimary ?? false,
+                            phone: g.phone || undefined, email: g.email || undefined,
+                            address: g.address || undefined,
+                            isPrimary: g.isPrimary ?? false,
                           }],
                         });
                       } catch (guardianErr: any) {

@@ -22,10 +22,12 @@ import { compressImageFileToDataUrl } from '@/lib/media';
 
 interface Guardian {
   id?: string;
+  studentGuardianId?: string;
   firstName: string;
   lastName: string;
   phone: string;
   email: string;
+  address: string;
   relationship: string;
   isPrimary: boolean;
 }
@@ -41,11 +43,11 @@ export interface EnrollmentSubmitData {
     placeOfBirth?: string;
     npi?: string;
     photoUrl?: string;
+    address?: string;
   };
   guardians: Guardian[];
   classId?: string;
-  schoolLevelId?: string; // UUID de school_levels sélectionné par l'utilisateur
-  /** ⭐ Type d'enrollment : 'NEW' (frais INSCRIPTION) | 'REPEAT' (frais RÉINSCRIPTION) */
+  schoolLevelId?: string;
   enrollmentType?: 'NEW' | 'REPEAT';
 }
 
@@ -83,27 +85,39 @@ export default function StudentEnrollmentForm({
   // ⭐ enrollmentType : 'NEW' (nouvel élève → frais d'INSCRIPTION) ou
   //    'REPEAT' (ancien élève → frais de RÉINSCRIPTION).
   //    Par défaut 'NEW' sauf si initialData fournit déjà un type.
+  // ⭐ FIX : convertir dateOfBirth ISO (2020-05-15T00:00:00.000Z) en YYYY-MM-DD
+  //    pour l'input type="date" qui n'accepte que ce format.
+  const rawDate = initialData?.dateOfBirth || '';
+  const dateForInput = rawDate
+    ? (rawDate.includes('T') ? rawDate.split('T')[0] : rawDate)
+    : '';
+
   const [formData, setFormData] = useState({
     firstName: initialData?.firstName || '',
     lastName: initialData?.lastName || '',
-    dateOfBirth: initialData?.dateOfBirth || '',
+    dateOfBirth: dateForInput,
     gender: initialData?.gender || '',
     nationality: initialData?.nationality || 'Béninoise',
     placeOfBirth: initialData?.placeOfBirth || '',
     npi: initialData?.npi || '',
     photoUrl: initialData?.photoUrl || '',
+    address: initialData?.address || '',
     classId: initialData?.classId || '',
     enrollmentType: (initialData?.enrollmentType as 'NEW' | 'REPEAT') || 'NEW',
   });
 
   // Parents — pré-rempli depuis initialData si mode édition
+  // ⭐ FIX : inclure l'adresse du guardian (manquait avant)
   const [guardians, setGuardians] = useState<Guardian[]>(
     initialData?.guardians?.length > 0
       ? initialData.guardians.map((g: any) => ({
+          id: g.id || '',
+          studentGuardianId: g.studentGuardianId || '',
           firstName: g.firstName || '',
           lastName: g.lastName || '',
           phone: g.phone || '',
           email: g.email || '',
+          address: g.address || '',
           relationship: g.relationship || 'Père',
           isPrimary: g.isPrimary ?? false,
         }))
@@ -306,6 +320,7 @@ export default function StudentEnrollmentForm({
           placeOfBirth: formData.placeOfBirth || undefined,
           npi: formData.npi || undefined,
           photoUrl: formData.photoUrl || undefined,
+          address: formData.address || undefined,
         },
         guardians,
         // ⭐ classId = classe OFFICIELLE (AcademicClass) — envoyé aussi bien comme
@@ -434,6 +449,14 @@ export default function StudentEnrollmentForm({
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
+
+        {/* ⭐ Adresse de l'élève — champ manquant avant */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Adresse (optionnel)</label>
+          <input type="text" value={formData.address} onChange={e => handleInputChange('address', e.target.value)}
+            placeholder="Quartier, ville..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
       )}
 
       {/* ─── Étape 2 : Photo ─── */}
@@ -530,6 +553,9 @@ export default function StudentEnrollmentForm({
                 <input type="email" placeholder="Email" value={g.email} onChange={e => updateGuardian(idx, 'email', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
+              {/* ⭐ Adresse du parent — champ manquant avant */}
+              <input type="text" placeholder="Adresse" value={g.address} onChange={e => updateGuardian(idx, 'address', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <select value={g.relationship} onChange={e => updateGuardian(idx, 'relationship', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="Père">Père</option>

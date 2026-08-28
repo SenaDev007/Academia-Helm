@@ -185,8 +185,8 @@ export default function StudentIdentityContent() {
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
 
-  // ⭐ Bug fix : vraie pagination (limit=50) au lieu de limit=200 sans pagination.
-  const PAGE_SIZE = 50;
+  // ⭐ PAGE_SIZE = 200 pour afficher tous les élèves d'une classe (Maternelle 2 peut avoir 30+ élèves)
+  const PAGE_SIZE = 200;
   const [currentPage, setCurrentPage] = useState(1);
   const [totalStudents, setTotalStudents] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -585,7 +585,7 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
             <InfoCard icon={MapPin} label="Nationalité" value={student.nationality || '—'} />
             <InfoCard icon={Hash} label="Matricule" value={student.matricule || '—'} mono />
             <InfoCard icon={FileCheck} label="NPI" value={student.npi || 'Non renseigné'} mono color={student.npi ? 'text-emerald-600' : 'text-amber-600'} />
-            <InfoCard icon={MapPin} label="Adresse" value={student.address || '—'} />
+            <InfoCard icon={MapPin} label="Adresse" value={student.address || student.studentGuardians?.[0]?.guardian?.address || '—'} />
           </div>
         ) : activeTab === 'parents' ? (
           <div className="space-y-3">

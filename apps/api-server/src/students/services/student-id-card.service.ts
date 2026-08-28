@@ -1307,14 +1307,14 @@ export class StudentIdCardService {
     }
     .fields {
       flex: 1;
-      font-size: 6.5pt;
+      font-size: 6pt;
       color: #1a1a2e;
       min-width: 0;
     }
     .field-row {
       display: flex;
-      margin-bottom: 0.5mm;
-      line-height: 1.2;
+      margin-bottom: 0.3mm;
+      line-height: 1.15;
     }
     .field-label {
       font-weight: 700;
@@ -1449,11 +1449,11 @@ export class StudentIdCardService {
     }
     .term-item {
       display: flex;
-      gap: 2mm;
-      font-size: 6pt;
+      gap: 1.5mm;
+      font-size: 5.5pt;
       color: #444;
-      line-height: 1.5;
-      margin-bottom: 2mm;
+      line-height: 1.3;
+      margin-bottom: 1mm;
     }
     .bullet {
       color: ${NAVY};
@@ -1461,13 +1461,13 @@ export class StudentIdCardService {
       flex-shrink: 0;
     }
     .contact-block {
-      margin-top: 2.5mm;
-      font-size: 7pt;
+      margin-top: 1mm;
+      font-size: 6pt;
       color: #1a1a2e;
     }
     .contact-row {
       display: flex;
-      margin-bottom: 1mm;
+      margin-bottom: 0.5mm;
       line-height: 1.3;
     }
     .contact-label {

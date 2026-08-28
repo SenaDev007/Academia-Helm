@@ -573,11 +573,11 @@ export function IdCardVisual({
 
           {/* term-item (puce ■ + texte) */}
           <div className="flex relative" style={{
-            gap: '2cqw',
-            fontSize: '2cqw',
+            gap: '1.5cqw',
+            fontSize: '1.8cqw',
             color: '#444',
-            lineHeight: 1.5,
-            marginBottom: '2cqw',
+            lineHeight: 1.35,
+            marginBottom: '1cqw',
             zIndex: 1,
           }}>
             <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
@@ -588,11 +588,11 @@ export function IdCardVisual({
               rappelant que la carte est OBLIGATOIRE pour récupérer l'enfant */}
           {isMaternelle && (
             <div className="flex relative" style={{
-              gap: '2cqw',
-              fontSize: '2cqw',
+              gap: '1.5cqw',
+              fontSize: '1.8cqw',
               color: '#444',
-              lineHeight: 1.5,
-              marginBottom: '2cqw',
+              lineHeight: 1.35,
+              marginBottom: '1cqw',
               zIndex: 1,
             }}>
               <span style={{ color: primaryColor, fontWeight: 900, flexShrink: 0 }}>■</span>
@@ -602,8 +602,8 @@ export function IdCardVisual({
 
           {/* contact-block */}
           <div className="relative" style={{
-            marginTop: '2.5cqw',
-            fontSize: '2.25cqw',
+            marginTop: '1cqw',
+            fontSize: '2cqw',
             color: '#1a1a2e',
             zIndex: 1,
           }}>
@@ -668,7 +668,7 @@ export function IdCardVisual({
 // ─── Sous-composant : ligne de champ (label : value) ──────────────────────
 function FieldRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex" style={{ marginBottom: '0.5cqw' }}>
+    <div className="flex" style={{ marginBottom: '0.2cqw' }}>
       <span style={{
         fontWeight: 700,
         width: '19.5cqw',
@@ -693,7 +693,7 @@ function FieldRow({ label, value, bold }: { label: string; value: string; bold?:
 // ─── Sous-composant : ligne de contact (label : value) ────────────────────
 function ContactRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex" style={{ marginBottom: '1cqw' }}>
+    <div className="flex" style={{ marginBottom: '0.3cqw' }}>
       <span style={{
         fontWeight: 700,
         width: '15cqw',

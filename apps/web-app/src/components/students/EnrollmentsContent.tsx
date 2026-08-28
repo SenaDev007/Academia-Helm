@@ -1892,9 +1892,16 @@ export default function EnrollmentsContent() {
                   // ⚠️ PAS de photoUrl ici — la photo est uploadée via uploadPhoto (endpoint dédié)
                 });
                 // Upload photo si nouvelle (data URL)
+                // ⭐ FIX : ne pas avaler l'erreur silencieusement. Avant, le
+                //    .catch() masquait les échecs et le toast affichait "succès"
+                //    même si la photo n'était pas sauvegardée.
                 if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                  await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl)
-                    .catch((e: any) => console.warn('uploadPhoto:', e?.message));
+                  try {
+                    await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
+                  } catch (photoErr: any) {
+                    console.error('uploadPhoto failed:', photoErr?.message);
+                    throw new Error(`Échec de l'upload de la photo: ${photoErr?.message || 'Erreur inconnue'}`);
+                  }
                 }
                 // Changement de classe
                 if (data.classId && data.classId !== editEnrollment.class?.id) {
@@ -1935,13 +1942,21 @@ export default function EnrollmentsContent() {
                       }).catch((e: any) => console.warn('updateGuardianRelation:', e?.message));
                     } else {
                       // Nouveau guardian → POST
-                      await studentsService.addGuardians(editEnrollment.student.id, {
-                        guardians: [{
-                          firstName: g.firstName, lastName: g.lastName,
-                          relationship: g.relationship || 'GUARDIAN',
-                          phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                        }],
-                      }).catch((e: any) => console.warn('addGuardian:', e?.message));
+                      // ⭐ FIX : ne pas avaler l'erreur silencieusement. Avant, le
+                      //    .catch() masquait les échecs (400 Bad Request) et le
+                      //    toast affichait "succès" même si rien n'était sauvegardé.
+                      try {
+                        await studentsService.addGuardians(editEnrollment.student.id, {
+                          guardians: [{
+                            firstName: g.firstName, lastName: g.lastName,
+                            relationship: g.relationship || 'GUARDIAN',
+                            phone: g.phone || undefined, email: g.email || undefined, isPrimary: g.isPrimary ?? false,
+                          }],
+                        });
+                      } catch (guardianErr: any) {
+                        console.error('addGuardian failed:', guardianErr?.message);
+                        throw new Error(`Échec de l'enregistrement du parent/tuteur: ${guardianErr?.message || 'Erreur inconnue'}`);
+                      }
                     }
                   }
 

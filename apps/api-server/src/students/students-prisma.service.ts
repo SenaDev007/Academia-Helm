@@ -300,6 +300,7 @@ export class StudentsPrismaService {
       npi?: string;
       photoUrl?: string;
       placeOfBirth?: string;
+      address?: string;
       status?: string;
       academicYearId?: string;
       schoolLevelId?: string;

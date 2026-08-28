@@ -34,6 +34,7 @@ export class UpdateStudentPrismaDto {
   @IsOptional() @IsString() npi?: string;
   @IsOptional() @IsString() photoUrl?: string;
   @IsOptional() @IsString() placeOfBirth?: string;
+  @IsOptional() @IsString() address?: string;
   @IsOptional() @IsIn(['ACTIVE', 'INACTIVE', 'GRADUATED', 'TRANSFERRED', 'ARCHIVED']) status?: string;
   /** Année académique — tout enregistrement élève DOIT être lié à une année
    *  (conformément au pattern RH/finance du projet). Permet la réinscription

@@ -1683,10 +1683,10 @@ export default function EnrollmentsContent() {
                 enrollmentType: data.enrollmentType,
               });
 
-              // 1b. Upload photo via endpoint dédié (pattern RH) si data URL présente
+              // 1b. Upload photo en arrière-plan (ne pas bloquer l'inscription)
               if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                await studentsService.uploadPhoto(student.id, data.student.photoUrl)
-                  .catch((e: any) => console.warn('uploadPhoto:', e?.message));
+                studentsService.uploadPhoto(student.id, data.student.photoUrl)
+                  .catch((e: any) => console.warn('uploadPhoto (background):', e?.message));
               }
 
               // 2. Admettre l'élève (génère matricule + compte financier)
@@ -1700,18 +1700,20 @@ export default function EnrollmentsContent() {
                 schoolLevelId: effectiveSchoolLevelId,
               });
 
-              // 3. Ajouter les parents (non bloquant)
+              // 3. Ajouter les parents (en parallèle pour la vitesse)
               if (data.guardians?.length) {
-                for (const g of data.guardians) {
-                  if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                  await studentsService.addGuardians(student.id, {
+                const guardianPromises = data.guardians
+                  .filter(g => g.firstName?.trim() && g.lastName?.trim())
+                  .map(g => studentsService.addGuardians(student.id, {
                     guardians: [{
                       firstName: g.firstName, lastName: g.lastName,
                       relationship: g.relationship || 'GUARDIAN',
-                      phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                      phone: g.phone || undefined, email: g.email || undefined,
+                      address: g.address || undefined,
+                      isPrimary: g.isPrimary ?? false,
                     }],
-                  }).catch((e: any) => console.warn('Guardian:', e?.message));
-                }
+                  }).catch((e: any) => console.warn('Guardian:', e?.message)));
+                await Promise.all(guardianPromises);
               }
 
               toast({
@@ -1863,6 +1865,7 @@ export default function EnrollmentsContent() {
                   nationality: data.student.nationality || undefined,
                   placeOfBirth: data.student.placeOfBirth || undefined,
                   npi: data.student.npi || undefined,
+                  address: data.student.address || undefined,
                   // ⚠️ PAS de photoUrl ici — la photo est uploadée via uploadPhoto (endpoint dédié)
                 });
                 // Upload photo si nouvelle (data URL)

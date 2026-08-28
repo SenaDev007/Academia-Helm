@@ -2231,6 +2231,7 @@ model Student {
   matricule                    String?
   enrollmentYear               Int?
   photoUrl                     String?
+  address                      String?
   /// ADDENDUM Offline-First §2.1 - Identifiant global Academia Helm (permanent, cross-school).
   /// Format: AH-STU-YYYY-NNNNNNNNN. Conserve lors de tout transfert inter-ecoles. Jamais modifiable manuellement.
   globalStudentId              String?                       @unique

@@ -2,14 +2,19 @@
  * ============================================================================
  * MODULE CONTAINER - STRUCTURE DE BASE (PREMIUM UPGRADE)
  * ============================================================================
- * 
+ *
  * Composant racine pour tous les modules Academia Hub.
- * Gère le layout standard : Header > Navigation > Content.
+ * Gere le layout standard : Header > Navigation > Content.
+ *
+ * ⭐ FIX PERFORMANCE : Les composants d'onglet sont maintenant gardes
+ *    montes en memoire (display: none) au lieu d'etre detruits a chaque
+ *    changement d'onglet. Cela preserve les donnees et evite le
+ *    rechargement depuis le backend.
  */
 
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useRef, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import ModuleHeader, { ModuleHeaderProps } from './ModuleHeader';
 import SubModuleNavigation, { SubModule, SubModuleTab } from './SubModuleNavigation';
@@ -41,9 +46,36 @@ export default function ModuleContainer({
   content,
   className,
 }: ModuleContainerProps) {
+  const activeId = subModules?.activeModuleId || 'main-content';
+
+  // ⭐ Cache des composants montes : garde les onglets en memoire
+  //    Key = activeModuleId, Value = ReactNode (le children qui a etait rendu)
+  //    Quand on revient sur un onglet, le composant est deja monte avec ses donnees.
+  const [mountedTabs, setMountedTabs] = useState<Map<string, ReactNode>>(new Map());
+  const prevActiveId = useRef<string>(activeId);
+
+  useEffect(() => {
+    // Ajouter le children actuel au cache s'il n'existe pas deja
+    if (content.children && !mountedTabs.has(activeId)) {
+      setMountedTabs(prev => {
+        const next = new Map(prev);
+        next.set(activeId, content.children);
+        return next;
+      });
+    } else if (content.children && prevActiveId.current !== activeId) {
+      // Le children a change (nouvel onglet) → mettre a jour le cache
+      setMountedTabs(prev => {
+        const next = new Map(prev);
+        next.set(activeId, content.children);
+        return next;
+      });
+    }
+    prevActiveId.current = activeId;
+  }, [activeId, content.children]);
+
   return (
     <div className={cn('flex flex-col space-y-6 animate-in fade-in duration-700', className)}>
-      {/* 1. Header du module (seulement s'il est défini) */}
+      {/* 1. Header du module (seulement s'il est defini) */}
       {header && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -54,7 +86,7 @@ export default function ModuleContainer({
         </motion.div>
       )}
 
-      {/* 2. Navigation des sous-modules (si présente) */}
+      {/* 2. Navigation des sous-modules (si presente) */}
       {subModules && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -66,20 +98,28 @@ export default function ModuleContainer({
         </motion.div>
       )}
 
-      {/* 3. Zone de contenu — sans animation de transition pour préserver les données */}
+      {/* 3. Zone de contenu — onglets gardes montes */}
       <div>
         <ModuleContentArea {...content}>
-          {/* ⭐ FIX : AnimatePresence + motion.div retirés pour éviter la
-              destruction/re-création des composants à chaque changement d'onglet.
-              Avant : chaque changement d'onglet détruisait l'ancien composant
-              (perte de toutes les données en mémoire) et créait le nouveau
-              (rechargement depuis le backend → délai + données vides temporaires).
-              Maintenant : le contenu est rendu directement sans animation de
-              transition, ce qui préserve les données et accélère la navigation.
-              Les animations peuvent être réactivées plus tard avec une approche
-              qui préserve l'état (ex: garder les composants montés avec
-              display:none au lieu de les détruire). */}
-          {content.children}
+          {/* ⭐ PERFORMANCE : Rendre TOUS les onglets montes, cacher les inactifs.
+              Au lieu de detruire l'onglet precedent et creer le nouveau (ce qui
+              force un rechargement complet des donnees), on garde tous les
+              onglets en memoire et on les cache avec display:none.
+
+              Le 1er montage d'un onglet : l'onglet est cree, ses donnees sont
+              chargees via useEffect/fetch.
+              Changement d'onglet : l'onglet precedent est cache (display:none)
+              mais reste monte en memoire. Le nouvel onglet est affiche.
+              Retour sur un onglet precedent : l'onglet est deja monte avec ses
+              donnees → affichage INSTANTANE (pas de re-fetch). */}
+          {Array.from(mountedTabs.entries()).map(([tabId, tabChildren]) => (
+            <div
+              key={tabId}
+              style={{ display: tabId === activeId ? 'block' : 'none' }}
+            >
+              {tabChildren}
+            </div>
+          ))}
         </ModuleContentArea>
       </div>
     </div>

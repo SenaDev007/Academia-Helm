@@ -45,8 +45,10 @@ export interface AdminGroup {
 const VALID_MODES: AdminStructureMode[] = ['SEPARATE', 'FUSED_MATERNELLE_PRIMAIRE'];
 
 // Codes de niveaux (constantes pour éviter les typos)
+// ⚠️ Alignés sur l'enum SchoolLevelType du Prisma schema : MATERNELLE / PRIMAIRE / SECONDAIRE (français)
+//    Ne pas utiliser 'PRIMARY' / 'SECONDARY' (anglais) — la DB utilise les codes français.
 const MAT = 'MATERNELLE';
-const PRI = 'PRIMARY';
+const PRI = 'PRIMAIRE';
 const SEC = 'SECONDAIRE';
 
 const UNIT_LABELS: Record<string, string> = {
@@ -209,8 +211,8 @@ export class AdminStructureService {
    * Résout les niveaux administrés conjointement à partir d'un niveau donné.
    *
    * Exemple en mode FUSED_MATERNELLE_PRIMAIRE :
-   *   - resolveAdminLevelsForUser(tenantId, 'MATERNELLE') → ['MATERNELLE', 'PRIMARY']
-   *   - resolveAdminLevelsForUser(tenantId, 'PRIMARY') → ['MATERNELLE', 'PRIMARY']
+   *   - resolveAdminLevelsForUser(tenantId, 'MATERNELLE') → ['MATERNELLE', 'PRIMAIRE']
+   *   - resolveAdminLevelsForUser(tenantId, 'PRIMAIRE') → ['MATERNELLE', 'PRIMAIRE']
    *   - resolveAdminLevelsForUser(tenantId, 'SECONDAIRE') → ['SECONDAIRE']
    *
    * Utile pour les guards backend : si un utilisateur a un rôle level-specific

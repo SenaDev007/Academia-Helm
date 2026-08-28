@@ -80,7 +80,7 @@ const PRIMARY = '#1A2BA6'; // Royal Blue
 // ── Types ───────────────────────────────────────────────────────────────────
 interface SchoolLevel {
   id: string;
-  code: string; // 'MATERNELLE' | 'PRIMARY' | 'SECONDAIRE'
+  code: string; // 'MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE' (codes français)
   name: string;
   isActive: boolean;
 }

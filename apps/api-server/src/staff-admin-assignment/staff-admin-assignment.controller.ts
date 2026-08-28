@@ -123,7 +123,7 @@ export class StaffAdminAssignmentController {
       // L'utilisateur n'a pas de fiche Staff → il est probablement PROMOTER
       return {
         adminRole: 'PROMOTER',
-        schoolLevelCodes: ['MATERNELLE', 'PRIMARY', 'SECONDAIRE'],
+        schoolLevelCodes: ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'],
         schoolLevelIds: [],
         modules: ['*'],
         staffId: null,
@@ -151,10 +151,11 @@ export class StaffAdminAssignmentController {
     const schoolLevelCodes = await this.service.resolveAdminLevelsForStaff(tenantId, staff.id);
 
     // Récupérer les UUIDs des school_levels pour le filtrage des requêtes
+    //    schoolLevelCodes sont déjà en format français (PRIMAIRE, SECONDAIRE) — pas besoin de conversion
     const schoolLevelIds = await this.prisma.schoolLevel.findMany({
       where: {
         tenantId,
-        code: { in: schoolLevelCodes.map(c => c === 'PRIMARY' ? 'PRIMAIRE' : c) },
+        code: { in: schoolLevelCodes },
       },
       select: { id: true, code: true },
     });

@@ -175,13 +175,16 @@ export const DIRECTOR_ROLES: AdminRole[] = [
 ];
 
 /**
- * Mapping entre les codes de niveaux (MATERNELLE/PRIMARY/SECONDAIRE) et les
+ * Mapping entre les codes de niveaux (MATERNELLE/PRIMAIRE/SECONDAIRE) et les
  * codes d'unités administratives (MAT/PRI/SEC/MAT_PRI) utilisés par le backend.
  * Permet de faire le lien entre /api/school-levels et /api/admin-structure/groups.
+ *
+ * ⚠️ Les codes de niveaux sont en français (alignés sur l'enum SchoolLevelType
+ *    du Prisma schema). Ne pas utiliser 'PRIMARY'/'SECONDARY' (anglais).
  */
 export const LEVEL_CODE_TO_UNIT: Record<string, string> = {
   MATERNELLE: 'MAT',
-  PRIMARY: 'PRI',
+  PRIMAIRE: 'PRI',
   SECONDAIRE: 'SEC',
 };
 

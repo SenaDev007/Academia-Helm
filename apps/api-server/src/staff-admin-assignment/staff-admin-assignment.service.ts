@@ -260,15 +260,15 @@ export class StaffAdminAssignmentService {
 
     for (const a of assignments) {
       if (a.schoolLevelCode === 'ALL') {
-        return ['MATERNELLE', 'PRIMARY', 'SECONDAIRE'];
+        return ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'];
       }
       if (a.schoolLevelCode === 'MAT_PRI') {
         levelCodes.add('MATERNELLE');
-        levelCodes.add('PRIMARY');
+        levelCodes.add('PRIMAIRE');
       } else if (a.schoolLevelCode === 'MAT') {
         levelCodes.add('MATERNELLE');
       } else if (a.schoolLevelCode === 'PRI') {
-        levelCodes.add('PRIMARY');
+        levelCodes.add('PRIMAIRE');
       } else if (a.schoolLevelCode === 'SEC') {
         levelCodes.add('SECONDAIRE');
       }

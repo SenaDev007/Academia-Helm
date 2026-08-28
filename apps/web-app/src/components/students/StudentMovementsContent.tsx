@@ -36,6 +36,8 @@ import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { useStudents, useEnrollments } from '@/lib/query/student-queries';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Student {
   id: string;
@@ -264,77 +266,42 @@ export default function StudentMovementsContent() {
     setCurrentPage(1);
   }, [filterStatus, filterLevelId, filterClassId, searchQuery]);
 
-  // ⭐ Bug fix : recharger les données quand la page ou n'importe quel filtre change.
-  // searchQuery est debounce de 250ms pour éviter de spammer le backend à chaque touche.
+  // ⭐ FIX : utilise React Query (useStudents + useEnrollments) au lieu de fetch manuel.
+  const studentsQuery = useStudents({
+    academicYearId: effectiveYearId,
+    page: currentPage,
+    limit: PAGE_SIZE,
+    schoolLevelId: filterLevelId || undefined,
+    classId: filterClassId || undefined,
+    status: filterStatus !== 'ALL' ? filterStatus : undefined,
+    search: searchQuery.trim() || undefined,
+  });
+  const enrollmentsQuery = useEnrollments(effectiveYearId);
+  const queryClient = useQueryClient();
+
+  // Synchronisation React Query → state local
   useEffect(() => {
     if (!effectiveYearId) return;
-    const timeout = setTimeout(() => {
-      loadData();
-    }, searchQuery ? 250 : 0);
-    return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, filterStatus, filterLevelId, filterClassId, searchQuery, effectiveYearId]);
-
-  // ⭐ Chargement initial + reload des stats globales quand l'année change.
-  // Les stats sont indépendantes des filtres de page (vrai total par statut).
-  useEffect(() => {
-    if (effectiveYearId) {
-      loadGlobalStats();
+    const sd = studentsQuery.data;
+    if (sd) {
+      setStudents(sd.data || []);
+      setPagination({
+        total: sd.total || 0, page: sd.page || 1,
+        limit: sd.limit || PAGE_SIZE, totalPages: sd.totalPages || 1,
+      });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setEnrollments(enrollmentsQuery.data || []);
+    setIsLoading(studentsQuery.isLoading || enrollmentsQuery.isLoading);
+  }, [studentsQuery.data, enrollmentsQuery.data, studentsQuery.isLoading, enrollmentsQuery.isLoading, effectiveYearId]);
+
+  // ⭐ Stats globales (inchangé — utilise loadGlobalStats)
+  useEffect(() => {
+    if (effectiveYearId) loadGlobalStats();
   }, [effectiveYearId, filterLevelId, filterClassId, filterYearId, schoolLevel?.id]);
 
-  /**
-   * Charge la page courante des élèves (paginé, limit=50).
-   * ⭐ Bug fix : tous les filtres (status, level, class, search) sont envoyés
-   * au backend qui les applique en SQL (mode insensitive pour search).
-   * L'ancien code ne passait que `status` et filtrait le reste côté client,
-   * ce qui cassait la pagination (filtres appliqués sur 50 élèves max seulement).
-   */
-  const loadData = async () => {
-    if (!effectiveYearId) return;
-    setIsLoading(true);
-    try {
-      const params: Record<string, string> = {
-        academicYearId: effectiveYearId,
-        page: String(currentPage),
-        limit: String(PAGE_SIZE),
-      };
-      // ⭐ Tous les filtres passés au backend
-      if (filterStatus !== 'ALL') params.status = filterStatus;
-      if (filterLevelId) params.schoolLevelId = filterLevelId;
-      if (filterClassId) params.classId = filterClassId;
-      if (searchQuery.trim()) params.search = searchQuery.trim();
-
-      const [studentsData, enrollmentsData] = await Promise.all([
-        studentsService.getAll(params),
-        studentsService.getEnrollments({ academicYearId: effectiveYearId }),
-      ]);
-
-      // ⭐ Gérer la réponse paginée { data, total, page, limit, totalPages }
-      // ou l'ancien format array (rétro-compatibilité)
-      if (Array.isArray(studentsData)) {
-        setStudents(studentsData);
-        setPagination({ total: studentsData.length, page: 1, limit: studentsData.length, totalPages: 1 });
-      } else if (studentsData && Array.isArray(studentsData.data)) {
-        setStudents(studentsData.data);
-        setPagination({
-          total: studentsData.total || 0,
-          page: studentsData.page || 1,
-          limit: studentsData.limit || PAGE_SIZE,
-          totalPages: studentsData.totalPages || 1,
-        });
-      } else {
-        setStudents([]);
-        setPagination({ total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 });
-      }
-      setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
-    } catch (e: any) {
-      console.error('Failed to load students:', e);
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
-    } finally {
-      setIsLoading(false);
-    }
+  const loadData = () => {
+    queryClient.invalidateQueries({ queryKey: ['students'] });
+    queryClient.invalidateQueries({ queryKey: ['enrollments', effectiveYearId] });
   };
 
   /**

@@ -32,6 +32,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import { useStudentStatistics } from '@/lib/query/student-queries';
 
 export interface StudentsModuleDashboardProps {
   /** Callback pour naviguer vers un sous-module (changer l’onglet actif) */
@@ -82,28 +83,23 @@ export default function StudentsModuleDashboard({
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ⭐ FIX : utilise React Query (useStudentStatistics) au lieu de fetch manuel.
+  //    Les données sont mises en cache et servies instantanément au remontage.
+  const statsQuery = useStudentStatistics(academicYear?.id, schoolLevel?.id);
+
   useEffect(() => {
     if (!academicYear || !schoolLevel) {
       setStatistics(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
-    studentsService.getStatistics(academicYear.id, schoolLevel.id)
-      .then(setStatistics)
-      .catch((e) => {
-        console.error('[Dashboard] getStatistics failed:', e?.message);
-        // Ne pas afficher de toast "Erreur" si c'est juste qu'il n'y a pas de données
-        // (ex: élèves supprimés, tenant vide). L'utilisateur voit déjà l'état vide.
-        // On affiche le toast seulement pour les vraies erreurs réseau (401, 500, etc.).
-        const status = e?.response?.status || e?.status;
-        if (status && status >= 500) {
-          toast({ title: 'Erreur serveur', description: 'Impossible de charger les statistiques', variant: 'error' });
-        }
-        setStatistics(null);
-      })
-      .finally(() => setLoading(false));
-  }, [academicYear?.id, schoolLevel?.id]);
+    setLoading(statsQuery.isLoading);
+    if (statsQuery.data) {
+      setStatistics(statsQuery.data);
+    } else if (!statsQuery.isLoading && statsQuery.isError) {
+      setStatistics(null);
+    }
+  }, [statsQuery.data, statsQuery.isLoading, statsQuery.isError, academicYear, schoolLevel]);
 
   const levelLabel =
     schoolLevel?.code === 'MATERNELLE'

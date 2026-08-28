@@ -16,6 +16,8 @@ import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import IdCardVisual, { type TenantInfo } from './IdCardVisual';
+import { useStudents, useAllClasses } from '@/lib/query/student-queries';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface StudentIdentity {
   id: string;
@@ -195,69 +197,54 @@ export default function StudentIdentityContent() {
   }, [filterLevelId, filterClassId, searchTerm]);
 
   // ⭐ Bug fix : recharger au changement de page/filtre/recherche (debounce 250ms sur search).
+  // ⭐ FIX : utilise React Query (useStudents + useAllClasses) au lieu de fetch manuel.
+  //    Les données sont mises en cache et servies instantanément au remontage.
+  const studentsQuery = useStudents({
+    academicYearId: academicYear?.id,
+    page: currentPage,
+    limit: PAGE_SIZE,
+    schoolLevelId: filterLevelId || undefined,
+    classId: filterClassId || undefined,
+    search: searchTerm.trim() || undefined,
+  });
+  const allClassesQuery = useAllClasses(academicYear?.id);
+  const queryClient = useQueryClient();
+
+  // Synchronisation React Query → state local
   useEffect(() => {
     if (!academicYear) return;
-    const timeout = setTimeout(() => {
-      loadData();
-    }, searchTerm ? 250 : 0);
-    return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicYear, schoolLevel, currentPage, filterLevelId, filterClassId, searchTerm]);
+    const studentsData = studentsQuery.data;
+    const allStudents = studentsData?.data || [];
+    setStudents(allStudents);
+    setTotalStudents(studentsData?.total || allStudents.length);
+    setTotalPages(studentsData?.totalPages || 1);
+    setAllClasses(allClassesQuery.data || []);
+    setIsLoading(studentsQuery.isLoading || allClassesQuery.isLoading);
+  }, [studentsQuery.data, allClassesQuery.data, studentsQuery.isLoading, allClassesQuery.isLoading, academicYear]);
 
-  const loadData = async () => {
-    if (!academicYear) return;
-    setIsLoading(true);
-    try {
-      // ⭐ Bug fix : passer page/limit/search/classId/schoolLevelId au backend.
-      // L'ancien code faisait limit=200 et filtrait côté client → pas de vraie pagination
-      // et recherche limitée aux 200 premiers élèves.
-      const params: Record<string, string> = {
-        academicYearId: academicYear.id,
-        page: String(currentPage),
-        limit: String(PAGE_SIZE),
-      };
-      if (filterLevelId) params.schoolLevelId = filterLevelId;
-      if (filterClassId) params.classId = filterClassId;
-      if (searchTerm.trim()) params.search = searchTerm.trim();
-
-      const [studentsData, classesRes] = await Promise.all([
-        studentsService.getAll(params),
-        fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
-      ]);
-      const allStudents = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
-      setStudents(allStudents);
-      // ⭐ Utiliser data.total pour le vrai total serveur (pas allStudents.length)
-      setTotalStudents(!Array.isArray(studentsData) && studentsData?.total != null ? studentsData.total : allStudents.length);
-      setTotalPages(!Array.isArray(studentsData) && studentsData?.totalPages != null ? studentsData.totalPages : 1);
-      setAllClasses(Array.isArray(classesRes) ? classesRes : []);
-
-      // ⭐ Présélection d'un élève si ?studentId=xxx est présent dans l'URL
-      // (ex: depuis l'onglet Historique Scolaire → bouton « Dossier Complet »).
-      if (typeof window !== 'undefined') {
-        const urlParams = new URLSearchParams(window.location.search);
-        const preselectStudentId = urlParams.get('studentId');
-        if (preselectStudentId) {
-          const found = allStudents.find((s: any) => s.id === preselectStudentId);
-          if (found) {
-            setSelectedStudent(found as StudentIdentity);
-          } else {
-            toast({
-              title: 'Élève introuvable',
-              description: 'Aucun dossier élève ne correspond à l\'identifiant demandé.',
-              variant: 'info',
-            });
-          }
-          // Nettoyer l'URL (retirer studentId, garder tab=dossiers)
-          urlParams.delete('studentId');
-          const newUrl = urlParams.toString()
-            ? `${window.location.pathname}?${urlParams.toString()}`
-            : window.location.pathname;
-          window.history.replaceState({}, '', newUrl);
-        }
-      }
-    } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); }
-    finally { setIsLoading(false); }
+  const loadData = () => {
+    queryClient.invalidateQueries({ queryKey: ['students'] });
+    queryClient.invalidateQueries({ queryKey: ['all-classes', academicYear?.id] });
   };
+
+  // ⭐ Présélection d'un élève si ?studentId=xxx est présent dans l'URL
+  useEffect(() => {
+    if (typeof window !== 'undefined' && students.length > 0) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const preselectStudentId = urlParams.get('studentId');
+      if (preselectStudentId) {
+        const found = students.find((s: any) => s.id === preselectStudentId);
+        if (found) {
+          setSelectedStudent(found as StudentIdentity);
+        }
+        urlParams.delete('studentId');
+        const newUrl = urlParams.toString()
+          ? `${window.location.pathname}?${urlParams.toString()}`
+          : window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [students]);
 
   const levels = useMemo(() => {
     const map = new Map<string, { id: string; name: string; code?: string }>();

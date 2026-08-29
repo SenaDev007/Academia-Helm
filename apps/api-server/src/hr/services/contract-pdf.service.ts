@@ -835,17 +835,20 @@ export class ContractPdfService {
     // Re-générer le PDF avec les deux signatures
     await this.generateContractPdf(contractId, tenantId);
 
-    // Mettre à jour le statut du personnel : PENDING_SIGNATURE → ACTIVE
+    // Mettre à jour le statut du personnel : PENDING_HIRE/PENDING_SIGNATURE → ACTIVE
+    // ⭐ Élargi pour inclure PENDING_HIRE (statut par défaut depuis la
+    //    refonte du flux d'embauche directe) en plus de PENDING_SIGNATURE
+    //    (statut historique encore présent dans le flux public ÉLIGIBLE).
     const staffId = updatedContract.staffId;
     if (staffId) {
       try {
         const currentStaff = await this.prisma.staff.findFirst({ where: { id: staffId } });
-        if (currentStaff && currentStaff.status === 'PENDING_SIGNATURE') {
+        if (currentStaff && ['PENDING_HIRE', 'PENDING_SIGNATURE'].includes(currentStaff.status)) {
           await this.prisma.staff.update({
             where: { id: staffId },
             data: { status: 'ACTIVE' },
           });
-          this.logger.log(`Staff ${staffId} status updated: PENDING_SIGNATURE → ACTIVE (contract signed)`);
+          this.logger.log(`Staff ${staffId} status updated: ${currentStaff.status} → ACTIVE (contract signed)`);
 
           // ── Création automatique des credentials ──
           try {
@@ -957,6 +960,33 @@ export class ContractPdfService {
       this.logger.log(`Staff ${staffId} status updated to ACTIVE during onboarding completion`);
     }
 
+    // ⭐ Alignement du flux d'embauche directe avec le flux public :
+    //    Avancer HrApplication.status de 'ÉLIGIBLE' à 'EMBAUCHÉ' si une
+    //    application est liée à ce staff. Sans cela, le candidat reste
+    //    éternellement dans "Éligibles en préparation" de l'onglet Embauche
+    //    même si le staff est ACTIF et le contrat ACTIF.
+    try {
+      const application = await this.prisma.hrApplication.findFirst({
+        where: { staffId, tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
+      if (application && application.status === 'ÉLIGIBLE') {
+        await this.prisma.hrApplication.update({
+          where: { id: application.id },
+          data: { status: 'EMBAUCHÉ' },
+        });
+        this.logger.log(
+          `[completeOnboarding] HrApplication ${application.id} advanced to EMBAUCHÉ for staff ${staffId}`,
+        );
+      }
+    } catch (err: any) {
+      // Non bloquant — l'embauche directe sans HrApplication est possible
+      this.logger.warn(
+        `[completeOnboarding] Failed to update HrApplication status (non-blocking): ${err?.message}`,
+      );
+    }
+
     // Générer les matricules si pas encore fait
     if (!staff.globalMatricule || !staff.tenantMatricule) {
       try {
@@ -993,6 +1023,34 @@ export class ContractPdfService {
         }
       } catch (err: any) {
         this.logger.warn(`Failed to create credentials during onboarding (non-blocking): ${err?.message}`);
+      }
+
+      // ⭐ Envoi de l'email "Vous êtes embauché(e)" pour aligner avec le flux public.
+      //    Le contrat est déjà signé synchrone dans l'onboarding direct, donc on
+      //    n'envoie pas d'URL de signature (le candidat a déjà le PDF).
+      try {
+        const application = await this.prisma.hrApplication.findFirst({
+          where: { staffId, tenantId },
+          include: { candidate: true, job: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        });
+        if (application?.candidateId && application?.jobId) {
+          await this.notificationService.notifyHired({
+            candidateId: application.candidateId,
+            tenantId,
+            jobId: application.jobId,
+            contractType: contract.contractType,
+            startDate: contract.startDate,
+            salary: String(contract.baseSalary ?? ''),
+          });
+          this.logger.log(`[completeOnboarding] notifyHired email sent for staff ${staffId}`);
+        }
+      } catch (err: any) {
+        // Non bloquant
+        this.logger.warn(
+          `[completeOnboarding] notifyHired email failed (non-blocking): ${err?.message}`,
+        );
       }
     } else if (!options.sendEmail) {
       // Même si sendEmail est false, créer les credentials sans envoyer d'email

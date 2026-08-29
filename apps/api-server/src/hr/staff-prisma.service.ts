@@ -120,6 +120,25 @@ export class StaffPrismaService {
       || CATEGORY_TO_ROLE[data.category || '']
       || 'TEACHER';
 
+    // ⭐ Pré-validation : vérifier qu'aucun User n'existe déjà avec cet email.
+    //    Sans cela, la création du staff réussit mais createCredentialsForStaff
+    //    échoue silencieusement plus tard (l'utilisateur ne peut pas se
+    //    connecter alors que tout semble OK). On remonte une erreur claire
+    //    le plus tôt possible.
+    if (data.email) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email: data.email },
+        select: { id: true, email: true },
+      });
+      if (existingUser) {
+        throw new BadRequestException(
+          `Un compte utilisateur existe déjà avec l'email "${data.email}". ` +
+          'Impossible de créer une nouvelle fiche personnel avec cet email. ' +
+          'Veuillez utiliser un email différent ou archiver le compte existant.',
+        );
+      }
+    }
+
     // Generate dual matricules
     let globalMatricule: string | null = null;
     let tenantMatricule: string | null = null;
@@ -156,7 +175,12 @@ export class StaffPrismaService {
         department:     data.department || null,
         roleType,
         hireDate:       data.hireDate ? new Date(data.hireDate) : new Date(),
-        status:         data.status || 'PENDING_SIGNATURE',
+        // ⭐ Aligné avec le flux de recrutement public qui crée aussi le staff
+        //    à PENDING_HIRE à la transition ÉLIGIBLE. Le statut PENDING_HIRE
+        //    signifie "embauche initiée, en attente de finalisation (signature
+        //    contrat + activation)". Le statut PENDING_SIGNATURE était trop
+        //    spécifique et incohérent avec le flux public.
+        status:         data.status || 'PENDING_HIRE',
         qualifications: data.qualifications || null,
         notes:          data.notes || null,
       },

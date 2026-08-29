@@ -1,16 +1,23 @@
 'use client';
 
-import { HRShell } from '../_components/HRShell';
-import { RecruitmentWorkspace } from '../_components/workspaces/RecruitmentWorkspace';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
+/**
+ * Redirection: l'onglet "Embauche" a été fusionné avec l'onglet "Recrutement".
+ * Les embauches sont maintenant accessibles via le sous-tab "Embauches"
+ * dans /app/hr/recruitment.
+ *
+ * Conservé comme redirection pour ne pas casser les bookmarks existants.
+ */
 export default function EmbauchePage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/app/hr/recruitment?tab=embauches');
+  }, [router]);
   return (
-    <HRShell
-      activeId="embauche"
-      title="Embauche"
-      description="Finalisez l'embauche de vos candidats éligibles : préparation et signature des contrats, envoi des emails d'embauche."
-    >
-      <RecruitmentWorkspace initialTab="embauches" />
-    </HRShell>
+    <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+      Redirection vers le module de recrutement…
+    </div>
   );
 }

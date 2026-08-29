@@ -3,15 +3,27 @@
  * HR MODULE — Navigation Tabs (centralisé)
  * Même pattern que pedagogy-tabs.tsx
  * ============================================================================
+ *
+ * Onglets supprimés suite à la centralisation :
+ *   - 'embauche' (alias de RecruitmentWorkspace initialTab="embauches") :
+ *     supprimé car c'était le même composant que 'recruitment' avec un
+ *     sous-tab différent. L'utilisateur accède aux embauches via l'onglet
+ *     'recruitment' → sous-tab 'Embauches'.
+ *   - 'staff' et 'contracts' : supprimés car ils sont déjà exposés comme
+ *     sous-tabs dans l'onglet 'collaborators' (Personnel / Contrats /
+ *     Historique / Organigramme). L'onglet 'collaborators' devient le
+ *     point d'entrée unique pour la gestion du personnel et des contrats.
+ *   - 'cnss' renommé en 'CNSS & Cotisations' (label honnête sur le
+ *     périmètre réel — il n'y a que la CNSS, pas d'impôts ni d'état
+ *     financier pour l'instant).
+ * ============================================================================
  */
 
 import {
   LayoutDashboard,
   Briefcase,
   Users,
-  UserCircle,
   UserCog,
-  FileCheck,
   Brain,
   Clock,
   CalendarDays,
@@ -21,7 +33,6 @@ import {
   BarChart3,
   Settings,
   Landmark,
-  UserPlus,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -49,24 +60,6 @@ export const HR_SUBMODULE_TABS = [
     label: 'Recrutement',
     path: '/app/hr/recruitment',
     icon: Briefcase,
-  },
-  {
-    id: 'embauche',
-    label: 'Embauche',
-    path: '/app/hr/embauche',
-    icon: UserPlus,
-  },
-  {
-    id: 'staff',
-    label: 'Personnel',
-    path: '/app/hr/staff',
-    icon: UserCircle,
-  },
-  {
-    id: 'contracts',
-    label: 'Contrats',
-    path: '/app/hr/contracts',
-    icon: FileCheck,
   },
   {
     id: 'collaborators',
@@ -112,7 +105,7 @@ export const HR_SUBMODULE_TABS = [
   },
   {
     id: 'cnss',
-    label: 'Impôts & État Financier',
+    label: 'CNSS & Cotisations',
     path: '/app/hr/cnss',
     icon: Landmark,
   },
@@ -129,4 +122,3 @@ export const HR_SUBMODULE_TABS = [
     icon: Settings,
   },
 ] as const;
-

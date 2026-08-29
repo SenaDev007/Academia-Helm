@@ -48,6 +48,7 @@ import {
   Share2,
   Link2,
   MessageCircle,
+  UserCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -2644,9 +2645,23 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         {eligibleCandidates.map((c) => {
                           const contractSigned = !!c.contract?.isEmployerSigned;
                           const contractStatus = c.contract?.status || 'DRAFT';
+                          // ⭐ Détection des embauches directes (OnboardingWizard) :
+                          //    HrApplication est encore à 'ÉLIGIBLE' mais le contrat
+                          //    est déjà ACTIVE (signé synchrone à l'étape 6). On les
+                          //    affiche distinctement avec un lien "Voir la fiche
+                          //    personnel" au lieu du bouton "Embaucher" (qui
+                          //    échouerait car le contrat n'est plus DRAFT/PENDING).
+                          const isDirectHireCompleted = contractStatus === 'ACTIVE';
                           return (
                             <tr key={c.id} className="hover:bg-violet-50/30 transition">
-                              <td className="p-4 font-bold text-slate-950">{c.name}</td>
+                              <td className="p-4 font-bold text-slate-950">
+                                {c.name}
+                                {isDirectHireCompleted && (
+                                  <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-1.5 py-0.5">
+                                    Embauché directement
+                                  </span>
+                                )}
+                              </td>
                               <td className="p-4 text-slate-600">{c.job}</td>
                               <td className="p-4">
                                 <span className={cn(
@@ -2655,9 +2670,11 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     ? 'bg-slate-50 text-slate-600 border-slate-200'
                                     : contractStatus === 'PENDING'
                                     ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                    : 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                    : contractStatus === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
                                 )}>
-                                  {contractStatus === 'DRAFT' ? 'Brouillon' : contractStatus === 'PENDING' ? 'En attente' : contractStatus}
+                                  {contractStatus === 'DRAFT' ? 'Brouillon' : contractStatus === 'PENDING' ? 'En attente' : contractStatus === 'ACTIVE' ? 'Actif' : contractStatus}
                                 </span>
                               </td>
                               <td className="p-4">
@@ -2675,33 +2692,48 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                 <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">{c.finalScore}%</span>
                               </td>
                               <td className="p-4 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  <button
-                                    onClick={() => handlePrepareContract(c)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-2 text-[#1A2BA6] rounded-lg text-xs font-bold border border-[#1A2BA6]/20 hover:bg-[#1A2BA6]/5 transition"
-                                    title="Ouvrir la page du contrat pour le préparer et le signer"
-                                  >
-                                    <FileText className="h-3.5 w-3.5" /> Préparer le contrat
-                                  </button>
-                                  {contractSigned ? (
-                                    <button
-                                      onClick={() => setHireCandidate(c)}
-                                      className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
-                                      title="Finaliser l'embauche — envoie l'email au candidat"
+                                {isDirectHireCompleted ? (
+                                  // ⭐ Embauche directe déjà finalisée — on affiche
+                                  //    un lien vers la fiche personnel plutôt que le
+                                  //    bouton "Embaucher" qui échouerait.
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Link
+                                      href={c.staffId ? `/app/hr/staff/${c.staffId}` : '/app/hr/collaborators'}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 text-[#1A2BA6] rounded-lg text-xs font-bold border border-[#1A2BA6]/20 hover:bg-[#1A2BA6]/5 transition"
+                                      title="Voir la fiche personnel (embauche directe finalisée)"
                                     >
-                                      <UserCheck className="h-3.5 w-3.5" /> Embaucher
-                                    </button>
-                                  ) : (
+                                      <UserCircle className="h-3.5 w-3.5" /> Voir la fiche personnel
+                                    </Link>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-2">
                                     <button
-                                      disabled
-                                      className="inline-flex items-center gap-1.5 px-4 py-2 text-slate-400 rounded-lg text-xs font-bold border border-slate-200 cursor-not-allowed"
-                                      title="Veuillez préparer et signer le contrat d'abord"
+                                      onClick={() => handlePrepareContract(c)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-2 text-[#1A2BA6] rounded-lg text-xs font-bold border border-[#1A2BA6]/20 hover:bg-[#1A2BA6]/5 transition"
+                                      title="Ouvrir la page du contrat pour le préparer et le signer"
                                     >
-                                      <AlertTriangle className="h-3.5 w-3.5" /> Embaucher
+                                      <FileText className="h-3.5 w-3.5" /> Préparer le contrat
                                     </button>
-                                  )}
-                                </div>
-                                {!contractSigned && (
+                                    {contractSigned ? (
+                                      <button
+                                        onClick={() => setHireCandidate(c)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90 transition bg-emerald-600"
+                                        title="Finaliser l'embauche — envoie l'email au candidat"
+                                      >
+                                        <UserCheck className="h-3.5 w-3.5" /> Embaucher
+                                      </button>
+                                    ) : (
+                                      <button
+                                        disabled
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 text-slate-400 rounded-lg text-xs font-bold border border-slate-200 cursor-not-allowed"
+                                        title="Veuillez préparer et signer le contrat d'abord"
+                                      >
+                                        <AlertTriangle className="h-3.5 w-3.5" /> Embaucher
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                {!isDirectHireCompleted && !contractSigned && (
                                   <p className="text-[9px] text-amber-700 mt-1.5 font-medium">
                                     ⚠ Veuillez préparer et signer le contrat d'abord.
                                   </p>

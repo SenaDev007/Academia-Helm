@@ -49,8 +49,15 @@ export class RecruitmentPrismaService {
 
   // Job Offers CRUD
   async getJobs(tenantId: string) {
+    // ⭐ Exclure les jobs "internes" (ref='INTERNAL') qui sont créés
+    //    automatiquement par le flux d'embauche directe (OnboardingWizard).
+    //    Ces jobs ne sont pas des offres publiées par le recruteur —
+    //    ils pollueraient la liste des offres visibles dans l'onglet Jobs.
     return this.prisma.hrJob.findMany({
-      where: { tenantId },
+      where: {
+        tenantId,
+        ref: { not: 'INTERNAL' },
+      },
       include: { _count: { select: { applications: { where: { tenantId } } } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -1197,14 +1204,17 @@ export class RecruitmentPrismaService {
         }
 
         // ─── Find the existing contract (created during ÉLIGIBLE) ─────────
-        // Look for the most recent DRAFT contract for this staff. The contract
-        // must have been signed by the employer (terms.employerSignedAt) before
-        // we can send the hire email to the candidate.
+        // Look for the most recent DRAFT/PENDING contract for this staff.
+        // On tolère aussi le statut ACTIVE : dans le flux d'embauche directe
+        // (OnboardingWizard), le contrat est signé synchrone à l'étape 6 et
+        // passe directement de PENDING → ACTIVE. Sans cette tolérance, le
+        // bouton "Embaucher" échouerait pour ces candidats car il n'y a plus
+        // de contrat DRAFT/PENDING à trouver.
         const contract = await this.prisma.contract.findFirst({
           where: {
             staffId: existingStaff.id,
             tenantId: application.tenantId,
-            status: { in: ['DRAFT', 'PENDING'] },
+            status: { in: ['DRAFT', 'PENDING', 'ACTIVE'] },
           },
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -1212,14 +1222,19 @@ export class RecruitmentPrismaService {
 
         if (!contract) {
           throw new BadRequestException(
-            'Impossible d\'embaucher : aucun contrat (DRAFT/PENDING) trouvé pour ce personnel. ' +
-            'Le contrat doit être créé lors de la déclaration d\'éligibilité.',
+            'Impossible d\'embaucher : aucun contrat (DRAFT/PENDING/ACTIVE) trouvé pour ce personnel. ' +
+            'Le contrat doit être créé lors de la déclaration d\'éligibilité ou de l\'onboarding.',
           );
         }
 
         // ─── Verify the employer has signed the contract ──────────────────
+        //    Sauf si le contrat est déjà ACTIVE : dans ce cas, les deux parties
+        //    ont déjà signé (flux direct), donc on skip la vérification et on
+        //    rend le bouton "Embaucher" idempotent (passer EMBAUCHÉ est un
+        //    no-op bénéfique pour synchroniser le statut de l'application).
         const terms = (contract.terms as any) || {};
-        if (!terms.employerSignedAt) {
+        const isAlreadyFullySigned = contract.status === 'ACTIVE';
+        if (!isAlreadyFullySigned && !terms.employerSignedAt) {
           throw new BadRequestException(
             'Le contrat doit être signé par le recruteur avant l\'embauche. ' +
             'Veuillez préparer et signer le contrat avant de finaliser l\'embauche.',
@@ -1271,16 +1286,22 @@ export class RecruitmentPrismaService {
 
           // Update contract status DRAFT → PENDING (waiting for employee signature)
           // NB: employer signature (terms.employerSignedAt) is preserved as-is.
+          //
+          // ⭐ Si le contrat est déjà ACTIVE (flux d'embauche directe où
+          //    l'employé a signé synchrone à l'étape 6 du OnboardingWizard),
+          //    on NE le repasse PAS à PENDING — ce serait une régression.
+          //    On le laisse à ACTIVE.
+          const newContractStatus = contract!.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING';
           const updatedContract = await tx.contract.update({
             where: { id: contract!.id },
             data: {
               ...prismaUpdateDefaults(),
-              status: 'PENDING',
+              status: newContractStatus,
             },
             include: { staff: true },
           });
           this.logger.log(
-            `[EMBAUCHÉ] Contract ${updatedContract.id} status updated: DRAFT → PENDING`,
+            `[EMBAUCHÉ] Contract ${updatedContract.id} status updated: ${contract!.status} → ${newContractStatus}`,
           );
 
           return { ...updatedApp, staff: staffRecord, contract: updatedContract };
@@ -1294,21 +1315,30 @@ export class RecruitmentPrismaService {
         //   - Create user credentials (login + password) for the new staff
 
         // 1. Generate contract sign token
+        //    ⭐ Skip si le contrat est déjà ACTIVE (flux d'embauche directe où
+        //    l'employé a déjà signé synchrone à l'étape 6 du OnboardingWizard).
+        //    Pas besoin d'URL de signature dans ce cas.
         let contractUrl: string | undefined;
-        try {
-          const tokenResult = await this.contractSignTokenService.generateToken(
-            contract.id,
-            application.tenantId,
-          );
-          contractUrl = tokenResult.signUrl;
+        if (!isAlreadyFullySigned) {
+          try {
+            const tokenResult = await this.contractSignTokenService.generateToken(
+              contract.id,
+              application.tenantId,
+            );
+            contractUrl = tokenResult.signUrl;
+            this.logger.log(
+              `[EMBAUCHÉ] Token de signature généré pour contrat ${contract.id} — URL: ${contractUrl}`,
+            );
+          } catch (tokenErr: any) {
+            this.logger.error(
+              `[EMBAUCHÉ] Échec génération token de signature pour contrat ${contract.id}: ${tokenErr.message}`,
+            );
+            // Non-bloquant — l'email partira sans le lien de signature
+          }
+        } else {
           this.logger.log(
-            `[EMBAUCHÉ] Token de signature généré pour contrat ${contract.id} — URL: ${contractUrl}`,
+            `[EMBAUCHÉ] Contract ${contract.id} déjà ACTIVE — skip génération token de signature (flux direct)`,
           );
-        } catch (tokenErr: any) {
-          this.logger.error(
-            `[EMBAUCHÉ] Échec génération token de signature pour contrat ${contract.id}: ${tokenErr.message}`,
-          );
-          // Non-bloquant — l'email partira sans le lien de signature
         }
 
         // 2. Send hire email notification (fire-and-forget)

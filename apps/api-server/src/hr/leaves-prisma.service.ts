@@ -243,7 +243,131 @@ export class LeavesPrismaService {
       });
     }
 
+    // ─── Fusion #3 : auto-créer des lignes ABSENT dans staff_attendances ──
+    //    Quand un congé est APPROVED, on génère une ligne d'absence pour
+    //    chaque jour couvert par la période du congé (incluse). Cela fait
+    //    du pointage la source unique de vérité "qui était absent le jour J"
+    //    et élimine le doublon conceptuel entre Congés et Présences.
+    //
+    //    Stratégie :
+    //      - On n'écrase pas une ligne d'attendance déjà existante pour
+    //        ce staff + ce jour (ex: si le recruteur a déjà pointé ABSENT
+    //        manuellement, on garde la trace originale).
+    //      - Pour chaque jour non déjà enregistré, on crée une ligne avec
+    //        status='ABSENT' et un note "Congé <type> approuvé le <date>".
+    //      - L'academicYearId est hérité du congé ; schoolLevelId du staff.
+    if (status === 'APPROVED') {
+      this.generateAttendanceForApprovedLeave(updated, tenantId).catch((err) => {
+        this.logger.error(
+          `[processLeaveRequest] generateAttendanceForApprovedLeave failed (non-blocking): ${err.message}`,
+        );
+      });
+    }
+
     return updated;
+  }
+
+  /**
+   * Génère les lignes d'attendance ABSENT pour chaque jour couvert par
+   * un congé approuvé. Ne crée pas de doublon si une ligne existe déjà
+   * pour le même (staffId, date).
+   */
+  private async generateAttendanceForApprovedLeave(
+    leaveRequest: any,
+    tenantId: string,
+  ): Promise<void> {
+    if (!leaveRequest?.staffId || !leaveRequest?.startDate || !leaveRequest?.endDate) {
+      return;
+    }
+
+    const startDate = new Date(leaveRequest.startDate);
+    const endDate = new Date(leaveRequest.endDate);
+    if (endDate < startDate) return;
+
+    // Récupérer le schoolLevelId du staff (si défini)
+    let schoolLevelId: string | null = null;
+    try {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: leaveRequest.staffId },
+        select: { schoolLevelId: true, academicYearId: true },
+      });
+      schoolLevelId = staff?.schoolLevelId ?? null;
+      // Si le staff a un academicYearId, on l'utilise ; sinon on prend celui
+      // du congé (qui devrait toujours être défini)
+      if (staff?.academicYearId) {
+        // priorité au staff
+      }
+    } catch (err: any) {
+      this.logger.warn(`generateAttendance: failed to load staff: ${err.message}`);
+    }
+
+    const academicYearId = leaveRequest.academicYearId;
+    if (!academicYearId) {
+      this.logger.warn(
+        `[generateAttendanceForApprovedLeave] leaveRequest ${leaveRequest.id} has no academicYearId — skipping`,
+      );
+      return;
+    }
+
+    // Itérer sur chaque jour entre startDate et endDate (inclus)
+    const leaveTypeLabel = LEAVE_TYPE_LABELS[leaveRequest.type] || 'Congé';
+    const note = `Congé ${leaveTypeLabel} approuvé le ${new Date().toLocaleDateString('fr-FR')}`;
+
+    const days: Date[] = [];
+    const cursor = new Date(startDate);
+    cursor.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(0, 0, 0, 0);
+    while (cursor <= end) {
+      days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    for (const day of days) {
+      try {
+        // Vérifier si une ligne existe déjà pour ce (staffId, date)
+        // ⚠ La contrainte @@unique([staffId, date]) impose l'unicité.
+        const existing = await this.prisma.staffAttendance.findUnique({
+          where: {
+            staffId_date: {
+              staffId: leaveRequest.staffId,
+              date: day,
+            },
+          },
+          select: { id: true },
+        });
+        if (existing) {
+          skippedCount++;
+          continue;
+        }
+
+        await this.prisma.staffAttendance.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId,
+            schoolLevelId,
+            staffId: leaveRequest.staffId,
+            date: day,
+            status: 'ABSENT',
+            hoursWorked: 0,
+            notes: note,
+          },
+        });
+        createdCount++;
+      } catch (err: any) {
+        // Non bloquant — on log et on continue
+        this.logger.warn(
+          `[generateAttendanceForApprovedLeave] failed for staff=${leaveRequest.staffId} date=${day.toISOString().slice(0, 10)}: ${err.message}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `[generateAttendanceForApprovedLeave] leave=${leaveRequest.id} staff=${leaveRequest.staffId} — ${createdCount} attendance rows created, ${skippedCount} already existing`,
+    );
   }
 
   /**

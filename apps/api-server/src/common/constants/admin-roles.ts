@@ -156,3 +156,33 @@ export const DIRECTOR_ROLES: AdminRole[] = [
   'PROVISEUR',
   'DIRECTEUR_DES_ETUDES',
 ];
+
+/**
+ * ⭐ Mapping AdminRole (staff_admin_assignments) → UserRole (plateforme)
+ *    Utilisé par staff-credential.service.ts pour déterminer le rôle du
+ *    compte User lors de la création/régénération d'identifiants, et par
+ *    staff-admin-assignment.service.ts pour mettre à jour le rôle du User
+ *    existant quand une affectation admin est créée.
+ *
+ *    Prioritaire sur refineUserRole(roleType, position) car l'adminRole
+ *    dans staff_admin_assignments est EXACT (pas du texte libre).
+ */
+export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
+  DIRECTEUR: 'DIRECTEUR',
+  DIRECTEUR_GENERAL: 'DIRECTEUR',
+  DIRECTEUR_ADJOINT: 'DIRECTEUR',
+  PROVISEUR: 'DIRECTEUR',
+  DIRECTEUR_DES_ETUDES: 'DIRECTEUR',
+  SURVEILLANT_GENERAL: 'SURVEILLANT',
+  SURVEILLANT: 'SURVEILLANT',
+  CENSEUR: 'CENSEUR',
+  SECRETAIRE: 'SECRETAIRE',
+  SECRETAIRE_COMPTABLE: 'SECRETAIRE_COMPTABLE',
+  COMPTABLE: 'COMPTABLE',
+  ECONOME: 'COMPTABLE',
+  INTENDANT: 'COMPTABLE',
+  RESP_SCOLARITE: 'SECRETAIRE',
+  CONSEILLER_PEDAGOGIQUE: 'ENSEIGNANT',
+  RESPONSABLE_ORIENTATIONS: 'SECRETAIRE',
+  AUTRE: 'SECRETAIRE',
+};

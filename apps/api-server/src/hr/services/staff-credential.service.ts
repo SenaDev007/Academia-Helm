@@ -24,6 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
+import { ADMIN_ROLE_TO_USER_ROLE } from '../../common/constants/admin-roles';
 import { renderCredentialEmail, TenantBranding } from '../recruitment-email-templates';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -51,6 +52,7 @@ const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
 const SPECIAL_CHARS = '!@#$%^&*?';
 
 // ── Mapping Staff roleType → UserRole ──
+//    (ADMIN_ROLE_TO_USER_ROLE est importé depuis common/constants/admin-roles.ts)
 
 const STAFF_ROLE_TO_USER_ROLE: Record<string, UserRole> = {
   TEACHER: UserRole.ENSEIGNANT,
@@ -59,6 +61,8 @@ const STAFF_ROLE_TO_USER_ROLE: Record<string, UserRole> = {
   DIRECTOR: UserRole.DIRECTEUR,
   OTHER: UserRole.SECRETAIRE,
 };
+
+// (ADMIN_ROLE_TO_USER_ROLE est importé depuis common/constants/admin-roles.ts)
 
 // ── Labels lisibles pour les rôles ──
 
@@ -179,7 +183,24 @@ export class StaffCredentialService {
       }
 
       // 3. Déterminer le rôle plateforme
-      const userRole = refineUserRole(staff.roleType, staff.position);
+      //    ⭐ Priorité : staff_admin_assignments > refineUserRole(roleType, position)
+      //    On cherche d'abord les affectations admin ACTIVES du staff pour
+      //    déterminer son rôle précis (SECRETAIRE, COMPTABLE, SECRETAIRE_COMPTABLE,
+      //    DIRECTEUR, CENSEUR, SURVEILLANT, etc.). Si aucune affectation, on
+      //    fallback sur refineUserRole qui parse staff.position.
+      let userRole: UserRole;
+      const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
+        where: { staffId, tenantId, isActive: true },
+        orderBy: { startDate: 'desc' },
+        take: 1,
+      });
+      if (adminAssignments.length > 0 && ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole]) {
+        userRole = ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole];
+        this.logger.log(`Role determined from admin assignment: ${adminAssignments[0].adminRole} → ${userRole}`);
+      } else {
+        userRole = refineUserRole(staff.roleType, staff.position);
+        this.logger.log(`Role determined from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);
+      }
       const portal = ROLE_PORTAL_MAP[userRole] || Portal.ECOLE;
 
       // 4. Déterminer l'identifiant de connexion
@@ -340,7 +361,20 @@ export class StaffCredentialService {
       const normalizedEmail = staff.email.trim().toLowerCase();
 
       // 4. Déterminer le rôle plateforme et l'identifiant de connexion
-      const userRole = refineUserRole(staff.roleType, staff.position);
+      //    ⭐ Priorité : staff_admin_assignments > refineUserRole(roleType, position)
+      let userRole: UserRole;
+      const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
+        where: { staffId, tenantId, isActive: true },
+        orderBy: { startDate: 'desc' },
+        take: 1,
+      });
+      if (adminAssignments.length > 0 && ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole]) {
+        userRole = ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole];
+        this.logger.log(`[generateOrRegenerate] Role from admin assignment: ${adminAssignments[0].adminRole} → ${userRole}`);
+      } else {
+        userRole = refineUserRole(staff.roleType, staff.position);
+        this.logger.log(`[generateOrRegenerate] Role from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);
+      }
       const portal = ROLE_PORTAL_MAP[userRole] || Portal.ECOLE;
       const isTeacher = staff.roleType === 'TEACHER';
       const username = isTeacher

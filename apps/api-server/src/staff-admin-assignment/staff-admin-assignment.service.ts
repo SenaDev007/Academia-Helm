@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { v4 as uuidv4 } from 'uuid';
-import { ADMIN_ROLES, isValidAdminRole } from '../common/constants/admin-roles';
+import { ADMIN_ROLES, isValidAdminRole, ADMIN_ROLE_TO_USER_ROLE } from '../common/constants/admin-roles';
 
 /**
  * ============================================================================
@@ -175,6 +175,36 @@ export class StaffAdminAssignmentService {
     });
 
     this.logger.log(`Admin assignment created: staff=${staff.firstName} ${staff.lastName}, role=${data.adminRole}, level=${data.schoolLevelCode}`);
+
+    // ⭐ Mettre à jour le rôle du User existant si le staff a déjà un compte.
+    //    Quand on affecte un poste admin à un staff, son compte User doit
+    //    refléter ce rôle pour que l'UI affichée soit correcte (secrétaire,
+    //    comptable, secrétaire-comptable, directeur, etc.).
+    try {
+      const staffWithStaff = await this.prisma.staff.findFirst({
+        where: { id: data.staffId, tenantId },
+        select: { email: true },
+      });
+      if (staffWithStaff?.email) {
+        const existingUser = await this.prisma.user.findFirst({
+          where: { email: staffWithStaff.email.trim().toLowerCase() },
+        });
+        if (existingUser) {
+          const targetRole = ADMIN_ROLE_TO_USER_ROLE[data.adminRole];
+          if (targetRole && existingUser.role !== targetRole) {
+            await this.prisma.user.update({
+              where: { id: existingUser.id },
+              data: { role: targetRole },
+            });
+            this.logger.log(`[create] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole} (from adminRole=${data.adminRole})`);
+          }
+        }
+      }
+    } catch (updateErr: any) {
+      // Non bloquant — l'affectation est créée, la mise à jour du User est best-effort
+      this.logger.warn(`[create] Failed to update User role (non-blocking): ${updateErr?.message}`);
+    }
+
     return rowToAssignment(row);
   }
 

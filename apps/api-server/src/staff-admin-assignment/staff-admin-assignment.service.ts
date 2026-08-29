@@ -95,7 +95,9 @@ export class StaffAdminAssignmentService {
             email: true,
             phone: true,
             employeeNumber: true,
-            photoUrl: true,
+            // ⭐ Le modèle Staff n'a pas de champ photoUrl direct — les photos
+            //    sont dans une table séparée StaffPhoto. On ne l'inclut pas ici
+            //    car le frontend n'en a pas besoin pour l'affichage des affectations.
           },
         },
       },

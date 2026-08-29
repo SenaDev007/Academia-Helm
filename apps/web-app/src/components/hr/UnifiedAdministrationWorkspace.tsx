@@ -69,6 +69,7 @@ import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/ui/toast';
 import {
   ADMIN_ROLE_LABELS, ROLES_BY_UNIT, ADMIN_UNIT_LABELS, LEVEL_CODE_TO_UNIT,
   type AdminRole,
@@ -538,7 +539,9 @@ export default function UnifiedAdministrationWorkspace() {
       setModalUnit(null);
       loadData();
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de l\'affectation');
+      const msg = err.message || 'Erreur lors de l\'affectation';
+      setError(msg);
+      toast({ variant: 'error', title: 'Échec de l\'affectation', description: msg });
     } finally {
       setSaving(false);
     }
@@ -1336,9 +1339,9 @@ export default function UnifiedAdministrationWorkspace() {
           setSignatureMode('none');
         }
       }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-base">
               <UserCheck className="w-4 h-4" style={{ color: PRIMARY }} />
               Affecter un poste administratif
               {modalUnit && (
@@ -1358,11 +1361,11 @@ export default function UnifiedAdministrationWorkspace() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-6 py-4">
             {/* Poste */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Poste administratif *
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Poste administratif *
               </label>
               <select
                 value={form.adminRole}
@@ -1386,8 +1389,8 @@ export default function UnifiedAdministrationWorkspace() {
 
             {/* Staff */}
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <UserCheck className="w-3 h-3" /> Membre du personnel *
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5" /> Membre du personnel *
               </label>
               <select
                 value={form.staffId}
@@ -1420,7 +1423,7 @@ export default function UnifiedAdministrationWorkspace() {
             {/* functionLabel + langue (si bilingue) */}
             <div className={cn('grid gap-3', isBilingual ? 'md:grid-cols-3' : 'md:grid-cols-1')}>
               <div className={isBilingual ? 'md:col-span-2' : ''}>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                   Fonction (libellé personnalisé)
                 </label>
                 <input
@@ -1433,8 +1436,8 @@ export default function UnifiedAdministrationWorkspace() {
               </div>
               {isBilingual && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                    <Globe className="w-3 h-3" /> Piste linguistique
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5" /> Piste linguistique
                   </label>
                   <select
                     value={form.language}
@@ -1452,7 +1455,7 @@ export default function UnifiedAdministrationWorkspace() {
             {/* Période */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date de début</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date de début</label>
                 <input
                   type="date"
                   value={form.startDate}
@@ -1461,7 +1464,7 @@ export default function UnifiedAdministrationWorkspace() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date de fin (optionnel)</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date de fin (optionnel)</label>
                 <input
                   type="date"
                   value={form.endDate}
@@ -1472,10 +1475,10 @@ export default function UnifiedAdministrationWorkspace() {
             </div>
 
             {/* Signature */}
-            <div className="border-t border-slate-100 pt-3">
-              <div className="flex items-center justify-between mb-2">
+            <div className="border-t border-slate-100 pt-5">
+              <div className="flex items-center justify-between mb-3">
                 <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                  <FileSignature className="w-3 h-3" /> Signature
+                  <FileSignature className="w-3.5 h-3.5" /> Signature
                 </label>
                 <button
                   type="button"
@@ -1583,7 +1586,7 @@ export default function UnifiedAdministrationWorkspace() {
             {/* Checkbox envoi identifiants */}
             <div
               className={cn(
-                'rounded-lg p-3 border flex items-start gap-2',
+                'rounded-lg p-4 border flex items-start gap-3',
                 form.sendCredentials
                   ? 'bg-blue-50/50 border-blue-200'
                   : 'bg-slate-50 border-slate-200',
@@ -1606,7 +1609,7 @@ export default function UnifiedAdministrationWorkspace() {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-4 border-t border-slate-100 mt-4">
             <Button
               variant="outline"
               onClick={() => {

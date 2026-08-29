@@ -9,7 +9,19 @@ export enum PortalType {
 }
 
 export class LoginDto {
-  @IsEmail()
+  /**
+   * Identifiant de connexion — accepte EMAIL ou MATRICULE.
+   *
+   * ⭐ Multi-portail unifié : un personnel ayant à la fois un poste enseignant
+   *    et un poste administratif peut se connecter au portail ÉCOLE avec son
+   *    email (ex: aurore@ecole.com) OU avec son matricule (ex: CSPEBE-P-26-00005).
+   *    Au portail ENSEIGNANT, il se connecte avec son matricule.
+   *
+   *    Le système détecte automatiquement :
+   *      - Si l'identifiant contient '@' → recherche par email dans User
+   *      - Sinon → recherche par matricule dans Staff, puis email dans User
+   */
+  @IsString()
   email: string;
 
   @IsString()

@@ -103,8 +103,38 @@ export class AuthService {
 
   async login(loginDto: LoginDto, meta?: SessionPersistMeta) {
     try {
-      // Find user by email
-      const user = await this.usersService.findByEmail(loginDto.email);
+      // ⭐ Recherche unifiée : accepte EMAIL ou MATRICULE comme identifiant.
+      //    - Si l'identifiant contient '@' → recherche directe par email dans User
+      //    - Sinon → recherche par matricule dans Staff, puis résolution email → User
+      //    Permet à un personnel multi-rôle (enseignant + admin) de se connecter
+      //    au portail ÉCOLE avec son matricule (comme au portail enseignant) ou
+      //    son email — les deux fonctionnent.
+      const identifier = (loginDto.email || '').trim();
+      let userEmail: string;
+
+      if (identifier.includes('@')) {
+        // C'est un email → recherche directe
+        userEmail = identifier.toLowerCase();
+      } else {
+        // C'est probablement un matricule → chercher dans Staff
+        const staff = await this.prisma.staff.findFirst({
+          where: {
+            OR: [
+              { tenantMatricule: { equals: identifier, mode: 'insensitive' } },
+              { globalMatricule: { equals: identifier, mode: 'insensitive' } },
+              { employeeNumber: { equals: identifier, mode: 'insensitive' } },
+            ],
+          },
+          select: { email: true },
+        });
+        if (!staff?.email) {
+          throw new UnauthorizedException('Identifiant invalide');
+        }
+        userEmail = staff.email.trim().toLowerCase();
+      }
+
+      // Find user by email (résolu depuis l'identifiant direct ou via Staff)
+      const user = await this.usersService.findByEmail(userEmail);
       if (!user) {
         throw new UnauthorizedException('Invalid credentials');
       }
@@ -364,7 +394,30 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.usersService.findByEmail(email);
+    // ⭐ Recherche unifiée : accepte EMAIL ou MATRICULE
+    //    Même logique que login() — si l'identifiant ne contient pas '@',
+    //    on cherche par matricule dans Staff puis on résout l'email.
+    const identifier = (email || '').trim();
+    let userEmail: string;
+
+    if (identifier.includes('@')) {
+      userEmail = identifier.toLowerCase();
+    } else {
+      const staff = await this.prisma.staff.findFirst({
+        where: {
+          OR: [
+            { tenantMatricule: { equals: identifier, mode: 'insensitive' } },
+            { globalMatricule: { equals: identifier, mode: 'insensitive' } },
+            { employeeNumber: { equals: identifier, mode: 'insensitive' } },
+          ],
+        },
+        select: { email: true },
+      });
+      if (!staff?.email) return null;
+      userEmail = staff.email.trim().toLowerCase();
+    }
+
+    const user = await this.usersService.findByEmail(userEmail);
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
       const { passwordHash, ...result } = user;
       return result;

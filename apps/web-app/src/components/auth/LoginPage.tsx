@@ -632,7 +632,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
 
-  const emailError = emailTouched && schoolCredentials.email && !isValidEmail(schoolCredentials.email)
+  // ⭐ Validation côté client — accepte EMAIL ou MATRICULE.
+  //    Si l'identifiant contient '@' → validation email ; sinon pas de
+  //    validation (le matricule peut être n'importe quel format).
+  const emailError = emailTouched && schoolCredentials.email && schoolCredentials.email.includes('@') && !isValidEmail(schoolCredentials.email)
     ? 'Format d\'email invalide'
     : null;
 
@@ -2039,17 +2042,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         htmlFor={`email-${tenantStorageKey}`}
                         className="mb-1.5 block text-sm font-semibold text-slate-900"
                       >
-                        Adresse email
+                        Email ou Matricule
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                           <Mail className="h-5 w-5 text-slate-400" />
                         </div>
                         <input
-                          type="email"
+                          type="text"
                           id={`email-${tenantStorageKey}`}
                           name={`email_${tenantStorageKey}`}
-                          autoComplete="email"
+                          autoComplete="username"
                           required
                           value={schoolCredentials.email}
                           onChange={(e) =>
@@ -2063,7 +2066,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           placeholder={
                             portalType === 'platform'
                               ? 'admin@academiahelm.com'
-                              : 'votre.email@etablissement.com'
+                              : 'email ou matricule (ex: CSPEBE-P-26-00005)'
                           }
                         />
                         {emailTouched && schoolCredentials.email && (

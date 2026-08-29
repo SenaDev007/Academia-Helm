@@ -16,8 +16,6 @@ import {
   Crown,
   UserCog,
   RefreshCw,
-  IdCard,
-  LayoutGrid,
   Briefcase,
   UserCheck,
   Plus,
@@ -27,8 +25,6 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 import { StaffWorkspace } from './StaffWorkspace';
 import { ContractsWorkspace } from './ContractsWorkspace';
-import { StaffCardWorkspace } from './StaffCardWorkspace';
-import { CardGallery } from './CardGallery';
 import { StaffListPDF } from './StaffListPDF';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -54,10 +50,12 @@ interface HistoryEntry {
 
 export function CollaboratorsWorkspace() {
   const { tenant } = useModuleContext();
-  // ⭐ Sous-tabs étendus : intégration de "Carte professionnelle", "Trombinoscope" et "Liste du personnel"
-  //    qui étaient auparavant dans l'onglet /app/hr/staff (désormais retiré de la sidebar).
+  // ⭐ Sous-tabs : Personnel, Liste du personnel, Contrats, Historique, Organigramme.
+  //    "Carte professionnelle" et "Trombinoscope" ont été supprimés définitivement
+  //    sur demande utilisateur — les fonctionnalités correspondantes ne sont plus
+  //    exposées dans le module RH.
   const [activeTab, setActiveTab] = useState<
-    'staff' | 'cards' | 'gallery' | 'list' | 'contracts' | 'history' | 'org_chart'
+    'staff' | 'list' | 'contracts' | 'history' | 'org_chart'
   >('staff');
   const [staffList, setStaffList] = useState<any[]>([]);
   const [contractsList, setContractsList] = useState<any[]>([]);
@@ -108,8 +106,6 @@ export function CollaboratorsWorkspace() {
 
   const SUB_TABS = [
     { id: 'staff', label: 'Personnel', icon: Users },
-    { id: 'cards', label: 'Carte professionnelle', icon: IdCard },
-    { id: 'gallery', label: 'Trombinoscope', icon: LayoutGrid },
     { id: 'list', label: 'Liste du personnel', icon: FileText },
     { id: 'contracts', label: 'Contrats', icon: Briefcase },
     { id: 'history', label: 'Historique', icon: History },
@@ -204,18 +200,6 @@ export function CollaboratorsWorkspace() {
         {activeTab === 'staff' && (
           <motion.div key="staff" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <StaffWorkspace />
-          </motion.div>
-        )}
-
-        {activeTab === 'cards' && (
-          <motion.div key="cards" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <StaffCardWorkspace />
-          </motion.div>
-        )}
-
-        {activeTab === 'gallery' && (
-          <motion.div key="gallery" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <CardGallery />
           </motion.div>
         )}
 

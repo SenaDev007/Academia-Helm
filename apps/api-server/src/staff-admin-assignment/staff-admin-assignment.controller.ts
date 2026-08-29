@@ -11,6 +11,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
 import * as crypto from 'crypto';
 
 /**
@@ -37,6 +38,7 @@ function resolveTid(tenant: any, tenantIdFallback?: string): string {
 }
 
 @Controller('staff-admin-assignments')
+@SkipAcademicYear() // ⭐ Les affectations admin ne sont pas liées à l'année scolaire
 export class StaffAdminAssignmentController {
   private readonly logger = new Logger(StaffAdminAssignmentController.name);
 

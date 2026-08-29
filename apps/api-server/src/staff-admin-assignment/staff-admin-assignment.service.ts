@@ -159,6 +159,26 @@ export class StaffAdminAssignmentService {
       );
     }
 
+    // ⭐ Vérifier qu'il n'existe pas déjà une affectation active identique
+    //    (même staffId + schoolLevelCode + adminRole + isActive=true). Si oui,
+    //    on ne crée pas de doublon — on retourne l'affectation existante.
+    const existing = await this.prisma.staffAdminAssignment.findFirst({
+      where: {
+        staffId: data.staffId,
+        tenantId,
+        schoolLevelCode: data.schoolLevelCode,
+        adminRole: data.adminRole,
+        isActive: true,
+      },
+    });
+    if (existing) {
+      this.logger.log(`Admin assignment already exists: staff=${staff.firstName} ${staff.lastName}, role=${data.adminRole}, level=${data.schoolLevelCode} — returning existing`);
+      return rowToAssignment({
+        ...existing,
+        staff: { id: staff.id, firstName: staff.firstName, lastName: staff.lastName, email: null, phone: null, employeeNumber: null },
+      });
+    }
+
     const row = await this.prisma.staffAdminAssignment.create({
       data: {
         id: uuidv4(),

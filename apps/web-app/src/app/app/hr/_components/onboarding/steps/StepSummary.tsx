@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle, User, FileText, PenTool, Mail, Loader2, PartyPopper } from 'lucide-react';
+import { CheckCircle, User, FileText, PenTool, Mail, Loader2, PartyPopper, Send } from 'lucide-react';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
 
@@ -13,6 +13,7 @@ interface StepSummaryProps {
   identity: any;
   employment: any;
   contract: any;
+  signatureMode: 'presentiel' | 'differe';
   employerSigned: boolean;
   employeeSigned: boolean;
   sendEmail: boolean;
@@ -28,6 +29,7 @@ export function StepSummary({
   identity,
   employment,
   contract,
+  signatureMode,
   employerSigned,
   employeeSigned,
   sendEmail,
@@ -37,7 +39,12 @@ export function StepSummary({
   const [finalizing, setFinalizing] = useState(false);
   const [completed, setCompleted] = useState(false);
 
-  const canFinalize = staffId && contractId && employerSigned && employeeSigned;
+  // ⭐ canFinalize dépend du mode :
+  //    - présentiel : employeur ET employé doivent avoir signé
+  //    - différé    : seul l'employeur doit avoir signé (l'employé signera à distance)
+  const canFinalize = signatureMode === 'differe'
+    ? !!(staffId && contractId && employerSigned)
+    : !!(staffId && contractId && employerSigned && employeeSigned);
 
   const handleFinalize = async () => {
     if (!staffId || !contractId) return;
@@ -45,11 +52,29 @@ export function StepSummary({
       setFinalizing(true);
       await hrFetch(hrUrl('contracts/onboarding/complete', { tenantId }), {
         method: 'POST',
-        body: { staffId, contractId, sendEmail },
+        body: {
+          staffId,
+          contractId,
+          sendEmail,
+          // ⭐ asyncSign=true en mode différé : le backend va
+          //   - skipper l'activation du staff (reste PENDING_HIRE)
+          //   - skipper l'avancement de HrApplication (reste ÉLIGIBLE)
+          //   - générer un token de signature
+          //   - envoyer notifyHired avec le lien de signature
+          //   Quand l'employé signera à distance (signContract EMPLOYE),
+          //   le backend activera le staff, avancera HrApplication à EMBAUCHÉ
+          //   et créera les credentials.
+          asyncSign: signatureMode === 'differe',
+        },
       });
       setCompleted(true);
       onCompleted();
-      toast({ variant: 'success', title: 'Onboarding finalisé avec succès !' });
+      toast({
+        variant: 'success',
+        title: signatureMode === 'differe'
+          ? 'Email de signature envoyé !'
+          : 'Onboarding finalisé avec succès !',
+      });
     } catch (err: any) {
       toast({ variant: 'error', title: 'Erreur lors de la finalisation', description: err?.message });
     } finally {
@@ -78,9 +103,21 @@ export function StepSummary({
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100">
           <PartyPopper className="h-8 w-8 text-emerald-600" />
         </div>
-        <h3 className="text-lg font-bold text-slate-800">Onboarding Terminé !</h3>
+        <h3 className="text-lg font-bold text-slate-800">
+          {signatureMode === 'differe' ? 'Email de signature envoyé !' : 'Onboarding Terminé !'}
+        </h3>
         <p className="text-sm text-slate-500">
-          Le dossier de <strong>{staffFullName}</strong> a été créé avec succès. Le contrat est signé et en vigueur.
+          {signatureMode === 'differe' ? (
+            <>
+              Le contrat a été envoyé par email à <strong>{staffFullName}</strong>.
+              Lorsqu&apos;il cliquera sur le lien et signera à distance, son compte sera activé
+              et ses identifiants de connexion lui seront envoyés automatiquement.
+            </>
+          ) : (
+            <>
+              Le dossier de <strong>{staffFullName}</strong> a été créé avec succès. Le contrat est signé et en vigueur.
+            </>
+          )}
         </p>
       </div>
     );
@@ -138,12 +175,37 @@ export function StepSummary({
             <CheckCircle className="h-4 w-4" />
             <span className="text-sm font-semibold">{employerSigned ? 'Employeur signé' : 'Employeur non signé'}</span>
           </div>
-          <div className={`flex items-center gap-2 p-2 rounded-lg ${employeeSigned ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-500'}`}>
-            <CheckCircle className="h-4 w-4" />
-            <span className="text-sm font-semibold">{employeeSigned ? 'Employé signé' : 'Employé non signé'}</span>
-          </div>
+          {signatureMode === 'presentiel' ? (
+            <div className={`flex items-center gap-2 p-2 rounded-lg ${employeeSigned ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-500'}`}>
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-sm font-semibold">{employeeSigned ? 'Employé signé' : 'Employé non signé'}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-50 text-blue-700">
+              <Mail className="h-4 w-4" />
+              <span className="text-sm font-semibold">Employé signera à distance</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ⭐ Info spécifique au mode différé */}
+      {signatureMode === 'differe' && (
+        <div className="border border-blue-200 rounded-xl p-4 bg-blue-50/30">
+          <div className="flex items-start gap-3">
+            <Mail className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h5 className="text-sm font-bold text-slate-800 mb-1">Signature à distance</h5>
+              <p className="text-[12px] text-slate-600">
+                En cliquant sur &laquo; Finaliser &raquo;, un email sera envoyé à <strong>{identity.email}</strong> avec
+                un lien sécurisé. L&apos;employé(e) signera à distance — le contrat passera à ACTIF,
+                son compte sera activé et ses identifiants lui seront envoyés automatiquement.
+                Cette procédure est identique au flux de recrutement public.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Email notification */}
       <div className="border border-slate-200 rounded-xl p-4 bg-white">
@@ -156,7 +218,11 @@ export function StepSummary({
           />
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-semibold text-slate-700">Envoyer une copie du contrat signé à l&apos;employé(e)</span>
+            <span className="text-sm font-semibold text-slate-700">
+              {signatureMode === 'differe'
+                ? "Envoyer l'email de signature à l'employé(e) (recommandé)"
+                : "Envoyer une copie du contrat signé à l'employé(e)"}
+            </span>
           </div>
         </label>
       </div>
@@ -171,15 +237,19 @@ export function StepSummary({
       >
         {finalizing ? (
           <Loader2 className="h-5 w-5 animate-spin" />
+        ) : signatureMode === 'differe' ? (
+          <Send className="h-5 w-5" />
         ) : (
           <CheckCircle className="h-5 w-5" />
         )}
-        {finalizing ? 'Finalisation en cours...' : 'Finaliser l\'Onboarding'}
+        {finalizing
+          ? (signatureMode === 'differe' ? 'Envoi en cours...' : 'Finalisation en cours...')
+          : (signatureMode === 'differe' ? 'Envoyer le contrat pour signature à distance' : 'Finaliser l\'Onboarding')}
       </button>
 
       {!canFinalize && (
         <p className="text-center text-xs text-amber-600">
-          Veuillez compléter toutes les étapes précédentes (notamment les signatures) avant de finaliser.
+          Veuillez compléter toutes les étapes précédentes (notamment la signature employeur) avant de finaliser.
         </p>
       )}
     </div>

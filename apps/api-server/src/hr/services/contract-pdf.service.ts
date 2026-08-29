@@ -865,6 +865,35 @@ export class ContractPdfService {
       } catch (staffErr: any) {
         this.logger.warn(`Failed to update staff status after contract signing: ${staffErr?.message}`);
       }
+
+      // ⭐ Alignement avec le flux de recrutement public (signature à distance) :
+      //    Quand l'employé signe à distance (via le lien envoyé par email dans
+      //    completeOnboarding asyncSign=true), le contrat passe à ACTIVE et le
+      //    staff passe à ACTIVE. Il faut aussi avancer HrApplication de ÉLIGIBLE
+      //    à EMBAUCHÉ pour que le candidat quitte "Éligibles en préparation"
+      //    et apparaisse cohéremment dans l'onglet Embauche.
+      //    (Idempotent : si l'application est déjà à EMBAUCHÉ, on ne fait rien.)
+      try {
+        const application = await this.prisma.hrApplication.findFirst({
+          where: { staffId, tenantId },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        });
+        if (application && application.status === 'ÉLIGIBLE') {
+          await this.prisma.hrApplication.update({
+            where: { id: application.id },
+            data: { status: 'EMBAUCHÉ' },
+          });
+          this.logger.log(
+            `[signContract EMPLOYE] HrApplication ${application.id} advanced to EMBAUCHÉ for staff ${staffId} (signature à distance)`,
+          );
+        }
+      } catch (appErr: any) {
+        // Non bloquant — l'embauche directe sans HrApplication est possible
+        this.logger.warn(
+          `[signContract EMPLOYE] Failed to update HrApplication status (non-blocking): ${appErr?.message}`,
+        );
+      }
     }
 
     this.logger.log(`Contrat ${contractId} signé par l'employé: ${data.signerName}`);
@@ -925,10 +954,30 @@ export class ContractPdfService {
 
   /**
    * Finalise le processus d'embauche d'un employé.
-   * Vérifie que le contrat est signé par les deux parties, met à jour le statut,
-   * et envoie optionnellement une copie par email.
+   *
+   * 2 modes supportés (alignés sur le flux de recrutement public) :
+   *
+   *   - Mode présentiel (asyncSign=false, défaut) :
+   *     Vérifie que le contrat est signé par les deux parties, active le staff
+   *     (PENDING_HIRE → ACTIVE), avance HrApplication à EMBAUCHÉ, génère les
+   *     matricules, crée les credentials (User + mdp) et envoie notifyHired.
+   *     Utilisé quand l'employé signe en présence du recruteur pendant le wizard.
+   *
+   *   - Mode différé (asyncSign=true) :
+   *     Vérifie que l'employeur a signé, génère un token de signature, envoie
+   *     notifyHired avec le lien de signature au candidat. Le staff reste
+   *     PENDING_HIRE et HrApplication reste ÉLIGIBLE jusqu'à ce que l'employé
+   *     signe à distance via le lien. Lors de cette signature à distance,
+   *     signContract(EMPLOYE) activera le staff, avancera HrApplication à
+   *     EMBAUCHÉ et créera les credentials — exactement comme dans le flux
+   *     de recrutement public.
    */
-  async completeOnboarding(staffId: string, contractId: string, tenantId: string, options: { sendEmail?: boolean } = {}) {
+  async completeOnboarding(
+    staffId: string,
+    contractId: string,
+    tenantId: string,
+    options: { sendEmail?: boolean; asyncSign?: boolean } = {},
+  ) {
     // Vérifier le personnel
     const staff = await this.prisma.staff.findFirst({ where: { id: staffId, tenantId } });
     if (!staff) throw new NotFoundException('Personnel introuvable');
@@ -946,9 +995,108 @@ export class ContractPdfService {
       throw new BadRequestException("L'employeur n'a pas encore signé le contrat. Veuillez compléter la signature de l'employeur avant de finaliser.");
     }
 
+    const asyncSign = options.asyncSign === true;
+
+    // ─── Mode différé : envoyer le contrat pour signature à distance ──────
+    if (asyncSign) {
+      // Le contrat doit encore être PENDING (l'employé n'a pas signé)
+      if (contract.status === 'ACTIVE' && contract.signedAt) {
+        // Déjà signé par l'employé → on tombe dans le cas présentiel, on continue
+        // vers la finalisation classique ci-dessous.
+        this.logger.log(
+          `[completeOnboarding] asyncSign=true mais contrat déjà ACTIVE — fallback vers mode présentiel`,
+        );
+      } else {
+        // Générer un token de signature pour l'employé
+        let contractUrl: string | undefined;
+        try {
+          const tokenResult = await this.contractSignTokenService.generateToken(
+            contract.id,
+            tenantId,
+          );
+          contractUrl = tokenResult.signUrl;
+          this.logger.log(
+            `[completeOnboarding] asyncSign: token de signature généré pour contrat ${contract.id} — URL: ${contractUrl}`,
+          );
+        } catch (tokenErr: any) {
+          this.logger.error(
+            `[completeOnboarding] asyncSign: échec génération token pour contrat ${contract.id}: ${tokenErr.message}`,
+          );
+          throw new BadRequestException(
+            `Impossible de générer le lien de signature : ${tokenErr.message}. Veuillez réessayer.`,
+          );
+        }
+
+        // Générer les matricules si pas encore fait (utile pour les emails)
+        if (!staff.globalMatricule || !staff.tenantMatricule) {
+          try {
+            const matriculeService = (this as any).matriculeService;
+            if (matriculeService) {
+              await matriculeService.generateMatricules(staffId, tenantId);
+            }
+          } catch (err: any) {
+            this.logger.warn(`Matricule generation failed (non-blocking): ${err?.message}`);
+          }
+        }
+
+        // Envoyer notifyHired avec le lien de signature (comme dans le flux public)
+        if (options.sendEmail !== false) {
+          try {
+            const application = await this.prisma.hrApplication.findFirst({
+              where: { staffId, tenantId },
+              include: { candidate: true, job: true },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            });
+            if (application?.candidateId && application?.jobId) {
+              await this.notificationService.notifyHired({
+                candidateId: application.candidateId,
+                tenantId,
+                jobId: application.jobId,
+                contractType: contract.contractType,
+                startDate: contract.startDate,
+                salary: String(contract.baseSalary ?? ''),
+                contractUrl,
+              });
+              this.logger.log(
+                `[completeOnboarding] asyncSign: notifyHired email sent for staff ${staffId} with sign URL`,
+              );
+            } else {
+              this.logger.warn(
+                `[completeOnboarding] asyncSign: pas de HrApplication liée à staff ${staffId} — notifyHired non envoyé`,
+              );
+            }
+          } catch (err: any) {
+            this.logger.warn(
+              `[completeOnboarding] asyncSign: notifyHired email failed (non-blocking): ${err?.message}`,
+            );
+          }
+        }
+
+        this.logger.log(
+          `[completeOnboarding] asyncSign mode terminé — staff ${staffId} reste PENDING_HIRE, HrApplication reste ÉLIGIBLE, en attente de signature à distance par l'employé`,
+        );
+
+        return {
+          success: true,
+          staffId,
+          contractId,
+          staffStatus: staff.status, // reste PENDING_HIRE
+          contractStatus: contract.status, // reste PENDING
+          employerSignedAt: terms.employerSignedAt,
+          employeeSignedAt: null, // pas encore signé
+          pdfUrl: terms.pdfUrl || null,
+          asyncSign: true,
+          signUrl: contractUrl,
+          message: 'Email de signature envoyé à l\'employé. Le contrat sera activé après sa signature à distance.',
+        };
+      }
+    }
+
+    // ─── Mode présentiel (par défaut) : vérifier signature employé + finaliser ──
     // Vérifier que l'employé a signé
     if (!contract.signedAt) {
-      throw new BadRequestException("L'employé n'a pas encore signé le contrat. Veuillez compléter la signature de l'employé avant de finaliser.");
+      throw new BadRequestException("L'employé n'a pas encore signé le contrat. Veuillez compléter la signature de l'employé avant de finaliser, ou activez le mode 'signature à distance'.");
     }
 
     // S'assurer que le statut du personnel est ACTIVE

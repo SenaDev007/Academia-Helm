@@ -66,6 +66,13 @@ export interface OnboardingState {
   pdfGenerated: boolean;
 
   // Step 6: Signatures
+  // ⭐ signatureMode :
+  //   - 'presentiel' (défaut) : les deux parties signent en présence, synchrone
+  //     (employeur + employé signent dans le wizard, contrat → ACTIVE immédiatement)
+  //   - 'differe' : seul l'employeur signe dans le wizard (contrat → PENDING),
+  //     puis un email avec lien de signature est envoyé à l'employé qui signe
+  //     à distance. Identique au flux de recrutement public.
+  signatureMode: 'presentiel' | 'differe';
   employerSigned: boolean;
   employeeSigned: boolean;
   employerSignatureData: string | null;
@@ -137,6 +144,7 @@ export const INITIAL_STATE: OnboardingState = {
   previewHtml: null,
   pdfGenerated: false,
 
+  signatureMode: 'presentiel',
   employerSigned: false,
   employeeSigned: false,
   employerSignatureData: null,
@@ -183,6 +191,7 @@ export type OnboardingAction =
   | { type: 'SET_ARTICLES_SAVED'; saved: boolean }
   | { type: 'SET_PREVIEW_HTML'; html: string | null }
   | { type: 'SET_PDF_GENERATED'; generated: boolean }
+  | { type: 'SET_SIGNATURE_MODE'; mode: 'presentiel' | 'differe' }
   | { type: 'SET_EMPLOYER_SIGNED'; signed: boolean; signatureData: string | null }
   | { type: 'SET_EMPLOYEE_SIGNED'; signed: boolean; signatureData: string | null }
   | { type: 'SET_SEND_EMAIL'; sendEmail: boolean }

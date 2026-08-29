@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { PenTool, CheckCircle, Loader2, AlertTriangle, Shield } from 'lucide-react';
+import { PenTool, CheckCircle, Loader2, AlertTriangle, Shield, Mail, UserCheck } from 'lucide-react';
 import { SignatureCanvas } from '../components/SignatureCanvas';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { toast } from '@/components/ui/toast';
@@ -10,6 +10,8 @@ interface StepSignaturesProps {
   contractId: string | null;
   tenantId: string;
   staffFullName: string;
+  signatureMode: 'presentiel' | 'differe';
+  onSignatureModeChange: (mode: 'presentiel' | 'differe') => void;
   employerSigned: boolean;
   employeeSigned: boolean;
   onEmployerSigned: (signatureData: string) => void;
@@ -20,6 +22,8 @@ export function StepSignatures({
   contractId,
   tenantId,
   staffFullName,
+  signatureMode,
+  onSignatureModeChange,
   employerSigned,
   employeeSigned,
   onEmployerSigned,
@@ -94,7 +98,7 @@ export function StepSignatures({
         </div>
         <div>
           <h4 className="text-sm font-bold text-slate-800">Signatures Électroniques</h4>
-          <p className="text-[11px] text-slate-400">L&apos;employeur signe en premier, puis l&apos;employé</p>
+          <p className="text-[11px] text-slate-400">L&apos;employeur signe en premier. Selon le mode, l&apos;employé signe ici ou à distance.</p>
         </div>
       </div>
 
@@ -102,6 +106,59 @@ export function StepSignatures({
       <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-blue-700 flex gap-2">
         <Shield className="h-4 w-4 shrink-0 text-blue-500 mt-0.5" />
         <span>Ces signatures électroniques ont valeur légale conformément aux dispositions applicables. La date, l&apos;heure et l&apos;adresse IP seront enregistrées à des fins probatoires.</span>
+      </div>
+
+      {/* ⭐ Mode de signature — Toggle */}
+      <div className="border border-slate-200 rounded-xl p-4 bg-white">
+        <h5 className="text-sm font-bold text-slate-800 mb-2">Mode de signature de l&apos;employé(e)</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => onSignatureModeChange('presentiel')}
+            disabled={employerSigned}
+            className={`text-left p-3 rounded-lg border-2 transition-all ${
+              signatureMode === 'presentiel'
+                ? 'border-[#1d4fa5] bg-[#1d4fa5]/5'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            } ${employerSigned ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <div className="flex items-start gap-2">
+              <UserCheck className="h-4 w-4 text-[#1d4fa5] shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">En présentiel</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  L&apos;employé(e) signe ici même, en votre présence. Le contrat passe directement à ACTIF.
+                </p>
+              </div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSignatureModeChange('differe')}
+            disabled={employerSigned}
+            className={`text-left p-3 rounded-lg border-2 transition-all ${
+              signatureMode === 'differe'
+                ? 'border-[#1d4fa5] bg-[#1d4fa5]/5'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            } ${employerSigned ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+          >
+            <div className="flex items-start gap-2">
+              <Mail className="h-4 w-4 text-[#1d4fa5] shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-slate-800">À distance (par email)</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Un email avec lien de signature sera envoyé à l&apos;employé(e). Il signera à distance — identique au flux de recrutement public.
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+        {employerSigned && (
+          <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Le mode ne peut plus être modifié après la signature de l&apos;employeur.
+          </p>
+        )}
       </div>
 
       {/* ─── EMPLOYER SIGNATURE ─────────────────────────────── */}
@@ -183,72 +240,114 @@ export function StepSignatures({
       </div>
 
       {/* ─── EMPLOYEE SIGNATURE ─────────────────────────────── */}
-      <div className={`border rounded-xl p-4 transition-all ${
-        !employerSigned
-          ? 'border-slate-200 bg-slate-50/50 opacity-60'
-          : employeeSigned
-          ? 'border-emerald-200 bg-emerald-50/30'
-          : 'border-slate-200 bg-white'
-      }`}>
-        <div className="flex items-center justify-between mb-3">
-          <h5 className="text-sm font-bold text-slate-800">Signature de l&apos;Employé(e)</h5>
-          {employeeSigned ? (
-            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-              <CheckCircle className="h-4 w-4" /> Signé
-            </span>
-          ) : employerSigned ? (
-            <span className="text-xs font-semibold text-amber-600 flex items-center gap-1">
-              <AlertTriangle className="h-3.5 w-3.5" /> En attente
-            </span>
+      {signatureMode === 'presentiel' ? (
+        <div className={`border rounded-xl p-4 transition-all ${
+          !employerSigned
+            ? 'border-slate-200 bg-slate-50/50 opacity-60'
+            : employeeSigned
+            ? 'border-emerald-200 bg-emerald-50/30'
+            : 'border-slate-200 bg-white'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="text-sm font-bold text-slate-800">Signature de l&apos;Employé(e)</h5>
+            {employeeSigned ? (
+              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                <CheckCircle className="h-4 w-4" /> Signé
+              </span>
+            ) : employerSigned ? (
+              <span className="text-xs font-semibold text-amber-600 flex items-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5" /> En attente
+              </span>
+            ) : (
+              <span className="text-xs font-semibold text-slate-400">L&apos;employeur doit signer en premier</span>
+            )}
+          </div>
+
+          {employerSigned && !employeeSigned ? (
+            <div className="space-y-3">
+              <div className="p-2 bg-slate-50 rounded-lg text-sm">
+                <span className="text-xs font-semibold text-slate-500">Signataire :</span>{' '}
+                <span className="font-bold text-slate-800">{staffFullName}</span>
+              </div>
+              <SignatureCanvas
+                onSignatureChange={(data) => setEmployeeSignatureData(data)}
+                placeholder="L'employé(e) signe ici"
+              />
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={employeeConsent}
+                  onChange={(e) => setEmployeeConsent(e.target.checked)}
+                  className="mt-1 rounded border-slate-300 text-[#1d4fa5] focus:ring-[#1d4fa5]"
+                />
+                <span className="text-[11px] text-slate-600">Je certifie avoir lu et compris le contrat de travail, et j&apos;accepte ses termes et conditions.</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleEmployeeSign}
+                disabled={signingEmployee || !employeeSignatureData || !employeeConsent}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#0b2f73] text-white rounded-xl text-sm font-bold disabled:opacity-50 transition hover:opacity-90"
+              >
+                {signingEmployee ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenTool className="h-4 w-4" />}
+                Signer en tant qu&apos;Employé(e)
+              </button>
+            </div>
+          ) : employeeSigned ? (
+            <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
+              <CheckCircle className="h-8 w-8 text-emerald-500" />
+              <div>
+                <p className="text-sm font-bold text-emerald-800">Signé par {staffFullName}</p>
+                <p className="text-xs text-emerald-600">Employé(e)</p>
+              </div>
+            </div>
           ) : (
-            <span className="text-xs font-semibold text-slate-400">L&apos;employeur doit signer en premier</span>
+            <div className="p-4 text-center text-sm text-slate-400">
+              <AlertTriangle className="h-6 w-6 mx-auto mb-2 opacity-40" />
+              L&apos;employeur doit signer le contrat en premier.
+            </div>
           )}
         </div>
+      ) : (
+        // ⭐ Mode "differe" — on n'affiche pas la section signature employé ici.
+        //    L'employé signera à distance via le lien envoyé par email après
+        //    finalisation (completeOnboarding avec asyncSign=true).
+        <div className={`border rounded-xl p-4 transition-all ${
+          !employerSigned
+            ? 'border-slate-200 bg-slate-50/50 opacity-60'
+            : 'border-blue-200 bg-blue-50/30'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <h5 className="text-sm font-bold text-slate-800">Signature de l&apos;Employé(e) à distance</h5>
+            {employerSigned ? (
+              <span className="flex items-center gap-1 text-xs font-semibold text-blue-700">
+                <Mail className="h-4 w-4" /> Email à envoyer
+              </span>
+            ) : (
+              <span className="text-xs font-semibold text-slate-400">En attente de signature employeur</span>
+            )}
+          </div>
 
-        {employerSigned && !employeeSigned ? (
           <div className="space-y-3">
+            <div className="p-3 bg-blue-50 rounded-lg text-[12px] text-blue-700 flex gap-2">
+              <Mail className="h-4 w-4 shrink-0 mt-0.5 text-blue-600" />
+              <div>
+                <p className="font-bold mb-1">Signature à distance par email</p>
+                <p>
+                  À l&apos;étape suivante (Finalisation), un email sera envoyé à <strong>{staffFullName}</strong> contenant un lien sécurisé de signature.
+                  Lorsqu&apos;il cliquera et signera à distance, le contrat passera à ACTIF, son compte personnel sera activé et ses identifiants de connexion lui seront envoyés automatiquement.
+                </p>
+                <p className="mt-1.5 italic">Ce flux est identique à celui du recrutement public pour assurer une cohérence parfaite.</p>
+              </div>
+            </div>
             <div className="p-2 bg-slate-50 rounded-lg text-sm">
               <span className="text-xs font-semibold text-slate-500">Signataire :</span>{' '}
               <span className="font-bold text-slate-800">{staffFullName}</span>
-            </div>
-            <SignatureCanvas
-              onSignatureChange={(data) => setEmployeeSignatureData(data)}
-              placeholder="L'employé(e) signe ici"
-            />
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={employeeConsent}
-                onChange={(e) => setEmployeeConsent(e.target.checked)}
-                className="mt-1 rounded border-slate-300 text-[#1d4fa5] focus:ring-[#1d4fa5]"
-              />
-              <span className="text-[11px] text-slate-600">Je certifie avoir lu et compris le contrat de travail, et j&apos;accepte ses termes et conditions.</span>
-            </label>
-            <button
-              type="button"
-              onClick={handleEmployeeSign}
-              disabled={signingEmployee || !employeeSignatureData || !employeeConsent}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#0b2f73] text-white rounded-xl text-sm font-bold disabled:opacity-50 transition hover:opacity-90"
-            >
-              {signingEmployee ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenTool className="h-4 w-4" />}
-              Signer en tant qu&apos;Employé(e)
-            </button>
-          </div>
-        ) : employeeSigned ? (
-          <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-lg">
-            <CheckCircle className="h-8 w-8 text-emerald-500" />
-            <div>
-              <p className="text-sm font-bold text-emerald-800">Signé par {staffFullName}</p>
-              <p className="text-xs text-emerald-600">Employé(e)</p>
+              <span className="text-xs text-slate-400 ml-2">(signera à distance via email)</span>
             </div>
           </div>
-        ) : (
-          <div className="p-4 text-center text-sm text-slate-400">
-            <AlertTriangle className="h-6 w-6 mx-auto mb-2 opacity-40" />
-            L&apos;employeur doit signer le contrat en premier.
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
+

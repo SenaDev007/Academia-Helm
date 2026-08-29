@@ -53,6 +53,12 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       case 5:
         return state.articlesSaved;
       case 6:
+        // En mode présentiel : les deux signatures doivent être présentes.
+        // En mode différé : seule la signature employeur est requise
+        // (l'employé signera à distance via l'email envoyé à l'étape 7).
+        if (state.signatureMode === 'differe') {
+          return state.employerSigned;
+        }
         return state.employerSigned && state.employeeSigned;
       case 7:
         return true;
@@ -375,6 +381,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                   contractId={state.contractId}
                   tenantId={tenantId}
                   staffFullName={staffFullName}
+                  signatureMode={state.signatureMode}
+                  onSignatureModeChange={(mode) =>
+                    setState((prev) => ({ ...prev, signatureMode: mode }))
+                  }
                   employerSigned={state.employerSigned}
                   employeeSigned={state.employeeSigned}
                   onEmployerSigned={(sigData) =>
@@ -394,6 +404,7 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                   identity={state.identity}
                   employment={state.employment}
                   contract={state.contract}
+                  signatureMode={state.signatureMode}
                   employerSigned={state.employerSigned}
                   employeeSigned={state.employeeSigned}
                   sendEmail={state.sendEmail}

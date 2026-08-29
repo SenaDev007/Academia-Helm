@@ -470,6 +470,19 @@ export class CompleteOnboardingDto {
   @IsUUID() staffId: string;
   @IsUUID() contractId: string;
   @IsOptional() @IsBoolean() sendEmail?: boolean;
+  /**
+   * ⭐ Mode de signature différée (aligné avec le flux de recrutement public) :
+   *   - false (défaut, mode présentiel) : le contrat a été signé par les deux
+   *     parties pendant le wizard → on active le staff + on avance HrApplication
+   *     à EMBAUCHÉ + on envoie notifyHired.
+   *   - true (mode différé) : seul l'employeur a signé pendant le wizard.
+   *     On skippe l'activation du staff (reste PENDING_HIRE) et l'avancement
+   *     de HrApplication (reste ÉLIGIBLE). On génère un token de signature
+   *     et on envoie notifyHired avec le lien de signature. Quand l'employé
+   *     signera à distance (signContract EMPLOYE), le backend activera le
+   *     staff, avancera HrApplication à EMBAUCHÉ et créera les credentials.
+   */
+  @IsOptional() @IsBoolean() asyncSign?: boolean;
 }
 
 // ─── Schedule DTOs ────────────────────────────────────────────────────────────

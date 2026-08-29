@@ -424,6 +424,7 @@ export class ContractsPrismaController {
 
     return this.contractPdfService.completeOnboarding(body.staffId, body.contractId, tid, {
       sendEmail: body.sendEmail ?? true,
+      asyncSign: body.asyncSign ?? false,
     });
   }
 

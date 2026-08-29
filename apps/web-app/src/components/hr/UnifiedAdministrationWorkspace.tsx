@@ -392,11 +392,14 @@ export default function UnifiedAdministrationWorkspace() {
     return group?.levelIds ?? [];
   }, [selectedUnit, adminGroups]);
 
-  // Filtrage enseignants : on prend tous les staff qui sont affectés à un
-  // des levelIds du groupe sélectionné, OU les non-affectés (pour permettre
-  // affectation). On filtre aussi par piste linguistique si bilingue.
+  // Filtrage enseignants : ⭐ uniquement roleType=TEACHER (exclut ADMIN, DIRECTOR,
+  //    PROMOTEUR, etc.). Le promoteur et le personnel administratif ne doivent
+  //    pas apparaître dans l'équipe enseignante — ils appartiennent à l'équipe
+  //    administrative. Un staff avec roleType=TEACHER qui a aussi une affectation
+  //    admin apparaîtra dans les DEUX sections (enseignant + admin), ce qui est
+  //    correct car il a un double rôle.
   const teachersForSelectedLevel = useMemo(() => {
-    let result = staffList;
+    let result = staffList.filter((s) => s.roleType === 'TEACHER');
 
     if (isBilingual) {
       // Filtrer par piste linguistique courante (FR ou EN)
@@ -432,6 +435,7 @@ export default function UnifiedAdministrationWorkspace() {
   // Tous les enseignants non affectés (pour permettre affectation rapide)
   const unassignedTeachersCount = useMemo(() => {
     return staffList.filter((s) => {
+      if (s.roleType !== 'TEACHER') return false;
       const effectiveLevelId = pendingTeacherChanges[s.id]?.levelId ?? s.schoolLevelId;
       return !effectiveLevelId;
     }).length;

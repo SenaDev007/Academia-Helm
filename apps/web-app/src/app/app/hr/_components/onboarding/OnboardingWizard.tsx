@@ -255,6 +255,36 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           await saveStep4AndAdvance();
           break;
         // Steps 5-6-7 handle their own persistence
+        case 6:
+          // ⭐ Mode différé : quand on quitte l'étape 6 (signature employeur
+          //    fait), on appelle completeOnboarding(asyncSign: true) pour
+          //    envoyer l'email de signature à l'employé. Le staff reste
+          //    PENDING_HIRE, le contrat reste PENDING. L'étape 7 affichera
+          //    "Email envoyé, en attente de signature à distance" et pollera
+          //    jusqu'à ce que l'employé signe à distance via le lien email.
+          if (state.signatureMode === 'differe' && state.staffId && state.contractId) {
+            try {
+              await hrFetch(hrUrl('contracts/onboarding/complete', { tenantId }), {
+                method: 'POST',
+                body: {
+                  staffId: state.staffId,
+                  contractId: state.contractId,
+                  sendEmail: state.sendEmail,
+                  asyncSign: true,
+                },
+              });
+              toast({
+                variant: 'success',
+                title: 'Email de signature envoyé',
+                description: `Un email a été envoyé à ${state.identity.email}. L'employé(e) pourra signer à distance via le lien sécurisé.`,
+              });
+            } catch (err: any) {
+              toast({ variant: 'error', title: 'Erreur envoi email', description: err?.message });
+              setSavingStep(false);
+              return; // Ne pas avancer à l'étape 7 si l'envoi échoue
+            }
+          }
+          break;
       }
       setState((prev) => ({ ...prev, currentStep: prev.currentStep + 1, error: null }));
     } catch (err: any) {

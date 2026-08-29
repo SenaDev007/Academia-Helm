@@ -218,6 +218,17 @@ export class ContractPdfService {
     const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
 
+    // ⭐ ministry et schoolSlogan — pour l'en-tête officiel aligné avec module élèves.
+    //    Le ministère dépend du niveau scolaire du staff (Maternelle/Primaire → Ministère
+    //    des Enseignements Maternel et Primaire ; Secondaire → Ministère de
+    //    l'Enseignement Secondaire, etc.). Si pas de niveau, fallback générique.
+    const staffLevelCode = (contract.staff?.schoolLevel?.code || '').toUpperCase();
+    const isSecondary = staffLevelCode.includes('SECONDAIRE') || staffLevelCode.includes('SECOND');
+    const ministry = isSecondary
+      ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`
+      : `Ministère des Enseignements Maternel et Primaire`;
+    const schoolSlogan = identityProfile?.slogan || schoolSettings?.slogan || '';
+
     // Résoudre le logo en URL complète si nécessaire
     // safety: school?.logo might be a JSON object (Prisma Json field), ensure we only use strings
     const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
@@ -284,6 +295,9 @@ export class ContractPdfService {
       schoolCountry,
       schoolCity,
       schoolLogoUrl,
+      // ⭐ Variables pour l'en-tête officiel (pattern module élèves)
+      ministry,
+      schoolSlogan,
       directorName,
       directorPosition: 'Directeur(rice)',
       schoolAuthorizationNumber,
@@ -495,6 +509,17 @@ export class ContractPdfService {
     const directorName = school?.directorPrimary || schoolSettings?.abbreviation || identityProfile?.schoolAcronym || 'Le Directeur';
     const schoolAuthorizationNumber = schoolSettings?.authorizationNumber || identityProfile?.authorizationNumber || '';
     const schoolAbbreviation = schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation || '';
+
+    // ⭐ ministry et schoolSlogan — pour l'en-tête officiel aligné avec module élèves.
+    //    Le ministère dépend du niveau scolaire du staff (Maternelle/Primaire → Ministère
+    //    des Enseignements Maternel et Primaire ; Secondaire → Ministère de
+    //    l'Enseignement Secondaire, etc.). Si pas de niveau, fallback générique.
+    const staffLevelCode = (contract.staff?.schoolLevel?.code || '').toUpperCase();
+    const isSecondary = staffLevelCode.includes('SECONDAIRE') || staffLevelCode.includes('SECOND');
+    const ministry = isSecondary
+      ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`
+      : `Ministère des Enseignements Maternel et Primaire`;
+    const schoolSlogan = identityProfile?.slogan || schoolSettings?.slogan || '';
 
     let schoolLogoUrl = '';
     const schoolLogoStr = typeof schoolLogo === 'string' ? schoolLogo : (schoolLogo as any)?.url || '';
@@ -1710,11 +1735,11 @@ export class ContractPdfService {
       color: #94a3b8;
       font-style: italic;
     }
-    /* Footer */
+    /* Footer — pattern aligné avec module élèves (pied de page officiel) */
     .footer {
       margin-top: 36px;
       padding-top: 12px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid ${primaryColor};
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
@@ -1723,6 +1748,10 @@ export class ContractPdfService {
     .footer-qr { text-align: right; }
     .footer-qr img { width: 64px; height: 64px; }
     .footer-qr p { font-size: 7pt; color: #94a3b8; margin-top: 2px; }
+    .footer-official {
+      text-align: center; font-size: 9pt; color: #94a3b8;
+      margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e2e8f0;
+    }
     /* Status badge */
     .status-badge {
       display: inline-block;
@@ -1997,6 +2026,11 @@ export class ContractPdfService {
     {{/if}}
   </div>
 
+  <!-- ⭐ Pied de page officiel centré — pattern aligné avec module élèves -->
+  <div class="footer-official">
+    Document généré par Academia Helm — {{generatedAt}}
+  </div>
+
 </div>
 </body>
 </html>`;
@@ -2190,18 +2224,38 @@ export class ContractPdfService {
       pointer-events: none;
     }
     .page { position: relative; z-index: 1; }
-    /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: ${showDecoLine ? `3px solid ${accentColor}` : 'none'};
-      padding-bottom: 16px;
-      margin-bottom: 24px;
+    /* Header — pattern officiel aligné avec le module élèves (class-list-pdf.service.ts) */
+    .header { margin-bottom: 24px; padding-bottom: 12px; border-bottom: 3px double ${primaryColor}; }
+    .header-table { width: 100%; border-collapse: collapse; }
+    .header-table td { vertical-align: middle; padding: 4px 8px; }
+    .header-left { text-align: center; width: 18%; }
+    .header-center { text-align: center; width: 64%; }
+    .header-right { text-align: center; width: 18%; }
+    .republique {
+      font-size: 14pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #0D1F6E;
     }
-    .school-info h1 { font-size: 18pt; color: ${primaryColor}; font-weight: bold; }
-    .school-info p { font-size: 9pt; color: #555; margin-top: 2px; }
-    .contract-meta { text-align: right; }
+    .divider {
+      margin: 6px auto; width: 55%;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .divider-line { flex: 1; height: 1px; background: #0D1F6E; }
+    .divider-diamond {
+      width: 6px; height: 6px; background: #0D1F6E;
+      transform: rotate(45deg); flex-shrink: 0;
+    }
+    .ministere {
+      font-size: 11pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px;
+      line-height: 1.4; color: #0D1F6E;
+    }
+    .school-name {
+      font-size: 15pt; font-weight: bold; text-transform: uppercase;
+      margin-top: 6px; line-height: 1.3; color: ${primaryColor};
+    }
+    .school-info {
+      font-size: 9pt; color: #555; margin-top: 4px; line-height: 1.4;
+    }
+    /* Contract meta (référence + statut) — sous le header, à droite */
+    .contract-meta { text-align: right; margin-bottom: 16px; }
     .contract-meta .ref {
       font-size: 8pt;
       color: #888;
@@ -2295,11 +2349,11 @@ export class ContractPdfService {
       color: #94a3b8;
       font-style: italic;
     }
-    /* Footer */
+    /* Footer — pattern aligné avec module élèves (pied de page officiel) */
     .footer {
       margin-top: 36px;
       padding-top: 12px;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid ${primaryColor};
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
@@ -2308,6 +2362,10 @@ export class ContractPdfService {
     .footer-qr { text-align: right; }
     .footer-qr img { width: 64px; height: 64px; }
     .footer-qr p { font-size: 7pt; color: #94a3b8; margin-top: 2px; }
+    .footer-official {
+      text-align: center; font-size: 9pt; color: #94a3b8;
+      margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e2e8f0;
+    }
     /* Status badge */
     .status-badge {
       display: inline-block;
@@ -2330,22 +2388,48 @@ export class ContractPdfService {
 <div class="${watermarkType === 'image' && watermarkImageUrl ? 'watermark-image' : 'watermark'}">${watermarkType === 'image' && watermarkImageUrl ? `<img src="${watermarkImageUrl}" alt="Watermark" style="max-width:400px;max-height:400px;" />` : watermarkText}</div>
 <div class="page">
 
-  <!-- Header -->
+  <!-- ⭐ EN-TÊTE OFFICIEL — Pattern aligné avec le module élèves (class-list-pdf.service.ts)
+       République du Bénin + drapeau + ministère + école + logo + contact -->
   <div class="header">
-    <div class="school-info">
-      <h1>{{schoolName}}</h1>
-      <p>{{schoolAddress}}</p>
-      <p>{{schoolCountry}}</p>
-    </div>
-    <div class="contract-meta">
-      <div class="ref">Réf. {{contractReference}}</div>
-      <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
-      {{#if isSigned}}
-        <span class="status-badge">✓ SIGNÉ</span>
-      {{else}}
-        <span class="status-badge unsigned">EN ATTENTE DE SIGNATURE</span>
-      {{/if}}
-    </div>
+    <table class="header-table">
+      <tr>
+        <td class="header-left">
+          <!-- Drapeau du Bénin en SVG data URL -->
+          <img src="data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`).toString('base64')}" alt="Drapeau du Bénin" style="width:50px;height:34px;" />
+        </td>
+        <td class="header-center">
+          <div class="republique">République du Bénin</div>
+          <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
+          <div class="ministere">{{ministry}}</div>
+          <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
+          <div class="school-name">{{schoolName}}</div>
+          <div class="school-info">
+            {{#if schoolSlogan}}« {{schoolSlogan}} » · {{/if}}{{schoolAddress}}{{#if schoolPhone}} · Tél : {{schoolPhone}}{{/if}}{{#if schoolEmail}} · Email : {{schoolEmail}}{{/if}}
+          </div>
+          {{#if schoolAuthorizationNumber}}
+            <div class="school-info" style="margin-top:2px;">N° d'autorisation : {{schoolAuthorizationNumber}}</div>
+          {{/if}}
+        </td>
+        <td class="header-right">
+          {{#if schoolLogoUrl}}
+            <img src="{{schoolLogoUrl}}" alt="Logo" style="max-width:60px;max-height:60px;object-fit:contain;" />
+          {{else}}
+            <div style="width:55px;height:55px;border:2px solid #0D1F6E;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;color:#0D1F6E;margin:0 auto;">{{schoolAbbreviation}}</div>
+          {{/if}}
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Contract meta (référence + statut) — sous le header, à droite -->
+  <div class="contract-meta">
+    <div class="ref">Réf. {{contractReference}}</div>
+    <p style="font-size:8pt;color:#888;">Émis le {{generatedAt}} à {{generatedTime}}</p>
+    {{#if isSigned}}
+      <span class="status-badge">✓ SIGNÉ</span>
+    {{else}}
+      <span class="status-badge unsigned">EN ATTENTE DE SIGNATURE</span>
+    {{/if}}
   </div>
 
   <!-- Title -->
@@ -2421,6 +2505,11 @@ export class ContractPdfService {
       <p>Scanner pour vérifier</p>
     </div>
     {{/if}}
+  </div>
+
+  <!-- ⭐ Pied de page officiel centré — pattern aligné avec module élèves -->
+  <div class="footer-official">
+    Document généré par Academia Helm — {{generatedAt}}
   </div>
 
 </div>

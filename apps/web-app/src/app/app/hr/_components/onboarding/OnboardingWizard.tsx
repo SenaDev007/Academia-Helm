@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import { toast } from '@/components/ui/toast';
-import { OnboardingState, INITIAL_STATE, REQUIRED_DOCUMENTS } from './types';
+import { OnboardingState, INITIAL_STATE } from './types';
 import { StepIndicator } from './components/StepIndicator';
 import { StepIdentity } from './steps/StepIdentity';
 import { StepEmployment } from './steps/StepEmployment';
@@ -41,13 +41,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
         return !!(state.identity.firstName && state.identity.lastName && state.identity.email && state.identity.phone && state.identity.birthDate && state.identity.nationalId);
       case 2:
         return !!(state.employment.position && state.employment.hireDate);
-      case 3: {
-        // Required docs must have files selected
-        const hasAllRequired = REQUIRED_DOCUMENTS.every(
-          (doc) => state.documents[doc] || state.uploadedDocuments[doc]
-        );
-        return hasAllRequired;
-      }
+      case 3:
+        // ⭐ Tous les documents sont optionnels en embauche interne — l'utilisateur
+        //    peut téléverser ce qu'il a maintenant et continuer. Aucune contrainte.
+        return true;
       case 4:
         return !!(state.contract.contractType && state.contract.baseSalary && state.contract.startDate);
       case 5:

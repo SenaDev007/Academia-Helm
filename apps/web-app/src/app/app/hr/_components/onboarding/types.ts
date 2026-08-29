@@ -154,13 +154,13 @@ export const INITIAL_STATE: OnboardingState = {
   completed: false,
 };
 
-export const REQUIRED_DOCUMENTS = ['CV', 'CNI', 'DIPLOMA'];
+export const REQUIRED_DOCUMENTS: string[] = [];
 
 export const DOCUMENT_CONFIG: Record<string, { label: string; category: string; required: boolean }> = {
-  CV: { label: 'Curriculum Vitae (CV)', category: 'EXPERIENCE', required: true },
-  CNI: { label: "Pièce d'Identité / Passeport", category: 'IDENTITE', required: true },
+  CV: { label: 'Curriculum Vitae (CV)', category: 'EXPERIENCE', required: false },
+  CNI: { label: "Pièce d'Identité / Passeport", category: 'IDENTITE', required: false },
   BIRTH_CERTIFICATE: { label: 'Acte de Naissance', category: 'IDENTITE', required: false },
-  DIPLOMA: { label: 'Diplôme le plus élevé', category: 'DIPLOMES', required: true },
+  DIPLOMA: { label: 'Diplôme le plus élevé', category: 'DIPLOMES', required: false },
   CNSS_CERTIFICATE: { label: 'Attestation CNSS', category: 'ADMINISTRATIF', required: false },
   MEDICAL_CERTIFICATE: { label: 'Certificat Médical', category: 'MEDICAL', required: false },
   PHOTO_ID: { label: "Photo d'identité", category: 'IDENTITE', required: false },

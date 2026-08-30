@@ -97,6 +97,9 @@ interface ChatConversation {
   lastMessagePreview?: string;
   lastMessageSenderId?: string;
   participants: ChatParticipant[];
+  // ⭐ DISCORD PARITY: Unread message count (computed by backend in listConversations).
+  //    Used to render a blue badge on the conversation list item.
+  unreadCount?: number;
 }
 
 interface ChatMessage {
@@ -167,8 +170,9 @@ function formatDateSeparator(dateStr: string): string {
 }
 
 /**
- * ⭐ RICH CONTENT RENDERER — Highlights @mentions, ||spoilers||, and `inline code`
- *    in message HTML content (Discord-style).
+ * ⭐ RICH CONTENT RENDERER — Discord-style markdown formatting.
+ *    Transforms @mentions, ||spoilers||, `inline code`, ~~strikethrough~~,
+ *    and > blockquotes in message HTML content.
  *
  * The message content is stored as HTML (from RichTextEditor). We need to
  * transform patterns WITHOUT breaking existing HTML tags. Approach:
@@ -176,13 +180,15 @@ function formatDateSeparator(dateStr: string): string {
  *      either an HTML tag OR plain text.
  *   2. Only transform patterns in TEXT segments (not inside tags).
  *
- * Supported patterns:
- *   - @username  → highlighted mention badge (blue background)
- *   - ||spoiler|| → click-to-reveal spoiler (dark background, reveals on click)
+ * Supported patterns (Discord-compatible):
+ *   - @username    → highlighted mention badge (blue background)
+ *   - ||spoiler||  → click-to-reveal spoiler (dark background, reveals on click)
  *   - `inline code` → monospace code with gray background
+ *   - ~~strikethrough~~ → line-through text
+ *   - > blockquote → left border + gray background blockquote
  *
  * This is safe because we never modify the actual HTML structure — we only
- * inject <span> elements around text patterns.
+ * inject <span>/<code>/<blockquote> elements around text patterns.
  *
  * @param html The message content as HTML
  * @returns HTML with rich content patterns transformed
@@ -192,7 +198,9 @@ function renderRichContent(html: string): string {
   let hasMentions = html.includes('@');
   let hasSpoilers = html.includes('||');
   let hasCode = html.includes('`');
-  if (!hasMentions && !hasSpoilers && !hasCode) return html;
+  let hasStrike = html.includes('~~');
+  let hasQuote = html.includes('&gt; ') || html.includes('> ');
+  if (!hasMentions && !hasSpoilers && !hasCode && !hasStrike && !hasQuote) return html;
 
   // Split into HTML tags and text content
   const parts = html.split(/(<[^>]+>)/);
@@ -210,11 +218,33 @@ function renderRichContent(html: string): string {
       );
     }
 
+    // ⭐ ~~strikethrough~~ → line-through
+    if (hasStrike) {
+      result = result.replace(
+        /~~([^~]+)~~/g,
+        '<span style="text-decoration:line-through;">$1</span>'
+      );
+    }
+
     // ⭐ `inline code` → monospace with gray background
     if (hasCode) {
       result = result.replace(
         /`([^`]+)`/g,
         '<code style="background-color:#f1f5f9;color:#0f172a;border-radius:3px;padding:1px 4px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.875em;">$1</code>'
+      );
+    }
+
+    // ⭐ > blockquote → left border + gray background (Discord-style)
+    //    Handles both the raw "> " at line start and the HTML-escaped "&gt; ".
+    //    Applied line-by-line to only match at the beginning of a line.
+    if (hasQuote) {
+      result = result.replace(
+        /(?:^|\n)(?:&gt;|>)\s(.+)/g,
+        (match, p1, offset, str) => {
+          // Determine if this is at the start of the string or after a newline
+          const prefix = match.startsWith('\n') ? '\n' : '';
+          return `${prefix}<blockquote style="border-left:3px solid #cbd5e1;background-color:#f8fafc;padding:2px 8px;margin:2px 0;color:#475569;border-radius:0 4px 4px 0;">${p1}</blockquote>`;
+        }
       );
     }
 
@@ -374,30 +404,35 @@ function stripHtml(html: string | null | undefined): string {
  * ⭐ DISCORD PARITY — Role-based color on usernames in group messages.
  *
  * Discord assigns a color to each role (e.g. "Admin" = red, "Moderator" = green).
- * Helm Connect applies the same concept: the sender's roleLabel (e.g. "Directeur",
- * "Enseignant", "Parent", "Secrétaire-Comptable") is mapped to a color that is
- * applied to the sender's name in group conversations.
+ * Helm Connect applies the same concept: the sender's role (raw DB role string
+ * like 'DIRECTOR', 'TEACHER', 'PARENT', or a roleLabel like "Directeur",
+ * "Enseignant", "Parent", "Secrétaire-Comptable") is mapped to a color that
+ * is applied to the sender's name in group conversations.
  *
- * The colors are chosen to be readable on both white message bubbles and
- * the #0958D9 header background.
+ * The backend `chat.service.ts` populates `sender.role` (raw DB role) but NOT
+ * `sender.roleLabel`. So this function must handle BOTH formats:
+ *   - Raw role: 'DIRECTOR', 'TEACHER', 'PARENT', 'SECRETARY', etc.
+ *   - Label: 'Directeur', 'Enseignant', 'Parent', 'Secrétaire-Comptable', etc.
+ *
+ * Colors are chosen to be readable on white message bubbles.
  */
-function getRoleColor(roleLabel: string | undefined): string {
-  if (!roleLabel) return '#0958D9'; // default Helm blue
-  const label = roleLabel.toLowerCase();
+function getRoleColor(roleOrLabel: string | undefined): string {
+  if (!roleOrLabel) return '#0958D9'; // default Helm blue
+  const v = roleOrLabel.toLowerCase();
   // School administration — warm/red tones
-  if (label.includes('directeur') || label.includes('directrice') || label.includes('promoteur')) return '#DC2626'; // red-600
-  if (label.includes('censeur') || label.includes('surveillant')) return '#D97706'; // amber-600
-  if (label.includes('comptable') || label.includes('économ') || label.includes('intendant')) return '#059669'; // emerald-600
-  if (label.includes('secrétaire') || label.includes('secretaire')) return '#0891B2'; // cyan-600
-  if (label.includes('scolarit')) return '#7C3AED'; // violet-600
+  if (v.includes('directeur') || v.includes('directrice') || v.includes('director') || v.includes('promoteur') || v.includes('promoter')) return '#DC2626'; // red-600
+  if (v.includes('censeur') || v.includes('surveillant') || v.includes('surveillance')) return '#D97706'; // amber-600
+  if (v.includes('comptable') || v.includes('compt') || v.includes('économ') || v.includes('econome') || v.includes('intendant')) return '#059669'; // emerald-600
+  if (v.includes('secrétaire') || v.includes('secretaire') || v.includes('secretary')) return '#0891B2'; // cyan-600
+  if (v.includes('scolarit')) return '#7C3AED'; // violet-600
   // Teachers — blue tones
-  if (label.includes('enseignant') || label.includes('professeur') || label.includes('maître') || label.includes('maitre')) return '#2563EB'; // blue-600
+  if (v.includes('enseignant') || v.includes('professeur') || v.includes('maître') || v.includes('maitre') || v.includes('teacher')) return '#2563EB'; // blue-600
   // Parents — green tones
-  if (label.includes('parent') || label.includes('tuteur')) return '#16A34A'; // green-600
+  if (v.includes('parent') || v.includes('tuteur') || v.includes('guardian')) return '#16A34A'; // green-600
   // Students — purple
-  if (label.includes('élève') || label.includes('eleve') || label.includes('étudiant') || label.includes('etudiant')) return '#9333EA'; // purple-600
+  if (v.includes('élève') || v.includes('eleve') || v.includes('étudiant') || v.includes('etudiant') || v.includes('student')) return '#9333EA'; // purple-600
   // Platform roles — slate
-  if (label.includes('platform') || label.includes('admin') || label.includes('super')) return '#475569'; // slate-600
+  if (v.includes('platform') || v.includes('super') || v.includes('admin') && !v.includes('administration')) return '#475569'; // slate-600
   return '#0958D9'; // default Helm blue
 }
 
@@ -2808,12 +2843,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     let type: 'AUDIO' | 'DOCUMENT' | 'IMAGE' = 'DOCUMENT';
     if (mime.startsWith('audio/')) type = 'AUDIO';
     else if (mime.startsWith('image/')) type = 'IMAGE';
+    // ⭐ DISCORD PARITY: Videos are sent as DOCUMENT (the backend stores them
+    //    via StorageService and the message type 'DOCUMENT' handles any file).
+    //    The frontend renders video attachments inline with a <video> element.
+    else if (mime.startsWith('video/')) type = 'DOCUMENT';
     handleSendAttachment(file, type);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // ⭐ DRAG & DROP — Upload files dropped onto the chat area (Discord-like)
-  //    Supports images, audio, and documents. Auto-detects the type from
+  //    Supports images, audio, video, and documents. Auto-detects the type from
   //    the file's MIME type. Multiple files are uploaded sequentially.
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2827,6 +2866,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       let type: 'AUDIO' | 'DOCUMENT' | 'IMAGE' = 'DOCUMENT';
       if (mime.startsWith('audio/')) type = 'AUDIO';
       else if (mime.startsWith('image/')) type = 'IMAGE';
+      // ⭐ Videos sent as DOCUMENT (backend stores them; frontend renders inline <video>).
+      else if (mime.startsWith('video/')) type = 'DOCUMENT';
       handleSendAttachment(file, type);
     });
   }, [activeConvId, isReadOnly, handleSendAttachment]);
@@ -2958,13 +2999,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm font-semibold text-slate-900 truncate">{display.name}</span>
-            {conv.lastMessageAt && (
-              <span className="text-[10px] text-slate-400 flex-shrink-0">{formatTime(conv.lastMessageAt)}</span>
-            )}
+            <span className={cn(
+              'text-sm truncate',
+              (conv as any).unreadCount && (conv as any).unreadCount > 0
+                ? 'font-bold text-slate-900'
+                : 'font-semibold text-slate-900'
+            )}>{display.name}</span>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* ⭐ DISCORD PARITY: Unread badge — blue circle with white count.
+                  Shown when the conversation has unread messages and is NOT
+                  the currently active one. */}
+              {(conv as any).unreadCount && (conv as any).unreadCount > 0 && conv.id !== activeConvId && (
+                <span className="min-w-[18px] h-[18px] px-1 bg-[#1677FF] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {(conv as any).unreadCount > 99 ? '99+' : (conv as any).unreadCount}
+                </span>
+              )}
+              {conv.lastMessageAt && (
+                <span className={cn(
+                  'text-[10px]',
+                  (conv as any).unreadCount && (conv as any).unreadCount > 0 ? 'text-[#1677FF] font-semibold' : 'text-slate-400'
+                )}>{formatTime(conv.lastMessageAt)}</span>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-slate-500 truncate flex-1">
+            <span className={cn(
+              'text-xs truncate flex-1',
+              (conv as any).unreadCount && (conv as any).unreadCount > 0
+                ? 'text-slate-700 font-medium'
+                : 'text-slate-500'
+            )}>
               {conv.lastMessagePreview || '—'}
             </span>
           </div>
@@ -2997,7 +3061,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         type="file"
         className="hidden"
         onChange={handleFileSelect}
-        accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,.xml"
+        accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,.xml"
       />
 
       {/* ═════ DISCORD-LIKE LEFT ICON RAIL — 12 sections ═════ */}
@@ -3677,24 +3741,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {activeConv.type === 'GROUP' && (
               <button
                 onClick={handleGenerateInviteLink}
-                className="p-1.5 rounded hover:bg-[#0958D9]"
+                className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:inline-flex"
                 title="Copier le lien d'invitation"
               >
                 <UserPlus className="w-4 h-4" />
               </button>
             )}
-            {/* ⭐ GAP FILL: In-conversation search toggle */}
+            {/* ⭐ GAP FILL: In-conversation search toggle — hidden on mobile (<sm)
+                to prevent header overflow. Use the global search (Search icon in
+                the section rail) or the in-conversation search via keyboard. */}
             <button
               onClick={() => setShowConvSearch(!showConvSearch)}
-              className="p-1.5 rounded hover:bg-[#0958D9]"
+              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:inline-flex"
               title="Rechercher dans la conversation"
             >
               <Search className="w-4 h-4" />
             </button>
-            {/* ⭐ V3-3: ORION-powered conversation summary button (Sparkles icon) */}
+            {/* ⭐ V3-3: ORION-powered conversation summary button (Sparkles icon)
+                — hidden on mobile to save space. */}
             <button
               onClick={handleSummarizeConversation}
-              className="p-1.5 rounded hover:bg-[#0958D9]"
+              className="p-1.5 rounded hover:bg-[#0958D9] hidden md:inline-flex"
               title="Résumer la conversation (ORION IA)"
             >
               <Sparkles className="w-4 h-4" />
@@ -3944,7 +4011,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {!isMine && activeConv.type === 'GROUP' && msg.sender && (
                           <div
                             className="text-[10px] font-bold mb-0.5"
-                            style={{ color: getRoleColor((msg.sender as any).roleLabel) }}
+                            style={{ color: getRoleColor((msg.sender as any).roleLabel || (msg.sender as any).role) }}
                           >
                             {msg.sender.firstName} {msg.sender.lastName}
                           </div>
@@ -4035,8 +4102,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         )}
                         {msg.type === 'DOCUMENT' && msg.attachmentUrl && (() => {
                           const ft = getFileTypeIcon(msg.attachmentMime, msg.attachmentName);
+                          const isVideo = (msg.attachmentMime || '').startsWith('video/') || /\.(mp4|webm|ogg|mov|avi|mkv)$/i.test(msg.attachmentName || '');
                           return (
                             <div>
+                              {/* ⭐ DISCORD PARITY: Inline video player for video attachments.
+                                  If the attachment MIME is video/* (or the extension is a known
+                                  video format), render a <video> element instead of a file chip.
+                                  The video is loaded from the attachment URL and has native
+                                  controls (play, pause, seek, volume, fullscreen). */}
+                              {isVideo ? (
+                                <video
+                                  controls
+                                  src={getAttachmentUrl(msg.attachmentUrl)}
+                                  className="w-full max-w-[280px] rounded-lg"
+                                  style={{ maxHeight: '300px' }}
+                                  preload="metadata"
+                                />
+                              ) : (
                               <a
                                 href={getAttachmentUrl(msg.attachmentUrl)}
                                 download={msg.attachmentName}
@@ -4054,6 +4136,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                   <div className={cn('text-[10px]', isMine ? 'text-white/80' : 'text-slate-500')}>{ft.label}{msg.attachmentSize ? ` · ${formatFileSize(msg.attachmentSize)}` : ''}</div>
                                 </div>
                               </a>
+                              )}
                               {/* ⭐ Issue B FIX: render the caption text below the file chip.
                                   The backend sends a formatted message (same wording as the WhatsApp
                                   template 'recu_paiement') as msg.content. Previously this was NOT

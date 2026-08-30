@@ -590,7 +590,7 @@ export function getVisibleModulesForRole(role: string): {
     'IT_MANAGER', 'SETTINGS_MANAGER',
   ];
 
-  // ⭐ Direction : directeur général, directeur d'établissement, censeur, etc.
+  // ⭐ Direction : directeur général, directeur d'établissement, censeur, surveillant, etc.
   const DIRECTION_ROLES = [
     ...levelSpecificDirectorRoles,
     'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
@@ -598,6 +598,7 @@ export function getVisibleModulesForRole(role: string): {
     'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
     'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
     'SUPER_DIRECTOR', 'director',
+    'SCOLARITE', // la scolarité fait partie de la direction
   ];
 
   // ⭐ Finance : comptable, caissier, responsable financier, etc.
@@ -607,8 +608,8 @@ export function getVisibleModulesForRole(role: string): {
     'SECRETAIRE_COMPTABLE', 'ECONOME',
   ];
 
-  // ⭐ RH : responsable RH, gestionnaire de paie
-  const HR_ROLES = ['HR_MANAGER', 'PAYROLL_MANAGER'];
+  // ⭐ RH : responsable RH, gestionnaire de paie, secrétaires-comptables (paie)
+  const HR_ROLES = ['HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE'];
 
   // ⭐ Communication : responsable communication, agent, vie scolaire
   const COMMUNICATION_ROLES = [
@@ -616,12 +617,16 @@ export function getVisibleModulesForRole(role: string): {
     ...levelSpecificSecretaryRoles, // les secrétaires ont accès à la communication
   ];
 
-  // ⭐ Examens : censeur, responsable examens, responsables de niveau
+  // ⭐ Examens : censeur, responsable examens, responsables de niveau,
+  //    secrétaires et secrétaires-comptables (saisie des notes, impressions bulletins)
   const EXAM_ROLES = [
-    'CENSOR', 'EXAM_MANAGER',
+    'CENSOR', 'CENSEUR', 'EXAM_MANAGER',
     'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-    'PEDAGOGIC_COORDINATOR',
+    'PEDAGOGIC_COORDINATOR', 'PEDAGOGIC_DIRECTOR',
     ...levelSpecificDirectorRoles,
+    ...levelSpecificSecretaryRoles,
+    ...levelSpecificComptableRoles, // secrétaires-comptables et comptables gèrent aussi les examens
+    'SCOLARITE', 'RESP_SCOLARITE',
   ];
 
   return {

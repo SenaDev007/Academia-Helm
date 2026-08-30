@@ -2066,7 +2066,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           placeholder={
                             portalType === 'platform'
                               ? 'admin@academiahelm.com'
-                              : 'email ou matricule (ex: CSPEBE-P-26-00005)'
+                              : 'email ou matricule'
                           }
                         />
                         {emailTouched && schoolCredentials.email && (

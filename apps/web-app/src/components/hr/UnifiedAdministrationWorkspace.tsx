@@ -54,7 +54,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, Trash2, Upload, Pen, School,
   Stamp, Plus, Mail, UserCheck, Eraser, FileSignature, X, Globe,
   ShieldCheck, Calendar, Send, GraduationCap, Search, Filter,
-  Baby, BookOpen, Users, Edit3,
+  Baby, BookOpen, Users, Edit3, Info,
 } from 'lucide-react';
 import { useBilingual, type LanguageTrack } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -238,6 +238,14 @@ export default function UnifiedAdministrationWorkspace() {
   const [generatingStamp, setGeneratingStamp] = useState<string | null>(null);
   const [generatingSignature, setGeneratingSignature] = useState(false);
   const [generatingRowSignature, setGeneratingRowSignature] = useState<string | null>(null);
+  // ⭐ État pour le modal d'affectation enseignant (permet d'affecter
+  //    un poste enseignant à n'importe quel staff, même un admin/comptable)
+  const [teacherAssignModalOpen, setTeacherAssignModalOpen] = useState(false);
+  const [teacherAssignForm, setTeacherAssignForm] = useState({
+    staffId: '',
+    position: '',
+  });
+  const [savingTeacherAssign, setSavingTeacherAssign] = useState(false);
   // ⭐ État pour l'édition d'une affectation admin existante
   const [editingAssignment, setEditingAssignment] = useState<AdminAssignment | null>(null);
   const [sendingTeacherCredentials, setSendingTeacherCredentials] = useState<string | null>(null);
@@ -659,6 +667,63 @@ export default function UnifiedAdministrationWorkspace() {
     setError(null);
     setSuccess(null);
   }, [isBilingual, currentTrack]);
+
+  // ── Affecter un poste enseignant à un staff ───────────────────────────────
+  //    Permet d'affecter un rôle d'enseignant à n'importe quel staff, même
+  //    s'il a été recruté comme comptable ou secrétaire. Le promoteur peut
+  //    décider qu'un comptable enseigne aussi une matière.
+  const handleTeacherAssign = async () => {
+    if (!teacherAssignForm.staffId) {
+      setError('Veuillez sélectionner un membre du personnel.');
+      return;
+    }
+    setSavingTeacherAssign(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      // 1. Mettre à jour le staff : schoolLevelId + roleType=TEACHER (conserver
+      //    l'ancien roleType si c'était déjà TEACHER, sinon passer à TEACHER
+      //    pour qu'il apparaisse dans l'équipe enseignante)
+      const targetLevelId = levelIdForSelectedUnit;
+      const staff = staffList.find((s) => s.id === teacherAssignForm.staffId);
+      if (!staff) throw new Error('Staff introuvable');
+
+      // ⭐ Si le staff n'est pas TEACHER, on met à jour son roleType à TEACHER
+      //    + on met à jour son schoolLevelId pour ce niveau + assignedLanguages
+      const updateBody: any = {
+        schoolLevelId: targetLevelId,
+      };
+      if (staff.roleType !== 'TEACHER') {
+        updateBody.roleType = 'TEACHER';
+      }
+      if (isBilingual) {
+        // Assigner la piste linguistique courante
+        const currentLangs = staff.assignedLanguages ?? [];
+        if (!currentLangs.includes(currentTrack)) {
+          updateBody.assignedLanguages = [...currentLangs, currentTrack];
+        }
+      }
+      if (teacherAssignForm.position) {
+        updateBody.position = teacherAssignForm.position;
+      }
+
+      await authedFetch(`/api/hr/staff/${teacherAssignForm.staffId}`, {
+        method: 'PUT',
+        body: updateBody,
+      });
+
+      const staffName = `${staff.firstName} ${staff.lastName}`.trim();
+      setSuccess(`${staffName} a été affecté(e) à l'équipe enseignante de ${ADMIN_UNIT_LABELS[selectedUnit || ''] || selectedUnit || 'ce niveau'}.`);
+      setTeacherAssignModalOpen(false);
+      setTeacherAssignForm({ staffId: '', position: '' });
+      loadData();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de l\'affectation');
+      toast({ variant: 'error', title: 'Échec de l\'affectation', description: err?.message });
+    } finally {
+      setSavingTeacherAssign(false);
+    }
+  };
 
   // ── Générer cachets pour une unité ────────────────────────────────────────
   const handleGenerateStamp = async (unit: string) => {
@@ -1243,21 +1308,15 @@ export default function UnifiedAdministrationWorkspace() {
                           Enregistrer ({Object.keys(pendingTeacherChanges).length})
                         </Button>
                       )}
-                      {/* ⭐ Bouton "Affecter un enseignant" — permet d'afficher les
-                          enseignants non affectés pour les affecter à ce niveau */}
+                      {/* ⭐ Bouton "Affecter un enseignant" — ouvre un modal pour
+                          sélectionner un staff et lui affecter un poste enseignant */}
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          // Réinitialiser la recherche pour afficher tous les
-                          // enseignants (y compris les non affectés à aucun niveau)
-                          setSearchQuery('');
-                          // Les enseignants non affectés apparaissent déjà dans la
-                          // liste grâce au filtre `if (!effectiveLevelId) return true`
-                          // dans teachersForSelectedLevel. Le bouton sert de
-                          // repère visuel pour indiquer qu'on peut affecter
-                          // de nouveaux enseignants ici.
+                          setTeacherAssignForm({ staffId: '', position: '' });
+                          setTeacherAssignModalOpen(true);
                         }}
                         className="text-xs"
                       >
@@ -1771,6 +1830,127 @@ export default function UnifiedAdministrationWorkspace() {
                 <UserCheck className="w-4 h-4" />
               )}
               {editingAssignment ? 'Modifier le poste' : 'Affecter le poste'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          MODAL : Affecter un poste enseignant
+          Permet d'affecter un rôle d'enseignant à n'importe quel staff,
+          même s'il a été recruté comme comptable ou secrétaire.
+          ═══════════════════════════════════════════════════════════════════ */}
+      <Dialog open={teacherAssignModalOpen} onOpenChange={(open) => {
+        setTeacherAssignModalOpen(open);
+        if (!open) {
+          setTeacherAssignForm({ staffId: '', position: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <GraduationCap className="w-4 h-4" style={{ color: PRIMARY }} />
+              Affecter un enseignant
+              {selectedUnit && (
+                <span
+                  className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{
+                    background: getUnitColor(selectedUnit).bg,
+                    color: getUnitColor(selectedUnit).text,
+                  }}
+                >
+                  {ADMIN_UNIT_LABELS[selectedUnit] || selectedUnit}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Sélectionnez un membre du personnel à affecter à l'équipe enseignante de ce niveau.
+              Vous pouvez affecter un enseignant ou un personnel administratif qui enseigne aussi.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-3">
+            {/* Staff — tous les staff, pas seulement TEACHER */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5" /> Membre du personnel *
+              </label>
+              <select
+                value={teacherAssignForm.staffId}
+                onChange={(e) => setTeacherAssignForm((prev) => ({ ...prev, staffId: e.target.value }))}
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              >
+                <option value="">— Sélectionner dans le staff —</option>
+                {staffList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.firstName} {s.lastName}
+                    {s.position ? ` (${s.position})` : ''}
+                    {s.roleType ? ` [${s.roleType}]` : ''}
+                  </option>
+                ))}
+              </select>
+              {staffList.length === 0 && (
+                <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Aucun staff disponible. Embauchez d'abord du personnel.
+                </p>
+              )}
+            </div>
+
+            {/* Poste enseignant (optionnel) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                Poste / Matière enseignée (optionnel)
+              </label>
+              <input
+                type="text"
+                value={teacherAssignForm.position}
+                onChange={(e) => setTeacherAssignForm((prev) => ({ ...prev, position: e.target.value }))}
+                placeholder="Ex: Instituteur(trice) du Primaire, Professeur d'Anglais..."
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Si le staff a déjà un poste administratif (ex: Comptable), ce champ précise sa matière d'enseignement.
+              </p>
+            </div>
+
+            {/* Info sur l'affectation */}
+            <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs text-blue-700 flex gap-2">
+              <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <div>
+                <p className="font-bold mb-1">Affectation enseignant</p>
+                <p>
+                  Le personnel sélectionné sera ajouté à l'équipe enseignante du niveau{' '}
+                  <strong>{selectedUnit ? (ADMIN_UNIT_LABELS[selectedUnit] || selectedUnit) : 'sélectionné'}</strong>
+                  {isBilingual && ` (piste ${currentTrack === 'FR' ? 'Francophone' : 'Anglophone'})`}.
+                  Si son rôle n'était pas « Enseignant », il sera mis à jour pour qu'il apparaisse dans cette équipe.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t border-slate-100 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTeacherAssignModalOpen(false);
+                setTeacherAssignForm({ staffId: '', position: '' });
+              }}
+              disabled={savingTeacherAssign}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleTeacherAssign}
+              disabled={savingTeacherAssign || !teacherAssignForm.staffId}
+              style={{ background: PRIMARY, color: 'white' }}
+            >
+              {savingTeacherAssign ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <GraduationCap className="w-4 h-4" />
+              )}
+              Affecter à l'équipe enseignante
             </Button>
           </DialogFooter>
         </DialogContent>

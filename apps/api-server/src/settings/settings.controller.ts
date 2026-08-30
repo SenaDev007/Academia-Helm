@@ -41,8 +41,11 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
+import { SignatureTokenService } from './services/signature-token.service';
 import { GeolocationService } from '../hr/geolocation.service';
 import { PrismaService } from '../database/prisma.service';
+import { EmailService } from '../communication/services/email.service';
+import { Public } from '../auth/decorators/public.decorator';
 import { createReadStream } from 'fs';
 import { existsSync } from 'fs';
 
@@ -77,6 +80,8 @@ export class SettingsController {
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
     private readonly stampsSignaturesService: StampsSignaturesService,
+    private readonly signatureTokenService: SignatureTokenService,
+    private readonly emailService: EmailService,
     private readonly geolocationService: GeolocationService,
     private readonly prisma: PrismaService,
   ) {}
@@ -1046,6 +1051,208 @@ export class SettingsController {
       body.holderLastName ?? '',
       body.educationLevelId ?? null,
     );
+  }
+
+  /**
+   * ⭐ CANVA SIGNATURE FLOW — Request a signature upload link.
+   *
+   * Instead of auto-generating a cursive text signature, this endpoint:
+   * 1. Creates a 32-char hex token (valid 30 days)
+   * 2. Sends an email to the staff member with a link to /signature/canvas/[token]
+   * 3. The staff opens the link, draws/uploads their signature on a canvas page
+   * 4. On submit, the canvas page POSTs the PNG to /settings/signature/upload/:token
+   * 5. The signature is stored and auto-applied everywhere it's needed
+   */
+  @Post('signature/request-canva-link')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async requestSignatureCanvaLink(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: {
+      staffId?: string;
+      role: string;
+      holderFirstName: string;
+      holderLastName: string;
+      email: string;
+      educationLevelId?: string | null;
+    },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (!body?.email?.trim()) throw new BadRequestException('email est requis');
+    if (!body?.role?.trim()) throw new BadRequestException('role est requis');
+    if (!body?.holderFirstName?.trim()) throw new BadRequestException('holderFirstName est requis');
+
+    // 1. Create the magic-link token
+    const { token, expiresAt } = await this.signatureTokenService.createToken({
+      tenantId: tid,
+      staffId: body.staffId || null,
+      role: body.role,
+      holderFirstName: body.holderFirstName,
+      holderLastName: body.holderLastName,
+      educationLevelId: body.educationLevelId ?? null,
+      email: body.email,
+    });
+
+    // 2. Build the signature upload URL (self-hosted canvas page)
+    const frontendUrl = process.env.FRONTEND_URL || process.env.APP_PUBLIC_URL || 'https://academiahelm.com';
+    const signatureUrl = `${frontendUrl}/signature/canvas/${token}`;
+
+    // 3. Send the email with the link
+    const holderName = `${body.holderFirstName} ${body.holderLastName}`.trim();
+    const roleLabel = body.role.replace(/_/g, ' ');
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1e3a8a;">Signature requise — Academia Helm</h2>
+        <p>Bonjour <strong>${holderName}</strong>,</p>
+        <p>Vous êtes invité à enregistrer votre signature manuscrite pour votre poste de <strong>${roleLabel}</strong>.</p>
+        <p>Cliquez sur le lien ci-dessous pour dessiner ou télécharger votre signature. Elle sera automatiquement appliquée sur tous les documents officiels vous concernant.</p>
+        <p style="margin: 24px 0;">
+          <a href="${signatureUrl}"
+             style="display: inline-block; background: #2563eb; color: white; padding: 12px 28px;
+                    text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+            Enregistrer ma signature
+          </a>
+        </p>
+        <p style="color: #6b7280; font-size: 13px;">
+          Ce lien expire le ${expiresAt.toLocaleDateString('fr-FR')}.<br/>
+          Si vous n'avez pas demandé ce lien, ignorez cet email.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
+        <p style="color: #9ca3af; font-size: 12px;">Academia Helm — Plateforme de gestion scolaire</p>
+      </div>
+    `;
+
+    try {
+      await this.emailService.sendEmail({
+        to: body.email,
+        subject: `Signature requise — ${roleLabel} — Academia Helm`,
+        html,
+        text: `Bonjour ${holderName}, veuillez enregistrer votre signature ici: ${signatureUrl}`,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Could not send signature email to ${body.email}: ${e.message}`);
+      // Don't fail the whole request — return the URL so the admin can share it manually
+    }
+
+    return {
+      success: true,
+      sentTo: body.email,
+      signatureUrl,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * ⭐ CANVA SIGNATURE FLOW — Upload a signature via magic-link token.
+   *
+   * Public endpoint (no JWT) — authenticated by the token in the URL.
+   * Accepts a base64 PNG data URL or a multipart file upload.
+   * Persists the signature to tenant_signatures and marks the token as used.
+   */
+  @Post('signature/upload/:token')
+  @Public()
+  async uploadSignatureByToken(
+    @Param('token') token: string,
+    @Body() body: { signatureDataUrl?: string },
+  ) {
+    // 1. Validate the token
+    const tokenData = await this.signatureTokenService.validateToken(token);
+
+    // 2. Get the signature image (base64 data URL from the canvas page)
+    if (!body?.signatureDataUrl?.trim()) {
+      throw new BadRequestException('signatureDataUrl est requis (base64 PNG data URL)');
+    }
+    const dataUrl = body.signatureDataUrl;
+    const base64Match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/);
+    if (!base64Match) {
+      throw new BadRequestException('signatureDataUrl doit être une data URL base64 (data:image/png;base64,...)');
+    }
+    const ext = base64Match[1] === 'jpeg' ? 'jpg' : base64Match[1];
+    const buffer = Buffer.from(base64Match[2], 'base64');
+
+    // 3. Generate or update the signature via the existing service
+    //    We use generateSignature which creates/updates a tenant_signatures row.
+    //    The signature image is stored as a file on disk (via the existing
+    //    svgToPng path pattern, but we upload the raw PNG buffer instead).
+    try {
+      // Save the PNG buffer to the signatures directory
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const SIGNATURES_DIR = 'uploads/tenant-signatures';
+      const dir = path.join(process.cwd(), SIGNATURES_DIR, tokenData.tenantId);
+      await fs.mkdir(dir, { recursive: true });
+      const fileName = `signature-${tokenData.role}-${Date.now()}.${ext}`;
+      const filePath = path.join(dir, fileName);
+      await fs.writeFile(filePath, buffer);
+      const signatureUrl = `${SIGNATURES_DIR}/${tokenData.tenantId}/${fileName}`;
+
+      // 4. Upsert the tenant_signatures row (create or update by role + level)
+      //    generateSignature already does this — but it generates its own SVG.
+      //    Instead, we directly upsert the DB row with our uploaded URL.
+      const existing = tokenData.educationLevelId
+        ? await this.prisma.tenantSignature.findFirst({
+            where: { tenantId: tokenData.tenantId, role: tokenData.role, educationLevelId: tokenData.educationLevelId },
+          })
+        : await this.prisma.tenantSignature.findFirst({
+            where: { tenantId: tokenData.tenantId, role: tokenData.role, educationLevelId: null },
+          });
+
+      if (existing) {
+        await this.prisma.tenantSignature.update({
+          where: { id: existing.id },
+          data: {
+            signatureUrl,
+            holderFirstName: tokenData.holderFirstName,
+            holderLastName: tokenData.holderLastName,
+            generatedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.tenantSignature.create({
+          data: {
+            tenantId: tokenData.tenantId,
+            role: tokenData.role,
+            holderFirstName: tokenData.holderFirstName,
+            holderLastName: tokenData.holderLastName,
+            educationLevelId: tokenData.educationLevelId || null,
+            signatureUrl,
+            generatedAt: new Date(),
+          } as any,
+        });
+      }
+
+      // 5. Mark the token as used
+      await this.signatureTokenService.markUsed(token);
+
+      this.logger.log(`Signature uploaded via token for ${tokenData.email} (role=${tokenData.role})`);
+
+      return {
+        success: true,
+        signatureUrl,
+        message: 'Signature enregistrée avec succès. Elle sera automatiquement appliquée sur vos documents officiels.',
+      };
+    } catch (e: any) {
+      this.logger.error(`Signature upload failed: ${e.message}`);
+      throw new BadRequestException(`Échec de l'enregistrement de la signature: ${e.message}`);
+    }
+  }
+
+  /**
+   * ⭐ CANVA SIGNATURE FLOW — Get token info (for the canvas page to display
+   * the staff name + role). Public endpoint — authenticated by the token.
+   */
+  @Get('signature/token-info/:token')
+  @Public()
+  async getSignatureTokenInfo(@Param('token') token: string) {
+    const tokenData = await this.signatureTokenService.validateToken(token);
+    return {
+      holderName: `${tokenData.holderFirstName} ${tokenData.holderLastName}`.trim(),
+      role: tokenData.role,
+      email: tokenData.email,
+      expiresAt: tokenData.expiresAt.toISOString(),
+    };
   }
 
   // ============================================================================

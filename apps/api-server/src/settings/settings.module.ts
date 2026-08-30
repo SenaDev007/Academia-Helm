@@ -23,11 +23,13 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
+import { SignatureTokenService } from './services/signature-token.service';
 import { GeolocationService } from '../hr/geolocation.service';
 import { DatabaseModule } from '../database/database.module';
 import { OrionModule } from '../orion/orion.module';
 import { TenantFeaturesModule } from '../tenant-features/tenant-features.module';
 import { PermissionGuard } from '../common/guards/permission.guard';
+import { CommunicationModule } from '../communication/communication.module';
 
 /**
  * Module Paramètres — Centre de contrôle stratégique d'Academia Helm
@@ -48,7 +50,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
  * - Historique & audit
  */
 @Module({
-  imports: [DatabaseModule, OrionModule, TenantFeaturesModule],
+  imports: [DatabaseModule, OrionModule, TenantFeaturesModule, CommunicationModule],
   controllers: [SettingsController],
   providers: [
     PermissionGuard,
@@ -95,6 +97,7 @@ import { PermissionGuard } from '../common/guards/permission.guard';
     BillingSettingsService,
     IdentityProfileService,
     StampsSignaturesService,
+    SignatureTokenService,
     GeolocationService,
     SecuritySettingsService,
     OrionSettingsService,

@@ -93,8 +93,12 @@ export class PermissionGuard implements CanActivate {
     }
 
     const roleStr = (user.role as string)?.toUpperCase();
-    // PLATFORM_OWNER / SUPER_ADMIN : bypass (vision globale)
-    if (roleStr === 'PLATFORM_OWNER' || roleStr === 'SUPER_ADMIN' || user.isSuperAdmin) {
+    // PLATFORM_OWNER / SUPER_ADMIN / PROMOTEUR : bypass (vision globale + accès total)
+    // ⭐ Le PROMOTEUR est le propriétaire de l'école — il a tous les droits, y compris
+    //    la génération de cachets et signatures (PARAMETRES:write). On l'ajoute au
+    //    bypass pour éviter l'erreur "Accès refusé: permission PARAMETRES:write requise"
+    //    même si la table user_roles n'est pas peuplée (bug d'onboarding connu).
+    if (roleStr === 'PLATFORM_OWNER' || roleStr === 'SUPER_ADMIN' || roleStr === 'PROMOTEUR' || roleStr === 'PROMOTER' || user.isSuperAdmin) {
       this.logger.debug(`Bypass permission: ${roleStr || 'superAdmin'}`);
       return true;
     }

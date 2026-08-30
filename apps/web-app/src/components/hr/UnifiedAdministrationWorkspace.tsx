@@ -840,8 +840,13 @@ export default function UnifiedAdministrationWorkspace() {
   };
 
   // ── Générer signature pour ligne existante ────────────────────────────────
+  // ── Envoyer un lien de signature par email (au lieu de générer un texte cursif) ──
+  // ⭐ Nouveau flux : envoie un email au staff avec un lien vers une page canvas
+  //    où il dessine/upload sa signature manuscrite. La signature est ensuite
+  //    automatiquement appliquée partout où elle est nécessaire.
   const handleGenerateSignatureForRow = async (assignment: AdminAssignment, unit: string) => {
     if (!assignment.staff) { setError('Staff introuvable pour cette affectation.'); return; }
+    if (!assignment.staff.email) { setError('Cet employé n\'a pas d\'email enregistré — impossible d\'envoyer le lien.'); return; }
     setGeneratingRowSignature(assignment.id);
     setError(null);
     setSuccess(null);
@@ -853,19 +858,26 @@ export default function UnifiedAdministrationWorkspace() {
         educationLevelId = level?.id ?? null;
       }
       const roleLabel = ADMIN_ROLE_LABELS[assignment.adminRole as AdminRole] || assignment.adminRole;
-      await authedFetch('/api/settings/signature/generate', {
+      const res = await authedFetch('/api/settings/signature/request-canva-link', {
         method: 'POST',
         body: {
+          staffId: assignment.staffId,
           role: roleLabel,
           holderFirstName: assignment.staff.firstName,
           holderLastName: assignment.staff.lastName,
+          email: assignment.staff.email,
           educationLevelId,
         },
       });
+      const data = await res.json();
       const staffName = `${assignment.staff.firstName} ${assignment.staff.lastName}`.trim();
-      setSuccess(`Signature officielle régénérée pour ${staffName} (${roleLabel}).`);
+      if (data.success) {
+        setSuccess(`Lien de signature envoyé par email à ${staffName} (${assignment.staff.email}). Le staff doit cliquer sur le lien pour dessiner sa signature.`);
+      } else {
+        setSuccess(`Lien de signature généré pour ${staffName}: ${data.signatureUrl}`);
+      }
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de la génération de la signature');
+      setError(err.message || 'Erreur lors de l\'envoi du lien de signature');
     } finally {
       setGeneratingRowSignature(null);
     }
@@ -1252,14 +1264,14 @@ export default function UnifiedAdministrationWorkspace() {
                                       onClick={() => handleGenerateSignatureForRow(a, group.unit)}
                                       disabled={generatingRowSignature === a.id || !a.staff}
                                       className="inline-flex items-center gap-1 text-[10px] md:text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                                      title="Générer / régénérer la signature officielle (texte) pour ce titulaire"
+                                      title="Envoyer un lien par email au titulaire pour qu'il dessine sa signature manuscrite"
                                     >
                                       {generatingRowSignature === a.id ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
                                       ) : (
                                         <FileSignature className="w-3 h-3" />
                                       )}
-                                      <span className="hidden md:inline">Signature</span>
+                                      <span className="hidden md:inline">Lien signature</span>
                                     </button>
                                     {/* ⭐ Cachet nominatif — génère un cachet rectangulaire professionnel
                                         avec le nom du titulaire + son rôle (effet encre SVG, rotation, double bordure). */}

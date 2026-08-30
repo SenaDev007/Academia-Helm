@@ -1496,10 +1496,13 @@ export class OnboardingService {
         } as any,
       });
 
-      // 7. Assigner le rôle PROMOTER à l'utilisateur
+      // 7. Assigner le rôle PROMOTEUR à l'utilisateur
+      //    ⭐ FIX: Le rôle système est créé sous le nom 'PROMOTEUR' (français) par
+      //    RolesPermissionsBootstrapService. On cherche les deux variantes
+      //    ('PROMOTEUR' et 'PROMOTER') pour être résilient au nom utilisé.
       try {
         const promoterRole = await tx.role.findFirst({
-          where: { name: 'PROMOTER' },
+          where: { name: { in: ['PROMOTEUR', 'PROMOTER'] }, isSystemRole: true },
         });
         if (promoterRole) {
           await tx.userRole.create({

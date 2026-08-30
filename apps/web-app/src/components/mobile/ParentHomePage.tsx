@@ -139,7 +139,7 @@ export default function ParentHomePage() {
 
                 {student.unreadMessages > 0 && (
                   <Link
-                    href="/mobile/parent/messages"
+                    href="/app/app/parent/messages"
                     className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200"
                   >
                     <div className="flex items-center space-x-3">
@@ -176,7 +176,7 @@ export default function ParentHomePage() {
           <p className="text-sm font-medium text-navy-900">Résultats</p>
         </Link>
         <Link
-          href="/mobile/parent/messages"
+          href="/app/app/parent/messages"
           className="bg-white rounded-lg border border-gray-200 p-4 text-center"
         >
           <MessageSquare className="w-8 h-8 text-navy-900 mx-auto mb-2" />

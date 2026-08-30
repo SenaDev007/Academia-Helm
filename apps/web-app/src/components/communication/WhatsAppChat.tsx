@@ -167,37 +167,71 @@ function formatDateSeparator(dateStr: string): string {
 }
 
 /**
- * ⭐ MENTIONS — Highlight @username patterns in message HTML content.
+ * ⭐ RICH CONTENT RENDERER — Highlights @mentions, ||spoilers||, and `inline code`
+ *    in message HTML content (Discord-style).
  *
  * The message content is stored as HTML (from RichTextEditor). We need to
- * highlight @mentions WITHOUT breaking existing HTML tags. Approach:
+ * transform patterns WITHOUT breaking existing HTML tags. Approach:
  *   1. Split the HTML into tag and text segments using a regex that matches
  *      either an HTML tag OR plain text.
- *   2. Only transform @mentions in TEXT segments (not inside tags).
- *   3. Wrap @FirstName (alphanumeric, 2-30 chars) in a styled <span>.
+ *   2. Only transform patterns in TEXT segments (not inside tags).
+ *
+ * Supported patterns:
+ *   - @username  → highlighted mention badge (blue background)
+ *   - ||spoiler|| → click-to-reveal spoiler (dark background, reveals on click)
+ *   - `inline code` → monospace code with gray background
  *
  * This is safe because we never modify the actual HTML structure — we only
- * inject <span> elements around text that follows @.
+ * inject <span> elements around text patterns.
  *
  * @param html The message content as HTML
- * @returns HTML with @mentions wrapped in highlight spans
+ * @returns HTML with rich content patterns transformed
  */
-function highlightMentions(html: string): string {
-  if (!html || !html.includes('@')) return html;
+function renderRichContent(html: string): string {
+  if (!html) return html;
+  let hasMentions = html.includes('@');
+  let hasSpoilers = html.includes('||');
+  let hasCode = html.includes('`');
+  if (!hasMentions && !hasSpoilers && !hasCode) return html;
+
   // Split into HTML tags and text content
-  // Example: "Hi <b>@John</b> how are you" → ["Hi ", "<b>", "@John", "</b>", " how are you"]
   const parts = html.split(/(<[^>]+>)/);
   return parts.map(part => {
     // Skip HTML tags (start with <)
     if (part.startsWith('<')) return part;
-    // Transform @mentions in text segments
-    // Match @FirstName or @first_last (2-30 chars after @, word boundary)
-    return part.replace(
-      /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_\-']{1,29})/g,
-      '<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">@$1</span>'
-    );
+
+    let result = part;
+
+    // ⭐ ||spoiler|| → click-to-reveal
+    if (hasSpoilers) {
+      result = result.replace(
+        /\|\|([^|]+)\|\|/g,
+        '<span class="spoiler-tag" style="background-color:#1e293b;color:#1e293b;border-radius:3px;padding:0 3px;cursor:pointer;transition:color 0.2s;" onclick="this.style.color=\'#f1f5f9\';this.style.backgroundColor=\'#334155\';">$1</span>'
+      );
+    }
+
+    // ⭐ `inline code` → monospace with gray background
+    if (hasCode) {
+      result = result.replace(
+        /`([^`]+)`/g,
+        '<code style="background-color:#f1f5f9;color:#0f172a;border-radius:3px;padding:1px 4px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.875em;">$1</code>'
+      );
+    }
+
+    // ⭐ @mentions → highlighted badge (applied last so it doesn't conflict)
+    if (hasMentions) {
+      result = result.replace(
+        /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_\-']{1,29})/g,
+        '<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">@$1</span>'
+      );
+    }
+
+    return result;
   }).join('');
 }
+
+/** ⭐ Backward-compatible alias for the old name (used elsewhere in the file). */
+const highlightMentions = renderRichContent;
 
 /**
  * ⭐ MENTIONS — Extract mentioned user IDs from message content.
@@ -221,6 +255,63 @@ function extractMentionedUserIds(html: string, participants: { userId: string; f
     }
   }
   return Array.from(mentioned);
+}
+
+/**
+ * ⭐ DISCORD PARITY — Notification sound on new message.
+ *
+ * Plays a short, pleasant two-tone beep using the Web Audio API.
+ * No external audio file is needed — the sound is synthesized on the fly.
+ * This works on all modern browsers (Chrome, Firefox, Safari, Edge) and on
+ * mobile (after a user interaction — the first user click/tap unlocks audio).
+ *
+ * The beep is a 880 Hz sine wave for 150 ms, followed by a 1320 Hz tone for
+ * 100 ms (a pleasant "ding-dong" pattern similar to Discord's notification).
+ */
+let _audioContext: AudioContext | null = null;
+function playNotificationSound(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    // Lazily create the AudioContext (must be created after a user gesture
+    // on mobile browsers — the first click anywhere in the app unlocks it)
+    if (!_audioContext) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      _audioContext = new AudioCtx();
+    }
+    // Resume if the context was suspended (mobile browsers suspend audio
+    // until a user gesture is detected)
+    if (_audioContext.state === 'suspended') {
+      _audioContext.resume().catch(() => {});
+    }
+
+    const now = _audioContext.currentTime;
+    // First tone (880 Hz, 150 ms)
+    const osc1 = _audioContext.createOscillator();
+    const gain1 = _audioContext.createGain();
+    osc1.frequency.value = 880;
+    osc1.type = 'sine';
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(0.15, now + 0.02);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc1.connect(gain1).connect(_audioContext.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.15);
+
+    // Second tone (1320 Hz, 100 ms — starts at 150 ms)
+    const osc2 = _audioContext.createOscillator();
+    const gain2 = _audioContext.createGain();
+    osc2.frequency.value = 1320;
+    osc2.type = 'sine';
+    gain2.gain.setValueAtTime(0, now + 0.15);
+    gain2.gain.linearRampToValueAtTime(0.15, now + 0.17);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc2.connect(gain2).connect(_audioContext.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.25);
+  } catch {
+    // Silent fallback — audio is non-critical
+  }
 }
 
 function getConversationDisplay(conv: ChatConversation, currentUserId: string): {
@@ -277,6 +368,37 @@ function stripHtml(html: string | null | undefined): string {
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
     .trim();
+}
+
+/**
+ * ⭐ DISCORD PARITY — Role-based color on usernames in group messages.
+ *
+ * Discord assigns a color to each role (e.g. "Admin" = red, "Moderator" = green).
+ * Helm Connect applies the same concept: the sender's roleLabel (e.g. "Directeur",
+ * "Enseignant", "Parent", "Secrétaire-Comptable") is mapped to a color that is
+ * applied to the sender's name in group conversations.
+ *
+ * The colors are chosen to be readable on both white message bubbles and
+ * the #0958D9 header background.
+ */
+function getRoleColor(roleLabel: string | undefined): string {
+  if (!roleLabel) return '#0958D9'; // default Helm blue
+  const label = roleLabel.toLowerCase();
+  // School administration — warm/red tones
+  if (label.includes('directeur') || label.includes('directrice') || label.includes('promoteur')) return '#DC2626'; // red-600
+  if (label.includes('censeur') || label.includes('surveillant')) return '#D97706'; // amber-600
+  if (label.includes('comptable') || label.includes('économ') || label.includes('intendant')) return '#059669'; // emerald-600
+  if (label.includes('secrétaire') || label.includes('secretaire')) return '#0891B2'; // cyan-600
+  if (label.includes('scolarit')) return '#7C3AED'; // violet-600
+  // Teachers — blue tones
+  if (label.includes('enseignant') || label.includes('professeur') || label.includes('maître') || label.includes('maitre')) return '#2563EB'; // blue-600
+  // Parents — green tones
+  if (label.includes('parent') || label.includes('tuteur')) return '#16A34A'; // green-600
+  // Students — purple
+  if (label.includes('élève') || label.includes('eleve') || label.includes('étudiant') || label.includes('etudiant')) return '#9333EA'; // purple-600
+  // Platform roles — slate
+  if (label.includes('platform') || label.includes('admin') || label.includes('super')) return '#475569'; // slate-600
+  return '#0958D9'; // default Helm blue
 }
 
 function formatFileSize(bytes: number): string {
@@ -791,7 +913,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       }
       // Also refresh conversation list (for lastMessage preview + unread count)
       loadConversations();
-    }, [activeConvId]),
+      // ⭐ DISCORD PARITY: Notification sound on new message.
+      //    Plays a short beep using the Web Audio API (no external file needed).
+      //    Only plays if the message is NOT from the current user (don't beep
+      //    for our own messages) and the conversation is not the active one
+      //    (to avoid beeping for messages the user is already reading).
+      try {
+        if (data?.message?.senderId && data.message.senderId !== currentUserId) {
+          // Only beep for messages in OTHER conversations (not the one currently open)
+          if (data?.conversationId !== activeConvId) {
+            playNotificationSound();
+          }
+        }
+      } catch { /* ignore audio errors */ }
+    }, [activeConvId, currentUserId]),
     onTypingStart: useCallback((convId: string, userId: string) => {
       if (convId === activeConvId) {
         setTypingUsers(prev => prev.some(t => t.userId === userId) ? prev : [...prev, { userId }]);
@@ -1920,6 +2055,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ FIX: Long-press handler for mobile reaction bar (WhatsApp style)
   const handleMessageLongPress = (msg: any, e: React.MouseEvent | React.TouchEvent) => {
     if (isReadOnly) return;
+    // ⭐ MOBILE: Haptic feedback (vibration) when long-pressing a message.
+    //    navigator.vibrate is supported on Android Chrome; ignored on iOS Safari
+    //    (which doesn't support the Vibration API). Wrapped in try/catch so it
+    //    never throws on unsupported browsers.
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(20);
+      }
+    } catch { /* ignore — not supported on all browsers */ }
     // Get position from event
     let x = 0, y = 0;
     if ('clientX' in e) {
@@ -2859,8 +3003,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       {/* ═════ DISCORD-LIKE LEFT ICON RAIL — 12 sections ═════ */}
       {/* ⭐ V3-11: Far-left vertical icon rail (72px) — switches between the 12
           Helm Connect sections. Branded with Royal Blue + gold accents.
-          On mobile (<md) this rail collapses to a hidden state; the sections
-          remain accessible via the MoreVertical dropdown in the sidebar header. */}
+          ⭐ MOBILE FIX: On mobile (<md) the vertical rail is hidden, and a
+          HORIZONTAL scrollable section bar is shown at the top of the sidebar
+          instead (see below, before the conversation list). This ensures all
+          12 sections are accessible on touch devices. */}
       <div className="hidden md:flex flex-col items-center gap-1 py-3 w-[72px] flex-shrink-0 bg-gradient-to-b from-[#0A2A5E] to-[#114FC4] border-r border-[#1C6FE8]/30">
         {/* ⭐ V3-11: Helm Connect logo at top — NO square container, just the
             logo image larger (was 24px in a 40x40 box, now 40px standalone). */}
@@ -2880,11 +3026,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           { id: 'fichiers', icon: <FileText className="w-5 h-5" />, label: 'Fichiers' },
           { id: 'vocaux', icon: <Mic className="w-5 h-5" />, label: 'Vocaux' },
           { id: 'appels', icon: <Phone className="w-5 h-5" />, label: 'Appels' },
-          { id: 'notifications', icon: <BellOff className="w-5 h-5" />, label: 'Notifications' },
+          { id: 'notifications', icon: <BellOff className="w-5 h-5" />, label: 'Notifs' },
           { id: 'recherche', icon: <Search className="w-5 h-5" />, label: 'Recherche' },
           { id: 'moderation', icon: <Flag className="w-5 h-5" />, label: 'Modération' },
           { id: 'analytics', icon: <BarChart3 className="w-5 h-5" />, label: 'Analytics' },
-          { id: 'parametres', icon: <Settings className="w-5 h-5" />, label: 'Paramètres' },
+          { id: 'parametres', icon: <Settings className="w-5 h-5" />, label: 'Profil' },
         ] as const).map((section) => {
           const isActive = activeHelmSection === section.id;
           // Sections that open a modal instead of changing the list content
@@ -2942,6 +3088,50 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         activeConvId ? 'hidden md:flex' : 'flex',
         'w-full md:w-80'
       )}>
+        {/* ⭐ MOBILE: Horizontal scrollable section bar — replaces the vertical
+            icon rail on touch devices. Shows the same 12 sections as a
+            horizontally scrollable row of icon buttons. Hidden on md+ where
+            the vertical rail takes over. */}
+        <div className="md:hidden flex items-center gap-1 px-2 py-2 overflow-x-auto border-b border-slate-100 bg-gradient-to-r from-[#0A2A5E] to-[#114FC4] no-scrollbar">
+          {([
+            { id: 'discussions', icon: <MessageSquare className="w-4 h-4" />, label: 'Discussions' },
+            { id: 'communautes', icon: <Users className="w-4 h-4" />, label: 'Communautés' },
+            { id: 'annonces', icon: <Bell className="w-4 h-4" />, label: 'Annonces' },
+            { id: 'canaux', icon: <Rss className="w-4 h-4" />, label: 'Canaux' },
+            { id: 'fichiers', icon: <FileText className="w-4 h-4" />, label: 'Fichiers' },
+            { id: 'vocaux', icon: <Mic className="w-4 h-4" />, label: 'Vocaux' },
+            { id: 'appels', icon: <Phone className="w-4 h-4" />, label: 'Appels' },
+            { id: 'notifications', icon: <BellOff className="w-4 h-4" />, label: 'Notifs' },
+            { id: 'recherche', icon: <Search className="w-4 h-4" />, label: 'Recherche' },
+            { id: 'moderation', icon: <Flag className="w-4 h-4" />, label: 'Modération' },
+            { id: 'analytics', icon: <BarChart3 className="w-4 h-4" />, label: 'Analytics' },
+            { id: 'parametres', icon: <Settings className="w-4 h-4" />, label: 'Profil' },
+          ] as const).map((section) => {
+            const isActive = activeHelmSection === section.id;
+            const opensModal = ['recherche', 'notifications', 'parametres'].includes(section.id);
+            return (
+              <button
+                key={section.id}
+                onClick={() => {
+                  if (section.id === 'recherche') setShowGlobalSearch(true);
+                  else if (section.id === 'notifications') setShowNotifPrefs(true);
+                  else if (section.id === 'parametres') setShowProfile(true);
+                  else setActiveHelmSection(section.id as HelmSection);
+                }}
+                className={cn(
+                  'flex-shrink-0 flex flex-col items-center justify-center gap-0.5 w-14 h-14 rounded-xl transition-all touch-manipulation',
+                  isActive
+                    ? 'bg-[#FFE08A] text-[#0A2A5E]'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white'
+                )}
+                aria-label={section.label}
+              >
+                {section.icon}
+                <span className="text-[8px] font-medium leading-none truncate max-w-[3rem]">{section.label}</span>
+              </button>
+            );
+          })}
+        </div>
         {/* Header — shows the active section name (Discord-like) + actions */}
         <div className="px-3 py-2 border-b border-slate-100 bg-gradient-to-r from-[#E6F4FF]/50 to-white">
           <div className="flex items-center justify-between gap-2">
@@ -3630,7 +3820,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           <div className="truncate opacity-80">{replyQuoteCache[(msg as any).replyToId].content}</div>
                         </div>
                         )}
-                        {/* ⭐ Message actions — hover button (top right of bubble) */}
+                        {/* ⭐ Message actions — button (top right of bubble)
+                            On desktop: appears on hover (opacity-0 → group-hover:opacity-100).
+                            On mobile: always visible (no hover on touch devices — the button
+                            must be tappable to open the Reply/Edit/Forward/Pin/Delete menu).
+                            We use `opacity-100 md:opacity-0 md:group-hover:opacity-100`
+                            so it's always shown on small screens and hover-revealed on md+. */}
                         {!isReadOnly && (
                           <button
                             data-msg-action-trigger
@@ -3638,10 +3833,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               e.stopPropagation();
                               setActiveMenuMsgId(activeMenuMsgId === msg.id ? null : msg.id);
                             }}
-                            className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="absolute top-1 right-1 p-1.5 rounded-full bg-white/20 hover:bg-white/40 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-manipulation"
                             title="Actions"
+                            aria-label="Actions du message"
                           >
-                            <MoreVertical className="w-3 h-3" />
+                            <MoreVertical className="w-3.5 h-3.5" />
                           </button>
                         )}
                         {/* ⭐ FIX: Action dropdown menu — positioned ABOVE the bubble + state-driven (auto-closes on outside click) */}
@@ -3744,9 +3940,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             )}
                           </div>
                         )}
-                        {/* Sender name (for group) */}
+                        {/* Sender name (for group) — ⭐ DISCORD PARITY: role-colored username */}
                         {!isMine && activeConv.type === 'GROUP' && msg.sender && (
-                          <div className="text-[10px] font-bold text-[#0958D9] mb-0.5">
+                          <div
+                            className="text-[10px] font-bold mb-0.5"
+                            style={{ color: getRoleColor((msg.sender as any).roleLabel) }}
+                          >
                             {msg.sender.firstName} {msg.sender.lastName}
                           </div>
                         )}
@@ -3867,7 +4066,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                     'whitespace-pre-wrap break-words text-xs mt-1',
                                     isMine ? 'text-white/90' : 'text-slate-700',
                                   )}
-                                  dangerouslySetInnerHTML={{ __html: msg.content }}
+                                  dangerouslySetInnerHTML={{ __html: renderRichContent(msg.content) }}
                                 />
                               )}
                             </div>
@@ -4156,7 +4355,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         .slice(0, 5);
                       if (matches.length === 0) return null;
                       return (
-                        <div className="absolute bottom-full left-0 mb-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 z-30 max-h-60 overflow-y-auto">
+                        <div className="absolute bottom-full left-0 right-0 mb-1 sm:right-auto sm:w-64 max-w-[calc(100vw-1rem)] bg-white rounded-lg shadow-xl border border-slate-200 z-30 max-h-60 overflow-y-auto">
                           <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
                             Mentionner un participant
                           </div>

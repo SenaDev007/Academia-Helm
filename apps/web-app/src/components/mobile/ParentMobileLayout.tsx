@@ -31,11 +31,11 @@ export default function ParentMobileLayout({ children }: ParentMobileLayoutProps
   const pathname = usePathname();
 
   const navItems = [
-    { path: '/mobile/parent', label: 'Accueil', icon: Home },
-    { path: '/mobile/parent/payments', label: 'Paiements', icon: DollarSign },
-    { path: '/mobile/parent/results', label: 'Résultats', icon: FileText },
-    { path: '/mobile/parent/messages', label: 'Messages', icon: MessageSquare },
-    { path: '/mobile/parent/profile', label: 'Profil', icon: User },
+    { path: '/app/app/parent', label: 'Accueil', icon: Home },
+    { path: '/app/app/parent/payments', label: 'Paiements', icon: DollarSign },
+    { path: '/app/app/parent/results', label: 'Résultats', icon: FileText },
+    { path: '/app/app/parent/messages', label: 'Messages', icon: MessageSquare },
+    { path: '/app/app/parent/children', label: 'Profil', icon: User },
   ];
 
   return (

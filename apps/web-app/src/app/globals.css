@@ -168,6 +168,30 @@ body {
   .safe-area-inset-right {
     padding-right: env(safe-area-inset-right);
   }
+
+  /* ⭐ MOBILE: Hide scrollbar on horizontally scrollable elements (used by the
+     Helm Connect mobile section bar and other horizontal scroll containers). */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ⭐ DISCORD PARITY: Spoiler tag — click-to-reveal hidden text (||spoiler||).
+     The inline onclick handler changes the text color from transparent to white
+     and the background from dark to slate-700. This CSS class adds a smooth
+     transition and prevents the text from being selectable before reveal. */
+  .spoiler-tag {
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .spoiler-tag::selection {
+    background-color: #1e293b;
+    color: #1e293b;
+  }
 }
 
 @keyframes fadeIn {

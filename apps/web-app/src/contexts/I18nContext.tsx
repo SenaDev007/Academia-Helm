@@ -28,7 +28,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
-export type Locale = 'fr' | 'en';
+export type Locale = 'fr' | 'en' | 'ar';
 
 const STORAGE_KEY = 'academia_helm_locale';
 const COOKIE_NAME = 'ah_locale';
@@ -36,16 +36,25 @@ const COOKIE_NAME = 'ah_locale';
 // Import translation messages
 import frMessages from '@/i18n/messages/fr.json';
 import enMessages from '@/i18n/messages/en.json';
+import arMessages from '@/i18n/messages/ar.json';
 
 const MESSAGES: Record<Locale, Record<string, any>> = {
   fr: frMessages,
   en: enMessages,
+  ar: arMessages,
 };
+
+/** RTL (right-to-left) languages. Arabic, Hebrew, Persian, Urdu, etc. */
+const RTL_LOCALES: Locale[] = ['ar'];
 
 interface I18nContextType {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
+  /** Text direction: 'ltr' for French/English, 'rtl' for Arabic. */
+  dir: 'ltr' | 'rtl';
+  /** True if the current locale is an RTL language. */
+  isRTL: boolean;
 }
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
@@ -83,14 +92,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // 1. Check localStorage
     const stored = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-    if (stored === 'fr' || stored === 'en') {
+    if (stored === 'fr' || stored === 'en' || stored === 'ar') {
       setLocaleState(stored);
       return;
     }
     // 2. Check cookie
     if (typeof document !== 'undefined') {
       const match = document.cookie.match(new RegExp(`${COOKIE_NAME}=([^;]+)`));
-      if (match && (match[1] === 'fr' || match[1] === 'en')) {
+      if (match && (match[1] === 'fr' || match[1] === 'en' || match[1] === 'ar')) {
         setLocaleState(match[1] as Locale);
         return;
       }
@@ -100,9 +109,22 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       const browserLang = navigator.language.toLowerCase();
       if (browserLang.startsWith('en')) {
         setLocaleState('en');
+      } else if (browserLang.startsWith('ar')) {
+        setLocaleState('ar');
       }
     }
   }, []);
+
+  // ⭐ RTL support: apply the `dir` attribute to <html> so the entire page
+  //    flips to right-to-left layout for Arabic and other RTL languages.
+  //    Tailwind CSS 4 respects `dir="rtl"` via logical properties (ms-, me-, ps-, pe-).
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      const isRTL = RTL_LOCALES.includes(locale);
+      document.documentElement.dir = isRTL ? 'rtl' : 'ltr';
+      document.documentElement.lang = locale;
+    }
+  }, [locale]);
 
   const setLocale = useCallback((newLocale: Locale) => {
     setLocaleState(newLocale);
@@ -134,9 +156,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     [locale],
   );
 
+  const isRTL = RTL_LOCALES.includes(locale);
+  const dir = isRTL ? 'rtl' : 'ltr';
+
   const value = useMemo<I18nContextType>(
-    () => ({ locale, setLocale, t }),
-    [locale, setLocale, t],
+    () => ({ locale, setLocale, t, dir, isRTL }),
+    [locale, setLocale, t, dir, isRTL],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
@@ -156,6 +181,8 @@ export function useI18n(): I18nContextType {
       locale: 'fr',
       setLocale: () => {},
       t: (key: string) => key,
+      dir: 'ltr' as const,
+      isRTL: false,
     };
   }
   return context;
@@ -163,7 +190,7 @@ export function useI18n(): I18nContextType {
 
 /**
  * Language switcher component — can be placed anywhere in the app.
- * Shows a compact FR/EN toggle.
+ * Shows a compact FR/EN/AR toggle.
  */
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { locale, setLocale } = useI18n();
@@ -193,6 +220,18 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
         title="English"
       >
         EN
+      </button>
+      <button
+        type="button"
+        onClick={() => setLocale('ar')}
+        className={`px-2 py-1 rounded-md text-xs font-bold transition ${
+          locale === 'ar'
+            ? 'bg-white text-blue-600 shadow-sm'
+            : 'text-slate-500 hover:text-slate-700'
+        }`}
+        title="العربية"
+      >
+        AR
       </button>
     </div>
   );

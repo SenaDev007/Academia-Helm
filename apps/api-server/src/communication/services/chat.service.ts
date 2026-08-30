@@ -27,6 +27,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { ParentUserProvisioningService } from '../../students/services/parent-user-provisioning.service';
 import { ChatGateway } from '../chat.gateway';
+import { FcmSenderService } from '../../notifications/fcm-sender.service';
 import { randomUUID } from 'crypto';
 
 export interface ChatConversation {
@@ -108,6 +109,10 @@ export class ChatService {
     // ⭐ ChatGateway injected for real-time broadcast (message:new, mention:new).
     //    Same module — no circular dependency (ChatGateway only depends on JwtService).
     private readonly chatGateway: ChatGateway,
+    // ⭐ DISCORD PARITY: FCM (Firebase Cloud Messaging) for mobile push notifications.
+    //    When a new chat message is sent, mobile users receive a push notification
+    //    via FCM (in addition to the in-app Socket.io real-time event).
+    private readonly fcmSender: FcmSenderService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -689,7 +694,52 @@ export class ChatService {
       this.logger?.warn?.(`Failed to broadcast new message via Socket.io: ${e.message}`);
     }
 
+    // ⭐ DISCORD PARITY: FCM mobile push notification for chat messages.
+    //    Send a push to all participants (except the sender) who have the mobile
+    //    app installed (registered FCM device tokens). The FcmSenderService is a
+    //    fire-and-forget service that silently skips if FCM is not configured.
+    try {
+      const senderName = await this.getUserDisplayName(tenantId, senderId);
+      const isMassMention = !!(data.mentionedUserIds && data.mentionedUserIds.length > 0);
+      const preview = data.content.length > 80 ? data.content.substring(0, 80) + '…' : data.content;
+      // Get all participants (excluding the sender) for push notification.
+      const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "userId" FROM "chat_participants"
+        WHERE "conversationId" = $1 AND "userId" != $2 AND "leftAt" IS NULL
+      `, conversationId, senderId);
+      const targetUserIds = participants.map(p => p.userId);
+      if (targetUserIds.length > 0) {
+        this.fcmSender.sendToUsers(targetUserIds, {
+          title: isMassMention ? `🔔 ${senderName}` : senderName,
+          body: preview,
+          data: {
+            conversationId,
+            messageId: msgId,
+            senderId,
+            type: isMassMention ? 'CHAT_MENTION' : 'CHAT_MESSAGE',
+          },
+          type: isMassMention ? 'CHAT_MENTION' : 'CHAT_MESSAGE',
+        }).catch((e: any) => this.logger?.warn?.(`FCM send failed: ${e.message}`));
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`FCM push notification failed: ${e.message}`);
+    }
+
     return (await this.listMessages(tenantId, senderId, conversationId, { limit: 1 }))[0];
+  }
+
+  /** Helper: get a user's display name for push notifications. */
+  private async getUserDisplayName(tenantId: string, userId: string): Promise<string> {
+    try {
+      const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "firstName", "lastName" FROM "users" WHERE id = $1
+      `, userId);
+      if (rows.length > 0) {
+        const name = `${rows[0].firstName || ''} ${rows[0].lastName || ''}`.trim();
+        return name || 'Helm Connect';
+      }
+    } catch { /* ignore */ }
+    return 'Helm Connect';
   }
 
   /**
@@ -2090,5 +2140,271 @@ export class ChatService {
       isEveryone,
       notifyIds: (isHere || isEveryone) ? participantIds : [],
     };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — VOICE CHANNELS, STAGE CHANNELS, LIVE STREAMS
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Create a voice channel (persistent always-on voice room). */
+  async createVoiceChannel(tenantId: string, userId: string, data: {
+    name: string;
+    description?: string;
+    type?: 'VOICE' | 'STAGE' | 'GO_LIVE';
+    conversationId?: string;
+    maxUsers?: number;
+  }): Promise<any> {
+    const id = randomUUID();
+    const type = data.type || 'VOICE';
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_voice_channels" ("id", "tenantId", "conversationId", "name", "description", "type", "maxUsers", "createdBy", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+    `, id, tenantId, data.conversationId || null, data.name, data.description || null, type, data.maxUsers || 0, userId);
+    return { id, name: data.name, type, description: data.description };
+  }
+
+  /** List all voice channels for a tenant (grouped by type). */
+  async listVoiceChannels(tenantId: string): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT v.*,
+        (SELECT count(*)::int FROM "chat_voice_states" WHERE "channelId" = v.id AND "leftAt" IS NULL) AS "activeUsers"
+      FROM "chat_voice_channels" v
+      WHERE v."tenantId" = $1
+      ORDER BY v."type" ASC, v."createdAt" ASC
+    `, tenantId);
+  }
+
+  /** Join a voice channel — creates a voice state record. */
+  async joinVoiceChannel(tenantId: string, userId: string, channelId: string, socketId?: string): Promise<{ success: boolean; channel: any; activeUsers: any[] }> {
+    // Verify the channel exists
+    const channels: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM "chat_voice_channels" WHERE id = $1 AND "tenantId" = $2
+    `, channelId, tenantId);
+    if (channels.length === 0) throw new NotFoundException('Voice channel not found');
+
+    // Check max users
+    const maxUsers = channels[0].maxUsers || 0;
+    if (maxUsers > 0) {
+      const count: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT count(*)::int AS cnt FROM "chat_voice_states" WHERE "channelId" = $1 AND "leftAt" IS NULL
+      `, channelId);
+      if (count[0].cnt >= maxUsers) {
+        throw new BadRequestException('Le canal vocal est plein.');
+      }
+    }
+
+    // Leave any existing voice channel first (Discord only allows one voice channel per user)
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_voice_states" SET "leftAt" = NOW() WHERE "userId" = $1 AND "leftAt" IS NULL
+    `, userId);
+
+    // Join the new channel
+    const stateId = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_voice_states" ("id", "userId", "channelId", "tenantId", "socketId", "joinedAt")
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT ON CONSTRAINT "chat_voice_states_user_channel_unique" DO UPDATE SET "leftAt" = NULL, "socketId" = $5, "joinedAt" = NOW()
+    `, stateId, userId, channelId, tenantId, socketId || null);
+
+    // Broadcast the join event via Socket.io
+    const activeUsers = await this.getVoiceChannelUsers(channelId);
+    try {
+      this.chatGateway?.server?.to(`voice:${channelId}`).emit('voice:user-joined', { userId, channelId });
+      this.chatGateway?.server?.emit('voice-channel:update', { channelId, activeUsers: activeUsers.length });
+    } catch (e: any) { this.logger?.warn?.(`Voice join broadcast failed: ${e.message}`); }
+
+    return { success: true, channel: channels[0], activeUsers };
+  }
+
+  /** Leave a voice channel. */
+  async leaveVoiceChannel(tenantId: string, userId: string, channelId: string): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_voice_states" SET "leftAt" = NOW() WHERE "userId" = $1 AND "channelId" = $2 AND "leftAt" IS NULL
+    `, userId, channelId);
+    try {
+      this.chatGateway?.server?.to(`voice:${channelId}`).emit('voice:user-left', { userId, channelId });
+      const activeUsers = await this.getVoiceChannelUsers(channelId);
+      this.chatGateway?.server?.emit('voice-channel:update', { channelId, activeUsers: activeUsers.length });
+    } catch (e: any) { this.logger?.warn?.(`Voice leave broadcast failed: ${e.message}`); }
+    return { success: true };
+  }
+
+  /** Get all users currently in a voice channel (with mute/deafen state). */
+  async getVoiceChannelUsers(channelId: string): Promise<any[]> {
+    const states: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT s.*, u."firstName", u."lastName", u."avatarUrl", u.role
+      FROM "chat_voice_states" s
+      JOIN "users" u ON u.id = s."userId"
+      WHERE s."channelId" = $1 AND s."leftAt" IS NULL
+    `, channelId);
+    return states;
+  }
+
+  /** Update mute/deafen state. */
+  async updateVoiceState(tenantId: string, userId: string, channelId: string, state: { muted?: boolean; deafened?: boolean; speaking?: boolean }): Promise<{ success: boolean }> {
+    const updates: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (state.muted !== undefined) { updates.push(`"muted" = $${idx++}`); params.push(state.muted); }
+    if (state.deafened !== undefined) { updates.push(`"deafened" = $${idx++}`); params.push(state.deafened); }
+    if (state.speaking !== undefined) { updates.push(`"speaking" = $${idx++}`); params.push(state.speaking); }
+    if (updates.length === 0) return { success: true };
+    params.push(userId, channelId);
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_voice_states" SET ${updates.join(', ')} WHERE "userId" = $${idx++} AND "channelId" = $${idx} AND "leftAt" IS NULL
+    `, ...params);
+    try {
+      this.chatGateway?.server?.to(`voice:${channelId}`).emit('voice:state-update', { userId, channelId, ...state });
+    } catch { /* ignore */ }
+    return { success: true };
+  }
+
+  /** Delete a voice channel (admin only — verified by createdBy). */
+  async deleteVoiceChannel(tenantId: string, userId: string, channelId: string): Promise<{ success: boolean }> {
+    const channels: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "createdBy" FROM "chat_voice_channels" WHERE id = $1 AND "tenantId" = $2
+    `, channelId, tenantId);
+    if (channels.length === 0) throw new NotFoundException('Voice channel not found');
+    if (channels[0].createdBy !== userId) throw new ForbiddenException('Seul le créateur peut supprimer le canal vocal.');
+    // Force-leave all users
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_voice_states" SET "leftAt" = NOW() WHERE "channelId" = $1 AND "leftAt" IS NULL
+    `, channelId);
+    await this.prisma.$executeRawUnsafe(`DELETE FROM "chat_voice_channels" WHERE id = $1`, channelId);
+    return { success: true };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — LIVE STREAMS (Go Live)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Start a live stream (Go Live). */
+  async startLiveStream(tenantId: string, userId: string, data: { title?: string; conversationId?: string; channelId?: string }): Promise<any> {
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_live_streams" ("id", "tenantId", "streamerId", "channelId", "conversationId", "title", "startedAt", "isActive")
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), true)
+    `, id, tenantId, userId, data.channelId || null, data.conversationId || null, data.title || null);
+    // Notify the conversation/channel
+    try {
+      const target = data.channelId ? `voice:${data.channelId}` : `conv:${data.conversationId}`;
+      this.chatGateway?.server?.to(target).emit('live-stream:started', { streamId: id, streamerId: userId, title: data.title });
+    } catch { /* ignore */ }
+    return { id, streamerId: userId, title: data.title };
+  }
+
+  /** End a live stream. */
+  async endLiveStream(tenantId: string, userId: string, streamId: string): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_live_streams" SET "endedAt" = NOW(), "isActive" = false WHERE id = $1 AND "streamerId" = $2 AND "isActive" = true
+    `, streamId, userId);
+    try {
+      this.chatGateway?.server?.emit('live-stream:ended', { streamId });
+    } catch { /* ignore */ }
+    return { success: true };
+  }
+
+  /** List active live streams for a tenant. */
+  async listLiveStreams(tenantId: string): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT l.*, u."firstName" AS "streamerFirstName", u."lastName" AS "streamerLastName", u."avatarUrl" AS "streamerAvatarUrl"
+      FROM "chat_live_streams" l
+      JOIN "users" u ON u.id = l."streamerId"
+      WHERE l."tenantId" = $1 AND l."isActive" = true
+      ORDER BY l."startedAt" DESC
+    `, tenantId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — STICKERS
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Create a sticker pack (admin). */
+  async createStickerPack(tenantId: string | null, userId: string, data: { name: string; description?: string }): Promise<any> {
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "sticker_packs" ("id", "tenantId", "name", "description", "createdBy", "createdAt")
+      VALUES ($1, $2, $3, $4, $5, NOW())
+    `, id, tenantId, data.name, data.description || null, userId);
+    return { id, name: data.name };
+  }
+
+  /** List sticker packs (tenant-scoped + global). */
+  async listStickerPacks(tenantId: string): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT p.*,
+        (SELECT count(*)::int FROM "stickers" WHERE "packId" = p.id) AS "stickerCount"
+      FROM "sticker_packs" p
+      WHERE (p."tenantId" = $1 OR p."tenantId" IS NULL) AND p."isActive" = true
+      ORDER BY p."createdAt" DESC
+    `, tenantId);
+  }
+
+  /** Upload a sticker to a pack. */
+  async uploadSticker(tenantId: string, userId: string, data: { packId: string; file: Express.Multer.File; name?: string; keywords?: string }): Promise<any> {
+    const url = await this.storage.uploadFile(data.file, `stickers/${data.packId}`);
+    const id = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "stickers" ("id", "packId", "url", "name", "keywords", "createdBy", "createdAt")
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+    `, id, data.packId, url, data.name || data.file.originalname, data.keywords || null, userId);
+    return { id, url, name: data.name };
+  }
+
+  /** List stickers in a pack. */
+  async listStickers(packId: string): Promise<any[]> {
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM "stickers" WHERE "packId" = $1 ORDER BY "createdAt" ASC
+    `, packId);
+  }
+
+  /** Send a sticker as a chat message (type=STICKER). */
+  async sendStickerMessage(tenantId: string, senderId: string, conversationId: string, stickerId: string): Promise<ChatMessage> {
+    await this.getConversation(tenantId, senderId, conversationId);
+    const stickers: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM "stickers" WHERE id = $1
+    `, stickerId);
+    if (stickers.length === 0) throw new NotFoundException('Sticker not found');
+    const sticker = stickers[0];
+    const msgId = randomUUID();
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "attachmentUrl", "attachmentName", "stickerId", "createdAt")
+      VALUES ($1, $2, $3, 'STICKER', $4, $5, $6, $7, NOW())
+    `, msgId, conversationId, senderId, sticker.name || 'Sticker', sticker.url, sticker.name || 'sticker.png', stickerId);
+    // Update conversation preview
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_conversations" SET "lastMessageAt" = NOW(), "lastMessagePreview" = '[Sticker]', "lastMessageSenderId" = $2, "updatedAt" = NOW() WHERE "id" = $1
+    `, conversationId, senderId);
+    return (await this.listMessages(tenantId, senderId, conversationId, { limit: 1 }))[0];
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — GIF SEARCH (Tenor API proxy)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Search GIFs via Tenor API (proxied server-side to keep the API key secure). */
+  async searchGifs(query: string, limit = 20): Promise<any[]> {
+    const apiKey = process.env.TENOR_API_KEY;
+    if (!apiKey) {
+      // No API key — return an empty array (frontend will show a message)
+      return [];
+    }
+    try {
+      const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${apiKey}&limit=${limit}&media_filter=gif&contentfilter=high`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Tenor API error: ${response.status}`);
+      const data: any = await response.json();
+      return (data.results || []).map((r: any) => ({
+        id: r.id,
+        url: r.media_formats?.gif?.url || r.url,
+        preview: r.media_formats?.tinygif?.url || r.url,
+        width: r.media_formats?.gif?.dims?.[0],
+        height: r.media_formats?.gif?.dims?.[1],
+        description: r.content_description,
+      }));
+    } catch (e: any) {
+      this.logger?.warn?.(`GIF search failed: ${e.message}`);
+      return [];
+    }
   }
 }

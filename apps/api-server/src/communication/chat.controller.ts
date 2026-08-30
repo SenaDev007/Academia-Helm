@@ -928,4 +928,169 @@ export class ChatController {
     }
     return this.chatService.forwardMessageToMany(tenantId, body.userId, messageId, body.targetConversationIds);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — VOICE CHANNELS, STAGE CHANNELS, LIVE STREAMS
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('voice-channels')
+  async createVoiceChannel(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; name: string; description?: string; type?: 'VOICE' | 'STAGE' | 'GO_LIVE'; conversationId?: string; maxUsers?: number },
+  ) {
+    if (!body.userId || !body.name) throw new BadRequestException('userId and name are required');
+    return this.chatService.createVoiceChannel(tenantId, body.userId, {
+      name: body.name,
+      description: body.description,
+      type: body.type,
+      conversationId: body.conversationId,
+      maxUsers: body.maxUsers,
+    });
+  }
+
+  @Get('voice-channels')
+  async listVoiceChannels(@TenantId() tenantId: string) {
+    return this.chatService.listVoiceChannels(tenantId);
+  }
+
+  @Post('voice-channels/:id/join')
+  async joinVoiceChannel(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string; socketId?: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.joinVoiceChannel(tenantId, body.userId, channelId, body.socketId);
+  }
+
+  @Post('voice-channels/:id/leave')
+  async leaveVoiceChannel(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.leaveVoiceChannel(tenantId, body.userId, channelId);
+  }
+
+  @Get('voice-channels/:id/users')
+  async getVoiceChannelUsers(@Param('id') channelId: string) {
+    return this.chatService.getVoiceChannelUsers(channelId);
+  }
+
+  @Put('voice-channels/:id/state')
+  async updateVoiceState(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string; muted?: boolean; deafened?: boolean; speaking?: boolean },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.updateVoiceState(tenantId, body.userId, channelId, {
+      muted: body.muted,
+      deafened: body.deafened,
+      speaking: body.speaking,
+    });
+  }
+
+  @Delete('voice-channels/:id')
+  async deleteVoiceChannel(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.deleteVoiceChannel(tenantId, body.userId, channelId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — LIVE STREAMS (Go Live)
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('live-streams')
+  async startLiveStream(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; title?: string; conversationId?: string; channelId?: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.startLiveStream(tenantId, body.userId, {
+      title: body.title,
+      conversationId: body.conversationId,
+      channelId: body.channelId,
+    });
+  }
+
+  @Delete('live-streams/:id')
+  async endLiveStream(
+    @TenantId() tenantId: string,
+    @Param('id') streamId: string,
+    @Body() body: { userId: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.endLiveStream(tenantId, body.userId, streamId);
+  }
+
+  @Get('live-streams')
+  async listLiveStreams(@TenantId() tenantId: string) {
+    return this.chatService.listLiveStreams(tenantId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — STICKERS
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('stickers/packs')
+  async createStickerPack(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; name: string; description?: string },
+  ) {
+    if (!body.userId || !body.name) throw new BadRequestException('userId and name are required');
+    return this.chatService.createStickerPack(tenantId, body.userId, { name: body.name, description: body.description });
+  }
+
+  @Get('stickers/packs')
+  async listStickerPacks(@TenantId() tenantId: string) {
+    return this.chatService.listStickerPacks(tenantId);
+  }
+
+  @Post('stickers')
+  @UseInterceptors(FileInterceptor('file', CHAT_FILE_UPLOAD_OPTIONS))
+  async uploadSticker(
+    @TenantId() tenantId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { userId: string; packId: string; name?: string; keywords?: string },
+  ) {
+    if (!file) throw new BadRequestException('file is required');
+    if (!body.userId || !body.packId) throw new BadRequestException('userId and packId are required');
+    return this.chatService.uploadSticker(tenantId, body.userId, {
+      packId: body.packId,
+      file,
+      name: body.name,
+      keywords: body.keywords,
+    });
+  }
+
+  @Get('stickers/:packId')
+  async listStickers(@Param('packId') packId: string) {
+    return this.chatService.listStickers(packId);
+  }
+
+  @Post('conversations/:id/sticker')
+  async sendStickerMessage(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { senderId: string; stickerId: string },
+  ) {
+    if (!body.senderId || !body.stickerId) throw new BadRequestException('senderId and stickerId are required');
+    return this.chatService.sendStickerMessage(tenantId, body.senderId, conversationId, body.stickerId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — GIF SEARCH (Tenor API proxy)
+  // ═════════════════════════════════════════════════════════════════
+
+  @Get('gifs/search')
+  async searchGifs(@Query('q') query: string, @Query('limit') limit?: string) {
+    if (!query) throw new BadRequestException('Query parameter "q" is required');
+    return this.chatService.searchGifs(query, limit ? parseInt(limit, 10) : 20);
+  }
 }

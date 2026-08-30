@@ -715,6 +715,20 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [slowModeSeconds, setSlowModeSeconds] = useState(0);
   // ⭐ DISCORD PARITY: Emoji picker popover
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // ⭐ DISCORD PARITY: GIF picker (Tenor API)
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [gifSearchQuery, setGifSearchQuery] = useState('');
+  const [gifResults, setGifResults] = useState<any[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  // ⭐ DISCORD PARITY: Sticker picker
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [stickerPacks, setStickerPacks] = useState<any[]>([]);
+  const [activeStickerPack, setActiveStickerPack] = useState<string | null>(null);
+  const [stickers, setStickers] = useState<any[]>([]);
+  // ⭐ DISCORD PARITY: Voice channels panel
+  const [voiceChannels, setVoiceChannels] = useState<any[]>([]);
+  const [activeVoiceChannel, setActiveVoiceChannel] = useState<string | null>(null);
+  const [voiceChannelUsers, setVoiceChannelUsers] = useState<any[]>([]);
   // ⭐ Helm Connect V2.4 — Global Search
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
@@ -1334,6 +1348,160 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
     setShowMemberList(prev => !prev);
   }, [showMemberList, activeConvId, loadConversationMembers]);
+
+  // ⭐ DISCORD PARITY: Search GIFs via the Tenor API proxy endpoint.
+  const searchGifs = useCallback(async (query: string) => {
+    if (!query.trim()) { setGifResults([]); return; }
+    setGifLoading(true);
+    try {
+      const res = await fetch(`/api/chat/gifs/search?q=${encodeURIComponent(query)}&limit=20`, { credentials: 'include' });
+      if (!res.ok) throw new Error('GIF search failed');
+      const data = await res.json();
+      setGifResults(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      console.error('searchGifs:', e);
+      setGifResults([]);
+    } finally {
+      setGifLoading(false);
+    }
+  }, []);
+
+  // ⭐ DISCORD PARITY: Send a GIF as an IMAGE message (uses the GIF URL directly).
+  const sendGif = useCallback(async (gif: { url: string; id?: string }) => {
+    if (!activeConvId || sending) return;
+    setSending(true);
+    try {
+      // Download the GIF and re-upload it as an attachment (so we control the URL
+      // and avoid hot-linking issues with Tenor's CDN which may rate-limit).
+      // For simplicity, we send the Tenor URL directly via a custom endpoint.
+      // The backend stores it as an IMAGE message with the external URL.
+      const formData = new FormData();
+      formData.append('senderId', currentUserId);
+      formData.append('type', 'IMAGE');
+      formData.append('content', gif.url);
+      formData.append('tenorGifId', gif.id || '');
+      // Fetch the GIF as a blob and upload it as a file attachment
+      const gifRes = await fetch(gif.url);
+      const blob = await gifRes.blob();
+      const fileName = `gif-${Date.now()}.gif`;
+      const file = new File([blob], fileName, { type: 'image/gif' });
+      formData.append('file', file);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+      const tenantId = typeof window !== 'undefined' ? localStorage.getItem('x-tenant-id') || document.cookie.match(/x-tenant-id=([^;]+)/)?.[1] || '' : '';
+      const uploadRes = await fetch(`https://api.academiahelm.com/api/chat/conversations/${activeConvId}/messages/attachment`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(tenantId ? { 'x-tenant-id': tenantId } : {}),
+        },
+        body: formData,
+        credentials: 'include',
+      });
+      if (!uploadRes.ok) throw new Error('Upload failed');
+      const newMsg = await uploadRes.json();
+      setMessages(prev => [...prev, newMsg]);
+      loadConversations();
+      setShowGifPicker(false);
+      toast.success('GIF envoyé');
+    } catch (e: any) {
+      toast.error("Échec d'envoi du GIF : " + e.message);
+    } finally {
+      setSending(false);
+    }
+  }, [activeConvId, currentUserId, sending, loadConversations]);
+
+  // ⭐ DISCORD PARITY: Load sticker packs.
+  const loadStickerPacks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/chat/stickers/packs', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setStickerPacks(Array.isArray(data) ? data : []);
+      if (data.length > 0 && !activeStickerPack) {
+        setActiveStickerPack(data[0].id);
+      }
+    } catch (e: any) { console.error('loadStickerPacks:', e); }
+  }, [activeStickerPack]);
+
+  // ⭐ DISCORD PARITY: Load stickers in a pack.
+  const loadStickers = useCallback(async (packId: string) => {
+    try {
+      const res = await fetch(`/api/chat/stickers/${packId}`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setStickers(Array.isArray(data) ? data : []);
+    } catch (e: any) { console.error('loadStickers:', e); }
+  }, []);
+
+  // ⭐ DISCORD PARITY: Send a sticker.
+  const sendSticker = useCallback(async (stickerId: string) => {
+    if (!activeConvId || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/sticker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: currentUserId, stickerId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Sticker send failed');
+      const newMsg = await res.json();
+      setMessages(prev => [...prev, newMsg]);
+      loadConversations();
+      setShowStickerPicker(false);
+    } catch (e: any) {
+      toast.error("Échec d'envoi du sticker : " + e.message);
+    } finally {
+      setSending(false);
+    }
+  }, [activeConvId, currentUserId, sending, loadConversations]);
+
+  // ⭐ DISCORD PARITY: Load voice channels.
+  const loadVoiceChannels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/chat/voice-channels', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      setVoiceChannels(Array.isArray(data) ? data : []);
+    } catch (e: any) { console.error('loadVoiceChannels:', e); }
+  }, []);
+
+  // ⭐ DISCORD PARITY: Join a voice channel.
+  const joinVoiceChannel = useCallback(async (channelId: string) => {
+    try {
+      const res = await fetch(`/api/chat/voice-channels/${channelId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, socketId: socket?.emit ? 'connected' : undefined }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Join failed');
+      const data = await res.json();
+      setActiveVoiceChannel(channelId);
+      setVoiceChannelUsers(data.activeUsers || []);
+      // ⭐ Start a WebRTC mesh audio call with all users in the channel
+      // (limited to ≤5 users for the mesh; an SFU is needed beyond that).
+      // For now we just record the voice state and let the user manage mute/deafen.
+      toast.success(`Rejoint le canal vocal : ${data.channel?.name || 'Voix'}`);
+    } catch (e: any) {
+      toast.error("Échec de l'audio : " + e.message);
+    }
+  }, [currentUserId, socket]);
+
+  // ⭐ DISCORD PARITY: Leave the active voice channel.
+  const leaveVoiceChannel = useCallback(async () => {
+    if (!activeVoiceChannel) return;
+    try {
+      await fetch(`/api/chat/voice-channels/${activeVoiceChannel}/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+    } catch { /* ignore */ }
+    setActiveVoiceChannel(null);
+    setVoiceChannelUsers([]);
+  }, [activeVoiceChannel, currentUserId]);
 
   // ───────────────────────────────────────────────────────────────────
   // Load messages for active conversation
@@ -4703,6 +4871,124 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               </div>
                             </div>
                           ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {/* ⭐ DISCORD PARITY: GIF picker — Tenor API search. Opens a popover
+                      with a search bar + grid of GIF results. Clicking a GIF sends it
+                      as an IMAGE message. */}
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={() => setShowGifPicker(prev => !prev)}
+                      className="p-2 text-slate-500 hover:bg-slate-100 rounded-full"
+                      title="Rechercher un GIF"
+                      disabled={readOnly}
+                    >
+                      <ImageIcon className="w-5 h-5" />
+                    </button>
+                    {showGifPicker && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowGifPicker(false)} />
+                        <div className="absolute bottom-full left-0 mb-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-3 max-h-80 overflow-y-auto no-scrollbar">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Recherche GIF (Tenor)</div>
+                          <input
+                            type="text"
+                            value={gifSearchQuery}
+                            onChange={e => { setGifSearchQuery(e.target.value); }}
+                            onKeyDown={e => { if (e.key === 'Enter') searchGifs(gifSearchQuery); }}
+                            placeholder="Rechercher un GIF..."
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/30 mb-2"
+                            autoFocus
+                          />
+                          {gifLoading && (
+                            <div className="flex items-center justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                          )}
+                          {!gifLoading && gifResults.length === 0 && gifSearchQuery && (
+                            <div className="text-center py-6 text-xs text-slate-500">
+                              Aucun GIF trouvé. {process.env.NEXT_PUBLIC_TENOR_DISABLED ? '' : 'Tapez une recherche et appuyez sur Entrée.'}
+                            </div>
+                          )}
+                          {!gifLoading && gifResults.length === 0 && !gifSearchQuery && (
+                            <div className="text-center py-6 text-xs text-slate-500">Tapez un mot-clé pour rechercher un GIF.</div>
+                          )}
+                          <div className="grid grid-cols-2 gap-1">
+                            {gifResults.map((gif, i) => (
+                              <button
+                                key={i}
+                                onClick={() => sendGif(gif)}
+                                className="relative rounded-lg overflow-hidden hover:opacity-80 transition-opacity aspect-square bg-slate-100"
+                                title={gif.description || 'GIF'}
+                              >
+                                <img src={gif.preview || gif.url} alt={gif.description || 'GIF'} className="w-full h-full object-cover" loading="lazy" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {/* ⭐ DISCORD PARITY: Sticker picker — shows sticker packs + stickers. */}
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        if (!showStickerPicker) loadStickerPacks();
+                        setShowStickerPicker(prev => !prev);
+                      }}
+                      className="p-2 text-slate-500 hover:bg-slate-100 rounded-full"
+                      title="Stickers"
+                      disabled={readOnly}
+                    >
+                      <span className="text-lg leading-none">🎨</span>
+                    </button>
+                    {showStickerPicker && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowStickerPicker(false)} />
+                        <div className="absolute bottom-full left-0 mb-2 w-80 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-3 max-h-80 overflow-y-auto no-scrollbar">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Stickers</div>
+                          {stickerPacks.length === 0 && (
+                            <div className="text-center py-6 text-xs text-slate-500">
+                              Aucun pack de stickers. Les packs sont créés par l'administration.
+                            </div>
+                          )}
+                          {/* Pack selector */}
+                          {stickerPacks.length > 0 && (
+                            <div className="flex gap-1 mb-2 overflow-x-auto no-scrollbar">
+                              {stickerPacks.map(pack => (
+                                <button
+                                  key={pack.id}
+                                  onClick={() => {
+                                    setActiveStickerPack(pack.id);
+                                    loadStickers(pack.id);
+                                  }}
+                                  className={cn(
+                                    'px-2 py-1 rounded-lg text-[10px] font-semibold whitespace-nowrap transition',
+                                    activeStickerPack === pack.id ? 'bg-[#1677FF] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                  )}
+                                >
+                                  {pack.name} ({pack.stickerCount || 0})
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {/* Stickers grid */}
+                          {activeStickerPack && (
+                            <div className="grid grid-cols-4 gap-1">
+                              {stickers.length === 0 && (
+                                <div className="col-span-4 text-center py-4 text-xs text-slate-500">Sélectionnez un pack ci-dessus.</div>
+                              )}
+                              {stickers.map(sticker => (
+                                <button
+                                  key={sticker.id}
+                                  onClick={() => sendSticker(sticker.id)}
+                                  className="rounded-lg overflow-hidden hover:bg-slate-100 p-1 transition"
+                                  title={sticker.name || 'Sticker'}
+                                >
+                                  <img src={sticker.url} alt={sticker.name || 'Sticker'} className="w-full h-full object-contain" loading="lazy" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </>
                     )}

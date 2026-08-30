@@ -192,6 +192,41 @@ body {
     background-color: #1e293b;
     color: #1e293b;
   }
+
+  /* ⭐ DISCORD PARITY — RTL (Right-to-Left) support for Arabic and other RTL languages.
+     When the <html dir="rtl"> attribute is set (by the I18nProvider), these rules
+     flip horizontal layouts so the UI reads correctly right-to-left.
+     Tailwind 4 also supports logical properties (ms-, me-, ps-, pe-, start-, end-)
+     which automatically respect the dir attribute, so most flex layouts adapt
+     automatically. These rules handle the few cases that need explicit flipping. */
+  [dir="rtl"] .rtl-flip {
+    transform: scaleX(-1);
+  }
+  /* In RTL mode, the mobile back arrow should point right (→) instead of left (←). */
+  [dir="rtl"] .rtl-flip-x {
+    transform: scaleX(-1);
+  }
+  /* In RTL mode, dropdown menus that are right-aligned in LTR should be left-aligned. */
+  [dir="rtl"] .rtl-left-auto {
+    left: auto;
+    right: 0;
+  }
+  [dir="rtl"] .rtl-right-auto {
+    right: auto;
+    left: 0;
+  }
+  /* Chat message bubbles: in RTL, "my messages" should still be on the right
+     (flex-end) but the reply quote border should be on the right side. */
+  [dir="rtl"] .border-l-2 {
+    border-left: 0;
+    border-right: 2px solid;
+  }
+  /* Reaction bar: in LTR it's positioned at -top-7 right-0; in RTL it should be
+     at -top-7 left-0. */
+  [dir="rtl"] .msg-action-menu {
+    right: auto;
+    left: 0;
+  }
 }
 
 @keyframes fadeIn {

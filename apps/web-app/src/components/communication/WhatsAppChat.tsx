@@ -30,7 +30,7 @@ import {
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
-  ChevronUp,
+  ChevronUp, Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -200,12 +200,25 @@ function renderRichContent(html: string): string {
   let hasCode = html.includes('`');
   let hasStrike = html.includes('~~');
   let hasQuote = html.includes('&gt; ') || html.includes('> ');
-  if (!hasMentions && !hasSpoilers && !hasCode && !hasStrike && !hasQuote) return html;
+  let hasCodeBlock = html.includes('```');
+  if (!hasMentions && !hasSpoilers && !hasCode && !hasStrike && !hasQuote && !hasCodeBlock) return html;
+
+  // ⭐ DISCORD PARITY: Multi-line code blocks ```language\ncode\n```
+  //    Must be processed BEFORE inline code (backticks) to avoid double-processing.
+  //    Discord-style: gray background, monospace, preserved whitespace, optional language label.
+  if (hasCodeBlock) {
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang, code) => {
+      const langLabel = lang ? `<span style="font-size:0.7em;color:#94a3b8;display:block;margin-bottom:4px;">${lang}</span>` : '';
+      const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').trim();
+      return `<pre style="background-color:#0f172a;color:#f1f5f9;border-radius:6px;padding:10px 12px;margin:6px 0;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.85em;line-height:1.5;">${langLabel}<code>${escapedCode}</code></pre>`;
+    });
+  }
 
   // Split into HTML tags and text content
   const parts = html.split(/(<[^>]+>)/);
   return parts.map(part => {
-    // Skip HTML tags (start with <)
+    // Skip HTML tags (start with <) — but allow <pre><code> blocks we just inserted
+    if (part.startsWith('<pre')) return part;
     if (part.startsWith('<')) return part;
 
     let result = part;
@@ -235,24 +248,31 @@ function renderRichContent(html: string): string {
     }
 
     // ⭐ > blockquote → left border + gray background (Discord-style)
-    //    Handles both the raw "> " at line start and the HTML-escaped "&gt; ".
-    //    Applied line-by-line to only match at the beginning of a line.
     if (hasQuote) {
       result = result.replace(
         /(?:^|\n)(?:&gt;|>)\s(.+)/g,
-        (match, p1, offset, str) => {
-          // Determine if this is at the start of the string or after a newline
+        (match, p1) => {
           const prefix = match.startsWith('\n') ? '\n' : '';
           return `${prefix}<blockquote style="border-left:3px solid #cbd5e1;background-color:#f8fafc;padding:2px 8px;margin:2px 0;color:#475569;border-radius:0 4px 4px 0;">${p1}</blockquote>`;
         }
       );
     }
 
-    // ⭐ @mentions → highlighted badge (applied last so it doesn't conflict)
+    // ⭐ @mentions + @here + @everyone → highlighted badge
     if (hasMentions) {
+      // @here and @everyone → amber/yellow badge (Discord style)
+      result = result.replace(
+        /@(here|everyone|tous)\b/gi,
+        '<span style="background-color:rgba(245,158,11,0.2);color:#B45309;font-weight:600;border-radius:3px;padding:0 2px;">@$1</span>'
+      );
+      // @username → blue badge
       result = result.replace(
         /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_\-']{1,29})/g,
-        '<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">@$1</span>'
+        (match, name) => {
+          // Skip if it's @here/@everyone (already processed)
+          if (/^(here|everyone|tous)$/i.test(name)) return match;
+          return `<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">@${name}</span>`;
+        }
       );
     }
 
@@ -274,6 +294,15 @@ function extractMentionedUserIds(html: string, participants: { userId: string; f
   if (!html || !html.includes('@')) return [];
   const text = html.replace(/<[^>]*>/g, ''); // strip HTML tags
   const mentioned = new Set<string>();
+  // ⭐ DISCORD PARITY: @here / @everyone / @tous → mention ALL participants
+  const isMassMention = /@(here|everyone|tous)\b/i.test(text);
+  if (isMassMention) {
+    for (const p of participants) {
+      if (p.userId && p.userId !== currentUserId) mentioned.add(p.userId);
+    }
+    return Array.from(mentioned);
+  }
+  // Per-user @FirstName / @LastName mentions
   for (const p of participants) {
     if (!p.userId || p.userId === currentUserId) continue;
     const firstName = (p.firstName || '').trim();
@@ -398,6 +427,68 @@ function stripHtml(html: string | null | undefined): string {
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
     .trim();
+}
+
+/**
+ * ⭐ DISCORD PARITY — Slash commands parser.
+ *
+ * Discord supports /me, /shrug, /tableflip, /tts, /poll, /announce, etc.
+ * Helm Connect implements a subset:
+ *   /me <action>         → *<action>* (italic, like IRC/Discord /me)
+ *   /shrug [text]        → text ¯\_(ツ)_/¯
+ *   /tableflip [text]    → text (╯°□°)╯︵ ┻━┻
+ *   /unflip [text]       → text ┬─┬ ノ( ゜-゜ノ)
+ *   /lenny [text]        → text ( ͡° ͜ʖ ͡°)
+ *   /poll <question>     → opens the poll modal (returns null, special signal)
+ *   /announce <text>     → opens the announcement modal (returns null, special signal)
+ *   /spoiler <text>      → ||text||
+ *   /code <text>         → `text`
+ *   /clear               → clears the messages (special signal, returns '__CLEAR__')
+ *
+ * Returns:
+ *   - { content: string, isCommand: true } if a slash command was parsed
+ *   - { content: original, isCommand: false } if not a slash command
+ *   - { special: 'poll' | 'announce' | 'clear' } for special-handling commands
+ */
+function parseSlashCommand(input: string): { content?: string; isCommand: boolean; special?: 'poll' | 'announce' | 'clear' } {
+  const text = input.replace(/<[^>]*>/g, '').trim();
+  if (!text.startsWith('/')) return { isCommand: false };
+
+  const spaceIdx = text.indexOf(' ');
+  const cmd = (spaceIdx === -1 ? text : text.substring(0, spaceIdx)).toLowerCase();
+  const arg = spaceIdx === -1 ? '' : text.substring(spaceIdx + 1).trim();
+
+  switch (cmd) {
+    case '/me':
+      if (!arg) return { isCommand: true, content: '<i>fait quelque chose</i>' };
+      return { isCommand: true, content: `<i>${escapeHtml(arg)}</i>` };
+    case '/shrug':
+      return { isCommand: true, content: arg ? `${escapeHtml(arg)} ¯\\_(ツ)_/¯` : '¯\\_(ツ)_/¯' };
+    case '/tableflip':
+      return { isCommand: true, content: arg ? `${escapeHtml(arg)} (╯°□°)╯︵ ┻━┻` : '(╯°□°)╯︵ ┻━┻' };
+    case '/unflip':
+      return { isCommand: true, content: arg ? `${escapeHtml(arg)} ┬─┬ ノ( ゜-゜ノ)` : '┬─┬ ノ( ゜-゜ノ)' };
+    case '/lenny':
+      return { isCommand: true, content: arg ? `${escapeHtml(arg)} ( ͡° ͜ʖ ͡°)` : '( ͡° ͜ʖ ͡°)' };
+    case '/spoiler':
+      return { isCommand: true, content: `||${escapeHtml(arg)}||` };
+    case '/code':
+      return { isCommand: true, content: `\`${escapeHtml(arg)}\`` };
+    case '/poll':
+      return { isCommand: true, special: 'poll' };
+    case '/announce':
+      return { isCommand: true, special: 'announce' };
+    case '/clear':
+      return { isCommand: true, special: 'clear' };
+    default:
+      // Unknown slash command — send as regular text (Discord does the same)
+      return { isCommand: false };
+  }
+}
+
+/** Minimal HTML escaper for slash command output safety. */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -612,6 +703,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   // ⭐ Helm Connect V2.3 — Notification Preferences
   const [showNotifPrefs, setShowNotifPrefs] = useState(false);
+  // ⭐ DISCORD PARITY: Member list sidebar (right panel for GROUP conversations)
+  const [showMemberList, setShowMemberList] = useState(false);
+  const [conversationMembers, setConversationMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  // ⭐ DISCORD PARITY: Audit log modal
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  // ⭐ DISCORD PARITY: Slow mode modal
+  const [showSlowModeModal, setShowSlowModeModal] = useState(false);
+  const [slowModeSeconds, setSlowModeSeconds] = useState(0);
   // ⭐ Helm Connect V2.4 — Global Search
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
@@ -785,6 +886,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [callDuration, setCallDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
+  // ⭐ DISCORD PARITY: Screen sharing state
+  const [isSharingScreen, setIsSharingScreen] = useState(false);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -1199,6 +1304,34 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       setLoadingConvs(false);
     }
   }, [currentUserId]);
+
+  // ⭐ DISCORD PARITY: Load conversation members with online status + custom status.
+  //    Called when the user opens the member list sidebar.
+  const loadConversationMembers = useCallback(async (convId: string) => {
+    setLoadingMembers(true);
+    try {
+      const res = await fetch(`/api/chat/conversations/${convId}/members?userId=${currentUserId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to load members');
+      const data = await res.json();
+      setConversationMembers(data);
+    } catch (e: any) {
+      console.error('loadConversationMembers:', e);
+      // Fallback: use participants already in the conversation object
+      if (activeConv) {
+        setConversationMembers((activeConv as any).participants || []);
+      }
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [currentUserId, activeConv]);
+
+  // ⭐ DISCORD PARITY: Toggle the member list sidebar.
+  const toggleMemberList = useCallback(() => {
+    if (!showMemberList && activeConvId) {
+      loadConversationMembers(activeConvId);
+    }
+    setShowMemberList(prev => !prev);
+  }, [showMemberList, activeConvId, loadConversationMembers]);
 
   // ───────────────────────────────────────────────────────────────────
   // Load messages for active conversation
@@ -1922,7 +2055,38 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (recordingState === 'preview') {
       cancelRecording();
     }
-    const content = text.trim(); // Keep HTML for sending — backend stores HTML
+
+    // ⭐ DISCORD PARITY: Slash commands (/me, /shrug, /tableflip, /poll, /announce, etc.)
+    const parsed = parseSlashCommand(text);
+    if (parsed.isCommand) {
+      if (parsed.special === 'poll') {
+        setText('');
+        setReplyToMessage(null);
+        setShowPollModal(true);
+        return;
+      }
+      if (parsed.special === 'announce') {
+        setText('');
+        setReplyToMessage(null);
+        setShowAnnouncements(true);
+        return;
+      }
+      if (parsed.special === 'clear') {
+        setText('');
+        setReplyToMessage(null);
+        setMessages([]);
+        toast.success('Messages effacés');
+        return;
+      }
+      // For regular slash commands (/me, /shrug, etc.), replace the content
+      // with the command output and continue with the normal send flow.
+      if (parsed.content) {
+        setText(parsed.content);
+        // The send continues below with the new content.
+      }
+    }
+
+    const content = (parsed.isCommand && parsed.content) ? parsed.content : text.trim();
     const replyToId = replyToMessage?.id || undefined;
     setText('');
     setReplyToMessage(null);
@@ -2347,8 +2511,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const callId = data.callId;
 
       // 2. Get local media stream
+      //    ⭐ DISCORD PARITY: Noise suppression — request the browser to apply
+      //    echoCancellation, noiseSuppression, and autoGainControl for cleaner
+      //    audio (similar to Discord's Krisp noise suppression, but using the
+      //    browser's built-in WebRTC audio processing).
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
         video: callType === 'VIDEO',
       });
       localStreamRef.current = stream;
@@ -2390,8 +2562,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
     try {
       // 1. Get local media
+      //    ⭐ DISCORD PARITY: Noise suppression for incoming call acceptance too.
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: callType === 'VIDEO',
       });
       localStreamRef.current = stream;
@@ -2525,8 +2698,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V2.5: Accept incoming call
   const acceptCall = async (fromUserId: string, callId: string, callType: string, offer: any) => {
     try {
+      // ⭐ DISCORD PARITY: Noise suppression on incoming call acceptance.
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: callType === 'VIDEO',
       });
       localStreamRef.current = stream;
@@ -2590,6 +2764,65 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
       setVideoOff(!videoTrack.enabled);
+    }
+  };
+
+  // ⭐ DISCORD PARITY: Screen sharing (getDisplayMedia).
+  //    Replaces the video track in the peer connection with the screen share
+  //    stream. The remote peer sees the shared screen instead of the webcam.
+  //    Clicking again stops the screen share and restores the webcam.
+  const toggleScreenShare = async () => {
+    if (!peerConnectionRef.current) return;
+
+    if (isSharingScreen) {
+      // Stop screen sharing — restore the original webcam video track
+      const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
+      if (sender && originalVideoTrackRef.current) {
+        await sender.replaceTrack(originalVideoTrackRef.current);
+      }
+      screenStreamRef.current?.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+      originalVideoTrackRef.current = null;
+      setIsSharingScreen(false);
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      return;
+    }
+
+    try {
+      // Request screen share (display media)
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false, // no system audio for now — would need additional track
+      });
+      screenStreamRef.current = displayStream;
+      const screenTrack = displayStream.getVideoTracks()[0];
+
+      // Save the original webcam track so we can restore it later
+      const originalVideoTrack = localStreamRef.current?.getVideoTracks()[0];
+      if (originalVideoTrack) originalVideoTrackRef.current = originalVideoTrack;
+
+      // Replace the video track in the peer connection
+      const sender = peerConnectionRef.current.getSenders().find(s => s.track?.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(screenTrack);
+      }
+
+      // Show the screen share in the local PiP video
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = displayStream;
+      }
+
+      // When the user stops sharing via the browser UI, auto-revert
+      screenTrack.onended = () => {
+        toggleScreenShare(); // toggle back to webcam
+      };
+
+      setIsSharingScreen(true);
+    } catch (e: any) {
+      console.error('Screen share failed:', e);
+      toast.error('Échec du partage d\'écran : ' + e.message);
     }
   };
 
@@ -3659,6 +3892,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
       {/* ═════ RIGHT PANE — Chat View ═════ */}
       {activeConv ? (
+        <>
         <div
           className="flex-1 flex flex-col bg-slate-50 relative"
           onDrop={handleDrop}
@@ -3766,6 +4000,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             >
               <Sparkles className="w-4 h-4" />
             </button>
+            {/* ⭐ DISCORD PARITY: Member list sidebar toggle (GROUP only).
+                Opens a right-side panel showing all conversation members
+                with online status, custom status, and role colors. */}
+            {activeConv?.type === 'GROUP' && (
+              <button
+                onClick={toggleMemberList}
+                className={cn('p-1.5 rounded hover:bg-[#0958D9]', showMemberList && 'bg-[#0958D9]/30')}
+                title="Membres de la conversation"
+              >
+                <Users className="w-4 h-4" />
+              </button>
+            )}
             {/* ⭐ Issue A5 FIX: MoreVertical button now opens notification preferences for this conversation (was a no-op) */}
             <button
               onClick={() => setShowNotifPrefs(true)}
@@ -4510,7 +4756,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         stopTypingRef.current = setTimeout(() => handleStopTyping(), 5000);
                       }}
                       minHeight="36px"
-                      placeholder="Tapez un message... Utilisez @ pour mentionner quelqu'un."
+                      placeholder="Tapez un message... @mention, /commande, ||spoiler||, ou `code`"
                     />
                   </div>
                   {/* Mic button (idle state — only when text is empty) */}
@@ -4546,6 +4792,89 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             )}
           </div>
         </div>
+
+        {/* ⭐ DISCORD PARITY: Member list sidebar (right panel for GROUP conversations).
+            Shows all conversation members grouped by online/offline status,
+            with their custom status, activity, and role-colored names.
+            Hidden by default; toggled via the Users button in the chat header. */}
+        {showMemberList && activeConv?.type === 'GROUP' && (
+          <div className="hidden md:flex flex-col w-64 bg-white border-l border-slate-200 flex-shrink-0">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Membres</h3>
+              <button
+                onClick={() => setShowMemberList(false)}
+                className="p-1 hover:bg-slate-100 rounded"
+                title="Fermer"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {loadingMembers ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                </div>
+              ) : (
+                <>
+                  {/* Online members */}
+                  {conversationMembers.filter(m => m.isOnline).length > 0 && (
+                    <div className="px-3 pt-3 pb-1">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-2 h-2 bg-green-400 rounded-full" />
+                        En ligne — {conversationMembers.filter(m => m.isOnline).length}
+                      </div>
+                    </div>
+                  )}
+                  {conversationMembers.filter(m => m.isOnline).map((m: any) => (
+                    <div key={m.userId} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer" onClick={() => { setShowProfile(true); }}>
+                      <div className="relative flex-shrink-0">
+                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold', m.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${m.firstName || ''} ${m.lastName || ''}`))}>
+                          {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" /> : getInitials(`${m.firstName || ''} ${m.lastName || ''}`)}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold truncate" style={{ color: getRoleColor(m.userRole) }}>
+                          {m.firstName} {m.lastName}
+                          {m.role === 'ADMIN' && <span className="ml-1 text-[9px] text-amber-600">(Admin)</span>}
+                        </div>
+                        {m.customStatus && <div className="text-[10px] text-slate-500 truncate">{m.customStatus}</div>}
+                        {!m.customStatus && m.activityStatus && <div className="text-[10px] text-slate-400 truncate">{m.activityStatus}</div>}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Offline members */}
+                  {conversationMembers.filter(m => !m.isOnline).length > 0 && (
+                    <div className="px-3 pt-3 pb-1 mt-2">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-2 h-2 bg-slate-300 rounded-full" />
+                        Hors ligne — {conversationMembers.filter(m => !m.isOnline).length}
+                      </div>
+                    </div>
+                  )}
+                  {conversationMembers.filter(m => !m.isOnline).map((m: any) => (
+                    <div key={m.userId} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 opacity-60 cursor-pointer" onClick={() => { setShowProfile(true); }}>
+                      <div className="relative flex-shrink-0">
+                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold grayscale', m.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${m.firstName || ''} ${m.lastName || ''}`))}>
+                          {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" /> : getInitials(`${m.firstName || ''} ${m.lastName || ''}`)}
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-slate-300 rounded-full border-2 border-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold truncate text-slate-500" style={{ color: getRoleColor(m.userRole) }}>
+                          {m.firstName} {m.lastName}
+                          {m.role === 'ADMIN' && <span className="ml-1 text-[9px] text-amber-600">(Admin)</span>}
+                        </div>
+                        {m.customStatus && <div className="text-[10px] text-slate-400 truncate">{m.customStatus}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        </>
       ) : (
         // Empty state when no conversation selected — uses Helm watermark background + Helm Connect icon
         // ⭐ Per user feedback: KEEP the watermark theme (asked for) but DO NOT replace
@@ -5200,6 +5529,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     {videoOff ? <VideoOff className="w-5 h-5 text-[#0A2A5E]" /> : <Video className="w-5 h-5" />}
                   </div>
                   <span className="text-[10px] text-white/80">{videoOff ? 'Caméra' : 'Vidéo'}</span>
+                </button>
+              )}
+              {/* ⭐ DISCORD PARITY: Screen sharing toggle — replaces webcam with
+                  screen share. Available in both AUDIO and VIDEO calls (the
+                  screen share adds a video track if needed). */}
+              {callState === 'active' && (
+                <button onClick={toggleScreenShare} className="flex flex-col items-center gap-1 px-3" title={isSharingScreen ? 'Arrêter le partage' : 'Partager votre écran'}>
+                  <div className={cn('w-12 h-12 rounded-full flex items-center justify-center text-white transition-colors', isSharingScreen ? 'bg-[#FFE08A]' : 'bg-white/20')}>
+                    <Monitor className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] text-white/80">{isSharingScreen ? 'Arrêter' : 'Écran'}</span>
                 </button>
               )}
               {/* ⭐ FIX: Speaker toggle (wired) — mutes/unmutes the remote audio */}

@@ -551,6 +551,74 @@ export class ChatService {
       throw new BadRequestException('Message content cannot be empty');
     }
 
+    // ⭐ DISCORD PARITY — Slow mode enforcement.
+    //    If the conversation has slowModeSeconds > 0, the user must wait
+    //    that many seconds between messages. We check the user's last
+    //    message timestamp in this conversation and reject if too soon.
+    //    Admins (ADMIN role on chat_participants) bypass slow mode.
+    try {
+      const convRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT c."slowModeSeconds", p.role
+        FROM "chat_conversations" c
+        LEFT JOIN "chat_participants" p ON p."conversationId" = c.id AND p."userId" = $2
+        WHERE c.id = $1
+      `, conversationId, senderId);
+      const slowMode = convRow[0]?.slowModeSeconds || 0;
+      const userRole = convRow[0]?.role;
+      if (slowMode > 0 && userRole !== 'ADMIN') {
+        const lastMsg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT "createdAt" FROM "chat_messages"
+          WHERE "conversationId" = $1 AND "senderId" = $2
+          ORDER BY "createdAt" DESC LIMIT 1
+        `, conversationId, senderId);
+        if (lastMsg.length > 0) {
+          const lastTime = new Date(lastMsg[0].createdAt).getTime();
+          const elapsed = (Date.now() - lastTime) / 1000;
+          if (elapsed < slowMode) {
+            const wait = Math.ceil(slowMode - elapsed);
+            throw new BadRequestException(`Mode lent actif. Patientez ${wait}s avant d'envoyer un autre message.`);
+          }
+        }
+      }
+    } catch (e: any) {
+      // If the column doesn't exist yet (migration pending), silently skip
+      if (!(e instanceof BadRequestException)) {
+        this.logger?.warn?.(`Slow mode check failed: ${e.message}`);
+      } else {
+        throw e;
+      }
+    }
+
+    // ⭐ DISCORD PARITY — Ban check. Reject if the user is banned from this conversation.
+    try {
+      const banRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id FROM "chat_conversation_bans"
+        WHERE "conversationId" = $1 AND "userId" = $2
+        AND ("expiresAt" IS NULL OR "expiresAt" > NOW())
+      `, conversationId, senderId);
+      if (banRow.length > 0) {
+        throw new ForbiddenException('Vous avez été banni de cette conversation.');
+      }
+    } catch (e: any) {
+      if (e instanceof ForbiddenException) throw e;
+      this.logger?.warn?.(`Ban check failed: ${e.message}`);
+    }
+
+    // ⭐ DISCORD PARITY — Mute check. Reject if the user is muted in this conversation.
+    try {
+      const muteRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id FROM "chat_conversation_mutes"
+        WHERE "conversationId" = $1 AND "userId" = $2
+        AND ("expiresAt" IS NULL OR "expiresAt" > NOW())
+      `, conversationId, senderId);
+      if (muteRow.length > 0) {
+        throw new ForbiddenException('Vous avez été mis en sourdine dans cette conversation.');
+      }
+    } catch (e: any) {
+      if (e instanceof ForbiddenException) throw e;
+      this.logger?.warn?.(`Mute check failed: ${e.message}`);
+    }
+
     // ⭐ MENTIONS: persist mentioned user IDs as a JSON array in the `mentions` column.
     //    The column was added by migration 20260901140000_fill_all_gaps.
     //    We store as TEXT (JSON) so it survives on Postgres without array column type.
@@ -869,6 +937,9 @@ export class ChatService {
       this.logger?.warn?.(`Failed to broadcast message edit via Socket.io: ${e.message}`);
     }
 
+    // ⭐ DISCORD PARITY: Audit log for message edits
+    await this.auditLog(msg[0]?.conversationId || null, userId, null, messageId, 'MESSAGE_EDIT', { contentPreview: content.substring(0, 100) });
+
     return { id: messageId, content, editedAt };
   }
 
@@ -1132,6 +1203,9 @@ export class ChatService {
     } catch (e: any) {
       this.logger?.warn?.(`Failed to broadcast message deletion via Socket.io: ${e.message}`);
     }
+
+    // ⭐ DISCORD PARITY: Audit log for message deletions
+    await this.auditLog(conversationId, userId, null, messageId, 'MESSAGE_DELETE', {});
 
     return { success: true };
   }
@@ -1768,5 +1842,253 @@ export class ChatService {
       description: `Conversation pédagogique${data.subjectId ? ` — ${data.subjectId}` : ''}`,
       participantIds: [], // Will be filled by dynamic group sync
     });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — MODERATION (ban/kick/mute), SLOW MODE, AUDIT LOG
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Set slow mode (seconds between messages) for a conversation. Admins only. */
+  async setSlowMode(tenantId: string, userId: string, conversationId: string, seconds: number): Promise<{ success: boolean; slowModeSeconds: number }> {
+    const conv = await this.getConversation(tenantId, userId, conversationId);
+    // Verify the user is an admin of the conversation
+    const participant = conv.participants?.find((p: any) => p.userId === userId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs de la conversation peuvent définir le mode lent.');
+    }
+    const clamped = Math.max(0, Math.min(21600, Math.floor(seconds))); // 0 to 6 hours
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_conversations" SET "slowModeSeconds" = $2, "updatedAt" = NOW() WHERE "id" = $1
+    `, conversationId, clamped);
+    await this.auditLog(conversationId, userId, null, null, 'SLOW_MODE_SET', { slowModeSeconds: clamped });
+    return { success: true, slowModeSeconds: clamped };
+  }
+
+  /** Ban a user from a conversation. Admins only. */
+  async banUser(tenantId: string, adminId: string, conversationId: string, targetUserId: string, reason?: string, expiresAt?: Date): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent bannir des utilisateurs.');
+    }
+    if (targetUserId === adminId) throw new BadRequestException('Vous ne pouvez pas vous bannir vous-même.');
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_conversation_bans" ("id", "conversationId", "userId", "bannedBy", "reason", "bannedAt", "expiresAt")
+      VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+      ON CONFLICT ON CONSTRAINT "chat_conversation_bans_conv_user_unique" DO UPDATE SET "bannedBy" = $4, "reason" = $5, "bannedAt" = NOW(), "expiresAt" = $6
+    `, randomUUID(), conversationId, targetUserId, adminId, reason || null, expiresAt || null);
+    // Remove the banned user from participants
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_participants" SET "leftAt" = NOW() WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, conversationId, targetUserId);
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'USER_BAN', { reason, expiresAt });
+    return { success: true };
+  }
+
+  /** Unban a user. Admins only. */
+  async unbanUser(tenantId: string, adminId: string, conversationId: string, targetUserId: string): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent débannir des utilisateurs.');
+    }
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM "chat_conversation_bans" WHERE "conversationId" = $1 AND "userId" = $2
+    `, conversationId, targetUserId);
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'USER_UNBAN', {});
+    return { success: true };
+  }
+
+  /** Mute a user in a conversation (prevents sending messages). Admins only. */
+  async muteUser(tenantId: string, adminId: string, conversationId: string, targetUserId: string, reason?: string, expiresAt?: Date): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent mettre en sourdine.');
+    }
+    if (targetUserId === adminId) throw new BadRequestException('Vous ne pouvez pas vous mettre en sourdine vous-même.');
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_conversation_mutes" ("id", "conversationId", "userId", "mutedBy", "reason", "mutedAt", "expiresAt")
+      VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+      ON CONFLICT ON CONSTRAINT "chat_conversation_mutes_conv_user_unique" DO UPDATE SET "mutedBy" = $4, "reason" = $5, "mutedAt" = NOW(), "expiresAt" = $6
+    `, randomUUID(), conversationId, targetUserId, adminId, reason || null, expiresAt || null);
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'USER_MUTE', { reason, expiresAt });
+    return { success: true };
+  }
+
+  /** Unmute a user. Admins only. */
+  async unmuteUser(tenantId: string, adminId: string, conversationId: string, targetUserId: string): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent lever la sourdine.');
+    }
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM "chat_conversation_mutes" WHERE "conversationId" = $1 AND "userId" = $2
+    `, conversationId, targetUserId);
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'USER_UNMUTE', {});
+    return { success: true };
+  }
+
+  /** Kick a user (remove from participants, no ban). Admins only. */
+  async kickUser(tenantId: string, adminId: string, conversationId: string, targetUserId: string, reason?: string): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent exclure des utilisateurs.');
+    }
+    if (targetUserId === adminId) throw new BadRequestException('Vous ne pouvez pas vous exclure vous-même.');
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_participants" SET "leftAt" = NOW() WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, conversationId, targetUserId);
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'USER_KICK', { reason });
+    return { success: true };
+  }
+
+  /** Get audit logs for a conversation. Admins only. */
+  async getAuditLogs(tenantId: string, userId: string, conversationId: string, limit = 50): Promise<any[]> {
+    const conv = await this.getConversation(tenantId, userId, conversationId);
+    const participant = conv.participants?.find((p: any) => p.userId === userId);
+    if (!participant || participant.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent consulter le journal d\'audit.');
+    }
+    return await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT a.*, u."firstName" AS "actorFirstName", u."lastName" AS "actorLastName",
+             t."firstName" AS "targetFirstName", t."lastName" AS "targetLastName"
+      FROM "chat_audit_logs" a
+      LEFT JOIN "users" u ON u.id = a."actorUserId"
+      LEFT JOIN "users" t ON t.id = a."targetUserId"
+      WHERE a."conversationId" = $1
+      ORDER BY a."createdAt" DESC
+      LIMIT $2
+    `, conversationId, limit);
+  }
+
+  /** Private helper: write an audit log entry. */
+  private async auditLog(
+    conversationId: string | null,
+    actorUserId: string,
+    targetUserId: string | null,
+    targetMessageId: string | null,
+    action: string,
+    details: any,
+  ): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "chat_audit_logs" ("id", "conversationId", "actorUserId", "targetUserId", "targetMessageId", "action", "details", "createdAt")
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `, randomUUID(), conversationId, actorUserId, targetUserId, targetMessageId, action, JSON.stringify(details || {}));
+    } catch (e: any) {
+      this.logger?.warn?.(`Audit log write failed: ${e.message}`);
+    }
+  }
+
+  /** Get conversation members with online status + role colors. Discord-style member list. */
+  async getConversationMembers(tenantId: string, userId: string, conversationId: string): Promise<any[]> {
+    const conv = await this.getConversation(tenantId, userId, conversationId);
+    const participants = conv.participants || [];
+    // Get last active timestamps for presence
+    const userIds = participants.map((p: any) => p.userId);
+    if (userIds.length === 0) return [];
+    const users: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, "firstName", "lastName", email, "avatarUrl", role,
+             "customStatus", "customStatusExpiresAt", "activityStatus",
+             "lastActiveAt",
+             CASE WHEN "lastActiveAt" IS NOT NULL AND "lastActiveAt" > NOW() - INTERVAL '5 minutes' THEN true ELSE false END AS "isOnline"
+      FROM "users" WHERE id = ANY($1::text[])
+    `, userIds);
+    // Map back to participants with role in conversation
+    return participants.map((p: any) => {
+      const u = users.find((x: any) => x.id === p.userId) || {};
+      return {
+        userId: p.userId,
+        role: p.role, // ADMIN or MEMBER
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        avatarUrl: u.avatarUrl,
+        userRole: u.role, // system role (TEACHER, PARENT, etc.)
+        customStatus: (u.customStatusExpiresAt && new Date(u.customStatusExpiresAt) < new Date()) ? null : u.customStatus,
+        activityStatus: u.activityStatus,
+        isOnline: u.isOnline,
+        lastActiveAt: u.lastActiveAt,
+      };
+    }).sort((a: any, b: any) => {
+      // Online first, then by name
+      if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+      return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — CUSTOM STATUS, BANNER, ACTIVITY STATUS
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Update the current user's custom status (Discord-style). */
+  async updateCustomStatus(tenantId: string, userId: string, status: string | null, expiresAt?: Date): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "users" SET "customStatus" = $2, "customStatusExpiresAt" = $3 WHERE id = $1
+    `, userId, status, expiresAt || null);
+    return { success: true };
+  }
+
+  /** Update the current user's activity status text. */
+  async updateActivityStatus(tenantId: string, userId: string, activity: string | null): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "users" SET "activityStatus" = $2 WHERE id = $1
+    `, userId, activity);
+    return { success: true };
+  }
+
+  /** Update the current user's banner image URL. */
+  async updateBanner(tenantId: string, userId: string, bannerUrl: string | null): Promise<{ success: boolean }> {
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "users" SET "bannerUrl" = $2 WHERE id = $1
+    `, userId, bannerUrl);
+    return { success: true };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — MULTI-FORWARD
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Forward a message to multiple target conversations at once. */
+  async forwardMessageToMany(
+    tenantId: string,
+    userId: string,
+    messageId: string,
+    targetConversationIds: string[],
+  ): Promise<{ forwarded: number; errors: string[] }> {
+    if (!targetConversationIds || targetConversationIds.length === 0) {
+      throw new BadRequestException('targetConversationIds cannot be empty');
+    }
+    const errors: string[] = [];
+    let forwarded = 0;
+    for (const targetId of targetConversationIds) {
+      try {
+        await this.forwardMessage(tenantId, messageId, userId, targetId);
+        forwarded++;
+      } catch (e: any) {
+        errors.push(`${targetId}: ${e.message}`);
+      }
+    }
+    await this.auditLog(null, userId, null, messageId, 'MESSAGE_FORWARD', { targetConversationIds, forwarded, errors });
+    return { forwarded, errors };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — @here / @everyone MENTIONS
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Parse @here and @everyone mentions from message content and return all participant IDs to notify. */
+  async resolveMassMentions(content: string, participantIds: string[]): Promise<{ isHere: boolean; isEveryone: boolean; notifyIds: string[] }> {
+    const text = content.replace(/<[^>]*>/g, '');
+    const isHere = /@here\b/i.test(text);
+    const isEveryone = /@everyone\b/i.test(text) || /@tous\b/i.test(text);
+    return {
+      isHere,
+      isEveryone,
+      notifyIds: (isHere || isEveryone) ? participantIds : [],
+    };
   }
 }

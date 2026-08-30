@@ -790,4 +790,142 @@ export class ChatController {
     if (!academicYear) return [];
     return this.autoGroupService.listAutoGroups(tenantId, academicYear.id);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — MODERATION, SLOW MODE, AUDIT LOG, MEMBERS
+  // ═════════════════════════════════════════════════════════════════
+
+  @Put('conversations/:id/slow-mode')
+  async setSlowMode(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { userId: string; seconds: number },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.setSlowMode(tenantId, body.userId, conversationId, body.seconds || 0);
+  }
+
+  @Post('conversations/:id/ban/:userId')
+  async banUser(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId: string; reason?: string; expiresAt?: string },
+  ) {
+    if (!body.adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.banUser(tenantId, body.adminId, conversationId, targetUserId, body.reason, body.expiresAt ? new Date(body.expiresAt) : undefined);
+  }
+
+  @Delete('conversations/:id/ban/:userId')
+  async unbanUser(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId: string },
+  ) {
+    if (!body.adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.unbanUser(tenantId, body.adminId, conversationId, targetUserId);
+  }
+
+  @Post('conversations/:id/mute/:userId')
+  async muteUser(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId: string; reason?: string; expiresAt?: string },
+  ) {
+    if (!body.adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.muteUser(tenantId, body.adminId, conversationId, targetUserId, body.reason, body.expiresAt ? new Date(body.expiresAt) : undefined);
+  }
+
+  @Delete('conversations/:id/mute/:userId')
+  async unmuteUser(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId: string },
+  ) {
+    if (!body.adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.unmuteUser(tenantId, body.adminId, conversationId, targetUserId);
+  }
+
+  @Post('conversations/:id/kick/:userId')
+  async kickUser(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId: string; reason?: string },
+  ) {
+    if (!body.adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.kickUser(tenantId, body.adminId, conversationId, targetUserId, body.reason);
+  }
+
+  @Get('conversations/:id/audit-logs')
+  async getAuditLogs(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.getAuditLogs(tenantId, userId, conversationId, limit ? parseInt(limit, 10) : 50);
+  }
+
+  @Get('conversations/:id/members')
+  async getMembers(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.getConversationMembers(tenantId, userId, conversationId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — CUSTOM STATUS, BANNER, ACTIVITY STATUS
+  // ═════════════════════════════════════════════════════════════════
+
+  @Put('profile/custom-status')
+  async updateCustomStatus(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; status: string | null; expiresAt?: string },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.updateCustomStatus(tenantId, body.userId, body.status, body.expiresAt ? new Date(body.expiresAt) : undefined);
+  }
+
+  @Put('profile/activity-status')
+  async updateActivityStatus(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; activity: string | null },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.updateActivityStatus(tenantId, body.userId, body.activity);
+  }
+
+  @Put('profile/banner')
+  async updateBanner(
+    @TenantId() tenantId: string,
+    @Body() body: { userId: string; bannerUrl: string | null },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.updateBanner(tenantId, body.userId, body.bannerUrl);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ DISCORD PARITY — MULTI-FORWARD
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('messages/:msgId/forward-many')
+  async forwardToMany(
+    @TenantId() tenantId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId: string; targetConversationIds: string[] },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    if (!body.targetConversationIds || body.targetConversationIds.length === 0) {
+      throw new BadRequestException('targetConversationIds cannot be empty');
+    }
+    return this.chatService.forwardMessageToMany(tenantId, body.userId, messageId, body.targetConversationIds);
+  }
 }

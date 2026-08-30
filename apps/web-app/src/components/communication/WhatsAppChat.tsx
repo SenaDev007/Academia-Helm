@@ -30,7 +30,7 @@ import {
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
-  ChevronUp, Monitor,
+  ChevronUp, Monitor, Smile,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -713,6 +713,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ DISCORD PARITY: Slow mode modal
   const [showSlowModeModal, setShowSlowModeModal] = useState(false);
   const [slowModeSeconds, setSlowModeSeconds] = useState(0);
+  // ⭐ DISCORD PARITY: Emoji picker popover
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   // ⭐ Helm Connect V2.4 — Global Search
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   // ⭐ Helm Connect V2.6 — Categorized Attachment Menu (Documents/Images/Videos/Poll/Audio)
@@ -4660,6 +4662,51 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   </div>
                 )}
                 <div className="flex items-end gap-1.5 sm:gap-2">
+                  {/* ⭐ DISCORD PARITY: Emoji picker — opens a popover with categorized
+                      common emojis. Clicking an emoji inserts it into the message. */}
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={() => setShowEmojiPicker(prev => !prev)}
+                      className="p-2 text-slate-500 hover:bg-slate-100 rounded-full"
+                      title="Emoji"
+                      disabled={readOnly}
+                    >
+                      <Smile className="w-5 h-5" />
+                    </button>
+                    {showEmojiPicker && (
+                      <>
+                        {/* Click-away overlay */}
+                        <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
+                        {/* Emoji popover */}
+                        <div className="absolute bottom-full left-0 mb-2 w-72 bg-white rounded-xl shadow-2xl border border-slate-200 z-50 p-3 max-h-72 overflow-y-auto no-scrollbar">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Emoji</div>
+                          {[
+                            { label: '😊 Sourire', emojis: ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😴','🤤','😪'] },
+                            { label: '👍 Gestes', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👋','🤚','🖐','✋','🖖','👏','🙌','🤝','🙏','✍️','💪','🦾','🦵','🦿','🤲','🤳','💅','👀','👁','👄','💋','🦷','👅','👂','🦻','👃','🧠','🦴','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟'] },
+                            { label: '🎉 Objets', emojis: ['🎉','🎊','🎈','🎂','🎁','🎀','🏆','🥇','🥈','🥉','⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🥅','🏒','🏑','🥍','🎯','🎮','🎲','🧩','♟','♠️','♥️','♦️','♣️','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥙','🧆','🥚','🍳','🥘','🍲','🥣','🥗','🍿','🧈','🧂','🥫','🍱','🍘','🍙','🍚','🍛','🍜','🍝','🍠','🍢','🍣','🍤','🍥','🥮','🍡','🥟'] },
+                          ].map((category, catIdx) => (
+                            <div key={catIdx} className="mb-2">
+                              <div className="text-[9px] font-bold text-slate-400 mb-1">{category.label}</div>
+                              <div className="grid grid-cols-8 gap-0.5">
+                                {category.emojis.map((emoji, i) => (
+                                  <button
+                                    key={`${catIdx}-${i}`}
+                                    onClick={() => {
+                                      setText(prev => prev + emoji);
+                                      setShowEmojiPicker(false);
+                                    }}
+                                    className="w-8 h-8 flex items-center justify-center text-lg hover:bg-slate-100 rounded transition-colors"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   {/* ⭐ Attach button — opens categorized menu (V2.6) */}
                   <button
                     onClick={() => setShowAttachmentMenu(true)}

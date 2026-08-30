@@ -1225,23 +1225,46 @@ export default function UnifiedAdministrationWorkspace() {
                         )}
                       </p>
                     </div>
-                    {Object.keys(pendingTeacherChanges).length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {Object.keys(pendingTeacherChanges).length > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleSaveTeacherChanges}
+                          disabled={saving}
+                          className="text-xs"
+                          style={{ background: PRIMARY, color: 'white' }}
+                        >
+                          {saving ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Send className="w-3 h-3" />
+                          )}
+                          Enregistrer ({Object.keys(pendingTeacherChanges).length})
+                        </Button>
+                      )}
+                      {/* ⭐ Bouton "Affecter un enseignant" — permet d'afficher les
+                          enseignants non affectés pour les affecter à ce niveau */}
                       <Button
                         type="button"
+                        variant="outline"
                         size="sm"
-                        onClick={handleSaveTeacherChanges}
-                        disabled={saving}
+                        onClick={() => {
+                          // Réinitialiser la recherche pour afficher tous les
+                          // enseignants (y compris les non affectés à aucun niveau)
+                          setSearchQuery('');
+                          // Les enseignants non affectés apparaissent déjà dans la
+                          // liste grâce au filtre `if (!effectiveLevelId) return true`
+                          // dans teachersForSelectedLevel. Le bouton sert de
+                          // repère visuel pour indiquer qu'on peut affecter
+                          // de nouveaux enseignants ici.
+                        }}
                         className="text-xs"
-                        style={{ background: PRIMARY, color: 'white' }}
                       >
-                        {saving ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Send className="w-3 h-3" />
-                        )}
-                        Enregistrer ({Object.keys(pendingTeacherChanges).length})
+                        <Plus className="w-3 h-3" />
+                        Affecter un enseignant
                       </Button>
-                    )}
+                    </div>
                   </div>
 
                   <div className="p-4 space-y-3">
@@ -1289,7 +1312,9 @@ export default function UnifiedAdministrationWorkspace() {
                           {isBilingual && ` (piste ${currentTrack})`}
                         </p>
                         <p className="text-xs text-gray-400 mt-1">
-                          Embauchez d'abord du personnel depuis l'onglet « Personnel », puis affectez-le ici.
+                          Les enseignants non encore affectés à un niveau apparaissent ici.
+                          Cliquez sur « Affecter » à côté de leur nom pour les affecter à ce niveau.
+                          Embauchez d'abord du personnel depuis le module Recrutement ou l'onboarding interne.
                         </p>
                       </div>
                     ) : (

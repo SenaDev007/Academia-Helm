@@ -1467,30 +1467,87 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, []);
 
   // ⭐ DISCORD PARITY: Join a voice channel.
+  //    Requests a LiveKit token from the backend. If LiveKit is configured,
+  //    dynamically imports `livekit-client` and connects to the SFU room.
+  //    If LiveKit is NOT configured (fallbackToMesh: true), falls back to
+  //    the existing mesh WebRTC approach (≤5 participants).
   const joinVoiceChannel = useCallback(async (channelId: string) => {
     try {
-      const res = await fetch(`/api/chat/voice-channels/${channelId}/join`, {
+      // 1. Request a LiveKit access token from the backend
+      const tokenRes = await fetch(`/api/chat/voice-channels/${channelId}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!tokenRes.ok) throw new Error('Token request failed');
+      const tokenData = await tokenRes.json();
+
+      // 2. Join the voice channel via the REST endpoint (records voice state)
+      const joinRes = await fetch(`/api/chat/voice-channels/${channelId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId, socketId: socket?.emit ? 'connected' : undefined }),
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Join failed');
-      const data = await res.json();
+      if (!joinRes.ok) throw new Error('Join failed');
+      const joinData = await joinRes.json();
       setActiveVoiceChannel(channelId);
-      setVoiceChannelUsers(data.activeUsers || []);
-      // ⭐ Start a WebRTC mesh audio call with all users in the channel
-      // (limited to ≤5 users for the mesh; an SFU is needed beyond that).
-      // For now we just record the voice state and let the user manage mute/deafen.
-      toast.success(`Rejoint le canal vocal : ${data.channel?.name || 'Voix'}`);
+      setVoiceChannelUsers(joinData.activeUsers || []);
+
+      // 3. Connect to LiveKit if configured, otherwise fall back to mesh
+      if (tokenData.configured && tokenData.token) {
+        try {
+          // Dynamic import — avoids bundling livekit-client if not installed.
+          // If the package is missing, this throws and we fall back to mesh.
+          const { Room, Track } = await import('livekit-client');
+          const room = new Room({ adaptiveStream: true, dynacast: true });
+          await room.connect(tokenData.url, tokenData.token);
+
+          // Publish microphone audio
+          try {
+            await room.localParticipant.setMicrophoneEnabled(true);
+          } catch (micErr: any) {
+            console.warn('Microphone publish failed:', micErr);
+          }
+
+          // Store the room reference for cleanup on leave
+          (window as any)._livekitRoom = room;
+
+          // Listen for participant events to update the UI
+          room.on('participant-connected', () => {
+            setVoiceChannelUsers(prev => [...prev]); // trigger re-render
+          });
+          room.on('participant-disconnected', () => {
+            setVoiceChannelUsers(prev => [...prev]);
+          });
+
+          toast.success(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (LiveKit SFU)`);
+        } catch (livekitErr: any) {
+          console.warn('LiveKit client not available, falling back to mesh:', livekitErr);
+          toast.info(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (mesh WebRTC)`);
+        }
+      } else {
+        toast.info(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (mesh WebRTC)`);
+      }
     } catch (e: any) {
       toast.error("Échec de l'audio : " + e.message);
     }
   }, [currentUserId, socket]);
 
   // ⭐ DISCORD PARITY: Leave the active voice channel.
+  //    Disconnects the LiveKit room (if connected) and calls the REST leave endpoint.
   const leaveVoiceChannel = useCallback(async () => {
     if (!activeVoiceChannel) return;
+    // Disconnect LiveKit room
+    try {
+      const room = (window as any)._livekitRoom;
+      if (room) {
+        await room.disconnect();
+        (window as any)._livekitRoom = null;
+      }
+    } catch { /* ignore */ }
+    // Call REST leave endpoint
     try {
       await fetch(`/api/chat/voice-channels/${activeVoiceChannel}/leave`, {
         method: 'POST',

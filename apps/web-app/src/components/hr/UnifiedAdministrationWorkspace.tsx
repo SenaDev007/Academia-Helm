@@ -750,6 +750,60 @@ export default function UnifiedAdministrationWorkspace() {
     }
   };
 
+  // ── Générer cachet NOMINATIF pour un titulaire de poste ──────────────────
+  // ⭐ Utilise le nouveau moteur de rendu professionnel (effet encre SVG,
+  //    rotation légère, double bordure) — même rendu que les fichiers de
+  //    référence cachet_nominatif_directeur.html et cachet_academia_helm.html.
+  const handleGenerateNominativeStamp = async (staffId: string, adminRole: string, unit: string) => {
+    if (!staffId || !adminRole) {
+      setError('Staff et rôle requis pour générer le cachet nominatif.');
+      return;
+    }
+    setGeneratingStamp(`nominative-${staffId}`);
+    setError(null);
+    try {
+      const staff = staffList.find((s) => s.id === staffId);
+      if (!staff) throw new Error('Staff introuvable');
+      const holderName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
+      if (!holderName) throw new Error('Nom du titulaire introuvable');
+
+      let educationLevelId: string | null = null;
+      if (unit !== 'MAT_PRI') {
+        const unitLevelCode = Object.entries(LEVEL_CODE_TO_UNIT).find(([, u]) => u === unit)?.[0];
+        const level = schoolLevels.find((l) => l.code === unitLevelCode);
+        educationLevelId = level?.id ?? null;
+      }
+
+      // Convertir le code de rôle admin en libellé français lisible
+      const roleLabelMap: Record<string, string> = {
+        DIRECTEUR: 'DIRECTEUR',
+        DIRECTEUR_ADJOINT: 'DIRECTEUR ADJOINT',
+        SECRETAIRE: 'SECRÉTAIRE',
+        SECRETAIRE_COMPTABLE: 'SECRÉTAIRE-COMPTABLE',
+        COMPTABLE: 'COMPTABLE',
+        ECONOME: 'ÉCONOME',
+        INTENDANT: 'INTENDANT',
+        CENSEUR: 'CENSEUR',
+        SURVEILLANT: 'SURVEILLANT',
+        RESP_SCOLARITE: 'RESPONSABLE SCOLARITÉ',
+        AUTRE: 'PERSONNEL ADMINISTRATIF',
+      };
+      const holderRole = roleLabelMap[adminRole] || adminRole;
+
+      const res = await authedFetch('/api/settings/stamps/generate-nominative', {
+        method: 'POST',
+        body: { holderName, holderRole, educationLevelId },
+      });
+      const data = await res.json();
+      setSuccess(`Cachet nominatif généré pour ${holderName} (${holderRole}). URL: ${data.stampUrl}`);
+      return data;
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la génération du cachet nominatif');
+    } finally {
+      setGeneratingStamp(null);
+    }
+  };
+
   // ── Générer signature officielle (modal) ──────────────────────────────────
   const handleGenerateOfficialSignature = async () => {
     if (!form.staffId || !form.adminRole || !modalUnit) {
@@ -1206,6 +1260,22 @@ export default function UnifiedAdministrationWorkspace() {
                                         <FileSignature className="w-3 h-3" />
                                       )}
                                       <span className="hidden md:inline">Signature</span>
+                                    </button>
+                                    {/* ⭐ Cachet nominatif — génère un cachet rectangulaire professionnel
+                                        avec le nom du titulaire + son rôle (effet encre SVG, rotation, double bordure). */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleGenerateNominativeStamp(a.staffId, a.adminRole, group.unit)}
+                                      disabled={generatingStamp === `nominative-${a.staffId}` || !a.staff}
+                                      className="inline-flex items-center gap-1 text-[10px] md:text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                      title="Générer / régénérer le cachet nominatif (nom + rôle) pour ce titulaire"
+                                    >
+                                      {generatingStamp === `nominative-${a.staffId}` ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <Stamp className="w-3 h-3" />
+                                      )}
+                                      <span className="hidden md:inline">Cachet</span>
                                     </button>
                                   </TableCell>
                                   <TableCell className="text-right">

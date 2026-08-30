@@ -236,13 +236,13 @@ export class StampsSignaturesService {
     if (formats.includes('circular')) {
       const circularSvg = this.buildCircularStampSvg(data);
       const circularPath = path.join(stampsDir, 'circular.png');
-      await this.svgToPng(circularSvg, circularPath, 400, 400);
+      await this.svgToPng(circularSvg, circularPath, 700, 700);
       circularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/circular.png`;
     }
     if (formats.includes('rectangular')) {
       const rectangularSvg = this.buildRectangularStampSvg(data);
       const rectangularPath = path.join(stampsDir, 'rectangular.png');
-      await this.svgToPng(rectangularSvg, rectangularPath, 320, 140);
+      await this.svgToPng(rectangularSvg, rectangularPath, 840, 300);
       rectangularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/rectangular.png`;
     }
     if (formats.includes('oval')) {
@@ -308,6 +308,44 @@ export class StampsSignaturesService {
       ovalStampUrl,
       generatedAt: now.toISOString(),
     };
+  }
+
+  /**
+   * ⭐ DISCORD PARITY — Génère un cachet NOMINATIF pour un titulaire de poste.
+   *
+   * Produit un cachet rectangulaire professionnel (effet encre, rotation légère,
+   * double bordure) avec le nom du titulaire (grand) + le rôle (plus petit).
+   * Le PNG est sauvegardé dans uploads/tenant-stamps/<tenantId>/nominative/<role>.png
+   * et l'URL est retournée pour affichage immédiat.
+   *
+   * @param tenantId       Le tenant courant
+   * @param holderName     Nom complet du titulaire (ex: "M. Jean Dupont")
+   * @param holderRole     Rôle/libellé (ex: "DIRECTEUR", "SECRÉTAIRE-COMPTABLE")
+   * @param educationLevelId  Optionnel — niveau scolaire (pour cachets par niveau)
+   */
+  async generateNominativeStamp(
+    tenantId: string,
+    holderName: string,
+    holderRole: string,
+    educationLevelId?: string | null,
+  ): Promise<{ stampUrl: string; generatedAt: string }> {
+    if (!holderName?.trim()) {
+      throw new BadRequestException('Le nom du titulaire est requis pour générer un cachet nominatif.');
+    }
+
+    const cwd = process.cwd();
+    const levelFolder = educationLevelId ?? 'global';
+    const roleSlug = (holderRole || 'role').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const stampsDir = path.join(cwd, STAMPS_DIR, tenantId, levelFolder, 'nominative');
+    await fs.mkdir(stampsDir, { recursive: true });
+
+    const svg = this.buildNominativeStampSvg(holderName, holderRole);
+    const stampPath = path.join(stampsDir, `${roleSlug}.png`);
+    await this.svgToPng(svg, stampPath, 840, 300);
+
+    const stampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/nominative/${roleSlug}.png`;
+    this.logger.log(`Cachet nominatif généré: tenant=${tenantId} role=${roleSlug} name="${holderName}"`);
+    return { stampUrl, generatedAt: new Date().toISOString() };
   }
 
   /**
@@ -444,32 +482,140 @@ export class StampsSignaturesService {
   /** Couleur secondaire (texte secondaire, légèrement plus clair) */
   private static readonly STAMP_RED_SECONDARY = '#c62828';
 
+  /**
+   * ⭐ PROFESSIONAL CIRCULAR STAMP — Ink-stamp rendering (Discord-quality).
+   *
+   * Reproduces the visual approach from the Claude AI reference file
+   * (cachet_academia_helm.html): SVG with feTurbulence + feDisplacementMap
+   * ink effect, slight rotation for hand-stamped feel, 3 concentric circles,
+   * top-arc company name + bottom-arc address via <textPath>, star
+   * decorations at 3 o'clock and 9 o'clock, center logo + subtitle + title.
+   *
+   * The output is a transparent PNG (via Puppeteer screenshot) that looks
+   * like a real red ink stamp — grainy, slightly displaced, semi-transparent.
+   */
   private buildCircularStampSvg(data: IdentityProfileData): string {
-    const name = this.escapeXml(data.schoolName);
+    const companyName = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
+    const addressLine = this.escapeXml([data.city, data.country].filter(Boolean).join(' — '));
+    const subtitle = this.escapeXml(data.schoolAcronym ? data.schoolName : 'ÉTABLISSEMENT');
+    const title = this.escapeXml('SCOLAIRE');
+    const red = StampsSignaturesService.STAMP_RED;
+
+    // 700×700 viewBox — same as the reference file.
+    // Arc paths computed for r=237.20 (top) and r=265.95 (bottom) centered on (350,350).
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700" style="--ink-color:${red};">
+  <defs>
+    <path id="topArcPath" d="M 117.98 300.68 A 237.20 237.20 0 0 1 582.02 300.68" fill="none"/>
+    <path id="bottomArcPath" d="M 86.63 387.01 A 265.95 265.95 0 0 0 613.37 387.01" fill="none"/>
+    <filter id="inkStampEffect" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+      <feComponentTransfer in="displaced" result="grainy">
+        <feFuncA type="discrete" tableValues="0 0.55 0.7 0.8 0.88 0.93 0.97 1 1 1"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="grainy" stdDeviation="0.6" result="softened"/>
+      <feColorMatrix in="softened" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.92 0"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-1.3 350 350)" filter="url(#inkStampEffect)">
+    <circle cx="350" cy="350" r="320" fill="none" stroke="currentColor" stroke-width="12" color="${red}"/>
+    <circle cx="350" cy="350" r="304" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
+    <circle cx="350" cy="350" r="213" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
+    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="60" letter-spacing="2" fill="${red}">
+      <textPath href="#topArcPath" startOffset="50%" text-anchor="middle">${companyName}</textPath>
+    </text>
+    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="21" letter-spacing="1" fill="${red}">
+      <textPath href="#bottomArcPath" startOffset="50%" text-anchor="middle">${addressLine}</textPath>
+    </text>
+    <path d="M 608.50 333.00 L 613.07 345.43 L 625.50 350.00 L 613.07 354.57 L 608.50 367.00 L 603.93 354.57 L 591.50 350.00 L 603.93 345.43 Z" fill="${red}"/>
+    <path d="M 91.50 333.00 L 96.07 345.43 L 108.50 350.00 L 96.07 354.57 L 91.50 367.00 L 86.93 354.57 L 74.50 350.00 L 86.93 345.43 Z" fill="${red}"/>
+    <text x="350" y="364" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${subtitle}</text>
+    <text x="350" y="412" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="38" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${title}</text>
+  </g>
+</svg>`;
+  }
+
+  /**
+   * ⭐ PROFESSIONAL RECTANGULAR (NOMINATIVE) STAMP — Ink-stamp rendering.
+   *
+   * Reproduces the visual approach from cachet_nominatif_directeur.html:
+   * SVG with ink effect, slight rotation, double rounded border, large
+   * holder name + smaller role/title. Used for per-role nominative stamps
+   * (Director, Comptable, Secrétaire, etc.).
+   *
+   * @param holderName  The person's name (e.g. "M. Jean Dupont")
+   * @param holderRole  The person's role label (e.g. "DIRECTEUR")
+   */
+  private buildRectangularStampSvg(data: IdentityProfileData): string {
+    // Institutional rectangular stamp: school name + address + phone + email.
+    const name = this.escapeXml(data.schoolName || 'Établissement');
+    const address = this.escapeXml(data.address || '');
     const city = this.escapeXml(data.city || '');
     const country = this.escapeXml(data.country || '');
-    const line1 = [city, country].filter(Boolean).join(' — ');
-    const line2 = 'ÉTABLISSEMENT SCOLAIRE';
-
-    const size = 400;
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size / 2 - 20;
-    const fontFamily = 'Georgia, "Times New Roman", serif';
-
+    const postalCode = this.escapeXml(data.postalCode || '');
+    const loc = [address, [postalCode, city].filter(Boolean).join(' '), country].filter(Boolean).join(' — ');
+    const phone = [data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ');
+    const email = this.escapeXml(data.email || '');
+    const web = this.escapeXml(data.website || '');
     const red = StampsSignaturesService.STAMP_RED;
-    const redSec = StampsSignaturesService.STAMP_RED_SECONDARY;
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
-    svg += `<rect width="100%" height="100%" fill="none"/>`;
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${red}" stroke-width="3"/>`;
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r - 8}" fill="none" stroke="${red}" stroke-width="1"/>`;
-    svg += this.arcText(cx, cy, r - 18, name, fontFamily, 14, true, red);
-    if (line1) {
-      svg += this.arcText(cx, cy, r - 18, line1, fontFamily, 11, false, redSec);
-    }
-    svg += `<text x="${cx}" y="${cy + 6}" text-anchor="middle" dominant-baseline="middle" font-family="${fontFamily}" font-size="12" font-weight="bold" fill="${red}" letter-spacing="1">${this.escapeXml(line2)}</text>`;
-    svg += '</svg>';
-    return svg;
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 300" style="--ink-color:${red};">
+  <defs>
+    <filter id="inkStampEffect" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="9" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.4" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+      <feComponentTransfer in="displaced" result="grainy">
+        <feFuncA type="discrete" tableValues="0 0.5 0.68 0.8 0.88 0.93 0.97 1 1 1"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="grainy" stdDeviation="0.6" result="softened"/>
+      <feColorMatrix in="softened" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.92 0"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-1 420 150)" filter="url(#inkStampEffect)">
+    <rect x="16" y="16" width="808" height="268" rx="36" fill="none" stroke="${red}" stroke-width="12"/>
+    <rect x="34" y="34" width="772" height="232" rx="26" fill="none" stroke="${red}" stroke-width="5"/>
+    <text x="420" y="110" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="56" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${name}</text>
+    ${loc ? `<text x="420" y="165" font-family="Georgia, 'Times New Roman', serif" font-size="22" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${loc}</text>` : ''}
+    ${(phone || email) ? `<text x="420" y="210" font-family="Georgia, 'Times New Roman', serif" font-size="20" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${this.escapeXml(phone)}${phone && email ? ' • ' : ''}${email}</text>` : ''}
+    ${web ? `<text x="420" y="250" font-family="Georgia, 'Times New Roman', serif" font-size="18" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${web}</text>` : ''}
+  </g>
+</svg>`;
+  }
+
+  /**
+   * ⭐ PROFESSIONAL NOMINATIVE STAMP — Per-holder rectangular stamp.
+   *
+   * Generates a stamp with the holder's NAME (large) + ROLE/TITLE (smaller)
+   * for a specific person (Director, Comptable, Secrétaire, etc.).
+   * Uses the same ink-stamp effect as the institutional stamps.
+   *
+   * @param holderName  e.g. "M. Jean Dupont"
+   * @param holderRole  e.g. "DIRECTEUR" or "SECRÉTAIRE-COMPTABLE"
+   */
+  private buildNominativeStampSvg(holderName: string, holderRole: string): string {
+    const name = this.escapeXml(holderName || 'Nom');
+    const role = this.escapeXml(holderRole || 'FONCTION');
+    const red = StampsSignaturesService.STAMP_RED;
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 300" style="--ink-color:${red};">
+  <defs>
+    <filter id="inkStampEffect" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="9" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.4" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+      <feComponentTransfer in="displaced" result="grainy">
+        <feFuncA type="discrete" tableValues="0 0.5 0.68 0.8 0.88 0.93 0.97 1 1 1"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="grainy" stdDeviation="0.6" result="softened"/>
+      <feColorMatrix in="softened" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.92 0"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-1 420 150)" filter="url(#inkStampEffect)">
+    <rect x="16" y="16" width="808" height="268" rx="36" fill="none" stroke="${red}" stroke-width="12"/>
+    <rect x="34" y="34" width="772" height="232" rx="26" fill="none" stroke="${red}" stroke-width="5"/>
+    <text x="420" y="138" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="82" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${name}</text>
+    <text x="420" y="208" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="32" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="4">${role}</text>
+  </g>
+</svg>`;
   }
 
   private buildOvalStampSvg(data: IdentityProfileData): string {

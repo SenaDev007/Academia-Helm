@@ -40,6 +40,8 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
 import { AutoGroupService } from './services/auto-group.service';
 // ⭐ V3-11: PrismaService — for direct academicYear lookup in auto-groups endpoints
 import { PrismaService } from '../database/prisma.service';
+// ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
+import { LiveKitTokenService } from './services/livekit-token.service';
 // ⭐ NOTE: We DO NOT use `import * as multer from 'multer'` here — it causes
 //    a CommonJS interop crash at runtime ("_multer is not a function")
 //    because multer's `module.exports` is a FUNCTION (not an object with named exports).
@@ -70,6 +72,8 @@ export class ChatController {
     private readonly autoGroupService: AutoGroupService,
     // ⭐ V3-11: PrismaService — for academicYear lookup in auto-groups endpoints
     private readonly prisma: PrismaService,
+    // ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
+    private readonly livekitTokenService: LiveKitTokenService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -1000,6 +1004,42 @@ export class ChatController {
   ) {
     if (!body.userId) throw new BadRequestException('userId is required');
     return this.chatService.deleteVoiceChannel(tenantId, body.userId, channelId);
+  }
+
+  /**
+   * ⭐ DISCORD PARITY — LiveKit token endpoint for voice/stage/live channels.
+   *
+   * Returns a LiveKit access token + server URL that the frontend uses with
+   * `livekit-client` to connect to the SFU. If LiveKit is not configured
+   * (no LIVEKIT_URL / API_KEY / API_SECRET env vars), returns
+   * `{ configured: false, fallbackToMesh: true }` and the frontend falls
+   * back to the existing mesh WebRTC implementation (≤5 participants).
+   *
+   * For STAGE channels, non-broadcasters get a subscribe-only token.
+   */
+  @Post('voice-channels/:id/token')
+  async getVoiceChannelToken(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string; isBroadcaster?: boolean },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    // Verify the channel exists and get its type (VOICE/STAGE/GO_LIVE)
+    const channels: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT type FROM "chat_voice_channels" WHERE id = $1 AND "tenantId" = $2
+    `, channelId, tenantId);
+    if (channels.length === 0) throw new BadRequestException('Voice channel not found');
+    const channelType: string = channels[0].type;
+
+    // For STAGE channels, only the broadcaster can publish; listeners subscribe only
+    const isBroadcaster = channelType === 'STAGE' ? (body.isBroadcaster ?? false) : true;
+
+    return this.livekitTokenService.mintToken(body.userId, channelId, {
+      canPublish: isBroadcaster,
+      canSubscribe: true,
+      canPublishData: isBroadcaster,
+      isBroadcaster,
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════

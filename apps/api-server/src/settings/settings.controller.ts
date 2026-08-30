@@ -946,6 +946,39 @@ export class SettingsController {
     );
   }
 
+  /**
+   * ⭐ DISCORD PARITY — Génère un cachet NOMINATIF pour un titulaire de poste.
+   *
+   * Body: { holderName, holderRole, educationLevelId? }
+   * Returns: { stampUrl, generatedAt }
+   *
+   * Le cachet nominatif est un tampon rectangulaire professionnel (effet encre,
+   * rotation légère, double bordure) avec le nom du titulaire (grand) + le
+   * rôle/libellé (plus petit). Sauvegardé en PNG dans le dossier tenant-stamps.
+   */
+  @Post('stamps/generate-nominative')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async generateNominativeStamp(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: { holderName: string; holderRole: string; educationLevelId?: string | null },
+  ) {
+    if (!body?.holderName?.trim()) {
+      throw new BadRequestException('holderName est requis');
+    }
+    if (!body?.holderRole?.trim()) {
+      throw new BadRequestException('holderRole est requis');
+    }
+    return this.stampsSignaturesService.generateNominativeStamp(
+      this.resolveTid(tenantId, user, req),
+      body.holderName,
+      body.holderRole,
+      body.educationLevelId ?? null,
+    );
+  }
+
   @Get('stamps/asset')
   @UseGuards(PermissionGuard)
   @RequirePermission('PARAMETRES', 'read')

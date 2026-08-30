@@ -68,6 +68,8 @@ import { ChatSummaryService } from './services/chat-summary.service';
 import { ChatTranscriptionService } from './services/chat-transcription.service';
 // ⭐ V3-11: Auto-groups (Communautés) auto-creation per academic year
 import { AutoGroupService } from './services/auto-group.service';
+// ⭐ LiveKit SFU — Discord-style voice/stage/live channels
+import { LiveKitTokenService } from './services/livekit-token.service';
 
 @Module({
   imports: [
@@ -159,6 +161,8 @@ import { AutoGroupService } from './services/auto-group.service';
     ChatTranscriptionService,
     // ⭐ V3-11 — Auto-groups (Communautés) auto-creation per academic year
     AutoGroupService,
+    // ⭐ LiveKit SFU — Discord-style voice/stage/live channels (token minting)
+    LiveKitTokenService,
   ],
   exports: [
     EmailService,

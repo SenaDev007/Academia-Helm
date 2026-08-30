@@ -40,7 +40,9 @@ const ROLE_LEVEL_SCOPES: Record<string, string[]> = {
   'TEACHING_ASSISTANT': ['MATERNELLE'],
   'ACTIVITIES_MANAGER': ['PRIMAIRE'],
   'CENSOR': ['SECONDAIRE'],
+  'CENSEUR': ['SECONDAIRE'], // alias français
   'GENERAL_MONITOR': ['SECONDAIRE'],
+  'SURVEILLANT_GENERAL': ['SECONDAIRE'], // alias français
   'ORIENTATION_MANAGER': ['SECONDAIRE'],
 
   // Nouveaux rôles Phase 2 — Directeurs par niveau
@@ -48,18 +50,28 @@ const ROLE_LEVEL_SCOPES: Record<string, string[]> = {
   'DIRECTEUR_PRIMAIRE': ['PRIMAIRE'],
   'DIRECTEUR_SECONDAIRE': ['SECONDAIRE'],
   'DIRECTEUR_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'], // Mode FUSED
+  'DIRECTEUR': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
 
   // Secrétaires par niveau
   'SECRETAIRE_MATERNELLE': ['MATERNELLE'],
   'SECRETAIRE_PRIMAIRE': ['PRIMAIRE'],
   'SECRETAIRE_SECONDAIRE': ['SECONDAIRE'],
   'SECRETAIRE_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'],
+  'SECRETAIRE': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
 
   // Secrétaires comptables par niveau
   'SECRETAIRE_COMPTABLE_MATERNELLE': ['MATERNELLE'],
   'SECRETAIRE_COMPTABLE_PRIMAIRE': ['PRIMAIRE'],
   'SECRETAIRE_COMPTABLE_SECONDAIRE': ['SECONDAIRE'],
   'SECRETAIRE_COMPTABLE_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'],
+  'SECRETAIRE_COMPTABLE': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
+
+  // Comptable et Économe par niveau (si assigné à un niveau spécifique)
+  'COMPTABLE': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
+  'ECONOME': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
+
+  // Surveillant par niveau
+  'SURVEILLANT': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
 };
 
 // Rôles qui ont accès à TOUS les niveaux (pas de restriction)
@@ -68,13 +80,15 @@ const ALL_LEVEL_ROLES = new Set([
   'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL',
   'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN',
   // Rôles transverses (HR, Finance, Communication, etc.)
-  'HR_MANAGER', 'PAYROLL_MANAGER', 'ACCOUNTANT', 'CASHIER', 'CFO',
+  'HR_MANAGER', 'PAYROLL_MANAGER', 'CFO',
   'FINANCE_MANAGER', 'RECOVERY_MANAGER', 'PEDAGOGIC_DIRECTOR',
   'SCHOOL_LIFE_MANAGER', 'COMMUNICATION_MANAGER', 'IT_MANAGER',
   'LIBRARIAN', 'CANTEEN_MANAGER', 'TRANSPORT_MANAGER', 'BOARDING_MANAGER',
   'HEALTH_MANAGER', 'SECURITY_MANAGER', 'SETTINGS_MANAGER',
-  'RESP_SCOLARITE', 'DATA_MANAGER', 'INTERNAL_AUDITOR',
+  'DATA_MANAGER', 'INTERNAL_AUDITOR',
   'EXAM_MANAGER', 'MONITOR', 'ADMIN_AGENT',
+  'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+  'SUPER_DIRECTOR', 'admin',
 ]);
 
 @Injectable()

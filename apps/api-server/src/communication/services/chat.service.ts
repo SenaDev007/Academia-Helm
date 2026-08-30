@@ -26,6 +26,7 @@ import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { ParentUserProvisioningService } from '../../students/services/parent-user-provisioning.service';
+import { ChatGateway } from '../chat.gateway';
 import { randomUUID } from 'crypto';
 
 export interface ChatConversation {
@@ -104,6 +105,9 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly parentUserProvisioningService: ParentUserProvisioningService,
+    // ⭐ ChatGateway injected for real-time broadcast (message:new, mention:new).
+    //    Same module — no circular dependency (ChatGateway only depends on JwtService).
+    private readonly chatGateway: ChatGateway,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -539,7 +543,7 @@ export class ChatService {
     tenantId: string,
     senderId: string,
     conversationId: string,
-    data: { content: string; replyToId?: string },
+    data: { content: string; replyToId?: string; mentionedUserIds?: string[] },
   ): Promise<ChatMessage> {
     await this.getConversation(tenantId, senderId, conversationId);
 
@@ -547,11 +551,18 @@ export class ChatService {
       throw new BadRequestException('Message content cannot be empty');
     }
 
+    // ⭐ MENTIONS: persist mentioned user IDs as a JSON array in the `mentions` column.
+    //    The column was added by migration 20260901140000_fill_all_gaps.
+    //    We store as TEXT (JSON) so it survives on Postgres without array column type.
+    const mentionsJson = (data.mentionedUserIds && data.mentionedUserIds.length > 0)
+      ? JSON.stringify(data.mentionedUserIds)
+      : null;
+
     const msgId = randomUUID();
     await this.prisma.$executeRawUnsafe(`
-      INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "replyToId", "createdAt")
-      VALUES ($1, $2, $3, 'TEXT', $4, $5, NOW())
-    `, msgId, conversationId, senderId, data.content.trim(), data.replyToId || null);
+      INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "replyToId", "mentions", "createdAt")
+      VALUES ($1, $2, $3, 'TEXT', $4, $5, $6, NOW())
+    `, msgId, conversationId, senderId, data.content.trim(), data.replyToId || null, mentionsJson);
 
     // Mettre à jour la conversation (lastMessageAt + preview)
     const preview = data.content.length > 60 ? data.content.substring(0, 60) + '…' : data.content;
@@ -566,6 +577,49 @@ export class ChatService {
 
     // Marquer comme lu par l'expéditeur
     await this.markAsRead(tenantId, senderId, conversationId);
+
+    // ⭐ MENTIONS: Broadcast the new message via Socket.io so mentioned users
+    //    (and all participants) receive it in real-time. The gateway emits
+    //    'message:new' to the conversation room AND 'inbox:new' to each
+    //    participant's personal room (for unread badge updates).
+    //    Mentioned users get an additional 'mention:new' event so the frontend
+    //    can show a distinct "@you" notification.
+    try {
+      // Récupérer les IDs de tous les participants pour le broadcast
+      const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "userId" FROM "chat_participants"
+        WHERE "conversationId" = $1 AND "leftAt" IS NULL
+      `, conversationId);
+      const participantIds = participants.map(p => p.userId);
+
+      this.chatGateway?.broadcastNewMessage(conversationId, {
+        id: msgId,
+        conversationId,
+        senderId,
+        type: 'TEXT',
+        content: data.content,
+        replyToId: data.replyToId || null,
+        mentions: data.mentionedUserIds || [],
+        createdAt: new Date().toISOString(),
+      }, participantIds);
+
+      // ⭐ MENTIONS: emit a dedicated 'mention:new' event to mentioned users
+      //    so the frontend can show a distinct notification (e.g. "@you" badge).
+      if (data.mentionedUserIds && data.mentionedUserIds.length > 0 && this.chatGateway?.server) {
+        for (const mentionedUserId of data.mentionedUserIds) {
+          if (mentionedUserId !== senderId) {
+            this.chatGateway.server.to(`user:${mentionedUserId}`).emit('mention:new', {
+              conversationId,
+              messageId: msgId,
+              senderId,
+              content: data.content.substring(0, 100),
+            });
+          }
+        }
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`Failed to broadcast new message via Socket.io: ${e.message}`);
+    }
 
     return (await this.listMessages(tenantId, senderId, conversationId, { limit: 1 }))[0];
   }
@@ -726,24 +780,47 @@ export class ChatService {
       LIMIT 1
     `, messageId, userId, emoji);
 
+    let action: 'added' | 'removed';
     if (existing.length > 0) {
       // Remove existing reaction (toggle off)
       await this.prisma.$executeRawUnsafe(`
         DELETE FROM chat_message_reactions
         WHERE "messageId" = $1 AND "userId" = $2 AND emoji = $3
       `, messageId, userId, emoji);
-      const count = await this.getReactionCount(messageId, emoji);
-      return { messageId, emoji, action: 'removed', count };
+      action = 'removed';
+    } else {
+      // Add new reaction
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO chat_message_reactions ("id", "messageId", "userId", "emoji", "createdAt")
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT ON CONSTRAINT "chat_message_reactions_message_user_emoji_idx" DO NOTHING
+      `, randomUUID(), messageId, userId, emoji);
+      action = 'added';
+    }
+    const count = await this.getReactionCount(messageId, emoji);
+
+    // ⭐ REACTIONS: Broadcast the reaction change via Socket.io so all
+    //    participants see reactions appear/disappear in real-time without
+    //    needing to reload the conversation.
+    try {
+      const msgRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT "conversationId" FROM "chat_messages" WHERE id = $1
+      `, messageId);
+      const conversationId = msgRow[0]?.conversationId;
+      if (conversationId && this.chatGateway?.server) {
+        this.chatGateway.server.to(`conv:${conversationId}`).emit('reaction:toggle', {
+          messageId,
+          emoji,
+          userId,
+          action,
+          count,
+        });
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`Failed to broadcast reaction via Socket.io: ${e.message}`);
     }
 
-    // Add new reaction
-    await this.prisma.$executeRawUnsafe(`
-      INSERT INTO chat_message_reactions ("id", "messageId", "userId", "emoji", "createdAt")
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT ON CONSTRAINT "chat_message_reactions_message_user_emoji_idx" DO NOTHING
-    `, randomUUID(), messageId, userId, emoji);
-    const count = await this.getReactionCount(messageId, emoji);
-    return { messageId, emoji, action: 'added', count };
+    return { messageId, emoji, action, count };
   }
 
   private async getReactionCount(messageId: string, emoji: string): Promise<number> {
@@ -766,7 +843,7 @@ export class ChatService {
   ): Promise<{ id: string; content: string; editedAt: string }> {
     // Verify the user is the sender
     const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT id, "senderId" FROM chat_messages WHERE id = $1
+      SELECT id, "senderId", "conversationId" FROM chat_messages WHERE id = $1
     `, messageId);
     if (msg.length === 0) throw new NotFoundException('Message not found');
     if (msg[0].senderId !== userId) throw new ForbiddenException('Only the sender can edit this message');
@@ -775,7 +852,24 @@ export class ChatService {
       UPDATE chat_messages SET content = $1, "editedAt" = NOW() WHERE id = $2
     `, content, messageId);
 
-    return { id: messageId, content, editedAt: new Date().toISOString() };
+    const editedAt = new Date().toISOString();
+
+    // ⭐ MESSAGE EDIT: Broadcast the edit via Socket.io so all participants
+    //    see the updated content in real-time without needing to reload.
+    try {
+      const conversationId = msg[0]?.conversationId;
+      if (conversationId && this.chatGateway?.server) {
+        this.chatGateway.server.to(`conv:${conversationId}`).emit('message:edited', {
+          messageId,
+          content,
+          editedAt,
+        });
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`Failed to broadcast message edit via Socket.io: ${e.message}`);
+    }
+
+    return { id: messageId, content, editedAt };
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -1026,6 +1120,18 @@ export class ChatService {
       SET "deletedAt" = NOW()
       WHERE "id" = $1
     `, messageId);
+
+    // ⭐ MESSAGE DELETE: Broadcast the deletion via Socket.io so all
+    //    participants see the message disappear in real-time.
+    try {
+      if (this.chatGateway?.server) {
+        this.chatGateway.server.to(`conv:${conversationId}`).emit('message:deleted', {
+          messageId,
+        });
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`Failed to broadcast message deletion via Socket.io: ${e.message}`);
+    }
 
     return { success: true };
   }

@@ -33,18 +33,26 @@ interface UseChatSocketOptions {
   onUserOnline?: (userId: string) => void;
   /** Callback quand un utilisateur passe hors ligne */
   onUserOffline?: (userId: string) => void;
+  /** ⭐ MENTIONS: Callback quand l'utilisateur courant est mentionné dans un message */
+  onMention?: (data: { conversationId: string; messageId: string; senderId: string; content: string }) => void;
+  /** ⭐ MESSAGE EDIT: Callback quand un message a été édité (pour rafraîchir l'affichage) */
+  onMessageEdited?: (data: { messageId: string; content: string; editedAt: string }) => void;
+  /** ⭐ MESSAGE DELETE: Callback quand un message a été supprimé */
+  onMessageDeleted?: (data: { messageId: string }) => void;
+  /** ⭐ REACTION: Callback quand une réaction a été ajoutée/supprimée */
+  onReaction?: (data: { messageId: string; emoji: string; userId: string; action: 'added' | 'removed'; count: number }) => void;
 }
 
 export function useChatSocket(options: UseChatSocketOptions) {
-  const { token, userId, onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline } = options;
+  const { token, userId, onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline, onMention, onMessageEdited, onMessageDeleted, onReaction } = options;
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   // ⭐ Pending listeners — queued when socket isn't ready yet, applied on connect
   const pendingListenersRef = useRef<Array<{ event: string; listener: any }>>([]);
 
   // ⭐ Stable refs for callbacks
-  const callbacksRef = useRef({ onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline });
-  callbacksRef.current = { onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline };
+  const callbacksRef = useRef({ onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline, onMention, onMessageEdited, onMessageDeleted, onReaction });
+  callbacksRef.current = { onNewMessage, onTypingStart, onTypingStop, onUserOnline, onUserOffline, onMention, onMessageEdited, onMessageDeleted, onReaction };
 
   useEffect(() => {
     if (!token || !userId) return;
@@ -100,6 +108,26 @@ export function useChatSocket(options: UseChatSocketOptions) {
 
     socket.on('user:offline', (data: { userId: string }) => {
       callbacksRef.current.onUserOffline?.(data.userId);
+    });
+
+    // ⭐ MENTIONS: notified when the current user is @mentioned in a message
+    socket.on('mention:new', (data: { conversationId: string; messageId: string; senderId: string; content: string }) => {
+      callbacksRef.current.onMention?.(data);
+    });
+
+    // ⭐ MESSAGE EDIT: a message was edited — refresh the UI
+    socket.on('message:edited', (data: { messageId: string; content: string; editedAt: string }) => {
+      callbacksRef.current.onMessageEdited?.(data);
+    });
+
+    // ⭐ MESSAGE DELETE: a message was deleted — remove from UI
+    socket.on('message:deleted', (data: { messageId: string }) => {
+      callbacksRef.current.onMessageDeleted?.(data);
+    });
+
+    // ⭐ REACTION: a reaction was added/removed — update the UI
+    socket.on('reaction:toggle', (data: { messageId: string; emoji: string; userId: string; action: 'added' | 'removed'; count: number }) => {
+      callbacksRef.current.onReaction?.(data);
     });
 
     return () => {

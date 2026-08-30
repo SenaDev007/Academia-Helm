@@ -28,7 +28,8 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, Wallet, Plus, X, Trash2
+  Pencil, CopyPlus, Layers, Wallet, Plus, X, Trash2,
+  GitMerge, Split, Info
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import StampDesigner from '@/components/settings/StampDesigner';
@@ -37,6 +38,7 @@ import { PaymentsSettingsSection } from '@/components/settings/fedapay/PaymentsS
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import { pedagogyService } from '@/services/pedagogy.service';
+import { useAdminStructureMode } from '@/hooks/useAdminStructureMode';
 import {
   SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT,
   SETTINGS_BILINGUAL_UPDATED_EVENT,
@@ -218,6 +220,10 @@ export default function SettingsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, tenant } = useAppSession();
+  // ⭐ Mode d'administration scolaire (SEPARATE | FUSED_MATERNELLE_PRIMAIRE)
+  //    Exposé dans l'onglet Structure pour permettre à l'école de fusionner
+  //    l'administration Maternelle + Primaire.
+  const adminStructure = useAdminStructureMode();
   const urlTenantId = searchParams.get('tenant_id');
   /** Rôles pouvant cibler un autre tenant (query) ou retomber sur le tenant du JWT */
   const isCrossTenantRole =
@@ -3403,6 +3409,127 @@ export default function SettingsPage() {
         const showSeriesReminderBulk = !!selectedGradeForBulk && isSecondCycleSecondary(selectedGradeForBulk);
         return (
           <div className="space-y-6">
+            {/* ═══════════════════════════════════════════════════════════════
+                ⭐ MODE D'ADMINISTRATION — Fusion Maternelle + Primaire
+                Toggle pour notifier au système que les niveaux Maternelle et
+                Primaire sont fusionnés (même staff gère les 2 niveaux).
+                Ce mode est consommé par :
+                  - SchoolLevelSelector (affiche "Maternelle + Primaire" groupé)
+                  - UnifiedAdministrationWorkspace (HR — filtre par levelIds)
+                  - LevelScopeGuard (backend — étend l'accès MAT↔PRI)
+                  - StaffAdminAssignment (valide le code MAT_PRI)
+                Secondaire reste TOUJOURS séparé.
+                ═══════════════════════════════════════════════════════════════ */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-1">
+                <GitMerge className="w-5 h-5 text-amber-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Mode d'administration</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Définissez comment l'administration de votre école est organisée. Ce choix affecte le sélecteur de niveau, le module RH (affectation du personnel) et les permissions d'accès aux données.
+              </p>
+
+              {adminStructure.loading && (
+                <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Chargement du mode d'administration…
+                </div>
+              )}
+
+              {adminStructure.error && (
+                <div className="flex items-start gap-2 p-3 mb-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>{adminStructure.error}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                {/* Option SEPARATE */}
+                <button
+                  type="button"
+                  onClick={() => adminStructure.setMode('SEPARATE').catch(() => {})}
+                  disabled={adminStructure.loading || adminStructure.mode === 'SEPARATE'}
+                  className={`text-left p-4 rounded-lg border-2 transition relative ${
+                    adminStructure.mode === 'SEPARATE'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  } ${adminStructure.loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Split className={`w-6 h-6 flex-shrink-0 ${adminStructure.mode === 'SEPARATE' ? 'text-blue-600' : 'text-gray-400'}`} />
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900 mb-1">Niveaux séparés</div>
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        Chaque niveau (Maternelle, Primaire, Secondaire) a sa propre administration : directeur, secrétaire, secrétaire-comptable, etc.
+                      </p>
+                    </div>
+                  </div>
+                  {adminStructure.mode === 'SEPARATE' && (
+                    <CheckCircle className="absolute top-3 right-3 w-5 h-5 text-blue-600" />
+                  )}
+                </button>
+
+                {/* Option FUSED_MATERNELLE_PRIMAIRE */}
+                <button
+                  type="button"
+                  onClick={() => adminStructure.setMode('FUSED_MATERNELLE_PRIMAIRE').catch(() => {})}
+                  disabled={adminStructure.loading || adminStructure.mode === 'FUSED_MATERNELLE_PRIMAIRE'}
+                  className={`text-left p-4 rounded-lg border-2 transition relative ${
+                    adminStructure.mode === 'FUSED_MATERNELLE_PRIMAIRE'
+                      ? 'border-amber-500 bg-amber-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
+                  } ${adminStructure.loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <GitMerge className={`w-6 h-6 flex-shrink-0 ${adminStructure.mode === 'FUSED_MATERNELLE_PRIMAIRE' ? 'text-amber-600' : 'text-gray-400'}`} />
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900 mb-1">
+                        Maternelle + Primaire fusionnés
+                      </div>
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        Un même staff (directeur, secrétaire, secrétaire-comptable…) gère simultanément la Maternelle ET le Primaire. Le Secondaire reste toujours séparé.
+                      </p>
+                    </div>
+                  </div>
+                  {adminStructure.mode === 'FUSED_MATERNELLE_PRIMAIRE' && (
+                    <CheckCircle className="absolute top-3 right-3 w-5 h-5 text-amber-600" />
+                  )}
+                </button>
+              </div>
+
+              {/* Info banner */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-800">
+                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold mb-1">Aperçu des unités administratives</p>
+                  {adminStructure.groups.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {adminStructure.groups.map((g) => (
+                        <span
+                          key={g.unit}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                            g.unit === 'MAT_PRI'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : g.unit === 'SEC'
+                              ? 'bg-violet-100 text-violet-800 border border-violet-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {g.unit === 'MAT_PRI' && <GitMerge className="w-3 h-3" />}
+                          {g.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-500">Aucune unité configurée — initialisez d'abord la structure pédagogique ci-dessous.</p>
+                  )}
+                  <p className="mt-2 text-slate-600">
+                    Le sélecteur de niveau (en haut de chaque module) affichera automatiquement « Maternelle + Primaire » groupé lorsque le mode fusionné est actif.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">Structure pédagogique</h3>
               <p className="text-sm text-gray-600 mb-2">

@@ -249,7 +249,7 @@ export class ChatController {
   async sendTextMessage(
     @TenantId() tenantId: string,
     @Param('id') conversationId: string,
-    @Body() body: { senderId: string; content: string; replyToId?: string },
+    @Body() body: { senderId: string; content: string; replyToId?: string; mentionedUserIds?: string[] },
   ) {
     if (!body.senderId || !body.content) {
       throw new BadRequestException('senderId and content are required');

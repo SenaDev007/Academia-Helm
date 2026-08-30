@@ -3,6 +3,7 @@ import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { json, urlencoded, static as expressStatic } from 'express';
 import { join } from 'path';
 import helmet from 'helmet';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { PrismaService } from './database/prisma.service';
@@ -104,6 +105,15 @@ async function bootstrap() {
   });
 
   app.useGlobalFilters(new PrismaExceptionFilter());
+
+  // ⭐ CRITICAL: Socket.io adapter — required for @WebSocketGateway to work.
+  //    Without this, NestJS defaults to the WsAdapter (raw `ws` package) which
+  //    is INCOMPATIBLE with Socket.io gateways. The ChatGateway (Helm Connect
+  //    real-time messaging) would silently fail — clients would fall back to
+  //    HTTP polling (every 5s) and never receive push events.
+  //    This is what powers: message:new, typing:start/stop, user:online/offline,
+  //    call:offer/answer/ice-candidate/reject/hangup, group-call:invite/leave.
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   app.useGlobalPipes(
     new ValidationPipe({

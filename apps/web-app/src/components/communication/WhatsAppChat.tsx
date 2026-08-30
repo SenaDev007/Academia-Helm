@@ -30,6 +30,7 @@ import {
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
+  ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -165,6 +166,63 @@ function formatDateSeparator(dateStr: string): string {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+/**
+ * ⭐ MENTIONS — Highlight @username patterns in message HTML content.
+ *
+ * The message content is stored as HTML (from RichTextEditor). We need to
+ * highlight @mentions WITHOUT breaking existing HTML tags. Approach:
+ *   1. Split the HTML into tag and text segments using a regex that matches
+ *      either an HTML tag OR plain text.
+ *   2. Only transform @mentions in TEXT segments (not inside tags).
+ *   3. Wrap @FirstName (alphanumeric, 2-30 chars) in a styled <span>.
+ *
+ * This is safe because we never modify the actual HTML structure — we only
+ * inject <span> elements around text that follows @.
+ *
+ * @param html The message content as HTML
+ * @returns HTML with @mentions wrapped in highlight spans
+ */
+function highlightMentions(html: string): string {
+  if (!html || !html.includes('@')) return html;
+  // Split into HTML tags and text content
+  // Example: "Hi <b>@John</b> how are you" → ["Hi ", "<b>", "@John", "</b>", " how are you"]
+  const parts = html.split(/(<[^>]+>)/);
+  return parts.map(part => {
+    // Skip HTML tags (start with <)
+    if (part.startsWith('<')) return part;
+    // Transform @mentions in text segments
+    // Match @FirstName or @first_last (2-30 chars after @, word boundary)
+    return part.replace(
+      /@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9_\-']{1,29})/g,
+      '<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">@$1</span>'
+    );
+  }).join('');
+}
+
+/**
+ * ⭐ MENTIONS — Extract mentioned user IDs from message content.
+ *
+ * Given the message HTML and the conversation participants, find which
+ * participants are mentioned (their firstName or lastName appears after @).
+ * Returns an array of userIds for push notification targeting.
+ */
+function extractMentionedUserIds(html: string, participants: { userId: string; firstName?: string; lastName?: string }[], currentUserId: string): string[] {
+  if (!html || !html.includes('@')) return [];
+  const text = html.replace(/<[^>]*>/g, ''); // strip HTML tags
+  const mentioned = new Set<string>();
+  for (const p of participants) {
+    if (!p.userId || p.userId === currentUserId) continue;
+    const firstName = (p.firstName || '').trim();
+    const lastName = (p.lastName || '').trim();
+    if (firstName && text.includes(`@${firstName}`)) {
+      mentioned.add(p.userId);
+    } else if (lastName && text.includes(`@${lastName}`)) {
+      mentioned.add(p.userId);
+    }
+  }
+  return Array.from(mentioned);
+}
+
 function getConversationDisplay(conv: ChatConversation, currentUserId: string): {
   name: string;
   subtitle?: string;
@@ -241,6 +299,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [sending, setSending] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // ⭐ PAGINATION — "Load more" older messages (Discord-like)
+  //    Backend supports ?before=<messageId>&limit=50 cursor pagination.
+  //    hasMore=false when the backend returns fewer than `limit` messages
+  //    (meaning we've reached the beginning of the conversation).
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // ⭐ DRAG & DROP — file upload by dragging files onto the chat area
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // ⭐ MENTIONS — @user autocomplete state
+  //    When the user types @, we show a popover with matching participants.
+  //    Selecting a participant inserts @FirstName into the message and
+  //    records the mention so the backend can send a push notification.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStartPos, setMentionStartPos] = useState<number>(-1);
 
   // ⭐ ROLE-BASED CATEGORY FILTER (Tout / Enseignants / Parents / Administration)
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -733,6 +808,46 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     onUserOffline: useCallback((userId: string) => {
       setOnlineUsers(prev => { const n = new Set(prev); n.delete(userId); return n; });
     }, []),
+    // ⭐ MENTIONS: show a toast when the current user is @mentioned
+    onMention: useCallback((data: { conversationId: string; messageId: string; senderId: string; content: string }) => {
+      // Strip HTML for the toast preview
+      const textPreview = (data.content || '').replace(/<[^>]*>/g, '').substring(0, 60);
+      toast.info(`Vous avez été mentionné : ${textPreview}${data.content.length > 60 ? '…' : ''}`, {
+        action: data.conversationId !== activeConvId ? {
+          label: 'Ouvrir',
+          onClick: () => setActiveConvId(data.conversationId),
+        } : undefined,
+      });
+    }, [activeConvId]),
+    // ⭐ MESSAGE EDIT: update the message in the UI in real-time
+    onMessageEdited: useCallback((data: { messageId: string; content: string; editedAt: string }) => {
+      setMessages(prev => prev.map(m =>
+        m.id === data.messageId
+          ? { ...m, content: data.content, editedAt: data.editedAt } as any
+          : m
+      ));
+    }, []),
+    // ⭐ MESSAGE DELETE: remove the message from the UI in real-time
+    onMessageDeleted: useCallback((data: { messageId: string }) => {
+      setMessages(prev => prev.filter(m => m.id !== data.messageId));
+    }, []),
+    // ⭐ REACTION: update the reactions on a message in real-time
+    onReaction: useCallback((data: { messageId: string; emoji: string; userId: string; action: 'added' | 'removed'; count: number }) => {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== data.messageId) return m;
+        const reactions = Array.isArray((m as any).reactions) ? [...(m as any).reactions] : [];
+        if (data.action === 'added') {
+          // Add if not already present
+          if (!reactions.some(r => r.emoji === data.emoji && r.userId === data.userId)) {
+            reactions.push({ emoji: data.emoji, userId: data.userId });
+          }
+        } else {
+          // Remove
+          return { ...m, reactions: reactions.filter(r => !(r.emoji === data.emoji && r.userId === data.userId)) } as any;
+        }
+        return { ...m, reactions } as any;
+      }));
+    }, []),
   });
 
   // ⭐ FIX: Remote stream ref — stores the remote MediaStream so we can re-attach it
@@ -921,6 +1036,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const loadMessages = useCallback(async () => {
     if (!activeConvId) return;
 
+    // ⭐ PAGINATION: reset hasMore on every fresh load (switching conv or refresh)
+    setHasMoreMessages(true);
+
     // ⭐ V3-1: Lire le cache IndexedDB d'abord (affichage instantané)
     if (isOfflineStoreAvailable()) {
       try {
@@ -949,6 +1067,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         return true;
       });
       setMessages(unique);
+      // ⭐ PAGINATION: if backend returned fewer than 100 messages,
+      //    we've reached the beginning of the conversation history.
+      setHasMoreMessages(unique.length >= 100);
 
       // ⭐ V3-1: Sauvegarder dans le cache offline (bulk)
       if (isOfflineStoreAvailable() && unique.length > 0) {
@@ -980,6 +1101,54 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       setLoadingMsgs(false);
     }
   }, [activeConvId, currentUserId]);
+
+  // ⭐ PAGINATION — Load older messages (Discord-like "Load more" button at top)
+  //    Uses the backend's ?before=<messageId> cursor to fetch messages older
+  //    than the current oldest one. Preserves scroll position so the user
+  //    doesn't get yanked to a different position.
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeConvId || loadingMore || !hasMoreMessages) return;
+    const oldestMessage = messages[0];
+    if (!oldestMessage) return;
+
+    setLoadingMore(true);
+    // Save current scroll height to restore position after prepending
+    const container = messagesContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+
+    try {
+      const res = await fetch(
+        `/api/chat/conversations/${activeConvId}/messages?userId=${currentUserId}&limit=50&before=${oldestMessage.id}`,
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Failed to load older messages');
+      const older = await res.json();
+      if (Array.isArray(older) && older.length > 0) {
+        // Deduplicate against current messages
+        const existingIds = new Set(messages.map(m => m.id));
+        const newOnes = older.filter((m: ChatMessage) => !existingIds.has(m.id));
+        if (newOnes.length > 0) {
+          setMessages(prev => [...newOnes, ...prev]);
+        }
+        // If backend returned fewer than 50, we've reached the beginning
+        setHasMoreMessages(older.length >= 50);
+      } else {
+        // No older messages — we've reached the beginning
+        setHasMoreMessages(false);
+      }
+      // Restore scroll position (after React re-renders)
+      requestAnimationFrame(() => {
+        if (container) {
+          const newScrollHeight = container.scrollHeight;
+          container.scrollTop = newScrollHeight - prevScrollHeight;
+        }
+      });
+    } catch (e: any) {
+      console.error('loadOlderMessages:', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeConvId, currentUserId, messages, loadingMore, hasMoreMessages]);
 
   useEffect(() => {
     loadConversations();
@@ -1402,6 +1571,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     prevMessagesLengthRef.current = 0;
     lastScrolledHeightRef.current = 0;
     userScrolledAwayRef.current = false;
+    // ⭐ Reset mention popover when switching conversations
+    setMentionQuery(null);
+    setMentionStartPos(-1);
   }, [activeConvId]);
 
   // ⭐ V3-11: Scroll the messages container to the bottom (NOT the page).
@@ -1617,6 +1789,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
 
     try {
+      // ⭐ MENTIONS: extract mentioned user IDs from the message content
+      //    so the backend can send push notifications to mentioned users.
+      const mentionedUserIds = activeConv
+        ? extractMentionedUserIds(content, activeConv.participants as any, currentUserId)
+        : [];
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1624,6 +1801,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           senderId: currentUserId,
           content,
           ...(replyToId ? { replyToId } : {}),
+          ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
         }),
         credentials: 'include',
       });
@@ -2490,6 +2668,64 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // ⭐ DRAG & DROP — Upload files dropped onto the chat area (Discord-like)
+  //    Supports images, audio, and documents. Auto-detects the type from
+  //    the file's MIME type. Multiple files are uploaded sequentially.
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (!activeConvId || isReadOnly) return;
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+    files.forEach(file => {
+      const mime = file.type;
+      let type: 'AUDIO' | 'DOCUMENT' | 'IMAGE' = 'DOCUMENT';
+      if (mime.startsWith('audio/')) type = 'AUDIO';
+      else if (mime.startsWith('image/')) type = 'IMAGE';
+      handleSendAttachment(file, type);
+    });
+  }, [activeConvId, isReadOnly, handleSendAttachment]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types?.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only hide the overlay if we're leaving the container entirely
+    // (not entering a child element). relatedTarget is null when leaving
+    // the browser window, and is a child element when moving between
+    // children. We check if the relatedTarget is still inside the container.
+    const container = e.currentTarget as HTMLElement;
+    if (e.relatedTarget && container.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    setIsDragOver(false);
+  }, []);
+
+  // ⭐ PASTE IMAGE — Upload images pasted from clipboard (Ctrl+V / Cmd+V)
+  //    Supports pasted screenshots (image/png) and copied image files.
+  //    Attached to the main chat container so it works regardless of focus.
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    if (!activeConvId || isReadOnly) return;
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItems = items.filter(item => item.type.startsWith('image/'));
+    if (imageItems.length === 0) return; // Let normal paste happen for text
+    e.preventDefault();
+    imageItems.forEach(item => {
+      const file = item.getAsFile();
+      if (file) {
+        handleSendAttachment(file, 'IMAGE');
+      }
+    });
+  }, [activeConvId, isReadOnly, handleSendAttachment]);
+
   // ⭐ SEND the audio from preview state (declared AFTER handleSendAttachment to avoid TDZ)
   const sendRecordedAudio = useCallback(async () => {
     if (!audioBlob || !activeConvId) return;
@@ -3169,7 +3405,24 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
       {/* ═════ RIGHT PANE — Chat View ═════ */}
       {activeConv ? (
-        <div className="flex-1 flex flex-col bg-slate-50">
+        <div
+          className="flex-1 flex flex-col bg-slate-50 relative"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onPaste={handlePaste}
+        >
+          {/* ⭐ DRAG & DROP overlay — shown when files are dragged over the chat */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-50 bg-blue-500/10 border-4 border-dashed border-blue-500 rounded-lg flex items-center justify-center pointer-events-none">
+              <div className="bg-white rounded-xl px-6 py-4 shadow-lg flex items-center gap-3">
+                <Paperclip className="w-6 h-6 text-blue-600" />
+                <span className="text-sm font-semibold text-slate-700">
+                  Déposez les fichiers pour les envoyer
+                </span>
+              </div>
+            </div>
+          )}
           {/* Header */}
           <div className="p-3 bg-[#0958D9] text-white flex items-center gap-3 shadow-sm">
             <button
@@ -3282,7 +3535,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <p className="text-sm text-slate-500">Aucun message — démarrez la conversation</p>
               </div>
             ) : (
-              messages.map((msg, idx) => {
+              <>
+                {/* ⭐ PAGINATION — "Load more" button at the top of the messages list.
+                    Discord-like: shows a spinner while loading and hides when
+                    we've reached the beginning of the conversation. */}
+                {hasMoreMessages && (
+                  <div className="flex justify-center py-2">
+                    <button
+                      onClick={loadOlderMessages}
+                      disabled={loadingMore}
+                      className="px-4 py-1.5 text-xs font-semibold text-[#0958D9] bg-white border border-slate-200 rounded-full hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Chargement…
+                        </>
+                      ) : (
+                        <>
+                          <ChevronUp className="w-3.5 h-3.5" />
+                          Charger les messages précédents
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                {messages.map((msg, idx) => {
                 const isMine = msg.senderId === currentUserId;
                 const showDateSeparator = idx === 0 ||
                   new Date(messages[idx - 1].createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
@@ -3514,7 +3792,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         ) : msg.type === 'TEXT' && (
                           <div
                             className="whitespace-pre-wrap break-words"
-                            dangerouslySetInnerHTML={{ __html: msg.content }}
+                            dangerouslySetInnerHTML={{ __html: highlightMentions(msg.content) }}
                           />
                         )}
                         {msg.type === 'IMAGE' && msg.attachmentUrl && (
@@ -3732,6 +4010,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   </React.Fragment>
                 );
               })
+              }
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -3861,18 +4141,94 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     <Paperclip className="w-5 h-5" />
                   </button>
-                  <div className="flex-1 min-w-0 bg-slate-100 rounded-2xl overflow-hidden">
+                  <div className="flex-1 min-w-0 bg-slate-100 rounded-2xl overflow-hidden relative">
+                    {/* ⭐ MENTIONS: Autocomplete popover — appears when the user types @
+                        followed by letters. Shows matching conversation participants.
+                        Clicking a participant inserts @FirstName into the message. */}
+                    {mentionQuery !== null && activeConv && (() => {
+                      const query = mentionQuery.toLowerCase();
+                      const matches = (activeConv.participants || [])
+                        .filter(p => p.userId !== currentUserId)
+                        .filter(p => {
+                          const fullName = `${p.firstName || ''} ${p.lastName || ''}`.trim().toLowerCase();
+                          return !query || fullName.includes(query);
+                        })
+                        .slice(0, 5);
+                      if (matches.length === 0) return null;
+                      return (
+                        <div className="absolute bottom-full left-0 mb-1 w-64 bg-white rounded-lg shadow-xl border border-slate-200 z-30 max-h-60 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                            Mentionner un participant
+                          </div>
+                          {matches.map(p => (
+                            <button
+                              key={p.userId}
+                              onClick={() => {
+                                // Insert @FirstName at the current cursor position
+                                const firstName = p.firstName || p.lastName || 'utilisateur';
+                                const mentionText = `@${firstName} `;
+                                // Append the mention to the current text (simple approach)
+                                // For contentEditable, we append HTML to the end
+                                const mentionHtml = `<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">${mentionText}</span>`;
+                                setText(prev => prev + mentionHtml);
+                                setMentionQuery(null);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50 text-left transition"
+                            >
+                              <div className={cn(
+                                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0',
+                                getAvatarColor(`${p.firstName || ''} ${p.lastName || ''}`)
+                              )}>
+                                {getInitials(`${p.firstName || ''} ${p.lastName || ''}`)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-slate-900 truncate">
+                                  {p.firstName} {p.lastName}
+                                </div>
+                                {p.roleLabel && (
+                                  <div className="text-[10px] text-slate-500 truncate">{p.roleLabel}</div>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     <RichTextEditor
                       value={text}
                       onChange={(html) => {
                         setText(html);
                         handleTyping();
+                        // ⭐ MENTIONS: detect @ followed by letters to show autocomplete
+                        const textContent = html.replace(/<[^>]*>/g, '');
+                        const lastAtIndex = textContent.lastIndexOf('@');
+                        if (lastAtIndex !== -1) {
+                          const afterAt = textContent.substring(lastAtIndex + 1);
+                          // If there's a space, the mention is "complete" (user finished typing)
+                          if (afterAt.includes(' ') || afterAt.length === 0) {
+                            // @ at the very end or followed by space — show all participants
+                            if (afterAt.length === 0) {
+                              setMentionQuery('');
+                              setMentionStartPos(lastAtIndex);
+                            } else {
+                              setMentionQuery(null);
+                            }
+                          } else if (/^[A-Za-zÀ-ÿ0-9_\-']+$/.test(afterAt)) {
+                            // Letters after @ — filter participants
+                            setMentionQuery(afterAt);
+                            setMentionStartPos(lastAtIndex);
+                          } else {
+                            setMentionQuery(null);
+                          }
+                        } else {
+                          setMentionQuery(null);
+                        }
                         // Auto-stop typing after 5s of no input
                         if (stopTypingRef.current) clearTimeout(stopTypingRef.current);
                         stopTypingRef.current = setTimeout(() => handleStopTyping(), 5000);
                       }}
                       minHeight="36px"
-                      placeholder="Tapez un message..."
+                      placeholder="Tapez un message... Utilisez @ pour mentionner quelqu'un."
                     />
                   </div>
                   {/* Mic button (idle state — only when text is empty) */}

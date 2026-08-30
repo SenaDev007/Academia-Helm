@@ -54,7 +54,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, Trash2, Upload, Pen, School,
   Stamp, Plus, Mail, UserCheck, Eraser, FileSignature, X, Globe,
   ShieldCheck, Calendar, Send, GraduationCap, Search, Filter,
-  Baby, BookOpen, Users,
+  Baby, BookOpen, Users, Edit3,
 } from 'lucide-react';
 import { useBilingual, type LanguageTrack } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -238,6 +238,9 @@ export default function UnifiedAdministrationWorkspace() {
   const [generatingStamp, setGeneratingStamp] = useState<string | null>(null);
   const [generatingSignature, setGeneratingSignature] = useState(false);
   const [generatingRowSignature, setGeneratingRowSignature] = useState<string | null>(null);
+  // ⭐ État pour l'édition d'une affectation admin existante
+  const [editingAssignment, setEditingAssignment] = useState<AdminAssignment | null>(null);
+  const [sendingTeacherCredentials, setSendingTeacherCredentials] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -360,20 +363,27 @@ export default function UnifiedAdministrationWorkspace() {
   const getAssignmentsForUnit = useCallback(
     (unit: string): AdminAssignment[] => {
       let list = assignments.filter((a) => a.schoolLevelCode === unit && a.isActive);
-      // Si bilingue, filtrer par piste linguistique courante
+      // ⭐ Si bilingue, filtrer par piste linguistique courante.
+      //    On détermine la piste d'une affectation en regardant le staff associé :
+      //    - staff.assignedLanguages contient les langues enseignées
+      //    - si le staff a 'FR' dans assignedLanguages → piste FR
+      //    - si le staff a 'EN' dans assignedLanguages → piste EN
+      //    - si le staff a les deux ou null → visible dans les deux pistes
+      //    Cela permet d'avoir des directeurs/admins différents pour chaque piste.
       if (isBilingual) {
         list = list.filter((a) => {
-          // On ne peut pas filtrer côté backend (champ language pas dans le model
-          // assignment) — on filtre via le staff.assignedLanguages si présent,
-          // sinon via le functionLabel (suffixe "Francophone"/"Anglophone").
-          // ⚠️ Tant que la donnée n'est pas étiquetée, on garde l'affectation visible
-          // dans les deux pistes — l'utilisateur peut la ré-affecter proprement.
-          return true; // On garde l'affectation visible, l'utilisateur gère explicitement.
+          const staff = staffList.find((s) => s.id === a.staffId);
+          if (!staff) return true; // staff introuvable → on garde (sera filtré ailleurs)
+          const langs = staff.assignedLanguages ?? ['FR', 'EN'];
+          // Si le staff enseigne dans la piste courante → on l'affiche
+          // Si le staff n'enseigne PAS dans la piste courante → on le cache
+          // (un directeur FR ne doit pas apparaître dans la piste EN)
+          return langs.includes(currentTrack);
         });
       }
       return list;
     },
-    [assignments, isBilingual],
+    [assignments, isBilingual, currentTrack, staffList],
   );
 
   // ── Enseignants filtrés pour le niveau sélectionné ────────────────────────
@@ -582,10 +592,73 @@ export default function UnifiedAdministrationWorkspace() {
       setSuccess(`Identifiants envoyés à ${name}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'envoi des identifiants');
+      toast({ variant: 'error', title: 'Échec envoi identifiants', description: err?.message });
     } finally {
       setSendingCredentials(null);
     }
   };
+
+  // ── Envoyer identifiants à un enseignant ──────────────────────────────────
+  const handleSendTeacherCredentials = async (staffId: string, staffName: string) => {
+    setSendingTeacherCredentials(staffId);
+    setError(null);
+    setSuccess(null);
+    try {
+      await authedFetch(`/api/hr/staff/${staffId}/generate-credentials`, { method: 'POST' });
+      setSuccess(`Identifiants envoyés à ${staffName}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de l\'envoi des identifiants');
+      toast({ variant: 'error', title: 'Échec envoi identifiants', description: err?.message });
+    } finally {
+      setSendingTeacherCredentials(null);
+    }
+  };
+
+  // ── Modifier une affectation admin existante ──────────────────────────────
+  const handleEditAssignment = async (assignment: AdminAssignment) => {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await authedFetch(`/api/staff-admin-assignments/${assignment.id}`, {
+        method: 'PUT',
+        body: {
+          adminRole: form.adminRole,
+          startDate: form.startDate || undefined,
+          endDate: form.endDate || undefined,
+        },
+      });
+      setSuccess('Affectation modifiée avec succès');
+      setEditingAssignment(null);
+      setForm(EMPTY_FORM);
+      setSignatureMode('none');
+      setModalUnit(null);
+      loadData();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la modification');
+      toast({ variant: 'error', title: 'Échec de la modification', description: err?.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Ouvrir le modal d'édition ──────────────────────────────────────────────
+  const openEditModal = useCallback((assignment: AdminAssignment) => {
+    setEditingAssignment(assignment);
+    setModalUnit(assignment.schoolLevelCode);
+    setForm({
+      ...EMPTY_FORM,
+      adminRole: assignment.adminRole,
+      staffId: assignment.staffId,
+      startDate: assignment.startDate ? assignment.startDate.slice(0, 10) : '',
+      endDate: assignment.endDate ? assignment.endDate.slice(0, 10) : '',
+      language: isBilingual ? currentTrack : 'NONE',
+    });
+    setSignatureMode('none');
+    setModalOpen(true);
+    setError(null);
+    setSuccess(null);
+  }, [isBilingual, currentTrack]);
 
   // ── Générer cachets pour une unité ────────────────────────────────────────
   const handleGenerateStamp = async (unit: string) => {
@@ -1032,7 +1105,7 @@ export default function UnifiedAdministrationWorkspace() {
                                         style={{ background: colors.bg, color: colors.text }}
                                       >
                                         <ShieldCheck className="w-2.5 h-2.5" />
-                                        {group.unit}
+                                        {ADMIN_UNIT_LABELS[group.unit] || group.unit}
                                       </span>
                                     </div>
                                   </TableCell>
@@ -1072,6 +1145,15 @@ export default function UnifiedAdministrationWorkspace() {
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModal(a)}
+                                        className="text-[10px] md:text-xs text-slate-600 hover:text-slate-800 hover:bg-slate-100 px-2 py-1 rounded flex items-center gap-1"
+                                        title="Modifier l'affectation (poste, dates)"
+                                      >
+                                        <Edit3 className="w-3 h-3" />
+                                        <span className="hidden md:inline">Modifier</span>
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => handleSendCredentials(a)}
@@ -1261,30 +1343,45 @@ export default function UnifiedAdministrationWorkspace() {
                                   </p>
                                 </div>
 
-                                {/* Bouton affectation rapide */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTeacherLevel(staff.id)}
-                                  className={cn(
-                                    'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0',
-                                    isAssignedHere
-                                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200'
-                                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                                  )}
-                                  title={isAssignedHere ? 'Retirer de ce niveau' : `Affecter à ${group.label}`}
-                                >
-                                  {isAssignedHere ? (
-                                    <>
-                                      <CheckCircle2 className="w-3.5 h-3.5" />
-                                      <span className="hidden sm:inline">Affecté</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Plus className="w-3.5 h-3.5" />
-                                      <span className="hidden sm:inline">Affecter</span>
-                                    </>
-                                  )}
-                                </button>
+                                {/* Bouton affectation rapide + identifiants */}
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSendTeacherCredentials(staff.id, `${staff.firstName} ${staff.lastName}`)}
+                                    disabled={sendingTeacherCredentials === staff.id}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition-all disabled:opacity-40"
+                                    title="Envoyer les identifiants de connexion par email"
+                                  >
+                                    {sendingTeacherCredentials === staff.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Mail className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleTeacherLevel(staff.id)}
+                                    className={cn(
+                                      'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
+                                      isAssignedHere
+                                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200'
+                                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                                    )}
+                                    title={isAssignedHere ? 'Retirer de ce niveau' : `Affecter à ${group.label}`}
+                                  >
+                                    {isAssignedHere ? (
+                                      <>
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Affecté</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Affecter</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Langues (si bilingue) */}
@@ -1341,13 +1438,14 @@ export default function UnifiedAdministrationWorkspace() {
           setModalUnit(null);
           setForm(EMPTY_FORM);
           setSignatureMode('none');
+          setEditingAssignment(null);
         }
       }}>
         <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <UserCheck className="w-4 h-4" style={{ color: PRIMARY }} />
-              Affecter un poste administratif
+              {editingAssignment ? 'Modifier le poste administratif' : 'Affecter un poste administratif'}
               {modalUnit && (
                 <span
                   className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -1361,7 +1459,9 @@ export default function UnifiedAdministrationWorkspace() {
               )}
             </DialogTitle>
             <DialogDescription>
-              Sélectionnez un poste, un membre du personnel et configurez la signature. Les identifiants de connexion seront envoyés si demandé.
+              {editingAssignment
+                ? 'Modifiez le poste ou les dates de cette affectation. Les identifiants seront régénérés si demandé.'
+                : 'Sélectionnez un poste, un membre du personnel et configurez la signature. Les identifiants de connexion seront envoyés si demandé.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -1621,22 +1721,31 @@ export default function UnifiedAdministrationWorkspace() {
                 setModalUnit(null);
                 setForm(EMPTY_FORM);
                 setSignatureMode('none');
+                setEditingAssignment(null);
               }}
               disabled={saving}
             >
               Annuler
             </Button>
             <Button
-              onClick={handleAssign}
-              disabled={saving || !form.staffId || !form.adminRole}
+              onClick={() => {
+                if (editingAssignment) {
+                  handleEditAssignment(editingAssignment);
+                } else {
+                  handleAssign();
+                }
+              }}
+              disabled={saving || !form.adminRole || (!editingAssignment && !form.staffId)}
               style={{ background: PRIMARY, color: 'white' }}
             >
               {saving ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
+              ) : editingAssignment ? (
+                <Edit3 className="w-4 h-4" />
               ) : (
                 <UserCheck className="w-4 h-4" />
               )}
-              Affecter le poste
+              {editingAssignment ? 'Modifier le poste' : 'Affecter le poste'}
             </Button>
           </DialogFooter>
         </DialogContent>

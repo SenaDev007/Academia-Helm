@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { v4 as uuidv4 } from 'uuid';
-import { ADMIN_ROLES, isValidAdminRole, ADMIN_ROLE_TO_USER_ROLE } from '../common/constants/admin-roles';
+import { ADMIN_ROLES, isValidAdminRole, ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel } from '../common/constants/admin-roles';
 
 /**
  * ============================================================================
@@ -202,23 +202,27 @@ export class StaffAdminAssignmentService {
     //    Quand on affecte un poste admin à un staff, son compte User doit
     //    refléter ce rôle pour que l'UI affichée soit correcte (secrétaire,
     //    comptable, secrétaire-comptable, directeur, etc.).
+    //    ⭐⭐ On utilise resolveUserRoleWithLevel qui prend en compte le
+    //        schoolLevelCode pour produire un UserRole niveau-spécifique
+    //        (ex: SECRETAIRE_COMPTABLE_MAT_PRI au lieu de SECRETAIRE_COMPTABLE).
+    //        Cela garantit que le LevelScopeGuard filtre les données par niveau.
     try {
-      const staffWithStaff = await this.prisma.staff.findFirst({
+      const staffWithEmail = await this.prisma.staff.findFirst({
         where: { id: data.staffId, tenantId },
         select: { email: true },
       });
-      if (staffWithStaff?.email) {
+      if (staffWithEmail?.email) {
         const existingUser = await this.prisma.user.findFirst({
-          where: { email: staffWithStaff.email.trim().toLowerCase() },
+          where: { email: staffWithEmail.email.trim().toLowerCase() },
         });
         if (existingUser) {
-          const targetRole = ADMIN_ROLE_TO_USER_ROLE[data.adminRole];
+          const targetRole = resolveUserRoleWithLevel(data.adminRole, data.schoolLevelCode);
           if (targetRole && existingUser.role !== targetRole) {
             await this.prisma.user.update({
               where: { id: existingUser.id },
               data: { role: targetRole },
             });
-            this.logger.log(`[create] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole} (from adminRole=${data.adminRole})`);
+            this.logger.log(`[create] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole} (from adminRole=${data.adminRole} @ ${data.schoolLevelCode})`);
           }
         }
       }
@@ -276,6 +280,31 @@ export class StaffAdminAssignmentService {
       data: updateData,
       include: { staff: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, employeeNumber: true } } },
     });
+
+    // ⭐ Re-sync User.role si adminRole ou schoolLevelCode a changé
+    //    (même logique que dans create(), mais ici on compare avec les valeurs
+    //    AVANT update vs APRÈS update)
+    const newAdminRole = data.adminRole ?? existing.adminRole;
+    const newSchoolLevelCode = data.schoolLevelCode ?? existing.schoolLevelCode;
+    if ((data.adminRole !== undefined || data.schoolLevelCode !== undefined) && row.staff?.email) {
+      try {
+        const existingUser = await this.prisma.user.findFirst({
+          where: { email: row.staff.email.trim().toLowerCase() },
+        });
+        if (existingUser) {
+          const targetRole = resolveUserRoleWithLevel(newAdminRole, newSchoolLevelCode);
+          if (targetRole && existingUser.role !== targetRole) {
+            await this.prisma.user.update({
+              where: { id: existingUser.id },
+              data: { role: targetRole },
+            });
+            this.logger.log(`[update] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole}`);
+          }
+        }
+      } catch (updateErr: any) {
+        this.logger.warn(`[update] Failed to sync User role (non-blocking): ${updateErr?.message}`);
+      }
+    }
 
     return rowToAssignment(row);
   }

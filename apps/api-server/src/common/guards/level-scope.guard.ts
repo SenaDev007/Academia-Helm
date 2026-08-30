@@ -72,6 +72,36 @@ const ROLE_LEVEL_SCOPES: Record<string, string[]> = {
 
   // Surveillant par niveau
   'SURVEILLANT': ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'], // générique = tous niveaux
+
+  // ⭐ Niveau-spécifique produits par resolveUserRoleWithLevel()
+  //    Ces rôles sont générés quand une affectation admin est créée avec un
+  //    schoolLevelCode spécifique (MAT, PRI, SEC, MAT_PRI). Le
+  //    LevelScopeGuard les utilise pour filtrer les données par niveau.
+  'DIRECTEUR_MAT': ['MATERNELLE'],
+  'DIRECTEUR_PRI': ['PRIMARY'],
+  'DIRECTEUR_SEC': ['SECONDAIRE'],
+  'SECRETAIRE_MAT': ['MATERNELLE'],
+  'SECRETAIRE_PRI': ['PRIMARY'],
+  'SECRETAIRE_SEC': ['SECONDAIRE'],
+  'SECRETAIRE_COMPTABLE_MAT': ['MATERNELLE'],
+  'SECRETAIRE_COMPTABLE_PRI': ['PRIMARY'],
+  'SECRETAIRE_COMPTABLE_SEC': ['SECONDAIRE'],
+  'SECRETAIRE_COMPTABLE_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'],
+  'COMPTABLE_MAT': ['MATERNELLE'],
+  'COMPTABLE_PRI': ['PRIMARY'],
+  'COMPTABLE_SEC': ['SECONDAIRE'],
+  'COMPTABLE_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'],
+  'SURVEILLANT_MAT': ['MATERNELLE'],
+  'SURVEILLANT_PRI': ['PRIMARY'],
+  'SURVEILLANT_SEC': ['SECONDAIRE'],
+  'SURVEILLANT_GENERAL_MAT': ['MATERNELLE'],
+  'SURVEILLANT_GENERAL_PRI': ['PRIMARY'],
+  'SURVEILLANT_GENERAL_SEC': ['SECONDAIRE'],
+  'CENSEUR_MAT': ['MATERNELLE'],
+  'CENSEUR_PRI': ['PRIMARY'],
+  'CENSEUR_SEC': ['SECONDAIRE'],
+  'CENSEUR_MAT_PRI': ['MATERNELLE', 'PRIMAIRE'],
+  'DIRECTEUR_MAT_PRI_ADMIN': ['MATERNELLE', 'PRIMAIRE'], // fallback si jamais produit
 };
 
 // Rôles qui ont accès à TOUS les niveaux (pas de restriction)

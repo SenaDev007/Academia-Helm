@@ -72,6 +72,28 @@ export const ROLE_PORTAL_MAP: Record<UserRole, Portal> = {
 };
 
 /**
+ * ⭐ Tous les rôles niveau-spécifiques (produits par resolveUserRoleWithLevel)
+ *    sont mappés vers le portail ECOLE. On les ajoute dynamiquement au runtime
+ *    pour que ROLE_PORTAL_MAP[role] ne retourne pas undefined.
+ *
+ *    Ces rôles ont la forme: BASE_ROLE_LEVEL_CODE (ex: SECRETAIRE_COMPTABLE_MAT_PRI,
+ *    DIRECTEUR_SEC, CENSEUR_SEC, SURVEILLANT_GENERAL_SEC, COMPTABLE_PRI).
+ */
+const LEVEL_SPECIFIC_PREFIXES = [
+  'DIRECTEUR_', 'SECRETAIRE_COMPTABLE_', 'SECRETAIRE_', 'COMPTABLE_',
+  'SURVEILLANT_GENERAL_', 'SURVEILLANT_', 'CENSEUR_',
+];
+const LEVEL_SPECIFIC_SUFFIXES = ['MAT', 'PRI', 'SEC', 'MAT_PRI'];
+
+// Auto-générer les entrées niveau-spécifiques → Portal.ECOLE
+for (const prefix of LEVEL_SPECIFIC_PREFIXES) {
+  for (const suffix of LEVEL_SPECIFIC_SUFFIXES) {
+    const role = `${prefix}${suffix}`;
+    (ROLE_PORTAL_MAP as Record<string, Portal>)[role] = Portal.ECOLE;
+  }
+}
+
+/**
  * Hiérarchie des rôles (niveau de pouvoir)
  * Plus le nombre est élevé, plus le rôle est puissant
  */

@@ -24,7 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
-import { ADMIN_ROLE_TO_USER_ROLE } from '../../common/constants/admin-roles';
+import { ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel } from '../../common/constants/admin-roles';
 import { renderCredentialEmail, TenantBranding } from '../recruitment-email-templates';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -92,21 +92,41 @@ function refineUserRole(roleType: string, position?: string): UserRole {
   const baseRole = STAFF_ROLE_TO_USER_ROLE[roleType] || UserRole.SECRETAIRE;
 
   // If ADMIN type, check position for more specific role
+  // ⭐ Ordre IMPORTANT : on vérifie d'abord les rôles les plus spécifiques
+  //    (SECRETAIRE_COMPTABLE avant COMPTABLE, SURVEILLANT_GENERAL avant SURVEILLANT)
+  //    car "Secrétaire-Comptable" contient "comptable" et matcherait COMPTABLE
+  //    si on vérifiait COMPTABLE en premier.
   if (roleType === 'ADMIN' || roleType === 'SUPPORT') {
     const posLower = (position || '').toLowerCase();
-    if (posLower.includes('comptable') || posLower.includes('compta')) {
-      return UserRole.COMPTABLE;
-    }
-    if (posLower.includes('secrétaire comptable') || posLower.includes('secretaire comptable')) {
+
+    // ── Rôles spécifiques (à vérifier EN PREMIER) ──
+    if (posLower.includes('secrétaire comptable') || posLower.includes('secretaire comptable') || posLower.includes('secrétaire-comptable') || posLower.includes('secretaire-comptable')) {
       return UserRole.SECRETAIRE_COMPTABLE;
+    }
+    if (posLower.includes('surveillant général') || posLower.includes('surveillant general') || posLower.includes('surveillant-général') || posLower.includes('surveillant-general')) {
+      return UserRole.SURVEILLANT;
     }
     if (posLower.includes('censeur')) {
       return UserRole.CENSEUR;
     }
+    if (posLower.includes('économe') || posLower.includes('econome') || posLower.includes('intendant')) {
+      return UserRole.COMPTABLE; // Économe/Intendant → COMPTABLE (gestion financière)
+    }
+    if (posLower.includes('proviseur') || posLower.includes('directeur des études') || posLower.includes('directeur général') || posLower.includes('directeur adjoint')) {
+      return UserRole.DIRECTEUR;
+    }
+
+    // ── Rôles génériques (à vérifier EN SECOND) ──
+    if (posLower.includes('comptable') || posLower.includes('compta')) {
+      return UserRole.COMPTABLE;
+    }
+    if (posLower.includes('secrétaire') || posLower.includes('secretaire')) {
+      return UserRole.SECRETAIRE;
+    }
     if (posLower.includes('surveillant') || posLower.includes('surv')) {
       return UserRole.SURVEILLANT;
     }
-    if (posLower.includes('directeur') || posLower.includes('director') || posLower.includes('principal') || posLower.includes('proviseur')) {
+    if (posLower.includes('directeur') || posLower.includes('director') || posLower.includes('principal')) {
       return UserRole.DIRECTEUR;
     }
   }
@@ -188,15 +208,19 @@ export class StaffCredentialService {
       //    déterminer son rôle précis (SECRETAIRE, COMPTABLE, SECRETAIRE_COMPTABLE,
       //    DIRECTEUR, CENSEUR, SURVEILLANT, etc.). Si aucune affectation, on
       //    fallback sur refineUserRole qui parse staff.position.
+      //    ⭐⭐ On utilise resolveUserRoleWithLevel qui prend en compte le
+      //        schoolLevelCode de l'affectation pour produire un UserRole
+      //        niveau-spécifique (ex: SECRETAIRE_COMPTABLE_MAT_PRI).
       let userRole: UserRole;
       const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
         where: { staffId, tenantId, isActive: true },
         orderBy: { startDate: 'desc' },
         take: 1,
       });
-      if (adminAssignments.length > 0 && ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole]) {
-        userRole = ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole];
-        this.logger.log(`Role determined from admin assignment: ${adminAssignments[0].adminRole} → ${userRole}`);
+      if (adminAssignments.length > 0) {
+        const resolvedRole = resolveUserRoleWithLevel(adminAssignments[0].adminRole, adminAssignments[0].schoolLevelCode);
+        userRole = resolvedRole as UserRole;
+        this.logger.log(`Role determined from admin assignment: ${adminAssignments[0].adminRole} @ ${adminAssignments[0].schoolLevelCode} → ${userRole}`);
       } else {
         userRole = refineUserRole(staff.roleType, staff.position);
         this.logger.log(`Role determined from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);
@@ -362,15 +386,18 @@ export class StaffCredentialService {
 
       // 4. Déterminer le rôle plateforme et l'identifiant de connexion
       //    ⭐ Priorité : staff_admin_assignments > refineUserRole(roleType, position)
+      //    ⭐⭐ On utilise resolveUserRoleWithLevel pour produire un UserRole
+      //        niveau-spécifique (ex: SECRETAIRE_COMPTABLE_MAT_PRI).
       let userRole: UserRole;
       const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
         where: { staffId, tenantId, isActive: true },
         orderBy: { startDate: 'desc' },
         take: 1,
       });
-      if (adminAssignments.length > 0 && ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole]) {
-        userRole = ADMIN_ROLE_TO_USER_ROLE[adminAssignments[0].adminRole];
-        this.logger.log(`[generateOrRegenerate] Role from admin assignment: ${adminAssignments[0].adminRole} → ${userRole}`);
+      if (adminAssignments.length > 0) {
+        const resolvedRole = resolveUserRoleWithLevel(adminAssignments[0].adminRole, adminAssignments[0].schoolLevelCode);
+        userRole = resolvedRole as UserRole;
+        this.logger.log(`[generateOrRegenerate] Role from admin assignment: ${adminAssignments[0].adminRole} @ ${adminAssignments[0].schoolLevelCode} → ${userRole}`);
       } else {
         userRole = refineUserRole(staff.roleType, staff.position);
         this.logger.log(`[generateOrRegenerate] Role from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);

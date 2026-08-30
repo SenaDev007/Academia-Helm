@@ -36,8 +36,29 @@ const FULL_ACCESS_ROLES = [
 // ⭐ Rôles directeur niveau-spécifiques (doivent être filtrés par accreditation)
 const LEVEL_SPECIFIC_DIRECTOR_ROLES = [
   'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI',
+  'DIRECTEUR_MAT', 'DIRECTEUR_PRI', 'DIRECTEUR_SEC',
   'DIRECTEUR',
 ];
+
+// ⭐ Rôles admin niveau-spécifiques (produits par resolveUserRoleWithLevel)
+//    Ces rôles contiennent un suffixe de niveau (_MAT, _PRI, _SEC, _MAT_PRI)
+//    On les détecte pour filtrer le SchoolLevelSelector.
+const LEVEL_SUFFIX_PATTERN = /_(MAT|PRI|SEC|MAT_PRI)$/;
+
+// ⭐ Détecter si un rôle est niveau-spécifique et extraire le code de niveau
+function extractLevelFromRole(role: string): string | null {
+  const match = role.match(LEVEL_SUFFIX_PATTERN);
+  if (!match) return null;
+  const suffix = match[1];
+  // Convertir le suffixe en code de niveau scolaire
+  switch (suffix) {
+    case 'MAT': return 'MATERNELLE';
+    case 'PRI': return 'PRIMARY';
+    case 'SEC': return 'SECONDAIRE';
+    case 'MAT_PRI': return 'MAT_PRI'; // géré plus tard (maternelle + primaire fusionnés)
+    default: return null;
+  }
+}
 
 // ⭐ Mapping accreditation → code de niveau scolaire
 //    Les accreditations du user sont stockées avec des codes comme 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'
@@ -68,10 +89,23 @@ export default function SchoolLevelSelector() {
   const userAccreditations = user?.accreditations || [];
 
   // ⭐ Filtrer les niveaux disponibles selon les accreditations du user
+  //    ⭐⭐ On vérifie aussi si le role contient un suffixe niveau-spécifique
+  //        (ex: SECRETAIRE_COMPTABLE_MAT_PRI → on autorise Maternelle + Primaire)
   const allowedLevels = useMemo(() => {
     if (!availableLevels.length) return [];
     // Si l'utilisateur a un accès complet, on garde tous les niveaux
     if (isFullAccess) return availableLevels;
+
+    // ⭐ Vérifier si le role contient un suffixe de niveau (_MAT, _PRI, _SEC, _MAT_PRI)
+    const roleLevelCode = user?.role ? extractLevelFromRole(user.role) : null;
+    if (roleLevelCode) {
+      if (roleLevelCode === 'MAT_PRI') {
+        // Mode fusionné : autoriser Maternelle et Primaire
+        return availableLevels.filter(level => level.code === 'MATERNELLE' || level.code === 'PRIMARY');
+      }
+      return availableLevels.filter(level => level.code === roleLevelCode);
+    }
+
     // Si l'utilisateur a des accreditations, on filtre
     if (userAccreditations.length > 0) {
       const allowedCodes = new Set(userAccreditations.map(accreditationToLevelCode));

@@ -166,6 +166,13 @@ export const DIRECTOR_ROLES: AdminRole[] = [
  *
  *    Prioritaire sur refineUserRole(roleType, position) car l'adminRole
  *    dans staff_admin_assignments est EXACT (pas du texte libre).
+ *
+ * ⭐⭐ Version niveau-spécifique : la fonction resolveUserRole ci-dessous
+ *    prend en paramètre l'adminRole ET le schoolLevelCode de l'affectation
+ *    pour produire le UserRole niveau-spécifique correspondant (ex:
+ *    SECRETAIRE_COMPTABLE + MAT_PRI → SECRETAIRE_COMPTABLE_MAT_PRI).
+ *    Cela garantit que le LevelScopeGuard filtre correctement les données
+ *    par niveau (un SECRETAIRE_COMPTABLE_PRIMAIRE ne voit que le Primaire).
  */
 export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
   DIRECTEUR: 'DIRECTEUR',
@@ -173,7 +180,7 @@ export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
   DIRECTEUR_ADJOINT: 'DIRECTEUR',
   PROVISEUR: 'DIRECTEUR',
   DIRECTEUR_DES_ETUDES: 'DIRECTEUR',
-  SURVEILLANT_GENERAL: 'SURVEILLANT',
+  SURVEILLANT_GENERAL: 'SURVEILLANT_GENERAL',
   SURVEILLANT: 'SURVEILLANT',
   CENSEUR: 'CENSEUR',
   SECRETAIRE: 'SECRETAIRE',
@@ -182,7 +189,34 @@ export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
   ECONOME: 'COMPTABLE',
   INTENDANT: 'COMPTABLE',
   RESP_SCOLARITE: 'SECRETAIRE',
-  CONSEILLER_PEDAGOGIQUE: 'ENSEIGNANT',
+  CONSEILLER_PEDAGOGIQUE: 'CENSEUR', // ⭐ Corrigé : était ENSEIGNANT (portail enseignant) → maintenant CENSEUR (portail école)
   RESPONSABLE_ORIENTATIONS: 'SECRETAIRE',
   AUTRE: 'SECRETAIRE',
 };
+
+/**
+ * ⭐ Résout le UserRole final en tenant compte du niveau scolaire de l'affectation.
+ *    Si l'adminRole a une version niveau-spécifique dans ROLE_LEVEL_SCOPES
+ *    (ex: SECRETAIRE_COMPTABLE_MAT_PRI), on l'utilise pour que le LevelScopeGuard
+ *    filtre les données par niveau.
+ *
+ * @param adminRole L'adminRole de l'affectation (ex: SECRETAIRE_COMPTABLE)
+ * @param schoolLevelCode Le code du niveau (ex: MAT_PRI, SEC, MAT, PRI)
+ * @returns Le UserRole niveau-spécifique si disponible, sinon le UserRole générique
+ */
+export function resolveUserRoleWithLevel(adminRole: string, schoolLevelCode: string): string {
+  const baseRole = ADMIN_ROLE_TO_USER_ROLE[adminRole] || 'SECRETAIRE';
+
+  // ⭐ Construire le rôle niveau-spécifique (ex: SECRETAIRE_COMPTABLE_MAT_PRI)
+  const levelSpecificRole = `${baseRole}_${schoolLevelCode}`;
+
+  // Vérifier si ce rôle niveau-spécifique existe dans ROLE_LEVEL_SCOPES
+  // (défini dans level-scope.guard.ts — on importe la liste des rôles valides)
+  const LEVEL_SPECIFIC_SUFFIXES = ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'MAT_PRI'];
+  if (LEVEL_SPECIFIC_SUFFIXES.includes(schoolLevelCode)) {
+    return levelSpecificRole;
+  }
+
+  // Fallback : rôle générique
+  return baseRole;
+}

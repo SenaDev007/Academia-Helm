@@ -594,18 +594,18 @@ export function getVisibleModulesForRole(role: string): {
   const DIRECTION_ROLES = [
     ...levelSpecificDirectorRoles,
     'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
-    'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL',
+    'CENSEUR', 'CENSOR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR',
     'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
     'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
     'SUPER_DIRECTOR', 'director',
     'SCOLARITE', // la scolarité fait partie de la direction
   ];
 
-  // ⭐ Finance : comptable, caissier, responsable financier, etc.
+  // ⭐ Finance : comptable, caissier, responsable financier, économe, intendant, etc.
   const FINANCE_ROLES = [
     ...levelSpecificComptableRoles,
     'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER',
-    'SECRETAIRE_COMPTABLE', 'ECONOME',
+    'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT',
   ];
 
   // ⭐ RH : responsable RH, gestionnaire de paie, secrétaires-comptables (paie)
@@ -615,18 +615,21 @@ export function getVisibleModulesForRole(role: string): {
   const COMMUNICATION_ROLES = [
     'COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER',
     ...levelSpecificSecretaryRoles, // les secrétaires ont accès à la communication
+    'SURVEILLANT', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR',
   ];
 
   // ⭐ Examens : censeur, responsable examens, responsables de niveau,
-  //    secrétaires et secrétaires-comptables (saisie des notes, impressions bulletins)
+  //    secrétaires et secrétaires-comptables (saisie des notes, impressions bulletins),
+  //    surveillants (gestion des examens, surveillance)
   const EXAM_ROLES = [
     'CENSOR', 'CENSEUR', 'EXAM_MANAGER',
     'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
     'PEDAGOGIC_COORDINATOR', 'PEDAGOGIC_DIRECTOR',
     ...levelSpecificDirectorRoles,
     ...levelSpecificSecretaryRoles,
-    ...levelSpecificComptableRoles, // secrétaires-comptables et comptables gèrent aussi les examens
+    ...levelSpecificComptableRoles,
     'SCOLARITE', 'RESP_SCOLARITE',
+    'SURVEILLANT', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR',
   ];
 
   return {
@@ -640,7 +643,7 @@ export function getVisibleModulesForRole(role: string): {
     showExamModules: isFullAccess || EXAM_ROLES.includes(role),
     showParentModules: false,
     showSettingsModules: SETTINGS_ACCESS_ROLES.includes(role),
-    showSupplementaryModules: isFullAccess,
+    showSupplementaryModules: isFullAccess || FINANCE_ROLES.includes(role) || COMMUNICATION_ROLES.includes(role),
   };
 }
 

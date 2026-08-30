@@ -1,6 +1,6 @@
 'use client';
 
-import { Briefcase, GraduationCap, Calendar } from 'lucide-react';
+import { Briefcase, GraduationCap, Calendar, Plus, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const inputClass =
@@ -16,6 +16,8 @@ interface StepEmploymentProps {
     roleType: string;
     hireDate: string;
     qualifications: string;
+    secondaryPosition: string;
+    isAlsoTeacher: boolean;
   };
   onUpdate: (field: string, value: any) => void;
 }
@@ -127,6 +129,44 @@ export function StepEmployment({ employment, onUpdate }: StepEmploymentProps) {
             <input required type="date" className={inputClass + ' pl-9'} value={employment.hireDate} onChange={(e) => onUpdate('hireDate', e.target.value)} />
           </div>
         </div>
+      </div>
+
+      {/* ⭐ Multi-poste : permet de préciser un poste enseignant supplémentaire */}
+      <div className="border-t border-slate-100 pt-4 mt-2">
+        <div className="flex items-center gap-2 mb-3">
+          <GraduationCap className="h-4 w-4 text-blue-500" />
+          <h5 className="text-sm font-bold text-slate-800">Multi-poste (optionnel)</h5>
+        </div>
+        <p className="text-[11px] text-slate-400 mb-3">
+          Ce personnel occupe-t-il aussi un poste d&apos;enseignant en plus de son poste principal ?
+          Le contrat reflétera les deux postes.
+        </p>
+        <label className="flex items-center gap-2 cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={employment.isAlsoTeacher}
+            onChange={(e) => onUpdate('isAlsoTeacher', e.target.checked)}
+            className="w-4 h-4 accent-[#1d4fa5] rounded"
+          />
+          <span className="text-sm font-semibold text-slate-700">
+            Ce personnel enseigne aussi une matière
+          </span>
+        </label>
+        {employment.isAlsoTeacher && (
+          <div>
+            <label className={labelClass}>Poste / Matière enseignée</label>
+            <input
+              type="text"
+              placeholder="Ex: Professeur d'Anglais, Instituteur(trice) du Primaire..."
+              className={inputClass}
+              value={employment.secondaryPosition}
+              onChange={(e) => onUpdate('secondaryPosition', e.target.value)}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Précisez la matière ou le poste enseignant. Cette information apparaîtra dans le contrat.
+            </p>
+          </div>
+        )}
       </div>
 
       <div>

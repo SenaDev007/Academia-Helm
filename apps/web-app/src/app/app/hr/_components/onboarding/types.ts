@@ -32,6 +32,11 @@ export interface OnboardingState {
     roleType: string;
     hireDate: string;
     qualifications: string;
+    // ⭐ Multi-poste : permet de préciser un poste enseignant en plus du
+    //    poste principal. Le promoteur peut décider qu'un comptable enseigne
+    //    aussi une matière. Le contrat reflétera les deux postes.
+    secondaryPosition: string;
+    isAlsoTeacher: boolean;
   };
 
   // Step 3: Documents
@@ -110,6 +115,8 @@ export const INITIAL_STATE: OnboardingState = {
     roleType: 'TEACHER',
     hireDate: new Date().toISOString().split('T')[0],
     qualifications: '',
+    secondaryPosition: '',
+    isAlsoTeacher: false,
   },
 
   documents: {

@@ -129,15 +129,31 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
 
   const saveStep2AndAdvance = async () => {
     if (!state.staffId) return;
+    const updateBody: any = {
+      position: state.employment.position || undefined,
+      department: state.employment.department || undefined,
+      roleType: state.employment.roleType,
+      hireDate: state.employment.hireDate || undefined,
+      qualifications: state.employment.qualifications || undefined,
+    };
+
+    // ⭐ Multi-poste : si le staff est aussi enseignant, on met à jour
+    //    son roleType vers TEACHER (pour qu'il apparaisse dans l'équipe
+    //    enseignante) et on stocke le poste secondaire dans position
+    //    (si le poste principal est vide) ou on le concatène.
+    if (state.employment.isAlsoTeacher && state.employment.secondaryPosition) {
+      // Si le roleType principal est ADMIN/SUPPORT/DIRECTOR, on garde ce
+      // roleType pour le compte User (credentials) mais on met à jour
+      // le schoolLevelId pour qu'il apparaisse dans l'équipe enseignante.
+      // Le poste secondaire est stocké dans qualifications (à la fin) pour
+      // que le contrat puisse le refléter.
+      const secondaryInfo = `\n\nPoste secondaire : ${state.employment.secondaryPosition} (Enseignant)`;
+      updateBody.qualifications = (state.employment.qualifications || '') + secondaryInfo;
+    }
+
     await hrFetch(hrUrl(`staff/${state.staffId}`, { tenantId }), {
       method: 'PUT',
-      body: {
-        position: state.employment.position || undefined,
-        department: state.employment.department || undefined,
-        roleType: state.employment.roleType,
-        hireDate: state.employment.hireDate || undefined,
-        qualifications: state.employment.qualifications || undefined,
-      },
+      body: updateBody,
     });
   };
 

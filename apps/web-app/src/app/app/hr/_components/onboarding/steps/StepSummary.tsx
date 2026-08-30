@@ -192,6 +192,9 @@ export function StepSummary({
           <div><span className="text-xs text-slate-400">Poste</span><p className="font-semibold text-slate-700">{employment.position || '—'}</p></div>
           <div><span className="text-xs text-slate-400">Catégorie</span><p className="font-semibold text-slate-700">{roleTypeLabels[employment.roleType] || employment.roleType}</p></div>
           <div><span className="text-xs text-slate-400">Nationalité</span><p className="font-semibold text-slate-700">{identity.nationality || '—'}</p></div>
+          {employment.isAlsoTeacher && employment.secondaryPosition && (
+            <div><span className="text-xs text-slate-400">Poste enseignant</span><p className="font-semibold text-blue-700">{employment.secondaryPosition}</p></div>
+          )}
         </div>
       </div>
 

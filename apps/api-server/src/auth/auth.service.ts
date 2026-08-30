@@ -105,18 +105,17 @@ export class AuthService {
     try {
       // ⭐ Recherche unifiée : accepte EMAIL ou MATRICULE comme identifiant.
       //    - Si l'identifiant contient '@' → recherche directe par email dans User
-      //    - Sinon → recherche par matricule dans Staff, puis résolution email → User
-      //    Permet à un personnel multi-rôle (enseignant + admin) de se connecter
-      //    au portail ÉCOLE avec son matricule (comme au portail enseignant) ou
-      //    son email — les deux fonctionnent.
+      //    - Sinon → recherche par matricule dans Staff, puis Teacher, puis User (email).
+      //    ⭐ FIX: Le promoteur n'a pas de ligne Staff — on étend la recherche à
+      //    Teacher (matricule) et User (email) pour qu'il puisse se connecter.
       const identifier = (loginDto.email || '').trim();
-      let userEmail: string;
+      let userEmail: string | null = null;
 
       if (identifier.includes('@')) {
         // C'est un email → recherche directe
         userEmail = identifier.toLowerCase();
       } else {
-        // C'est probablement un matricule → chercher dans Staff
+        // 1. Chercher dans Staff par matricule
         const staff = await this.prisma.staff.findFirst({
           where: {
             OR: [
@@ -127,14 +126,46 @@ export class AuthService {
           },
           select: { email: true },
         });
-        if (!staff?.email) {
+        if (staff?.email) {
+          userEmail = staff.email.trim().toLowerCase();
+        }
+
+        // 2. Chercher dans Teacher par matricule
+        if (!userEmail) {
+          const teacher = await this.prisma.teacher.findFirst({
+            where: { matricule: { equals: identifier, mode: 'insensitive' } },
+            select: { userId: true },
+          });
+          if (teacher?.userId) {
+            const teacherUser = await this.prisma.user.findUnique({
+              where: { id: teacher.userId },
+              select: { email: true },
+            });
+            if (teacherUser?.email) {
+              userEmail = teacherUser.email.trim().toLowerCase();
+            }
+          }
+        }
+
+        // 3. ⭐ FIX PROMOTER: Chercher dans User par email (fallback)
+        if (!userEmail) {
+          const userByEmail = await this.prisma.user.findFirst({
+            where: { email: { equals: identifier, mode: 'insensitive' } },
+            select: { email: true },
+          });
+          if (userByEmail?.email) {
+            userEmail = userByEmail.email.trim().toLowerCase();
+          }
+        }
+
+        if (!userEmail) {
           throw new UnauthorizedException('Identifiant invalide');
         }
-        userEmail = staff.email.trim().toLowerCase();
       }
 
       // Find user by email (résolu depuis l'identifiant direct ou via Staff)
-      const user = await this.usersService.findByEmail(userEmail);
+      // userEmail est garanti non-null ici (les branches ci-dessus throw si null)
+      const user = await this.usersService.findByEmail(userEmail!);
       if (!user) {
         throw new UnauthorizedException('Invalid credentials');
       }
@@ -394,15 +425,21 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<any> {
-    // ⭐ Recherche unifiée : accepte EMAIL ou MATRICULE
-    //    Même logique que login() — si l'identifiant ne contient pas '@',
-    //    on cherche par matricule dans Staff puis on résout l'email.
+    // ⭐ Recherche unifiée : accepte EMAIL ou MATRICULE.
+    //    - Si l'identifiant contient '@' → recherche directe par email dans User.
+    //    - Sinon → recherche par matricule dans Staff (tenantMatricule / globalMatricule /
+    //      employeeNumber), puis dans Teacher (matricule), puis dans User (email).
+    //    ⭐ FIX: Le promoteur (PROMOTER/PROMOTEUR) n'a pas de ligne Staff — il est créé
+    //      comme User lors de l'onboarding. On étend donc la recherche à User par email
+    //      en dernier recours, pour que le promoteur puisse se connecter avec son email
+    //      même s'il ne contient pas '@' (ou avec n'importe quel identifiant de fallback).
     const identifier = (email || '').trim();
-    let userEmail: string;
+    let userEmail: string | null = null;
 
     if (identifier.includes('@')) {
       userEmail = identifier.toLowerCase();
     } else {
+      // 1. Chercher dans Staff par matricule (RH module staff)
       const staff = await this.prisma.staff.findFirst({
         where: {
           OR: [
@@ -413,11 +450,47 @@ export class AuthService {
         },
         select: { email: true },
       });
-      if (!staff?.email) return null;
-      userEmail = staff.email.trim().toLowerCase();
+      if (staff?.email) {
+        userEmail = staff.email.trim().toLowerCase();
+      }
+
+      // 2. Chercher dans Teacher par matricule (enseignants)
+      if (!userEmail) {
+        const teacher = await this.prisma.teacher.findFirst({
+          where: { matricule: { equals: identifier, mode: 'insensitive' } },
+          select: { userId: true },
+        });
+        if (teacher?.userId) {
+          const teacherUser = await this.prisma.user.findUnique({
+            where: { id: teacher.userId },
+            select: { email: true },
+          });
+          if (teacherUser?.email) {
+            userEmail = teacherUser.email.trim().toLowerCase();
+          }
+        }
+      }
+
+      // 3. ⭐ FIX PROMOTER: Chercher dans User directement par email
+      //    (le promoteur n'a ni Staff ni Teacher — il est créé comme User lors de
+      //    l'onboarding. Si l'identifiant ressemble à un email partiel, ou si le
+      //    promoteur tape son email sans '@' par erreur, on le trouve quand même.)
+      if (!userEmail) {
+        const userByEmail = await this.prisma.user.findFirst({
+          where: { email: { equals: identifier, mode: 'insensitive' } },
+          select: { email: true },
+        });
+        if (userByEmail?.email) {
+          userEmail = userByEmail.email.trim().toLowerCase();
+        }
+      }
+
+      // 4. ⭐ Dernier recours: chercher dans User par matricule si on a ajouté
+      //    une colonne matricule à User (futur). Pour l'instant, return null.
+      if (!userEmail) return null;
     }
 
-    const user = await this.usersService.findByEmail(userEmail);
+    const user = await this.usersService.findByEmail(userEmail!);
     if (user && (await bcrypt.compare(password, user.passwordHash))) {
       const { passwordHash, ...result } = user;
       return result;
@@ -452,6 +525,8 @@ export class AuthService {
     const schoolRoles = [
       // 3.1 Gouvernance et Direction Générale
       'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+      // ⭐ Promoteur (créé lors de l'onboarding — User uniquement, pas de Staff)
+      'PROMOTER', 'PROMOTEUR',
       // 3.2 Administration Générale
       'SCHOOL_ADMIN', 'ADMIN_AGENT', 'RESP_SCOLARITE', 'DATA_MANAGER', 'INTERNAL_AUDITOR',
       // 3.3 Maternelle

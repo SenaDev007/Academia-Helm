@@ -102,17 +102,123 @@ function getLandingPageUrlFromApp(): string {
 
 function formatRoleLabel(role?: string) {
   if (!role) return '—';
+
+  // ⭐ Mapping complet des rôles plateforme (UserRole enum) + rôles legacy
+  //    + rôles niveau-spécifiques (produits par resolveUserRoleWithLevel).
+  //    Le header affiche le LIBELLÉ français, pas le code technique.
   const labels: Record<string, string> = {
+    // ── Rôles plateforme ──
     PLATFORM_SUPER_ADMIN: 'Super Admin',
     PLATFORM_OWNER: 'Propriétaire plateforme',
     PLATFORM_ADMIN: 'Admin plateforme',
+    SUPER_ADMIN: 'Super Admin',
+
+    // ── Rôles école (UserRole enum) ──
+    PROMOTER: 'Promoteur',
+    PROMOTEUR: 'Promoteur',
+    DIRECTEUR: 'Directeur / Directrice',
+    SECRETAIRE: 'Secrétaire',
+    COMPTABLE: 'Comptable',
+    SECRETAIRE_COMPTABLE: 'Secrétaire-Comptable',
+    CENSEUR: 'Censeur',
+    SURVEILLANT: 'Surveillant',
+    ENSEIGNANT: 'Enseignant',
+
+    // ── Rôles école (legacy anglais) ──
     SUPER_DIRECTOR: 'Promoteur',
     DIRECTOR: 'Directeur',
+    DIRECTOR_GENERAL: 'Directeur Général',
+    SCHOOL_DIRECTOR: 'Directeur',
+    DEPUTY_DIRECTOR: 'Directeur Adjoint',
     ADMIN: 'Administrateur',
+    SCHOOL_ADMIN: 'Admin École',
+    SCHOOL_OWNER: 'Propriétaire École',
     TEACHER: 'Enseignant',
     ACCOUNTANT: 'Comptable',
+    CASHIER: 'Caissier',
+    CENSOR: 'Censeur',
+    GENERAL_MONITOR: 'Surveillant Général',
+    SURVEILLANT_GENERAL: 'Surveillant Général',
+
+    // ── Rôles niveau-spécifiques (produits par resolveUserRoleWithLevel) ──
+    // Directeurs
+    DIRECTEUR_MATERNELLE: 'Directeur Maternelle',
+    DIRECTEUR_PRIMAIRE: 'Directeur Primaire',
+    DIRECTEUR_SECONDAIRE: 'Directeur Secondaire',
+    DIRECTEUR_MAT_PRI: 'Directeur Maternelle + Primaire',
+    DIRECTEUR_MAT: 'Directeur Maternelle',
+    DIRECTEUR_PRI: 'Directeur Primaire',
+    DIRECTEUR_SEC: 'Directeur Secondaire',
+    DIRECTEUR_GENERAL: 'Directeur Général',
+    DIRECTEUR_ETABLISSEMENT: 'Directeur Établissement',
+
+    // Secrétaires
+    SECRETAIRE_MATERNELLE: 'Secrétaire Maternelle',
+    SECRETAIRE_PRIMAIRE: 'Secrétaire Primaire',
+    SECRETAIRE_SECONDAIRE: 'Secrétaire Secondaire',
+    SECRETAIRE_MAT_PRI: 'Secrétaire Maternelle + Primaire',
+    SECRETAIRE_MAT: 'Secrétaire Maternelle',
+    SECRETAIRE_PRI: 'Secrétaire Primaire',
+    SECRETAIRE_SEC: 'Secrétaire Secondaire',
+    SECRETAIRE_GENERAL: 'Secrétaire Général',
+
+    // Secrétaires-Comptables
+    SECRETAIRE_COMPTABLE_MATERNELLE: 'Secrétaire-Comptable Maternelle',
+    SECRETAIRE_COMPTABLE_PRIMAIRE: 'Secrétaire-Comptable Primaire',
+    SECRETAIRE_COMPTABLE_SECONDAIRE: 'Secrétaire-Comptable Secondaire',
+    SECRETAIRE_COMPTABLE_MAT_PRI: 'Secrétaire-Comptable Maternelle + Primaire',
+    SECRETAIRE_COMPTABLE_MAT: 'Secrétaire-Comptable Maternelle',
+    SECRETAIRE_COMPTABLE_PRI: 'Secrétaire-Comptable Primaire',
+    SECRETAIRE_COMPTABLE_SEC: 'Secrétaire-Comptable Secondaire',
+
+    // Comptables
+    COMPTABLE_MAT: 'Comptable Maternelle',
+    COMPTABLE_PRI: 'Comptable Primaire',
+    COMPTABLE_SEC: 'Comptable Secondaire',
+    COMPTABLE_MAT_PRI: 'Comptable Maternelle + Primaire',
+
+    // Surveillants
+    SURVEILLANT_MAT: 'Surveillant Maternelle',
+    SURVEILLANT_PRI: 'Surveillant Primaire',
+    SURVEILLANT_SEC: 'Surveillant Secondaire',
+    SURVEILLANT_GENERAL_MAT: 'Surveillant Général Maternelle',
+    SURVEILLANT_GENERAL_PRI: 'Surveillant Général Primaire',
+    SURVEILLANT_GENERAL_SEC: 'Surveillant Général Secondaire',
+
+    // Censeurs
+    CENSEUR_MAT: 'Censeur Maternelle',
+    CENSEUR_PRI: 'Censeur Primaire',
+    CENSEUR_SEC: 'Censeur Secondaire',
+    CENSEUR_MAT_PRI: 'Censeur Maternelle + Primaire',
+
+    // ── Autres rôles ──
+    PARENT: 'Parent',
+    ELEVE: 'Élève',
+    SCOLARITE: 'Scolarité',
+    RESP_SCOLARITE: 'Responsable Scolarité',
+    HR_MANAGER: 'Responsable RH',
+    PAYROLL_MANAGER: 'Responsable Paie',
+    FINANCE_MANAGER: 'Responsable Finances',
+    CFO: 'Directeur Financier',
+    ECONOME: 'Économe',
+    INTENDANT: 'Intendant',
+    COMMUNICATION_MANAGER: 'Responsable Communication',
+    IT_MANAGER: 'Responsable IT',
+    PEDAGOGIC_DIRECTOR: 'Directeur Pédagogique',
+    PEDAGOGIC_COORDINATOR: 'Coordinateur Pédagogique',
+    BOARD_PRESIDENT: 'Président du Conseil',
+    FEDERIS_ADMIN: 'Admin Federis',
   };
-  return labels[role] ?? role;
+
+  // Si le rôle a un suffixe niveau-spécifique non listé explicitement,
+  // on essaie de le déduire en remplaçant les underscores
+  if (labels[role]) return labels[role];
+
+  // Fallback : remplacer les underscores par des espaces et capitaliser
+  return role
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawerOpen }: PilotageTopBarProps) {

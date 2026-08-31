@@ -1656,6 +1656,116 @@ export default function UnifiedAdministrationWorkspace() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
+          ⭐ SECTION : Cachets & Tampons générés
+          Affiche les cachets institutionnels (circulaire) + nominatifs générés
+          pour le niveau sélectionné. Permet de visualiser le rendu.
+          ═══════════════════════════════════════════════════════════════════ */}
+      {selectedUnit && (() => {
+        // Construire l'URL de l'asset cachet pour le niveau sélectionné
+        let educationLevelId: string | null = null;
+        if (selectedUnit !== 'MAT_PRI') {
+          const unitLevelCode = Object.entries(LEVEL_CODE_TO_UNIT).find(([, u]) => u === selectedUnit)?.[0];
+          const level = schoolLevels.find((l) => l.code === unitLevelCode);
+          educationLevelId = level?.id ?? null;
+        }
+        const levelFolder = educationLevelId ?? 'global';
+        const stampBase = `/api/settings/stamps/asset?type=`;
+        const stampParams = educationLevelId ? `&education_level_id=${educationLevelId}` : '';
+        const circularUrl = `${stampBase}circular${stampParams}`;
+        const rectangularUrl = `${stampBase}rectangular${stampParams}`;
+        const ovalUrl = `${stampBase}oval${stampParams}`;
+
+        // Cachets nominatifs : un par poste assigné
+        const unitAssignmentsForStamps = assignments.filter((a) => a.adminUnit === selectedUnit && a.staff);
+        const roleLabelMap: Record<string, string> = {
+          PROMOTEUR: 'PROMOTEUR',
+          DIRECTEUR: 'DIRECTEUR',
+          DIRECTEUR_ADJOINT: 'DIRECTEUR ADJOINT',
+          SECRETAIRE: 'SECRETAIRE',
+          SECRETAIRE_COMPTABLE: 'SECRETAIRE-COMPTABLE',
+          COMPTABLE: 'COMPTABLE',
+          ECONOME: 'ECONOME',
+          INTENDANT: 'INTENDANT',
+          CENSEUR: 'CENSEUR',
+          SURVEILLANT: 'SURVEILLANT',
+          RESP_SCOLARITE: 'RESPONSABLE SCOLARITE',
+          AUTRE: 'PERSONNEL ADMINISTRATIF',
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Stamp className="w-5 h-5 text-red-600" />
+                <h3 className="text-sm font-bold text-gray-900">
+                  Cachets & Tampons — {ADMIN_UNIT_LABELS[selectedUnit] || selectedUnit}
+                </h3>
+              </div>
+              <p className="text-xs text-gray-500 mb-4">
+                Cachets institutionnels et nominatifs générés pour ce niveau. Cliquez sur « Générer le cachet » ci-dessus pour (re)générer.
+              </p>
+
+              {/* Cachets institutionnels */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <StampPreviewCard
+                  title="Cachet circulaire"
+                  url={circularUrl}
+                  description="Cachet officiel de l'établissement (effet encre rouge)"
+                />
+                <StampPreviewCard
+                  title="Cachet rectangulaire"
+                  url={rectangularUrl}
+                  description="Tampon rectangulaire avec coordonnées"
+                />
+                <StampPreviewCard
+                  title="Cachet ovale"
+                  url={ovalUrl}
+                  description="Tampon ovale de l'établissement"
+                />
+              </div>
+
+              {/* Cachets nominatifs */}
+              {unitAssignmentsForStamps.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">
+                    Cachets nominatifs (par titulaire de poste)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {unitAssignmentsForStamps.map((a) => {
+                      const holderName = a.staff
+                        ? `${a.staff.firstName || ''} ${a.staff.lastName || ''}`.trim()
+                        : '—';
+                      const holderRole = roleLabelMap[a.adminRole] || a.adminRole;
+                      const roleSlug = holderRole.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                      const nominativeUrl = `/api/settings/stamps/asset?type=signature&signature_id=nominative_${levelFolder}_${roleSlug}`;
+                      return (
+                        <StampPreviewCard
+                          key={a.id}
+                          title={`${holderName}`}
+                          subtitle={holderRole}
+                          url={nominativeUrl}
+                          description="Cachet nominatif (nom + rôle)"
+                        />
+                      );
+                    })}
+                    {/* Cachet du promoteur */}
+                    {sessionUser && (sessionUser.role === 'PROMOTEUR' || sessionUser.role === 'PROMOTER') && (
+                      <StampPreviewCard
+                        title={`${sessionUser.firstName || ''} ${sessionUser.lastName || ''}`}
+                        subtitle="PROMOTEUR"
+                        url={`/api/settings/stamps/asset?type=signature&signature_id=nominative_${levelFolder}_promoteur`}
+                        description="Cachet nominatif du promoteur"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
           MODAL : Affecter un poste administratif
           ═══════════════════════════════════════════════════════════════════ */}
       <Dialog open={modalOpen} onOpenChange={(open) => {
@@ -2097,6 +2207,49 @@ export default function UnifiedAdministrationWorkspace() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ⭐ Stamp Preview Card — affiche un cachet généré (PNG) avec titre + description
+function StampPreviewCard({ title, subtitle, url, description }: {
+  title: string;
+  subtitle?: string;
+  url: string;
+  description?: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
+      <div className="mb-2">
+        <h4 className="text-xs font-bold text-gray-900 truncate">{title}</h4>
+        {subtitle && <p className="text-[10px] text-gray-500 font-medium">{subtitle}</p>}
+      </div>
+      <div className="flex items-center justify-center bg-slate-50 rounded-lg p-4 min-h-[120px]">
+        {!loaded && !error && (
+          <div className="flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-300" />
+          </div>
+        )}
+        {error ? (
+          <div className="text-center">
+            <Stamp className="w-8 h-8 text-gray-200 mx-auto mb-1" />
+            <p className="text-[10px] text-gray-400">Non généré</p>
+          </div>
+        ) : (
+          <img
+            src={url}
+            alt={title}
+            className="max-w-full max-h-32 object-contain"
+            style={{ display: loaded ? 'block' : 'none' }}
+            onLoad={() => setLoaded(true)}
+            onError={() => { setError(true); setLoaded(true); }}
+          />
+        )}
+      </div>
+      {description && <p className="text-[10px] text-gray-400 mt-2">{description}</p>}
     </div>
   );
 }

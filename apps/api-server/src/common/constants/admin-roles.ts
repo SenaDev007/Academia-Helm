@@ -25,6 +25,9 @@
  */
 
 export const ADMIN_ROLES = [
+  // ── Promoteur (propriétaire de l'école) ──
+  'PROMOTEUR',              // Promoteur / Fondateur
+
   // ── Direction ──
   'DIRECTEUR',              // Directeur/Directrice (Maternelle, Primaire)
   'DIRECTEUR_GENERAL',      // Directeur Général (tous niveaux)
@@ -74,6 +77,7 @@ export function isValidAdminRole(role: string): role is AdminRole {
  * Libellés affichables pour l'UI (français).
  */
 export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
+  PROMOTEUR: 'Promoteur / Fondateur',
   DIRECTEUR: 'Directeur / Directrice',
   DIRECTEUR_GENERAL: 'Directeur Général',
   DIRECTEUR_ADJOINT: 'Directeur Adjoint',
@@ -99,6 +103,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
  */
 export const ROLES_BY_LEVEL: Record<string, AdminRole[]> = {
   MATERNELLE: [
+    'PROMOTEUR',
     'DIRECTEUR',
     'SURVEILLANT',
     'SECRETAIRE',
@@ -107,6 +112,7 @@ export const ROLES_BY_LEVEL: Record<string, AdminRole[]> = {
     'AUTRE',
   ],
   PRIMAIRE: [
+    'PROMOTEUR',
     'DIRECTEUR',
     'SURVEILLANT',
     'SECRETAIRE',
@@ -117,6 +123,7 @@ export const ROLES_BY_LEVEL: Record<string, AdminRole[]> = {
     'AUTRE',
   ],
   SECONDAIRE: [
+    'PROMOTEUR',
     'PROVISEUR',
     'DIRECTEUR_ADJOINT',
     'CENSEUR',
@@ -134,6 +141,7 @@ export const ROLES_BY_LEVEL: Record<string, AdminRole[]> = {
     'AUTRE',
   ],
   MAT_PRI: [
+    'PROMOTEUR',
     'DIRECTEUR',
     'SURVEILLANT',
     'SECRETAIRE',

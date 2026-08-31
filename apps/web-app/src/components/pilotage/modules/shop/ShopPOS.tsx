@@ -3,19 +3,21 @@
  * SHOP POS (POINT OF SALE) - ACADEMIA HELM
  * ============================================================================
  *
- * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
- *  - Boutons : <Button> shadcn
- *  - Inputs/Labels : <Input>/<Label> shadcn
- *  - Modals : <Dialog> shadcn
- *  - Notifications : useToast() (au lieu de alert())
- *  - Cards : rounded-xl border-gray-200
- *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * Refonte août 2026 : alignement du sélecteur d'élève sur le pattern du
+ * module Finance (onglet Encaissement). L'ancien modal « Rechercher par nom,
+ * prénom ou matricule » avec une liste cliquable a été remplacé par le même
+ * pattern que NewPaymentModal :
+ *   - Sélecteur Niveau scolaire (cascade)
+ *   - Sélecteur Classe (filtré par niveau)
+ *   - Recherche libre (nom / prénom / matricule)
+ *   - Sélecteur élève (Select) alimenté par les filtres ci-dessus
+ *   - Auto-sélection quand un seul élève correspond
  * ============================================================================
  */
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
@@ -33,6 +35,9 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 
 interface ProductItem {
   id?: string;
@@ -60,12 +65,23 @@ export default function ShopPOS() {
   const [cart, setCart] = useState<any[]>([]);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'FEDAPAY'>('CASH');
   const [submitting, setSubmitting] = useState(false);
-  // ⭐ Student association
+
+  // ⭐ Association d'un élève — pattern aligné sur Finance/Encaissement :
+  //    Niveau → Classe → Recherche → Sélecteur élève.
   const [studentModalOpen, setStudentModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string; class?: string } | null>(null);
+
+  // Données de filtrage (chargées à l'ouverture du modal)
+  const [levels, setLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+
+  // Sélecteurs
+  const [selectedLevelId, setSelectedLevelId] = useState<string>('');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [studentSearch, setStudentSearch] = useState('');
-  const [studentResults, setStudentResults] = useState<any[]>([]);
-  const [studentLoading, setStudentLoading] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
   const addToCart = (product: any) => {
     setCart((prev) => {
@@ -131,19 +147,155 @@ export default function ShopPOS() {
     }
   };
 
-  // ⭐ Student search
-  const handleStudentSearch = async (query: string) => {
-    if (!query.trim()) { setStudentResults([]); return; }
-    setStudentLoading(true);
-    try {
-      const res = await fetch(`/api/students?search=${encodeURIComponent(query)}&limit=20`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        const students = Array.isArray(data) ? data : (data?.items ?? data?.students ?? []);
-        setStudentResults(students);
+  // ⭐ Chargement des niveaux scolaires (mise en cache côté composant —
+  //    le modal se rouvre souvent, on évite de refetch à chaque fois).
+  useEffect(() => {
+    if (levels.length > 0) return;
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setLevels([]));
+  }, [levels.length]);
+
+  // ⭐ Chargement des classes (toutes classes confondues — on filtre
+  //    ensuite par niveau côté client via useMemo).
+  useEffect(() => {
+    if (classes.length > 0) return;
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d?.data ?? []);
+        setClasses(list);
+      })
+      .catch(() => setClasses([]));
+  }, [classes.length]);
+
+  // ⭐ Chargement des élèves (une seule fois, au montage du composant).
+  //    On demande une limite élevée (500) pour récupérer l'ensemble de
+  //    l'effectif — la plupart des écoles ont moins de 500 élèves par
+  //    année scolaire. Si l'école est plus grande, le filtre côté client
+  //    reste pertinent tant que l'API renvoie un échantillon représentatif.
+  useEffect(() => {
+    if (students.length > 0) return;
+    setStudentsLoading(true);
+    fetch('/api/students?limit=500&include=enrollments', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d?.items ?? d?.students ?? d?.data ?? []);
+        setStudents(list);
+      })
+      .catch(() => setStudents([]))
+      .finally(() => setStudentsLoading(false));
+  }, [students.length]);
+
+  // Classes filtrées par niveau sélectionné (cascade)
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId) return classes;
+    const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+    const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+    const levelCode = selectedLevel?.code;
+    return classes.filter((c: any) => {
+      return c.schoolLevelId === schoolLevelId ||
+             c.schoolLevel?.code === levelCode ||
+             c.schoolLevel?.id === schoolLevelId;
+    });
+  }, [classes, selectedLevelId, levels]);
+
+  // Élèves filtrés par niveau + classe + recherche (pattern Encaissement)
+  const filteredStudents = useMemo(() => {
+    if (!students.length) return [];
+
+    // Filtrage par niveau : on prend les classIds des classes du niveau
+    // sélectionné et on ne garde que les élèves inscrits dans l'une de
+    // ces classes (via studentEnrollments).
+    let levelClassIds: Set<string> | null = null;
+    if (selectedLevelId) {
+      const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+      const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+      const levelCode = selectedLevel?.code;
+      levelClassIds = new Set(
+        classes
+          .filter((c: any) =>
+            c.schoolLevelId === schoolLevelId ||
+            c.schoolLevel?.code === levelCode ||
+            c.schoolLevel?.id === schoolLevelId
+          )
+          .map((c: any) => c.id)
+      );
+    }
+
+    // Filtrage par classe : si une classe est sélectionnée, on ne garde
+    // que les élèves inscrits dans cette classe.
+    const classFilterId = selectedClassId || null;
+
+    // Recherche texte (nom / prénom / matricule)
+    const q = studentSearch.trim().toLowerCase();
+
+    return students.filter((s: any) => {
+      // Filtre niveau
+      if (levelClassIds) {
+        const enrollments = s.studentEnrollments ?? s.enrollments ?? [];
+        if (!enrollments.some((e: any) => levelClassIds.has(e.classId))) {
+          return false;
+        }
       }
-    } catch { setStudentResults([]); }
-    finally { setStudentLoading(false); }
+      // Filtre classe
+      if (classFilterId) {
+        const enrollments = s.studentEnrollments ?? s.enrollments ?? [];
+        if (!enrollments.some((e: any) => e.classId === classFilterId)) {
+          return false;
+        }
+      }
+      // Recherche texte
+      if (q) {
+        const name = `${s.lastName || ''} ${s.firstName || ''} ${s.matricule || ''}`.toLowerCase();
+        if (!name.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [students, selectedLevelId, selectedClassId, studentSearch, levels, classes]);
+
+  // ⭐ Auto-sélection si la recherche + filtres donnent un seul résultat.
+  //    Pattern repris du modal Encaissement (NewPaymentModal).
+  useEffect(() => {
+    if (
+      (studentSearch.trim() || selectedClassId || selectedLevelId) &&
+      filteredStudents.length === 1 &&
+      selectedStudentId !== filteredStudents[0].id
+    ) {
+      setSelectedStudentId(filteredStudents[0].id);
+    }
+  }, [studentSearch, filteredStudents, selectedStudentId, selectedClassId, selectedLevelId]);
+
+  // Ouvrir le modal : réinitialise les filtres et la sélection
+  const openStudentModal = () => {
+    setStudentModalOpen(true);
+    setSelectedLevelId('');
+    setSelectedClassId('');
+    setStudentSearch('');
+    setSelectedStudentId('');
+  };
+
+  // Confirmer l'association : on convertit l'élève sélectionné en
+  // l'objet attendu par le panier (id / name / class).
+  const confirmStudentSelection = () => {
+    const s = students.find((st) => st.id === selectedStudentId);
+    if (!s) {
+      toast({
+        title: 'Aucun élève sélectionné',
+        description: 'Veuillez choisir un élève dans la liste.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const fullName = `${s.firstName || ''} ${s.lastName || ''}`.trim();
+    const className =
+      s.classroom?.name ||
+      s.academicClass?.name ||
+      classes.find((c: any) => c.id === (s.studentEnrollments?.[0]?.classId || s.enrollments?.[0]?.classId))?.name ||
+      '';
+    setSelectedStudent({ id: s.id, name: fullName, class: className });
+    setStudentModalOpen(false);
   };
 
   if (loading) {
@@ -268,7 +420,7 @@ export default function ShopPOS() {
             ) : (
               <div
                 className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all cursor-pointer"
-                onClick={() => { setStudentModalOpen(true); setStudentSearch(''); setStudentResults([]); }}
+                onClick={openStudentModal}
               >
                 <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
                   <User className="w-4 h-4 text-indigo-600" />
@@ -298,64 +450,141 @@ export default function ShopPOS() {
         </Card>
       </div>
 
-      {/* Student Search Modal */}
+      {/* ============================================================
+          STUDENT SEARCH MODAL — Pattern aligné sur Finance/Encaissement
+          (NewPaymentModal) :
+            - Sélecteur Niveau scolaire (cascade)
+            - Sélecteur Classe (filtré par niveau)
+            - Recherche libre (nom / prénom / matricule)
+            - Sélecteur élève (Select) alimenté par les filtres
+            - Auto-sélection si un seul résultat
+            - Bouton « Associer » pour confirmer
+          ============================================================ */}
       <Dialog open={studentModalOpen} onOpenChange={setStudentModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Associer un élève</DialogTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Filtrez par niveau et classe, ou recherchez par nom, prénom ou matricule, puis sélectionnez l'élève.
+            </p>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Rechercher par nom, prénom ou matricule..."
-                className="pl-9"
-                value={studentSearch}
-                onChange={(e) => { setStudentSearch(e.target.value); handleStudentSearch(e.target.value); }}
-                autoFocus
-              />
+
+          <div className="space-y-4 py-2">
+            {/* ── Ligne 1 : Niveau + Classe (cascade) ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Niveau scolaire</Label>
+                <Select
+                  value={selectedLevelId || 'ALL'}
+                  onValueChange={(v) => {
+                    setSelectedLevelId(v === 'ALL' ? '' : v);
+                    setSelectedClassId('');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tous les niveaux" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                    {levels.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.label ?? l.code ?? l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs">Classe</Label>
+                <Select
+                  value={selectedClassId || 'ALL'}
+                  onValueChange={(v) => setSelectedClassId(v === 'ALL' ? '' : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Toutes les classes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Toutes les classes</SelectItem>
+                    {filteredClasses.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="max-h-60 overflow-y-auto space-y-1">
-              {studentLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+
+            {/* ── Ligne 2 : Recherche libre ── */}
+            <div>
+              <Label className="text-xs">Rechercher un élève</Label>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Rechercher par nom, prénom ou matricule..."
+                  className="pl-9"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* ── Ligne 3 : Sélecteur élève (Select) ── */}
+            <div>
+              <Label className="text-xs">Élève</Label>
+              {studentsLoading ? (
+                <div className="flex items-center justify-center py-4 text-sm text-gray-500">
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Chargement des élèves...
                 </div>
-              ) : studentResults.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">
-                  {studentSearch ? 'Aucun élève trouvé.' : 'Tapez pour rechercher un élève.'}
-                </p>
               ) : (
-                studentResults.map((s: any) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      const fullName = `${s.firstName || ''} ${s.lastName || ''}`.trim();
-                      const className = s.classroom?.name || s.academicClass?.name || '';
-                      setSelectedStudent({ id: s.id, name: fullName, class: className });
-                      setStudentModalOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg text-left transition"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600">
-                      {(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-navy-900">
-                        {s.firstName} {s.lastName}
-                      </p>
-                      {s.matricule && <p className="text-xs text-gray-500">{s.matricule}</p>}
-                    </div>
-                    {s.classroom?.name && (
-                      <span className="text-xs text-gray-500 bg-slate-100 px-2 py-0.5 rounded">{s.classroom.name}</span>
-                    )}
-                  </button>
-                ))
+                <Select
+                  value={selectedStudentId}
+                  onValueChange={setSelectedStudentId}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        filteredStudents.length === 0
+                          ? 'Aucun élève trouvé'
+                          : `Sélectionner (${filteredStudents.length} élève${filteredStudents.length > 1 ? 's' : ''})`
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredStudents.map((s: any) => {
+                      const fullName = `${s.lastName || ''} ${s.firstName || ''}`.trim();
+                      const classroomName = s.classroom?.name || s.academicClass?.name || '';
+                      return (
+                        <SelectItem key={s.id} value={s.id}>
+                          {fullName}
+                          {s.matricule ? ` — ${s.matricule}` : ''}
+                          {classroomName ? ` (${classroomName})` : ''}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              )}
+              {filteredStudents.length === 0 && (selectedLevelId || selectedClassId || studentSearch) && !studentsLoading && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Aucun élève ne correspond aux critères. Ajustez le filtre ou la recherche.
+                </p>
               )}
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setStudentModalOpen(false)}>Annuler</Button>
+            <Button
+              onClick={confirmStudentSelection}
+              disabled={!selectedStudentId}
+            >
+              Associer cet élève
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

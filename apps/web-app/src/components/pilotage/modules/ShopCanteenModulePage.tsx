@@ -35,12 +35,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Home, Menu as MenuIcon, Search, Plus, ChefHat, ShoppingBag,
+  Home, Search, Plus, ChefHat, ShoppingBag,
   Activity, List, Package, Archive, QrCode, Wallet, Box, Truck,
   Tag, Bookmark, Navigation, RotateCcw, BarChart3, Settings,
   LayoutDashboard, ClipboardCheck, Users, UtensilsCrossed,
   AlertTriangle, CreditCard, AlertCircle, ExternalLink,
-  TrendingUp, X,
+  TrendingUp, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -250,7 +250,28 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
   const { user } = useAppSession();
   const config = MODE_CONFIG[mode];
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  // ⭐ Persiste l'état plié/déplié de la sidebar dans localStorage pour qu'il
+  //    survive aux navigations entre modules et aux rafraîchissements.
+  //    Clé préfixée par `mode` pour que Boutique et Cantine gardent chacune
+  //    leur propre préférence.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem(`shop-canteen-sidebar-collapsed:${mode}`);
+    if (stored === 'true') setSidebarCollapsed(true);
+    else if (stored === 'false') setSidebarCollapsed(false);
+  }, [mode]);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(`shop-canteen-sidebar-collapsed:${mode}`, String(next));
+      }
+      return next;
+    });
+  };
+
   const [activeView, setActiveView] = useState<string>(initialView || `${mode}:dashboard`);
   const [searchQuery, setSearchQuery] = useState('');
   // ⭐ Une seule source de stats — celle du module actif. Pas de mock.
@@ -359,13 +380,16 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
     <div className="flex flex-col h-[calc(100vh-64px)] bg-white overflow-hidden">
       {/* ═════════ TOP BAR ═════════ */}
       <div className="flex items-center gap-4 px-4 h-14 border-b border-slate-200 bg-white sticky top-0 z-50">
-        {/* Hamburger menu */}
+        {/* Hamburger menu — plie/déplie la sidebar (icônes seules vs icônes + textes) */}
         <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
+          onClick={toggleSidebar}
           className="p-2 rounded-full hover:bg-slate-100"
-          title="Afficher/Masquer la sidebar"
+          title={sidebarCollapsed ? 'Déplier la sidebar' : 'Plier la sidebar'}
+          aria-label={sidebarCollapsed ? 'Déplier la sidebar' : 'Plier la sidebar'}
         >
-          {sidebarOpen ? <X className="w-5 h-5 text-slate-700" /> : <MenuIcon className="w-5 h-5 text-slate-700" />}
+          {sidebarCollapsed
+            ? <ChevronsRight className="w-5 h-5 text-slate-700" />
+            : <ChevronsLeft className="w-5 h-5 text-slate-700" />}
         </button>
 
         {/* Logo — couleur unique du module actif (pas de mélange) */}
@@ -376,22 +400,27 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
           <span className="hidden sm:block text-lg font-bold text-slate-900">{config.label}</span>
         </div>
 
-        {/* Search bar — limitée aux sous-modules du mode actif */}
-        <div className="flex-1 max-w-2xl mx-auto">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder={`Rechercher dans ${config.label}...`}
-              className={cn(
-                'w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-sm outline-none focus:bg-white focus:ring-2',
-                config.accent === 'amber' ? 'focus:ring-amber-500/30' : 'focus:ring-emerald-500/30',
-              )}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
+        {/* Search bar — limitée aux sous-modules du mode actif.
+            Cachée quand la sidebar est pliée (icônes seules) : la recherche
+            n'aurait aucun sens sans les libellés visibles dans la sidebar. */}
+        {!sidebarCollapsed && (
+          <div className="flex-1 max-w-2xl mx-auto">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder={`Rechercher dans ${config.label}...`}
+                className={cn(
+                  'w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-full text-sm outline-none focus:bg-white focus:ring-2',
+                  config.accent === 'amber' ? 'focus:ring-amber-500/30' : 'focus:ring-emerald-500/30',
+                )}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
+        )}
+        {sidebarCollapsed && <div className="flex-1" />}
 
         {/* Quick action — UN SEUL bouton (celui du module actif) */}
         <button
@@ -411,53 +440,69 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
 
       {/* ═════════ MAIN LAYOUT ═════════ */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ═════════ SIDEBAR ═════════ */}
-        {sidebarOpen && (
-          <div className="w-60 flex-shrink-0 border-r border-slate-200 overflow-y-auto bg-white">
-            <div className="py-2">
-              {/* ACCUEIL du module */}
-              {filteredHome.length > 0 && (
-                <div className="mb-2">
-                  {filteredHome.map(item => (
-                    <SidebarButton
-                      key={item.id}
-                      item={item}
-                      isActive={activeView === item.id}
-                      accentClasses={accentClasses}
-                      onClick={() => setActiveView(item.id)}
-                    />
-                  ))}
-                </div>
-              )}
+        {/* ═════════ SIDEBAR ═════════
+            Pliable : w-60 (dépliée, icônes + textes) ou w-16 (pliée, icônes seules).
+            On ne masque JAMAIS complètement la sidebar — l'utilisateur a toujours
+            accès aux sous-modules via les icônes. */}
+        <div
+          className={cn(
+            'flex-shrink-0 border-r border-slate-200 overflow-y-auto bg-white transition-[width] duration-200',
+            sidebarCollapsed ? 'w-16' : 'w-60',
+          )}
+        >
+          <div className="py-2">
+            {/* ACCUEIL du module */}
+            {filteredHome.length > 0 && (
+              <div className="mb-2">
+                {filteredHome.map(item => (
+                  <SidebarButton
+                    key={item.id}
+                    item={item}
+                    isActive={activeView === item.id}
+                    accentClasses={accentClasses}
+                    collapsed={sidebarCollapsed}
+                    onClick={() => setActiveView(item.id)}
+                  />
+                ))}
+              </div>
+            )}
 
-              {/* SECTION du module actif — uniquement */}
-              {filteredModule.length > 0 && (
-                <div className="border-t border-slate-100 pt-2 mt-2">
+            {/* SECTION du module actif — uniquement */}
+            {filteredModule.length > 0 && (
+              <div className="border-t border-slate-100 pt-2 mt-2">
+                {sidebarCollapsed ? (
+                  // Mode plié : on affiche juste un point coloré centré pour signaler
+                  // la section, sans libellé.
+                  <div className="flex justify-center py-2" title={config.sidebarSectionLabel}>
+                    <span className={cn('w-1.5 h-1.5 rounded-full', accentClasses.dot)} />
+                  </div>
+                ) : (
                   <div className={cn('px-4 py-1 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5', accentClasses.text)}>
                     <span className={cn('w-1.5 h-1.5 rounded-full', accentClasses.dot)} />
                     {config.sidebarSectionLabel}
                   </div>
-                  {filteredModule.map(item => (
-                    <SidebarButton
-                      key={item.id}
-                      item={item}
-                      isActive={activeView === item.id}
-                      accentClasses={accentClasses}
-                      onClick={() => setActiveView(item.id)}
-                    />
-                  ))}
-                </div>
-              )}
+                )}
+                {filteredModule.map(item => (
+                  <SidebarButton
+                    key={item.id}
+                    item={item}
+                    isActive={activeView === item.id}
+                    accentClasses={accentClasses}
+                    collapsed={sidebarCollapsed}
+                    onClick={() => setActiveView(item.id)}
+                  />
+                ))}
+              </div>
+            )}
 
-              {/* Empty search results */}
-              {filteredItems.length === 0 && (
-                <div className="px-4 py-8 text-center text-xs text-slate-400">
-                  Aucun sous-module ne correspond à « {searchQuery} »
-                </div>
-              )}
-            </div>
+            {/* Empty search results — uniquement en mode déplié (le search est caché en mode plié) */}
+            {filteredItems.length === 0 && !sidebarCollapsed && (
+              <div className="px-4 py-8 text-center text-xs text-slate-400">
+                Aucun sous-module ne correspond à « {searchQuery} »
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {/* ═════════ MAIN CONTENT AREA ═════════ */}
         <div className="flex-1 overflow-y-auto bg-slate-50">
@@ -487,14 +532,32 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
 // ─────────────────────────────────────────────────────────────────────
 
 function SidebarButton({
-  item, isActive, accentClasses, onClick,
+  item, isActive, accentClasses, collapsed, onClick,
 }: {
   item: SidebarItem;
   isActive: boolean;
   accentClasses: { sidebarActive: string; sidebarHover: string };
+  collapsed: boolean;
   onClick: () => void;
 }) {
   const Icon = item.icon;
+
+  if (collapsed) {
+    // Mode plié : icône centrée seule, libellé masqué mais exposé via title (tooltip natif)
+    return (
+      <button
+        onClick={onClick}
+        title={item.label}
+        aria-label={item.label}
+        className={cn(
+          'w-full flex items-center justify-center py-2.5 text-sm transition-colors',
+          isActive ? accentClasses.sidebarActive : accentClasses.sidebarHover,
+        )}
+      >
+        <Icon className="w-5 h-5 flex-shrink-0" />
+      </button>
+    );
+  }
 
   return (
     <button

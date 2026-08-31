@@ -118,18 +118,21 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   // ACCUEIL du module (vue d'ensemble)
   { id: 'home', label: 'Accueil', icon: Home, group: 'home' },
 
-  // BOUTIQUE — 14 sous-modules
+  // BOUTIQUE — sous-modules actifs
   { id: 'shop:dashboard', label: 'Vue d\'ensemble', icon: Activity, group: 'shop' },
   { id: 'shop:catalog', label: 'Catalogue', icon: List, group: 'shop' },
   { id: 'shop:orders', label: 'Commandes', icon: Archive, group: 'shop' },
   { id: 'shop:pos', label: 'Ventes (POS)', icon: QrCode, group: 'shop' },
-  { id: 'shop:payments', label: 'Paiements & Wallet', icon: Wallet, group: 'shop' },
+  { id: 'shop:payments', label: 'Paiements', icon: Wallet, group: 'shop' },
   { id: 'shop:inventory', label: 'Stocks & Inventaires', icon: Box, group: 'shop' },
   { id: 'shop:suppliers', label: 'Fournisseurs & Achats', icon: Truck, group: 'shop' },
-  { id: 'shop:discounts', label: 'Remises & Promos', icon: Tag, group: 'shop' },
+  // ⭐ Commenté — sera réactivé à la demande des clients
+  // { id: 'shop:discounts', label: 'Remises & Promos', icon: Tag, group: 'shop' },
   { id: 'shop:kits', label: 'Kits Scolaires', icon: Bookmark, group: 'shop' },
-  { id: 'shop:pickups', label: 'Retraits & Livraisons', icon: Navigation, group: 'shop' },
-  { id: 'shop:returns', label: 'Retours & Échanges', icon: RotateCcw, group: 'shop' },
+  // ⭐ Commenté — sera réactivé à la demande des clients
+  // { id: 'shop:pickups', label: 'Retraits & Livraisons', icon: Navigation, group: 'shop' },
+  // ⭐ Commenté — sera réactivé à la demande des clients
+  // { id: 'shop:returns', label: 'Retours & Échanges', icon: RotateCcw, group: 'shop' },
   { id: 'shop:analysis', label: 'Rapports & Stats', icon: BarChart3, group: 'shop' },
   { id: 'shop:settings', label: 'Configuration', icon: Settings, group: 'shop' },
 
@@ -588,7 +591,6 @@ function HomeView({
     { label: 'Stocks', icon: Box, view: 'shop:inventory' },
     { label: 'Fournisseurs', icon: Truck, view: 'shop:suppliers' },
     { label: 'Kits Scolaires', icon: Bookmark, view: 'shop:kits' },
-    { label: 'Retours', icon: RotateCcw, view: 'shop:returns' },
     { label: 'Rapports', icon: BarChart3, view: 'shop:analysis' },
   ] : [
     { label: 'Nouveau Menu', icon: ChefHat, view: 'canteen:menus', primary: true },

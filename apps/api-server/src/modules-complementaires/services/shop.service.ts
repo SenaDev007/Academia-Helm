@@ -361,8 +361,20 @@ export class ShopService {
   }
 
   async createSupplier(tenantId: string, data: any) {
+    // ⭐ FIX: Only pass fields that exist in the ShopSupplier model.
+    //    The frontend may send extra fields like 'contact' which don't exist
+    //    in the schema and cause Prisma to throw a validation error.
+    const { name, contactName, email, phone, address, category } = data;
     return this.prisma.shopSupplier.create({
-      data: { tenantId, ...data }
+      data: {
+        tenantId,
+        name,
+        contactName: contactName || null,
+        email: email || null,
+        phone: phone || null,
+        address: address || null,
+        category: category || null,
+      },
     });
   }
 

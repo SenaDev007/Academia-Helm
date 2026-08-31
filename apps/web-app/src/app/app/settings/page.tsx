@@ -2257,7 +2257,7 @@ export default function SettingsPage() {
     CANTINE: 'Cantine',
     INFIRMERIE: 'Infirmerie',
     EDUCAST: 'EduCast',
-    BOUTIQUE: 'Boutique',
+    BOUTIQUE: 'Academia Shop',
   };
 
   /** Rôles plateforme (PLATFORM_OWNER, PLATFORM_ADMIN) vs rôles école (tenant + autres système) */
@@ -2440,10 +2440,9 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    // ⭐ L'administration du personnel (départements, postes, structure administrative)
-    //    a été entièrement déplacée vers le module RH → onglet "Administration".
-    //    Ici on ne garde que les Cachets et Tampons officiels.
-    { id: 'departments' as TabId, label: 'Cachets et Tampons', icon: Stamp },
+    // ⭐ Cachets et Tampons déplacé vers le module RH → onglet "Administration".
+    //    La génération des cachets (circulaire, rectangulaire, nominatif) se fait
+    //    maintenant directement depuis l'espace administration du module RH.
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
@@ -3383,21 +3382,12 @@ export default function SettingsPage() {
         //    pour les anciens signets (l'utilisateur doit utiliser le module RH).
         return null;
 
+      // ⭐ Cachets et Tampons déplacé vers le module RH → onglet "Administration".
+      //    La génération des cachets (circulaire, rectangulaire, nominatif) se fait
+      //    maintenant directement depuis l'espace administration du module RH,
+      //    avec le moteur de rendu professionnel (effet encre SVG).
       case 'departments':
-        return (
-          <div className="space-y-6">
-            {/* ⭐ Cachets & Tampons officiels
-                (l'administration du personnel — départements, postes, structure administrative —
-                 est désormais gérée dans le module RH → onglet "Administration") */}
-            <div>
-              <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-                <Stamp className="w-5 h-5 text-red-600" />
-                Cachets &amp; Tampons officiels
-              </h3>
-              <StampDesigner />
-            </div>
-          </div>
-        );
+        return null;
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];
@@ -4588,7 +4578,7 @@ export default function SettingsPage() {
           INFIRMARY: 'Infirmerie',
           QHSE: 'QHSE',
           EDUCAST: 'EduCast',
-          SHOP: 'Boutique',
+          SHOP: 'Academia Shop',
           ORION: 'ORION',
           ATLAS: 'ATLAS',
           OFFLINE_SYNC: 'Sync. hors ligne',

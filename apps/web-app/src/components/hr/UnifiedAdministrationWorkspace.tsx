@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { useBilingual, type LanguageTrack } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
 import {
@@ -229,6 +230,8 @@ export default function UnifiedAdministrationWorkspace() {
   const currentAcademicYear = moduleCtx?.academicYear;
   const tenantId = moduleCtx?.tenantId;
   const academicYearId = currentAcademicYear?.id;
+  // ⭐ Session pour accéder au promoteur (génération de cachet)
+  const { user: sessionUser } = useAppSession();
 
   // ── États UI ──────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
@@ -726,6 +729,11 @@ export default function UnifiedAdministrationWorkspace() {
   };
 
   // ── Générer cachets pour une unité ────────────────────────────────────────
+  // ⭐ Génère: (1) les cachets institutionnels (circulaire/rectangulaire/ovale)
+  //    + (2) les cachets nominatifs pour CHAQUE personne assignée à cette unité
+  //    (directeur, secrétaire-comptable, comptable, etc.) + le promoteur.
+  //    Le cachet nominatif est un tampon rectangulaire avec le nom + le rôle,
+  //    utilisant le moteur de rendu professionnel (effet encre SVG).
   const handleGenerateStamp = async (unit: string) => {
     setGeneratingStamp(unit);
     setError(null);
@@ -737,12 +745,66 @@ export default function UnifiedAdministrationWorkspace() {
         const level = schoolLevels.find((l) => l.code === unitLevelCode);
         educationLevelId = level?.id ?? null;
       }
+
+      // 1. Générer les cachets institutionnels (circulaire/rectangulaire/ovale)
       await authedFetch('/api/settings/stamps/generate', {
         method: 'POST',
         body: { formats: ['circular', 'rectangular', 'oval'], educationLevelId },
       });
+
+      // 2. Générer les cachets nominatifs pour chaque personne assignée à cette unité
+      const unitAssignments = assignments.filter((a) => a.adminUnit === unit && a.staff);
+      const roleLabelMap: Record<string, string> = {
+        DIRECTEUR: 'DIRECTEUR',
+        DIRECTEUR_ADJOINT: 'DIRECTEUR ADJOINT',
+        SECRETAIRE: 'SECRÉTAIRE',
+        SECRETAIRE_COMPTABLE: 'SECRÉTAIRE-COMPTABLE',
+        COMPTABLE: 'COMPTABLE',
+        ECONOME: 'ÉCONOME',
+        INTENDANT: 'INTENDANT',
+        CENSEUR: 'CENSEUR',
+        SURVEILLANT: 'SURVEILLANT',
+        RESP_SCOLARITE: 'RESPONSABLE SCOLARITÉ',
+        PROMOTEUR: 'PROMOTEUR',
+        AUTRE: 'PERSONNEL ADMINISTRATIF',
+      };
+
+      let nominativeCount = 0;
+      for (const assignment of unitAssignments) {
+        if (!assignment.staff) continue;
+        const holderName = `${assignment.staff.firstName || ''} ${assignment.staff.lastName || ''}`.trim();
+        if (!holderName) continue;
+        const holderRole = roleLabelMap[assignment.adminRole] || assignment.adminRole;
+        try {
+          await authedFetch('/api/settings/stamps/generate-nominative', {
+            method: 'POST',
+            body: { holderName, holderRole, educationLevelId },
+          });
+          nominativeCount++;
+        } catch (e: any) {
+          // Continue even if one fails
+          console.error(`Cachet nominatif échoué pour ${holderName}:`, e.message);
+        }
+      }
+
+      // 3. Générer le cachet du promoteur (si l'utilisateur connecté est promoteur)
+      if (sessionUser && (sessionUser.role === 'PROMOTEUR' || sessionUser.role === 'PROMOTER')) {
+        const promoterName = `${sessionUser.firstName || ''} ${sessionUser.lastName || ''}`.trim();
+        if (promoterName) {
+          try {
+            await authedFetch('/api/settings/stamps/generate-nominative', {
+              method: 'POST',
+              body: { holderName: promoterName, holderRole: 'PROMOTEUR', educationLevelId },
+            });
+            nominativeCount++;
+          } catch (e: any) {
+            console.error(`Cachet promoteur échoué:`, e.message);
+          }
+        }
+      }
+
       const unitLabel = ADMIN_UNIT_LABELS[unit] || unit;
-      setSuccess(`Cachets générés pour ${unitLabel}. Disponibles dans Paramètres > Cachets & Signatures.`);
+      setSuccess(`Cachets générés pour ${unitLabel}: ${nominativeCount > 0 ? `${nominativeCount} cachet(s) nominatif(s) + ` : ''}cachets institutionnels prêts.`);
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la génération des cachets');
     } finally {
@@ -790,12 +852,11 @@ export default function UnifiedAdministrationWorkspace() {
       };
       const holderRole = roleLabelMap[adminRole] || adminRole;
 
-      const res = await authedFetch('/api/settings/stamps/generate-nominative', {
+      const data = await authedFetch<{ stampUrl: string; generatedAt: string }>('/api/settings/stamps/generate-nominative', {
         method: 'POST',
         body: { holderName, holderRole, educationLevelId },
       });
-      const data = await res.json();
-      setSuccess(`Cachet nominatif généré pour ${holderName} (${holderRole}). URL: ${data.stampUrl}`);
+      setSuccess(`Cachet nominatif généré pour ${holderName} (${holderRole}). URL: ${data?.stampUrl || ''}`);
       return data;
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la génération du cachet nominatif');
@@ -858,7 +919,7 @@ export default function UnifiedAdministrationWorkspace() {
         educationLevelId = level?.id ?? null;
       }
       const roleLabel = ADMIN_ROLE_LABELS[assignment.adminRole as AdminRole] || assignment.adminRole;
-      const res = await authedFetch('/api/settings/signature/request-canva-link', {
+      const data = await authedFetch<{ success: boolean; signatureUrl: string }>('/api/settings/signature/request-canva-link', {
         method: 'POST',
         body: {
           staffId: assignment.staffId,
@@ -869,7 +930,6 @@ export default function UnifiedAdministrationWorkspace() {
           educationLevelId,
         },
       });
-      const data = await res.json();
       const staffName = `${assignment.staff.firstName} ${assignment.staff.lastName}`.trim();
       if (data.success) {
         setSuccess(`Lien de signature envoyé par email à ${staffName} (${assignment.staff.email}). Le staff doit cliquer sur le lien pour dessiner sa signature.`);

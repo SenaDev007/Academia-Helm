@@ -384,7 +384,7 @@ const SAISIEMASTER_MODULES = [
 const SUPPLEMENTARY_MODULES = [
   { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed, featureCode: 'CANTEEN' },
   { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
-  { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, iconUrl: '/icons/modules/boutique.png', featureCode: 'SHOP' },
+  { path: '/app/shop', label: 'Academia Shop', icon: ShoppingBag, iconUrl: '/icons/modules/boutique.png', featureCode: 'SHOP' },
   // ⭐ Modules masqués temporairement — seront réactivés lors des mises à jour futures
   // { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
   // { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },

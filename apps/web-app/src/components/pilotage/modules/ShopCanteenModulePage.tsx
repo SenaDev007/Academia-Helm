@@ -173,7 +173,7 @@ interface ModeConfig {
 
 const MODE_CONFIG: Record<ModuleMode, ModeConfig> = {
   shop: {
-    label: 'Boutique & Économat',
+    label: 'Academia Shop & Économat',
     description: 'Gestion des ventes, stocks, fournisseurs, kits scolaires et lien direct avec les encaissements du module Finance.',
     accent: 'amber',
     logoBg: 'bg-gradient-to-br from-amber-500 to-orange-500',
@@ -185,7 +185,7 @@ const MODE_CONFIG: Record<ModuleMode, ModeConfig> = {
       btnClass: 'bg-amber-600 text-white rounded-full text-sm font-bold hover:bg-amber-700',
     },
     statsEndpoint: '/api/modules-complementaires/shop/stats',
-    sidebarSectionLabel: 'Boutique & Économat',
+    sidebarSectionLabel: 'Academia Shop & Économat',
   },
   canteen: {
     label: 'Cantine & Restauration',
@@ -652,7 +652,7 @@ function HomeView({
         </div>
         <div>
           <p className="text-sm font-bold text-slate-900">
-            {mode === 'shop' ? 'Configuration Boutique' : 'Paramètres Cantine'}
+            {mode === 'shop' ? 'Configuration Academia Shop' : 'Paramètres Cantine'}
           </p>
           <p className="text-xs text-slate-500">
             {mode === 'shop'

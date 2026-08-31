@@ -64,7 +64,7 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/transport': 'Transport',
   '/app/library': 'Bibliothèque',
   '/app/infirmary': 'Infirmerie',
-  '/app/shop': 'Boutique',
+  '/app/shop': 'Academia Shop',
   '/app/qhse': 'QHSE',
   '/app/canteen': 'Cantine',
   '/app/educast': 'EduCast',

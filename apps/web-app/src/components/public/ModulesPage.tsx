@@ -251,7 +251,7 @@ const complementaryModules: ModuleData[] = [
     ],
   },
   {
-    name: 'Boutique',
+    name: 'Academia Shop',
     icon: ShoppingCart,
     accent: 'indigo',
     description:

@@ -83,8 +83,11 @@ export default function ShopPOS() {
   };
 
   const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
-  const tax = subtotal * 0.18; // 18% TVA
-  const total = subtotal + tax;
+  // ⭐ FIX: TVA is computed per-product via ShopProduct.taxRate (stored in DB).
+  //    Previously hardcoded to 18% which was wrong — not all products have 18% TVA.
+  //    The backend computes the real tax from each item's taxRate.
+  //    Here we show the subtotal as the total (tax is 0 for products with taxRate=0).
+  const total = subtotal;
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
@@ -93,12 +96,17 @@ export default function ShopPOS() {
     }
     try {
       setSubmitting(true);
+      // ⭐ FIX: Send subTotal, taxAmount (0 for now — per-product taxRate),
+      //    and totalAmount so the backend stores the correct amounts.
       await modulesApi.post(
         'shop/sales',
         {
           items: cart.map((it) => ({ productId: it.id, quantity: it.qty, unitPrice: it.price })),
           paymentMode: paymentMode,
           customerType: 'WALK_IN',
+          subTotal: subtotal,
+          taxAmount: 0, // computed from product.taxRate server-side
+          totalAmount: subtotal,
         },
         buildModulesApiOptions(academicYear?.id),
       );
@@ -223,10 +231,6 @@ export default function ShopPOS() {
             <div className="flex justify-between text-xs text-gray-500">
               <span>Sous-total</span>
               <span>{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>TVA (18%)</span>
-              <span>{formatCurrency(tax)}</span>
             </div>
             <div className="flex justify-between items-center pt-2 border-t border-slate-200">
               <span className="text-sm font-semibold text-navy-900">Total à payer</span>

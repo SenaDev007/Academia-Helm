@@ -1,57 +1,77 @@
 /**
  * ============================================================================
- * SHOP PAYMENTS & WALLET - ACADEMIA HELM
+ * SHOP PAYMENTS — Historique des ventes + reçus PDF
  * ============================================================================
  *
- * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
- *  - Boutons : <Button> shadcn
- *  - Table : <Table> shadcn
- *  - Modals : <Dialog> shadcn
- *  - Notifications : useToast() (au lieu de alert())
- *  - Inputs/Labels : <Input>/<Label> shadcn
- *  - Cards : rounded-xl (au lieu de rounded-[2.5rem])
- *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * Refonte sept 2026 : alignement sur le pattern Finance/Encaissement.
+ *  - Affiche le total des ventes encaissées (pas "-0")
+ *  - Carte "Total Portefeuille" seule, pleine largeur, hauteur proportionnelle
+ *  - Suppression de la carte "Méthodes Favorites" (redondante)
+ *  - Colonnes corrigées : Référence=saleNumber, Méthode=paymentMode (mappé),
+ *    Montant=totalAmount (pas amount)
+ *  - Colonne Actions : boutons Reçu PDF (Download / Email / Helm Connect)
+ *    qui appellent les endpoints /api/modules-complementaires/shop/sales/:id/receipt.pdf
+ *    et /resend — pattern identique à TransactionsContent (Finance).
  * ============================================================================
  */
 
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Wallet, CreditCard, Banknote, History, Search, Filter, ArrowUpRight, ArrowDownLeft, Plus, Smartphone, User } from 'lucide-react';
+import {
+  Loader2, Wallet, CreditCard, Banknote, History, Search, Filter,
+  ArrowUpRight, ArrowDownLeft, Plus, Smartphone, User,
+  Download, Mail, FileText, RefreshCw,
+} from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
-import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+import { GmailIcon, HelmConnectIcon } from '@/components/finance/OfficialIcons';
 
 interface SaleItem {
   id?: string;
+  saleNumber?: string;
   refNo?: string;
   reference?: string;
-  type?: string;
-  direction?: string;
   customerName?: string;
   clientName?: string;
   studentName?: string;
+  paymentMode?: string;
   method?: string;
   paymentMethod?: string;
+  totalAmount?: number;
   amount?: number;
   total?: number;
+  subTotal?: number;
+  paymentStatus?: string;
   status?: string;
+  saleDate?: string;
   date?: string;
   createdAt?: string;
+  customerType?: string;
 }
+
+// ⭐ Mapping des codes de paiement → libellés français lisibles.
+// Le backend stocke paymentMode en uppercase ('CASH', 'FEDAPAY', 'WALLET', 'CARD').
+const PAYMENT_MODE_LABELS: Record<string, string> = {
+  CASH: 'Espèces',
+  cash: 'Espèces',
+  FEDAPAY: 'FedaPay',
+  fedapay: 'FedaPay',
+  WALLET: 'Portefeuille',
+  wallet: 'Portefeuille',
+  CARD: 'Carte bancaire',
+  card: 'Carte bancaire',
+  MOBILE_MONEY: 'Mobile Money',
+};
 
 export default function ShopPayments() {
   const { academicYear } = useModuleContext();
@@ -62,68 +82,65 @@ export default function ShopPayments() {
     academicYear?.id,
   );
 
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ amount: 0, method: 'cash', customerId: '' });
-  const [walletAmount, setWalletAmount] = useState(0);
-  const [walletCardId, setWalletCardId] = useState(''); // ⭐ FIX: backend requires cardId
-
-  const handleRecordPayment = async () => {
-    try {
-      setSubmitting(true);
-      await modulesApi.post('shop/sales', paymentForm, buildModulesApiOptions(academicYear?.id));
-      setPaymentModalOpen(false);
-      setPaymentForm({ amount: 0, method: 'cash', customerId: '' });
-      await refetch();
-      toast({ title: 'Paiement enregistré', description: 'La transaction a été ajoutée à l\'historique.' });
-    } catch (e: any) {
-      toast({
-        title: 'Erreur',
-        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'enregistrement du paiement',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleWalletRecharge = async () => {
-    try {
-      setSubmitting(true);
-      // ⭐ FIX: Backend requires { cardId, amount } — not just { amount }
-      if (!walletCardId) {
-        toast({ title: 'Erreur', description: 'Veuillez sélectionner une carte de fidélité.', variant: 'destructive' });
-        setSubmitting(false);
-        return;
-      }
-      await modulesApi.post('shop/wallet/recharge', { cardId: walletCardId, amount: walletAmount }, buildModulesApiOptions(academicYear?.id));
-      setWalletModalOpen(false);
-      setWalletAmount(0);
-      setWalletCardId('');
-      await refetch();
-      toast({ title: 'Recharge effectuée', description: 'Le portefeuille a été rechargé avec succès.' });
-    } catch (e: any) {
-      toast({
-        title: 'Erreur',
-        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const [searchQuery, setSearchQuery] = useState('');
+  // ⭐ Canal d'envoi en cours (par sale id) — pour désactiver le bouton pendant l'envoi
+  const [sendingChannel, setSendingChannel] = useState<string | null>(null);
 
   const safeSales = sales ?? [];
 
-  // Calcul du solde global consolidé (somme des montants crédités)
-  const totalBalance = safeSales.reduce((acc: number, s: any) => {
-    const type = (s?.type ?? s?.direction ?? '').toString().toUpperCase();
-    const amount = s?.amount ?? s?.total ?? 0;
-    return type.includes('CRÉDIT') || type.includes('CREDIT') || type === 'IN'
-      ? acc + (amount as number)
-      : acc;
+  // ⭐ Calcul du total des ventes encaissées (somme des totalAmount)
+  // Anciennement : sommait uniquement les "CRÉDIT" → donnait -0 car les
+  // ShopSale n'ont pas de champ type/direction. Maintenant on somme
+  // directement totalAmount qui est le montant total de la vente.
+  const totalRevenue = safeSales.reduce((acc: number, s: any) => {
+    const amount = Number(s?.totalAmount ?? s?.total ?? s?.amount ?? 0);
+    return acc + amount;
   }, 0);
+
+  // Filtrage par recherche (saleNumber ou customerName)
+  const filteredSales = safeSales.filter((s: any) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const saleNumber = (s?.saleNumber ?? s?.refNo ?? s?.reference ?? '').toString().toLowerCase();
+    const customerName = (s?.customerName ?? s?.clientName ?? s?.studentName ?? '').toString().toLowerCase();
+    return saleNumber.includes(q) || customerName.includes(q);
+  });
+
+  // ⭐ URL du reçu PDF pour une vente (endpoint BFF)
+  const getReceiptPdfUrl = (saleId: string) =>
+    `/api/modules-complementaires/shop/sales/${encodeURIComponent(saleId)}/receipt.pdf`;
+
+  // ⭐ Télécharger le reçu PDF (ouvre dans un nouvel onglet)
+  const handleDownloadReceipt = (saleId: string) => {
+    window.open(getReceiptPdfUrl(saleId), '_blank');
+  };
+
+  // ⭐ Renvoyer le reçu par email ou Helm Connect
+  const handleResendReceipt = async (saleId: string, channel: 'email' | 'helm_connect') => {
+    const key = `${saleId}:${channel}`;
+    setSendingChannel(key);
+    try {
+      const res = await fetch(`/api/modules-complementaires/shop/sales/${encodeURIComponent(saleId)}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ channels: [channel] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const status = data?.channels?.[channel];
+      if (status?.status === 'skipped') {
+        toast({ title: 'Contact manquant', description: status.reason || `Aucun contact pour ${channel}.`, variant: 'destructive' });
+      } else if (status?.status === 'failed') {
+        toast({ title: 'Échec d\'envoi', description: status.error || `Échec de l'envoi par ${channel}.`, variant: 'destructive' });
+      } else {
+        toast({ title: 'Reçu envoyé', description: `Reçu envoyé par ${channel}${status?.to ? ` à ${status.to}` : ''}.` });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || `Échec envoi par ${channel}.`, variant: 'destructive' });
+    } finally {
+      setSendingChannel(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -142,56 +159,34 @@ export default function ShopPayments() {
         </div>
       )}
 
-      {/* Wallet Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2 p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-md border-0 relative overflow-hidden">
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <Wallet className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold">Total Portefeuille</h3>
-                  <p className="text-indigo-100 text-xs">Fonds sécurisés Academia Pay</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-3xl font-semibold">{formatCurrency(totalBalance)}</p>
-                <p className="text-xs text-indigo-100 mt-1">Solde global consolidé</p>
-              </div>
+      {/* ⭐ CARTE UNIQUE : Total des ventes encaissées — pleine largeur,
+          hauteur proportionnelle au contenu (pas de min-height fixe).
+          L'ancienne carte "Méthodes Favorites" a été supprimée car elle
+          affichait des pourcentages hardcoded (65%/25%/10%) non basés sur
+          les données réelles. */}
+      <Card className="p-6 bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-md border-0 relative overflow-hidden">
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/10 rounded-lg backdrop-blur-sm">
+              <Wallet className="w-6 h-6" />
             </div>
-
-            {/* ⭐ Wallet commenté — sera réactivé à la demande des clients
-            <div className="grid grid-cols-3 gap-3">
-              <QuickAction label="Recharger" icon={Plus} onClick={() => setWalletModalOpen(true)} />
-              <QuickAction label="Historique" icon={History} />
-              <QuickAction label="Réglages" icon={Smartphone} />
-            </div>
-            */}
-          </div>
-        </Card>
-
-        <Card className="p-6 shadow-sm flex flex-col justify-between">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-navy-900">Méthodes Favorites</h3>
-            <div className="space-y-3">
-              <PaymentMethodItem icon={Banknote} label="Espèces" percent={65} color="emerald" />
-              <PaymentMethodItem icon={Smartphone} label="Academia Pay (Wallet)" percent={25} color="indigo" />
-              <PaymentMethodItem icon={CreditCard} label="Carte Bancaire" percent={10} color="amber" />
+            <div>
+              <h3 className="text-base font-semibold">Total des ventes encaissées</h3>
+              <p className="text-indigo-100 text-xs mt-0.5">
+                {safeSales.length} transaction(s) · Année {academicYear?.name || '—'}
+              </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setPaymentModalOpen(true)}
-            className="w-full mt-4"
-          >
-            Enregistrer un Paiement
-          </Button>
-        </Card>
-      </div>
+          <div className="text-right">
+            <p className="text-3xl font-semibold">{formatCurrency(totalRevenue)}</p>
+            <p className="text-xs text-indigo-100 mt-1">Recette totale boutique</p>
+          </div>
+        </div>
+      </Card>
 
-      {/* Transaction History */}
+      {/* ⭐ HISTORIQUE DES TRANSACTIONS — avec colonnes corrigées :
+          Référence=saleNumber, Méthode=paymentMode (mappé vers libellé
+          français), Montant=totalAmount, + colonne Actions (Reçu). */}
       <Card className="shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <h3 className="text-base font-semibold text-navy-900">Historique des Transactions</h3>
@@ -200,11 +195,13 @@ export default function ShopPayments() {
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
                 type="text"
-                placeholder="N° Transac..."
-                className="pl-9 h-9 w-48"
+                placeholder="N° vente ou client..."
+                className="pl-9 h-9 w-56"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Button variant="outline" size="icon" className="h-9 w-9">
+            <Button variant="outline" size="icon" className="h-9 w-9" title="Filtrer (à venir)">
               <Filter className="w-4 h-4" />
             </Button>
           </div>
@@ -213,37 +210,127 @@ export default function ShopPayments() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead>Type</TableHead>
                 <TableHead>Référence</TableHead>
                 <TableHead>Client / Élève</TableHead>
                 <TableHead>Méthode</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
                 <TableHead>Statut</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead className="text-right">Reçu</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {safeSales.length === 0 ? (
+              {filteredSales.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-12">
                     Aucune transaction disponible pour cette année scolaire.
                   </TableCell>
                 </TableRow>
               ) : (
-                safeSales.map((sale: any, i: number) => {
-                  const type = (sale?.type ?? sale?.direction ?? 'DÉBIT').toString().toUpperCase();
-                  const isCredit = type.includes('CRÉDIT') || type.includes('CREDIT') || type === 'IN';
+                filteredSales.map((sale: any, i: number) => {
+                  // ⭐ Référence : prioriser saleNumber (format VTE-YYYY-NNNNN),
+                  //    puis refNo, reference, id.
+                  const saleNumber = sale?.saleNumber ?? sale?.refNo ?? sale?.reference ?? sale?.id ?? `VTE-${i}`;
+                  // ⭐ Client : prioriser customerName, puis clientName, studentName
+                  const customerName = sale?.customerName ?? sale?.clientName ?? sale?.studentName ?? 'Client de passage';
+                  // ⭐ Méthode : mapper paymentMode vers libellé français
+                  const paymentMode = sale?.paymentMode ?? sale?.method ?? sale?.paymentMethod ?? '—';
+                  const methodLabel = PAYMENT_MODE_LABELS[String(paymentMode).toUpperCase()] ?? PAYMENT_MODE_LABELS[paymentMode] ?? paymentMode;
+                  // ⭐ Montant : prioriser totalAmount, puis total, amount
+                  const amount = Number(sale?.totalAmount ?? sale?.total ?? sale?.amount ?? 0);
+                  // ⭐ Statut : prioriser paymentStatus, puis status
+                  const status = sale?.paymentStatus ?? sale?.status ?? 'PAID';
+                  const statusLabel = status === 'PAID' ? 'Payé' : status === 'PENDING' ? 'En attente' : status;
+                  const statusClass = status === 'PAID'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200';
+                  // ⭐ Date : prioriser saleDate, puis createdAt
+                  const rawDate = sale?.saleDate ?? sale?.createdAt;
+                  const date = rawDate
+                    ? new Date(rawDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                    : (sale?.date ?? '—');
+                  const saleId = sale?.id;
+
                   return (
-                    <TxRow
-                      key={sale?.id ?? `tx-${i}`}
-                      type={isCredit ? 'CRÉDIT' : 'DÉBIT'}
-                      refNo={sale?.refNo ?? sale?.reference ?? sale?.id ?? `TXN-${i}`}
-                      name={sale?.customerName ?? sale?.clientName ?? sale?.studentName ?? 'Client'}
-                      method={sale?.method ?? sale?.paymentMethod ?? '—'}
-                      amount={sale?.amount ?? sale?.total ?? 0}
-                      status={sale?.status ?? 'Succès'}
-                      date={sale?.date ?? (sale?.createdAt ? new Date(sale.createdAt).toLocaleDateString('fr-FR') : '—')}
-                    />
+                    <TableRow key={sale?.id ?? `tx-${i}`} className="hover:bg-slate-50">
+                      <TableCell>
+                        <span className="text-xs font-mono font-medium text-navy-900">{saleNumber}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                            <User className="w-3 h-3 text-gray-400" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs text-gray-700 truncate max-w-[180px]">{customerName}</span>
+                            {sale?.customerType === 'STUDENT' && (
+                              <span className="text-[10px] text-indigo-500">Élève</span>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {String(paymentMode).toUpperCase() === 'CASH' && <Banknote className="w-3.5 h-3.5 text-emerald-600" />}
+                          {String(paymentMode).toUpperCase() === 'FEDAPAY' && <CreditCard className="w-3.5 h-3.5 text-blue-600" />}
+                          {String(paymentMode).toUpperCase() === 'WALLET' && <Wallet className="w-3.5 h-3.5 text-indigo-600" />}
+                          <span className="text-xs text-gray-600">{methodLabel}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="text-sm font-semibold text-navy-900">
+                          {formatCurrency(amount)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-xs ${statusClass}`}>
+                          {statusLabel}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-gray-500">{date}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* ⭐ Télécharger le reçu PDF */}
+                          <button
+                            type="button"
+                            onClick={() => saleId && handleDownloadReceipt(saleId)}
+                            disabled={!saleId}
+                            className="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Télécharger le reçu PDF"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          {/* ⭐ Envoyer par Email */}
+                          <button
+                            type="button"
+                            onClick={() => saleId && handleResendReceipt(saleId, 'email')}
+                            disabled={!saleId || sendingChannel === `${saleId}:email`}
+                            className="p-1.5 rounded text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Envoyer le reçu par email"
+                          >
+                            {sendingChannel === `${saleId}:email` ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <GmailIcon className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          {/* ⭐ Envoyer par Helm Connect */}
+                          <button
+                            type="button"
+                            onClick={() => saleId && handleResendReceipt(saleId, 'helm_connect')}
+                            disabled={!saleId || sendingChannel === `${saleId}:helm_connect`}
+                            className="p-1.5 rounded text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="Envoyer le reçu via Helm Connect"
+                          >
+                            {sendingChannel === `${saleId}:helm_connect` ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <HelmConnectIcon className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
@@ -251,156 +338,6 @@ export default function ShopPayments() {
           </Table>
         </div>
       </Card>
-
-      {/* Payment Modal */}
-      <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Enregistrer un Paiement</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs">Montant (FCFA)</Label>
-              <Input
-                type="number"
-                value={paymentForm.amount}
-                onChange={(e) => setPaymentForm({ ...paymentForm, amount: Number(e.target.value) })}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Méthode</Label>
-              <select
-                value={paymentForm.method}
-                onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <option value="cash">Espèces</option>
-                <option value="wallet">Wallet</option>
-                <option value="card">Carte</option>
-              </select>
-            </div>
-            <div>
-              <Label className="text-xs">ID Client</Label>
-              <Input
-                type="text"
-                value={paymentForm.customerId}
-                onChange={(e) => setPaymentForm({ ...paymentForm, customerId: e.target.value })}
-                placeholder="Optionnel"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPaymentModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleRecordPayment} disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {submitting ? 'Envoi...' : 'Enregistrer'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ⭐ Wallet Recharge Modal — commenté, sera réactivé à la demande des clients
-      <Dialog open={walletModalOpen} onOpenChange={setWalletModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Recharger le Portefeuille</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs">Montant (FCFA)</Label>
-              <Input
-                type="number"
-                value={walletAmount}
-                onChange={(e) => setWalletAmount(Number(e.target.value))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setWalletModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleWalletRecharge} disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {submitting ? 'Envoi...' : 'Recharger'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      */}
     </div>
-  );
-}
-
-function QuickAction({ label, icon: Icon, onClick }: any) {
-  return (
-    <Button
-      variant="ghost"
-      onClick={onClick}
-      className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white h-auto"
-    >
-      <div className="p-2 bg-white/10 rounded-md">
-        <Icon className="w-4 h-4" />
-      </div>
-      <span className="text-xs font-medium">{label}</span>
-    </Button>
-  );
-}
-
-function PaymentMethodItem({ icon: Icon, label, percent, color }: any) {
-  const colors: any = {
-    emerald: 'bg-emerald-500',
-    indigo: 'bg-indigo-600',
-    amber: 'bg-amber-500',
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2 text-navy-900">
-          <Icon className="w-4 h-4" />
-          <span className="text-xs font-medium">{label}</span>
-        </div>
-        <span className="text-xs text-gray-400">{percent}%</span>
-      </div>
-      <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${colors[color]} transition-all duration-1000`} style={{ width: `${percent}%` }}></div>
-      </div>
-    </div>
-  );
-}
-
-function TxRow({ type, refNo, name, method, amount, status, date }: any) {
-  return (
-    <TableRow className="hover:bg-slate-50">
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <div className={`p-1.5 rounded-md ${type === 'CRÉDIT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-            {type === 'CRÉDIT' ? <ArrowDownLeft className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
-          </div>
-          <span className="text-xs font-medium">{type}</span>
-        </div>
-      </TableCell>
-      <TableCell className="text-xs font-medium text-navy-900">{refNo}</TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center">
-            <User className="w-3 h-3 text-gray-400" />
-          </div>
-          <span className="text-xs text-gray-600">{name}</span>
-        </div>
-      </TableCell>
-      <TableCell className="text-xs text-gray-500">{method}</TableCell>
-      <TableCell className="text-right">
-        <span className={`text-sm font-semibold ${type === 'CRÉDIT' ? 'text-emerald-600' : 'text-navy-900'}`}>
-          {type === 'CRÉDIT' ? '+' : '-'}{formatCurrency(amount)}
-        </span>
-      </TableCell>
-      <TableCell>
-        <Badge variant="outline" className={`text-xs ${
-          status === 'Succès' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-        }`}>
-          {status}
-        </Badge>
-      </TableCell>
-      <TableCell className="text-xs text-gray-500">{date}</TableCell>
-    </TableRow>
   );
 }

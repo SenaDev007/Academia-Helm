@@ -3,13 +3,13 @@
  * SHOP DASHBOARD - ACADEMIA HELM
  * ============================================================================
  *
- * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
- *  - Cards : rounded-xl border-gray-200 shadow-sm (au lieu de rounded-3xl)
- *  - Titres : text-lg font-semibold text-navy-900 (au lieu de font-black uppercase tracking-tight)
- *  - Table : composants shadcn <Table>/<TableHeader>/... au lieu de <table> HTML
- *  - Couleur primaire : indigo-600 / blue-600 (au lieu de navy-900 partout)
- *  - Plus de "Sarah AI Insights" custom (navy-900 + amber) — remplacé par une
- *    carte sobre "Top Produits" standard
+ * Refonte sept 2026 :
+ *  - Top Produits : affiche `sales` (nb ventes) au lieu de `quantity`
+ *    (backend renvoie maintenant `sales` dans topProducts)
+ *  - Performance des ventes : graphique Recharts (AreaChart) alimenté par
+ *    `dailyRevenue` (30 derniers jours). Remplace le placeholder.
+ *  - Ventes récentes : alimenté par `recentOrders` (10 dernières ventes
+ *    avec items + student). Backend renvoie maintenant `recentOrders`.
  * ============================================================================
  */
 
@@ -18,8 +18,12 @@
 import React from 'react';
 import {
   Package, TrendingUp, ShoppingCart, AlertCircle,
-  Clock, BarChart3, Loader2, ArrowRight,
+  Clock, Loader2, ArrowRight,
 } from 'lucide-react';
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
+  CartesianGrid, Tooltip, Legend,
+} from 'recharts';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
@@ -47,6 +51,9 @@ interface ShopStats {
     time: string;
   }>;
   topProducts?: Array<{ id?: string; name?: string; sales?: number; revenue?: number }>;
+  // ⭐ dailyRevenue : revenu par jour sur les 30 derniers jours pour le
+  //    graphique Performance. Format : { date: 'JJ/MM', revenue: number }
+  dailyRevenue?: Array<{ date: string; revenue: number }>;
 }
 
 const DEFAULT_STATS: ShopStats = {
@@ -56,6 +63,19 @@ const DEFAULT_STATS: ShopStats = {
   lowStockAlerts: 0,
   recentOrders: [],
   topProducts: [],
+  dailyRevenue: [],
+};
+
+// ⭐ Mapping des codes de paiement → libellés pour le tableau des ventes récentes
+const PAYMENT_MODE_LABELS: Record<string, string> = {
+  CASH: 'Espèces',
+  FEDAPAY: 'FedaPay',
+  WALLET: 'Portefeuille',
+  CARD: 'Carte',
+  cash: 'Espèces',
+  fedapay: 'FedaPay',
+  wallet: 'Portefeuille',
+  card: 'Carte',
 };
 
 export default function ShopDashboard() {
@@ -73,6 +93,21 @@ export default function ShopDashboard() {
     );
   }
 
+  // ⭐ Tooltip custom pour le graphique (affiche le montant formaté)
+  const ChartTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
+          <p className="font-medium text-gray-700 mb-1">{label}</p>
+          <p className="text-blue-600 font-semibold">
+            {formatCurrency(payload[0].value)}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
@@ -81,21 +116,21 @@ export default function ShopDashboard() {
         </div>
       )}
 
-      {/* Cartes résumé (secondaires — les KPIs principaux sont dans le ModuleHeader du parent) */}
+      {/* Cartes résumé */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           title="Chiffre d'affaires (mois)"
           value={formatCurrency(stats.totalRevenueMonth ?? 0)}
           icon={<TrendingUp className="w-5 h-5" />}
           accent="emerald"
-          trend="+15.4%"
+          trend={stats.totalRevenueMonth && stats.totalRevenueMonth > 0 ? '+30j' : undefined}
         />
         <SummaryCard
-          title="Commandes totales"
+          title="Ventes totales (30j)"
           value={String(stats.totalSalesMonth ?? 0)}
           icon={<ShoppingCart className="w-5 h-5" />}
           accent="blue"
-          trend="+5%"
+          sub="transactions"
         />
         <SummaryCard
           title="Commandes en attente"
@@ -114,7 +149,8 @@ export default function ShopDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* GraphiquePlaceholder — Performance des ventes */}
+        {/* ⭐ Performance des ventes — graphique Recharts AreaChart alimenté
+            par dailyRevenue (30 derniers jours). Remplace le placeholder. */}
         <Card className="lg:col-span-2 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -124,16 +160,53 @@ export default function ShopDashboard() {
             <Badge variant="outline" className="text-xs">30 derniers jours</Badge>
           </div>
 
-          <div className="h-[300px] w-full bg-gradient-to-b from-gray-50 to-white rounded-xl border border-dashed border-gray-200 flex items-center justify-center">
-            <div className="text-center">
-              <BarChart3 className="w-12 h-12 text-gray-300 mb-3 mx-auto" />
-              <p className="text-sm font-medium text-gray-500">Graphique analytique</p>
-              <p className="text-xs text-gray-400 mt-1">Données synchronisées en temps réel</p>
+          {(stats.dailyRevenue && stats.dailyRevenue.length > 0) ? (
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={stats.dailyRevenue}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: '#6b7280' }}
+                    interval={Math.floor((stats.dailyRevenue.length || 30) / 6)}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#6b7280' }}
+                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                  />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    fill="url(#colorRevenue)"
+                    name="Revenu"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-          </div>
+          ) : (
+            <div className="h-[300px] w-full bg-gradient-to-b from-gray-50 to-white rounded-xl border border-dashed border-gray-200 flex items-center justify-center">
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-500">Aucune donnée de vente</p>
+                <p className="text-xs text-gray-400 mt-1">Les ventes apparaîtront ici une fois encaissées</p>
+              </div>
+            </div>
+          )}
         </Card>
 
-        {/* Top Produits */}
+        {/* ⭐ Top Produits — affiche `sales` (nb ventes) au lieu de `quantity`.
+            Le backend renvoie maintenant `sales` dans topProducts. */}
         <Card className="p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-navy-900">Top produits</h3>
@@ -151,7 +224,7 @@ export default function ShopDashboard() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-navy-900">{product.name ?? '—'}</p>
-                    <p className="text-xs text-gray-500">{product.sales ?? 0} ventes</p>
+                    <p className="text-xs text-gray-500">{product.sales ?? 0} vente{(product.sales ?? 0) > 1 ? 's' : ''}</p>
                   </div>
                 </div>
                 <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
@@ -161,7 +234,7 @@ export default function ShopDashboard() {
             ))}
             {(!stats.topProducts || stats.topProducts.length === 0) && (
               <div className="text-center py-8 text-sm text-gray-400">
-                Aucun produit en vedette.
+                Aucun produit vendu pour le moment.
               </div>
             )}
           </div>
@@ -172,7 +245,9 @@ export default function ShopDashboard() {
         </Card>
       </div>
 
-      {/* Ventes récentes — table standard pattern Finance */}
+      {/* ⭐ Ventes récentes — alimenté par `recentOrders` (10 dernières ventes
+          avec items + student). Le backend renvoie maintenant `recentOrders`
+          au format attendu par cette table. */}
       <Card className="shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
           <div>
@@ -203,7 +278,7 @@ export default function ShopDashboard() {
                   <TableCell>
                     <div>
                       <p className="text-sm font-medium text-navy-900">{order.name}</p>
-                      <p className="text-xs text-gray-500">{order.student ?? '—'}</p>
+                      {order.student && <p className="text-xs text-gray-500">{order.student}</p>}
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-gray-600 max-w-[200px] truncate">
@@ -213,7 +288,9 @@ export default function ShopDashboard() {
                     {formatCurrency(order.amount)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="text-xs">{order.mode}</Badge>
+                    <Badge variant="outline" className="text-xs">
+                      {PAYMENT_MODE_LABELS[order.mode] ?? order.mode ?? '—'}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -248,7 +325,7 @@ export default function ShopDashboard() {
   );
 }
 
-// ─── Sous-composant carte résumé (style Finance, pas de font-black uppercase) ───
+// ─── Sous-composant carte résumé ───
 function SummaryCard({
   title,
   value,

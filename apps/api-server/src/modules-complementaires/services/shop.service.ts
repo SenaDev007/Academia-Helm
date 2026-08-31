@@ -564,6 +564,9 @@ export class ShopService {
     const lowStockCount = products.filter(p => p.stock && p.stock.quantity <= p.minStock).length;
 
     // ⭐ topProducts : top 5 des produits les plus vendus (30 derniers jours)
+    //    Le frontend attend un champ `sales` (pas `quantity`) — on renvoie
+    //    les deux pour rétro-compatibilité, mais `sales` est la valeur
+    //    utilisée par ShopDashboard.
     const saleItems = await this.prisma.shopSaleItem.findMany({
       where: {
         sale: {
@@ -572,14 +575,14 @@ export class ShopService {
           saleDate: { gte: new Date(new Date().setDate(new Date().getDate() - 30)) }
         }
       },
-      include: { product: { select: { name: true, code: true } } },
+      include: { product: { select: { id: true, name: true, code: true } } },
       take: 500,
     });
-    const productMap = new Map<string, { name: string; code: string; quantity: number; revenue: number }>();
+    const productMap = new Map<string, { id: string; name: string; code: string; quantity: number; revenue: number }>();
     for (const item of saleItems) {
       const key = item.productId;
       if (!productMap.has(key)) {
-        productMap.set(key, { name: item.product?.name || 'N/A', code: item.product?.code || '', quantity: 0, revenue: 0 });
+        productMap.set(key, { id: item.productId, name: item.product?.name || 'N/A', code: item.product?.code || '', quantity: 0, revenue: 0 });
       }
       const entry = productMap.get(key)!;
       entry.quantity += item.quantity;
@@ -587,7 +590,9 @@ export class ShopService {
     }
     const topProducts = Array.from(productMap.values())
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
+      .slice(0, 5)
+      // ⭐ Renomme `quantity` en `sales` pour matcher l'interface frontend
+      .map(p => ({ id: p.id, name: p.name, code: p.code, sales: p.quantity, revenue: p.revenue }));
 
     // ⭐ salesByMode : répartition des ventes par mode de paiement
     const salesByMode: Record<string, { count: number; total: number }> = {};
@@ -598,14 +603,63 @@ export class ShopService {
       salesByMode[mode].total += Number(s.totalAmount);
     }
 
+    // ⭐ recentOrders : 10 dernières ventes avec items + student pour
+    //    affichage dans ShopDashboard (section "Ventes récentes").
+    //    Format attendu par le frontend :
+    //      { id, refNo, name, student, items, amount, mode, status, time }
+    const recentSales = await this.prisma.shopSale.findMany({
+      where: { tenantId, academicYearId },
+      include: {
+        items: { include: { product: { select: { name: true } } } },
+        student: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { saleDate: 'desc' },
+      take: 10,
+    });
+    const recentOrders = recentSales.map(s => {
+      const itemsList = (s.items || []).map((it: any) => it.product?.name || 'Article').join(', ');
+      return {
+        id: s.id,
+        refNo: s.saleNumber,
+        name: s.customerName || (s.student ? `${s.student.lastName} ${s.student.firstName}` : 'Client'),
+        student: s.student ? `${s.student.lastName} ${s.student.firstName}` : undefined,
+        items: itemsList.substring(0, 100) + (itemsList.length > 100 ? '...' : ''),
+        amount: Number(s.totalAmount),
+        mode: s.paymentMode || '—',
+        status: s.paymentStatus === 'PAID' ? 'Complété' : s.paymentStatus,
+        time: new Date(s.saleDate).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }),
+      };
+    });
+
+    // ⭐ dailyRevenue : revenu par jour sur les 30 derniers jours pour le
+    //    graphique "Performance des ventes". Format attendu :
+    //      { date: 'JJ/MM', revenue: number }
+    const dailyRevenue: Array<{ date: string; revenue: number }> = [];
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      const dayStart = new Date(day.setHours(0, 0, 0, 0));
+      const dayEnd = new Date(day.setHours(23, 59, 59, 999));
+      const daySales = sales.filter(s => s.saleDate >= dayStart && s.saleDate <= dayEnd);
+      const dayRev = daySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
+      dailyRevenue.push({
+        date: `${String(dayStart.getDate()).padStart(2, '0')}/${String(dayStart.getMonth() + 1).padStart(2, '0')}`,
+        revenue: dayRev,
+      });
+    }
+
     return {
       totalProducts: products.length,
       totalSalesMonth: sales.length,
       totalRevenueMonth: totalRevenue,
+      totalOrders: 0, // ⭐ Pas de concept d'orders en attente dans le POS actuel
       lowStockAlerts: lowStockCount,
       inventoryValue: products.reduce((sum, p) => sum + (Number(p.costPrice || 0) * (p.stock?.quantity || 0)), 0),
       topProducts,
-      salesByMode
+      salesByMode,
+      recentOrders,
+      dailyRevenue,
     };
   }
 

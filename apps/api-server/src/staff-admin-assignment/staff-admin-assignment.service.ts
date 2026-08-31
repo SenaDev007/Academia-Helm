@@ -216,13 +216,22 @@ export class StaffAdminAssignmentService {
           where: { email: staffWithEmail.email.trim().toLowerCase() },
         });
         if (existingUser) {
-          const targetRole = resolveUserRoleWithLevel(data.adminRole, data.schoolLevelCode);
-          if (targetRole && existingUser.role !== targetRole) {
-            await this.prisma.user.update({
-              where: { id: existingUser.id },
-              data: { role: targetRole },
-            });
-            this.logger.log(`[create] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole} (from adminRole=${data.adminRole} @ ${data.schoolLevelCode})`);
+          // ⭐ FIX: Ne PAS écraser le rôle d'un PROMOTEUR ou SUPER_ADMIN.
+          //    Le promoteur est le propriétaire de l'école — son rôle doit rester
+          //    PROMOTEUR même s'il a aussi un poste administratif (directeur, etc.).
+          //    Le PermissionGuard bypass pour PROMOTEUR repose sur users.role.
+          const PROTECTED_ROLES = ['PROMOTEUR', 'PROMOTER', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'PLATFORM_ADMIN'];
+          if (PROTECTED_ROLES.includes(existingUser.role)) {
+            this.logger.log(`[create] Skipping role update for protected user ${existingUser.email} (role=${existingUser.role})`);
+          } else {
+            const targetRole = resolveUserRoleWithLevel(data.adminRole, data.schoolLevelCode);
+            if (targetRole && existingUser.role !== targetRole) {
+              await this.prisma.user.update({
+                where: { id: existingUser.id },
+                data: { role: targetRole },
+              });
+              this.logger.log(`[create] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole} (from adminRole=${data.adminRole} @ ${data.schoolLevelCode})`);
+            }
           }
         }
       }
@@ -292,13 +301,19 @@ export class StaffAdminAssignmentService {
           where: { email: row.staff.email.trim().toLowerCase() },
         });
         if (existingUser) {
-          const targetRole = resolveUserRoleWithLevel(newAdminRole, newSchoolLevelCode);
-          if (targetRole && existingUser.role !== targetRole) {
-            await this.prisma.user.update({
-              where: { id: existingUser.id },
-              data: { role: targetRole },
-            });
-            this.logger.log(`[update] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole}`);
+          // ⭐ FIX: Ne PAS écraser le rôle d'un PROMOTEUR ou SUPER_ADMIN (même logique que create).
+          const PROTECTED_ROLES = ['PROMOTEUR', 'PROMOTER', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'PLATFORM_ADMIN'];
+          if (PROTECTED_ROLES.includes(existingUser.role)) {
+            this.logger.log(`[update] Skipping role update for protected user ${existingUser.email} (role=${existingUser.role})`);
+          } else {
+            const targetRole = resolveUserRoleWithLevel(newAdminRole, newSchoolLevelCode);
+            if (targetRole && existingUser.role !== targetRole) {
+              await this.prisma.user.update({
+                where: { id: existingUser.id },
+                data: { role: targetRole },
+              });
+              this.logger.log(`[update] User role updated: ${existingUser.email} ${existingUser.role} → ${targetRole}`);
+            }
           }
         }
       } catch (updateErr: any) {

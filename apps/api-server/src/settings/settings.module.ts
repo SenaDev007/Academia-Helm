@@ -71,6 +71,7 @@ import { CommunicationModule } from '../communication/communication.module';
     BillingSettingsService,
     IdentityProfileService,
     StampsSignaturesService,
+    SignatureTokenService,
     GeolocationService,
     SecuritySettingsService,
     OrionSettingsService,

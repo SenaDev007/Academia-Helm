@@ -6,6 +6,7 @@ import { LabService } from './services/lab.service';
 import { InfirmaryService } from './services/infirmary.service';
 import { ShopService } from './services/shop.service';
 import { ShopReceiptService } from './services/shop-receipt.service';
+import { ShopPdfService } from './services/shop-pdf.service';
 import { EduCastService } from './services/educast.service';
 import { QHSEService } from './services/qhse.service';
 import { MedicalService } from './services/medical.service';
@@ -29,6 +30,7 @@ import { ModulesComplementairesController } from './modules-complementaires.cont
     InfirmaryService,
     ShopService,
     ShopReceiptService,
+    ShopPdfService,
     EduCastService,
     QHSEService,
     MedicalService,
@@ -42,6 +44,7 @@ import { ModulesComplementairesController } from './modules-complementaires.cont
     InfirmaryService,
     ShopService,
     ShopReceiptService,
+    ShopPdfService,
     EduCastService,
     QHSEService,
     MedicalService,

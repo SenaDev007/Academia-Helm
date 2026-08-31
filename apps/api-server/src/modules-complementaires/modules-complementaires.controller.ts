@@ -24,6 +24,7 @@ import { LabService } from './services/lab.service';
 import { InfirmaryService } from './services/infirmary.service';
 import { ShopService } from './services/shop.service';
 import { ShopReceiptService } from './services/shop-receipt.service';
+import { ShopPdfService } from './services/shop-pdf.service';
 import { EduCastService } from './services/educast.service';
 import { QHSEService } from './services/qhse.service';
 import { ModulesComplementairesOrionService } from './services/modules-complementaires-orion.service';
@@ -44,6 +45,7 @@ export class ModulesComplementairesController {
     private readonly infirmaryService: InfirmaryService,
     private readonly shopService: ShopService,
     private readonly shopReceiptService: ShopReceiptService,
+    private readonly shopPdfService: ShopPdfService,
     private readonly educastService: EduCastService,
     private readonly qhseService: QHSEService,
     private readonly orionService: ModulesComplementairesOrionService,
@@ -1563,6 +1565,96 @@ export class ModulesComplementairesController {
     @Query('academicYearId') academicYearId: string,
   ) {
     return this.shopService.getShopStats(tenantId, academicYearId);
+  }
+
+  /**
+   * ⭐ Génère le PDF du catalogue (liste de tous les produits).
+   * Pattern identique à /api/students/export/global-pdf — Puppeteer + HTML
+   * inline avec en-tête officiel (République du Bénin + drapeau + ministère
+   * + nom école + logo + slogan + contacts).
+   */
+  @Get('shop/catalogue/pdf')
+  async getShopCataloguePdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: any,
+  ) {
+    try {
+      const pdfBuffer = await this.shopPdfService.generateCataloguePdf(tenantId, academicYearId);
+      const filename = `Catalogue_Boutique_${new Date().toISOString().substring(0, 10)}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${filename}"`,
+        'Content-Length': String(pdfBuffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      this.logger.error(`Erreur génération PDF catalogue: ${err.message}`);
+      return res.status(500).json({ message: `Échec: ${err.message}` });
+    }
+  }
+
+  /**
+   * ⭐ Génère le PDF de l'historique des paiements (ventes) sur une période.
+   * Filtre par date : startDate (ISO) + endDate (ISO). Si non fournis, toutes
+   * les ventes de l'année sont incluses.
+   */
+  @Get('shop/payments/history/pdf')
+  async getShopPaymentsHistoryPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Res() res: any,
+  ) {
+    try {
+      const pdfBuffer = await this.shopPdfService.generatePaymentsHistoryPdf(
+        tenantId,
+        academicYearId,
+        startDate || null,
+        endDate || null,
+      );
+      const periode = startDate && endDate
+        ? `${startDate.substring(0, 10)}_${endDate.substring(0, 10)}`
+        : 'toutes';
+      const filename = `Historique_Paiements_${periode}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${filename}"`,
+        'Content-Length': String(pdfBuffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      this.logger.error(`Erreur génération PDF historique: ${err.message}`);
+      return res.status(500).json({ message: `Échec: ${err.message}` });
+    }
+  }
+
+  /**
+   * ⭐ Génère le PDF de la liste du stock (produit, quantité, seuil, valeur).
+   */
+  @Get('shop/stocks/pdf')
+  async getShopStocksPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: any,
+  ) {
+    try {
+      const pdfBuffer = await this.shopPdfService.generateStocksPdf(tenantId, academicYearId);
+      const filename = `Liste_Stock_${new Date().toISOString().substring(0, 10)}.pdf`;
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${filename}"`,
+        'Content-Length': String(pdfBuffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      this.logger.error(`Erreur génération PDF stock: ${err.message}`);
+      return res.status(500).json({ message: `Échec: ${err.message}` });
+    }
   }
 
   @Get('shop/settings')

@@ -20,7 +20,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
-import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X, Pencil, Trash2, Upload, ImageIcon } from 'lucide-react';
+import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X, Pencil, Trash2, Upload, ImageIcon, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -382,6 +382,25 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
                 <Button onClick={openCreateProduct}>
                   <Plus className="w-4 h-4 mr-2" />
                   Ajouter un Article
+                </Button>
+                {/* ⭐ Bouton Générer PDF du catalogue — pattern identique à
+                    la liste des élèves. Ouvre le PDF dans un nouvel onglet
+                    (le PDF est généré à la volée par le backend Puppeteer). */}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!academicYear?.id) {
+                      toast({ title: 'Année scolaire requise', variant: 'destructive' });
+                      return;
+                    }
+                    window.open(
+                      `/api/modules-complementaires/shop/catalogue/pdf?academicYearId=${academicYear.id}`,
+                      '_blank',
+                    );
+                  }}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Générer PDF
                 </Button>
               </div>
             </div>

@@ -17,7 +17,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Package, Search, AlertTriangle, History, TrendingDown, BarChart3, MapPin, MoreVertical, Edit, RefreshCw } from 'lucide-react';
+import { Loader2, Package, Search, AlertTriangle, History, TrendingDown, BarChart3, MapPin, MoreVertical, Edit, RefreshCw, FileText } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
@@ -152,6 +152,22 @@ export default function ShopStocks() {
                 <Button variant="outline" size="sm">
                   <MapPin className="w-4 h-4 mr-1.5" />
                   Localisation
+                </Button>
+                {/* ⭐ Bouton Générer PDF de la liste du stock — pattern identique
+                    à la liste des élèves. Ouvre le PDF dans un nouvel onglet. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!academicYear?.id) return;
+                    window.open(
+                      `/api/modules-complementaires/shop/stocks/pdf?academicYearId=${academicYear.id}`,
+                      '_blank',
+                    );
+                  }}
+                >
+                  <FileText className="w-4 h-4 mr-1.5" />
+                  Générer PDF
                 </Button>
                 <Button size="sm" onClick={() => openStockModal()}>
                   <RefreshCw className="w-4 h-4 mr-1.5" />

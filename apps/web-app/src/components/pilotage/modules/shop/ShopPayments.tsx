@@ -85,6 +85,10 @@ export default function ShopPayments() {
   const [searchQuery, setSearchQuery] = useState('');
   // ⭐ Canal d'envoi en cours (par sale id) — pour désactiver le bouton pendant l'envoi
   const [sendingChannel, setSendingChannel] = useState<string | null>(null);
+  // ⭐ Filtre par date pour la génération PDF de l'historique
+  const [pdfStartDate, setPdfStartDate] = useState('');
+  const [pdfEndDate, setPdfEndDate] = useState('');
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const safeSales = sales ?? [];
 
@@ -190,7 +194,7 @@ export default function ShopPayments() {
       <Card className="shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <h3 className="text-base font-semibold text-navy-900">Historique des Transactions</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
@@ -204,7 +208,70 @@ export default function ShopPayments() {
             <Button variant="outline" size="icon" className="h-9 w-9" title="Filtrer (à venir)">
               <Filter className="w-4 h-4" />
             </Button>
+            {/* ⭐ Bouton Générer PDF de l'historique — avec filtre par date.
+                Le PDF est généré à la volée par le backend (Puppeteer) avec
+                en-tête officiel (République du Bénin + drapeau + ministère +
+                nom école + logo + slogan). Pattern identique à la liste
+                des élèves. */}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={generatingPdf || !academicYear?.id}
+              onClick={() => {
+                if (!academicYear?.id) return;
+                setGeneratingPdf(true);
+                const params = new URLSearchParams({ academicYearId: academicYear.id });
+                if (pdfStartDate) params.set('startDate', new Date(pdfStartDate).toISOString());
+                if (pdfEndDate) {
+                  // Inclure la date de fin complète (jusqu'à 23:59:59)
+                  const end = new Date(pdfEndDate);
+                  end.setHours(23, 59, 59, 999);
+                  params.set('endDate', end.toISOString());
+                }
+                window.open(
+                  `/api/modules-complementaires/shop/payments/history/pdf?${params.toString()}`,
+                  '_blank',
+                );
+                setTimeout(() => setGeneratingPdf(false), 1000);
+              }}
+              title="Générer le PDF de l'historique des paiements (filtrable par date)"
+            >
+              {generatingPdf ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileText className="w-4 h-4 mr-1.5" />}
+              Générer PDF
+            </Button>
           </div>
+        </div>
+        {/* ⭐ Filtre par date pour la génération PDF — visible sous la barre de recherche */}
+        <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-3 flex-wrap bg-slate-50/50">
+          <span className="text-xs text-gray-500 font-medium">Filtrer PDF par période :</span>
+          <Input
+            type="date"
+            value={pdfStartDate}
+            onChange={(e) => setPdfStartDate(e.target.value)}
+            className="h-8 w-auto text-xs"
+            placeholder="Date début"
+          />
+          <span className="text-xs text-gray-400">→</span>
+          <Input
+            type="date"
+            value={pdfEndDate}
+            onChange={(e) => setPdfEndDate(e.target.value)}
+            className="h-8 w-auto text-xs"
+            placeholder="Date fin"
+          />
+          {(pdfStartDate || pdfEndDate) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => { setPdfStartDate(''); setPdfEndDate(''); }}
+            >
+              Effacer les dates
+            </Button>
+          )}
+          {!pdfStartDate && !pdfEndDate && (
+            <span className="text-[10px] text-gray-400">(toutes les ventes si pas de dates)</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <Table>

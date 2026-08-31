@@ -54,7 +54,6 @@ import '../../features/canteen/pages/canteen_screen.dart';
 import '../../features/infirmary/pages/infirmary_screen.dart';
 import '../../features/qhse/pages/qhse_screen.dart';
 import '../../features/educast/pages/educast_screen.dart';
-import '../../features/shop/pages/shop_screen.dart';
 // ⭐ P0: Import des écrans orphelins (écrans qui existaient mais n'étaient pas routés)
 import '../../features/grades/pages/grades_list_screen.dart';
 import '../../features/grades/pages/grade_detail_screen.dart';
@@ -197,12 +196,6 @@ const List<AdaptiveDestination> _adminDestinations = [
     selectedIcon: Icons.radio,
     label: 'EduCast',
     path: '/educast',
-  ),
-  AdaptiveDestination(
-    icon: Icons.shopping_bag_outlined,
-    selectedIcon: Icons.shopping_bag,
-    label: 'Boutique',
-    path: '/shop',
   ),
   AdaptiveDestination(
     icon: Icons.settings_outlined,
@@ -704,11 +697,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/educast',
             name: 'educast',
             builder: (context, state) => const EducastScreen(),
-          ),
-          GoRoute(
-            path: '/shop',
-            name: 'shop',
-            builder: (context, state) => const ShopScreen(),
           ),
           // Legacy routes
           GoRoute(

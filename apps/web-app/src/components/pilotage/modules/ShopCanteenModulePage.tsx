@@ -49,7 +49,6 @@ import { useAppSession } from '@/contexts/AppSessionContext';
 // Sous-composants Boutique
 import ShopDashboard from './shop/ShopDashboard';
 import ShopCatalog from './shop/ShopCatalog';
-import ShopProducts from './shop/ShopProducts';
 import ShopOrders from './shop/ShopOrders';
 import ShopPOS from './shop/ShopPOS';
 import ShopPayments from './shop/ShopPayments';
@@ -122,7 +121,6 @@ const SIDEBAR_ITEMS: SidebarItem[] = [
   // BOUTIQUE — 14 sous-modules
   { id: 'shop:dashboard', label: 'Vue d\'ensemble', icon: Activity, group: 'shop' },
   { id: 'shop:catalog', label: 'Catalogue', icon: List, group: 'shop' },
-  { id: 'shop:products', label: 'Articles & Variantes', icon: Package, group: 'shop' },
   { id: 'shop:orders', label: 'Commandes', icon: Archive, group: 'shop' },
   { id: 'shop:pos', label: 'Ventes (POS)', icon: QrCode, group: 'shop' },
   { id: 'shop:payments', label: 'Paiements & Wallet', icon: Wallet, group: 'shop' },
@@ -316,7 +314,6 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
       switch (activeView) {
         case 'shop:dashboard': return <ShopDashboard />;
         case 'shop:catalog': return <ShopCatalog />;
-        case 'shop:products': return <ShopProducts />;
         case 'shop:orders': return <ShopOrders />;
         case 'shop:pos': return <ShopPOS />;
         case 'shop:payments': return <ShopPayments />;
@@ -587,7 +584,6 @@ function HomeView({
   const quickActions = mode === 'shop' ? [
     { label: 'Nouvelle Vente', icon: Plus, view: 'shop:pos', primary: true },
     { label: 'Catalogue', icon: List, view: 'shop:catalog' },
-    { label: 'Articles & Variantes', icon: Package, view: 'shop:products' },
     { label: 'Commandes', icon: Archive, view: 'shop:orders' },
     { label: 'Stocks', icon: Box, view: 'shop:inventory' },
     { label: 'Fournisseurs', icon: Truck, view: 'shop:suppliers' },

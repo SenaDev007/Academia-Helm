@@ -8,7 +8,6 @@ import { Module, Global, Controller } from '@nestjs/common';
 import { CacheService } from './services/cache.service';
 import { PermissionsService } from './services/permissions.service';
 import { DashboardService } from './services/dashboard.service';
-import { StrictPermissionsService } from './services/strict-permissions.service';
 import { AccessDeniedLogService } from './services/access-denied-log.service';
 import { SubdomainService } from './services/subdomain.service';
 import { PuppeteerPoolService } from './services/puppeteer-pool.service';
@@ -36,7 +35,6 @@ import { ModelEnsembleService } from './services/model-ensemble.service';
     CacheService,
     PermissionsService,
     DashboardService,
-    StrictPermissionsService,
     AccessDeniedLogService,
     SubdomainService,
     PuppeteerPoolService,
@@ -51,7 +49,6 @@ import { ModelEnsembleService } from './services/model-ensemble.service';
     CacheService,
     PermissionsService,
     DashboardService,
-    StrictPermissionsService,
     AccessDeniedLogService,
     SubdomainService,
     PuppeteerPoolService,

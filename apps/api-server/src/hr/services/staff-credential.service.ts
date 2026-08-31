@@ -82,7 +82,6 @@ const PORTAL_LABELS: Record<string, string> = {
   [Portal.ENSEIGNANT]: 'Portail Enseignant',
   [Portal.PLATEFORME]: 'Portail Plateforme',
   [Portal.PARENT_ELEVE]: 'Portail Parent/Élève',
-  [Portal.FEDERIS]: 'Portail FEDERIS',
 };
 
 // ── Refinement: position-based role detection ──

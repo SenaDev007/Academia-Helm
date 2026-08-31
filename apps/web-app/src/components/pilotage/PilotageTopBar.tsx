@@ -207,7 +207,6 @@ function formatRoleLabel(role?: string) {
     PEDAGOGIC_DIRECTOR: 'Directeur Pédagogique',
     PEDAGOGIC_COORDINATOR: 'Coordinateur Pédagogique',
     BOARD_PRESIDENT: 'Président du Conseil',
-    FEDERIS_ADMIN: 'Admin Federis',
   };
 
   // Si le rôle a un suffixe niveau-spécifique non listé explicitement,

@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/api';
+import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 
 interface ShopSettings {
   id?: string;

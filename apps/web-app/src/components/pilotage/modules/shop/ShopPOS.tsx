@@ -58,10 +58,14 @@ export default function ShopPOS() {
   );
 
   const [cart, setCart] = useState<any[]>([]);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'wallet' | 'card'>('cash');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'FEDAPAY'>('CASH');
   const [submitting, setSubmitting] = useState(false);
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [walletAmount, setWalletAmount] = useState(0);
+  // ⭐ Student association
+  const [studentModalOpen, setStudentModalOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<{ id: string; name: string; class?: string } | null>(null);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentResults, setStudentResults] = useState<any[]>([]);
+  const [studentLoading, setStudentLoading] = useState(false);
 
   const addToCart = (product: any) => {
     setCart((prev) => {
@@ -103,14 +107,17 @@ export default function ShopPOS() {
         {
           items: cart.map((it) => ({ productId: it.id, quantity: it.qty, unitPrice: it.price })),
           paymentMode: paymentMode,
-          customerType: 'WALK_IN',
+          customerType: selectedStudent ? 'STUDENT' : 'WALK_IN',
+          studentId: selectedStudent?.id || undefined,
+          customerName: selectedStudent?.name || undefined,
           subTotal: subtotal,
-          taxAmount: 0, // computed from product.taxRate server-side
+          taxAmount: 0,
           totalAmount: subtotal,
         },
         buildModulesApiOptions(academicYear?.id),
       );
       setCart([]);
+      setSelectedStudent(null);
       await refetch();
       toast({ title: 'Vente encaissée', description: 'La transaction a été enregistrée avec succès.' });
     } catch (e: any) {
@@ -124,27 +131,19 @@ export default function ShopPOS() {
     }
   };
 
-  const handleWalletRecharge = async () => {
+  // ⭐ Student search
+  const handleStudentSearch = async (query: string) => {
+    if (!query.trim()) { setStudentResults([]); return; }
+    setStudentLoading(true);
     try {
-      setSubmitting(true);
-      await modulesApi.post(
-        'shop/wallet/recharge',
-        { amount: walletAmount },
-        buildModulesApiOptions(academicYear?.id),
-      );
-      setWalletModalOpen(false);
-      setWalletAmount(0);
-      await refetch();
-      toast({ title: 'Recharge effectuée', description: 'Le portefeuille a été rechargé.' });
-    } catch (e: any) {
-      toast({
-        title: 'Erreur',
-        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
+      const res = await fetch(`/api/students?search=${encodeURIComponent(query)}&limit=20`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        const students = Array.isArray(data) ? data : (data?.items ?? data?.students ?? []);
+        setStudentResults(students);
+      }
+    } catch { setStudentResults([]); }
+    finally { setStudentLoading(false); }
   };
 
   if (loading) {
@@ -243,22 +242,39 @@ export default function ShopPOS() {
         <Card className="shadow-sm p-4 space-y-4">
           <div className="space-y-2">
             <p className="text-xs text-gray-500">Client / Élève</p>
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all cursor-pointer">
-              <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
-                <User className="w-4 h-4 text-indigo-600" />
+            {selectedStudent ? (
+              <div className="flex items-center gap-3 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <User className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-navy-900">{selectedStudent.name}</p>
+                  {selectedStudent.class && <p className="text-xs text-gray-500">{selectedStudent.class}</p>}
+                </div>
+                <button onClick={() => setSelectedStudent(null)} className="text-xs text-red-500 hover:text-red-700">
+                  Retirer
+                </button>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-navy-900">Associer un élève</p>
-                <p className="text-xs text-gray-400">Optionnel</p>
+            ) : (
+              <div
+                className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all cursor-pointer"
+                onClick={() => { setStudentModalOpen(true); setStudentSearch(''); setStudentResults([]); }}
+              >
+                <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                  <User className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-navy-900">Associer un élève</p>
+                  <p className="text-xs text-gray-400">Optionnel</p>
+                </div>
+                <Plus className="w-4 h-4 text-gray-400" />
               </div>
-              <Plus className="w-4 h-4 text-gray-400" />
-            </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <PaymentModeBtn icon={Banknote} label="Cash" active={paymentMode === 'cash'} onClick={() => setPaymentMode('cash')} />
-            <PaymentModeBtn icon={Wallet} label="Wallet" active={paymentMode === 'wallet'} onClick={() => setPaymentMode('wallet')} />
-            <PaymentModeBtn icon={CreditCard} label="Carte" active={paymentMode === 'card'} onClick={() => setPaymentMode('card')} />
+          <div className="grid grid-cols-2 gap-2">
+            <PaymentModeBtn icon={Banknote} label="Espèces" active={paymentMode === 'CASH'} onClick={() => setPaymentMode('CASH')} />
+            <PaymentModeBtn icon={CreditCard} label="FedaPay" active={paymentMode === 'FEDAPAY'} onClick={() => setPaymentMode('FEDAPAY')} />
           </div>
 
           <Button
@@ -272,28 +288,64 @@ export default function ShopPOS() {
         </Card>
       </div>
 
-      {/* Wallet Recharge Modal */}
-      <Dialog open={walletModalOpen} onOpenChange={setWalletModalOpen}>
-        <DialogContent className="max-w-md">
+      {/* Student Search Modal */}
+      <Dialog open={studentModalOpen} onOpenChange={setStudentModalOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Recharger le Portefeuille</DialogTitle>
+            <DialogTitle>Associer un élève</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs">Montant</Label>
+          <div className="space-y-3 py-2">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <Input
-                type="number"
-                value={walletAmount}
-                onChange={(e) => setWalletAmount(Number(e.target.value))}
+                type="text"
+                placeholder="Rechercher par nom, prénom ou matricule..."
+                className="pl-9"
+                value={studentSearch}
+                onChange={(e) => { setStudentSearch(e.target.value); handleStudentSearch(e.target.value); }}
+                autoFocus
               />
+            </div>
+            <div className="max-h-60 overflow-y-auto space-y-1">
+              {studentLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                </div>
+              ) : studentResults.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">
+                  {studentSearch ? 'Aucun élève trouvé.' : 'Tapez pour rechercher un élève.'}
+                </p>
+              ) : (
+                studentResults.map((s: any) => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      const fullName = `${s.firstName || ''} ${s.lastName || ''}`.trim();
+                      const className = s.classroom?.name || s.academicClass?.name || '';
+                      setSelectedStudent({ id: s.id, name: fullName, class: className });
+                      setStudentModalOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg text-left transition"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600">
+                      {(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-navy-900">
+                        {s.firstName} {s.lastName}
+                      </p>
+                      {s.matricule && <p className="text-xs text-gray-500">{s.matricule}</p>}
+                    </div>
+                    {s.classroom?.name && (
+                      <span className="text-xs text-gray-500 bg-slate-100 px-2 py-0.5 rounded">{s.classroom.name}</span>
+                    )}
+                  </button>
+                ))
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setWalletModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleWalletRecharge} disabled={submitting}>
-              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {submitting ? 'Envoi...' : 'Recharger'}
-            </Button>
+            <Button variant="outline" onClick={() => setStudentModalOpen(false)}>Annuler</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

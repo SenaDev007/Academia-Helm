@@ -38,6 +38,7 @@ interface IdentityProfileData {
   phoneSecondary?: string | null;
   email?: string | null;
   website?: string | null;
+  logoUrl?: string | null;
 }
 
 @Injectable()
@@ -212,6 +213,7 @@ export class StampsSignaturesService {
       phoneSecondary: profile.phoneSecondary,
       email: profile.email,
       website: profile.website,
+      logoUrl: (profile as any).logoUrl ?? null,
     };
 
     const cwd = process.cwd();
@@ -236,13 +238,15 @@ export class StampsSignaturesService {
     if (formats.includes('circular')) {
       const circularSvg = this.buildCircularStampSvg(data);
       const circularPath = path.join(stampsDir, 'circular.png');
-      await this.svgToPng(circularSvg, circularPath, 700, 700);
+      // ⭐ TRANSPARENT background — no white fill, so the stamp overlays cleanly on documents
+      await this.svgToPng(circularSvg, circularPath, 700, 700, true);
       circularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/circular.png`;
     }
     if (formats.includes('rectangular')) {
       const rectangularSvg = this.buildRectangularStampSvg(data);
       const rectangularPath = path.join(stampsDir, 'rectangular.png');
-      await this.svgToPng(rectangularSvg, rectangularPath, 840, 300);
+      // ⭐ TRANSPARENT background
+      await this.svgToPng(rectangularSvg, rectangularPath, 840, 300, true);
       rectangularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/rectangular.png`;
     }
     if (formats.includes('oval')) {
@@ -341,7 +345,8 @@ export class StampsSignaturesService {
 
     const svg = this.buildNominativeStampSvg(holderName, holderRole);
     const stampPath = path.join(stampsDir, `${roleSlug}.png`);
-    await this.svgToPng(svg, stampPath, 840, 300);
+    // ⭐ TRANSPARENT background for nominative stamps
+    await this.svgToPng(svg, stampPath, 840, 300, true);
 
     const stampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/nominative/${roleSlug}.png`;
     this.logger.log(`Cachet nominatif généré: tenant=${tenantId} role=${roleSlug} name="${holderName}"`);
@@ -487,22 +492,26 @@ export class StampsSignaturesService {
    *
    * Reproduces the visual approach from the Claude AI reference file
    * (cachet_academia_helm.html): SVG with feTurbulence + feDisplacementMap
-   * ink effect, slight rotation for hand-stamped feel, 3 concentric circles,
-   * top-arc company name + bottom-arc address via <textPath>, star
-   * decorations at 3 o'clock and 9 o'clock, center logo + subtitle + title.
+   * ink effect, slight rotation, 3 concentric circles, top-arc ACRONYM +
+   * bottom-arc address/phone, star decorations, center LOGO + subtitle.
    *
-   * The output is a transparent PNG (via Puppeteer screenshot) that looks
-   * like a real red ink stamp — grainy, slightly displaced, semi-transparent.
+   * ⭐ TRANSPARENT background (no white fill) — the stamp overlays cleanly
+   *    on any document background.
+   * ⭐ Uses schoolAcronym (not full schoolName) for the top arc.
+   * ⭐ Uses the school logoUrl in the center circle (if available).
    */
   private buildCircularStampSvg(data: IdentityProfileData): string {
-    const companyName = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
-    const addressLine = this.escapeXml([data.city, data.country].filter(Boolean).join(' — '));
+    const acronym = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
+    // Bottom arc: phone + city + country
+    const phone = this.escapeXml([data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ') || '');
+    const addressParts = [phone, data.city, data.country].filter(Boolean);
+    const addressLine = this.escapeXml(addressParts.join(' — '));
     const subtitle = this.escapeXml(data.schoolAcronym ? data.schoolName : 'ÉTABLISSEMENT');
     const title = this.escapeXml('SCOLAIRE');
     const red = StampsSignaturesService.STAMP_RED;
+    // Logo in center (if available)
+    const logoUrl = data.logoUrl ? this.escapeXml(data.logoUrl) : null;
 
-    // 700×700 viewBox — same as the reference file.
-    // Arc paths computed for r=237.20 (top) and r=265.95 (bottom) centered on (350,350).
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700" style="--ink-color:${red};">
   <defs>
     <path id="topArcPath" d="M 117.98 300.68 A 237.20 237.20 0 0 1 582.02 300.68" fill="none"/>
@@ -521,14 +530,19 @@ export class StampsSignaturesService {
     <circle cx="350" cy="350" r="320" fill="none" stroke="currentColor" stroke-width="12" color="${red}"/>
     <circle cx="350" cy="350" r="304" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
     <circle cx="350" cy="350" r="213" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
+    <!-- Top arc: ACRONYM of the school -->
     <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="60" letter-spacing="2" fill="${red}">
-      <textPath href="#topArcPath" startOffset="50%" text-anchor="middle">${companyName}</textPath>
+      <textPath href="#topArcPath" startOffset="50%" text-anchor="middle">${acronym}</textPath>
     </text>
-    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="21" letter-spacing="1" fill="${red}">
+    <!-- Bottom arc: address + phone -->
+    ${addressLine ? `<text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="21" letter-spacing="1" fill="${red}">
       <textPath href="#bottomArcPath" startOffset="50%" text-anchor="middle">${addressLine}</textPath>
-    </text>
+    </text>` : ''}
+    <!-- Star decorations at 3 o'clock and 9 o'clock -->
     <path d="M 608.50 333.00 L 613.07 345.43 L 625.50 350.00 L 613.07 354.57 L 608.50 367.00 L 603.93 354.57 L 591.50 350.00 L 603.93 345.43 Z" fill="${red}"/>
     <path d="M 91.50 333.00 L 96.07 345.43 L 108.50 350.00 L 96.07 354.57 L 91.50 367.00 L 86.93 354.57 L 74.50 350.00 L 86.93 345.43 Z" fill="${red}"/>
+    <!-- Center: LOGO (if available) + subtitle + title -->
+    ${logoUrl ? `<image href="${logoUrl}" x="310" y="270" width="80" height="80" preserveAspectRatio="xMidYMid meet" opacity="0.85"/>` : ''}
     <text x="350" y="364" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${subtitle}</text>
     <text x="350" y="412" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="38" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${title}</text>
   </g>
@@ -536,27 +550,14 @@ export class StampsSignaturesService {
   }
 
   /**
-   * ⭐ PROFESSIONAL RECTANGULAR (NOMINATIVE) STAMP — Ink-stamp rendering.
+   * ⭐ PROFESSIONAL RECTANGULAR (INSTITUTIONAL) STAMP — Ink-stamp rendering.
    *
-   * Reproduces the visual approach from cachet_nominatif_directeur.html:
-   * SVG with ink effect, slight rotation, double rounded border, large
-   * holder name + smaller role/title. Used for per-role nominative stamps
-   * (Director, Comptable, Secrétaire, etc.).
-   *
-   * @param holderName  The person's name (e.g. "M. Jean Dupont")
-   * @param holderRole  The person's role label (e.g. "DIRECTEUR")
+   * ⭐ TRANSPARENT background (no white fill).
+   * ⭐ Uses school ACRONYM (not full name).
+   * ⭐ Only the acronym — no address, no phone, no email.
    */
   private buildRectangularStampSvg(data: IdentityProfileData): string {
-    // Institutional rectangular stamp: school name + address + phone + email.
-    const name = this.escapeXml(data.schoolName || 'Établissement');
-    const address = this.escapeXml(data.address || '');
-    const city = this.escapeXml(data.city || '');
-    const country = this.escapeXml(data.country || '');
-    const postalCode = this.escapeXml(data.postalCode || '');
-    const loc = [address, [postalCode, city].filter(Boolean).join(' '), country].filter(Boolean).join(' — ');
-    const phone = [data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ');
-    const email = this.escapeXml(data.email || '');
-    const web = this.escapeXml(data.website || '');
+    const acronym = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
     const red = StampsSignaturesService.STAMP_RED;
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 300" style="--ink-color:${red};">
@@ -574,10 +575,7 @@ export class StampsSignaturesService {
   <g transform="rotate(-1 420 150)" filter="url(#inkStampEffect)">
     <rect x="16" y="16" width="808" height="268" rx="36" fill="none" stroke="${red}" stroke-width="12"/>
     <rect x="34" y="34" width="772" height="232" rx="26" fill="none" stroke="${red}" stroke-width="5"/>
-    <text x="420" y="110" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="56" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${name}</text>
-    ${loc ? `<text x="420" y="165" font-family="Georgia, 'Times New Roman', serif" font-size="22" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${loc}</text>` : ''}
-    ${(phone || email) ? `<text x="420" y="210" font-family="Georgia, 'Times New Roman', serif" font-size="20" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${this.escapeXml(phone)}${phone && email ? ' • ' : ''}${email}</text>` : ''}
-    ${web ? `<text x="420" y="250" font-family="Georgia, 'Times New Roman', serif" font-size="18" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${web}</text>` : ''}
+    <text x="420" y="150" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="72" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${acronym}</text>
   </g>
 </svg>`;
   }

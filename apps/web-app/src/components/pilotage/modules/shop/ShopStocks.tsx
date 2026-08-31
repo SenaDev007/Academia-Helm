@@ -183,7 +183,7 @@ export default function ShopStocks() {
                     </TableRow>
                   ) : (
                     safeStocks.map((s: any, i: number) => {
-                      const name = s?.name ?? s?.productName ?? `Article #${i + 1}`;
+                      const name = s?.product?.name ?? s?.name ?? s?.productName ?? `Article #${i + 1}`;
                       const location = s?.location ?? s?.zone ?? '—';
                       const qty = s?.qty ?? s?.quantity ?? s?.stock ?? 0;
                       const threshold = s?.threshold ?? s?.minThreshold ?? 0;
@@ -201,7 +201,7 @@ export default function ShopStocks() {
                           threshold={threshold}
                           lastMvt={lastMvt}
                           status={status}
-                          onEdit={() => openStockModal(s?.id)}
+                          onEdit={() => openStockModal(s?.productId ?? s?.id)}
                         />
                       );
                     })
@@ -223,7 +223,7 @@ export default function ShopStocks() {
                 <MovementItem
                   key={`mv-${i}`}
                   type={i % 2 === 0 ? 'IN' : 'OUT'}
-                  label={`Mouvement - ${s?.name ?? s?.productName ?? 'Article'}`}
+                  label={`Mouvement - ${s?.product?.name ?? s?.name ?? s?.productName ?? 'Article'}`}
                   qty={s?.qty ?? s?.quantity ?? s?.stock ?? 0}
                   date={s?.lastMvt ?? s?.lastMovement ?? '—'}
                 />
@@ -256,15 +256,22 @@ export default function ShopStocks() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label className="text-xs">ID Produit</Label>
-              <Input
-                type="text"
+              <Label className="text-xs">Produit</Label>
+              <select
+                className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/30 bg-white"
                 value={stockForm.productId}
                 onChange={(e) => setStockForm({ ...stockForm, productId: e.target.value })}
-              />
+              >
+                <option value="">— Sélectionner un produit —</option>
+                {safeStocks.map((s: any) => (
+                  <option key={s?.productId ?? s?.id} value={s?.productId ?? s?.id}>
+                    {s?.product?.name ?? s?.name ?? 'Produit inconnu'}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <Label className="text-xs">Quantité</Label>
+              <Label className="text-xs">Nouvelle Quantité</Label>
               <Input
                 type="number"
                 value={stockForm.quantity}
@@ -274,7 +281,7 @@ export default function ShopStocks() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleUpdateStock} disabled={submitting}>
+            <Button onClick={handleUpdateStock} disabled={submitting || !stockForm.productId}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Mise à jour...' : 'Mettre à jour'}
             </Button>

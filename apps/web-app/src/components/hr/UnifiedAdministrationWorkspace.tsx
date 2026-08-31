@@ -1466,10 +1466,33 @@ export default function UnifiedAdministrationWorkspace() {
                                         educationLevelId = level?.id ?? null;
                                       }
                                       const roleLabel = ADMIN_ROLE_LABELS[a.adminRole as AdminRole] || a.adminRole;
+                                      // ⭐ Matching flexible de la signature : on accepte
+                                      //    plusieurs formulations du rôle car la DB peut
+                                      //    contenir "Promoteur" (sans suffixe) alors que
+                                      //    ADMIN_ROLE_LABELS affiche "Promoteur / Fondateur".
+                                      //    On compare avec le code (PROMOTEUR), le libellé
+                                      //    français (Promoteur / Fondateur), et le premier
+                                      //    mot du libellé (Promoteur).
+                                      const roleCode = a.adminRole;
+                                      const roleLabelFirstWord = roleLabel.split(/[\/\s]/)[0].trim();
                                       const existingSig = signatures.find((s: any) => {
-                                        if (s.role !== roleLabel) return false;
-                                        if (educationLevelId) return s.educationLevelId === educationLevelId;
-                                        return s.educationLevelId === null || s.educationLevelId === undefined;
+                                        // Match par code (PROMOTEUR == PROMOTEUR)
+                                        const sRoleUpper = String(s.role || '').toUpperCase();
+                                        if (sRoleUpper === roleCode) {
+                                          if (educationLevelId) return s.educationLevelId === educationLevelId;
+                                          return s.educationLevelId === null || s.educationLevelId === undefined;
+                                        }
+                                        // Match par libellé exact ("Promoteur / Fondateur")
+                                        if (s.role === roleLabel) {
+                                          if (educationLevelId) return s.educationLevelId === educationLevelId;
+                                          return s.educationLevelId === null || s.educationLevelId === undefined;
+                                        }
+                                        // Match par premier mot ("Promoteur")
+                                        if (s.role === roleLabelFirstWord) {
+                                          if (educationLevelId) return s.educationLevelId === educationLevelId;
+                                          return s.educationLevelId === null || s.educationLevelId === undefined;
+                                        }
+                                        return false;
                                       });
                                       const hasSignature = !!(existingSig?.signatureUrl);
 

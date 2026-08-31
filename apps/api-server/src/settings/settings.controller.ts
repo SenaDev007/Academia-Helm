@@ -1091,36 +1091,59 @@ export class SettingsController {
     const tid = this.resolveTid(tenantId, user, req);
     const levelId = body.educationLevelId ?? null;
 
-    // ⭐ Cherche la ligne tenant_signatures existante par (tenantId, role,
-    //    educationLevelId). Si elle n'existe pas, on renvoie juste un
-    //    succès (rien à réinitialiser).
-    const existing = levelId != null
-      ? await this.prisma.tenantSignature.findFirst({
-          where: { tenantId: tid, role: body.role, educationLevelId: levelId },
-        })
-      : await this.prisma.tenantSignature.findFirst({
-          where: { tenantId: tid, role: body.role, educationLevelId: null },
-        });
+    // ⭐ Le frontend peut envoyer le role sous différentes formulations :
+    //    "Promoteur / Fondateur", "Promoteur", "PROMOTEUR". On fait un
+    //    matching flexible côté backend en comparant le premier mot et
+    //    la version uppercased.
+    const roleInput = body.role.trim();
+    const roleInputFirstWord = roleInput.split(/[\/\s]/)[0].trim();
+    const roleInputUpper = roleInput.toUpperCase();
 
-    if (!existing) {
+    // ⭐ Cherche toutes les signatures pour ce tenant (toutes formulations
+    //    de rôle confondues) puis filtre côté JS pour matcher.
+    const allSigs = await this.prisma.tenantSignature.findMany({
+      where: { tenantId: tid },
+    });
+    const matchingSigs = allSigs.filter((s: any) => {
+      // Match par niveau
+      const levelMatch = levelId != null
+        ? s.educationLevelId === levelId
+        : (s.educationLevelId === null || s.educationLevelId === undefined);
+      if (!levelMatch) return false;
+      const sRole = String(s.role || '');
+      // Match par libellé exact
+      if (sRole === roleInput) return true;
+      // Match par uppercased (PROMOTEUR == PROMOTEUR)
+      if (sRole.toUpperCase() === roleInputUpper) return true;
+      // Match par premier mot ("Promoteur" == "Promoteur / Fondateur")
+      if (sRole === roleInputFirstWord) return true;
+      // Match inverse : premier mot de la DB == premier mot de l'input
+      const sRoleFirstWord = sRole.split(/[\/\s]/)[0].trim();
+      if (sRoleFirstWord === roleInputFirstWord) return true;
+      return false;
+    });
+
+    if (matchingSigs.length === 0) {
       return { success: true, message: 'Aucune signature à réinitialiser.' };
     }
 
-    // ⭐ Passe signatureUrl à null — la signature ne sera plus affichée
-    //    ni appliquée sur les documents. holderFirstName/holderLastName
-    //    sont conservés (le staff peut re-signer avec le même nom).
-    await this.prisma.tenantSignature.update({
-      where: { id: existing.id },
-      data: {
-        signatureUrl: null,
-        generatedAt: null,
-      },
-    });
+    // ⭐ Passe signatureUrl à null pour toutes les signatures matchées
+    //    (généralement une seule, mais on gère le cas où plusieurs
+    //    formulations existent pour le même rôle+level).
+    for (const sig of matchingSigs) {
+      await this.prisma.tenantSignature.update({
+        where: { id: sig.id },
+        data: {
+          signatureUrl: null,
+          generatedAt: null,
+        },
+      });
+    }
 
-    this.logger.log(`Signature réinitialisée: tenant=${tid} role=${body.role} level=${levelId ?? 'global'}`);
+    this.logger.log(`Signature réinitialisée: tenant=${tid} role=${body.role} level=${levelId ?? 'global'} (${matchingSigs.length} match(es))`);
     return {
       success: true,
-      message: 'Signature réinitialisée. Le bouton "Lien signature" est de nouveau visible.',
+      message: `Signature réinitialisée (${matchingSigs.length} entrée(s) mise(s) à jour). Le bouton "Lien signature" est de nouveau visible.`,
     };
   }
 

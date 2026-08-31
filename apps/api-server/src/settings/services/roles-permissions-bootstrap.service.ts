@@ -4,7 +4,7 @@ import { prismaCreateDefaults, prismaCreateNoUpdatedAt, prismaUpdateDefaults } f
  * au démarrage de l'API si absents (production-ready, idempotent).
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 const RESOURCES = [
@@ -113,10 +113,32 @@ const SYSTEM_ROLES: RoleDef[] = [
 ];
 
 @Injectable()
-export class RolesPermissionsBootstrapService {
+export class RolesPermissionsBootstrapService implements OnModuleInit {
   private readonly logger = new Logger(RolesPermissionsBootstrapService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * ⭐ AUTO-BOOTSTRAP: Runs automatically when the SettingsModule is loaded.
+   *    This ensures all 96 permissions + 12 system roles are seeded in the DB
+   *    BEFORE any API request hits a PermissionGuard-protected endpoint.
+   *    Previously this was only triggered manually (UI button or POST /rbac/ensure-initialized)
+   *    which meant new tenants had zero permissions until a user opened Settings > Roles.
+   *    Now it runs on every API startup — idempotent (skips if already seeded).
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      // Run in background (non-blocking) so the API starts immediately
+      // — the bootstrap will complete before any request needs it.
+      this.logger.log('🔄 Auto-bootstrapping RBAC permissions and system roles...');
+      await this.ensurePermissionsAndRoles();
+      this.logger.log('✅ RBAC bootstrap complete — permissions and system roles ready');
+    } catch (e: any) {
+      // Don't crash the API if bootstrap fails (e.g. DB not ready yet)
+      // — log the error so the operator can investigate.
+      this.logger.error(`❌ RBAC auto-bootstrap failed: ${e.message}. Run POST /api/settings/rbac/ensure-initialized manually after DB is ready.`);
+    }
+  }
 
   /**
    * Assure que les tables roles et role_permissions contiennent les colonnes attendues par le schéma Prisma.

@@ -575,7 +575,7 @@ export function getVisibleModulesForRole(role: string): {
   // ⭐ Rôles qui ont accès à TOUS les modules (y compris Settings)
   // Le promoteur est propriétaire de l'école — il voit TOUT, sans exception.
   const FULL_ACCESS_ROLES = [
-    'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
     'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
     'SUPER_ADMIN', 'SUPER_DIRECTOR', 'admin',
   ];
@@ -584,7 +584,7 @@ export function getVisibleModulesForRole(role: string): {
   // ⭐ Rôles qui ont accès aux Paramètres (Settings)
   // SEULS le promoteur, l'admin, le platform owner et le responsable IT y ont accès.
   const SETTINGS_ACCESS_ROLES = [
-    'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
     'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
     'SUPER_ADMIN', 'SUPER_DIRECTOR', 'admin',
     'IT_MANAGER', 'SETTINGS_MANAGER',

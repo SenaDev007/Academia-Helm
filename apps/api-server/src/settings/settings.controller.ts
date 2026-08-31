@@ -1099,14 +1099,24 @@ export class SettingsController {
     const frontendUrl = process.env.FRONTEND_URL || process.env.APP_PUBLIC_URL || 'https://academiahelm.com';
     const signatureUrl = `${frontendUrl}/signature/canvas/${token}`;
 
-    // 3. Send the email with the link
+    // 3. Get the school name (for the email to be sent on behalf of the school)
+    let schoolName = 'Academia Helm';
+    let schoolLogoUrl: string | null = null;
+    try {
+      const profile = await this.identityProfileService.getActiveProfile(tid);
+      if (profile?.schoolName) schoolName = profile.schoolName;
+      if (profile?.logoUrl) schoolLogoUrl = profile.logoUrl;
+    } catch { /* fallback to default */ }
+
+    // 4. Send the email on behalf of the school
     const holderName = `${body.holderFirstName} ${body.holderLastName}`.trim();
     const roleLabel = body.role.replace(/_/g, ' ');
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #1e3a8a;">Signature requise — Academia Helm</h2>
+        ${schoolLogoUrl ? `<div style="text-align: center; margin-bottom: 20px;"><img src="${schoolLogoUrl}" alt="${schoolName}" style="max-height: 60px; max-width: 200px; object-fit: contain;" /></div>` : ''}
+        <h2 style="color: #1e3a8a;">Signature requise — ${schoolName}</h2>
         <p>Bonjour <strong>${holderName}</strong>,</p>
-        <p>Vous êtes invité à enregistrer votre signature manuscrite pour votre poste de <strong>${roleLabel}</strong>.</p>
+        <p>L'administration de <strong>${schoolName}</strong> vous invite à enregistrer votre signature manuscrite pour votre poste de <strong>${roleLabel}</strong>.</p>
         <p>Cliquez sur le lien ci-dessous pour dessiner ou télécharger votre signature. Elle sera automatiquement appliquée sur tous les documents officiels vous concernant.</p>
         <p style="margin: 24px 0;">
           <a href="${signatureUrl}"
@@ -1120,16 +1130,16 @@ export class SettingsController {
           Si vous n'avez pas demandé ce lien, ignorez cet email.
         </p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
-        <p style="color: #9ca3af; font-size: 12px;">Academia Helm — Plateforme de gestion scolaire</p>
+        <p style="color: #9ca3af; font-size: 12px;">${schoolName} — Plateforme de gestion scolaire Academia Helm</p>
       </div>
     `;
 
     try {
       await this.emailService.sendEmail({
         to: body.email,
-        subject: `Signature requise — ${roleLabel} — Academia Helm`,
+        subject: `Signature requise — ${roleLabel} — ${schoolName}`,
         html,
-        text: `Bonjour ${holderName}, veuillez enregistrer votre signature ici: ${signatureUrl}`,
+        text: `Bonjour ${holderName}, ${schoolName} vous invite à enregistrer votre signature ici: ${signatureUrl}`,
       });
     } catch (e: any) {
       this.logger.warn(`Could not send signature email to ${body.email}: ${e.message}`);

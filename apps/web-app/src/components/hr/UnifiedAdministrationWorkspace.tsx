@@ -239,6 +239,8 @@ export default function UnifiedAdministrationWorkspace() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [sendingCredentials, setSendingCredentials] = useState<string | null>(null);
   const [generatingStamp, setGeneratingStamp] = useState<string | null>(null);
+  // ⭐ Stamp version: incremented after each generation to force StampPreviewCard to refetch
+  const [stampVersion, setStampVersion] = useState(Date.now());
   const [generatingSignature, setGeneratingSignature] = useState(false);
   const [generatingRowSignature, setGeneratingRowSignature] = useState<string | null>(null);
   // ⭐ État pour le modal d'affectation enseignant (permet d'affecter
@@ -805,6 +807,8 @@ export default function UnifiedAdministrationWorkspace() {
 
       const unitLabel = ADMIN_UNIT_LABELS[unit] || unit;
       setSuccess(`Cachets générés pour ${unitLabel}: ${nominativeCount > 0 ? `${nominativeCount} cachet(s) nominatif(s) + ` : ''}cachets institutionnels prêts.`);
+      // ⭐ Force stamp preview cards to refetch the newly generated PNGs
+      setStampVersion(Date.now());
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la génération des cachets');
     } finally {
@@ -857,6 +861,8 @@ export default function UnifiedAdministrationWorkspace() {
         body: { holderName, holderRole, educationLevelId },
       });
       setSuccess(`Cachet nominatif généré pour ${holderName} (${holderRole}). URL: ${data?.stampUrl || ''}`);
+      // ⭐ Force stamp preview cards to refetch
+      setStampVersion(Date.now());
       return data;
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la génération du cachet nominatif');
@@ -1711,17 +1717,15 @@ export default function UnifiedAdministrationWorkspace() {
                   title="Cachet circulaire"
                   url={circularUrl}
                   description="Cachet officiel de l'établissement (effet encre rouge)"
+                  stampVersion={stampVersion}
                 />
                 <StampPreviewCard
                   title="Cachet rectangulaire"
                   url={rectangularUrl}
-                  description="Tampon rectangulaire avec coordonnées"
+                  description="Tampon rectangulaire avec acronyme"
+                  stampVersion={stampVersion}
                 />
-                <StampPreviewCard
-                  title="Cachet ovale"
-                  url={ovalUrl}
-                  description="Tampon ovale de l'établissement"
-                />
+                {/* ⭐ Cachet ovale supprimé à la demande de l'utilisateur */}
               </div>
 
               {/* Cachets nominatifs */}
@@ -1745,6 +1749,7 @@ export default function UnifiedAdministrationWorkspace() {
                           subtitle={holderRole}
                           url={nominativeUrl}
                           description="Cachet nominatif (nom + rôle)"
+                          stampVersion={stampVersion}
                         />
                       );
                     })}
@@ -1755,6 +1760,7 @@ export default function UnifiedAdministrationWorkspace() {
                         subtitle="PROMOTEUR"
                         url={`/api/settings/stamps/asset?type=signature&signature_id=nominative_${levelFolder}_promoteur`}
                         description="Cachet nominatif du promoteur"
+                        stampVersion={stampVersion}
                       />
                     )}
                   </div>
@@ -2212,14 +2218,25 @@ export default function UnifiedAdministrationWorkspace() {
 }
 
 // ⭐ Stamp Preview Card — affiche un cachet généré (PNG) avec titre + description
-function StampPreviewCard({ title, subtitle, url, description }: {
+// ⭐ stampVersion: un timestamp qui change après chaque génération pour forcer le rechargement de l'image
+function StampPreviewCard({ title, subtitle, url, description, stampVersion }: {
   title: string;
   subtitle?: string;
   url: string;
   description?: string;
+  stampVersion?: number;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+
+  // ⭐ Reset loaded/error when stampVersion changes (after regeneration)
+  useEffect(() => {
+    setLoaded(false);
+    setError(false);
+  }, [stampVersion]);
+
+  // ⭐ Cache-bust: append timestamp to URL to force browser to re-fetch
+  const cacheBustUrl = stampVersion ? `${url}&_t=${stampVersion}` : url;
 
   return (
     <div className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
@@ -2240,7 +2257,7 @@ function StampPreviewCard({ title, subtitle, url, description }: {
           </div>
         ) : (
           <img
-            src={url}
+            src={cacheBustUrl}
             alt={title}
             className="max-w-full max-h-32 object-contain"
             style={{ display: loaded ? 'block' : 'none' }}

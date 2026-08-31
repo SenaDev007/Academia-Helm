@@ -1135,8 +1135,11 @@ export class SettingsController {
     `;
 
     try {
+      // ⭐ Send email ON BEHALF OF THE SCHOOL (not Academia Helm)
+      //    Same pattern as staff credentials email — uses schoolName as fromName
       await this.emailService.sendEmail({
         to: body.email,
+        fromName: schoolName,
         subject: `Signature requise — ${roleLabel} — ${schoolName}`,
         html,
         text: `Bonjour ${holderName}, ${schoolName} vous invite à enregistrer votre signature ici: ${signatureUrl}`,

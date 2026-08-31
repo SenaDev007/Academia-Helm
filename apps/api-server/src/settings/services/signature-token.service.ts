@@ -59,7 +59,7 @@ export class SignatureTokenService {
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
     try {
-      await this.prisma.$executeRawUnsafe(`
+      const result = await this.prisma.$executeRawUnsafe(`
         INSERT INTO "signature_upload_tokens"
           ("token", "tenantId", "staffId", "role", "holderFirstName", "holderLastName",
            "educationLevelId", "email", "createdAt", "expiresAt", "usedAt")
@@ -67,10 +67,14 @@ export class SignatureTokenService {
       `, token, data.tenantId, data.staffId || null, data.role,
         data.holderFirstName, data.holderLastName,
         data.educationLevelId || null, data.email, expiresAt);
+      if (!result) {
+        throw new Error('INSERT returned 0 rows — token not persisted');
+      }
     } catch (e: any) {
-      // Table may not exist yet — fall back to a transient in-memory store
-      // (the token still works for this server instance until restart)
-      this.logger.warn(`Could not persist signature token (table missing?): ${e.message}. Using transient token.`);
+      // ⭐ FIX: If the INSERT fails, we MUST throw — otherwise the token is returned
+      //    to the user but doesn't exist in the DB, causing "Token invalide" when clicked.
+      this.logger.error(`Failed to persist signature token: ${e.message}`);
+      throw new Error(`Impossible de créer le token de signature: ${e.message}`);
     }
 
     this.logger.log(`Created signature token for ${data.email} (role=${data.role}, expires=${expiresAt.toISOString()})`);

@@ -502,15 +502,17 @@ export class StampsSignaturesService {
    */
   private buildCircularStampSvg(data: IdentityProfileData): string {
     const acronym = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
-    // Bottom arc: phone + city + country
+    // Bottom arc: phone + city + country (increased font size for readability)
     const phone = this.escapeXml([data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ') || '');
     const addressParts = [phone, data.city, data.country].filter(Boolean);
     const addressLine = this.escapeXml(addressParts.join(' — '));
-    const subtitle = this.escapeXml(data.schoolAcronym ? data.schoolName : 'ÉTABLISSEMENT');
-    const title = this.escapeXml('SCOLAIRE');
     const red = StampsSignaturesService.STAMP_RED;
     // Logo in center (if available)
     const logoUrl = data.logoUrl ? this.escapeXml(data.logoUrl) : null;
+
+    // ⭐ Adaptive font size for acronym: if long, reduce to fit the arc
+    const acronymLen = (data.schoolAcronym || data.schoolName || '').length;
+    const arcFontSize = acronymLen > 20 ? 36 : acronymLen > 15 ? 44 : acronymLen > 10 ? 52 : 60;
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700" style="--ink-color:${red};">
   <defs>
@@ -530,21 +532,19 @@ export class StampsSignaturesService {
     <circle cx="350" cy="350" r="320" fill="none" stroke="currentColor" stroke-width="12" color="${red}"/>
     <circle cx="350" cy="350" r="304" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
     <circle cx="350" cy="350" r="213" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
-    <!-- Top arc: ACRONYM of the school -->
-    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="60" letter-spacing="2" fill="${red}">
+    <!-- Top arc: ACRONYM only (adaptive font size) -->
+    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${arcFontSize}" letter-spacing="2" fill="${red}">
       <textPath href="#topArcPath" startOffset="50%" text-anchor="middle">${acronym}</textPath>
     </text>
-    <!-- Bottom arc: address + phone -->
-    ${addressLine ? `<text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="21" letter-spacing="1" fill="${red}">
+    <!-- Bottom arc: address + phone (increased font size from 21 to 26) -->
+    ${addressLine ? `<text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" letter-spacing="1" fill="${red}">
       <textPath href="#bottomArcPath" startOffset="50%" text-anchor="middle">${addressLine}</textPath>
     </text>` : ''}
     <!-- Star decorations at 3 o'clock and 9 o'clock -->
     <path d="M 608.50 333.00 L 613.07 345.43 L 625.50 350.00 L 613.07 354.57 L 608.50 367.00 L 603.93 354.57 L 591.50 350.00 L 603.93 345.43 Z" fill="${red}"/>
     <path d="M 91.50 333.00 L 96.07 345.43 L 108.50 350.00 L 96.07 354.57 L 91.50 367.00 L 86.93 354.57 L 74.50 350.00 L 86.93 345.43 Z" fill="${red}"/>
-    <!-- Center: LOGO (if available) + subtitle + title -->
-    ${logoUrl ? `<image href="${logoUrl}" x="310" y="270" width="80" height="80" preserveAspectRatio="xMidYMid meet" opacity="0.85"/>` : ''}
-    <text x="350" y="364" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="1">${subtitle}</text>
-    <text x="350" y="412" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="38" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${title}</text>
+    <!-- Center: LOGO ONLY (no school name, no "SCOLAIRE") -->
+    ${logoUrl ? `<image href="${logoUrl}" x="290" y="310" width="120" height="120" preserveAspectRatio="xMidYMid meet" opacity="0.85"/>` : `<circle cx="350" cy="370" r="60" fill="none" stroke="${red}" stroke-width="3"/>`}
   </g>
 </svg>`;
   }
@@ -559,6 +559,10 @@ export class StampsSignaturesService {
   private buildRectangularStampSvg(data: IdentityProfileData): string {
     const acronym = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
     const red = StampsSignaturesService.STAMP_RED;
+
+    // ⭐ Adaptive font size for acronym
+    const acronymLen = (data.schoolAcronym || data.schoolName || '').length;
+    const fontSize = acronymLen > 20 ? 48 : acronymLen > 15 ? 56 : acronymLen > 10 ? 64 : 72;
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 300" style="--ink-color:${red};">
   <defs>
@@ -575,7 +579,7 @@ export class StampsSignaturesService {
   <g transform="rotate(-1 420 150)" filter="url(#inkStampEffect)">
     <rect x="16" y="16" width="808" height="268" rx="36" fill="none" stroke="${red}" stroke-width="12"/>
     <rect x="34" y="34" width="772" height="232" rx="26" fill="none" stroke="${red}" stroke-width="5"/>
-    <text x="420" y="150" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="72" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${acronym}</text>
+    <text x="420" y="150" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${fontSize}" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${acronym}</text>
   </g>
 </svg>`;
   }

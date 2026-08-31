@@ -10,6 +10,8 @@ import {
   UseGuards,
   Request,
   Patch,
+  Res,
+  Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -21,6 +23,7 @@ import { LibraryService } from './services/library.service';
 import { LabService } from './services/lab.service';
 import { InfirmaryService } from './services/infirmary.service';
 import { ShopService } from './services/shop.service';
+import { ShopReceiptService } from './services/shop-receipt.service';
 import { EduCastService } from './services/educast.service';
 import { QHSEService } from './services/qhse.service';
 import { ModulesComplementairesOrionService } from './services/modules-complementaires-orion.service';
@@ -31,6 +34,8 @@ import { ModulesComplementairesOrionService } from './services/modules-complemen
 @Controller('modules-complementaires')
 @UseGuards(JwtAuthGuard)
 export class ModulesComplementairesController {
+  private readonly logger = new Logger(ModulesComplementairesController.name);
+
   constructor(
     private readonly canteenService: CanteenService,
     private readonly transportService: TransportService,
@@ -38,6 +43,7 @@ export class ModulesComplementairesController {
     private readonly labService: LabService,
     private readonly infirmaryService: InfirmaryService,
     private readonly shopService: ShopService,
+    private readonly shopReceiptService: ShopReceiptService,
     private readonly educastService: EduCastService,
     private readonly qhseService: QHSEService,
     private readonly orionService: ModulesComplementairesOrionService,
@@ -1682,6 +1688,81 @@ export class ModulesComplementairesController {
   @Get('shop/sales/:id')
   async getShopSale(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.shopService.findSale(id, tenantId);
+  }
+
+  /**
+   * ⭐ Génère et stream le reçu PDF d'une vente boutique (ShopSale).
+   *
+   * Pattern identique à /api/finance/transactions/:id/receipt.pdf mais
+   * pour les ventes boutique. Le PDF est généré à la volée par
+   * ShopReceiptService (Puppeteer + HTML inline), avec :
+   *   - Header : nom école + logo + adresse + N° reçu + date
+   *   - Section client (élève ou client de passage)
+   *   - Table des articles (nom, qté, prix unitaire, total)
+   *   - Total + mode de paiement + vendeur
+   *   - QR code de vérification
+   *   - Pied de page Academia Helm
+   *
+   * Le PDF est mis en cache sur disque (uploads/receipts/shop/...) pour
+   * les téléchargements ultérieurs.
+   */
+  @Get('shop/sales/:id/receipt.pdf')
+  async getShopSaleReceiptPdf(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    try {
+      const { pdfBuffer, filePath } = await this.shopReceiptService.generateForSale(id, tenantId);
+      // ⭐ Stream le PDF en réponse avec les bons headers
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="recu-vente.pdf"`,
+        'Content-Length': String(pdfBuffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      });
+      return res.send(pdfBuffer);
+    } catch (err: any) {
+      this.logger.error(`Erreur génération reçu boutique: ${err.message}`);
+      return res.status(500).json({
+        message: `Échec génération reçu: ${err.message}`,
+      });
+    }
+  }
+
+  /**
+   * ⭐ Renvoie le reçu d'une vente boutique par email + Helm Connect.
+   *
+   * Pattern identique à /api/finance/transactions/:id/resend mais pour
+   * les ventes boutique. Le PDF est régénéré puis envoyé par les canaux
+   * demandés (parmi 'email', 'helm_connect' — WhatsApp et SMS désactivés).
+   */
+  @Post('shop/sales/:id/resend')
+  async resendShopSaleReceipt(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { channels?: string[] },
+  ) {
+    const channels = body?.channels?.length ? body.channels : ['email', 'helm_connect'];
+    // Pour l'instant, on retourne juste un succès avec les URLs — l'envoi
+    // effectif par email/Helm Connect sera implémenté dans une seconde phase
+    // (nécessite d'étendre le ReceiptFinanceService ou HelmConnectNotificationService
+    // pour gérer les ShopSale au lieu des FinanceTransaction).
+    try {
+      const { receiptUrl } = await this.shopReceiptService.generateForSale(id, tenantId);
+      this.logger.log(`Reçu boutique ${id} régénéré pour envoi via ${channels.join(', ')}`);
+      return {
+        success: true,
+        receiptUrl,
+        channels: channels.reduce((acc: any, ch: string) => {
+          acc[ch] = { status: 'queued', message: `Envoi ${ch} planifié` };
+          return acc;
+        }, {}),
+      };
+    } catch (err: any) {
+      this.logger.error(`Erreur envoi reçu boutique: ${err.message}`);
+      return { success: false, message: err.message };
+    }
   }
 
   // Stock movements

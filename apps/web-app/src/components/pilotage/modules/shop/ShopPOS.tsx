@@ -25,6 +25,7 @@ import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaire
 import {
   Loader2, Search, Plus, Minus, CreditCard,
   Wallet, Banknote, QrCode, User, ShoppingCart,
+  CheckCircle2, Download, Send, Mail, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +39,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { GmailIcon, HelmConnectIcon } from '@/components/finance/OfficialIcons';
 
 interface ProductItem {
   id?: string;
@@ -65,6 +67,14 @@ export default function ShopPOS() {
   const [cart, setCart] = useState<any[]>([]);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'FEDAPAY'>('CASH');
   const [submitting, setSubmitting] = useState(false);
+  // ⭐ Reçu de la vente — affiché en bandeau de succès avec boutons
+  //    Download PDF / Email / Helm Connect. Pattern identique à
+  //    NewPaymentModal (Finance/Encaissement).
+  const [receipt, setReceipt] = useState<{ id: string; saleNumber: string; createdAt: string } | null>(null);
+  // ⭐ Reliquat (espèces) — montant remis par le client + monnaie à rendre
+  const [tenderedAmount, setTenderedAmount] = useState('');
+  // ⭐ Canal d'envoi en cours (pour désactiver le bouton pendant l'envoi)
+  const [sendingChannel, setSendingChannel] = useState<string | null>(null);
 
   // ⭐ Association d'un élève — pattern aligné sur Finance/Encaissement :
   //    Niveau → Classe → Recherche → Sélecteur élève.
@@ -109,33 +119,173 @@ export default function ShopPOS() {
   //    Here we show the subtotal as the total (tax is 0 for products with taxRate=0).
   const total = subtotal;
 
+  // ⭐ Reliquat (espèces) — calculé APRÈS total (sinon ReferenceError).
+  const tenderedNum = parseFloat(tenderedAmount) || 0;
+  const changeGiven = Math.max(0, tenderedNum - total);
+  const isTenderedInsufficient = tenderedNum > 0 && tenderedNum < total;
+
   const handleCheckout = async () => {
     if (cart.length === 0) {
       toast({ title: 'Panier vide', description: 'Ajoutez au moins un article avant d\'encaisser.', variant: 'destructive' });
       return;
     }
+    // ⭐ Espèces : vérifier que le montant remis est suffisant
+    if (paymentMode === 'CASH' && tenderedNum > 0 && isTenderedInsufficient) {
+      toast({
+        title: 'Montant remis insuffisant',
+        description: `Le client a remis ${formatCurrency(tenderedNum)} mais le total à encaisser est ${formatCurrency(total)}. Manquant : ${formatCurrency(total - tenderedNum)}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const itemsPayload = cart.map((it) => ({ productId: it.id, quantity: it.qty, unitPrice: it.price }));
+    const customerType = selectedStudent ? 'STUDENT' : 'WALK_IN';
+    const studentId = selectedStudent?.id || undefined;
+    const customerName = selectedStudent?.name || undefined;
+
+    // ── FedaPay : initier le checkout via le widget ──
+    //    Pattern repris de NewPaymentModal (Finance/Encaissement) :
+    //    1. Fetch public key
+    //    2. Load checkout.js script
+    //    3. Ouvrir le widget → onComplete → créer la ShopSale avec paymentMode=FEDAPAY
+    if (paymentMode === 'FEDAPAY') {
+      try {
+        setSubmitting(true);
+        // 1. Récupérer la clé publique FedaPay configurée par l'école
+        const keyRes = await fetch('/api/finance/payments/fedapay/public-key', { credentials: 'include' });
+        const keyData = await keyRes.json();
+        if (!keyData.publicKey) {
+          toast({
+            title: 'Fedapay non configuré',
+            description: "L'école n'a pas configuré Fedapay. Allez dans Paramètres → Paiements pour configurer.",
+            variant: 'destructive',
+          });
+          setSubmitting(false);
+          return;
+        }
+
+        // 2. Charger le script Fedapay checkout dynamiquement
+        await new Promise((resolve, reject) => {
+          if ((window as any).FedaPay) return resolve(null);
+          const script = document.createElement('script');
+          script.src = 'https://cdn.fedapay.com/checkout.js?v=1.1.7';
+          script.onload = () => resolve(null);
+          script.onerror = () => reject(new Error('Impossible de charger Fedapay'));
+          document.head.appendChild(script);
+        });
+
+        // 3. Ouvrir le checkout — le client saisit lui-même ses infos
+        const FedaPay = (window as any).FedaPay;
+        const widget = FedaPay.init({
+          public_key: keyData.publicKey,
+          transaction: {
+            amount: total,
+            description: `Boutique — ${cart.length} article(s)`.substring(0, 100),
+          },
+          customer: {
+            firstname: selectedStudent?.name?.split(' ')[0] || '',
+            lastname: selectedStudent?.name?.split(' ').slice(1).join(' ') || '',
+          },
+          onComplete: async (response: any) => {
+            // Vérifier les raisons d'annulation
+            if (response?.reason === 'DIALOG DISMISSED' || response?.reason === 'USERCANCELLED') {
+              toast({ title: 'Paiement annulé', description: 'Le checkout Fedapay a été fermé.' });
+              setSubmitting(false);
+              return;
+            }
+
+            // ✅ Paiement réussi — créer la ShopSale côté backend
+            const fedapayReference = response?.reference || response?.id || `FEDAPAY-${Date.now()}`;
+            try {
+              const data: any = await modulesApi.post(
+                'shop/sales',
+                {
+                  items: itemsPayload,
+                  paymentMode: 'FEDAPAY',
+                  customerType,
+                  studentId,
+                  customerName,
+                  subTotal: subtotal,
+                  taxAmount: 0,
+                  totalAmount: subtotal,
+                  reference: fedapayReference,
+                },
+                buildModulesApiOptions(academicYear?.id),
+              );
+              if (data?.id || data?.saleNumber) {
+                setReceipt({
+                  id: data.id,
+                  saleNumber: data.saleNumber || '—',
+                  createdAt: data.saleDate || data.createdAt || new Date().toISOString(),
+                });
+                setCart([]);
+                setSelectedStudent(null);
+                setTenderedAmount('');
+                await refetch();
+                toast({
+                  title: '✅ Vente encaissée',
+                  description: `Vente ${data.saleNumber} enregistrée. Référence Fedapay : ${fedapayReference}.`,
+                });
+              }
+            } catch (err: any) {
+              toast({
+                title: 'Paiement reçu mais vente non enregistrée',
+                description: `Référence Fedapay : ${fedapayReference}. Erreur: ${err?.message || 'Inconnue'}. Contactez l'administrateur.`,
+                variant: 'destructive',
+              });
+            } finally {
+              setSubmitting(false);
+            }
+          },
+        });
+        widget.open();
+      } catch (e: any) {
+        toast({
+          title: 'Erreur FedaPay',
+          description: e?.message || 'Erreur lors de l\'initialisation du checkout Fedapay',
+          variant: 'destructive',
+        });
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // ── Espèces : créer directement la ShopSale ──
     try {
       setSubmitting(true);
-      // ⭐ FIX: Send subTotal, taxAmount (0 for now — per-product taxRate),
-      //    and totalAmount so the backend stores the correct amounts.
-      await modulesApi.post(
+      const data: any = await modulesApi.post(
         'shop/sales',
         {
-          items: cart.map((it) => ({ productId: it.id, quantity: it.qty, unitPrice: it.price })),
-          paymentMode: paymentMode,
-          customerType: selectedStudent ? 'STUDENT' : 'WALK_IN',
-          studentId: selectedStudent?.id || undefined,
-          customerName: selectedStudent?.name || undefined,
+          items: itemsPayload,
+          paymentMode: 'CASH',
+          customerType,
+          studentId,
+          customerName,
           subTotal: subtotal,
           taxAmount: 0,
           totalAmount: subtotal,
+          // ⭐ Espèces : montant remis + reliquat (pour traçabilité reçu PDF)
+          tenderedAmount: tenderedNum > 0 ? tenderedNum : undefined,
+          changeGiven: tenderedNum > 0 ? changeGiven : undefined,
         },
         buildModulesApiOptions(academicYear?.id),
       );
-      setCart([]);
-      setSelectedStudent(null);
-      await refetch();
-      toast({ title: 'Vente encaissée', description: 'La transaction a été enregistrée avec succès.' });
+      if (data?.id || data?.saleNumber) {
+        setReceipt({
+          id: data.id,
+          saleNumber: data.saleNumber || '—',
+          createdAt: data.saleDate || data.createdAt || new Date().toISOString(),
+        });
+        setCart([]);
+        setSelectedStudent(null);
+        setTenderedAmount('');
+        await refetch();
+        toast({
+          title: '✅ Vente encaissée',
+          description: `Vente ${data.saleNumber} enregistrée avec succès.`,
+        });
+      }
     } catch (e: any) {
       toast({
         title: 'Erreur',
@@ -145,6 +295,49 @@ export default function ShopPOS() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ── Handlers pour le bandeau de succès (reçu) ──
+  // Pattern identique à NewPaymentModal : Download / Email / Helm Connect.
+  const getShopSaleReceiptPdfUrl = (saleId: string) =>
+    `/api/modules-complementaires/shop/sales/${encodeURIComponent(saleId)}/receipt.pdf`;
+
+  const handleDownloadReceipt = () => {
+    if (!receipt) return;
+    window.open(getShopSaleReceiptPdfUrl(receipt.id), '_blank');
+  };
+
+  const handleResendReceipt = async (channel: 'email' | 'helm_connect') => {
+    if (!receipt) return;
+    setSendingChannel(channel);
+    try {
+      const res = await fetch(`/api/modules-complementaires/shop/sales/${encodeURIComponent(receipt.id)}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ channels: [channel] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const status = data?.channels?.[channel];
+      if (status?.status === 'skipped') {
+        toast({ title: 'Contact manquant', description: status.reason || `Aucun contact pour ${channel}.`, variant: 'destructive' });
+      } else if (status?.status === 'failed') {
+        toast({ title: 'Échec d\'envoi', description: status.error || `Échec de l'envoi par ${channel}.`, variant: 'destructive' });
+      } else {
+        toast({ title: 'Reçu envoyé', description: `Reçu envoyé par ${channel}${status?.to ? ` à ${status.to}` : ''}.` });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || `Échec envoi par ${channel}.`, variant: 'destructive' });
+    } finally {
+      setSendingChannel(null);
+    }
+  };
+
+  const handleNewSale = () => {
+    setReceipt(null);
+    setCart([]);
+    setSelectedStudent(null);
+    setTenderedAmount('');
   };
 
   // ⭐ Chargement des niveaux scolaires (mise en cache côté composant —
@@ -456,16 +649,112 @@ export default function ShopPOS() {
             <PaymentModeBtn icon={CreditCard} label="FedaPay" active={paymentMode === 'FEDAPAY'} onClick={() => setPaymentMode('FEDAPAY')} />
           </div>
 
+          {/* ⭐ Montant remis en espèces + reliquat (visible uniquement si CASH) */}
+          {paymentMode === 'CASH' && (
+            <div className="space-y-2">
+              <div>
+                <Label className="text-xs">Montant remis par le client (FCFA)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={tenderedAmount}
+                  onChange={(e) => setTenderedAmount(e.target.value)}
+                  placeholder="Ex: 5000 (laisser vide si exact)"
+                />
+              </div>
+              {tenderedNum > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-sm bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <span className="text-emerald-700 font-medium">💰 Reliquat à rendre :</span>
+                    <span className="font-bold text-emerald-900">{formatCurrency(changeGiven)}</span>
+                  </div>
+                  {isTenderedInsufficient && (
+                    <p className="text-xs text-rose-600 flex items-center gap-1">
+                      ⚠️ Le montant remis ({formatCurrency(tenderedNum)}) est inférieur au total ({formatCurrency(total)}). Manquant : {formatCurrency(total - tenderedNum)}.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⭐ FedaPay : message d'info (le client saisira ses infos dans le widget) */}
+          {paymentMode === 'FEDAPAY' && (
+            <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              💳 Le client sera redirigé vers le checkout FedaPay pour saisir son numéro Mobile Money / carte. Le paiement est confirmé en temps réel.
+            </div>
+          )}
+
           <Button
             onClick={handleCheckout}
-            disabled={submitting || cart.length === 0}
+            disabled={submitting || cart.length === 0 || (paymentMode === 'CASH' && isTenderedInsufficient)}
             className="w-full"
           >
             {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {submitting ? 'En cours...' : 'Valider l\'Encaissement'}
+            {submitting ? 'En cours...' : paymentMode === 'FEDAPAY' ? 'Payer avec FedaPay' : 'Valider l\'Encaissement'}
           </Button>
         </Card>
       </div>
+
+      {/* ⭐ BANDEAU DE SUCCÈS — affiché après une vente réussie.
+          Pattern identique à NewPaymentModal (Finance/Encaissement) :
+            - Télécharger PDF
+            - Envoyer par Email
+            - Envoyer par Helm Connect
+            - Nouvelle vente (efface le reçu et recommence) */}
+      {receipt && (
+        <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white border-l border-emerald-200 shadow-2xl z-50 overflow-y-auto p-6 space-y-4">
+          <div className="flex items-start gap-3 mb-2">
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <h3 className="text-base font-bold text-emerald-900">Vente encaissée avec succès</h3>
+              <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                <div>
+                  <span className="text-emerald-700">N° vente : </span>
+                  <span className="font-mono font-bold text-emerald-900">{receipt.saleNumber}</span>
+                </div>
+                <div>
+                  <span className="text-emerald-700">Date/heure : </span>
+                  <span className="font-medium text-emerald-900">
+                    {new Date(receipt.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-emerald-200">
+            <Button size="sm" onClick={handleDownloadReceipt} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Download className="w-3.5 h-3.5 mr-1.5" /> Télécharger PDF
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleResendReceipt('email')}
+              disabled={sendingChannel === 'email'}
+            >
+              <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
+              {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleResendReceipt('helm_connect')}
+              disabled={sendingChannel === 'helm_connect'}
+            >
+              <HelmConnectIcon className="w-3.5 h-3.5 mr-1.5" />
+              {sendingChannel === 'helm_connect' ? 'Envoi...' : 'Helm Connect'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleNewSale}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              Nouvelle vente
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setReceipt(null)}>
+              Fermer
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================
           STUDENT SEARCH MODAL — Pattern aligné sur Finance/Encaissement

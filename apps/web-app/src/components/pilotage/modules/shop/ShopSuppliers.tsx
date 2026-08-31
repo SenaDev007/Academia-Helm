@@ -75,10 +75,19 @@ export default function ShopSuppliers() {
     'purchase-orders',
     academicYear?.id,
   );
+  // ⭐ Fetch products for the PO multi-select
+  const { data: products } = useModulesList<any>(
+    'shop',
+    'products',
+    academicYear?.id,
+  );
 
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
   const [poModalOpen, setPoModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // ⭐ PO form: supplier dropdown + product checkboxes
+  const [poSelectedSupplierId, setPoSelectedSupplierId] = useState('');
+  const [poSelectedProductIds, setPoSelectedProductIds] = useState<string[]>([]);
   const [supplierForm, setSupplierForm] = useState({ name: '', category: '', phone: '', email: '' });
   const [poForm, setPoForm] = useState({ supplierId: '', items: '' });
 
@@ -104,16 +113,23 @@ export default function ShopSuppliers() {
   const handleCreatePO = async () => {
     try {
       setSubmitting(true);
-      // ⭐ FIX: Backend expects items: [{ productId, quantity, unitPrice?, totalPrice }]
-      //    — not items: string[]
-      const productIds = poForm.items.split(',').map((s) => s.trim()).filter(Boolean);
-      const items = productIds.map((productId: string) => ({
-        productId,
-        quantity: 1,
-        totalPrice: 0, // will be computed server-side when unitPrice is set
-      }));
-      await modulesApi.post('shop/purchase-orders', { supplierId: poForm.supplierId, items }, buildModulesApiOptions(academicYear?.id));
+      // ⭐ FIX: Build PO items from selected products (checkbox multi-select)
+      const items = poSelectedProductIds.map((productId: string) => {
+        const product = (products ?? []).find((p: any) => p.id === productId);
+        return {
+          productId,
+          quantity: 1,
+          unitPrice: Number(product?.unitPrice ?? 0),
+          totalPrice: Number(product?.unitPrice ?? 0),
+        };
+      });
+      await modulesApi.post('shop/purchase-orders', {
+        supplierId: poSelectedSupplierId,
+        items,
+      }, buildModulesApiOptions(academicYear?.id));
       setPoModalOpen(false);
+      setPoSelectedSupplierId('');
+      setPoSelectedProductIds([]);
       setPoForm({ supplierId: '', items: '' });
       await refetchPOs();
       toast({ title: 'Bon de commande créé', description: 'Le PO a été enregistré.' });
@@ -308,22 +324,54 @@ export default function ShopSuppliers() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label className="text-xs">ID Fournisseur</Label>
-              <Input type="text" value={poForm.supplierId} onChange={(e) => setPoForm({ ...poForm, supplierId: e.target.value })} />
+              <Label className="text-xs">Fournisseur</Label>
+              <select
+                className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/30 bg-white"
+                value={poSelectedSupplierId}
+                onChange={(e) => setPoSelectedSupplierId(e.target.value)}
+              >
+                <option value="">— Sélectionner un fournisseur —</option>
+                {(suppliers ?? []).filter((s: any) => s.isActive !== false).map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.category ? ` (${s.category})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <Label className="text-xs">Articles (IDs séparés par virgule)</Label>
-              <textarea
-                value={poForm.items}
-                onChange={(e) => setPoForm({ ...poForm, items: e.target.value })}
-                placeholder="ex: prod-1, prod-2"
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
-              />
+              <Label className="text-xs">Articles</Label>
+              <div className="mt-1 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1">
+                {(products ?? []).length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Aucun produit disponible. Créez des produits dans le Catalogue d'abord.</p>
+                ) : (
+                  (products ?? []).map((p: any) => (
+                    <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={poSelectedProductIds.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setPoSelectedProductIds([...poSelectedProductIds, p.id]);
+                          } else {
+                            setPoSelectedProductIds(poSelectedProductIds.filter(id => id !== p.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded accent-amber-600"
+                      />
+                      <span className="text-sm flex-1">{p.name}</span>
+                      <span className="text-xs text-slate-500">{Number(p.unitPrice).toLocaleString('fr-FR')} FCFA</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {poSelectedProductIds.length > 0 && (
+                <p className="text-xs text-slate-500 mt-1">{poSelectedProductIds.length} article(s) sélectionné(s)</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPoModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleCreatePO} disabled={submitting}>
+            <Button onClick={handleCreatePO} disabled={submitting || !poSelectedSupplierId || poSelectedProductIds.length === 0}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Création...' : 'Créer le bon'}
             </Button>

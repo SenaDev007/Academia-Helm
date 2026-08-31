@@ -187,7 +187,7 @@ export default function ShopPOS() {
               Aucun article disponible pour le point de vente.
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {(products ?? []).map((product, i) => (
                 <POSProductCard
                   key={product?.id ?? `pos-${i}`}
@@ -221,7 +221,17 @@ export default function ShopPOS() {
               </div>
             ) : (
               cart.map((item) => (
-                <CartItem key={item.id} item={item} />
+                <CartItem
+                  key={item.id}
+                  item={item}
+                  onIncrement={() => setCart(prev => prev.map(it => it.id === item.id ? { ...it, qty: it.qty + 1 } : it))}
+                  onDecrement={() => setCart(prev => prev.flatMap(it => {
+                    if (it.id === item.id) {
+                      return it.qty > 1 ? [{ ...it, qty: it.qty - 1 }] : []; // remove if qty reaches 0
+                    }
+                    return [it];
+                  }))}
+                />
               ))
             )}
           </div>
@@ -359,34 +369,37 @@ function POSProductCard({ product, index, onAdd }: any) {
   const stock = (typeof product?.stock === 'object' && product?.stock !== null
     ? product.stock.quantity
     : product?.stock) ?? product?.quantity ?? 0;
-  const sku = product?.sku ?? `SKU-${index}`;
+  const sku = product?.sku ?? product?.code ?? `SKU-${index}`;
   const emoji = product?.emoji ?? '📦';
 
   return (
     <Button
       variant="outline"
       onClick={onAdd}
-      className="bg-white rounded-xl border-slate-200 p-3 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-200 h-auto flex-col items-stretch"
+      className="bg-white rounded-xl border-slate-200 p-3 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-200 h-auto flex-row items-center gap-3 text-left"
     >
-      <div className="h-20 bg-slate-50 rounded-lg mb-3 flex items-center justify-center relative overflow-hidden">
-        <span className="text-2xl">{emoji}</span>
-        <div className="absolute top-1.5 right-1.5">
-          <div className="w-5 h-5 bg-white/90 rounded-md flex items-center justify-center text-indigo-600 border border-slate-100 shadow-sm">
-            <Plus className="w-3 h-3" />
-          </div>
+      {/* Left: product icon */}
+      <div className="w-14 h-14 bg-slate-50 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">
+        {emoji}
+      </div>
+      {/* Center: product info */}
+      <div className="flex-1 min-w-0">
+        <h4 className="text-xs font-medium text-navy-900 truncate mb-0.5">{name}</h4>
+        <p className="text-xs font-semibold text-indigo-600 mb-0.5">{formatCurrency(price)}</p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-400">Stock: {stock}</span>
+          <span className="text-[10px] text-gray-400 bg-slate-50 px-1 rounded font-mono">{sku}</span>
         </div>
       </div>
-      <h4 className="text-xs font-medium text-navy-900 line-clamp-1 mb-1 text-left">{name}</h4>
-      <p className="text-xs font-semibold text-indigo-600 mb-2 text-left">{formatCurrency(price)}</p>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-400">Stock: {stock}</span>
-        <div className="px-1.5 py-0.5 bg-slate-50 rounded text-xs text-gray-400 border border-slate-100 font-mono">{sku}</div>
+      {/* Right: add button */}
+      <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+        <Plus className="w-4 h-4 text-indigo-600" />
       </div>
     </Button>
   );
 }
 
-function CartItem({ item }: any) {
+function CartItem({ item, onIncrement, onDecrement }: any) {
   return (
     <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-lg border border-slate-100">
       <div className="w-10 h-10 bg-white rounded-md flex items-center justify-center text-lg shadow-sm">
@@ -397,11 +410,11 @@ function CartItem({ item }: any) {
         <p className="text-xs text-indigo-600">{formatCurrency(item.price)}</p>
       </div>
       <div className="flex items-center gap-1.5">
-        <Button variant="outline" size="icon" className="h-6 w-6">
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={onDecrement}>
           <Minus className="w-3 h-3" />
         </Button>
         <span className="text-xs font-medium text-navy-900 w-5 text-center">{item.qty}</span>
-        <Button size="icon" className="h-6 w-6">
+        <Button size="icon" className="h-6 w-6" onClick={onIncrement}>
           <Plus className="w-3 h-3" />
         </Button>
       </div>

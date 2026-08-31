@@ -57,17 +57,23 @@ export default function ShopKits() {
     'kits',
     academicYear?.id,
   );
+  // ⭐ Fetch products for the multi-select dropdown
+  const { data: products } = useModulesList<any>(
+    'shop',
+    'products',
+    academicYear?.id,
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [kitForm, setKitForm] = useState({ name: '', description: '', price: 0, productIds: '' });
+  const [kitForm, setKitForm] = useState({ name: '', description: '', price: 0 });
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
   const handleCreateKit = async () => {
     try {
       setSubmitting(true);
-      // ⭐ FIX: Backend expects items: [{ productId, quantity }] — not productIds: string[]
-      const productIds = kitForm.productIds.split(',').map((s) => s.trim()).filter(Boolean);
-      const items = productIds.map((productId: string) => ({ productId, quantity: 1 }));
+      // ⭐ FIX: Build items from selected products (checkbox multi-select)
+      const items = selectedProductIds.map((productId: string) => ({ productId, quantity: 1 }));
       await modulesApi.post('shop/kits', {
         name: kitForm.name,
         description: kitForm.description,
@@ -75,7 +81,8 @@ export default function ShopKits() {
         items,
       }, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
-      setKitForm({ name: '', description: '', price: 0, productIds: '' });
+      setKitForm({ name: '', description: '', price: 0 });
+      setSelectedProductIds([]);
       await refetch();
       toast({ title: 'Kit créé', description: 'Le nouveau kit scolaire a été enregistré.' });
     } catch (e: any) {
@@ -190,13 +197,39 @@ export default function ShopKits() {
               <Input type="number" value={kitForm.price} onChange={(e) => setKitForm({ ...kitForm, price: Number(e.target.value) })} />
             </div>
             <div>
-              <Label className="text-xs">IDs Produits (séparés par virgule)</Label>
-              <Input type="text" value={kitForm.productIds} onChange={(e) => setKitForm({ ...kitForm, productIds: e.target.value })} placeholder="ex: prod-1, prod-2" />
+              <Label className="text-xs">Produits du kit</Label>
+              <div className="mt-1 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1">
+                {(products ?? []).length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Aucun produit disponible. Créez des produits dans le Catalogue d'abord.</p>
+                ) : (
+                  (products ?? []).map((p: any) => (
+                    <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductIds.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProductIds([...selectedProductIds, p.id]);
+                          } else {
+                            setSelectedProductIds(selectedProductIds.filter(id => id !== p.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded accent-amber-600"
+                      />
+                      <span className="text-sm flex-1">{p.name}</span>
+                      <span className="text-xs text-slate-500">{Number(p.unitPrice).toLocaleString('fr-FR')} FCFA</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {selectedProductIds.length > 0 && (
+                <p className="text-xs text-slate-500 mt-1">{selectedProductIds.length} produit(s) sélectionné(s)</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleCreateKit} disabled={submitting}>
+            <Button onClick={handleCreateKit} disabled={submitting || selectedProductIds.length === 0 || !kitForm.name}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Création...' : 'Créer le kit'}
             </Button>

@@ -79,7 +79,7 @@ export default function ShopSuppliers() {
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
   const [poModalOpen, setPoModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [supplierForm, setSupplierForm] = useState({ name: '', contact: '', phone: '', email: '' });
+  const [supplierForm, setSupplierForm] = useState({ name: '', category: '', phone: '', email: '' });
   const [poForm, setPoForm] = useState({ supplierId: '', items: '' });
 
   const handleCreateSupplier = async () => {
@@ -87,7 +87,7 @@ export default function ShopSuppliers() {
       setSubmitting(true);
       await modulesApi.post('shop/suppliers', supplierForm, buildModulesApiOptions(academicYear?.id));
       setSupplierModalOpen(false);
-      setSupplierForm({ name: '', contact: '', phone: '', email: '' });
+      setSupplierForm({ name: '', category: '', phone: '', email: '' });
       await refetchSuppliers();
       toast({ title: 'Fournisseur créé', description: 'Le nouveau fournisseur a été ajouté.' });
     } catch (e: any) {
@@ -278,8 +278,8 @@ export default function ShopSuppliers() {
               <Input type="text" value={supplierForm.name} onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })} />
             </div>
             <div>
-              <Label className="text-xs">Contact</Label>
-              <Input type="text" value={supplierForm.contact} onChange={(e) => setSupplierForm({ ...supplierForm, contact: e.target.value })} />
+              <Label className="text-xs">Type de fournisseur</Label>
+              <Input type="text" value={supplierForm.category} onChange={(e) => setSupplierForm({ ...supplierForm, category: e.target.value })} placeholder="ex: Textile & Uniforme, Fournitures..." />
             </div>
             <div>
               <Label className="text-xs">Téléphone</Label>

@@ -162,11 +162,13 @@ export default function ShopPayments() {
               </div>
             </div>
 
+            {/* ⭐ Wallet commenté — sera réactivé à la demande des clients
             <div className="grid grid-cols-3 gap-3">
               <QuickAction label="Recharger" icon={Plus} onClick={() => setWalletModalOpen(true)} />
               <QuickAction label="Historique" icon={History} />
               <QuickAction label="Réglages" icon={Smartphone} />
             </div>
+            */}
           </div>
         </Card>
 
@@ -297,7 +299,7 @@ export default function ShopPayments() {
         </DialogContent>
       </Dialog>
 
-      {/* Wallet Recharge Modal */}
+      {/* ⭐ Wallet Recharge Modal — commenté, sera réactivé à la demande des clients
       <Dialog open={walletModalOpen} onOpenChange={setWalletModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -322,6 +324,7 @@ export default function ShopPayments() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      */}
     </div>
   );
 }

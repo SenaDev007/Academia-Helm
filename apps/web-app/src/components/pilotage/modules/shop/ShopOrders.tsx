@@ -62,31 +62,39 @@ export default function ShopOrders() {
     'orders',
     academicYear?.id,
   );
+  // ⭐ Fetch products for the dropdown selector
+  const { data: products } = useModulesList<any>(
+    'shop',
+    'products',
+    academicYear?.id,
+  );
 
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [formData, setFormData] = useState({ customer: '', items: '' });
 
   const handleCreate = async () => {
     try {
       setSubmitting(true);
-      // ⭐ FIX: Backend expects { totalAmount, items: [{ productId, quantity, unitPrice }] }
-      //    — not { customer, items: string[] }
-      const productIds = formData.items.split(',').map((s) => s.trim()).filter(Boolean);
-      // We need product prices — for now, send quantity=1 and unitPrice=0
-      // (the user can adjust the order after creation, or we fetch prices later)
-      const orderItems = productIds.map((productId: string) => ({
-        productId,
-        quantity: 1,
-        unitPrice: 0,
-      }));
-      const totalAmount = 0; // will be computed server-side
+      // ⭐ FIX: Build order items from selected products (dropdown multi-select)
+      //    instead of asking the user to type comma-separated IDs.
+      const orderItems = selectedProductIds.map((productId: string) => {
+        const product = (products ?? []).find((p: any) => p.id === productId);
+        return {
+          productId,
+          quantity: 1,
+          unitPrice: Number(product?.unitPrice ?? 0),
+        };
+      });
+      const totalAmount = orderItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
       await modulesApi.post('shop/orders', {
         totalAmount,
         items: orderItems,
       }, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
+      setSelectedProductIds([]);
       setFormData({ customer: '', items: '' });
       await refetch();
       toast({ title: 'Commande créée', description: 'La nouvelle commande a été enregistrée.' });
@@ -263,18 +271,39 @@ export default function ShopOrders() {
               />
             </div>
             <div>
-              <Label className="text-xs">Articles (IDs séparés par virgule)</Label>
-              <textarea
-                value={formData.items}
-                onChange={(e) => setFormData({ ...formData, items: e.target.value })}
-                placeholder="ex: prod-1, prod-2"
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
-              />
+              <Label className="text-xs">Articles</Label>
+              <div className="mt-1 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1">
+                {(products ?? []).length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Aucun produit disponible. Créez des produits dans le Catalogue d'abord.</p>
+                ) : (
+                  (products ?? []).map((p: any) => (
+                    <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductIds.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProductIds([...selectedProductIds, p.id]);
+                          } else {
+                            setSelectedProductIds(selectedProductIds.filter(id => id !== p.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded accent-amber-600"
+                      />
+                      <span className="text-sm flex-1">{p.name}</span>
+                      <span className="text-xs text-slate-500">{Number(p.unitPrice).toLocaleString('fr-FR')} FCFA</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {selectedProductIds.length > 0 && (
+                <p className="text-xs text-slate-500 mt-1">{selectedProductIds.length} article(s) sélectionné(s)</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleCreate} disabled={submitting}>
+            <Button onClick={handleCreate} disabled={submitting || selectedProductIds.length === 0}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Création...' : 'Créer la commande'}
             </Button>

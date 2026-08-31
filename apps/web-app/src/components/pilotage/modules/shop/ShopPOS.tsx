@@ -356,7 +356,9 @@ export default function ShopPOS() {
 function POSProductCard({ product, index, onAdd }: any) {
   const name = product?.name ?? `Article #${index}`;
   const price = product?.price ?? product?.unitPrice ?? 0;
-  const stock = product?.stock ?? product?.quantity ?? 0;
+  const stock = (typeof product?.stock === 'object' && product?.stock !== null
+    ? product.stock.quantity
+    : product?.stock) ?? product?.quantity ?? 0;
   const sku = product?.sku ?? `SKU-${index}`;
   const emoji = product?.emoji ?? '📦';
 

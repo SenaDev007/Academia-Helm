@@ -59,7 +59,7 @@ interface CategoryItem {
   icon?: string;
 }
 
-export default function ShopCatalog() {
+export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
@@ -156,7 +156,9 @@ export default function ShopCatalog() {
       setProductModalOpen(false);
       setEditingProduct(null);
       setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '', imageUrl: '' });
+      // ⭐ FIX: Refetch BOTH products AND categories so category counts update immediately
       await refetch();
+      await refetchCategories();
     } catch (e: any) {
       toast({
         title: 'Erreur',
@@ -174,6 +176,7 @@ export default function ShopCatalog() {
     try {
       await modulesApi.delete(`shop/products/${productId}`, buildModulesApiOptions(academicYear?.id));
       await refetch();
+      await refetchCategories();
       toast({ title: 'Produit supprimé', description: `Le produit « ${productName} » a été supprimé.` });
     } catch (e: any) {
       toast({
@@ -328,12 +331,17 @@ export default function ShopCatalog() {
           </Card>
 
           <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-md border-0">
-            <Bookmark className="w-7 h-7 text-indigo-300 mb-3" />
+            <Bookmark className="w-7 h-7 text-amber-300 mb-3" />
             <h4 className="text-sm font-semibold mb-2">Kits Scolaires</h4>
             <p className="text-xs text-slate-300 leading-relaxed mb-4">
               Gérez les packs d'articles obligatoires par niveau pour faciliter les achats parents.
             </p>
-            <Button variant="outline" size="sm" className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
+              onClick={() => onNavigate?.('shop:kits')}
+            >
               Configurer les kits
             </Button>
           </Card>

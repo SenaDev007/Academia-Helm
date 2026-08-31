@@ -316,7 +316,7 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
     if (mode === 'shop') {
       switch (activeView) {
         case 'shop:dashboard': return <ShopDashboard />;
-        case 'shop:catalog': return <ShopCatalog />;
+        case 'shop:catalog': return <ShopCatalog onNavigate={setActiveView} />;
         case 'shop:orders': return <ShopOrders />;
         case 'shop:pos': return <ShopPOS />;
         case 'shop:payments': return <ShopPayments />;

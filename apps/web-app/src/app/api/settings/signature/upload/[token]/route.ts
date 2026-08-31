@@ -1,6 +1,10 @@
 /**
  * Proxy API — Upload signature via magic-link token (PUBLIC, no auth)
  * POST /api/settings/signature/upload/:token
+ *
+ * ⭐ Next.js 16: `params` is now a Promise and must be awaited. Same fix
+ *    as token-info route — without this, the upload silently fails with
+ *    "Token introuvable" because the backend receives `[object Promise]`.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,10 +14,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
   try {
-    const url = new URL(`${API_BASE_URL}/settings/signature/upload/${params.token}`);
+    const { token } = await params;
+    const url = new URL(`${API_BASE_URL}/settings/signature/upload/${token}`);
     const body = await request.json();
     const response = await fetch(url.toString(), {
       method: 'POST',

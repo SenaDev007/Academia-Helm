@@ -1,6 +1,11 @@
 /**
  * Proxy API — Get signature token info (PUBLIC, no auth)
  * GET /api/settings/signature/token-info/:token
+ *
+ * ⭐ Next.js 16: `params` is now a Promise and must be awaited. Treating it
+ *    as a sync object returns `[object Promise]` for `params.token`, which
+ *    causes the backend to receive a bogus token and return 404 — making
+ *    every signature magic-link email show "Lien invalide".
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,10 +15,11 @@ const API_BASE_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
   try {
-    const url = new URL(`${API_BASE_URL}/settings/signature/token-info/${params.token}`);
+    const { token } = await params;
+    const url = new URL(`${API_BASE_URL}/settings/signature/token-info/${token}`);
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },

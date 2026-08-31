@@ -67,6 +67,7 @@ export default function ShopPayments() {
   const [submitting, setSubmitting] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ amount: 0, method: 'cash', customerId: '' });
   const [walletAmount, setWalletAmount] = useState(0);
+  const [walletCardId, setWalletCardId] = useState(''); // ⭐ FIX: backend requires cardId
 
   const handleRecordPayment = async () => {
     try {
@@ -90,9 +91,16 @@ export default function ShopPayments() {
   const handleWalletRecharge = async () => {
     try {
       setSubmitting(true);
-      await modulesApi.post('shop/wallet/recharge', { amount: walletAmount }, buildModulesApiOptions(academicYear?.id));
+      // ⭐ FIX: Backend requires { cardId, amount } — not just { amount }
+      if (!walletCardId) {
+        toast({ title: 'Erreur', description: 'Veuillez sélectionner une carte de fidélité.', variant: 'destructive' });
+        setSubmitting(false);
+        return;
+      }
+      await modulesApi.post('shop/wallet/recharge', { cardId: walletCardId, amount: walletAmount }, buildModulesApiOptions(academicYear?.id));
       setWalletModalOpen(false);
       setWalletAmount(0);
+      setWalletCardId('');
       await refetch();
       toast({ title: 'Recharge effectuée', description: 'Le portefeuille a été rechargé avec succès.' });
     } catch (e: any) {

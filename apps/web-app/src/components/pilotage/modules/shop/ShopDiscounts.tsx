@@ -69,7 +69,15 @@ export default function ShopDiscounts() {
   const handleCreateDiscount = async () => {
     try {
       setSubmitting(true);
-      await modulesApi.post('shop/discounts', discountForm, buildModulesApiOptions(academicYear?.id));
+      // ⭐ FIX: Backend expects { name, type, value, code, startDate?, endDate? }
+      //    — not { code, percentage, validUntil }
+      await modulesApi.post('shop/discounts', {
+        name: discountForm.code || `Remise ${discountForm.percentage}%`,
+        type: 'PERCENTAGE',
+        value: discountForm.percentage,
+        code: discountForm.code,
+        endDate: discountForm.validUntil || undefined,
+      }, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
       setDiscountForm({ code: '', percentage: 0, validUntil: '' });
       await refetch();

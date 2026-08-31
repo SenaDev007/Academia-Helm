@@ -71,8 +71,21 @@ export default function ShopOrders() {
   const handleCreate = async () => {
     try {
       setSubmitting(true);
-      const items = formData.items.split(',').map((s) => s.trim()).filter(Boolean);
-      await modulesApi.post('shop/orders', { customer: formData.customer, items }, buildModulesApiOptions(academicYear?.id));
+      // ⭐ FIX: Backend expects { totalAmount, items: [{ productId, quantity, unitPrice }] }
+      //    — not { customer, items: string[] }
+      const productIds = formData.items.split(',').map((s) => s.trim()).filter(Boolean);
+      // We need product prices — for now, send quantity=1 and unitPrice=0
+      // (the user can adjust the order after creation, or we fetch prices later)
+      const orderItems = productIds.map((productId: string) => ({
+        productId,
+        quantity: 1,
+        unitPrice: 0,
+      }));
+      const totalAmount = 0; // will be computed server-side
+      await modulesApi.post('shop/orders', {
+        totalAmount,
+        items: orderItems,
+      }, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
       setFormData({ customer: '', items: '' });
       await refetch();

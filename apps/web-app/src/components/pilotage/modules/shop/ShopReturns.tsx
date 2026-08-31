@@ -71,8 +71,23 @@ export default function ShopReturns() {
   const handleCreateReturn = async () => {
     try {
       setSubmitting(true);
-      const items = returnForm.items.split(',').map((s) => s.trim()).filter(Boolean);
-      await modulesApi.post('shop/returns', { orderId: returnForm.orderId, reason: returnForm.reason, items }, buildModulesApiOptions(academicYear?.id));
+      // ⭐ FIX: Backend expects { saleId?, orderId?, productId, quantity, reason, refundAmount? }
+      //    — not { orderId, reason, items: string[] }
+      const productIds = returnForm.items.split(',').map((s) => s.trim()).filter(Boolean);
+      if (productIds.length === 0) {
+        toast({ title: 'Erreur', description: 'Veuillez spécifier au moins un produit.', variant: 'destructive' });
+        setSubmitting(false);
+        return;
+      }
+      // Create one return per product (backend expects a single productId per return)
+      for (const productId of productIds) {
+        await modulesApi.post('shop/returns', {
+          orderId: returnForm.orderId || undefined,
+          productId,
+          quantity: 1,
+          reason: returnForm.reason,
+        }, buildModulesApiOptions(academicYear?.id));
+      }
       setModalOpen(false);
       setReturnForm({ orderId: '', reason: '', items: '' });
       await refetch();

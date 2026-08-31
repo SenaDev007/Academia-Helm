@@ -104,7 +104,14 @@ export default function ShopSuppliers() {
   const handleCreatePO = async () => {
     try {
       setSubmitting(true);
-      const items = poForm.items.split(',').map((s) => s.trim()).filter(Boolean);
+      // ⭐ FIX: Backend expects items: [{ productId, quantity, unitPrice?, totalPrice }]
+      //    — not items: string[]
+      const productIds = poForm.items.split(',').map((s) => s.trim()).filter(Boolean);
+      const items = productIds.map((productId: string) => ({
+        productId,
+        quantity: 1,
+        totalPrice: 0, // will be computed server-side when unitPrice is set
+      }));
       await modulesApi.post('shop/purchase-orders', { supplierId: poForm.supplierId, items }, buildModulesApiOptions(academicYear?.id));
       setPoModalOpen(false);
       setPoForm({ supplierId: '', items: '' });

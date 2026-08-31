@@ -65,8 +65,15 @@ export default function ShopKits() {
   const handleCreateKit = async () => {
     try {
       setSubmitting(true);
+      // ⭐ FIX: Backend expects items: [{ productId, quantity }] — not productIds: string[]
       const productIds = kitForm.productIds.split(',').map((s) => s.trim()).filter(Boolean);
-      await modulesApi.post('shop/kits', { ...kitForm, productIds }, buildModulesApiOptions(academicYear?.id));
+      const items = productIds.map((productId: string) => ({ productId, quantity: 1 }));
+      await modulesApi.post('shop/kits', {
+        name: kitForm.name,
+        description: kitForm.description,
+        price: kitForm.price,
+        items,
+      }, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
       setKitForm({ name: '', description: '', price: 0, productIds: '' });
       await refetch();

@@ -648,39 +648,13 @@ export class StampsSignaturesService {
     return svg;
   }
 
-  private buildRectangularStampSvg(data: IdentityProfileData): string {
-    const name = this.escapeXml(data.schoolName);
-    const address = this.escapeXml(data.address || '');
-    const city = this.escapeXml(data.city || '');
-    const country = this.escapeXml(data.country || '');
-    const postalCode = this.escapeXml(data.postalCode || '');
-    const loc = [address, [postalCode, city].filter(Boolean).join(' '), country].filter(Boolean).join(' — ');
-    const phone = [data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ');
-    const email = this.escapeXml(data.email || '');
-    const web = this.escapeXml(data.website || '');
-
-    const w = 320;
-    const h = 140;
-    const fontFamily = 'Georgia, "Times New Roman", serif';
-
-    const red = StampsSignaturesService.STAMP_RED;
-    const redSec = StampsSignaturesService.STAMP_RED_SECONDARY;
-    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
-    svg += `<rect width="${w}" height="${h}" fill="none" stroke="${red}" stroke-width="2" rx="4"/>`;
-    svg += `<rect x="4" y="4" width="${w - 8}" height="${h - 8}" fill="none" stroke="${red}" stroke-width="1" rx="2"/>`;
-    svg += `<text x="${w / 2}" y="28" text-anchor="middle" font-family="${fontFamily}" font-size="16" font-weight="bold" fill="${red}">${name}</text>`;
-    if (loc) {
-      svg += `<text x="${w / 2}" y="52" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="${redSec}">${loc}</text>`;
-    }
-    if (phone || email) {
-      svg += `<text x="${w / 2}" y="74" text-anchor="middle" font-family="${fontFamily}" font-size="10" fill="${redSec}">${this.escapeXml(phone)}${phone && email ? ' • ' : ''}${email}</text>`;
-    }
-    if (web) {
-      svg += `<text x="${w / 2}" y="96" text-anchor="middle" font-family="${fontFamily}" font-size="9" fill="${redSec}">${web}</text>`;
-    }
-    svg += '</svg>';
-    return svg;
-  }
+  // ⭐ NOTE : la 2e version de buildRectangularStampSvg (legacy, avec schoolName
+  //    + adresse + téléphone + email) a été SUPPRIMÉE. Elle écrasait la 1ère
+  //    version (ligne ~559) qui utilise l'acronyme seul, ce qui faisait que le
+  //    cachet rectangulaire affichait TOUJOURS le nom complet de l'école
+  //    (ex: « e Privé Entrepreneuriat et Bilingue - EVEL d'A… ») au lieu de
+  //    l'acronyme court. Avec cette suppression, c'est la version moderne
+  //    (acronyme seul) qui est utilisée — conforme à la demande utilisateur.
 
   private buildSignatureSvg(firstName: string, lastName: string): string {
     const fullName = `${firstName} ${lastName}`.trim();

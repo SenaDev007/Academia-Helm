@@ -354,6 +354,106 @@ export class StampsSignaturesService {
   }
 
   /**
+   * ⭐ Génère les DEUX cachets pour un staff spécifique :
+   *    1. Cachet CIRCULAIRE nominatif — acronyme école en haut + adresse +
+   *       téléphone en bas + RÔLE du titulaire au centre (au lieu du logo)
+   *    2. Cachet RECTANGULAIRE nominatif — nom du titulaire (grand) + rôle
+   *       en dessous
+   *
+   * Cette méthode est appelée par le bouton « Cachet » dans RH >
+   * Administration pour chaque staff de l'équipe administrative. Les deux
+   * PNGs sont sauvegardés dans uploads/tenant-stamps/<tenantId>/<level>/
+   * nominative/ et leurs URLs sont retournées pour affichage dans le modal.
+   *
+   * ⭐ Les cachets sont persistés sur disque (réutilisables après reload),
+   *    mais il n'y a pas de table DB dédiée pour les cachets nominatifs —
+   *    on les identifie par leur filename `<roleSlug>.png` (cachet
+   *    rectangulaire) et `<roleSlug>-circular.png` (cachet circulaire).
+   *
+   * @param tenantId          Le tenant courant
+   * @param holderName        Nom complet du titulaire (ex: "Erhel DEGBE")
+   * @param holderRole        Rôle du titulaire (ex: "PROMOTEUR",
+   *                          "DIRECTEUR", "SECRÉTAIRE-COMPTABLE")
+   * @param educationLevelId  Optionnel — niveau scolaire (pour cachets par
+   *                          niveau). Si null, les cachets sont stockés dans
+   *                          le dossier "global".
+   */
+  async generateStampsForStaff(
+    tenantId: string,
+    holderName: string,
+    holderRole: string,
+    educationLevelId?: string | null,
+  ): Promise<{
+    circularStampUrl: string;
+    rectangularStampUrl: string;
+    generatedAt: string;
+  }> {
+    if (!holderName?.trim()) {
+      throw new BadRequestException('Le nom du titulaire est requis pour générer les cachets.');
+    }
+    if (!holderRole?.trim()) {
+      throw new BadRequestException('Le rôle du titulaire est requis pour générer les cachets.');
+    }
+
+    // Récupérer le profil d'identité pour l'acronyme + adresse + téléphone
+    const profile = await this.identityProfile.getActiveProfile(tenantId);
+    if (!profile) {
+      throw new BadRequestException(
+        'Profil d\'identité requis. Renseignez l\'onglet Identité avant de générer les cachets.',
+      );
+    }
+    const data: IdentityProfileData = {
+      schoolName: profile.schoolName ?? 'Établissement',
+      schoolAcronym: profile.schoolAcronym,
+      address: profile.address,
+      city: profile.city,
+      country: profile.country ?? 'Bénin',
+      postalCode: profile.postalCode,
+      phonePrimary: profile.phonePrimary,
+      phoneSecondary: profile.phoneSecondary,
+      email: profile.email,
+      website: profile.website,
+      logoUrl: (profile as any).logoUrl ?? null,
+    };
+
+    const cwd = process.cwd();
+    const levelFolder = educationLevelId ?? 'global';
+    // ⭐ roleSlug nettoyé (minuscules, sans accents ni caractères spéciaux)
+    //    pour un filename valide sur tous les filesystems. On retire aussi
+    //    les accents du rôle français (ex: "SECRÉTAIRE" → "secretaire").
+    const roleSlug = (holderRole || 'role')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const stampsDir = path.join(cwd, STAMPS_DIR, tenantId, levelFolder, 'nominative');
+    await fs.mkdir(stampsDir, { recursive: true });
+
+    // 1. Cachet CIRCULAIRE nominatif (rôle au centre)
+    const circularSvg = this.buildNominativeCircularStampSvg(data, holderRole);
+    const circularPath = path.join(stampsDir, `${roleSlug}-circular.png`);
+    // ⭐ TRANSPARENT background — no white fill
+    await this.svgToPng(circularSvg, circularPath, 700, 700, true);
+    const circularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/nominative/${roleSlug}-circular.png`;
+
+    // 2. Cachet RECTANGULAIRE nominatif (nom + rôle)
+    const rectangularSvg = this.buildNominativeStampSvg(holderName, holderRole);
+    const rectangularPath = path.join(stampsDir, `${roleSlug}.png`);
+    // ⭐ TRANSPARENT background
+    await this.svgToPng(rectangularSvg, rectangularPath, 840, 300, true);
+    const rectangularStampUrl = `${STAMPS_DIR}/${tenantId}/${levelFolder}/nominative/${roleSlug}.png`;
+
+    this.logger.log(`Cachets générés pour staff: tenant=${tenantId} role=${roleSlug} name="${holderName}" → circulaire=${circularStampUrl} rectangulaire=${rectangularStampUrl}`);
+
+    return {
+      circularStampUrl,
+      rectangularStampUrl,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Génère la signature d'un responsable (niveau + rôle). Crée ou met à jour la ligne et enregistre le PNG.
    */
   async generateSignature(
@@ -469,13 +569,33 @@ export class StampsSignaturesService {
   getAssetPath(tenantId: string, type: 'signature', signatureId: string): string | null;
   getAssetPath(
     tenantId: string,
-    type: 'circular' | 'rectangular' | 'oval' | 'signature',
+    type: 'circular' | 'rectangular' | 'oval' | 'signature' | 'nominative_circular' | 'nominative_rectangular',
     educationLevelIdOrSignatureId?: string | null,
   ): string | null {
     const cwd = process.cwd();
     if (type === 'signature') {
       if (!educationLevelIdOrSignatureId) return null;
       return path.join(cwd, SIGNATURES_DIR, tenantId, `${educationLevelIdOrSignatureId}.png`);
+    }
+    // ⭐ Cachets nominatifs (par staff) : situés dans
+    //    uploads/tenant-stamps/<tenantId>/<levelFolder>/nominative/
+    //    Le 2e paramètre est le "roleSlug" (ex: "promoteur",
+    //    "directeur", "secretaire-comptable") qui sert de filename.
+    //    Pour le circulaire, on ajoute "-circular.png" au filename.
+    if (type === 'nominative_circular' || type === 'nominative_rectangular') {
+      if (!educationLevelIdOrSignatureId) return null;
+      // Format reçu : "nominative_<levelFolder>_<roleSlug>" (pour rester
+      // compatible avec le pattern signature_id existant utilisé par le
+      // frontend). On parse pour récupérer levelFolder et roleSlug.
+      const raw = String(educationLevelIdOrSignatureId);
+      const match = raw.match(/^nominative_([^_]+(?:_[^_]+)*)_(.+)$/);
+      if (!match) return null;
+      const levelFolder = match[1];
+      const roleSlug = match[2];
+      const fileName = type === 'nominative_circular'
+        ? `${roleSlug}-circular.png`
+        : `${roleSlug}.png`;
+      return path.join(cwd, STAMPS_DIR, tenantId, levelFolder, 'nominative', fileName);
     }
     const levelFolder = educationLevelIdOrSignatureId ?? 'global';
     return path.join(cwd, STAMPS_DIR, tenantId, levelFolder, `${type}.png`);
@@ -545,6 +665,79 @@ export class StampsSignaturesService {
     <path d="M 91.50 333.00 L 96.07 345.43 L 108.50 350.00 L 96.07 354.57 L 91.50 367.00 L 86.93 354.57 L 74.50 350.00 L 86.93 345.43 Z" fill="${red}"/>
     <!-- Center: LOGO ONLY (no school name, no "SCOLAIRE") -->
     ${logoUrl ? `<image href="${logoUrl}" x="290" y="310" width="120" height="120" preserveAspectRatio="xMidYMid meet" opacity="0.85"/>` : `<circle cx="350" cy="370" r="60" fill="none" stroke="${red}" stroke-width="3"/>`}
+  </g>
+</svg>`;
+  }
+
+  /**
+   * ⭐ PROFESSIONAL CIRCULAR STAMP — Nominative variant (per staff member).
+   *
+   * Même rendu que buildCircularStampSvg (effet encre, rotation, 3 cercles
+   * concentriques, étoiles), MAIS :
+   *   - Au centre, on affiche le RÔLE du titulaire (PROMOTEUR, DIRECTEUR,
+   *     COMPTABLE, SECRÉTAIRE-COMPTABLE) au lieu du logo de l'école.
+   *   - L'acronyme de l'école reste dans l'arc supérieur (identité de
+   *     l'établissement).
+   *   - L'adresse + téléphone reste dans l'arc inférieur (contact).
+   *
+   * Utilisé par le bouton « Cachet » dans RH > Administration : pour chaque
+   * staff, on génère un cachet circulaire nominatif (rôle au centre) + un
+   * cachet rectangulaire nominatif (nom + rôle).
+   *
+   * @param data        Données d'identité de l'établissement (acronyme,
+   *                    adresse, téléphone pour les arcs).
+   * @param holderRole  Rôle du titulaire affiché au centre (ex: "PROMOTEUR").
+   */
+  private buildNominativeCircularStampSvg(data: IdentityProfileData, holderRole: string): string {
+    const acronym = this.escapeXml(data.schoolAcronym || data.schoolName || 'Établissement');
+    const phone = this.escapeXml([data.phonePrimary, data.phoneSecondary].filter(Boolean).join(' • ') || '');
+    const addressParts = [phone, data.city, data.country].filter(Boolean);
+    const addressLine = this.escapeXml(addressParts.join(' — '));
+    const red = StampsSignaturesService.STAMP_RED;
+    const roleText = this.escapeXml((holderRole || 'FONCTION').toUpperCase());
+
+    // ⭐ Adaptive font size for acronym: if long, reduce to fit the arc
+    const acronymLen = (data.schoolAcronym || data.schoolName || '').length;
+    const arcFontSize = acronymLen > 20 ? 36 : acronymLen > 15 ? 44 : acronymLen > 10 ? 52 : 60;
+
+    // ⭐ Taille de police adaptative pour le rôle au centre (selon longueur)
+    //    "PROMOTEUR" = 9 chars → 56px
+    //    "SECRÉTAIRE-COMPTABLE" = 20 chars → 32px
+    const roleLen = roleText.length;
+    const roleFontSize = roleLen > 18 ? 32 : roleLen > 12 ? 40 : roleLen > 8 ? 48 : 56;
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 700" style="--ink-color:${red};">
+  <defs>
+    <path id="topArcPathNominative" d="M 117.98 300.68 A 237.20 237.20 0 0 1 582.02 300.68" fill="none"/>
+    <path id="bottomArcPathNominative" d="M 86.63 387.01 A 265.95 265.95 0 0 0 613.37 387.01" fill="none"/>
+    <filter id="inkStampEffectNominative" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
+      <feComponentTransfer in="displaced" result="grainy">
+        <feFuncA type="discrete" tableValues="0 0.55 0.7 0.8 0.88 0.93 0.97 1 1 1"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="grainy" stdDeviation="0.6" result="softened"/>
+      <feColorMatrix in="softened" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.92 0"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-1.3 350 350)" filter="url(#inkStampEffectNominative)">
+    <circle cx="350" cy="350" r="320" fill="none" stroke="currentColor" stroke-width="12" color="${red}"/>
+    <circle cx="350" cy="350" r="304" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
+    <circle cx="350" cy="350" r="213" fill="none" stroke="currentColor" stroke-width="5" color="${red}"/>
+    <!-- Top arc: ACRONYM of the school (institutional identity) -->
+    <text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${arcFontSize}" letter-spacing="2" fill="${red}">
+      <textPath href="#topArcPathNominative" startOffset="50%" text-anchor="middle">${acronym}</textPath>
+    </text>
+    <!-- Bottom arc: address + phone (contact info) -->
+    ${addressLine ? `<text font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="26" letter-spacing="1" fill="${red}">
+      <textPath href="#bottomArcPathNominative" startOffset="50%" text-anchor="middle">${addressLine}</textPath>
+    </text>` : ''}
+    <!-- Star decorations at 3 o'clock and 9 o'clock -->
+    <path d="M 608.50 333.00 L 613.07 345.43 L 625.50 350.00 L 613.07 354.57 L 608.50 367.00 L 603.93 354.57 L 591.50 350.00 L 603.93 345.43 Z" fill="${red}"/>
+    <path d="M 91.50 333.00 L 96.07 345.43 L 108.50 350.00 L 96.07 354.57 L 91.50 367.00 L 86.93 354.57 L 74.50 350.00 L 86.93 345.43 Z" fill="${red}"/>
+    <!-- ⭐ Center: ROLE of the holder (PROMOTEUR / DIRECTEUR / etc.) —
+         replaces the logo of the institutional stamp. -->
+    <text x="350" y="370" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="${roleFontSize}" text-anchor="middle" dominant-baseline="middle" fill="${red}" letter-spacing="2">${roleText}</text>
   </g>
 </svg>`;
   }

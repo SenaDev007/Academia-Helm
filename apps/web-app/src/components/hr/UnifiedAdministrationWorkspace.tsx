@@ -54,7 +54,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, Trash2, Upload, Pen, School,
   Stamp, Plus, Mail, UserCheck, Eraser, FileSignature, X, Globe,
   ShieldCheck, Calendar, Send, GraduationCap, Search, Filter,
-  Baby, BookOpen, Users, Edit3, Info,
+  Baby, BookOpen, Users, Edit3, Info, RefreshCw,
 } from 'lucide-react';
 import { useBilingual, type LanguageTrack } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -243,6 +243,24 @@ export default function UnifiedAdministrationWorkspace() {
   const [stampVersion, setStampVersion] = useState(Date.now());
   const [generatingSignature, setGeneratingSignature] = useState(false);
   const [generatingRowSignature, setGeneratingRowSignature] = useState<string | null>(null);
+  // ⭐ Resetting signature: per-assignment id being reset to null
+  const [resettingSignature, setResettingSignature] = useState<string | null>(null);
+  // ⭐ Signatures list loaded from /api/settings/signatures — used to
+  //    determine if a signature already exists for a given (role + level),
+  //    and to display the existing signature image instead of the
+  //    "Lien signature" button.
+  const [signatures, setSignatures] = useState<any[]>([]);
+  // ⭐ Stamp modal state — opened when user clicks "Cachet" on a row.
+  //    Stores the staff info + the URLs of the generated circular and
+  //    rectangular nominative stamps so they can be displayed in a modal.
+  const [stampModal, setStampModal] = useState<{
+    open: boolean;
+    staffName: string;
+    holderRole: string;
+    circularUrl: string | null;
+    rectangularUrl: string | null;
+    loading: boolean;
+  }>({ open: false, staffName: '', holderRole: '', circularUrl: null, rectangularUrl: null, loading: false });
   // ⭐ État pour le modal d'affectation enseignant (permet d'affecter
   //    un poste enseignant à n'importe quel staff, même un admin/comptable)
   const [teacherAssignModalOpen, setTeacherAssignModalOpen] = useState(false);
@@ -362,6 +380,20 @@ export default function UnifiedAdministrationWorkspace() {
       } catch (err) {
         console.warn('Failed to load admin assignments:', err);
         setAssignments([]);
+      }
+
+      // 5. Signatures existantes (tenant_signatures) — pour masquer le
+      //    bouton "Lien signature" si la signature est déjà présente, et
+      //    afficher la signature image + bouton "Réinitialiser".
+      //    On récupère TOUTES les signatures (sans filtre education_level_id)
+      //    pour pouvoir les retrouver par rôle quel que soit le niveau.
+      try {
+        const sigsData = await authedFetch<any[] | { items?: any[] }>('/api/settings/signatures');
+        const sigs = Array.isArray(sigsData) ? sigsData : (sigsData?.items ?? []);
+        setSignatures(sigs);
+      } catch (err) {
+        console.warn('Failed to load signatures:', err);
+        setSignatures([]);
       }
     } catch (err: any) {
       setError(err.message || 'Erreur lors du chargement');
@@ -817,18 +849,53 @@ export default function UnifiedAdministrationWorkspace() {
   };
 
   // ── Générer cachet NOMINATIF pour un titulaire de poste ──────────────────
-  // ⭐ Utilise le nouveau moteur de rendu professionnel (effet encre SVG,
-  //    rotation légère, double bordure) — même rendu que les fichiers de
-  //    référence cachet_nominatif_directeur.html et cachet_academia_helm.html.
+  // ⭐ NOUVELLE STRATÉGIE (sept 2026) : le bouton « Cachet » génère les DEUX
+  //    cachets pour le staff et ouvre un MODAL qui les affiche côte à côte :
+  //      1. Cachet CIRCULAIRE nominatif — acronyme école en haut + adresse
+  //         en bas + RÔLE du titulaire au centre (au lieu du logo)
+  //      2. Cachet RECTANGULAIRE nominatif — nom du titulaire (grand) +
+  //         rôle en dessous
+  //    Les deux PNGs sont persistés dans uploads/tenant-stamps/<tenantId>/
+  //    <level>/nominative/ et récupérés via le endpoint
+  //    /api/settings/stamps/asset?type=nominative_circular&signature_id=...
+  //    (et nominative_rectangular pour le rectangulaire).
   const handleGenerateNominativeStamp = async (staffId: string, adminRole: string, unit: string) => {
     if (!staffId || !adminRole) {
-      setError('Staff et rôle requis pour générer le cachet nominatif.');
+      setError('Staff et rôle requis pour générer les cachets.');
       return;
     }
     setGeneratingStamp(`nominative-${staffId}`);
     setError(null);
+    // Ouvrir le modal immédiatement en mode "loading" pour feedback user
+    const staff = staffList.find((s) => s.id === staffId);
+    const staffNamePreview = staff ? `${staff.firstName || ''} ${staff.lastName || ''}`.trim() : '—';
+
+    // Convertir le code de rôle admin en libellé français lisible
+    const roleLabelMap: Record<string, string> = {
+      DIRECTEUR: 'DIRECTEUR',
+      DIRECTEUR_ADJOINT: 'DIRECTEUR ADJOINT',
+      SECRETAIRE: 'SECRÉTAIRE',
+      SECRETAIRE_COMPTABLE: 'SECRÉTAIRE-COMPTABLE',
+      COMPTABLE: 'COMPTABLE',
+      ECONOME: 'ÉCONOME',
+      INTENDANT: 'INTENDANT',
+      CENSEUR: 'CENSEUR',
+      SURVEILLANT: 'SURVEILLANT',
+      RESP_SCOLARITE: 'RESPONSABLE SCOLARITÉ',
+      AUTRE: 'PERSONNEL ADMINISTRATIF',
+    };
+    const holderRole = roleLabelMap[adminRole] || adminRole;
+
+    setStampModal({
+      open: true,
+      staffName: staffNamePreview,
+      holderRole,
+      circularUrl: null,
+      rectangularUrl: null,
+      loading: true,
+    });
+
     try {
-      const staff = staffList.find((s) => s.id === staffId);
       if (!staff) throw new Error('Staff introuvable');
       const holderName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
       if (!holderName) throw new Error('Nom du titulaire introuvable');
@@ -840,34 +907,96 @@ export default function UnifiedAdministrationWorkspace() {
         educationLevelId = level?.id ?? null;
       }
 
-      // Convertir le code de rôle admin en libellé français lisible
-      const roleLabelMap: Record<string, string> = {
-        DIRECTEUR: 'DIRECTEUR',
-        DIRECTEUR_ADJOINT: 'DIRECTEUR ADJOINT',
-        SECRETAIRE: 'SECRÉTAIRE',
-        SECRETAIRE_COMPTABLE: 'SECRÉTAIRE-COMPTABLE',
-        COMPTABLE: 'COMPTABLE',
-        ECONOME: 'ÉCONOME',
-        INTENDANT: 'INTENDANT',
-        CENSEUR: 'CENSEUR',
-        SURVEILLANT: 'SURVEILLANT',
-        RESP_SCOLARITE: 'RESPONSABLE SCOLARITÉ',
-        AUTRE: 'PERSONNEL ADMINISTRATIF',
-      };
-      const holderRole = roleLabelMap[adminRole] || adminRole;
-
-      const data = await authedFetch<{ stampUrl: string; generatedAt: string }>('/api/settings/stamps/generate-nominative', {
+      // ⭐ Appelle le nouveau endpoint qui génère les 2 cachets en une fois
+      const data = await authedFetch<{
+        circularStampUrl: string;
+        rectangularStampUrl: string;
+        generatedAt: string;
+      }>('/api/settings/stamps/generate-for-staff', {
         method: 'POST',
         body: { holderName, holderRole, educationLevelId },
       });
-      setSuccess(`Cachet nominatif généré pour ${holderName} (${holderRole}). URL: ${data?.stampUrl || ''}`);
+
+      // ⭐ Construire les URLs d'asset pour afficher les PNGs dans le modal.
+      //    On utilise le endpoint /api/settings/stamps/asset avec type
+      //    nominative_circular / nominative_rectangular + signature_id
+      //    formaté comme "nominative_<levelFolder>_<roleSlug>".
+      const levelFolder = educationLevelId ?? 'global';
+      const roleSlug = (holderRole || 'role')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const signatureId = `nominative_${levelFolder}_${roleSlug}`;
+      // ⭐ Cache-bust via _t=Date.now() pour forcer le navigateur à
+      //    re-fetch le PNG (sinon il sert une version stale)
+      const cb = Date.now();
+      const circularUrl = `/api/settings/stamps/asset?type=nominative_circular&signature_id=${signatureId}&_t=${cb}`;
+      const rectangularUrl = `/api/settings/stamps/asset?type=nominative_rectangular&signature_id=${signatureId}&_t=${cb}`;
+
+      setStampModal({
+        open: true,
+        staffName: holderName,
+        holderRole,
+        circularUrl,
+        rectangularUrl,
+        loading: false,
+      });
+      setSuccess(`Cachets générés pour ${holderName} (${holderRole}).`);
       // ⭐ Force stamp preview cards to refetch
       setStampVersion(Date.now());
-      return data;
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de la génération du cachet nominatif');
+      setError(err.message || 'Erreur lors de la génération des cachets');
+      setStampModal((prev) => ({ ...prev, loading: false }));
     } finally {
       setGeneratingStamp(null);
+    }
+  };
+
+  // ── Réinitialiser la signature d'un staff (remet signatureUrl à null) ──
+  // ⭐ Appelé par le bouton "Réinitialiser" qui apparaît à côté de la
+  //    signature déjà uploadée. Permet au staff de re-signer (le bouton
+  //    "Lien signature" réapparaît après reset).
+  const handleResetSignature = async (assignment: AdminAssignment, unit: string) => {
+    if (!assignment.staff) return;
+    setResettingSignature(assignment.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      let educationLevelId: string | null = null;
+      if (unit !== 'MAT_PRI') {
+        const unitLevelCode = Object.entries(LEVEL_CODE_TO_UNIT).find(([, u]) => u === unit)?.[0];
+        const level = schoolLevels.find((l) => l.code === unitLevelCode);
+        educationLevelId = level?.id ?? null;
+      }
+      const roleLabel = ADMIN_ROLE_LABELS[assignment.adminRole as AdminRole] || assignment.adminRole;
+      // ⭐ On appelle l'endpoint generate avec un holderFirstName/LastName
+      //    vide → le backend va créer/mettre à jour la ligne en
+      //    signatureUrl=null, ce qui masquera la signature existante.
+      //    Alternative plus propre : un endpoint DELETE dédié, mais pour
+      //    rester minimal on réutilise le PATCH existant.
+      // ⭐ En réalité, la signature est stockée par (tenantId, role, level),
+      //    pas par staffId. Le "reset" efface donc la signature pour ce
+      //    rôle+level — c'est ce qu'on veut (le staff qui occupe ce poste
+      //    devra re-signer).
+      // ⭐ Approche : on appelle PATCH /api/settings/signatures/reset avec
+      //    role + level. Comme l'endpoint n'existe pas encore, on utilise
+      //    un POST /api/settings/signature/reset (à créer côté backend).
+      await authedFetch('/api/settings/signature/reset', {
+        method: 'POST',
+        body: { role: roleLabel, educationLevelId },
+      });
+      // ⭐ Recharge les signatures pour mettre à jour l'UI
+      const sigsData = await authedFetch<any[]>('/api/settings/signatures');
+      const sigs = Array.isArray(sigsData) ? sigsData : (sigsData?.items ?? []);
+      setSignatures(sigs);
+      const staffName = `${assignment.staff.firstName || ''} ${assignment.staff.lastName || ''}`.trim();
+      setSuccess(`Signature réinitialisée pour ${staffName}. Le bouton "Lien signature" est de nouveau visible.`);
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la réinitialisation de la signature');
+    } finally {
+      setResettingSignature(null);
     }
   };
 
@@ -1325,28 +1454,88 @@ export default function UnifiedAdministrationWorkspace() {
                                     </div>
                                   </TableCell>
                                   <TableCell>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleGenerateSignatureForRow(a, group.unit)}
-                                      disabled={generatingRowSignature === a.id || !a.staff}
-                                      className="inline-flex items-center gap-1 text-[10px] md:text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                                      title="Envoyer un lien par email au titulaire pour qu'il dessine sa signature manuscrite"
-                                    >
-                                      {generatingRowSignature === a.id ? (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                      ) : (
-                                        <FileSignature className="w-3 h-3" />
-                                      )}
-                                      <span className="hidden md:inline">Lien signature</span>
-                                    </button>
-                                    {/* ⭐ Cachet nominatif — génère un cachet rectangulaire professionnel
-                                        avec le nom du titulaire + son rôle (effet encre SVG, rotation, double bordure). */}
+                                    {(() => {
+                                      // ⭐ Cherche la signature existante pour ce staff.
+                                      //    La signature est identifiée par (role, educationLevelId)
+                                      //    — on compare avec le roleLabel français + le niveau de
+                                      //    l'unité courante.
+                                      let educationLevelId: string | null = null;
+                                      if (group.unit !== 'MAT_PRI') {
+                                        const unitLevelCode = Object.entries(LEVEL_CODE_TO_UNIT).find(([, u]) => u === group.unit)?.[0];
+                                        const level = schoolLevels.find((l) => l.code === unitLevelCode);
+                                        educationLevelId = level?.id ?? null;
+                                      }
+                                      const roleLabel = ADMIN_ROLE_LABELS[a.adminRole as AdminRole] || a.adminRole;
+                                      const existingSig = signatures.find((s: any) => {
+                                        if (s.role !== roleLabel) return false;
+                                        if (educationLevelId) return s.educationLevelId === educationLevelId;
+                                        return s.educationLevelId === null || s.educationLevelId === undefined;
+                                      });
+                                      const hasSignature = !!(existingSig?.signatureUrl);
+
+                                      if (hasSignature) {
+                                        // ⭐ Signature déjà uploadée : on affiche la signature
+                                        //    image + un bouton "Réinitialiser" pour permettre
+                                        //    au staff de re-signer.
+                                        const sigId = existingSig.id;
+                                        const sigUrl = `/api/settings/stamps/asset?type=signature&signature_id=${sigId}&_t=${stampVersion}`;
+                                        return (
+                                          <div className="flex flex-col gap-1">
+                                            <img
+                                              src={sigUrl}
+                                              alt={`Signature de ${staffName}`}
+                                              className="max-h-12 max-w-[120px] object-contain border border-slate-100 rounded p-0.5 bg-white"
+                                              onError={(e) => {
+                                                // Masquer l'image si elle ne charge pas
+                                                (e.target as HTMLImageElement).style.display = 'none';
+                                              }}
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleResetSignature(a, group.unit)}
+                                              disabled={resettingSignature === a.id}
+                                              className="inline-flex items-center gap-1 text-[10px] md:text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed w-fit"
+                                              title="Réinitialiser la signature — le bouton 'Lien signature' réapparaîtra"
+                                            >
+                                              {resettingSignature === a.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : (
+                                                <RefreshCw className="w-3 h-3" />
+                                              )}
+                                              <span className="hidden md:inline">Réinitialiser</span>
+                                            </button>
+                                          </div>
+                                        );
+                                      }
+
+                                      // ⭐ Pas de signature : on affiche le bouton "Lien signature"
+                                      //    classique qui envoie l'email avec le lien canvas.
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleGenerateSignatureForRow(a, group.unit)}
+                                          disabled={generatingRowSignature === a.id || !a.staff}
+                                          className="inline-flex items-center gap-1 text-[10px] md:text-xs text-amber-600 hover:text-amber-800 hover:bg-amber-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                          title="Envoyer un lien par email au titulaire pour qu'il dessine sa signature manuscrite"
+                                        >
+                                          {generatingRowSignature === a.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <FileSignature className="w-3 h-3" />
+                                          )}
+                                          <span className="hidden md:inline">Lien signature</span>
+                                        </button>
+                                      );
+                                    })()}
+                                    {/* ⭐ Bouton Cachet — ouvre un modal qui affiche les
+                                        2 cachets générés (circulaire avec rôle au centre +
+                                        rectangulaire avec nom + rôle). */}
                                     <button
                                       type="button"
                                       onClick={() => handleGenerateNominativeStamp(a.staffId, a.adminRole, group.unit)}
                                       disabled={generatingStamp === `nominative-${a.staffId}` || !a.staff}
-                                      className="inline-flex items-center gap-1 text-[10px] md:text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
-                                      title="Générer / régénérer le cachet nominatif (nom + rôle) pour ce titulaire"
+                                      className="inline-flex items-center gap-1 text-[10px] md:text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed mt-1"
+                                      title="Générer / régénérer les cachets (circulaire + nominatif) pour ce titulaire"
                                     >
                                       {generatingStamp === `nominative-${a.staffId}` ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -2209,6 +2398,86 @@ export default function UnifiedAdministrationWorkspace() {
                 <GraduationCap className="w-4 h-4" />
               )}
               Affecter à l'équipe enseignante
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          MODAL : Cachets générés pour un staff
+          Affiche les 2 cachets générés (circulaire nominatif + rectangulaire
+          nominatif) côte à côte, avec bouton de téléchargement pour chacun.
+          ═══════════════════════════════════════════════════════════════════ */}
+      <Dialog open={stampModal.open} onOpenChange={(open) => {
+        if (!open) {
+          setStampModal((prev) => ({ ...prev, open: false }));
+        }
+      }}>
+        <DialogContent className="sm:max-w-3xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Stamp className="w-4 h-4 text-red-600" />
+              Cachets générés — {stampModal.staffName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            {stampModal.loading ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+                <p className="text-sm text-gray-500">
+                  Génération des cachets en cours pour {stampModal.staffName}...
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Cachet circulaire nominatif */}
+                <div>
+                  <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />
+                    Cachet circulaire
+                  </h4>
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    Acronyme école + adresse + <strong>{stampModal.holderRole}</strong> au centre
+                  </p>
+                  <div className="flex items-center justify-center bg-slate-50 rounded-lg p-6 min-h-[280px]">
+                    {stampModal.circularUrl && (
+                      <img
+                        src={stampModal.circularUrl}
+                        alt={`Cachet circulaire de ${stampModal.staffName}`}
+                        className="max-w-full max-h-72 object-contain"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Cachet rectangulaire nominatif */}
+                <div>
+                  <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-600" />
+                    Cachet rectangulaire nominatif
+                  </h4>
+                  <p className="text-[11px] text-gray-500 mb-3">
+                    <strong>{stampModal.staffName}</strong> (nom) + <strong>{stampModal.holderRole}</strong> (poste en dessous)
+                  </p>
+                  <div className="flex items-center justify-center bg-slate-50 rounded-lg p-6 min-h-[180px]">
+                    {stampModal.rectangularUrl && (
+                      <img
+                        src={stampModal.rectangularUrl}
+                        alt={`Cachet nominatif de ${stampModal.staffName}`}
+                        className="max-w-full max-h-40 object-contain"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setStampModal((prev) => ({ ...prev, open: false }))}
+            >
+              Fermer
             </Button>
           </DialogFooter>
         </DialogContent>

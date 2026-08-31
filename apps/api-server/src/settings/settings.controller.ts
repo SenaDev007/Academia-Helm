@@ -984,6 +984,42 @@ export class SettingsController {
     );
   }
 
+  /**
+   * ⭐ Génère les DEUX cachets (circulaire nominatif + rectangulaire
+   *    nominatif) pour un staff spécifique.
+   *
+   * Appelé par le bouton « Cachet » dans RH > Administration pour chaque
+   * staff. Le cachet circulaire a le RÔLE du titulaire au centre (au lieu
+   * du logo), et le cachet rectangulaire a le nom du titulaire (grand) +
+   * le rôle en dessous.
+   *
+   * Les deux PNGs sont sauvegardés dans uploads/tenant-stamps/<tenantId>/
+   * <levelFolder>/nominative/ et leurs URLs sont retournées pour
+   * affichage immédiat dans le modal du frontend.
+   */
+  @Post('stamps/generate-for-staff')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async generateStampsForStaff(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: { holderName: string; holderRole: string; educationLevelId?: string | null },
+  ) {
+    if (!body?.holderName?.trim()) {
+      throw new BadRequestException('holderName est requis');
+    }
+    if (!body?.holderRole?.trim()) {
+      throw new BadRequestException('holderRole est requis');
+    }
+    return this.stampsSignaturesService.generateStampsForStaff(
+      this.resolveTid(tenantId, user, req),
+      body.holderName,
+      body.holderRole,
+      body.educationLevelId ?? null,
+    );
+  }
+
   @Get('stamps/asset')
   @UseGuards(PermissionGuard)
   @RequirePermission('PARAMETRES', 'read')
@@ -991,18 +1027,20 @@ export class SettingsController {
     @TenantId() tenantId: string | undefined,
     @CurrentUser() user: any,
     @Request() req: any,
-    @Query('type') type: 'circular' | 'rectangular' | 'oval' | 'signature',
+    @Query('type') type: 'circular' | 'rectangular' | 'oval' | 'signature' | 'nominative_circular' | 'nominative_rectangular',
     @Query('education_level_id') educationLevelId: string | undefined,
     @Query('signature_id') signatureId: string | undefined,
   ) {
     const tid = this.resolveTid(tenantId, user, req);
-    if (!type || !['circular', 'rectangular', 'oval', 'signature'].includes(type)) {
-      throw new BadRequestException('Paramètre type requis: circular, rectangular, oval ou signature');
+    if (!type || !['circular', 'rectangular', 'oval', 'signature', 'nominative_circular', 'nominative_rectangular'].includes(type)) {
+      throw new BadRequestException('Paramètre type requis: circular, rectangular, oval, signature, nominative_circular ou nominative_rectangular');
     }
     const filePath =
       type === 'signature'
         ? this.stampsSignaturesService.getAssetPath(tid, 'signature', signatureId ?? '')
-        : this.stampsSignaturesService.getAssetPath(tid, type, educationLevelId ?? null);
+        : type === 'nominative_circular' || type === 'nominative_rectangular'
+          ? this.stampsSignaturesService.getAssetPath(tid, type as any, signatureId ?? '')
+          : this.stampsSignaturesService.getAssetPath(tid, type as any, educationLevelId ?? null);
     if (!filePath || !existsSync(filePath)) {
       throw new NotFoundException('Fichier non trouvé');
     }
@@ -1023,6 +1061,67 @@ export class SettingsController {
       this.resolveTid(tenantId, user, req),
       educationLevelId ?? null,
     );
+  }
+
+  /**
+   * ⭐ Réinitialise la signature d'un titulaire (passe signatureUrl à null).
+   *
+   * Appelé par le bouton « Réinitialiser » dans RH > Administration quand
+   * une signature existe déjà pour un staff (rôle + niveau). Après reset,
+   * le bouton « Lien signature » réapparaît et le staff peut re-signer.
+   *
+   * ⭐ La signature est identifiée par (tenantId, role, educationLevelId).
+   *    On ne supprime PAS la ligne tenant_signatures (qui contient aussi
+   *    holderFirstName/holderLastName) — on passe juste signatureUrl à
+   *    null pour que la signature ne soit plus affichée ni appliquée sur
+   *    les documents.
+   */
+  @Post('signature/reset')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('PARAMETRES', 'write')
+  async resetSignature(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: { role: string; educationLevelId?: string | null },
+  ) {
+    if (!body?.role?.trim()) {
+      throw new BadRequestException('role est requis');
+    }
+    const tid = this.resolveTid(tenantId, user, req);
+    const levelId = body.educationLevelId ?? null;
+
+    // ⭐ Cherche la ligne tenant_signatures existante par (tenantId, role,
+    //    educationLevelId). Si elle n'existe pas, on renvoie juste un
+    //    succès (rien à réinitialiser).
+    const existing = levelId != null
+      ? await this.prisma.tenantSignature.findFirst({
+          where: { tenantId: tid, role: body.role, educationLevelId: levelId },
+        })
+      : await this.prisma.tenantSignature.findFirst({
+          where: { tenantId: tid, role: body.role, educationLevelId: null },
+        });
+
+    if (!existing) {
+      return { success: true, message: 'Aucune signature à réinitialiser.' };
+    }
+
+    // ⭐ Passe signatureUrl à null — la signature ne sera plus affichée
+    //    ni appliquée sur les documents. holderFirstName/holderLastName
+    //    sont conservés (le staff peut re-signer avec le même nom).
+    await this.prisma.tenantSignature.update({
+      where: { id: existing.id },
+      data: {
+        signatureUrl: null,
+        generatedAt: null,
+      },
+    });
+
+    this.logger.log(`Signature réinitialisée: tenant=${tid} role=${body.role} level=${levelId ?? 'global'}`);
+    return {
+      success: true,
+      message: 'Signature réinitialisée. Le bouton "Lien signature" est de nouveau visible.',
+    };
   }
 
   @Post('signature/generate')
@@ -1196,7 +1295,21 @@ export class SettingsController {
       const SIGNATURES_DIR = 'uploads/tenant-signatures';
       const dir = path.join(process.cwd(), SIGNATURES_DIR, tokenData.tenantId);
       await fs.mkdir(dir, { recursive: true });
-      const fileName = `signature-${tokenData.role}-${Date.now()}.${ext}`;
+      // ⭐ FIX : nettoyer le role du filename pour retirer les caractères
+      //    spéciaux (slash, espace, accent) qui cassent le filesystem.
+      //    AVANT : role = "Directeur / Directrice" → filename =
+      //    "signature-Directeur/Directrice-1234567.png" → le / créait un
+      //    sous-dossier et l'écriture échouait avec "Échec de
+      //    l'enregistrement de la signature".
+      //    APRÈS : roleSlug = "directeur-directrice" → filename =
+      //    "signature-directeur-directrice-1234567.png" (plat, valide).
+      const roleSlug = (tokenData.role || 'role')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // retire les accents
+        .replace(/[^a-z0-9]+/g, '-')    // remplace tout non-alphanumérique par -
+        .replace(/^-+|-+$/g, '');       // retire les - en début/fin
+      const fileName = `signature-${roleSlug}-${Date.now()}.${ext}`;
       const filePath = path.join(dir, fileName);
       await fs.writeFile(filePath, buffer);
       const signatureUrl = `${SIGNATURES_DIR}/${tokenData.tenantId}/${fileName}`;

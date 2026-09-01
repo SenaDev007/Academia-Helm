@@ -32,6 +32,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -66,6 +67,9 @@ export default function ShopStocks() {
   const [stockForm, setStockForm] = useState({ productId: '', quantity: 0 });
   // ⭐ Seuil d'alerte par défaut chargé depuis les paramètres
   const [defaultThreshold, setDefaultThreshold] = useState(10);
+  // ⭐ État pour l'aperçu PDF (pattern Finance)
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // ⭐ Charger les paramètres pour récupérer le seuil d'alerte par défaut
   useEffect(() => {
@@ -164,15 +168,31 @@ export default function ShopStocks() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
+              disabled={exportingPdf || !academicYear?.id}
+              onClick={async () => {
                 if (!academicYear?.id) return;
-                window.open(
-                  `/api/modules-complementaires/shop/stocks/pdf?academicYearId=${academicYear.id}`,
-                  '_blank',
-                );
+                setExportingPdf(true);
+                try {
+                  const res = await fetch(
+                    `/api/modules-complementaires/shop/stocks/pdf?academicYearId=${academicYear.id}`,
+                    { credentials: 'include' },
+                  );
+                  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  setPreviewDoc({
+                    filePath: url,
+                    fileName: `Liste_Stock_${new Date().toISOString().substring(0, 10)}.pdf`,
+                    mimeType: 'application/pdf',
+                  });
+                } catch (e: any) {
+                  toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+                } finally {
+                  setExportingPdf(false);
+                }
               }}
             >
-              <FileText className="w-4 h-4 mr-1.5" />
+              {exportingPdf ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileText className="w-4 h-4 mr-1.5" />}
               Générer PDF
             </Button>
             <Button size="sm" onClick={() => openStockModal()}>
@@ -292,6 +312,11 @@ export default function ShopStocks() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ⭐ DocumentPreviewModal — pattern Finance */}
+      {previewDoc && (
+        <DocumentPreviewModal doc={previewDoc} onClose={() => { URL.revokeObjectURL(previewDoc.filePath); setPreviewDoc(null); }} />
+      )}
     </div>
   );
 }

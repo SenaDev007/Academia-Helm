@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -66,6 +67,9 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
+  // ⭐ État pour l'aperçu PDF (pattern Finance : fetch → blob → DocumentPreviewModal)
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const { data: categories, loading: catLoading, refetch: refetchCategories } = useModulesList<CategoryItem>(
     'shop',
@@ -386,23 +390,38 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
                   <Plus className="w-4 h-4 mr-2" />
                   Ajouter un Article
                 </Button>
-                {/* ⭐ Bouton Générer PDF du catalogue — pattern identique à
-                    la liste des élèves. Ouvre le PDF dans un nouvel onglet
-                    (le PDF est généré à la volée par le backend Puppeteer). */}
+                {/* ⭐ Bouton Générer PDF du catalogue — pattern Finance :
+                    fetch → blob → DocumentPreviewModal (pas window.open) */}
                 <Button
                   variant="outline"
-                  onClick={() => {
+                  disabled={exportingPdf || !academicYear?.id}
+                  onClick={async () => {
                     if (!academicYear?.id) {
                       toast({ title: 'Année scolaire requise', variant: 'destructive' });
                       return;
                     }
-                    window.open(
-                      `/api/modules-complementaires/shop/catalogue/pdf?academicYearId=${academicYear.id}`,
-                      '_blank',
-                    );
+                    setExportingPdf(true);
+                    try {
+                      const res = await fetch(
+                        `/api/modules-complementaires/shop/catalogue/pdf?academicYearId=${academicYear.id}`,
+                        { credentials: 'include' },
+                      );
+                      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      setPreviewDoc({
+                        filePath: url,
+                        fileName: `Catalogue_Boutique_${new Date().toISOString().substring(0, 10)}.pdf`,
+                        mimeType: 'application/pdf',
+                      });
+                    } catch (e: any) {
+                      toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+                    } finally {
+                      setExportingPdf(false);
+                    }
                   }}
                 >
-                  <FileText className="w-4 h-4 mr-2" />
+                  {exportingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
                   Générer PDF
                 </Button>
               </div>
@@ -696,6 +715,11 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ⭐ DocumentPreviewModal — pattern Finance : affiche le PDF dans un modal */}
+      {previewDoc && (
+        <DocumentPreviewModal doc={previewDoc} onClose={() => { URL.revokeObjectURL(previewDoc.filePath); setPreviewDoc(null); }} />
+      )}
     </div>
   );
 }

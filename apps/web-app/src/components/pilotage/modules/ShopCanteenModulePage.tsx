@@ -336,7 +336,7 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
     // Sous-modules — STRICTEMENT du mode actif
     if (mode === 'shop') {
       switch (activeView) {
-        case 'shop:dashboard': return <ShopDashboard />;
+        case 'shop:dashboard': return <ShopDashboard onNavigate={setActiveView} />;
         case 'shop:catalog': return <ShopCatalog onNavigate={setActiveView} />;
         case 'shop:orders': return <ShopOrders />;
         case 'shop:pos': return <ShopPOS />;

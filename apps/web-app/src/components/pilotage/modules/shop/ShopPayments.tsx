@@ -34,6 +34,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/use-toast';
+import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { GmailIcon, HelmConnectIcon } from '@/components/finance/OfficialIcons';
 
 interface SaleItem {
@@ -89,6 +90,8 @@ export default function ShopPayments() {
   const [pdfStartDate, setPdfStartDate] = useState('');
   const [pdfEndDate, setPdfEndDate] = useState('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  // ⭐ État pour l'aperçu PDF (pattern Finance)
+  const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
 
   const safeSales = sales ?? [];
 
@@ -217,22 +220,34 @@ export default function ShopPayments() {
               variant="outline"
               size="sm"
               disabled={generatingPdf || !academicYear?.id}
-              onClick={() => {
+              onClick={async () => {
                 if (!academicYear?.id) return;
                 setGeneratingPdf(true);
                 const params = new URLSearchParams({ academicYearId: academicYear.id });
                 if (pdfStartDate) params.set('startDate', new Date(pdfStartDate).toISOString());
                 if (pdfEndDate) {
-                  // Inclure la date de fin complète (jusqu'à 23:59:59)
                   const end = new Date(pdfEndDate);
                   end.setHours(23, 59, 59, 999);
                   params.set('endDate', end.toISOString());
                 }
-                window.open(
-                  `/api/modules-complementaires/shop/payments/history/pdf?${params.toString()}`,
-                  '_blank',
-                );
-                setTimeout(() => setGeneratingPdf(false), 1000);
+                try {
+                  const res = await fetch(
+                    `/api/modules-complementaires/shop/payments/history/pdf?${params.toString()}`,
+                    { credentials: 'include' },
+                  );
+                  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  setPreviewDoc({
+                    filePath: url,
+                    fileName: `Historique_Paiements_${new Date().toISOString().substring(0, 10)}.pdf`,
+                    mimeType: 'application/pdf',
+                  });
+                } catch (e: any) {
+                  toast({ title: 'Erreur export PDF', description: e.message, variant: 'destructive' });
+                } finally {
+                  setGeneratingPdf(false);
+                }
               }}
               title="Générer le PDF de l'historique des paiements (filtrable par date)"
             >
@@ -405,6 +420,11 @@ export default function ShopPayments() {
           </Table>
         </div>
       </Card>
+
+      {/* ⭐ DocumentPreviewModal — pattern Finance */}
+      {previewDoc && (
+        <DocumentPreviewModal doc={previewDoc} onClose={() => { URL.revokeObjectURL(previewDoc.filePath); setPreviewDoc(null); }} />
+      )}
     </div>
   );
 }

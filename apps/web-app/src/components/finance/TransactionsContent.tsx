@@ -466,6 +466,7 @@ export default function TransactionsContent() {
           <div className="mt-4">
             <ShopSalesSection
               academicYearId={academicYear.id}
+              refreshTrigger={modalRefreshTrigger}
               onGoToShop={() => {
                 if (typeof window !== 'undefined') {
                   window.location.href = '/app/shop';

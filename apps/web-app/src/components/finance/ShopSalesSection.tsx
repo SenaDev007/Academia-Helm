@@ -24,9 +24,13 @@ import { formatCurrency } from '@/lib/utils';
 export default function ShopSalesSection({
   academicYearId,
   onGoToShop,
+  refreshTrigger = 0,
 }: {
   academicYearId: string;
   onGoToShop?: () => void;
+  /** ⭐ Incrémenté par le parent après un paiement réussi pour forcer
+   *    le rechargement des ventes boutique. */
+  refreshTrigger?: number;
 }) {
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,7 @@ export default function ShopSalesSection({
         setSales([]);
       })
       .finally(() => setLoading(false));
-  }, [academicYearId]);
+  }, [academicYearId, refreshTrigger]);
 
   // Statistiques rapides
   const totalRevenue = sales.reduce((sum, s) => sum + Number(s.totalAmount ?? 0), 0);

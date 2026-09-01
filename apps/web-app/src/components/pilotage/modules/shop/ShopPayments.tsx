@@ -58,6 +58,15 @@ interface SaleItem {
   date?: string;
   createdAt?: string;
   customerType?: string;
+  // ⭐ Items détaillés (articles achetés) — pour afficher le détail
+  //    dans l'historique des paiements. Le backend renvoie `items` avec
+  //    chaque item contenant { product: { name }, quantity, unitPrice, totalPrice }.
+  items?: Array<{
+    product?: { name?: string; code?: string };
+    quantity?: number;
+    unitPrice?: number;
+    totalPrice?: number;
+  }>;
 }
 
 // ⭐ Mapping des codes de paiement → libellés français lisibles.
@@ -292,19 +301,20 @@ export default function ShopPayments() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead>Référence</TableHead>
-                <TableHead>Client / Élève</TableHead>
-                <TableHead>Méthode</TableHead>
-                <TableHead className="text-right">Montant</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Reçu</TableHead>
+                <TableHead className="whitespace-nowrap">Référence</TableHead>
+                <TableHead className="whitespace-nowrap">Client / Élève</TableHead>
+                <TableHead className="whitespace-nowrap">Articles</TableHead>
+                <TableHead className="whitespace-nowrap">Méthode</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Montant</TableHead>
+                <TableHead className="whitespace-nowrap">Statut</TableHead>
+                <TableHead className="whitespace-nowrap">Date</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Reçu</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSales.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-12">
+                  <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-12">
                     Aucune transaction disponible pour cette année scolaire.
                   </TableCell>
                 </TableRow>
@@ -351,12 +361,28 @@ export default function ShopPayments() {
                           </div>
                         </div>
                       </TableCell>
+                      {/* ⭐ Colonne Articles — détail des articles achetés */}
+                      <TableCell>
+                        <div className="space-y-0.5 max-w-[250px]">
+                          {(sale?.items?.length ?? 0) > 0 ? (
+                            sale.items.map((it: any, idx: number) => (
+                              <div key={idx} className="text-[11px] text-gray-600 flex items-center gap-1 whitespace-nowrap">
+                                <span className="font-medium text-gray-700">{it.product?.name ?? 'Article'}</span>
+                                <span className="text-gray-400">×{it.quantity ?? 1}</span>
+                                <span className="text-gray-400">@ {formatCurrency(Number(it.unitPrice ?? 0))}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-gray-400 italic">Détail non disponible</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
                           {String(paymentMode).toUpperCase() === 'CASH' && <Banknote className="w-3.5 h-3.5 text-emerald-600" />}
                           {String(paymentMode).toUpperCase() === 'FEDAPAY' && <CreditCard className="w-3.5 h-3.5 text-blue-600" />}
                           {String(paymentMode).toUpperCase() === 'WALLET' && <Wallet className="w-3.5 h-3.5 text-indigo-600" />}
-                          <span className="text-xs text-gray-600">{methodLabel}</span>
+                          <span className="text-xs text-gray-600 whitespace-nowrap">{methodLabel}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

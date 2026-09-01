@@ -118,11 +118,37 @@ export default function ShopCartSection({
   };
 
   // ⭐ Valider la sélection multiple : ajouter tous les produits cochés au panier
+  //    On construit le nouveau tableau d'items en une seule fois (pas de boucle
+  //    qui appelle handleAddProduct — car items n'est pas mis à jour entre
+  //    les appels à cause du batching de React).
   const handleValidateMultiSelection = () => {
     const selectedProducts = products.filter((p: any) => selectedPickerIds.has(p.id));
-    for (const product of selectedProducts) {
-      handleAddProduct(product);
-    }
+    if (selectedProducts.length === 0) return;
+
+    // Construire les nouveaux items à ajouter (ceux qui ne sont pas déjà dans le panier)
+    const newItems = selectedProducts
+      .filter((p) => !items.find((it) => it.productId === p.id))
+      .map((p) => ({
+        productId: p.id,
+        name: p.name,
+        code: p.code,
+        unitPrice: Number(p.unitPrice),
+        quantity: 1,
+        stock: Number(p.stock?.quantity ?? 0),
+      }));
+
+    // Pour les produits déjà dans le panier, on incrémente la quantité
+    const updatedItems = items.map((it) => {
+      const selected = selectedProducts.find((p) => p.id === it.productId);
+      if (selected) {
+        const stock = Number(selected.stock?.quantity ?? 0);
+        return { ...it, quantity: Math.min(it.quantity + 1, stock) };
+      }
+      return it;
+    });
+
+    // Fusionner en une seule mise à jour
+    onItemsChange([...updatedItems, ...newItems]);
     setSelectedPickerIds(new Set());
     setShowProductPicker(false);
   };

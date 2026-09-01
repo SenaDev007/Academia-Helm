@@ -619,7 +619,6 @@ export class ReceiptFinanceService {
   </div>
 
   <div class="verification-info">
-    Token de vérification : ${verificationToken.substring(0, 32)}... ·
     Reçu généré électroniquement le ${dateOp} à ${heureOp} ·
     Ce document est authentique et ne peut être modifié.
   </div>

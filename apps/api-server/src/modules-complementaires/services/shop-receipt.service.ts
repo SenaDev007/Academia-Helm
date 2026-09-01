@@ -247,6 +247,15 @@ export class ShopReceiptService {
     };
     const methodLabel = methodLabels[sale.paymentMode] || sale.paymentMode || '—';
 
+    // ⭐ Mapping des statuts de paiement en français
+    const PAYMENT_STATUS_LABELS: Record<string, string> = {
+      PAID: 'Payé',
+      PENDING: 'En attente',
+      CANCELLED: 'Annulé',
+      REFUNDED: 'Remboursé',
+      UNPAID: 'Impayé',
+    };
+
     const sellerName = sale.seller
       ? `${sale.seller.firstName} ${sale.seller.lastName}`.trim()
       : '—';
@@ -370,7 +379,7 @@ export class ShopReceiptService {
       <div class="info-item"><span class="info-label">Sous-total :</span><span class="info-value">${Number(sale.subTotal).toLocaleString('fr-FR')} FCFA</span></div>
       ${Number(sale.taxAmount) > 0 ? `<div class="info-item"><span class="info-label">TVA :</span><span class="info-value">${Number(sale.taxAmount).toLocaleString('fr-FR')} FCFA</span></div>` : ''}
       ${Number(sale.discountAmount) > 0 ? `<div class="info-item"><span class="info-label">Remise :</span><span class="info-value">-${Number(sale.discountAmount).toLocaleString('fr-FR')} FCFA</span></div>` : ''}
-      <div class="info-item"><span class="info-label">Statut :</span><span class="info-value" style="color: #16a34a;">${sale.paymentStatus || 'PAYÉ'}</span></div>
+      <div class="info-item"><span class="info-label">Statut :</span><span class="info-value" style="color: #16a34a;">${PAYMENT_STATUS_LABELS[sale.paymentStatus] || 'Payé'}</span></div>
     </div>
   </div>
 
@@ -386,7 +395,7 @@ export class ShopReceiptService {
   </div>
 
   <div class="verification-info">
-    Token : ${verificationToken.substring(0, 16)}... · Vérification en ligne via QR code
+    Reçu généré électroniquement · Vérification en ligne via QR code
   </div>
 
   <div class="academia-footer">

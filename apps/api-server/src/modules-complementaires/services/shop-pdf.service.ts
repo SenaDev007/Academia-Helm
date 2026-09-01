@@ -106,8 +106,14 @@ export class ShopPdfService {
 
   /**
    * Construit le header HTML (commun aux 3 PDFs).
+   * ⭐ Le ministère s'affiche en fonction du niveau scolaire de l'établissement,
+   *    comme dans class-list-pdf.service.ts :
+   *    - Maternelle/Primaire → "Ministère des Enseignements Maternel et Primaire"
+   *    - Secondaire → "Ministère de l'Enseignement Secondaire, de la Formation
+   *      Technique et Professionnelle, de la Reconversion et l'Insertion des Jeunes"
+   *    - Mixte (les deux niveaux) → on affiche les deux ministères l'un sous l'autre
    */
-  private buildHeader(branding: any): string {
+  private buildHeader(branding: any, isSecondary: boolean, hasBothLevels: boolean): string {
     const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
     const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
     const schoolLogoBlock = branding.schoolLogo
@@ -120,6 +126,19 @@ export class ShopPdfService {
       branding.schoolEmail ? `Email : ${branding.schoolEmail}` : null,
     ].filter(Boolean).join(' · ');
 
+    // ⭐ Déterminer le(s) ministère(s) à afficher selon le niveau scolaire
+    const ministryPrimary = `Ministère des Enseignements Maternel et Primaire`;
+    const ministrySecondary = `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et l'Insertion des Jeunes`;
+    let ministryHtml: string;
+    if (hasBothLevels) {
+      // Établissement mixte (primaire + secondaire) → afficher les deux
+      ministryHtml = `<div class="ministere">${ministryPrimary}</div>
+          <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
+          <div class="ministere">${ministrySecondary}</div>`;
+    } else {
+      ministryHtml = `<div class="ministere">${isSecondary ? ministrySecondary : ministryPrimary}</div>`;
+    }
+
     return `
   <div class="header">
     <table class="header-table">
@@ -128,7 +147,7 @@ export class ShopPdfService {
         <td class="header-center">
           <div class="republique">République du Bénin</div>
           <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
-          <div class="ministere">Ministère des Enseignements Maternel, Primaire et Secondaire</div>
+          ${ministryHtml}
           <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
           <div class="school-name">${branding.schoolName || 'Établissement'}</div>
           ${contactInfo ? `<div class="school-info">${contactInfo}</div>` : ''}
@@ -137,6 +156,37 @@ export class ShopPdfService {
       </tr>
     </table>
   </div>`;
+  }
+
+  /**
+   * ⭐ Détermine les niveaux scolaires actifs de l'établissement pour
+   *    afficher le bon ministère dans l'en-tête. Retourne :
+   *    { isSecondary: boolean, hasBothLevels: boolean }
+   *    - isSecondary = true si l'établissement a au moins un niveau secondaire
+   *    - hasBothLevels = true si l'établissement a à la fois primaire ET secondaire
+   */
+  private async getSchoolLevelInfo(tenantId: string): Promise<{ isSecondary: boolean; hasBothLevels: boolean }> {
+    try {
+      const levels = await this.prisma.schoolLevel.findMany({
+        where: { tenantId, isActive: true },
+        select: { code: true, name: true },
+      });
+      const hasPrimary = levels.some((l: any) => {
+        const code = (l.code || '').toUpperCase();
+        return code.includes('MATERNELLE') || code.includes('PRIMAIRE') || code.includes('MAT_PRI');
+      });
+      const hasSecondary = levels.some((l: any) => {
+        const code = (l.code || '').toUpperCase();
+        return code.includes('SECONDAIRE') || code.includes('SECOND');
+      });
+      return {
+        isSecondary: hasSecondary && !hasPrimary, // true seulement si secondaire uniquement
+        hasBothLevels: hasPrimary && hasSecondary,
+      };
+    } catch {
+      // Fallback : si on ne peut pas déterminer, on utilise le primaire par défaut
+      return { isSecondary: false, hasBothLevels: false };
+    }
   }
 
   /**
@@ -166,7 +216,7 @@ export class ShopPdfService {
     tenantId: string,
     academicYearId: string,
   ): Promise<Buffer> {
-    const [branding, yearName, products] = await Promise.all([
+    const [branding, yearName, products, levelInfo] = await Promise.all([
       this.getTenantBranding(tenantId),
       this.getAcademicYearName(academicYearId),
       this.prisma.shopProduct.findMany({
@@ -174,6 +224,7 @@ export class ShopPdfService {
         include: { stock: true, category: true },
         orderBy: { name: 'asc' },
       }),
+      this.getSchoolLevelInfo(tenantId),
     ]);
 
     const rows = products.map((p: any, i: number) => `
@@ -188,7 +239,7 @@ export class ShopPdfService {
     `).join('');
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Catalogue Boutique</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding)}
+      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Catalogue Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>
@@ -229,9 +280,10 @@ export class ShopPdfService {
     startDate?: string | null,
     endDate?: string | null,
   ): Promise<Buffer> {
-    const [branding, yearName] = await Promise.all([
+    const [branding, yearName, levelInfo] = await Promise.all([
       this.getTenantBranding(tenantId),
       this.getAcademicYearName(academicYearId),
+      this.getSchoolLevelInfo(tenantId),
     ]);
 
     const where: any = { tenantId, academicYearId };
@@ -274,7 +326,7 @@ export class ShopPdfService {
       : 'Toutes les ventes';
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Historique des Paiements</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding)}
+      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Historique des Paiements — Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>
@@ -315,7 +367,7 @@ export class ShopPdfService {
     tenantId: string,
     academicYearId: string,
   ): Promise<Buffer> {
-    const [branding, yearName, products] = await Promise.all([
+    const [branding, yearName, products, levelInfo] = await Promise.all([
       this.getTenantBranding(tenantId),
       this.getAcademicYearName(academicYearId),
       this.prisma.shopProduct.findMany({
@@ -323,6 +375,7 @@ export class ShopPdfService {
         include: { stock: true, category: true },
         orderBy: { name: 'asc' },
       }),
+      this.getSchoolLevelInfo(tenantId),
     ]);
 
     const rows = products.map((p: any, i: number) => {
@@ -353,7 +406,7 @@ export class ShopPdfService {
     }).length;
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Liste du Stock</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding)}
+      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Liste du Stock — Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>

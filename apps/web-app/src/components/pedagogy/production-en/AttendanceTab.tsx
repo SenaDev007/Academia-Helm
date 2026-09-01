@@ -5,12 +5,12 @@
  * APPEL JOURNALIER — Avec marquage Morning/Afternoon/Excused + Auto-save 5s
  * ============================================================================
  *
- * Système de marquage (demi-jours) :
- *   - 3 boutons par élève pour le MATIN : PM (Present), AM (Absent), EM (Excused)
- *   - 3 boutons par élève pour l'APRÈS-MIDI : PS (Present), AS (Absent), ES (Excused)
- *   - Bouton "Late" pour notifier les parents
- *   - Auto-save toutes les 5 secondes si changements détectés
- *   - Sync automatique vers le Registre d'Appel mensuel
+ * Marking system (half-days):
+ *   - 3 buttons per student for MORNING: PM (Present), AM (Absent), EM (Excused)
+ *   - 3 buttons per student for AFTERNOON: PA (Present), AA (Absent), EA (Excused)
+ *   - "Late" button to notify parents
+ *   - Auto-save every 5 seconds if changes are detected
+ *   - Automatic sync to the monthly Attendance Register
  *
  * ⭐ FIX BUG DÉMI-JOURNÉES (commit 2026-08-16) :
  *   - Avant : le hack JSON dans `notes` + cache BFF 60s causait un stale read
@@ -26,6 +26,7 @@ import {
   Clock, AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { translateClassName } from "@/lib/pedagogy/class-name-en";
 
 interface AttendanceTabProps {
   tenantId: string;
@@ -229,10 +230,10 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
 
   const renderSaveBadge = () => {
     switch (saveStatus) {
-      case "saving": return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"><Cloud className="h-3.5 w-3.5 animate-pulse" /> Enregistrement…</span>;
-      case "saved": return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 className="h-3.5 w-3.5" /> Enregistré{lastSavedAt && <span className="font-normal opacity-70"> à {lastSavedAt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>}</span>;
+      case "saving": return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"><Cloud className="h-3.5 w-3.5 animate-pulse" /> Saving…</span>;
+      case "saved": return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"><CheckCircle2 className="h-3.5 w-3.5" /> Saved{lastSavedAt && <span className="font-normal opacity-70"> at {lastSavedAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>}</span>;
       case "error": return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 text-red-700 text-xs font-bold"><CloudOff className="h-3.5 w-3.5" /> Error — retry</span>;
-      default: return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium"><Clock className="h-3.5 w-3.5" /> Auto-save actif (5s)</span>;
+      default: return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium"><Clock className="h-3.5 w-3.5" /> Auto-save active (5s)</span>;
     }
   };
 
@@ -240,7 +241,7 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
 
   return (
     <div className="space-y-4">
-      {/* En-tête */}
+      {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="text-lg font-bold text-slate-900">Daily Attendance</h3>
         <div className="flex-1" />
@@ -248,14 +249,14 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
           {renderSaveBadge()}
           <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
             className="h-9 min-w-[200px] px-3 rounded-lg border border-slate-200 text-sm">
-            {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
+            {classes.map(c => <option key={c.classId} value={c.classId}>{translateClassName(c.className)}</option>)}
           </select>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="h-9 px-3 rounded-lg border border-slate-200 text-sm" />
           {students.length > 0 && (
             <button onClick={markAllPresent}
               className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium hover:bg-emerald-200">
-              <CheckCircle2 className="h-4 w-4" /> Tous présents
+              <CheckCircle2 className="h-4 w-4" /> All Present
             </button>
           )}
           <button onClick={() => handleSave(false)} disabled={saving || students.length === 0}
@@ -266,26 +267,26 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
         </div>
       </div>
 
-      {/* Stats rapides */}
+      {/* Quick stats */}
       {students.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">
-            ☀️ Morning: {presentMorning} présents, {absentMorning} absents{excusedMorning > 0 && `, ${excusedMorning} excusés`}
+            ☀️ Morning: {presentMorning} present, {absentMorning} absent{excusedMorning > 0 && `, ${excusedMorning} excused`}
           </span>
           <span className="px-3 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
-            🌙 Afternoon: {presentAprem} présents, {absentAprem} absents{excusedAprem > 0 && `, ${excusedAprem} excusés`}
+            🌙 Afternoon: {presentAprem} present, {absentAprem} absent{excusedAprem > 0 && `, ${excusedAprem} excused`}
           </span>
-          {retards > 0 && <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold">⏰ {retards} retard(s)</span>}
+          {retards > 0 && <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold">⏰ {retards} late</span>}
         </div>
       )}
 
-      {/* Légende */}
+      {/* Legend */}
       <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-lg p-3">
         <AlertCircle className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
         <div className="text-xs text-slate-600">
-          <strong>Marquage :</strong> Pour chaque élève, marquez le matin (PM/AM/EM) et l'après-midi (PS/AS/ES).
-          <strong> EM/ES = Excused</strong> (ne compte pas comme absence, justifié).
-          Les absences sont comptées en demi-jours. Le bouton <strong>Late</strong> notifie les parents.
+          <strong>Marking:</strong> For each student, mark morning (PM/AM/EM) and afternoon (PA/AA/EA).
+          <strong> EM/EA = Excused</strong> (does not count as absence, justified).
+          Absences are counted in half-days. The <strong>Late</strong> button notifies parents.
         </div>
       </div>
 
@@ -299,7 +300,7 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-4 py-2 font-semibold text-slate-700">No.</th>
-                <th className="text-left px-4 py-2 font-semibold text-slate-700">Nom</th>
+                <th className="text-left px-4 py-2 font-semibold text-slate-700">Name</th>
                 <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={3}>☀️ Morning</th>
                 <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={3}>🌙 Afternoon</th>
                 <th className="text-center px-2 py-2 font-semibold text-slate-700">⏰ Late</th>
@@ -319,7 +320,7 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
               {[...students].sort((a, b) => {
                 const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
                 const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
-                return aName.localeCompare(bName, 'fr');
+                return aName.localeCompare(bName, 'en');
               }).map((s, idx) => (
                 <tr key={s.studentId} className="border-b border-slate-100">
                   <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
@@ -346,26 +347,26 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
                       EM
                     </button>
                   </td>
-                  {/* Afternoon : PS / AS / ES */}
+                  {/* Afternoon : PA / AA / EA (A = Afternoon, not S/Soir) */}
                   <td className="px-2 py-2 text-center">
                     <button onClick={() => setAfternoon(s.studentId, 'PRESENT')}
                       className={cn("px-2.5 py-1.5 rounded text-xs font-bold transition-colors",
                         s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>
-                      PS
+                      PA
                     </button>
                   </td>
                   <td className="px-2 py-2 text-center">
                     <button onClick={() => setAfternoon(s.studentId, 'ABSENT')}
                       className={cn("px-2.5 py-1.5 rounded text-xs font-bold transition-colors",
                         s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>
-                      AS
+                      AA
                     </button>
                   </td>
                   <td className="px-2 py-2 text-center">
                     <button onClick={() => setAfternoon(s.studentId, 'EXCUSED')}
                       className={cn("px-2.5 py-1.5 rounded text-xs font-bold transition-colors",
                         s.afternoonStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>
-                      ES
+                      EA
                     </button>
                   </td>
                   {/* Late */}

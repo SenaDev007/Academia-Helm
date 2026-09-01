@@ -47,9 +47,22 @@ import {
 // ⭐ Export PDF professionnel (même template que module Finance)
 import { exportMonthlyEvaluationToPdf } from "@/lib/exports/pedagogy-exports";
 import { useModuleContext } from "@/hooks/useModuleContext";
+import { translateClassName } from "@/lib/pedagogy/class-name-en";
 
-const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+// ⭐ Translate nursery appreciation labels from the shared GradingSheet helper
+//    (which returns French strings) to English for the EN track.
+const APPRECIATION_EN: Record<string, string> = {
+  'Très Satisfaisant': 'Very Satisfactory',
+  'Satisfaisant': 'Satisfactory',
+  'Peu Satisfaisant': 'Less Satisfactory',
+};
+function translateAppreciation(label: string | undefined | null): string {
+  if (!label) return '';
+  return APPRECIATION_EN[label] || label;
+}
 
 interface MonthlyEvaluationTabProps {
   tenantId: string;
@@ -171,7 +184,7 @@ export function MonthlyEvaluationTab({
         if (res.ok) {
           const data = await res.json();
           setSchoolInfo({
-            name: data.schoolName || data.name || data.tenantName || 'Établissement scolaire',
+            name: data.schoolName || data.name || data.tenantName || 'School establishment',
             logoUrl: data.logoUrl || data.logo || null,
             address: data.address || data.schoolAddress || '',
             phone: data.phone || data.schoolPhone || '',
@@ -226,7 +239,7 @@ export function MonthlyEvaluationTab({
             classId: ev.class?.id || classId,
             className: ev.class?.name || className,
             evaluationTypeId: ev.evaluationType?.id || '',
-            evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
+            evaluationTypeName: ev.evaluationType?.name || 'Evaluation',
             periodId: ev.period?.id || '',
             periodName: ev.period?.name || '',
             startDate: ev.startDate || ev.evaluationDate || null,
@@ -273,8 +286,8 @@ export function MonthlyEvaluationTab({
 
       setGroups(groupsWithGrades);
     } catch (err: any) {
-      console.error('Erreur lors du chargement des évaluations:', err);
-      setError(err.message || 'Erreur lors du chargement des évaluations');
+      console.error('Error loading evaluations:', err);
+      setError(err.message || 'Error loading evaluations');
       setGroups([]);
     } finally {
       setLoading(false);
@@ -431,19 +444,19 @@ export function MonthlyEvaluationTab({
   const handleSubmitToDirector = async (group: GroupedEvaluation) => {
     const sig = signatures[group.key];
     if (!sig?.teacher) {
-      toast.error("Signature obligatoire", {
-        description: "Vous devez signer avant de soumettre au directeur.",
+      toast.error("Signature required", {
+        description: "You must sign before submitting to the director.",
       });
       return;
     }
-    // ⭐ Modal professionnel (remplace window.confirm)
+    // ⭐ Professional modal (replaces window.confirm)
     const ok = await confirmWarning(
-      `Souhaitez-vous soumettre cette évaluation au directeur ?`,
-      'Soumission au directeur',
-      `Classe : ${group.className}\n` +
-      `Période : ${group.periodName || '—'}\n` +
-      `Type : ${group.evaluationTypeName}\n\n` +
-      `Cette action est irréversible. Vous ne pourrez plus modifier les notes après la soumission.`
+      `Do you want to submit this evaluation to the director?`,
+      'Submission to director',
+      `Class: ${translateClassName(group.className)}\n` +
+      `Period: ${group.periodName || '—'}\n` +
+      `Type: ${group.evaluationTypeName}\n\n` +
+      `This action is irreversible. You will not be able to modify the grades after submission.`
     );
     if (!ok) return;
     setSubmitting(group.key);
@@ -455,8 +468,8 @@ export function MonthlyEvaluationTab({
             await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
           } catch (err: any) {
             const msg = err.response?.data?.message || err.message || '';
-            if (msg.includes('doit être') || err.response?.status === 400) {
-              console.warn(`Evaluation ${evId} déjà soumise ou statut invalide, ignoré`);
+            if (msg.includes('must be') || err.response?.status === 400) {
+              console.warn(`Evaluation ${evId} already submitted or invalid status, ignored`);
               return;
             }
             console.error(`Failed to submit evaluation ${evId}:`, err.response?.data || err.message);
@@ -465,14 +478,14 @@ export function MonthlyEvaluationTab({
         })
       );
       if (errors.length > 0) {
-        throw new Error(`Échec de la soumission pour ${errors.length} évaluation(s).`);
+        throw new Error(`Failed to submit ${errors.length} evaluation(s).`);
       }
-      toast.success("Évaluation soumise au directeur", {
-        description: "Vous pouvez suivre la validation dans le Module Examen.",
+      toast.success("Evaluation submitted to director", {
+        description: "You can track validation in the Exams Module.",
       });
       await loadEvaluations();
     } catch (err: any) {
-      toast.error("Erreur lors de la soumission", { description: err.message });
+      toast.error("Submission error", { description: err.message });
     } finally {
       setSubmitting(null);
     }
@@ -498,9 +511,9 @@ export function MonthlyEvaluationTab({
         startDate.getDate() === endDate.getDate();
       const dateRange = startDate
         ? sameDay || !endDate
-          ? `Le ${startDate.toLocaleDateString('fr-FR')}`
-          : `Du ${startDate.toLocaleDateString('fr-FR')} au ${endDate.toLocaleDateString('fr-FR')}`
-        : 'Date non définie';
+          ? `On ${startDate.toLocaleDateString('en-GB')}`
+          : `From ${startDate.toLocaleDateString('en-GB')} to ${endDate.toLocaleDateString('en-GB')}`
+        : 'Date not defined';
 
       // ⭐ Construire les lignes d'évaluation au format attendu par le PDF
       const evalRows = rows.map((row, idx) => {
@@ -569,9 +582,9 @@ export function MonthlyEvaluationTab({
         pourcentageReussiteTotal: stats.pourcentageReussiteTotal,
       };
 
-      // ⭐ Header école (même structure que module Finance)
+      // ⭐ School header (same structure as Finance module)
       const header = {
-        schoolName: schoolInfo?.name || tenant?.name || 'Établissement scolaire',
+        schoolName: schoolInfo?.name || tenant?.name || 'School establishment',
         schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : schoolInfo?.logoUrl,
         schoolAddress: schoolInfo?.address || tenant?.address || null,
         schoolPhone: schoolInfo?.phone || tenant?.phone || null,
@@ -581,7 +594,7 @@ export function MonthlyEvaluationTab({
 
       await exportMonthlyEvaluationToPdf({
         header,
-        className: group.className,
+        className: translateClassName(group.className),
         periodName: group.periodName || MONTH_NAMES[selectedMonth] + ' ' + selectedYear,
         dateRange,
         evaluationTypeName: group.evaluationTypeName,
@@ -590,19 +603,19 @@ export function MonthlyEvaluationTab({
         rows: evalRows,
         recap,
         signatures: {
-          teacherName: teacherName || 'Nom du titulaire',
-          directorName: directorName || 'Nom du directeur',
+          teacherName: teacherName || 'Teacher name',
+          directorName: directorName || 'Director name',
           teacherSignature: sig.teacher,
           directorSignature: sig.director,
         },
       });
 
-      toast.success('PDF généré avec succès', {
-        description: 'Le PDF a été téléchargé avec en-tête officiel.',
+      toast.success('PDF generated successfully', {
+        description: 'The PDF has been downloaded with official header.',
       });
     } catch (err: any) {
-      console.error('Erreur export PDF:', err);
-      toast.error('Erreur lors de l\'export PDF', { description: err.message });
+      console.error('PDF export error:', err);
+      toast.error('PDF export error', { description: err.message });
     } finally {
       setExportingPdf(false);
     }
@@ -614,7 +627,7 @@ export function MonthlyEvaluationTab({
     return (
       <div className="bg-white border-2 border-slate-200 rounded-xl p-8 flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-        <span className="text-sm text-slate-600">Chargement des évaluations validées…</span>
+        <span className="text-sm text-slate-600">Loading validated evaluations…</span>
       </div>
     );
   }
@@ -625,14 +638,14 @@ export function MonthlyEvaluationTab({
         <div className="flex items-start gap-3 text-red-700">
           <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold">Erreur de chargement</p>
+            <p className="font-semibold">Loading error</p>
             <p className="text-sm mt-1">{error}</p>
             <button
               onClick={loadEvaluations}
               className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700"
             >
               <RefreshCw className="h-3 w-3" />
-              Réessayer
+              Retry
             </button>
           </div>
         </div>
@@ -648,31 +661,31 @@ export function MonthlyEvaluationTab({
             <FileText className="h-8 w-8 text-blue-500" />
           </div>
           <h3 className="text-lg font-bold text-slate-900 mb-2">
-            Aucune évaluation pour {MONTH_NAMES[selectedMonth]} {selectedYear}
+            No evaluation for {MONTH_NAMES[selectedMonth]} {selectedYear}
           </h3>
           <p className="text-sm text-slate-600 mb-4">
-            Aucune évaluation n'a encore été saisie et validée par l'enseignant pour la classe
-            <strong> {className}</strong> pour le mois de
+            No evaluation has been entered and validated by the teacher for class
+            <strong> {translateClassName(className)}</strong> for the month of
             <strong> {MONTH_NAMES[selectedMonth]} {selectedYear}</strong>.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
-            <p className="text-sm font-semibold text-blue-800 mb-2">Procédure :</p>
+            <p className="text-sm font-semibold text-blue-800 mb-2">Procedure:</p>
             <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
-              <li>L'administration crée une évaluation dans <strong>Module Examen → Évaluations</strong>.</li>
-              <li>L'enseignant saisit les notes dans <strong>Module Examen → Saisie des notes</strong>.</li>
-              <li>L'enseignant clique sur <strong>"Valider"</strong> pour valider sa saisie.</li>
-              <li>L'évaluation validée apparaît ici automatiquement pour signature et soumission au directeur.</li>
+              <li>The administration creates an evaluation in <strong>Exams Module → Evaluations</strong>.</li>
+              <li>The teacher enters grades in <strong>Exams Module → Grade entry</strong>.</li>
+              <li>The teacher clicks <strong>"Validate"</strong> to validate the entry.</li>
+              <li>The validated evaluation appears here automatically for signature and submission to the director.</li>
             </ol>
           </div>
           <p className="text-xs text-slate-500 mt-4">
-            💡 Vous pouvez changer le mois/année dans le sélecteur en haut pour consulter les évaluations d'un autre mois.
+            💡 You can change the month/year in the selector at the top to view evaluations from another month.
           </p>
           <button
             onClick={loadEvaluations}
             className="mt-4 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 mx-auto"
           >
             <RefreshCw className="h-4 w-4" />
-            Actualiser
+            Refresh
           </button>
         </div>
       </div>
@@ -681,14 +694,14 @@ export function MonthlyEvaluationTab({
 
   return (
     <div className="space-y-6">
-      {/* En-tête */}
+      {/* Header */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-slate-900">
-            Évaluations validées par l'enseignant — {MONTH_NAMES[selectedMonth]} {selectedYear}
+            Evaluations validated by the teacher — {MONTH_NAMES[selectedMonth]} {selectedYear}
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            {groups.length} évaluation(s) · Classe : {className}
+            {groups.length} evaluation(s) · Class: {translateClassName(className)}
           </p>
         </div>
         <button
@@ -696,7 +709,7 @@ export function MonthlyEvaluationTab({
           className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold text-slate-700"
         >
           <RefreshCw className="h-4 w-4" />
-          Actualiser
+          Refresh
         </button>
       </div>
 
@@ -716,77 +729,77 @@ export function MonthlyEvaluationTab({
           startDate.getDate() === endDate.getDate();
         const dateRange = startDate
           ? sameDay || !endDate
-            ? `Le ${startDate.toLocaleDateString('fr-FR')}`
-            : `Du ${startDate.toLocaleDateString('fr-FR')} au ${endDate.toLocaleDateString('fr-FR')}`
-          : 'Date non définie';
+            ? `On ${startDate.toLocaleDateString('en-GB')}`
+            : `From ${startDate.toLocaleDateString('en-GB')} to ${endDate.toLocaleDateString('en-GB')}`
+          : 'Date not defined';
 
         return (
           <div key={group.key} className="bg-white border-2 border-slate-800 rounded-xl p-6 space-y-4">
-            {/* En-tête */}
+            {/* Header */}
             <div className="text-center border-b border-slate-300 pb-3">
               <h2 className="text-lg font-bold text-slate-900">
-                {group.firstEvaluation.title || `ÉVALUATION MENSUELLE — ${group.evaluationTypeName}`}
+                {group.firstEvaluation.title || `MONTHLY EVALUATION — ${group.evaluationTypeName}`}
               </h2>
               <div className="text-sm text-slate-600 mt-1">
-                Classe : <strong>{group.className}</strong>
+                Class: <strong>{translateClassName(group.className)}</strong>
                 {group.periodName && ` — ${group.periodName}`}
               </div>
               <div className="text-xs text-slate-500 mt-1">
                 {dateRange} · {group.evaluationTypeName}
               </div>
               <p className="text-xs text-slate-500 mt-1 italic">
-                NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.
+                NB: For each test, the evaluated student will receive a perfection bonus only when they have reached the minimum mastery set.
               </p>
-              {/* Badge de statut */}
+              {/* Status badge */}
               <div className="mt-2">
                 {allValidated ? (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    Validée par l'administration — Notes verrouillées
+                    Validated by administration — Grades locked
                   </span>
                 ) : allSubmitted ? (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
                     <Send className="h-3 w-3" />
-                    Soumise au directeur — En attente de validation
+                    Submitted to director — Pending validation
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    Validée par l'enseignant — Prête à signer
+                    Validated by teacher — Ready to sign
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Actions : Signature obligatoire + Bouton soumettre */}
+            {/* Actions: Signature required + Submit button */}
             <div className="flex flex-wrap items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
               <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
               <span className="text-sm font-semibold text-amber-800">
                 {allSubmitted
-                  ? "Cette évaluation a été soumise au directeur."
+                  ? "This evaluation has been submitted to the director."
                   : allValidated
-                  ? "Cette évaluation a été validée par l'administration."
-                  : "Vous devez signer avant de soumettre au directeur."}
+                  ? "This evaluation has been validated by the administration."
+                  : "You must sign before submitting to the director."}
               </span>
               <div className="ml-auto flex items-center gap-2">
-                {/* ⭐ Bouton Export PDF — visible pour tous les statuts */}
+                {/* ⭐ PDF Export button — visible for all statuses */}
                 <button
                   onClick={() => handleExportPDF(group)}
                   disabled={exportingPdf}
                   className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
-                  title="Exporter en PDF professionnel (en-tête officielle)"
+                  title="Export to professional PDF (official header)"
                 >
                   {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                  {exportingPdf ? 'Génération...' : 'Export PDF'}
+                  {exportingPdf ? 'Generating...' : 'Export PDF'}
                 </button>
-                {/* ⭐ Bouton Soumettre au directeur SUPPRIMÉ — désormais géré par le
-                    bouton unifié dans l'en-tête du registre d'appel (qui soumet
-                    registre + évaluation mensuelle + cahier journal en une fois) */}
+                {/* ⭐ Submit to director button REMOVED — now handled by the
+                    unified button in the attendance register header (which submits
+                    register + monthly evaluation + journal notebook at once) */}
                 {!allSubmitted && !allValidated && (
                   <span className="text-xs text-amber-700 bg-amber-100 px-3 py-2 rounded-lg font-semibold">
                     {!sig.teacher
-                      ? "⚠ Signature requise avant soumission (bouton unifié en haut)"
-                      : "✓ Prêt pour soumission (bouton unifié en haut)"}
+                      ? "⚠ Signature required before submission (unified button at top)"
+                      : "✓ Ready for submission (unified button at top)"}
                   </span>
                 )}
               </div>
@@ -797,10 +810,10 @@ export function MonthlyEvaluationTab({
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100">
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">No.</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Full name</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Gender</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Presence</th>
                     {sortedSubjects.map((subject, idx) => (
                       isMaternelle ? (
                         <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
@@ -810,7 +823,7 @@ export function MonthlyEvaluationTab({
                       ) : isSecondaire ? (
                         <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                           {subject.name}
-                          <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                          <div className="text-[9px] text-slate-400 font-normal">Grade /20</div>
                         </th>
                       ) : (
                         <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
@@ -819,13 +832,13 @@ export function MonthlyEvaluationTab({
                       )
                     ))}
                     {!isMaternelle && !isSecondaire && (
-                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gen.</th>
                     )}
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
-                    <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rank</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Set threshold</th>
+                    <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Threshold reached</th>
                     {isMaternelle && (
-                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation globale</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Global appreciation</th>
                     )}
                     <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Observation</th>
                   </tr>
@@ -840,14 +853,14 @@ export function MonthlyEvaluationTab({
                       {sortedSubjects.map((_, idx) => (
                         <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
                       ))}
-                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
-                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Yes</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">No</th>
                     </tr>
                   )}
                   {isMaternelle && (
                     <tr className="bg-slate-50">
-                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
-                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Yes</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">No</th>
                     </tr>
                   )}
                 </thead>
@@ -948,7 +961,7 @@ export function MonthlyEvaluationTab({
                                   allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-500'
                                 )}>A</span>
                                 {isMixed && (
-                                  <span className="text-[9px] font-bold text-amber-600 ml-0.5" title="Présence mixte">⚠</span>
+                                  <span className="text-[9px] font-bold text-amber-600 ml-0.5" title="Mixed presence">⚠</span>
                                 )}
                               </div>
                             );
@@ -1059,7 +1072,7 @@ export function MonthlyEvaluationTab({
                             return hasComposed && !seuilAtteint ? '✓' : '';
                           })()}
                         </td>
-                        {/* Appréciation globale (Maternelle) */}
+                        {/* Global appreciation (Nursery) */}
                         {isMaternelle && (
                           <td className="border border-slate-300 px-2 py-1 text-center font-bold">
                             <span className={cn(
@@ -1068,7 +1081,7 @@ export function MonthlyEvaluationTab({
                               computeAppreciationGlobale(row.scores, sortedSubjects) === 'Satisfaisant' && 'text-blue-600',
                               computeAppreciationGlobale(row.scores, sortedSubjects) === 'Peu Satisfaisant' && 'text-amber-600',
                             )}>
-                              {computeAppreciationGlobale(row.scores, sortedSubjects)}
+                              {translateAppreciation(computeAppreciationGlobale(row.scores, sortedSubjects))}
                             </span>
                           </td>
                         )}
@@ -1088,7 +1101,7 @@ export function MonthlyEvaluationTab({
                         colSpan={isMaternelle ? 10 + group.subjects.length : isSecondaire ? 9 + group.subjects.length : 10 + group.subjects.length * 3}
                         className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                       >
-                        Aucun élève dans cette classe.
+                        No students in this class.
                       </td>
                     </tr>
                   )}
@@ -1096,46 +1109,46 @@ export function MonthlyEvaluationTab({
               </table>
             </div>
 
-            {/* Récapitulatif */}
+            {/* Summary */}
             <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/50">
-              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Récapitulatif de l'évaluation</h3>
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Evaluation summary</h3>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicateur</th>
-                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase">Garçons</th>
-                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase">Filles</th>
+                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicator</th>
+                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase">Boys</th>
+                      <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase">Girls</th>
                       <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total de la classe</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold">Total class headcount</td>
                       <td className="border border-slate-300 px-3 py-2 text-center">{stats.effectifG}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center">{stats.effectifF}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.effectifTotal}</td>
                     </tr>
                     <tr>
-                      <td className="border border-slate-300 px-3 py-2 font-semibold">Nombre d'élèves ayant composé</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold">Number of students who took the exam</td>
                       <td className="border border-slate-300 px-3 py-2 text-center">{stats.ayantComposeG || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center">{stats.ayantComposeF || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.ayantComposeTotal || "—"}</td>
                     </tr>
                     <tr className="bg-emerald-50/50">
-                      <td className="border border-slate-300 px-3 py-2 font-semibold">Ont atteint le seuil de réussite</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold">Reached the success threshold</td>
                       <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.ayantAtteintSeuilG || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.ayantAtteintSeuilF || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">{stats.ayantAtteintSeuilTotal || "—"}</td>
                     </tr>
                     <tr className="bg-red-50/50">
-                      <td className="border border-slate-300 px-3 py-2 font-semibold">N'ont pas atteint le seuil</td>
+                      <td className="border border-slate-300 px-3 py-2 font-semibold">Did not reach the threshold</td>
                       <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.nAyantPasAtteintG || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.nAyantPasAtteintF || "—"}</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-red-700">{stats.nAyantPasAtteintTotal || "—"}</td>
                     </tr>
                     <tr className="bg-blue-50/50">
-                      <td className="border border-slate-300 px-3 py-2 font-bold">% de réussite</td>
+                      <td className="border border-slate-300 px-3 py-2 font-bold">% of success</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">{stats.pourcentageReussiteG.toFixed(2)}%</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">{stats.pourcentageReussiteF.toFixed(2)}%</td>
                       <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-800">{stats.pourcentageReussiteTotal.toFixed(2)}%</td>
@@ -1147,29 +1160,29 @@ export function MonthlyEvaluationTab({
 
             {/* Signatures */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6">
-              {/* Signature Titulaire */}
+              {/* Class teacher signature */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
-                    <div className="text-xs text-slate-500">{teacherName || 'Nom du titulaire'} — Signature</div>
+                    <div className="text-sm font-bold text-slate-800">The Class Teacher</div>
+                    <div className="text-xs text-slate-500">{teacherName || 'Teacher\'s name'} — Signature</div>
                   </div>
                   {sig.teacher && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                      <CheckCircle2 className="h-3 w-3" /> Signé
+                      <CheckCircle2 className="h-3 w-3" /> Signed
                     </span>
                   )}
                 </div>
                 {sig.teacher ? (
                   <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={sig.teacher} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+                    <img src={sig.teacher} alt="Teacher signature" className="max-h-24 mx-auto" />
                   </div>
                 ) : (
                   <SignatureCanvas
                     width={400}
                     height={120}
                     disabled={isReadOnly || allSubmitted || allValidated}
-                    placeholder="Signature du Titulaire"
+                    placeholder="Teacher's signature"
                     onSignatureChange={(data) => {
                       setSignatures(prev => ({
                         ...prev,
@@ -1192,32 +1205,32 @@ export function MonthlyEvaluationTab({
                       onSignaturesChange?.(null, signatures[group.key]?.director || null);
                     }}
                     className="text-xs text-red-500 hover:underline">
-                    Effacer la signature
+                    Clear signature
                   </button>
                 )}
               </div>
 
-              {/* Signature Directeur */}
+              {/* Director signature */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-                    <div className="text-xs text-slate-500">{directorName || 'Nom du directeur'} — Signature et cachet</div>
+                    <div className="text-sm font-bold text-slate-800">The Director</div>
+                    <div className="text-xs text-slate-500">{directorName || 'Director\'s name'} — Signature and stamp</div>
                   </div>
                   {sig.director && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                      <CheckCircle2 className="h-3 w-3" /> Signé
+                      <CheckCircle2 className="h-3 w-3" /> Signed
                     </span>
                   )}
                 </div>
                 {sig.director ? (
                   <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={sig.director} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                    <img src={sig.director} alt="Director signature" className="max-h-24 mx-auto" />
                   </div>
                 ) : (
                   <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center">
                     <p className="text-xs text-slate-400 italic">
-                      La signature du directeur sera apposée après validation
+                      The director's signature will be applied after validation
                     </p>
                   </div>
                 )}

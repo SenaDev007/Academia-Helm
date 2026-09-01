@@ -47,6 +47,7 @@ import { MonthlyEvaluationTab } from "./MonthlyEvaluationTab";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { exportAttendanceRegisterToPdf } from "@/lib/exports/pedagogy-exports";
+import { translateClassName, translateLevelCode } from "@/lib/pedagogy/class-name-en";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -69,17 +70,17 @@ const MONTHS = [
 const MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
                      "July", "August", "September", "October", "November", "December"];
 
-const WEEKS = [1, 2, 3, 4, 5]; // 5 semaines par mois
+const WEEKS = [1, 2, 3, 4, 5]; // 5 weeks per month
 const DAYS = [
-  { num: 1, label: "L" }, { num: 2, label: "M" }, { num: 3, label: "M" },
-  { num: 4, label: "J" }, { num: 5, label: "V" },
-]; // Monday à Friday (initiales)
+  { num: 1, label: "M" }, { num: 2, label: "T" }, { num: 3, label: "W" },
+  { num: 4, label: "T" }, { num: 5, label: "F" },
+]; // Monday to Friday (initials)
 
 const STATUS_CONFIG = {
-  DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
-  SUBMITTED: { label: "Soumis", color: "bg-blue-100 text-blue-700", icon: Send },
-  VALIDATED: { label: "Validé", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
-  REJECTED: { label: "Rejeté", color: "bg-red-100 text-red-700", icon: XCircle },
+  DRAFT: { label: "Draft", color: "bg-slate-100 text-slate-600", icon: Clock },
+  SUBMITTED: { label: "Submitted", color: "bg-blue-100 text-blue-700", icon: Send },
+  VALIDATED: { label: "Validated", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
+  REJECTED: { label: "Rejected", color: "bg-red-100 text-red-700", icon: XCircle },
 } as const;
 
 function cn(...classes: (string | false | undefined)[]) {
@@ -154,10 +155,10 @@ function getWeekDateRanke(week: number, month: number, year: number): string {
   return `${first}/${String(month).padStart(2, '0')} → ${last}/${String(month).padStart(2, '0')}`;
 }
 
-function formatDateFR(dateStr: string): string {
+function formatDateEN(dateStr: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 // Marqueurs d'absence possibles
@@ -241,7 +242,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           month: selectedMonth, year: selectedYear,
         }),
       });
-      if (!res.ok) throw new Error("Erreur");
+      if (!res.ok) throw new Error("Error");
       const data = await res.json();
       setRegister(data);
       // ⭐ Charger les signatures + jours fériés existants depuis le registre
@@ -312,7 +313,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       if (sumRes.ok) setSummary(await sumRes.json());
       else setSummary(null);
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Error", { description: e.message });
     } finally {
       setLoading(false);
     }
@@ -454,14 +455,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           holidays: holidays,
         }),
       });
-      if (!res.ok) throw new Error("Erreur");
-      toast.success("✅ Registre enregistré", {
-        description: "Les modifications ont été sauvegardées. Le statut reste 'Brouillon' jusqu'à la soumission au directeur.",
+      if (!res.ok) throw new Error("Error");
+      toast.success("✅ Register saved", {
+        description: "Changes have been saved. The status remains 'Draft' until submission to the director.",
       });
-      // ⭐ Recharger le registre pour mettre à jour l'affichage
+      // ⭐ Reload the register to update the display
       await loadRegister();
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Error", { description: e.message });
     } finally {
       setSaving(false);
     }
@@ -486,17 +487,17 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [notifyingDirector, setNotifyingDirector] = useState(false);
   const handleUnifiedSubmit = async () => {
     if (!register || !selectedClassId) return;
-    // ⭐ Modal professionnel
+    // ⭐ Professional modal
     const ok = await confirmWarning(
-      `Souhaitez-vous soumettre au directeur ?`,
-      'Soumission unifiée',
-      `Class : ${selectedClass?.className || '—'}\n` +
-      `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}\n\n` +
-      `Cette action soumet en une seule fois :\n` +
-      `• Le registre d'appel\n` +
-      `• L'évaluation mensuelle\n\n` +
-      `Cette action est irréversible. Le directeur sera notifié automatiquement.\n` +
-      `(Le cahier journal est soumis séparément depuis son onglet dédié.)`
+      `Do you want to submit to the director?`,
+      'Unified submission',
+      `Class: ${selectedClass?.className || '—'}\n` +
+      `Month: ${MONTH_NAMES[selectedMonth]} ${selectedYear}\n\n` +
+      `This action submits in one go:\n` +
+      `• The attendance register\n` +
+      `• The monthly evaluation\n\n` +
+      `This action is irreversible. The director will be notified automatically.\n` +
+      `(The journal notebook is submitted separately from its dedicated tab.)`
     );
     if (!ok) return;
     setSubmittingUnified(true);
@@ -518,13 +519,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
       }
       const data = await res.json();
-      toast.success('✅ Soumission réussie', {
-        description: `Le directeur a été notifié par email, WhatsApp et SMS.`,
+      toast.success('✅ Submission successful', {
+        description: `The director has been notified by email, WhatsApp and SMS.`,
       });
-      // ⭐ Recharger le registre pour mettre à jour le statut (DRAFT → SUBMITTED)
+      // ⭐ Reload the register to update the status (DRAFT → SUBMITTED)
       await loadRegister();
     } catch (e: any) {
-      toast.error('Erreur lors de la soumission', { description: e.message });
+      toast.error('Submission error', { description: e.message });
     } finally {
       setSubmittingUnified(false);
     }
@@ -535,14 +536,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const handleNotifyDirector = async () => {
     if (!register || !selectedClassId) return;
     const ok = await confirmWarning(
-      `Notifier le directeur ?`,
-      'Notification manuelle',
-      `Le directeur recevra une notification par :\n` +
+      `Notify the director?`,
+      'Manual notification',
+      `The director will receive a notification by:\n` +
       `• Email\n` +
       `• WhatsApp\n` +
       `• SMS\n\n` +
-      `Class : ${selectedClass?.className || '—'}\n` +
-      `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}`
+      `Class: ${selectedClass?.className || '—'}\n` +
+      `Month: ${MONTH_NAMES[selectedMonth]} ${selectedYear}`
     );
     if (!ok) return;
     setNotifyingDirector(true);
@@ -564,11 +565,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
       }
       const data = await res.json();
-      toast.success('✅ Directeur notifié', {
-        description: `Notification envoyée à ${data.notifiedDirectors || 'le directeur'}.`,
+      toast.success('✅ Director notified', {
+        description: `Notification sent to ${data.notifiedDirectors || 'the director'}.`,
       });
     } catch (e: any) {
-      toast.error('Erreur lors de la notification', { description: e.message });
+      toast.error('Notification error', { description: e.message });
     } finally {
       setNotifyingDirector(false);
     }
@@ -600,9 +601,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSummary(data);
-      toast.success("✅ Tableau de relevés actualisé");
+      toast.success("✅ Summary table refreshed");
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Error", { description: e.message });
     }
   };
 
@@ -638,7 +639,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     try {
       // ⭐ Header école (même structure que module Finance)
       const header = {
-        schoolName: tenant?.name || 'Établissement scolaire',
+        schoolName: tenant?.name || 'School establishment',
         schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         schoolAddress: tenant?.address || null,
         schoolPhone: tenant?.phone || null,
@@ -695,10 +696,10 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         girlsCount,
       });
 
-      toast.success('✅ PDF exporté avec en-tête officiel');
+      toast.success('✅ PDF exported with official header');
     } catch (e: any) {
-      console.error('Erreur export PDF:', e);
-      toast.error("Erreur d'export", { description: e.message });
+      console.error('PDF export error:', e);
+      toast.error("Export error", { description: e.message });
     } finally {
       setExporting(null);
     }
@@ -706,7 +707,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   return (
     <div className="space-y-4">
-      {/* === En-tête : classe + mois + actions === */}
+      {/* === Header: class + month + actions === */}
       <div className="flex flex-wrap items-center gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Class</label>
@@ -715,14 +716,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             disabled={loading}>
             {classes.map((c) => (
               <option key={c.classId} value={c.classId}>
-                {c.className || c.classId} ({c.totalStudents || 0} élèves)
+                {translateClassName(c.className) || c.classId} ({c.totalStudents || 0} students)
               </option>
             ))}
           </select>
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mois</label>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Month</label>
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
@@ -735,13 +736,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Année</label>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Year</label>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
             className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold w-[110px] text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer"
           >
-            {/* ⭐ Liste d'années : année courante -2 à +1 (permet consultation registres passés) */}
+            {/* ⭐ Year list: current year -2 to +1 (allows consultation of past registers) */}
             {[today.getFullYear() - 2, today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1].map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
@@ -758,37 +759,37 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         )}
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* ⭐ Bouton Appel — ouvre un modal pour marquer les présences/absences */}
+          {/* ⭐ Attendance button — opens a modal to mark presences/absences */}
           {activeTab === "register" && register && (
             <button onClick={() => setShowAppelModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700">
               <CalendarCheck className="h-4 w-4" />
-              Faire l'appel
+              Take attendance
             </button>
           )}
-          {/* ⭐ Bouton Save — toujours actif (sauf loading/saving/!register)
-              pour permettre la sauvegarde en attendant la soumission au directeur */}
+          {/* ⭐ Save button — always active (except loading/saving/!register)
+              to allow saving while waiting for submission to the director */}
           <button onClick={handleSave} disabled={saving || loading || !register}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save
           </button>
-          {/* ⭐ Bouton Soumettre UNIFIÉ — soumet registre + évaluation mensuelle + cahier journal
-              en une seule transaction, puis notifie automatiquement le directeur
+          {/* ⭐ Unified submit button — submits register + monthly evaluation + journal notebook
+              in a single transaction, then automatically notifies the director
               (email + WhatsApp + SMS) */}
           <button onClick={handleUnifiedSubmit} disabled={loading || !register || register?.status !== "DRAFT" || submittingUnified}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
             {submittingUnified ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {submittingUnified ? 'Soumission...' : 'Soumettre au directeur'}
+            {submittingUnified ? 'Submitting...' : 'Submit to director'}
           </button>
-          {/* ⭐ Bouton Notifier le directeur — relance email/WhatsApp/SMS (visible même après soumission) */}
+          {/* ⭐ Notify director button — relaunch email/WhatsApp/SMS (visible even after submission) */}
           <button onClick={handleNotifyDirector} disabled={notifyingDirector || !register}
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
-            title="Notifier le directeur par email, WhatsApp et SMS">
+            title="Notify the director by email, WhatsApp and SMS">
             {notifyingDirector ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-            Notifier
+            Notify
           </button>
-          {/* ⭐ Bouton Export PDF uniquement (Excel supprimé) */}
+          {/* ⭐ PDF Export button only (Excel removed) */}
           {register && (
             <button onClick={() => handleExport("pdf")} disabled={!!exporting}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
@@ -799,86 +800,86 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
       </div>
 
-      {/* === Sous-onglets : Registre / Evaluation / Relevés / Paramètres === */}
+      {/* === Sub-tabs: Register / Evaluation / Summary / Settings === */}
       <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1 flex-wrap">
         <button onClick={() => setActiveTab("register")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeTab === "register" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
           <ClipboardList className="h-4 w-4" />
-          Registre d'appel
+          Attendance Register
         </button>
         <button onClick={() => setActiveTab("evaluation")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeTab === "evaluation" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
           <FileText className="h-4 w-4" />
-          Evaluation mensuelle
+          Monthly Evaluation
         </button>
         <button onClick={() => setActiveTab("summary")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
           <BarChart3 className="h-4 w-4" />
-          Tableau de relevés annuel
+          Annual Summary Table
         </button>
         <button onClick={() => setActiveTab("settings")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeTab === "settings" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
           <Settings className="h-4 w-4" />
-          Paramètres
+          Settings
         </button>
       </div>
 
-      {/* === PAGE 1 — Registre d'appel === */}
+      {/* === PAGE 1 — Attendance Register === */}
       {activeTab === "register" && register && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 space-y-4">
-          {/* En-tête */}
+          {/* Header */}
           <div className="text-center border-b border-slate-300 pb-3">
             <h2 className="text-lg font-bold text-slate-900">
-              REGISTRE D'APPEL{register.schoolLevelCode === "MATERNELLE" ? " MATERNELLE" : register.schoolLevelCode === "PRIMAIRE" ? "" : ` ${register.schoolLevelName || ""}`}
+              ATTENDANCE REGISTER{register.schoolLevelCode === "MATERNELLE" ? " — NURSERY" : register.schoolLevelCode === "PRIMAIRE" ? "" : ` ${translateLevelCode(register.schoolLevelCode)}`}
             </h2>
             <div className="text-sm text-slate-600 mt-1 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span>Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}</span>
+                <span>Month of <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}</span>
                 <span className="text-slate-300">|</span>
-                <span>Namebre de demi-journées : <strong className="text-blue-600">{demiJourneeMois}</strong></span>
+                <span>Number of half-days: <strong className="text-blue-600">{demiJourneeMois}</strong></span>
               </div>
               <div className="text-slate-700">
-                Class : <strong>{register.classNameResolved || selectedClass?.className || "—"}</strong> — Headcount : {selectedClass?.totalStudents || 0} élèves
-                ({selectedClass?.boys || 0} G, {selectedClass?.girls || 0} F)
+                Class: <strong>{translateClassName(register.classNameResolved) || translateClassName(selectedClass?.className) || "—"}</strong> — Headcount: {selectedClass?.totalStudents || 0} students
+                ({selectedClass?.boys || 0} B, {selectedClass?.girls || 0} G)
               </div>
             </div>
           </div>
 
-          {/* Tableau principal : 1 élève = 1 ligne */}
+          {/* Main table: 1 student = 1 row */}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-xs" style={{ minWidth: "1600px" }}>
               <thead>
                 <tr className="bg-slate-100">
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">No.</th>
-                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Name et prénom</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Full name</th>
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Gender</th>
                   <th colSpan={25} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center">
-                    Indication des absences pour chaque jour de classe (5 semaines × 5 jours)
+                    Absence indication for each class day (5 weeks × 5 days)
                   </th>
-                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "120px" }}>Motif des absences</th>
-                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total présences possibles</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "120px" }}>Absence reason</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total possible presences</th>
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total absences</th>
-                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total présence effectif</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total actual presence</th>
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "100px" }}>Observation</th>
                 </tr>
                 <tr className="bg-slate-50">
-                  {/* ⭐ Élargir les sous-colonnes jours : de px-1 à px-2,
-                      minWidth 45px par cellule (au lieu de default ~28px).
-                      Permet de voir les marques (-, |, +) clairement. */}
+                  {/* ⭐ Widen day sub-columns: from px-1 to px-2,
+                      minWidth 45px per cell (instead of default ~28px).
+                      Allows seeing marks (-, |, +) clearly. */}
                   {WEEKS.map(w => {
                     const range = getWeekDateRanke(w, selectedMonth, selectedYear);
                     return (
                       <th key={w} colSpan={5} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[11px] uppercase" style={{ minWidth: "225px" }}>
-                        S{w} {range && <span className="font-normal text-slate-400 normal-case text-[9px] block">{range}</span>}
+                        W{w} {range && <span className="font-normal text-slate-400 normal-case text-[9px] block">{range}</span>}
                       </th>
                     );
                   })}
                 </tr>
-                {/* ⭐ Ligne des initiales des jours (L M M J V) avec dates pour chaque semaine */}
+                {/* ⭐ Row of day initials (M T W T F) with dates for each week */}
                 <tr className="bg-slate-50">
                   {WEEKS.map(w => DAYS.map(d => {
                     const cell = getCellDate(w, d.num, selectedMonth, selectedYear);
@@ -900,20 +901,20 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 {[...students].sort((a, b) => {
                   const aName = `${a.nom || ''} ${a.prenom || ''}`.trim().toLowerCase();
                   const bName = `${b.nom || ''} ${b.prenom || ''}`.trim().toLowerCase();
-                  return aName.localeCompare(bName, 'fr');
+                  return aName.localeCompare(bName, 'en');
                 }).map((student, idx) => (
                   <tr key={student.studentId || idx} className={cn("hover:bg-slate-50", idx % 2 === 1 && "bg-slate-50/50")}>
-                    {/* ⭐ No. séquentiel après tri alphabétique (1, 2, 3...) */}
+                    {/* ⭐ Sequential No. after alphabetical sort (1, 2, 3...) */}
                     <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{idx + 1}</td>
                     <td className="border border-slate-300 px-2 py-1 font-medium">
                       {student.nom} {student.prenom}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-center">{student.sexe}</td>
-                    {/* 25 cases d'absence — système demi-jours : -, |, + */}
+                    {/* 25 absence cells — half-day system: -, |, + */}
                     {WEEKS.map(w => DAYS.map(d => {
                       const marked = getAbsence(student, w, d.num);
                       const cell = getCellDate(w, d.num, selectedMonth, selectedYear);
-                      // ⭐ Griser les cellules hors mois
+                      // ⭐ Grey out cells outside the month
                       if (!cell.inMonth) {
                         return (
                           <td key={`${w}-${d.num}`} className="border border-slate-300 p-0 bg-slate-100" style={{ minWidth: "45px", width: "45px" }}>
@@ -921,18 +922,18 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                           </td>
                         );
                       }
-                      // ⭐ Si jour férié → emoji 🎉 en lecture seule
+                      // ⭐ If public holiday → emoji 🎉 in read-only
                       const isHoliday = holidays.includes(cell.dateStr);
                       if (isHoliday) {
                         return (
                           <td key={`${w}-${d.num}`} className="border border-slate-300 p-0 bg-red-50" style={{ minWidth: "45px", width: "45px" }}>
-                            <div className="w-full h-9 flex items-center justify-center text-base" title="Jour férié">🎉</div>
+                            <div className="w-full h-9 flex items-center justify-center text-base" title="Public holiday">🎉</div>
                           </td>
                         );
                       }
                       return (
                         <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
-                          {/* ⭐ Affichage read-only : seul le symbole s'affiche, pas de select/flèche */}
+                          {/* ⭐ Read-only display: only the symbol is shown, no select/arrow */}
                           <div className={cn(
                             "w-full h-9 flex items-center justify-center text-base font-bold",
                             marked === "-" && "bg-amber-100 text-amber-700",
@@ -965,7 +966,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 {students.length === 0 && (
                   <tr>
                     <td colSpan={33} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">
-                      No students inscrit dans cette classe.
+                      No students enrolled in this class.
                     </td>
                   </tr>
                 )}
@@ -973,48 +974,48 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </table>
           </div>
 
-          {/* ⭐ Section jours fériés (dynamique sous le tableau) */}
+          {/* ⭐ Public holidays section (dynamic under the table) */}
           {holidays.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
               <div className="text-xs font-bold text-red-700 uppercase flex items-center gap-1">
-                <span>🎉</span> Days fériés du mois
+                <span>🎉</span> Public holidays of the month
               </div>
               <div className="flex flex-wrap gap-2">
                 {holidays.map(h => (
                   <span key={h} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded text-xs text-red-700">
-                    🎉 {formatDateFR(h)}
+                    🎉 {formatDateEN(h)}
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* === Légende des symboles === */}
+          {/* === Symbol legend === */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-            <div className="text-xs font-bold text-slate-600 uppercase mb-2">Légende</div>
+            <div className="text-xs font-bold text-slate-600 uppercase mb-2">Legend</div>
             <div className="flex flex-wrap gap-4 text-xs text-slate-600">
               <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-transparent text-slate-400 font-bold rounded">·</span> Present</span>
-              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">−</span> Absent le matin (1 demi-jour)</span>
-              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">│</span> Absent l'après-midi (1 demi-jour)</span>
-              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 text-red-700 font-bold rounded">+</span> Absent toute la journée (2 demi-jours)</span>
-              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-slate-100 text-slate-400 font-bold rounded">—</span> Hors mois</span>
-              <span className="flex items-center gap-1"><span className="text-base">🎉</span> Jour férié</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">−</span> Absent morning (1 half-day)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">│</span> Absent afternoon (1 half-day)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 text-red-700 font-bold rounded">+</span> Absent all day (2 half-days)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-slate-100 text-slate-400 font-bold rounded">—</span> Out of month</span>
+              <span className="flex items-center gap-1"><span className="text-base">🎉</span> Public holiday</span>
             </div>
           </div>
 
-          {/* === Section récapitulative (bas du registre) === */}
+          {/* === Summary section (bottom of register) === */}
           <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/50">
             <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">
-              Récapitulatif du mois — {MONTH_NAMES[selectedMonth]} {selectedYear}
+              Monthly summary — {MONTH_NAMES[selectedMonth]} {selectedYear}
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Demi-journées du mois</label>
-                {/* ⭐ Auto-calculé (read-only) : nombre de demi-jours du mois, SANS × nb élèves */}
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Half-days of the month</label>
+                {/* ⭐ Auto-calculated (read-only): number of half-days of the month, WITHOUT × number of students */}
                 <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold bg-slate-100 text-slate-700">{demiJourneeMois}</div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Présence possible</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Possible presence</label>
                 <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold bg-white">{totalPoss}</div>
               </div>
               <div>
@@ -1022,11 +1023,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold text-red-600 bg-white">{totalAbs}</div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Total présences effectives</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Total actual presences</label>
                 <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold text-emerald-600 bg-white">{totalEff}</div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">% présences</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">% presences</label>
                 <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold text-emerald-700 bg-emerald-50">{pctP}%</div>
               </div>
               <div>
@@ -1036,35 +1037,35 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </div>
           </div>
 
-          {/* === Phrase d'arrêt === */}
+          {/* === Closing statement === */}
           <div className="border border-slate-300 rounded-lg p-4 bg-amber-50/30">
             <p className="text-sm font-medium text-slate-800 mb-3">
-              Arrêté ce registre d'appel ce jour :
+              Closed this attendance register this day:
             </p>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Date d'arrêt</label>
-                <input type="date" value={register.arreteDate ? formatDateFR(register.arreteDate) : ""}
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Closing date</label>
+                <input type="date" value={register.arreteDate ? formatDateEN(register.arreteDate) : ""}
                   onChange={(e) => updateRegisterField("arreteDate", e.target.value)}
                   disabled={isReadOnly}
                   className="w-full px-2 py-1 border border-slate-200 rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Heure</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Time</label>
                 <input type="time" value={register.arreteHeure || ""}
                   onChange={(e) => updateRegisterField("arreteHeure", e.target.value)}
                   disabled={isReadOnly}
                   className="w-full px-2 py-1 border border-slate-200 rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Headcount filles du jour</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Girls headcount of the day</label>
                 <input type="number" min={0} value={register.effectifJourGirls || 0}
                   onChange={(e) => updateRegisterField("effectifJourGirls", parseInt(e.target.value) || 0)}
                   disabled={isReadOnly}
                   className="w-full px-2 py-1 border border-slate-200 rounded text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Headcount garçons du jour</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Boys headcount of the day</label>
                 <input type="number" min={0} value={register.effectifJourGarcons || 0}
                   onChange={(e) => updateRegisterField("effectifJourGarcons", parseInt(e.target.value) || 0)}
                   disabled={isReadOnly}
@@ -1073,31 +1074,31 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </div>
           </div>
 
-          {/* === Signatures (comme dans le module RH — contrats) === */}
+          {/* === Signatures (as in the HR module — contracts) === */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6">
-            {/* Signature Directeur */}
+            {/* Director signature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-                  <div className="text-xs text-slate-500">{directorName || 'Name du directeur'} — Signature et cachet</div>
+                  <div className="text-sm font-bold text-slate-800">The Director</div>
+                  <div className="text-xs text-slate-500">{directorName || 'Director\'s name'} — Signature and stamp</div>
                 </div>
                 {directorSignature && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                    <CheckCircle2 className="h-3 w-3" /> Signé
+                    <CheckCircle2 className="h-3 w-3" /> Signed
                   </span>
                 )}
               </div>
               {directorSignature ? (
                 <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                  <img src={directorSignature} alt="Signature Directeur" className="max-h-32 mx-auto" />
+                  <img src={directorSignature} alt="Director signature" className="max-h-32 mx-auto" />
                 </div>
               ) : (
                 <SignatureCanvas
                   width={400}
                   height={140}
                   disabled={isReadOnly}
-                  placeholder="Signature du Directeur"
+                  placeholder="Director's signature"
                   onSignatureChange={(data) => setDirectorSignature(data)}
                 />
               )}
@@ -1107,34 +1108,34 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   onClick={() => setDirectorSignature(null)}
                   className="text-xs text-red-500 hover:underline"
                 >
-                  Effacer la signature
+                  Clear signature
                 </button>
               )}
             </div>
 
-            {/* Signature Titulaire */}
+            {/* Class teacher signature */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
-                  <div className="text-xs text-slate-500">{teacherName || 'Name du titulaire'} — Signature</div>
+                  <div className="text-sm font-bold text-slate-800">The Class Teacher</div>
+                  <div className="text-xs text-slate-500">{teacherName || 'Teacher\'s name'} — Signature</div>
                 </div>
                 {teacherSignature && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
-                    <CheckCircle2 className="h-3 w-3" /> Signé
+                    <CheckCircle2 className="h-3 w-3" /> Signed
                   </span>
                 )}
               </div>
               {teacherSignature ? (
                 <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                  <img src={teacherSignature} alt="Signature Titulaire" className="max-h-32 mx-auto" />
+                  <img src={teacherSignature} alt="Teacher signature" className="max-h-32 mx-auto" />
                 </div>
               ) : (
                 <SignatureCanvas
                   width={400}
                   height={140}
                   disabled={isReadOnly}
-                  placeholder="Signature du Titulaire"
+                  placeholder="Teacher's signature"
                   onSignatureChange={(data) => setTeacherSignature(data)}
                 />
               )}
@@ -1144,7 +1145,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   onClick={() => setTeacherSignature(null)}
                   className="text-xs text-red-500 hover:underline"
                 >
-                  Effacer la signature
+                  Clear signature
                 </button>
               )}
             </div>
@@ -1169,22 +1170,22 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         />
       )}
 
-      {/* === PAGE 3 — Tableau de relevés mensuels pour l'année scolaire === */}
+      {/* === PAGE 3 — Annual monthly summary table === */}
       {activeTab === "summary" && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-slate-900">
-                TABLEAU DE RELEVÉS MENSUELS POUR L'ANNÉE SCOLAIRE
+                ANNUAL MONTHLY SUMMARY TABLE
               </h2>
               <p className="text-sm text-slate-600 mt-1">
-                Class : <strong>{selectedClass?.className || "—"}</strong>
+                Class: <strong>{translateClassName(selectedClass?.className) || "—"}</strong>
               </p>
             </div>
             <button onClick={refreshSummary}
               className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold">
               <RefreshCw className="h-4 w-4" />
-              Actualiser
+              Refresh
             </button>
           </div>
 
@@ -1192,25 +1193,25 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <table className="w-full border-collapse text-xs" style={{ minWidth: "1400px" }}>
               <thead>
                 <tr className="bg-slate-100">
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Mois</th>
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Month</th>
                   <th colSpan={6} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center bg-blue-50">
-                    RENSEIGNEMENTS GÉNÉRAUX
+                    GENERAL INFORMATION
                   </th>
                   <th colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center bg-amber-50">
-                    RENSEIGNEMENTS SPÉCIAUX
+                    SPECIAL INFORMATION
                   </th>
                   <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "150px" }}>Observations</th>
                 </tr>
                 <tr className="bg-slate-50 text-[10px]">
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Demi-jours de classe</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total élèves fréquentés</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total présences possibles</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Class half-days</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total students attended</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total possible presences</th>
                   <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total absences</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Namebre présences</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">% présences effectives</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Students jamais manqué / ≤ 4 classes</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Students ayant manqué &gt; 4 classes</th>
-                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total absences imputables</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Number of presences</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">% actual presences</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Students never absent / ≤ 4 classes</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Students absent &gt; 4 classes</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 uppercase">Total attributable absences</th>
                 </tr>
               </thead>
               <tbody>
@@ -1232,9 +1233,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                     </tr>
                   );
                 })}
-                {/* Ligne moyenne générale */}
+                {/* General average row */}
                 <tr className="bg-slate-100 font-bold">
-                  <td className="border border-slate-300 px-2 py-2 uppercase">Average générale</td>
+                  <td className="border border-slate-300 px-2 py-2 uppercase">General average</td>
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + (d.demiDaysClass || 0), 0) / monthlyData.length).toFixed(1) : "—"}</td>
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + (d.totalElevesFrequentes || 0), 0) / monthlyData.length).toFixed(0) : "—"}</td>
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.reduce((s, d) => s + (d.totalPresencesPossibles || 0), 0) || "—"}</td>
@@ -1246,7 +1247,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.reduce((s, d) => s + (d.nombreElevesJamaisManque || 0), 0) || "—"}</td>
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.reduce((s, d) => s + (d.nombreElevesManquePlusDe4 || 0), 0) || "—"}</td>
                   <td className="border border-slate-300 px-2 py-2 text-center">{monthlyData.reduce((s, d) => s + (d.totalAbsencesImputables || 0), 0) || "—"}</td>
-                  <td className="border border-slate-300 px-2 py-2 text-[10px] text-slate-500">Totaux annuels</td>
+                  <td className="border border-slate-300 px-2 py-2 text-[10px] text-slate-500">Annual totals</td>
                 </tr>
               </tbody>
             </table>
@@ -1254,40 +1255,40 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
           {monthlyData.length === 0 && (
             <div className="text-center text-sm text-slate-500 py-6 italic">
-              No data mensuelle disponible. Cliquez sur "Actualiser" pour recalculer à partir des registres d'appel existants.
+              No monthly data available. Click "Refresh" to recalculate from existing attendance registers.
             </div>
           )}
         </div>
       )}
 
-      {/* === PAGE 4 — Paramètres (jours fériés) === */}
+      {/* === PAGE 4 — Settings (public holidays) === */}
       {activeTab === "settings" && register && (
         <div className="bg-white border-2 border-slate-200 rounded-xl p-6 space-y-6">
           <div className="border-b border-slate-200 pb-3">
-            <h2 className="text-xl font-bold text-slate-900">Paramètres du mois</h2>
+            <h2 className="text-xl font-bold text-slate-900">Month settings</h2>
             <p className="text-sm text-slate-500">
-              {MONTH_NAMES[selectedMonth]} {selectedYear} — Configuration des jours fériés
+              {MONTH_NAMES[selectedMonth]} {selectedYear} — Public holidays configuration
             </p>
           </div>
 
-          {/* === Days fériés === */}
+          {/* === Public holidays === */}
           <div className="space-y-4">
             <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
               <Settings className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <div className="text-xs text-blue-800">
-                <strong>Days fériés :</strong> Spécifiez les jours fériés du mois.
-                Chaque jour férié déduit ses demi-jours du total (Monday/Tuesday/Thursday/Friday = 2 demi-jours,
-                Wednesday = 1 demi-jour). Le total des demi-jours est mis à jour automatiquement.
+                <strong>Public holidays:</strong> Specify the public holidays of the month.
+                Each public holiday deducts its half-days from the total (Monday/Tuesday/Thursday/Friday = 2 half-days,
+                Wednesday = 1 half-day). The total half-days is updated automatically.
               </div>
             </div>
 
-            {/* Liste des jours du mois (lundi-vendredi seulement) */}
+            {/* List of month days (Monday-Friday only) */}
             <div className="space-y-2">
-              <h3 className="text-sm font-bold text-slate-700">Days ouvrés du mois :</h3>
+              <h3 className="text-sm font-bold text-slate-700">Working days of the month:</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                 {(() => {
                   const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-                  const dayNames = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+                  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
                   const items = [];
                   for (let day = 1; day <= daysInMonth; day++) {
                     const d = new Date(selectedYear, selectedMonth - 1, day);
@@ -1314,7 +1315,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                       >
                         <div className="font-bold">{dayNames[dow]} {day}</div>
                         <div className="text-[10px]">
-                          {isHoliday ? "🎉 Férié" : `${dow === 3 ? 1 : 2} dj`}
+                          {isHoliday ? "🎉 Holiday" : `${dow === 3 ? 1 : 2} hd`}
                         </div>
                       </button>
                     );
@@ -1324,36 +1325,36 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               </div>
             </div>
 
-            {/* Récapitulatif des demi-jours */}
+            {/* Half-days summary */}
             <div className="bg-slate-50 rounded-xl p-4 space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Demi-jours bruts (tous jours ouvrés) :</span>
+                <span className="text-slate-600">Raw half-days (all working days):</span>
                 <span className="font-bold text-slate-900">{calculateDemiJourneesMois(selectedMonth, selectedYear, [])}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Days fériés déclarés :</span>
+                <span className="text-slate-600">Declared public holidays:</span>
                 <span className="font-bold text-red-600">{holidays.length}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">Demi-jours déduits (jours fériés) :</span>
+                <span className="text-slate-600">Deducted half-days (public holidays):</span>
                 <span className="font-bold text-red-600">
                   {calculateDemiJourneesMois(selectedMonth, selectedYear, []) - calculateDemiJourneesMois(selectedMonth, selectedYear, holidays)}
                 </span>
               </div>
               <div className="border-t border-slate-300 pt-2 flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-700">Total demi-jours du mois :</span>
+                <span className="text-sm font-bold text-slate-700">Total half-days of the month:</span>
                 <span className="text-lg font-bold text-blue-600">{calculateDemiJourneesMois(selectedMonth, selectedYear, holidays)}</span>
               </div>
             </div>
 
-            {/* Bouton sauvegarder */}
+            {/* Save button */}
             <button
               onClick={handleSave}
               disabled={saving || isReadOnly}
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save les paramètres
+              Save settings
             </button>
           </div>
         </div>
@@ -1374,7 +1375,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         />
       )}
 
-      {/* === États === */}
+      {/* === States === */}
       {loading && (
         <div className="flex items-center justify-center py-12 text-slate-500">
           <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -1385,15 +1386,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       {!loading && !selectedClassId && classes.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <ClipboardList className="h-12 w-12 text-slate-300 mb-3" />
-          <p className="font-medium text-slate-600">Aucune classe assignée</p>
-          <p className="text-sm text-slate-500 mt-1">Vous n'avez pas de classe assignée pour cette année.</p>
+          <p className="font-medium text-slate-600">No class assigned</p>
+          <p className="text-sm text-slate-500 mt-1">You have no class assigned for this year.</p>
         </div>
       )}
 
       {isReadOnly && (
         <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
           <Lock className="h-4 w-4" />
-          Ce registre est verrouillé (statut: {register?.status}).
+          This register is locked (status: {register?.status}).
         </div>
       )}
       {/* ⭐ Modal de confirmation professionnel (remplace window.confirm) */}
@@ -1486,12 +1487,12 @@ function AppelModal({
         cache: "no-store",
         body: JSON.stringify({ academicYearId, classId: selectedClassId, date: appelDate, records }),
       });
-      if (!res.ok) throw new Error("Erreur d'enregistrement");
-      toast.success("✅ Appel enregistré — le registre est mis à jour");
+      if (!res.ok) throw new Error("Save error");
+      toast.success("✅ Attendance saved — register updated");
 
-      // ⭐ Émettre l'event 'attendance:saved' pour que le tableau du registre
-      //    se recharge automatiquement. Le listener dans AttendanceRegisterTab
-      //    (composant parent) appellera loadRegister() avec un délai de 300ms.
+      // ⭐ Emit the 'attendance:saved' event so the register table
+      //    reloads automatically. The listener in AttendanceRegisterTab
+      //    (parent component) will call loadRegister() with a 300ms delay.
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('attendance:saved', {
           detail: {
@@ -1505,7 +1506,7 @@ function AppelModal({
       onSaved();
       onClose();
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Error", { description: e.message });
     } finally { setSaving(false); }
   };
 
@@ -1519,8 +1520,8 @@ function AppelModal({
           <div className="flex items-center gap-3">
             <CalendarCheck className="h-6 w-6 text-amber-600" />
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Faire l'appel</h3>
-              <p className="text-xs text-slate-500">Class: {register.classNameResolved || '—'} — Les données s'enregistreront automatiquement dans le registre</p>
+              <h3 className="text-lg font-bold text-slate-900">Take attendance</h3>
+              <p className="text-xs text-slate-500">Class: {translateClassName(register.classNameResolved) || '—'} — Data will be saved automatically to the register</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg"><X className="h-5 w-5" /></button>
@@ -1528,7 +1529,7 @@ function AppelModal({
 
         {/* Date selector */}
         <div className="p-4 bg-slate-50 border-b border-slate-200">
-          <label className="text-xs font-semibold text-slate-600 mr-2">Date de l'appel:</label>
+          <label className="text-xs font-semibold text-slate-600 mr-2">Attendance date:</label>
           <input type="date" value={appelDate} onChange={e => setAppelDate(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm" />
         </div>
 
@@ -1537,7 +1538,7 @@ function AppelModal({
           {loading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
           ) : students.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">No students dans cette classe.</div>
+            <div className="text-center py-8 text-slate-400">No students in this class.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1564,7 +1565,7 @@ function AppelModal({
                   {[...students].sort((a, b) => {
                     const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
                     const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
-                    return aName.localeCompare(bName, 'fr');
+                    return aName.localeCompare(bName, 'en');
                   }).map((s, idx) => (
                     <tr key={s.studentId} className="border-b border-slate-100">
                       <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
@@ -1579,13 +1580,13 @@ function AppelModal({
                         <button onClick={() => setMorning(s.studentId, 'EXCUSED')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.morningStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>EM</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setAfternoon(s.studentId, 'PRESENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PS</button>
+                        <button onClick={() => setAfternoon(s.studentId, 'PRESENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PA</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setAfternoon(s.studentId, 'ABSENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AS</button>
+                        <button onClick={() => setAfternoon(s.studentId, 'ABSENT')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AA</button>
                       </td>
                       <td className="px-2 py-2 text-center">
-                        <button onClick={() => setAfternoon(s.studentId, 'EXCUSED')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>ES</button>
+                        <button onClick={() => setAfternoon(s.studentId, 'EXCUSED')} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'EXCUSED' ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>EA</button>
                       </td>
                       <td className="px-2 py-2 text-center">
                         <button onClick={() => toggleLate(s.studentId)} className={cn("px-2.5 py-1.5 rounded text-xs font-bold", s.late ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>Late</button>
@@ -1604,7 +1605,7 @@ function AppelModal({
           <button onClick={handleSave} disabled={saving || students.length === 0}
             className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save l'appel
+            Save attendance
           </button>
         </div>
       </div>

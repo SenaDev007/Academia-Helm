@@ -3,10 +3,11 @@
  * Structure académique : Niveaux → Cycles → Classes (par année scolaire).
  */
 
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { randomUUID as cryptoRandomUUID } from 'crypto';
+import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
 
 export interface DuplicateStructureResult {
   fromAcademicYearId: string;
@@ -102,7 +103,11 @@ function fallbackGlobalOrderIndexForCycle(
 export class AcademicStructurePrismaService {
   private readonly logger = new Logger(AcademicStructurePrismaService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => BilingualStructureService))
+    private readonly bilingualStructureService: BilingualStructureService,
+  ) {}
 
   /**
    * Recopie l’activation des niveaux depuis Paramètres (EducationLevel.isEnabled)
@@ -866,7 +871,7 @@ export class AcademicStructurePrismaService {
       }
     }
 
-    return this.prisma.class.create({
+    const createdSection = await this.prisma.class.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
@@ -883,6 +888,28 @@ export class AcademicStructurePrismaService {
         schoolLevel: { select: { id: true, code: true, name: true } },
       },
     });
+
+    // ⭐ Phase 2 — Auto-création de la section EN miroir si mode bilingue activé
+    //    ET la section créée est FR (pas déjà EN) ET dans le scope (MATERNELLE+PRIMAIRE).
+    //    Non-bloquant : si l'auto-création échoue, la section FR reste créée.
+    //    ⚠️ NE duplique PAS les élèves — la section EN est un miroir vide.
+    if (!data.language || data.language === 'FR') {
+      try {
+        await this.bilingualStructureService.autoCreateEnSectionForFrSection(data.tenantId, {
+          id: createdSection.id,
+          name: createdSection.name,
+          code: createdSection.code,
+          officialClassId: createdSection.officialClassId,
+          schoolLevelId: createdSection.schoolLevelId,
+          academicYearId: createdSection.academicYearId,
+          capacity: createdSection.capacity,
+        });
+      } catch (e: any) {
+        this.logger?.warn?.(`Failed to auto-create EN section for ${createdSection.name}: ${e.message}`);
+      }
+    }
+
+    return createdSection;
   }
 
   /**
@@ -1335,7 +1362,7 @@ export class AcademicStructurePrismaService {
       throw new BadRequestException(`Une classe avec le code "${data.code}" existe déjà pour cette année.`);
     }
     await this.assertEnglishTrackAllowedIfNeeded(data.tenantId, data.languageTrack);
-    return this.prisma.academicClass.create({
+    const created = await this.prisma.academicClass.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId: data.tenantId,
@@ -1356,6 +1383,27 @@ export class AcademicStructurePrismaService {
         mainTeacher: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    // ⭐ Phase 2 — Auto-création de l'AcademicClass EN miroir si mode bilingue activé
+    //    ET la classe créée est FR (pas déjà EN) ET dans le scope (MATERNELLE+PRIMAIRE).
+    //    Non-bloquant : si l'auto-création échoue, la classe FR reste créée.
+    if (!data.languageTrack || data.languageTrack === 'FR') {
+      try {
+        await this.bilingualStructureService.autoCreateEnAcademicClassForFrAcademicClass(data.tenantId, {
+          id: created.id,
+          levelId: created.levelId,
+          cycleId: created.cycleId,
+          name: created.name,
+          code: created.code,
+          capacity: created.capacity,
+          academicYearId: created.academicYearId,
+        });
+      } catch (e: any) {
+        this.logger?.warn?.(`Failed to auto-create EN AcademicClass for ${created.name}: ${e.message}`);
+      }
+    }
+
+    return created;
   }
 
   async updateClass(

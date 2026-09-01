@@ -89,6 +89,9 @@ import { MaterialReturnsController } from './material-returns.controller';
 import { SaisieMasterService } from './saisiemaster.service';
 import { SaisieMasterController } from './saisiemaster.controller';
 
+// ⭐ Bilingual structure service — auto-création de la structure EN (Nursery/Primary)
+import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
+
 @Module({
   imports: [DatabaseModule, CommunicationModule],
   controllers: [
@@ -181,6 +184,8 @@ import { SaisieMasterController } from './saisiemaster.controller';
     AnnualPlanService,
     // ⭐ Planification pédagogique mensuelle
     MonthlyPlanService,
+    // ⭐ Bilingual structure service — auto-création de la structure EN
+    BilingualStructureService,
   ],
   exports: [
     // StorageService fourni par CommonModule

@@ -30,6 +30,7 @@ import { OrionModule } from '../orion/orion.module';
 import { TenantFeaturesModule } from '../tenant-features/tenant-features.module';
 import { PermissionGuard } from '../common/guards/permission.guard';
 import { CommunicationModule } from '../communication/communication.module';
+import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
 
 /**
  * Module Paramètres — Centre de contrôle stratégique d'Academia Helm
@@ -57,6 +58,7 @@ import { CommunicationModule } from '../communication/communication.module';
     GeneralSettingsService,
     PedagogicalStructureService,
     BilingualSettingsService,
+    BilingualStructureService,
     FeatureFlagsService,
     CommunicationSettingsService,
     AcademicYearSettingsService,

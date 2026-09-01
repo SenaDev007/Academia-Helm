@@ -5,6 +5,7 @@ import { SettingsHistoryService } from './settings-history.service';
 import { BilingualValidationService } from '../../tenant-features/bilingual-validation.service';
 import { TenantFeaturesService } from '../../tenant-features/tenant-features.service';
 import { FeatureCode } from '../../tenant-features/entities/tenant-feature.entity';
+import { BilingualStructureService } from '../../bilingual-structure/bilingual-structure.service';
 
 /**
  * Service pour la gestion de l'option bilingue (mode académique structurant).
@@ -25,6 +26,7 @@ export class BilingualSettingsService {
     private readonly historyService: SettingsHistoryService,
     private readonly bilingualValidation: BilingualValidationService,
     private readonly tenantFeaturesService: TenantFeaturesService,
+    private readonly bilingualStructureService: BilingualStructureService,
   ) {}
 
   /**
@@ -157,6 +159,31 @@ export class BilingualSettingsService {
       } catch (syncErr: any) {
         // Non-bloquant : si le sync échoue (ex: feature déjà activée), on logge et continue
         this.logger.warn(`Failed to sync BILINGUAL_TRACK feature flag: ${syncErr.message}`);
+      }
+
+      // ─── ⭐ Auto-création de la structure pédagogique EN ───
+      //    Quand le mode bilingue passe de OFF → ON, on crée automatiquement
+      //    la structure EN miroir (Nursery 1/2, Primary 1-6) pour tous les
+      //    niveaux FR existants. Opération idempotente — ne recrée pas ce
+      //    qui existe déjà. Ne lance PAS d'erreur si le seed échoue partiellement
+      //    (l'utilisateur peut relancer manuellement via l'endpoint dédié).
+      if (data.isEnabled && !existing.isEnabled) {
+        try {
+          const stats = await this.bilingualStructureService.seedEnglishStructureForTenant(tenantId);
+          this.logger.log(
+            `Bilingual structure seeded for tenant ${tenantId}: ` +
+            `${stats.academicClassesCreated} EN academic classes, ` +
+            `${stats.classroomsCreated} EN classrooms, ` +
+            `${stats.classSubjectsCreated} EN class subjects created`,
+          );
+        } catch (seedErr: any) {
+          // Non-bloquant : l'activation bilingue réussit même si le seed échoue.
+          // L'utilisateur pourra relancer le seed via l'endpoint dédié.
+          this.logger.error(
+            `Failed to seed EN structure for tenant ${tenantId}: ${seedErr.message}`,
+            seedErr.stack,
+          );
+        }
       }
     }
 

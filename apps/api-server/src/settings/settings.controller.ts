@@ -31,6 +31,7 @@ import { AdministrativeSealsService } from './services/administrative-seals.serv
 import { ElectronicSignaturesService } from './services/electronic-signatures.service';
 import { PedagogicalStructureService } from './services/pedagogical-structure.service';
 import { BilingualSettingsService } from './services/bilingual-settings.service';
+import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
 import { CommunicationSettingsService } from './services/communication-settings.service';
 import { AcademicYearSettingsService } from './services/academic-year-settings.service';
 import { AcademicPeriodSettingsService } from './services/academic-period-settings.service';
@@ -70,6 +71,7 @@ export class SettingsController {
     private readonly electronicSignaturesService: ElectronicSignaturesService,
     private readonly pedagogicalStructureService: PedagogicalStructureService,
     private readonly bilingualSettingsService: BilingualSettingsService,
+    private readonly bilingualStructureService: BilingualStructureService,
     private readonly communicationSettingsService: CommunicationSettingsService,
     private readonly academicYearSettingsService: AcademicYearSettingsService,
     private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
@@ -1607,6 +1609,24 @@ export class SettingsController {
     @Request() req: any,
   ) {
     return this.bilingualSettingsService.getBillingImpact(this.resolveTid(tenantId, user, req));
+  }
+
+  /**
+   * ⭐ POST /settings/bilingual/seed-en-structure
+   *    Re-créé manuellement la structure pédagogique EN (Nursery 1/2, Primary 1-6)
+   *    à partir de la structure FR existante. Opération idempotente.
+   *    Utile si l'auto-seed à l'activation bilingue a échoué, ou si de nouvelles
+   *    classes FR ont été ajoutées après l'activation.
+   */
+  @Post('bilingual/seed-en-structure')
+  async seedEnStructure(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.bilingualStructureService.seedEnglishStructureForTenant(
+      this.resolveTid(tenantId, user, req),
+    );
   }
 
   // ============================================================================

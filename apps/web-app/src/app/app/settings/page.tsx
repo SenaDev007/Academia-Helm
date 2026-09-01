@@ -2127,6 +2127,28 @@ export default function SettingsPage() {
     }
   };
 
+  // ⭐ Re-seed manuel de la structure pédagogique EN
+  //    Appelé par le bouton "Créer la structure EN" dans l'onglet Bilingue.
+  //    Idempotent : peut être appelé plusieurs fois sans effet de bord.
+  const [seedingEnStructure, setSeedingEnStructure] = useState(false);
+  const handleSeedEnStructure = async () => {
+    try {
+      setSeedingEnStructure(true);
+      const result = await settingsService.seedBilingualEnStructure(effectiveTenantId ?? undefined);
+      const stats = result || {};
+      showToast(
+        'success',
+        `Structure EN créée : ${stats.academicClassesCreated || 0} classe(s) académique(s), ` +
+        `${stats.classroomsCreated || 0} classe(s) physique(s), ` +
+        `${stats.classSubjectsCreated || 0} matière(s)`,
+      );
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la création de la structure EN');
+    } finally {
+      setSeedingEnStructure(false);
+    }
+  };
+
   const handleToggleFeature = async (featureCode: string, currentlyEnabled: boolean) => {
     try {
       setSaving(true);
@@ -4543,7 +4565,19 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex justify-end gap-2 flex-wrap">
+                {/* ⭐ Bouton "Créer la structure EN" — visible uniquement si bilingue activé */}
+                {bilingualForm.isEnabled && (
+                  <button
+                    onClick={handleSeedEnStructure}
+                    disabled={seedingEnStructure}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50"
+                    title="Crée automatiquement la structure pédagogique anglophone (Nursery 1/2, Primary 1-6) à partir de la structure francophone existante. Opération idempotente."
+                  >
+                    {seedingEnStructure ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Créer la structure EN (Nursery / Primary)
+                  </button>
+                )}
                 <button
                   onClick={handleSaveBilingual}
                   disabled={saving || (wantsToEnable && migrationNeeded && !bilingualForm.billingImpactAcknowledged)}

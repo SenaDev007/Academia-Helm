@@ -1,6 +1,7 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { BilingualStructureService } from '../../bilingual-structure/bilingual-structure.service';
 
 /**
  * Structure pédagogique hiérarchique :
@@ -99,7 +100,11 @@ const DEFAULT_CYCLES_AND_GRADES: Record<
 @Injectable()
 export class EducationStructureService {
   private readonly logger = new Logger(EducationStructureService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => BilingualStructureService))
+    private readonly bilingualStructureService: BilingualStructureService,
+  ) {}
 
   /**
    * Initialise la structure par défaut (niveaux + cycles + grades) pour un tenant.
@@ -277,7 +282,7 @@ export class EducationStructureService {
     const name = await this.allocateUniqueClassroomName(tenantId, academicYearId, rawName);
     const code = (data.code || '').trim() || name.replace(/\s+/g, '_').toUpperCase();
 
-    return this.prisma.classroom.create({
+    const created = await this.prisma.classroom.create({
       data: {
         ...prismaCreateDefaults(),
         tenantId,
@@ -293,6 +298,24 @@ export class EducationStructureService {
         grade: { include: { cycle: { include: { level: true } }, series: true } },
       },
     });
+
+    // ⭐ Phase 2 — Auto-création du Classroom EN miroir si le mode bilingue est activé
+    //    et que le grade FR est dans le scope (MATERNELLE+PRIMAIRE).
+    //    Non-bloquant : si l'auto-création échoue, le Classroom FR reste créé.
+    try {
+      await this.bilingualStructureService.autoCreateEnClassroomForFrClassroom(tenantId, {
+        id: created.id,
+        gradeId: created.gradeId,
+        name: created.name,
+        code: created.code,
+        capacity: created.capacity,
+        academicYearId,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Failed to auto-create EN classroom for ${created.name}: ${e.message}`);
+    }
+
+    return created;
   }
 
   /**

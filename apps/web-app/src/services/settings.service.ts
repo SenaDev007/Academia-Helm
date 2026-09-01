@@ -510,6 +510,22 @@ export async function startBilingualMigration(tenantId?: string | null) {
   return fetchWithAuth(`${BASE_URL}/bilingual/migrate${qs}`, { method: 'POST' });
 }
 
+/**
+ * ⭐ Re-seed de la structure pédagogique EN (Nursery 1/2, Primary 1-6).
+ *    Crée automatiquement les niveaux, cycles, grades, classrooms, AcademicClasses
+ *    et ClassSubjects EN miroir de la structure FR existante.
+ *    Opération idempotente — peut être appelée plusieurs fois sans effet de bord.
+ *
+ *    Utile si :
+ *    - L'auto-seed à l'activation bilingue a échoué
+ *    - De nouvelles classes FR ont été ajoutées après l'activation et on veut
+ *      créer leurs miroirs EN
+ */
+export async function seedBilingualEnStructure(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/seed-en-structure${qs}`, { method: 'POST' });
+}
+
 // ============================================================================
 // FEATURE FLAGS (Modules & fonctionnalités)
 // ============================================================================

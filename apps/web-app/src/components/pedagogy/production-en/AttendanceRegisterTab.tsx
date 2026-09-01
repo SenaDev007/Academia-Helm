@@ -42,7 +42,7 @@ import {
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useAppSession } from "@/contexts/AppSessionContext";
-import { useMyClasss } from "@/lib/query/pedagogy-hooks";
+import { useMyClasses } from "@/lib/query/pedagogy-hooks";
 import { MonthlyEvaluationTab } from "./MonthlyEvaluationTab";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useModuleContext } from "@/hooks/useModuleContext";
@@ -213,7 +213,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   // === Loading des classes ===
   // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
-  const { data: classesData = [] } = useMyClasss(teacherId, academicYearId);
+  const { data: classesData = [] } = useMyClasses(teacherId, academicYearId);
   useEffect(() => {
     const list = Array.isArray(classesData) ? classesData : [];
     setClasss(list);

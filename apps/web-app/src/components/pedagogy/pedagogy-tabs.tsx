@@ -278,6 +278,34 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
       'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
     ],
   },
+  // ⭐ Onglets pour la piste linguistique Anglophone (écoles bilingues)
+  {
+    id: 'teacher-space-en',
+    label: 'Pedagogical Space',
+    path: '/app/pedagogy/production-en',
+    icon: NotebookPen,
+    roles: [
+      'TEACHER', 'TEACHER_RESP',
+      'SUPER_DIRECTOR', 'director', 'admin',
+      'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR',
+      'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
+    ],
+  },
+  {
+    id: 'director-space-en',
+    label: 'Director Validation',
+    path: '/app/pedagogy/control-en',
+    icon: ShieldCheck,
+    roles: [
+      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+      'director', 'admin',
+      'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+      'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
+    ],
+  },
   // ⭐ ORION analytics tab — REMOVED per user request (2026-08-23)
   // User: 'Supprime carrément l'onglet analytique Orient et tout son contenu'
   // {

@@ -44,7 +44,7 @@ import { CahierJournalFichesContainer } from "./CahierJournalFichesContainer";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
-import { MonthlyPlanningTab } from "./MonthlyPlanningTab";
+import { SchemeOfWorkTab } from "./SchemeOfWorkTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { TeacherMaterialsWorkspace } from "./TeacherMaterialsWorkspace";
 import TeacherTasksWorkspace from "./TeacherTasksWorkspace";
@@ -73,10 +73,11 @@ const ALL_TABS = [
   { id: 'classes', label: 'My Classes', icon: Users, description: 'Headcount & students', secondaryOnly: false, maternellePrimaireOnly: false },
   { id: 'attendance', label: 'Attendance', icon: CalendarCheck, description: 'Daily attendance', secondaryOnly: false, maternellePrimaireOnly: false },
   { id: 'registre', label: 'Attendance Register', icon: ClipboardList, description: 'Monthly register + evaluations', secondaryOnly: false, maternellePrimaireOnly: true },
-  // ⭐ Planification mensuelle — auto-proposition depuis la planification annuelle
-  //    L'enseignant édite la planification de son mois pour sa classe.
-  //    Terminologie : SA (Situation d'Apprentissage), Séquence, U (Unité), D (Dossier)
-  { id: 'monthly-planning', label: 'Monthly Planning', icon: CalendarClock, description: 'Auto-plan + editing', secondaryOnly: false, maternellePrimaireOnly: true },
+  // ⭐ Scheme of Work — replaces Monthly Planning for the English track.
+  //    Organized by TERM (First / Second / Third Term). The teacher fills
+  //    in the scheme for ALL subjects assigned to their class.
+  //    Same submission workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED.
+  { id: 'monthly-planning', label: 'Scheme of Work', icon: CalendarClock, description: 'Term-based scheme', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Daily Log & Pedagogical Sheets', icon: FileSpreadsheet, description: 'Weekly grid + daily sheets', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'weekly', label: 'Weekly Log', icon: CalendarDays, description: 'Institutional monitoring', secondaryOnly: false, maternellePrimaireOnly: false },
   // ⭐ Travaux & Suivi — accessible depuis l'Espace Pédagogique (directeurs/promoteurs)
@@ -313,20 +314,20 @@ export function PedagogicalSpaceWorkspaceEN({
               teacherId={teacherId}
             />
           )}
-          {/* ⭐ Planification mensuelle — auto-proposition depuis la planification annuelle */}
+          {/* ⭐ Scheme of Work — organized by term, one section per subject */}
           {tab === 'monthly-planning' && (
             teacherClasses.length === 0 ? (
               <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
                 <CalendarClock className="h-12 w-12 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm font-medium text-slate-700">Aucune classe assignée</p>
+                <p className="text-sm font-medium text-slate-700">No class assigned</p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Vous n'avez pas encore de classes assignées. La planification mensuelle
-                  n'est accessible qu'aux enseignants titulaires d'au moins une classe.
-                  Contactez la direction si vous pensez qu'il s'agit d'une erreur.
+                  You have no classes assigned yet. The Scheme of Work is only
+                  accessible to teachers who hold at least one class.
+                  Contact the administration if you believe this is an error.
                 </p>
               </div>
             ) : (
-              <MonthlyPlanningTab
+              <SchemeOfWorkTab
                 tenantId={resolvedTenantId}
                 academicYearId={resolvedAcademicYearId}
                 teacherId={teacherId}

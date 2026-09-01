@@ -130,8 +130,12 @@ export function PedagogicalSpaceWorkspace({
   //    (PROMOTEUR, plateforme admins, super admin). Ces rôles peuvent basculer entre
   //    les niveaux Maternelle/Primaire/Secondaire dans le dropdown sans perdre l'accès
   //    aux fonctionnalités réservées Maternelle+Primaire (cahier journal, fiches, registre).
+  //    ⭐ FIX: inclure les variantes FR (PROMOTEUR, DIRECTEUR) ET EN (PROMOTER, DIRECTOR)
+  //    car les deux coexistent dans la DB selon l'historique des seeds/migrations.
   const GLOBAL_ACCESS_ROLES = new Set([
-    'PROMOTER', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN', 'SUPER_ADMIN',
+    'PROMOTER', 'PROMOTEUR',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN', 'SUPER_ADMIN',
+    'SCHOOL_OWNER',
   ]);
   const userRole = (user?.role || '').toUpperCase();
   const hasGlobalAccess = GLOBAL_ACCESS_ROLES.has(userRole);

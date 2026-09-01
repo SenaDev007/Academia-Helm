@@ -193,14 +193,13 @@ export class FeeStructureService {
     });
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_CREATE', 'FeeStructure', structure.id, undefined, { id: structure.id, name: structure.name, feeType: structure.feeType });
 
-    // ⭐ Recalculer automatiquement les comptes élèves (comme pour update)
-    this.recalculateAllAccounts(tenantId, data.academicYearId)
-      .then((result) => {
-        console.log(`[FeeStructure] Recalcul auto après create: ${result.accountsRecalculated} comptes (fee=${structure.id}, year=${data.academicYearId})`);
-      })
-      .catch((err) => {
-        console.error(`[FeeStructure] Recalcul auto après create échoué (non bloquant): ${err.message}`);
-      });
+    // ⭐ Recalculer SYNCHRONE les comptes élèves (comme pour update)
+    try {
+      const result = await this.recalculateAllAccounts(tenantId, data.academicYearId);
+      console.log(`[FeeStructure] Recalcul synchrone après create: ${result.accountsRecalculated} comptes (fee=${structure.id}, year=${data.academicYearId})`);
+    } catch (err: any) {
+      console.error(`[FeeStructure] Recalcul synchrone après create échoué (non bloquant): ${err.message}`);
+    }
 
     return structure;
   }
@@ -386,22 +385,19 @@ export class FeeStructureService {
 
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { name: existing.name }, { name: updated.name });
 
-    // ⭐ Recalculer automatiquement TOUS les comptes élèves de cette année
-    //    scolaire pour propager la modification des frais. Fire-and-forget
-    //    (non bloquant) pour ne pas retarder la réponse API — le recalcul
-    //    peut prendre quelques secondes si l'école a beaucoup d'élèves.
-    //    AVANT : les comptes gardaient les anciens montants jusqu'à ce que
-    //    l'utilisateur clique manuellement sur "Recalculer tous les comptes".
-    //    APRÈS : les comptes sont mis à jour automatiquement dès que les
-    //    frais sont modifiés, ce qui correspond au comportement attendu.
+    // ⭐ Recalculer SYNCHRONE tous les comptes élèves de cette année
+    //    scolaire pour propager la modification des frais.
+    //    AVANT : fire-and-forget → le recalcul pouvait échouer silencieusement
+    //      ou ne pas être déployé à temps.
+    //    APRÈS : synchrone avec try/catch (non bloquant en cas d'erreur —
+    //      l'update de la fee structure est déjà fait, le recalcul est un bonus).
     if (data.totalAmount !== undefined || data.isActive !== undefined) {
-      this.recalculateAllAccounts(tenantId, existing.academicYearId)
-        .then((result) => {
-          console.log(`[FeeStructure] Recalcul auto après update: ${result.accountsRecalculated} comptes, ${result.breakdownsUpdated} breakdowns (fee=${id}, year=${existing.academicYearId})`);
-        })
-        .catch((err) => {
-          console.error(`[FeeStructure] Recalcul auto échoué (non bloquant): ${err.message}`);
-        });
+      try {
+        const result = await this.recalculateAllAccounts(tenantId, existing.academicYearId);
+        console.log(`[FeeStructure] Recalcul synchrone après update: ${result.accountsRecalculated} comptes, ${result.breakdownsUpdated} breakdowns (fee=${id}, year=${existing.academicYearId})`);
+      } catch (err: any) {
+        console.error(`[FeeStructure] Recalcul synchrone échoué (non bloquant): ${err.message}`);
+      }
     }
 
     return reloaded ?? updated;

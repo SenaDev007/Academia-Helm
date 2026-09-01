@@ -149,14 +149,18 @@ export class BilingualStructureService {
    *   3. EducationGrade EN (NUR1, NUR2, P1-P6)
    *   4. Classroom EN (pour chaque FR Classroom avec un grade dans le scope)
    *   5. AcademicLevel EN (NURSERY, PRIMARY)
-   *   6. AcademicCycle EN ( Nursery 1, Nursery 2, Primary 1-6)
+   *   6. AcademicCycle EN (Nursery 1, Nursery 2, Primary 1-6)
    *   7. AcademicClass EN (languageTrack='EN', code P1-P6/NUR1-NUR2)
-   *   8. ClassSubject EN (pour chaque ClassSubject FR correspondant)
    *
    * ⚠️ Ne crée PAS :
    *   - Les sections physiques (Class) — créées à la volée par l'utilisateur
-   *   - Les élèves (les sections EN sont des miroirs vides)
+   *   - Les élèves (les élèves restent inscrits en section FR — ils sont reconnus
+   *     automatiquement dans la section EN jumelle via le système de piste)
    *   - Les TeacherClassAssignment — l'utilisateur assigne les teachers manuellement
+   *   - Les Subjects EN — les matières anglophones sont SPÉCIFIQUES à la piste EN
+   *     et créées manuellement par l'admin (elles ne sont PAS des traductions des
+   *     matières FR). Ne PAS créer de matières EN automatiquement.
+   *   - Les ClassSubject EN — liés aux matières EN créées manuellement par l'admin.
    */
   async seedEnglishStructureForTenant(tenantId: string): Promise<{
     educationLevelsCreated: number;
@@ -166,7 +170,6 @@ export class BilingualStructureService {
     academicLevelsCreated: number;
     academicCyclesCreated: number;
     academicClassesCreated: number;
-    classSubjectsCreated: number;
     skipped: number;
   }> {
     this.logger.log(`[BilingualStructure] Seeding EN structure for tenant ${tenantId}`);
@@ -179,7 +182,6 @@ export class BilingualStructureService {
       academicLevelsCreated: 0,
       academicCyclesCreated: 0,
       academicClassesCreated: 0,
-      classSubjectsCreated: 0,
       skipped: 0,
     };
 
@@ -406,88 +408,21 @@ export class BilingualStructureService {
           }
         }
       }
-
-      // ─── Étape 8 : ClassSubject EN — pour chaque ClassSubject FR correspondant ───
-      const enAcademicClasses = await this.prisma.academicClass.findMany({
-        where: { tenantId, academicYearId: year.id, languageTrack: 'EN' },
-        select: { id: true, code: true, name: true },
-      });
-
-      for (const enAcademicClass of enAcademicClasses) {
-        const enCodePrefix = enAcademicClass.code?.split('_')[0] || enAcademicClass.code;
-        const frGradeCode = BilingualStructureService.GRADE_EN_TO_FR[enCodePrefix];
-        if (!frGradeCode) continue;
-
-        const frAcademicClass = await this.prisma.academicClass.findFirst({
-          where: {
-            tenantId,
-            academicYearId: year.id,
-            code: { startsWith: frGradeCode },
-            OR: [{ languageTrack: null }, { languageTrack: 'FR' }],
-          },
-          include: {
-            classSubjects: {
-              include: { subject: true },
-            },
-          },
-        });
-        if (!frAcademicClass) continue;
-
-        for (const frCS of frAcademicClass.classSubjects) {
-          let enSubject = await this.prisma.subject.findFirst({
-            where: {
-              tenantId,
-              language: 'EN',
-              OR: [
-                { code: frCS.subject.code },
-                { name: frCS.subject.name },
-              ],
-            },
-          });
-          if (!enSubject) {
-            enSubject = await this.prisma.subject.create({
-              data: {
-                ...prismaCreateDefaults(),
-                tenantId,
-                schoolLevelId: frCS.subject.schoolLevelId,
-                name: frCS.subject.name,
-                code: `${frCS.subject.code}_EN`,
-                coefficient: frCS.coefficient,
-                language: 'EN',
-                weeklyHours: frCS.weeklyHours,
-              },
-            });
-          }
-
-          const existingCS = await this.prisma.classSubject.findFirst({
-            where: {
-              classId: enAcademicClass.id,
-              subjectId: enSubject.id,
-            },
-          });
-          if (existingCS) continue;
-
-          await this.prisma.classSubject.create({
-            data: {
-              ...prismaCreateDefaults(),
-              tenantId,
-              classId: enAcademicClass.id,
-              subjectId: enSubject.id,
-              weeklyHours: frCS.weeklyHours,
-              coefficient: frCS.coefficient,
-            },
-          });
-          stats.classSubjectsCreated++;
-        }
-      }
     }
+
+    // ⭐ NOTE : On ne crée PAS automatiquement les Subjects EN ni les ClassSubject EN.
+    //    Les matières anglophones sont SPÉCIFIQUES à la piste EN et sont créées
+    //    manuellement par l'admin dans le module Pédagogie (section Matières).
+    //    Elles ne sont PAS des traductions des matières FR.
+    //    Une fois les matières EN créées manuellement, l'admin peut les lier aux
+    //    AcademicClass EN via l'interface de gestion des matières.
 
     this.logger.log(
       `[BilingualStructure] Seed complete for tenant ${tenantId}: ` +
       `${stats.educationLevelsCreated} levels, ${stats.educationCyclesCreated} cycles, ` +
       `${stats.educationGradesCreated} grades, ${stats.classroomsCreated} classrooms, ` +
       `${stats.academicLevelsCreated} academic levels, ${stats.academicCyclesCreated} academic cycles, ` +
-      `${stats.academicClassesCreated} academic classes, ${stats.classSubjectsCreated} class subjects, ` +
+      `${stats.academicClassesCreated} academic classes, ` +
       `${stats.skipped} skipped (out of scope)`,
     );
 

@@ -2130,6 +2130,8 @@ export default function SettingsPage() {
   // ⭐ Re-seed manuel de la structure pédagogique EN
   //    Appelé par le bouton "Créer la structure EN" dans l'onglet Bilingue.
   //    Idempotent : peut être appelé plusieurs fois sans effet de bord.
+  //    Note : les matières EN ne sont PAS créées automatiquement — l'admin les
+  //    crée manuellement dans le module Pédagogie (elles sont spécifiques à la piste EN).
   const [seedingEnStructure, setSeedingEnStructure] = useState(false);
   const handleSeedEnStructure = async () => {
     try {
@@ -2139,8 +2141,8 @@ export default function SettingsPage() {
       showToast(
         'success',
         `Structure EN créée : ${stats.academicClassesCreated || 0} classe(s) académique(s), ` +
-        `${stats.classroomsCreated || 0} classe(s) physique(s), ` +
-        `${stats.classSubjectsCreated || 0} matière(s)`,
+        `${stats.classroomsCreated || 0} classe(s) physique(s). ` +
+        `Pensez à créer les matières anglophones spécifiques dans le module Pédagogie.`,
       );
     } catch (error: any) {
       showToast('error', error.message || 'Erreur lors de la création de la structure EN');

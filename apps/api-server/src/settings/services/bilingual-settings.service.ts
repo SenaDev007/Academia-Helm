@@ -167,14 +167,16 @@ export class BilingualSettingsService {
       //    niveaux FR existants. Opération idempotente — ne recrée pas ce
       //    qui existe déjà. Ne lance PAS d'erreur si le seed échoue partiellement
       //    (l'utilisateur peut relancer manuellement via l'endpoint dédié).
+      //
+      //    ⚠️ NB : les matières EN ne sont PAS créées ici — elles sont spécifiques
+      //    à la piste EN et créées manuellement par l'admin dans le module Pédagogie.
       if (data.isEnabled && !existing.isEnabled) {
         try {
           const stats = await this.bilingualStructureService.seedEnglishStructureForTenant(tenantId);
           this.logger.log(
             `Bilingual structure seeded for tenant ${tenantId}: ` +
             `${stats.academicClassesCreated} EN academic classes, ` +
-            `${stats.classroomsCreated} EN classrooms, ` +
-            `${stats.classSubjectsCreated} EN class subjects created`,
+            `${stats.classroomsCreated} EN classrooms created`,
           );
         } catch (seedErr: any) {
           // Non-bloquant : l'activation bilingue réussit même si le seed échoue.

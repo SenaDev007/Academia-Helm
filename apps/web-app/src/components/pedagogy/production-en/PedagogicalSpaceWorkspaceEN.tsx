@@ -160,14 +160,16 @@ export function PedagogicalSpaceWorkspaceEN({
 
   // ⭐ Fetch classes assigned to the teacher — for the Scheme of Work class selector.
   //    A teacher should only see THEIR classes (not all the school's classes).
-  //    We use the SAME endpoint as MyClassesTab (/api/pedagogy-space/my-classes)
-  //    to guarantee consistency: if the teacher sees their classes in the My Classes
-  //    tab, they will see them in Scheme of Work too.
-  //    For director/promoter roles, we use ALL primary + nursery classes.
+  //    Uses the SAME pattern as the FR PedagogicalSpaceWorkspace (commit 8afcc18):
+  //    /api/pedagogy/teacher-profiles → resolve user.id → teacher.id
+  //    /api/pedagogy/teacher-class-assignments → get AcademicClass list
+  //    Filter on ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'] (MATERNELLE excluded for monthly plan).
+  //    For director/promoter roles, we use ALL primary classes.
   useEffect(() => {
     if (tab !== 'monthly-planning') return;
     if (!resolvedAcademicYearId || !teacherId) return;
     // ⭐ Global access (director/promoter) — return all standard classes
+    //    with EN labels (Nursery, Primary 1-6)
     if (hasGlobalAccess) {
       setTeacherClasses([
         { value: 'MATERNELLE_GRANDS', label: 'Nursery' },
@@ -177,53 +179,55 @@ export function PedagogicalSpaceWorkspaceEN({
       ]);
       return;
     }
-    // ⭐ Teacher: fetch their assigned classes via the SAME endpoint as MyClassesTab.
-    //    Previously, we used /api/pedagogy/teacher-class-assignments and extracted
-    //    `officialClassId` with a strict filter on ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'].
-    //    That filter was TOO strict: if className was "Sil CP A" or "CE1 B", the class
-    //    was excluded → the teacher saw "No class assigned" even though MyClassesTab
-    //    displayed their classes. Now we use /api/pedagogy-space/my-classes (which works)
-    //    and extract the level code (CI, CP, CE1, ...) from the className via regex.
+    // ⭐ Teacher: fetch their assigned classes via the SAME pattern as the FR workspace
+    //    (commit 8afcc18 — this version was tested and worked).
+    //    We extract `officialClassId` from the assignments and filter on the 6 primary
+    //    class codes. The label is translated to English via a labelMap.
     (async () => {
       try {
-        const res = await fetch(
-          `/api/pedagogy-space/my-classes?teacherId=${encodeURIComponent(teacherId)}&academicYearId=${encodeURIComponent(resolvedAcademicYearId)}&language=EN`,
+        // 1. Récupérer le profil enseignant (user.id → teacher.id)
+        const profRes = await fetch(
+          `/api/pedagogy/teacher-profiles?academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
           { credentials: 'include' }
         );
-        if (!res.ok) {
-          console.error('Failed to fetch teacher classes for scheme of work:', res.status);
-          return;
-        }
-        const data = await res.json();
-        const classList = Array.isArray(data) ? data : (data?.data ?? []);
+        const profList = await profRes.json();
+        const profiles = Array.isArray(profList) ? profList : (profList?.data || []);
+        const myProfile = profiles.find((p: any) =>
+          p.userId === user?.id ||
+          p.user?.id === user?.id ||
+          (p.teacher?.email && user?.email && p.teacher.email.toLowerCase() === user.email.toLowerCase()) ||
+          (p.teacher?.matricule && user?.matricule && p.teacher.matricule === user.matricule)
+        );
+        const myTeacherId = myProfile?.teacherId || myProfile?.id;
+        if (!myTeacherId) return;
 
-        // ⭐ For each class, extract the level code (CI, CP, CE1, CE2, CM1, CM2, MATERNELLE)
-        //    from the className (e.g., "Sil CP A" → "CP", "CE1 B" → "CE1", "Maternelle" → "MATERNELLE_GRANDS").
-        //    This code is sent to the backend monthly-plans as `classLevel`.
+        // 2. Récupérer les assignments du teacher
+        const assignRes = await fetch(
+          `/api/pedagogy/teacher-class-assignments?teacherId=${encodeURIComponent(myTeacherId)}&academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
+          { credentials: 'include' }
+        );
+        const assignList = await assignRes.json();
+        const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
+
+        // 3. Extraire les officialClassId uniques (ex: "CI", "CP", "CE1", ...)
+        //    On ne retient que les classes primaires (CI à CM2) — pas maternelle pour la planif mensuelle.
+        //    Les labels sont traduits en anglais (Nursery, Primary 1-6).
         const classSet = new Map<string, string>(); // value → label
-        const levelRegex = /\b(CI|CP|CE1|CE2|CM1|CM2|MATERNELLE)\b/i;
-        const labelMap: Record<string, string> = {
-          'MATERNELLE_GRANDS': 'Nursery',
+        const enLabelMap: Record<string, string> = {
           'CI': 'Primary 1', 'CP': 'Primary 2',
           'CE1': 'Primary 3', 'CE2': 'Primary 4',
           'CM1': 'Primary 5', 'CM2': 'Primary 6',
         };
-        for (const cls of classList) {
-          const className: string = cls.className || cls.label || '';
-          const match = className.match(levelRegex);
-          if (match) {
-            const code = match[1].toUpperCase();
-            const value = code === 'MATERNELLE' ? 'MATERNELLE_GRANDS' : code;
-            if (!classSet.has(value)) {
-              classSet.set(value, labelMap[value] || code);
-            }
-          } else if (className) {
-            // ⭐ Fallback: if className doesn't contain a recognized code,
-            //    use the className itself as value AND label. The backend
-            //    monthly-plans accepts any string for classLevel.
-            const value = className.toUpperCase();
-            if (!classSet.has(value)) {
-              classSet.set(value, className);
+        for (const a of assignments) {
+          const officialClassId = a.classSubject?.academicClass?.officialClassId
+            || a.classSubject?.academicClass?.name
+            || a.academicClass?.officialClassId
+            || a.academicClass?.name;
+          if (officialClassId) {
+            const validClasses = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
+            const upperId = String(officialClassId).toUpperCase();
+            if (validClasses.includes(upperId) && !classSet.has(upperId)) {
+              classSet.set(upperId, enLabelMap[upperId] || upperId);
             }
           }
         }
@@ -232,7 +236,7 @@ export function PedagogicalSpaceWorkspaceEN({
         console.error('Failed to fetch teacher classes for scheme of work:', e);
       }
     })();
-  }, [tab, resolvedAcademicYearId, teacherId, hasGlobalAccess]);
+  }, [tab, resolvedAcademicYearId, teacherId, hasGlobalAccess, user?.id, user?.email, user?.matricule]);
 
   if (!resolvedAcademicYearId) {
     return (

@@ -618,11 +618,17 @@ export class ShopService {
     });
     const recentOrders = recentSales.map(s => {
       const itemsList = (s.items || []).map((it: any) => it.product?.name || 'Article').join(', ');
+      // ⭐ Pour les ventes STUDENT, customerName contient déjà le nom de
+      //    l'élève → on ne remplit pas `student` pour éviter le doublon
+      //    dans le frontend (qui affiche name + student sur 2 lignes).
+      //    On ne remplit `student` que si customerType !== 'STUDENT'
+      //    (ex: WALK_IN avec un élève lié — cas rare).
+      const isStudentSale = s.customerType === 'STUDENT';
       return {
         id: s.id,
         refNo: s.saleNumber,
         name: s.customerName || (s.student ? `${s.student.lastName} ${s.student.firstName}` : 'Client'),
-        student: s.student ? `${s.student.lastName} ${s.student.firstName}` : undefined,
+        student: (!isStudentSale && s.student) ? `${s.student.lastName} ${s.student.firstName}` : undefined,
         items: itemsList.substring(0, 100) + (itemsList.length > 100 ? '...' : ''),
         amount: Number(s.totalAmount),
         mode: s.paymentMode || '—',

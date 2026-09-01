@@ -274,17 +274,23 @@ export default function ShopDashboard() {
             <TableBody>
               {(stats.recentOrders?.length ? stats.recentOrders : []).map((order, i) => (
                 <TableRow key={order.id ?? i} className="hover:bg-slate-50">
-                  <TableCell className="font-mono text-xs font-medium">{order.refNo}</TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="text-sm font-medium text-navy-900">{order.name}</p>
-                      {order.student && <p className="text-xs text-gray-500">{order.student}</p>}
-                    </div>
+                  {/* ⭐ Référence sur une ligne (whitespace-nowrap) */}
+                  <TableCell className="font-mono text-xs font-medium whitespace-nowrap">{order.refNo}</TableCell>
+                  {/* ⭐ Client sur une ligne — le backend ne renvoie plus
+                      `student` pour les ventes STUDENT (doublon corrigé).
+                      Si student est présent (vente WALK_IN avec élève lié),
+                      on l'affiche entre parenthèses sur la même ligne. */}
+                  <TableCell className="whitespace-nowrap">
+                    <span className="text-sm font-medium text-navy-900">{order.name}</span>
+                    {order.student && (
+                      <span className="text-xs text-gray-500 ml-1">({order.student})</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-gray-600 max-w-[200px] truncate">
                     {order.items}
                   </TableCell>
-                  <TableCell className="text-right font-semibold text-navy-900">
+                  {/* ⭐ Montant sur une ligne (whitespace-nowrap) */}
+                  <TableCell className="text-right font-semibold text-navy-900 whitespace-nowrap">
                     {formatCurrency(order.amount)}
                   </TableCell>
                   <TableCell>

@@ -26,6 +26,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -406,12 +409,13 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
             </div>
           </Card>
 
-          {/* Catalog Grid */}
+          {/* Catalog Grid / List — le rendu change selon viewMode */}
           {(products ?? []).length === 0 ? (
             <div className="text-center py-16 text-gray-500">
               Aucun produit disponible pour cette année scolaire.
             </div>
-          ) : (
+          ) : viewMode === 'grid' ? (
+            /* ⭐ Vue grille — cartes produit en colonnes */
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
               {(products ?? []).map((product, i) => (
                 <ProductCard
@@ -423,6 +427,93 @@ export default function ShopCatalog({ onNavigate }: { onNavigate?: (view: string
                 />
               ))}
             </div>
+          ) : (
+            /* ⭐ Vue liste — table compacte avec tous les produits */
+            <Card className="shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="w-10">N°</TableHead>
+                      <TableHead>Produit</TableHead>
+                      <TableHead className="w-24">Code</TableHead>
+                      <TableHead>Catégorie</TableHead>
+                      <TableHead className="text-right w-28">Prix unitaire</TableHead>
+                      <TableHead className="text-center w-20">Stock</TableHead>
+                      <TableHead className="text-center w-24">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(products ?? []).map((product, i) => {
+                      const stock = (typeof product?.stock === 'object' && product?.stock !== null
+                        ? product.stock.quantity
+                        : product?.stock) ?? product?.quantity ?? 0;
+                      const categoryName = (product as any)?.category?.name
+                        || (categories as any[])?.find((c: any) => c.id === (product as any)?.categoryId)?.name
+                        || '—';
+                      return (
+                        <TableRow key={product?.id ?? `prod-row-${i}`} className="hover:bg-slate-50">
+                          <TableCell className="text-center text-xs text-gray-400">{i + 1}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
+                                {(product as any)?.emoji || (product as any)?.imageUrl ? (
+                                  (product as any)?.imageUrl ? (
+                                    <img src={(product as any).imageUrl} alt="" className="w-full h-full object-contain rounded-lg" />
+                                  ) : (
+                                    (product as any).emoji
+                                  )
+                                ) : '📦'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-navy-900">{product?.name ?? `Article #${i + 1}`}</p>
+                                {(product as any)?.description && (
+                                  <p className="text-[10px] text-gray-400 truncate max-w-[200px]">{(product as any).description}</p>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs font-mono text-gray-500 whitespace-nowrap">{product?.sku ?? product?.code ?? '—'}</TableCell>
+                          <TableCell className="text-xs text-gray-600">{categoryName}</TableCell>
+                          <TableCell className="text-right text-sm font-semibold text-indigo-600 whitespace-nowrap">
+                            {formatCurrency(product?.price ?? product?.unitPrice ?? 0)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className={`text-xs ${
+                              stock <= 0
+                                ? 'bg-red-50 text-red-700 border-red-200'
+                                : stock <= 5
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}>
+                              {stock}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => product?.id && openEditProduct(product)}
+                                className="p-1.5 rounded text-slate-500 hover:bg-slate-100"
+                                title="Modifier"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => product?.id && handleDeleteProduct(product.id, product.name ?? `Article #${i + 1}`)}
+                                className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
           )}
         </div>
       </div>

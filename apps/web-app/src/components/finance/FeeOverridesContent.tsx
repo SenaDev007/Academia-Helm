@@ -224,7 +224,9 @@ export default function FeeOverridesContent() {
     if (!ok) return;
     try {
       await financeService.deleteFeeOverride(id);
-      toast({ title: 'Succès', description: 'Personnalisation supprimée.' });
+      toast({ title: 'Succès', description: 'Personnalisation supprimée. Le compte élève a été recalculé.' });
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
       // Retirer de la sélection si présent
       setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       await loadOverrides();
@@ -635,7 +637,7 @@ export default function FeeOverridesContent() {
       {modalOverride && (
         <FeeOverrideModal
           structures={structures}
-          onClose={() => { setModalOverride(false); loadOverrides(); }}
+          onClose={() => { setModalOverride(false); loadOverrides(); window.dispatchEvent(new CustomEvent('finance-accounts-changed')); }}
         />
       )}
 
@@ -644,7 +646,7 @@ export default function FeeOverridesContent() {
         <FeeOverrideModal
           structures={structures}
           editingOverride={editingOverride}
-          onClose={() => { setEditingOverride(null); loadOverrides(); }}
+          onClose={() => { setEditingOverride(null); loadOverrides(); window.dispatchEvent(new CustomEvent('finance-accounts-changed')); }}
         />
       )}
 
@@ -652,7 +654,7 @@ export default function FeeOverridesContent() {
       <ImportOverridesModal
         open={modalImport}
         onClose={() => setModalImport(false)}
-        onSuccess={() => loadOverrides()}
+        onSuccess={() => { loadOverrides(); window.dispatchEvent(new CustomEvent('finance-accounts-changed')); }}
       />
     </>
   );

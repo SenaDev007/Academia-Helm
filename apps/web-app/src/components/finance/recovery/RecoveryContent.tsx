@@ -263,6 +263,8 @@ export default function RecoveryContent() {
       });
       setDeleteArrearModal(null);
       window.dispatchEvent(new CustomEvent('recovery-reload'));
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (e: any) {
       toast({
         title: 'Erreur de suppression',
@@ -358,6 +360,8 @@ export default function RecoveryContent() {
         description: `${result?.length ?? 0} arriéré(s) détecté(s) ou mis à jour.`,
       });
       await invalidateRecoveryData();
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (e: any) {
       toast({
         title: 'Erreur détection',

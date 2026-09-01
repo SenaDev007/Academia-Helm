@@ -175,6 +175,11 @@ export default function ImportArrearsModal({ open, onClose, onSuccess }: ImportA
         variant: data.failed > 0 ? 'destructive' : 'default',
       });
       if (onSuccess) onSuccess();
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)
+      //    Les arriérés importés modifient les soldes des comptes → le
+      //    backend recalcul automatiquement, il faut juste que le frontend
+      //    recharge les données.
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (e: any) {
       toast({ title: 'Erreur import', description: e.message, variant: 'destructive' });
       setStep('preview');

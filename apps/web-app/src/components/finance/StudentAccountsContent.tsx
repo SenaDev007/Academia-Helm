@@ -205,6 +205,21 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage, showWithdrawn, refreshTrigger]);
 
+  // ⭐ Écouter l'événement global 'finance-accounts-changed' dispatché par
+  //    FeeOverridesContent (après création/modification/suppression de
+  //    personnalisations) et RecoveryContent (après ajout d'arriérés).
+  //    Ces composants sont sur des pages/routes séparées — le custom event
+  //    permet la communication cross-page sans prop drilling.
+  useEffect(() => {
+    const handler = () => {
+      console.log('[StudentAccounts] finance-accounts-changed event received → reloading');
+      loadAccounts();
+    };
+    window.addEventListener('finance-accounts-changed', handler);
+    return () => window.removeEventListener('finance-accounts-changed', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ⭐ Reset page à 1 quand les filtres changent (sinon on reste bloqué sur une page vide)
   useEffect(() => {
     setCurrentPage(1);

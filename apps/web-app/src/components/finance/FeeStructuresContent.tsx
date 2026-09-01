@@ -391,23 +391,21 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       //    déjà recalculé les montants synchrone — il suffit que le frontend
       //    recharge les données quand l'utilisateur va sur l'onglet Comptes).
       onAccountsChanged?.();
+      // ⭐ Aussi dispatch l'événement global (cross-page, au cas où
+      //    StudentAccountsContent est sur une route séparée)
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
   };
 
   const handleDelete = async (id: string) => {
-    const ok = await confirmDialog.danger(
-      'Ce frais sera supprimé DÉFINITIVEMENT de la base de données.',
-      'Supprimer définitivement'
-    );
-    if (!ok) return;
     try {
       await financeService.deleteFeeStructure(id);
       toast({ title: 'Succès', description: 'Frais supprimé définitivement.' });
-      // Retirer de la sélection si présent
       setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       await loadStructures();
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (error: any) {
       toast({
         title: 'Suppression impossible',

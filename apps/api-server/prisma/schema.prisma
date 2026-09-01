@@ -12488,15 +12488,22 @@ model ShopWalletTransaction {
 }
 
 model ShopSettings {
-  id                   String  @id @default(uuid())
-  tenantId             String  @unique
-  lowStockAlert        Boolean @default(true)
-  allowPreOrders       Boolean @default(true)
-  loyaltyProgramActive Boolean @default(false)
-  pointsPer1000        Int     @default(10)
-  receiptHeader        String?
-  receiptFooter        String?
-  tenant               Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                        String  @id @default(uuid())
+  tenantId                  String  @unique
+  lowStockAlert             Boolean @default(true)
+  allowPreOrders            Boolean @default(true)
+  loyaltyProgramActive      Boolean @default(false)
+  pointsPer1000             Int     @default(10)
+  receiptHeader             String?
+  receiptFooter             String?
+  lowStockAlertEnabled      Boolean @default(true)
+  weeklyInventoryReport     Boolean @default(false)
+  defaultLowStockThreshold  Int     @default(10)
+  allowClientCredit         Boolean @default(false)
+  autoPrintReceipt          Boolean @default(true)
+  barcodeScannerEnabled     Boolean @default(true)
+  orionPredictiveInventory  Boolean @default(true)
+  tenant                    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("shop_settings")
 }

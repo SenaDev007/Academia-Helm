@@ -46,8 +46,8 @@ import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { MonthlyPlanningTab } from "./MonthlyPlanningTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
-import { TeacherMaterialsWorkspace } from "@/components/pedagogy/materials/TeacherMaterialsWorkspace";
-import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
+import { TeacherMaterialsWorkspace } from "./TeacherMaterialsWorkspace";
+import TeacherTasksWorkspace from "./TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ⭐ Ordre des onglets — Fiches Pédagogiques fusionnées avec Cahier Journal :

@@ -1,15 +1,23 @@
 "use client";
 
 /**
- * Mes Classes — Vue d'ensemble des classes assignées à l'enseignant.
- * Affiche : nom, niveau, effectifs (G/F/total), matières enseignées.
- * Clic sur une classe → vue détaillée (liste élèves).
+ * My Classes — Overview of classes assigned to the teacher (English track).
+ * Displays: class name (EN mapping), level, headcount (Boys/Girls/Total), subjects taught.
+ * Click on a class → detailed view (student list).
  *
- * ⭐ Offline-aware : si la connexion est indisponible, on retombe sur
- *    IndexedDB (store `teacherclassassignment`) qui est peuplé par le sync
- *    engine PULL. Avant ce fix, on utilisait raw fetch() → si offline,
- *    on catchait l'erreur et on affichait "Aucune classe" — alors que
- *    l'enseignant en avait bien.
+ * ⭐ English class name mapping:
+ *    Maternelle 1 → Nursery 1
+ *    Maternelle 2 → Nursery 2
+ *    CI → Primary 1
+ *    CP → Primary 2
+ *    CE1 → Primary 3
+ *    CE2 → Primary 4
+ *    CM1 → Primary 5
+ *    CM2 → Primary 6
+ *
+ * ⭐ Subject filtering: only English-track subjects (language=EN) are shown.
+ *    If no subjects are assigned for the EN track, a clear message is displayed
+ *    instead of showing FR-track subjects.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -24,6 +32,44 @@ interface MyClassesTabProps {
   teacherId: string;
 }
 
+// ⭐ Map French class names to English equivalents
+const CLASS_NAME_EN: Record<string, string> = {
+  'Maternelle 1': 'Nursery 1',
+  'Maternelle 2': 'Nursery 2',
+  'Maternelle': 'Nursery',
+  'CI': 'Primary 1',
+  'CP': 'Primary 2',
+  'CE1': 'Primary 3',
+  'CE2': 'Primary 4',
+  'CM1': 'Primary 5',
+  'CM2': 'Primary 6',
+};
+
+// ⭐ Map French level names to English
+const LEVEL_NAME_EN: Record<string, string> = {
+  'Maternelle': 'Nursery',
+  'Primaire': 'Primary',
+  'Secondaire': 'Secondary',
+};
+
+function translateClassName(name: string): string {
+  if (!name) return '';
+  // Try exact match first
+  if (CLASS_NAME_EN[name]) return CLASS_NAME_EN[name];
+  // Try case-insensitive match
+  const key = Object.keys(CLASS_NAME_EN).find(k => k.toLowerCase() === name.toLowerCase());
+  if (key) return CLASS_NAME_EN[key];
+  return name;
+}
+
+function translateLevelName(name: string): string {
+  if (!name) return '';
+  if (LEVEL_NAME_EN[name]) return LEVEL_NAME_EN[name];
+  const key = Object.keys(LEVEL_NAME_EN).find(k => name.toLowerCase().includes(k.toLowerCase()));
+  if (key) return name.replace(new RegExp(key, 'i'), LEVEL_NAME_EN[key]);
+  return name;
+}
+
 export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesTabProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,26 +78,36 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
   const loadClasses = useCallback(async () => {
     setLoading(true);
     try {
-      // ⭐ offlineFetch — essaie le réseau, et si ça échoue, lit IndexedDB
-      //    (store "teacherclassassignment"). Si le cache est aussi vide,
-      //    lance une erreur réelle pour que l'UI puisse la distinguer
-      //    d'un "légitimement pas de données".
       const data = await offlineFetch<any>(
-        `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`,
+        `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}&language=EN`,
         "teacherclassassignment",
         { tenantId }
       );
-      setClasses(Array.isArray(data) ? data : (data?.data ?? []));
+      let classList = Array.isArray(data) ? data : (data?.data ?? []);
+
+      // ⭐ Filter subjects to only show English-track subjects (language=EN)
+      //    If a class has subjects, filter them. If after filtering the class
+      //    has 0 EN subjects, we keep the class but clear the subjects array
+      //    so the UI can show "No subjects assigned yet".
+      classList = classList.map((cls: any) => {
+        if (!cls.subjects || cls.subjects.length === 0) return cls;
+        const enSubjects = cls.subjects.filter((s: any) => {
+          // Filter by language — only keep EN subjects
+          const lang = (s.language || '').toUpperCase();
+          return lang === 'EN' || lang === '';
+        });
+        return { ...cls, subjects: enSubjects };
+      });
+
+      setClasses(classList);
     } catch (e: any) {
-      // Si on est offline ET le cache est vide, on affiche un message clair
-      // plutôt que de simuler "pas de classes".
       const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
       if (isOffline) {
-        toast.warning("Hors ligne", {
-          description: "Vous êtes hors ligne et les données de classes n'ont pas encore été mises en cache. Reconnectez-vous pour charger vos classes.",
+        toast.warning("Offline", {
+          description: "You are offline and class data has not been cached yet. Reconnect to load your classes.",
         });
       } else {
-        toast.error("Erreur", { description: e?.message || "Erreur de chargement" });
+        toast.error("Error", { description: e?.message || "Loading error" });
       }
       setClasses([]);
     } finally {
@@ -63,11 +119,13 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
     loadClasses();
   }, [loadClasses]);
 
-  // Vue détaillée d'une classe (liste élèves)
+  // Detailed class view (student list)
   if (selectedClass) {
+    const enClassName = translateClassName(selectedClass.className);
+    const enLevelName = translateLevelName(selectedClass.schoolLevelName);
     return (
       <div className="space-y-4">
-        {/* Header avec retour */}
+        {/* Header with back button */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSelectedClass(null)}
@@ -76,12 +134,12 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <h3 className="text-lg font-bold text-slate-900">{selectedClass.className}</h3>
-            <p className="text-sm text-slate-500">{selectedClass.schoolLevelName}</p>
+            <h3 className="text-lg font-bold text-slate-900">{enClassName}</h3>
+            <p className="text-sm text-slate-500">{enLevelName}</p>
           </div>
         </div>
 
-        {/* Stats rapides */}
+        {/* Quick stats */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
             <div className="text-2xl font-bold text-blue-600">{selectedClass.totalStudents}</div>
@@ -89,16 +147,16 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
           </div>
           <div className="bg-cyan-50 rounded-xl p-4 text-center border border-cyan-100">
             <div className="text-2xl font-bold text-cyan-600">{selectedClass.boys}</div>
-            <div className="text-xs text-cyan-600 font-medium uppercase tracking-wider">Garçons</div>
+            <div className="text-xs text-cyan-600 font-medium uppercase tracking-wider">Boys</div>
           </div>
           <div className="bg-pink-50 rounded-xl p-4 text-center border border-pink-100">
             <div className="text-2xl font-bold text-pink-600">{selectedClass.girls}</div>
-            <div className="text-xs text-pink-600 font-medium uppercase tracking-wider">Filles</div>
+            <div className="text-xs text-pink-600 font-medium uppercase tracking-wider">Girls</div>
           </div>
         </div>
 
-        {/* Matières enseignées */}
-        {selectedClass.subjects?.length > 0 && (
+        {/* Subjects taught */}
+        {selectedClass.subjects?.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {selectedClass.subjects.map((s: any) => (
               <span key={s.subjectId} className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-100">
@@ -108,24 +166,29 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
               </span>
             ))}
           </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+            <BookOpen className="h-4 w-4 inline mr-1.5" />
+            No subjects assigned yet for the English track. Please contact the administration.
+          </div>
         )}
 
-        {/* Liste des élèves */}
+        {/* Student list */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">N°</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">Nom</th>
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">No.</th>
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">Name</th>
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Matricule</th>
-                <th className="text-center px-4 py-3 font-semibold text-slate-700">Sexe</th>
+                <th className="text-center px-4 py-3 font-semibold text-slate-700">Gender</th>
               </tr>
             </thead>
             <tbody>
               {selectedClass.students?.slice().sort((a: any, b: any) => {
                 const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
                 const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
-                return aName.localeCompare(bName, 'fr');
+                return aName.localeCompare(bName, 'en');
               }).map((s: any, idx: number) => (
                 <tr key={s.studentId} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
@@ -150,15 +213,15 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
     );
   }
 
-  // Vue liste des classes
+  // Class list view
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Mes Classes</h3>
+          <h3 className="text-lg font-bold text-slate-900">My Classes</h3>
           <p className="text-sm text-slate-500">
-            {loading ? "Chargement…" : `${classes.length} classe(s) assignée(s)`}
+            {loading ? "Loading..." : `${classes.length} class(es) assigned`}
           </p>
         </div>
         <button
@@ -178,60 +241,66 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
       ) : classes.length === 0 ? (
         <div className="text-center py-12">
           <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-          <p className="font-medium text-slate-700">Aucune classe assignée</p>
+          <p className="font-medium text-slate-700">No classes assigned</p>
           <p className="text-sm text-slate-400 mt-1">
-            Contactez l'administration pour recevoir des affectations de classe.
+            Please contact the administration to receive class assignments.
           </p>
         </div>
       ) : (
-        /* Grille de cartes classes */
+        /* Class cards grid */
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {classes.map((cls) => (
-            <button
-              key={cls.classId}
-              onClick={() => setSelectedClass(cls)}
-              className="text-left p-5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-md transition-all"
-            >
-              {/* Header carte */}
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h4 className="text-base font-bold text-slate-900">{cls.className}</h4>
-                  <p className="text-xs text-slate-500">{cls.schoolLevelName}</p>
+          {classes.map((cls) => {
+            const enClassName = translateClassName(cls.className);
+            const enLevelName = translateLevelName(cls.schoolLevelName);
+            return (
+              <button
+                key={cls.classId}
+                onClick={() => setSelectedClass(cls)}
+                className="text-left p-5 rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-md transition-all"
+              >
+                {/* Card header */}
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h4 className="text-base font-bold text-slate-900">{enClassName}</h4>
+                    <p className="text-xs text-slate-500">{enLevelName}</p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-slate-300" />
                 </div>
-                <ChevronRight className="h-5 w-5 text-slate-300" />
-              </div>
 
-              {/* Stats */}
-              <div className="flex items-center gap-4 mb-3">
-                <div className="flex items-center gap-1.5">
-                  <Users className="h-4 w-4 text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-700">{cls.totalStudents}</span>
-                  <span className="text-xs text-slate-400">élèves</span>
+                {/* Stats */}
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="h-4 w-4 text-slate-400" />
+                    <span className="text-sm font-semibold text-slate-700">{cls.totalStudents}</span>
+                    <span className="text-xs text-slate-400">students</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-cyan-600">{cls.boys}B</span>
+                    <span className="text-slate-200">·</span>
+                    <span className="text-xs font-medium text-pink-600">{cls.girls}G</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium text-cyan-600">{cls.boys}G</span>
-                  <span className="text-slate-200">·</span>
-                  <span className="text-xs font-medium text-pink-600">{cls.girls}F</span>
-                </div>
-              </div>
 
-              {/* Matières */}
-              {cls.subjects?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {cls.subjects.slice(0, 3).map((s: any) => (
-                    <span key={s.subjectId} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">
-                      {s.subjectName}
-                    </span>
-                  ))}
-                  {cls.subjects.length > 3 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
-                      +{cls.subjects.length - 3}
-                    </span>
-                  )}
-                </div>
-              )}
-            </button>
-          ))}
+                {/* Subjects */}
+                {cls.subjects?.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {cls.subjects.slice(0, 3).map((s: any) => (
+                      <span key={s.subjectId} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">
+                        {s.subjectName}
+                      </span>
+                    ))}
+                    {cls.subjects.length > 3 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                        +{cls.subjects.length - 3}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-amber-500 italic">No subjects assigned yet</div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
-import { prismaCreateDefaults } from '../../common/utils/prisma-helpers';
+import { PrismaService } from '../database/prisma.service';
+import { prismaCreateDefaults } from '../common/utils/prisma-helpers';
 
 /**
  * ============================================================================

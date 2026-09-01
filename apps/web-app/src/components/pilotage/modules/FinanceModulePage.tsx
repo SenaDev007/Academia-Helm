@@ -61,6 +61,13 @@ export default function FinanceModulePage() {
   const { academicYear, isLoading: contextLoading } = useModuleContext();
   const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
   const [stats, setStats] = useState<any>(null);
+  // ⭐ Trigger de rafraîchissement des comptes élèves — incrémenté par
+  //    FeeStructuresContent après chaque modification/création/suppression
+  //    de frais, pour que StudentAccountsContent recharge automatiquement
+  //    ses données quand l'utilisateur navigue vers l'onglet "Comptes élèves".
+  //    Le recalcul backend est synchrone (déjà fait avant la réponse API),
+  //    il suffit donc que le frontend recharge les données.
+  const [accountsRefreshTrigger, setAccountsRefreshTrigger] = useState(0);
 
   useEffect(() => {
     if (academicYear?.id) {
@@ -144,8 +151,8 @@ export default function FinanceModulePage() {
       }}
       content={
         activeSubModuleId === 'dashboard' ? { layout: 'default', children: <FinanceDashboard /> } :
-        activeSubModuleId === 'fees' ? { layout: 'default', children: <FeeStructuresContent /> } :
-        activeSubModuleId === 'accounts' ? { layout: 'default', children: <StudentAccountsContent /> } :
+        activeSubModuleId === 'fees' ? { layout: 'default', children: <FeeStructuresContent onAccountsChanged={() => setAccountsRefreshTrigger(n => n + 1)} /> } :
+        activeSubModuleId === 'accounts' ? { layout: 'default', children: <StudentAccountsContent refreshTrigger={accountsRefreshTrigger} /> } :
         activeSubModuleId === 'payments' ? { layout: 'default', children: <TransactionsContent /> } :
         activeSubModuleId === 'recovery' ? { layout: 'default', children: <RecoveryRemindersContent /> } :
         activeSubModuleId === 'expenses' ? { layout: 'default', children: <ExpensesManagement /> } :

@@ -49,7 +49,7 @@ function classOrder(name: string): number {
   return 100 + (name.charCodeAt(0) || 0);
 }
 
-export default function FeeStructuresContent() {
+export default function FeeStructuresContent({ onAccountsChanged }: { onAccountsChanged?: () => void }) {
   const confirmDialog = useConfirmDialog();
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
@@ -351,6 +351,8 @@ export default function FeeStructuresContent() {
           });
         }
         await loadStructures();
+        // ⭐ Déclencher le rafraîchissement des comptes élèves
+        onAccountsChanged?.();
         return;
       }
 
@@ -360,8 +362,10 @@ export default function FeeStructuresContent() {
       delete payload.classIds; // nettoyer au cas où
       await financeService.createFeeStructure(payload);
       setModalNewFee(false);
-      toast({ title: 'Succès', description: 'Frais configuré avec succès.' });
+      toast({ title: 'Succès', description: 'Frais configuré avec succès. Les comptes élèves ont été recalculés.' });
       await loadStructures();
+      // ⭐ Déclencher le rafraîchissement des comptes élèves
+      onAccountsChanged?.();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }
@@ -381,8 +385,12 @@ export default function FeeStructuresContent() {
       delete payload.classIds;
       await financeService.updateFeeStructure(editingFee.id, payload);
       setEditingFee(null);
-      toast({ title: 'Succès', description: 'Frais modifié avec succès.' });
+      toast({ title: 'Succès', description: 'Frais modifié avec succès. Les comptes élèves ont été recalculés.' });
       await loadStructures();
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (le backend a
+      //    déjà recalculé les montants synchrone — il suffit que le frontend
+      //    recharge les données quand l'utilisateur va sur l'onglet Comptes).
+      onAccountsChanged?.();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     }

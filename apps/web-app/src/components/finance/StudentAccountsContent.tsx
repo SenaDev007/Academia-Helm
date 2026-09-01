@@ -43,7 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
   CLOSED: 'bg-gray-100 text-gray-800',
 };
 
-export default function StudentAccountsContent() {
+export default function StudentAccountsContent({ refreshTrigger = 0 }: { refreshTrigger?: number }) {
   const { academicYear, schoolLevel } = useModuleContext();
   const { tenant } = useAppSession();
   const searchParams = useSearchParams();
@@ -194,13 +194,16 @@ export default function StudentAccountsContent() {
   };
 
   // ⭐ Recharger quand la page ou les filtres changent (search avec debounce 250ms)
+  //    OU quand refreshTrigger change (incrémenté par FeeStructuresContent
+  //    après modification/création de frais → le backend a déjà recalculé
+  //    les montants synchrone, il suffit de recharger les données frontend).
   useEffect(() => {
     const timeout = setTimeout(() => {
       loadAccounts();
     }, searchQuery ? 250 : 0);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage, showWithdrawn]);
+  }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage, showWithdrawn, refreshTrigger]);
 
   // ⭐ Reset page à 1 quand les filtres changent (sinon on reste bloqué sur une page vide)
   useEffect(() => {

@@ -159,9 +159,10 @@ export function PedagogicalSpaceWorkspace({
 
   // ⭐ Fetch des classes assignées à l'enseignant — pour le sélecteur de la planification mensuelle.
   //    Un enseignant ne doit voir QUE ses classes (pas toutes les classes de l'école).
-  //    On fetch via /api/pedagogy/teacher-profiles (pour résoudre user.id → teacher.id)
-  //    puis /api/pedagogy/teacher-class-assignments (pour avoir les AcademicClass).
-  //    Pour les rôles direction/promoteur, on prend TOUTES les classes CI-CM2.
+  //    On utilise le MÊME endpoint que MyClassesTab (/api/pedagogy-space/my-classes)
+  //    pour garantir la cohérence : si l'enseignant voit ses classes dans l'onglet
+  //    « Mes Classes », il les verra aussi dans la planification mensuelle.
+  //    Pour les rôles direction/promoteur, on prend TOUTES les classes CI-CM2 + Maternelle.
   useEffect(() => {
     if (tab !== 'monthly-planning') return;
     if (!resolvedAcademicYearId || !teacherId) return;
@@ -176,46 +177,48 @@ export function PedagogicalSpaceWorkspace({
       ]);
       return;
     }
-    // ⭐ Enseignant : fetch de ses classes assignées
+    // ⭐ Enseignant : fetch de ses classes assignées via le MÊME endpoint que MyClassesTab.
+    //    Avant, on utilisait /api/pedagogy/teacher-class-assignments puis on extrayait
+    //    `officialClassId` en filtrant sur ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'].
+    //    Ce filtre était TROP strict : si le className était "Sil CP A" ou "CE1 B",
+    //    la classe était exclue → l'enseignant voyait "Aucune classe assignée"
+    //    même si MyClassesTab affichait ses classes. Désormais on utilise
+    //    /api/pedagogy-space/my-classes (qui marche) et on extrait le code de niveau
+    //    (CI, CP, CE1, ...) depuis le className via regex.
     (async () => {
       try {
-        // 1. Récupérer le profil enseignant (user.id → teacher.id)
-        const profRes = await fetch(
-          `/api/pedagogy/teacher-profiles?academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
+        const res = await fetch(
+          `/api/pedagogy-space/my-classes?teacherId=${encodeURIComponent(teacherId)}&academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
           { credentials: 'include' }
         );
-        const profList = await profRes.json();
-        const profiles = Array.isArray(profList) ? profList : (profList?.data || []);
-        const myProfile = profiles.find((p: any) =>
-          p.userId === user?.id ||
-          p.user?.id === user?.id ||
-          (p.teacher?.email && user?.email && p.teacher.email.toLowerCase() === user.email.toLowerCase()) ||
-          (p.teacher?.matricule && user?.matricule && p.teacher.matricule === user.matricule)
-        );
-        const myTeacherId = myProfile?.teacherId || myProfile?.id;
-        if (!myTeacherId) return;
+        if (!res.ok) {
+          console.error('Failed to fetch teacher classes for monthly planning:', res.status);
+          return;
+        }
+        const data = await res.json();
+        const classList = Array.isArray(data) ? data : (data?.data ?? []);
 
-        // 2. Récupérer les assignments du teacher
-        const assignRes = await fetch(
-          `/api/pedagogy/teacher-class-assignments?teacherId=${encodeURIComponent(myTeacherId)}&academicYearId=${encodeURIComponent(resolvedAcademicYearId)}`,
-          { credentials: 'include' }
-        );
-        const assignList = await assignRes.json();
-        const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
-
-        // 3. Extraire les officialClassId uniques (ex: "CI", "CP", "CE1", ...)
+        // ⭐ Pour chaque classe, extraire le code de niveau (CI, CP, CE1, CE2, CM1, CM2, MATERNELLE)
+        //    depuis le className (ex: "Sil CP A" → "CP", "CE1 B" → "CE1", "Maternelle" → "MATERNELLE_GRANDS").
+        //    Ce code est envoyé au backend monthly-plans comme `classLevel`.
         const classSet = new Map<string, string>(); // value → label
-        for (const a of assignments) {
-          const officialClassId = a.classSubject?.academicClass?.officialClassId
-            || a.classSubject?.academicClass?.name
-            || a.academicClass?.officialClassId
-            || a.academicClass?.name;
-          if (officialClassId) {
-            // ⭐ On ne retient que les classes primaires (CI à CM2) — pas maternelle pour la planif mensuelle
-            const validClasses = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
-            const upperId = String(officialClassId).toUpperCase();
-            if (validClasses.includes(upperId) && !classSet.has(upperId)) {
-              classSet.set(upperId, upperId);
+        const levelRegex = /\b(CI|CP|CE1|CE2|CM1|CM2|MATERNELLE)\b/i;
+        for (const cls of classList) {
+          const className: string = cls.className || cls.label || '';
+          const match = className.match(levelRegex);
+          if (match) {
+            const code = match[1].toUpperCase();
+            const value = code === 'MATERNELLE' ? 'MATERNELLE_GRANDS' : code;
+            if (!classSet.has(value)) {
+              classSet.set(value, code === 'MATERNELLE' ? 'Maternelle' : code);
+            }
+          } else if (className) {
+            // ⭐ Fallback : si le className ne contient pas un code reconnu,
+            //    utiliser le className lui-même comme value ET label. Le backend
+            //    monthly-plans accepte n'importe quelle chaîne pour classLevel.
+            const value = className.toUpperCase();
+            if (!classSet.has(value)) {
+              classSet.set(value, className);
             }
           }
         }
@@ -224,7 +227,7 @@ export function PedagogicalSpaceWorkspace({
         console.error('Failed to fetch teacher classes for monthly planning:', e);
       }
     })();
-  }, [tab, resolvedAcademicYearId, teacherId, hasGlobalAccess, user?.id, user?.email, user?.matricule]);
+  }, [tab, resolvedAcademicYearId, teacherId, hasGlobalAccess]);
 
   if (!resolvedAcademicYearId) {
     return (

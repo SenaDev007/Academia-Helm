@@ -89,11 +89,14 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
       //    If a class has subjects, filter them. If after filtering the class
       //    has 0 EN subjects, we keep the class but clear the subjects array
       //    so the UI can show "No subjects assigned yet".
+      //    Note: the backend returns the subject's language as `subjectLanguage`
+      //    (added in getMyClasses service). We also accept `language` for
+      //    backward compatibility with older backend versions.
       classList = classList.map((cls: any) => {
         if (!cls.subjects || cls.subjects.length === 0) return cls;
         const enSubjects = cls.subjects.filter((s: any) => {
           // Filter by language — only keep EN subjects
-          const lang = (s.language || '').toUpperCase();
+          const lang = (s.subjectLanguage || s.language || '').toUpperCase();
           return lang === 'EN' || lang === '';
         });
         return { ...cls, subjects: enSubjects };

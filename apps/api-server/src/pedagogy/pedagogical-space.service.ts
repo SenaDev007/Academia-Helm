@@ -223,7 +223,7 @@ export class PedagogicalSpaceService {
           select: {
             id: true,
             subjectId: true,
-            subject: { select: { id: true, name: true, code: true } },
+            subject: { select: { id: true, name: true, code: true, language: true } },
             weeklyHours: true,
             coefficient: true,
             classId: true,
@@ -268,6 +268,7 @@ export class PedagogicalSpaceService {
               subjectId: a.classSubject.subjectId,
               subjectName: a.classSubject.subject.name,
               subjectCode: a.classSubject.subject.code,
+              subjectLanguage: a.classSubject.subject.language || null,
               weeklyHours: a.classSubject.weeklyHours,
               coefficient: a.classSubject.coefficient,
             }]
@@ -279,6 +280,7 @@ export class PedagogicalSpaceService {
               subjectId: a.classSubject.subjectId,
               subjectName: a.classSubject.subject.name,
               subjectCode: a.classSubject.subject.code,
+              subjectLanguage: a.classSubject.subject.language || null,
               weeklyHours: a.classSubject.weeklyHours,
               coefficient: a.classSubject.coefficient,
             });
@@ -319,6 +321,7 @@ export class PedagogicalSpaceService {
                     subjectId: a.classSubject.subjectId,
                     subjectName: a.classSubject.subject.name,
                     subjectCode: a.classSubject.subject.code,
+                    subjectLanguage: a.classSubject.subject.language || null,
                     weeklyHours: a.classSubject.weeklyHours,
                     coefficient: a.classSubject.coefficient,
                   }]
@@ -335,6 +338,7 @@ export class PedagogicalSpaceService {
                   subjectId: a.classSubject.subjectId,
                   subjectName: a.classSubject.subject.name,
                   subjectCode: a.classSubject.subject.code,
+                  subjectLanguage: a.classSubject.subject.language || null,
                   weeklyHours: a.classSubject.weeklyHours,
                   coefficient: a.classSubject.coefficient,
                 }]
@@ -346,6 +350,7 @@ export class PedagogicalSpaceService {
                   subjectId: a.classSubject.subjectId,
                   subjectName: a.classSubject.subject.name,
                   subjectCode: a.classSubject.subject.code,
+                  subjectLanguage: a.classSubject.subject.language || null,
                   weeklyHours: a.classSubject.weeklyHours,
                   coefficient: a.classSubject.coefficient,
                 });

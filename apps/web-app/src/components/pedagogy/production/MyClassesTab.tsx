@@ -36,12 +36,35 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
       //    (store "teacherclassassignment"). Si le cache est aussi vide,
       //    lance une erreur réelle pour que l'UI puisse la distinguer
       //    d'un "légitimement pas de données".
+      // ⭐ Filtre language=FR : l'Espace Pédagogique FR ne doit afficher QUE
+      //    les matières francophones. Les matières anglophones (language=EN)
+      //    sont exclues. Les matières sans langue (NULL ou '') sont conservées
+      //    car elles sont communes aux deux pistes (par compatibilité avec
+      //    les données antérieures à l'introduction de la piste EN).
       const data = await offlineFetch<any>(
-        `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`,
+        `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}&language=FR`,
         "teacherclassassignment",
         { tenantId }
       );
-      setClasses(Array.isArray(data) ? data : (data?.data ?? []));
+      let classList = Array.isArray(data) ? data : (data?.data ?? []);
+
+      // ⭐ Filtrer côté client les matières par langue : on ne garde QUE
+      //    les matières FR (et les matières sans langue, communes aux deux pistes).
+      //    Le paramètre `language=FR` envoyé au backend est un hint — le filtre
+      //    côté client est la source de vérité (le backend peut ne pas supporter
+      //    le filtre selon la version).
+      classList = classList.map((cls: any) => {
+        if (!cls.subjects || cls.subjects.length === 0) return cls;
+        const frSubjects = cls.subjects.filter((s: any) => {
+          const lang = (s.subjectLanguage || s.language || '').toUpperCase();
+          // ⭐ On garde : FR (piste francophone) + '' (commun) + NULL (legacy)
+          //    On exclut : EN (piste anglophone — gérée par l'Espace Pédagogique EN)
+          return lang === 'FR' || lang === '';
+        });
+        return { ...cls, subjects: frSubjects };
+      });
+
+      setClasses(classList);
     } catch (e: any) {
       // Si on est offline ET le cache est vide, on affiche un message clair
       // plutôt que de simuler "pas de classes".

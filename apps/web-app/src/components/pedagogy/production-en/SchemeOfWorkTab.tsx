@@ -219,7 +219,7 @@ export function SchemeOfWorkTab({
           classId: c.classId,
           className: c.className,
           subjects: (c.subjects || []).filter((s: any) => {
-            const lang = (s.language || '').toUpperCase();
+            const lang = (s.subjectLanguage || s.language || '').toUpperCase();
             return lang === 'EN' || lang === '';
           }),
           totalStudents: c.totalStudents,

@@ -180,6 +180,12 @@ export function SchemeOfWorkTab({
   const [pendingSignature, setPendingSignature] = useState<string | null>(null);
   const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  // ⭐ Ref to track if user is currently editing — prevents auto-refresh from
+  //    overwriting unsaved edits. Updated whenever editingCellKey changes.
+  const isEditingRef = useRef(false);
+  useEffect(() => {
+    isEditingRef.current = editingCellKey !== null;
+  }, [editingCellKey]);
 
   // ⭐ Loaded classes (with subjects) from /api/pedagogy-space/my-classes
   const [loadedClasses, setLoadedClasses] = useState<AvailableClass[]>([]);
@@ -286,15 +292,21 @@ export function SchemeOfWorkTab({
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, selectedClassValue, selectedTerm, teacherId, selectedClass]);
+  }, [academicYearId, selectedClassValue, selectedTerm, teacherId]);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
-  // ⭐ Auto-refresh every 30s for status updates (director validation)
+  // ⭐ Auto-refresh every 60s for status updates (director validation)
+  //    Only if the user is NOT currently editing (cells not dirty) to avoid
+  //    overwriting unsaved edits. Also disabled during loading/saving.
   useEffect(() => {
-    const interval = setInterval(() => { loadPlan(); }, 30000);
+    const interval = setInterval(() => {
+      if (!isEditingRef.current && !saving && !loading) {
+        loadPlan();
+      }
+    }, 60000); // 60 seconds (was 30s — too frequent caused flicker)
     return () => clearInterval(interval);
-  }, [loadPlan]);
+  }, [loadPlan, saving, loading]);
 
   // ⭐ Load director name from settings/identity
   useEffect(() => {

@@ -87,6 +87,20 @@ export class BilingualStructureService {
     PRIMAIRE: 'PRIMARY',
   };
 
+  /**
+   * ⭐ Lookup case-insensitive dans une map.
+   *    Les noms en DB peuvent être 'MATERNELLE', 'Maternelle', ou 'maternelle'
+   *    selon comment ils ont été créés. Ce helper gère tous les cas.
+   */
+  private static lookupCI<T>(map: Record<string, T>, key: string | undefined | null): T | undefined {
+    if (!key) return undefined;
+    const lower = key.toLowerCase();
+    for (const [k, v] of Object.entries(map)) {
+      if (k.toLowerCase() === lower) return v;
+    }
+    return undefined;
+  }
+
   /** Mapping nom de cycle FR → EN (les cycles correspondent 1:1 aux grades pour MATERNELLE+PRIMAIRE). */
   private static readonly CYCLE_FR_TO_EN: Record<string, string> = {
     'Maternelle 1': 'Nursery 1',
@@ -195,9 +209,11 @@ export class BilingualStructureService {
     //    - EducationLevel : isEnabled (pas isActive)
     //    - EducationCycle : PAS de tenantId, PAS de isActive
     //    - EducationGrade : isEnabled (pas isActive), PAS de tenantId
+    // ⭐ Recherche case-insensitive des niveaux FR (la DB peut contenir
+    //    'MATERNELLE', 'Maternelle', ou 'maternelle' selon l'historique).
     for (const [frLevelName, enLevelName] of Object.entries(BilingualStructureService.LEVEL_FR_TO_EN)) {
       const frLevel = await this.prisma.educationLevel.findFirst({
-        where: { tenantId, name: frLevelName },
+        where: { tenantId, name: { equals: frLevelName, mode: 'insensitive' } },
         include: { cycles: { include: { grades: true } } },
       });
       if (!frLevel) {
@@ -207,7 +223,7 @@ export class BilingualStructureService {
 
       // 1. Créer ou récupérer le niveau EN ( champ isEnabled, pas isActive )
       let enLevel = await this.prisma.educationLevel.findFirst({
-        where: { tenantId, name: enLevelName },
+        where: { tenantId, name: { equals: enLevelName, mode: 'insensitive' } },
       });
       if (!enLevel) {
         enLevel = await this.prisma.educationLevel.create({
@@ -226,7 +242,7 @@ export class BilingualStructureService {
       // 2-3. Pour chaque cycle FR, créer le cycle EN + son grade EN
       //    ⭐ EducationCycle n'a PAS de tenantId ni isActive (uniquement levelId, name, order)
       for (const frCycle of frLevel.cycles) {
-        const enCycleName = BilingualStructureService.CYCLE_FR_TO_EN[frCycle.name];
+        const enCycleName = BilingualStructureService.lookupCI(BilingualStructureService.CYCLE_FR_TO_EN, frCycle.name);
         if (!enCycleName) {
           stats.skipped++;
           continue;
@@ -249,7 +265,7 @@ export class BilingualStructureService {
 
         // ⭐ EducationGrade : isEnabled (pas isActive), PAS de tenantId
         for (const frGrade of frCycle.grades) {
-          const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGrade.code];
+          const enGradeInfo = BilingualStructureService.lookupCI(BilingualStructureService.GRADE_FR_TO_EN, frGrade.code);
           if (!enGradeInfo) {
             stats.skipped++;
             continue;
@@ -279,6 +295,9 @@ export class BilingualStructureService {
     //    ⭐ On parcourt TOUTES les années académiques du tenant pour que le seed
     //    rattrape aussi les classes créées AVANT l'activation du mode bilingue.
     //    Opération idempotente : ne recrée pas ce qui existe déjà.
+    //    ⭐ Recherche case-insensitive des grade codes (la DB peut contenir
+    //    'CI', 'ci', ou 'Ci' selon l'historique de saisie).
+    const frGradeCodes = Object.keys(BilingualStructureService.GRADE_FR_TO_EN);
     const academicYears = await this.prisma.academicYear.findMany({
       where: { tenantId },
       select: { id: true },
@@ -290,7 +309,7 @@ export class BilingualStructureService {
           tenantId,
           academicYearId: year.id,
           isArchived: false,
-          grade: { code: { in: Object.keys(BilingualStructureService.GRADE_FR_TO_EN) } },
+          grade: { code: { in: frGradeCodes, mode: 'insensitive' } },
         },
         include: {
           grade: {
@@ -305,38 +324,61 @@ export class BilingualStructureService {
         },
       });
 
+      this.logger.debug(`[BilingualStructure] Year ${year.id}: found ${frClassrooms.length} FR classrooms to mirror`);
+
       for (const frClassroom of frClassrooms) {
-        const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frClassroom.grade.code];
-        if (!enGradeInfo) continue;
+        const enGradeInfo = BilingualStructureService.lookupCI(
+          BilingualStructureService.GRADE_FR_TO_EN,
+          frClassroom.grade.code,
+        );
+        if (!enGradeInfo) {
+          this.logger.warn(`[BilingualStructure] Classroom ${frClassroom.name}: grade code '${frClassroom.grade.code}' not in mapping — skipping`);
+          continue;
+        }
 
         // ⭐ Déterminer le niveau EN correspondant au niveau FR du classroom
         //    ex: frClassroom.grade.cycle.level.name = 'PRIMAIRE' → enLevelName = 'PRIMARY'
+        //    ⭐ Case-insensitive: 'Primaire', 'PRIMAIRE', 'primaire' → tous mappent vers 'PRIMARY'
         const frLevelName = frClassroom.grade?.cycle?.level?.name || '';
-        const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frLevelName];
+        const enLevelName = BilingualStructureService.lookupCI(
+          BilingualStructureService.LEVEL_FR_TO_EN,
+          frLevelName,
+        );
         if (!enLevelName) {
-          // Niveau FR hors scope (ex: SECONDAIRE) — skip
+          this.logger.warn(
+            `[BilingualStructure] Classroom ${frClassroom.name}: FR level '${frLevelName}' not in mapping — skipping (likely SECONDAIRE or custom level)`,
+          );
           stats.skipped++;
           continue;
         }
 
         // ⭐ Trouver le niveau EN SPÉCIFIQUE (NURSERY ou PRIMARY, pas n'importe lequel)
         const enLevel = await this.prisma.educationLevel.findFirst({
-          where: { tenantId, name: enLevelName },
+          where: { tenantId, name: { equals: enLevelName, mode: 'insensitive' } },
         });
-        if (!enLevel) continue;
+        if (!enLevel) {
+          this.logger.warn(`[BilingualStructure] Classroom ${frClassroom.name}: EN level '${enLevelName}' not found — skipping`);
+          continue;
+        }
 
         // ⭐ Trouver le cycle EN qui porte le même nom que le grade EN
-        //    ex: pour CE2 → enGradeInfo.name = 'Primary 3' → cycle EN 'Primary 3'
+        //    ex: pour CE2 → enGradeInfo.name = 'Primary 4' → cycle EN 'Primary 4'
         const enCycle = await this.prisma.educationCycle.findFirst({
-          where: { levelId: enLevel.id, name: enGradeInfo.name },
+          where: { levelId: enLevel.id, name: { equals: enGradeInfo.name, mode: 'insensitive' } },
         });
-        if (!enCycle) continue;
+        if (!enCycle) {
+          this.logger.warn(`[BilingualStructure] Classroom ${frClassroom.name}: EN cycle '${enGradeInfo.name}' not found — skipping`);
+          continue;
+        }
 
         // ⭐ Trouver le grade EN dans ce cycle
         const enGrade = await this.prisma.educationGrade.findFirst({
           where: { cycleId: enCycle.id, code: enGradeInfo.code },
         });
-        if (!enGrade) continue;
+        if (!enGrade) {
+          this.logger.warn(`[BilingualStructure] Classroom ${frClassroom.name}: EN grade '${enGradeInfo.code}' not found — skipping`);
+          continue;
+        }
 
         const enName = BilingualStructureService.translateClassNameFrToEn(frClassroom.name);
         const enCode = BilingualStructureService.translateClassCodeFrToEn(frClassroom.code || frClassroom.name);
@@ -378,12 +420,19 @@ export class BilingualStructureService {
       });
 
       for (const frAcademicLevel of frAcademicLevels) {
-        const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frAcademicLevel.name];
-        if (!enLevelName) continue;
+        // ⭐ Case-insensitive: 'Maternelle', 'MATERNELLE', 'Primaire', 'PRIMAIRE' → tous mappent
+        const enLevelName = BilingualStructureService.lookupCI(
+          BilingualStructureService.LEVEL_FR_TO_EN,
+          frAcademicLevel.name,
+        );
+        if (!enLevelName) {
+          this.logger.debug(`[BilingualStructure] AcademicLevel '${frAcademicLevel.name}' not in mapping — skipping`);
+          continue;
+        }
 
         // 5. Créer AcademicLevel EN (orderIndex, pas order)
         let enAcademicLevel = await this.prisma.academicLevel.findFirst({
-          where: { tenantId, academicYearId: year.id, name: enLevelName },
+          where: { tenantId, academicYearId: year.id, name: { equals: enLevelName, mode: 'insensitive' } },
         });
         if (!enAcademicLevel) {
           enAcademicLevel = await this.prisma.academicLevel.create({
@@ -401,12 +450,15 @@ export class BilingualStructureService {
 
         // 6-7. Pour chaque cycle FR, créer l'AcademicCycle EN + AcademicClass EN
         for (const frAcademicCycle of frAcademicLevel.cycles) {
-          const enCycleName = BilingualStructureService.CYCLE_FR_TO_EN[frAcademicCycle.name];
+          const enCycleName = BilingualStructureService.lookupCI(
+            BilingualStructureService.CYCLE_FR_TO_EN,
+            frAcademicCycle.name,
+          );
           if (!enCycleName) continue;
 
           // ⭐ AcademicCycle a bien tenantId, academicYearId, levelId, orderIndex, isActive
           let enAcademicCycle = await this.prisma.academicCycle.findFirst({
-            where: { tenantId, academicYearId: year.id, levelId: enAcademicLevel.id, name: enCycleName },
+            where: { tenantId, academicYearId: year.id, levelId: enAcademicLevel.id, name: { equals: enCycleName, mode: 'insensitive' } },
           });
           if (!enAcademicCycle) {
             enAcademicCycle = await this.prisma.academicCycle.create({
@@ -427,8 +479,15 @@ export class BilingualStructureService {
           // Pour chaque AcademicClass FR, créer l'AcademicClass EN
           for (const frAcademicClass of frAcademicCycle.classes) {
             const frGradeCode = frAcademicClass.code?.split('_')[0] || frAcademicClass.code;
-            const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGradeCode];
-            if (!enGradeInfo) continue;
+            // ⭐ Case-insensitive grade code lookup
+            const enGradeInfo = BilingualStructureService.lookupCI(
+              BilingualStructureService.GRADE_FR_TO_EN,
+              frGradeCode,
+            );
+            if (!enGradeInfo) {
+              this.logger.debug(`[BilingualStructure] AcademicClass '${frAcademicClass.name}' (code='${frAcademicClass.code}'): grade code '${frGradeCode}' not in mapping — skipping`);
+              continue;
+            }
 
             const enClassName = BilingualStructureService.translateClassNameFrToEn(frAcademicClass.name);
             const enClassCode = BilingualStructureService.translateClassCodeFrToEn(frAcademicClass.code);
@@ -498,24 +557,25 @@ export class BilingualStructureService {
     });
     if (!frGrade) return null;
 
-    const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGrade.code];
+    const enGradeInfo = BilingualStructureService.lookupCI(BilingualStructureService.GRADE_FR_TO_EN, frGrade.code);
     if (!enGradeInfo) return null;
 
     // ⭐ Déterminer le niveau EN correspondant au niveau FR du classroom
     //    ex: frGrade.cycle.level.name = 'PRIMAIRE' → enLevelName = 'PRIMARY'
+    //    ⭐ Case-insensitive: gère 'Primaire', 'PRIMAIRE', etc.
     const frLevelName = frGrade?.cycle?.level?.name || '';
-    const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frLevelName];
+    const enLevelName = BilingualStructureService.lookupCI(BilingualStructureService.LEVEL_FR_TO_EN, frLevelName);
     if (!enLevelName) return null; // Niveau FR hors scope (ex: SECONDAIRE)
 
     // ⭐ Trouver le niveau EN SPÉCIFIQUE (NURSERY ou PRIMARY, pas n'importe lequel)
     const enLevel = await this.prisma.educationLevel.findFirst({
-      where: { tenantId, name: enLevelName },
+      where: { tenantId, name: { equals: enLevelName, mode: 'insensitive' } },
     });
     if (!enLevel) return null;
 
     // ⭐ Trouver le cycle EN qui porte le même nom que le grade EN
     const enCycle = await this.prisma.educationCycle.findFirst({
-      where: { levelId: enLevel.id, name: enGradeInfo.name },
+      where: { levelId: enLevel.id, name: { equals: enGradeInfo.name, mode: 'insensitive' } },
     });
     if (!enCycle) return null;
 
@@ -568,23 +628,25 @@ export class BilingualStructureService {
       where: { id: frAcademicClass.levelId },
     });
     if (!frLevel) return null;
-    const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frLevel.name];
+    // ⭐ Case-insensitive level name lookup
+    const enLevelName = BilingualStructureService.lookupCI(BilingualStructureService.LEVEL_FR_TO_EN, frLevel.name);
     if (!enLevelName) return null;
 
     const frCycle = await this.prisma.academicCycle.findUnique({
       where: { id: frAcademicClass.cycleId },
     });
     if (!frCycle) return null;
-    const enCycleName = BilingualStructureService.CYCLE_FR_TO_EN[frCycle.name];
+    // ⭐ Case-insensitive cycle name lookup
+    const enCycleName = BilingualStructureService.lookupCI(BilingualStructureService.CYCLE_FR_TO_EN, frCycle.name);
     if (!enCycleName) return null;
 
     const enAcademicLevel = await this.prisma.academicLevel.findFirst({
-      where: { tenantId, academicYearId: frAcademicClass.academicYearId, name: enLevelName },
+      where: { tenantId, academicYearId: frAcademicClass.academicYearId, name: { equals: enLevelName, mode: 'insensitive' } },
     });
     if (!enAcademicLevel) return null;
 
     const enAcademicCycle = await this.prisma.academicCycle.findFirst({
-      where: { tenantId, academicYearId: frAcademicClass.academicYearId, levelId: enAcademicLevel.id, name: enCycleName },
+      where: { tenantId, academicYearId: frAcademicClass.academicYearId, levelId: enAcademicLevel.id, name: { equals: enCycleName, mode: 'insensitive' } },
     });
     if (!enAcademicCycle) return null;
 

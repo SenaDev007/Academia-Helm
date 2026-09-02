@@ -57,7 +57,8 @@ import { useModuleContext } from "@/hooks/useModuleContext";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { translateClassName } from "@/lib/pedagogy/class-name-en";
-import { loadPdfLibs, drawOfficialHeader, drawFooter, type SchoolHeader } from "@/lib/exports/finance-exports";
+import { loadPdfLibs } from "@/lib/exports/pdf-loader";
+import { drawOfficialHeader, drawFooter, type SchoolHeader } from "@/lib/exports/finance-exports";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types

@@ -65,6 +65,7 @@ interface DirectorPedagogyControlProps {
 //       + secondaire) car le semainier est une responsabilité transverse.
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, maternellePrimaireOnly: false },
+  { id: "scheme-of-work", label: "Scheme of Work", icon: BookOpen, maternellePrimaireOnly: true },
   { id: "registres", label: "Attendance Registers", icon: ClipboardList, maternellePrimaireOnly: false },
 ] as const;
 
@@ -170,6 +171,9 @@ export function DirectorPedagogyControlEN({ tenantId, academicYearId, userId }: 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6">
         {tab === "dashboard" && (
           <DashboardTab tenantId={tenantId} academicYearId={academicYearId} refreshKey={refreshKey} onNavigate={setTab} isSecondaryLevel={isSecondaryLevel} hasGlobalAccess={hasGlobalAccess} />
+        )}
+        {tab === "scheme-of-work" && (
+          <PendingSchemeOfWorkTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
         {tab === "cahier-journal" && (
           <PendingCahierJournalsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
@@ -5857,6 +5861,332 @@ function PendingMonthlyPlansTab({
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ PendingSchemeOfWorkTab — Director validation for Scheme of Work (EN track)
+//    Receives submitted Scheme of Work plans (monthly_plans with month =
+//    "First Term"/"Second Term"/"Third Term"). Displays the scheme table
+//    with an observation column for the director to add feedback.
+//    Pattern: same as PendingMonthlyPlansTab but filtered for EN terms.
+// ============================================================================
+function PendingSchemeOfWorkTab({
+  tenantId, academicYearId, userId, refreshKey, onRefresh,
+}: {
+  tenantId: string;
+  academicYearId: string;
+  userId: string;
+  refreshKey: number;
+  onRefresh: () => void;
+}) {
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const [pendingPlans, setPendingPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
+  const [planDetail, setPlanDetail] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(null);
+  const [directorObservation, setDirectorObservation] = useState("");
+  const [validating, setValidating] = useState(false);
+
+  // EN term labels — used to filter pending plans
+  const EN_TERMS = ['First Term', 'Second Term', 'Third Term'];
+
+  // Load pending scheme of work plans (monthly_plans with EN term labels)
+  const loadPending = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}&status=${statusTab}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch pending scheme of work");
+      const data = await res.json();
+      // ⭐ Filter for EN terms only (exclude FR monthly plans like "Septembre", "Octobre", etc.)
+      const allPlans = Array.isArray(data) ? data : [];
+      const enPlans = allPlans.filter((p: any) => EN_TERMS.includes(p.month));
+      setPendingPlans(enPlans);
+    } catch (e: any) {
+      console.error("Failed to load pending scheme of work:", e);
+      setPendingPlans([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId, statusTab]);
+
+  useEffect(() => { loadPending(); }, [loadPending, refreshKey]);
+
+  useEffect(() => {
+    setSelectedPlan(null);
+    setPlanDetail(null);
+  }, [statusTab]);
+
+  // Load director signature
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/school-directors?userId=${encodeURIComponent(userId)}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const sig = data?.signatureDataUrl || data?.signatureUploadedUrl || null;
+        setDirectorSignature(sig);
+      } catch { /* silent */ }
+    })();
+  }, [userId]);
+
+  // Load plan detail when selected
+  const loadPlanDetail = useCallback(async (plan: any) => {
+    setSelectedPlan(plan);
+    setDetailLoading(true);
+    setDirectorObservation(plan.directorObservation || "");
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId || '')}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to load plan detail");
+      const data = await res.json();
+      setPlanDetail(data);
+    } catch (e: any) {
+      console.error("Failed to load plan detail:", e);
+      setPlanDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [academicYearId]);
+
+  // Validate / Reject
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED') => {
+    if (!selectedPlan) return;
+    if (action === 'VALIDATED' && !directorSignature) {
+      toast.error("Director signature required. Configure your signature in your profile.");
+      return;
+    }
+    setValidating(true);
+    try {
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: selectedPlan.classLevel,
+        month: selectedPlan.month,
+        teacherId: selectedPlan.teacherId || '',
+      });
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/validate?${params.toString()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            status: action,
+            directorSignature: directorSignature,
+            directorObservation: action === 'REJECTED' ? directorObservation : undefined,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success(action === 'VALIDATED' ? "✅ Scheme of Work validated" : "Scheme of Work rejected");
+      setSelectedPlan(null);
+      setPlanDetail(null);
+      await loadPending();
+      onRefresh();
+    } catch (e: any) {
+      toast.error("Validation failed: " + e.message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  // ⭐ Render detail view
+  if (selectedPlan && planDetail) {
+    const cells = planDetail.cells || [];
+    const subjects = [...new Set(cells.map((c: any) => c.domain))].filter(Boolean);
+    const SCHEME_COLUMNS = ['Topic', 'Objectives', 'Activities', 'Resources', 'Evaluation'];
+    const WEEKS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+    const getCell = (week: number, subject: string, column: string) => {
+      const c = cells.find((x: any) => x.weekNumber === week && x.domain === subject && (x.subDomain || '') === column);
+      return c?.content || '';
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Back button */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => { setSelectedPlan(null); setPlanDetail(null); }}
+            className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back to list
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleValidate('REJECTED')}
+              disabled={validating}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+            >
+              {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+              Reject
+            </button>
+            <button
+              onClick={() => handleValidate('VALIDATED')}
+              disabled={validating || !directorSignature}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
+              title={!directorSignature ? "Signature required" : "Validate"}
+            >
+              {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Validate
+            </button>
+          </div>
+        </div>
+
+        {/* Plan info */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <h3 className="text-lg font-bold text-slate-900">
+            Scheme of Work — {selectedPlan.classLevel} — {selectedPlan.month}
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Teacher: {selectedPlan.teacherName || '—'} · Status: {selectedPlan.status}
+          </p>
+        </div>
+
+        {/* Director observation */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <label className="block text-sm font-bold text-slate-700 mb-2">Director's Observation</label>
+          <textarea
+            value={directorObservation}
+            onChange={(e) => setDirectorObservation(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            rows={3}
+            placeholder="Enter your observation (visible to the teacher)..."
+          />
+        </div>
+
+        {/* Scheme of Work tables — one per subject, with observation column */}
+        {detailLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+        ) : subjects.length === 0 ? (
+          <div className="text-center py-8 text-slate-400">No subjects found in this plan.</div>
+        ) : (
+          subjects.map((subject: string) => (
+            <div key={subject} className="bg-white rounded-xl border-2 border-slate-800 overflow-hidden shadow-sm">
+              <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+                <span className="text-base font-bold tracking-wide">SCHEME OF WORK</span>
+                <span className="text-sm font-semibold">{String(subject || '').toUpperCase()}</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs" style={{ minWidth: "1200px" }}>
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase w-12">Week</th>
+                      {SCHEME_COLUMNS.map(col => (
+                        <th key={col} className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">{col}</th>
+                      ))}
+                      <th className="p-2 border border-slate-300 text-center font-bold text-red-700 uppercase w-32">Director Obs.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {WEEKS.map(week => (
+                      <tr key={week} className={week % 2 === 0 ? "bg-slate-50/50" : ""}>
+                        <td className="p-2 border border-slate-300 text-center font-bold text-slate-700 bg-slate-100">{week}</td>
+                        {SCHEME_COLUMNS.map(col => (
+                          <td key={col} className="p-2 border border-slate-300 text-slate-700" dangerouslySetInnerHTML={{ __html: getCell(week, subject, col) || '—' }} />
+                        ))}
+                        <td className="p-2 border border-slate-300 bg-red-50/30">
+                          {/* Director observation per row — stored in cell with subDomain "DirectorObs" */}
+                          <div className="text-xs text-slate-600" dangerouslySetInnerHTML={{ __html: getCell(week, subject, 'DirectorObs') || '—' }} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* Signatures */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white rounded-xl border border-slate-200 p-4">
+          <div>
+            <div className="text-sm font-bold text-slate-800">Class Teacher</div>
+            {planDetail.teacherSignature ? (
+              <img src={planDetail.teacherSignature} alt="Teacher signature" className="max-h-20 mt-2" />
+            ) : (
+              <div className="text-xs text-slate-400 mt-2">No signature</div>
+            )}
+          </div>
+          <div>
+            <div className="text-sm font-bold text-slate-800">Director</div>
+            {directorSignature ? (
+              <img src={directorSignature} alt="Director signature" className="max-h-20 mt-2" />
+            ) : (
+              <div className="text-xs text-slate-400 mt-2">No signature configured</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ⭐ Render list view
+  return (
+    <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+        {(['SUBMITTED', 'VALIDATED', 'REJECTED'] as const).map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusTab(s)}
+            className={cn(
+              "flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all",
+              statusTab === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"
+            )}
+          >
+            {s === 'SUBMITTED' ? 'Pending' : s === 'VALIDATED' ? 'Validated' : 'Rejected'}
+            {s === 'SUBMITTED' && pendingPlans.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">{pendingPlans.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : pendingPlans.length === 0 ? (
+        <div className="text-center py-12 text-slate-400">
+          <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          <p>No Scheme of Work {statusTab === 'SUBMITTED' ? 'pending' : statusTab === 'VALIDATED' ? 'validated' : 'rejected'}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pendingPlans.map((plan, idx) => (
+            <button
+              key={plan.id || idx}
+              onClick={() => loadPlanDetail(plan)}
+              className="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
+            >
+              <div>
+                <div className="font-bold text-slate-900">{plan.classLevel} — {plan.month}</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Teacher: {plan.teacherName || '—'} · Submitted: {plan.submittedAt ? new Date(plan.submittedAt).toLocaleDateString('en-GB') : '—'}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "px-2 py-1 rounded-full text-xs font-bold",
+                  plan.status === 'SUBMITTED' ? "bg-blue-100 text-blue-700" :
+                  plan.status === 'VALIDATED' ? "bg-emerald-100 text-emerald-700" :
+                  "bg-red-100 text-red-700"
+                )}>
+                  {plan.status}
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>

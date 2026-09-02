@@ -69,6 +69,11 @@ export interface ContractData {
   providerSignatureDataUrl?: string | null; // Provider signature (admin)
   promoterSignedAt?: string;
   providerSignedAt?: string;
+
+  // ⭐ Contrat déjà signé manuellement (version papier) : aucune signature
+  //    numérique n'est recueillie ; le PDF est délivré avec la mention
+  //    « déjà signé manuellement » (signature sur l'exemplaire papier).
+  signedManually?: boolean;
 }
 
 @Injectable()
@@ -309,6 +314,29 @@ export class ContractGenerationService {
       text-align: center;
       padding: 20px 0;
     }
+    .manual-signed-banner {
+      background: #fffbeb;
+      border: 1px solid #f59e0b;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 9px;
+      color: #92400e;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+    .manual-sign-mention {
+      font-size: 9px;
+      color: #92400e;
+      text-align: center;
+      padding: 16px 0 12px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .manual-sign-mention .sub {
+      font-size: 8px;
+      font-weight: 400;
+      color: #b45309;
+    }
     .footer {
       background: #0a1d3f;
       color: #bfdbfe;
@@ -477,7 +505,26 @@ export class ContractGenerationService {
 
     <!-- ── Section signatures ── -->
     <div class="signature-section">
-      <h3>✍️ Signatures électroniques</h3>
+      ${data.signedManually
+        ? `<h3>✒️ Signatures</h3>
+      <div class="manual-signed-banner">
+        <strong>Contrat déjà signé manuellement</strong> — les signatures des deux parties ont été
+        apposées sur la version papier du présent contrat. La présente version numérique est délivrée
+        à titre de copie conforme pour archivage ; aucune signature numérique n'a été recueillie.
+      </div>
+      <div class="signature-grid">
+        <div class="signature-box">
+          <div class="label">Pour le Client — ${data.promoterName} (Promoteur)</div>
+          <div class="manual-sign-mention">✒️ Déjà signé manuellement<br /><span class="sub">(voir exemplaire papier)</span></div>
+          <div class="date">Date : ${data.promoterSignedAt ? new Date(data.promoterSignedAt).toLocaleDateString('fr-FR') : dateStr}</div>
+        </div>
+        <div class="signature-box">
+          <div class="label">Pour le Prestataire — YEHI OR Tech</div>
+          <div class="manual-sign-mention">✒️ Déjà signé manuellement<br /><span class="sub">(voir exemplaire papier)</span></div>
+          <div class="date">Date : ${data.providerSignedAt ? new Date(data.providerSignedAt).toLocaleDateString('fr-FR') : dateStr}</div>
+        </div>
+      </div>`
+        : `<h3>✍️ Signatures électroniques</h3>
       <div class="signature-grid">
         <div class="signature-box">
           <div class="label">Pour le Client — ${data.promoterName} (Promoteur)</div>
@@ -495,7 +542,7 @@ export class ContractGenerationService {
           }
           <div class="date">Date : ${data.providerSignedAt ? new Date(data.providerSignedAt).toLocaleDateString('fr-FR') : '____ / ____ / ________'}</div>
         </div>
-      </div>
+      </div>`}
       <p style="text-align: center; font-size: 9px; color: #6b7280; margin-top: 6px;">
         Fait à Parakou, le ${dateStr}, en deux (2) exemplaires originaux.
       </p>

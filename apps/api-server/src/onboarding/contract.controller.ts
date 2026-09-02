@@ -28,6 +28,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { ContractGenerationService, ContractData, ContractInstallment } from './contract-generation.service';
 import { OnboardingService, CashPaymentMarking } from './services/onboarding.service';
 import { EmailService } from '../communication/services/email.service';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 
 /**
  * ⭐ Les endpoints contrat sont PUBLICS : ils sont appelés pendant le flux
@@ -46,6 +47,7 @@ export class ContractController {
     private readonly contractService: ContractGenerationService,
     private readonly onboardingService: OnboardingService,
     private readonly emailService: EmailService,
+    private readonly puppeteerPool: PuppeteerPoolService,
   ) {}
 
   /**
@@ -71,6 +73,12 @@ export class ContractController {
    *      - Les credentials de connexion (email + URL de login)
    *      - Le mot de passe n'est PAS inclus (choisi à l'étape 2)
    *
+   * ⭐ Flux "Contrat déjà signé manuellement" (signedManually=true) :
+   *   Le contrat a été signé sur papier par les deux parties. Aucune signature
+   *   numérique n'est recueillie. Le contrat PDF est quand même généré avec la
+   *   mention « déjà signé manuellement », l'école est créée, et le promoteur
+   *   reçoit l'email avec le contrat PDF + ses identifiants de connexion.
+   *
    * Flux "Envoyer pour signature différée" (signLater=true) :
    *   1. Envoie un email au promoteur avec un lien pour signer plus tard
    *      (/signup/contract-sign?draftId=...)
@@ -83,20 +91,26 @@ export class ContractController {
       promoterSignature: string;
       providerSignature?: string;
       signLater?: boolean;
+      // ⭐ Contrat déjà signé manuellement (version papier)
+      signedManually?: boolean;
       contractData?: ContractData;
       paymentMarked?: CashPaymentMarking & {
         installments?: ContractInstallment[];
       };
     },
   ) {
-    this.logger.log(`Contract sign request: draft=${body.draftId}, signLater=${body.signLater}`);
+    this.logger.log(`Contract sign request: draft=${body.draftId}, signLater=${body.signLater}, signedManually=${body.signedManually}`);
 
     // ⭐ Persister le marquage de paiement en espèces avant tout (signature
     //    immédiate OU différée) — les flags survivent ainsi au rechargement
     //    du draft et alimentent le contrat + l'activation.
+    //    Le flag signedManually est persisté pour la traçabilité.
     if (body.paymentMarked && body.draftId) {
       try {
-        await this.onboardingService.markCashPayment(body.draftId, body.paymentMarked);
+        await this.onboardingService.markCashPayment(body.draftId, {
+          ...body.paymentMarked,
+          ...(body.signedManually ? { signedManually: true } : {}),
+        });
       } catch (err: any) {
         // Non-bloquant : l'activation relira les flags depuis le draft
         this.logger.warn(`⚠️  Failed to persist payment marking: ${err.message}`);
@@ -118,8 +132,10 @@ export class ContractController {
       }
     }
 
-    // ⭐ Signature immédiate : les deux parties signent en présence
-    if (!body.promoterSignature) {
+    // ⭐ Signature immédiate : les deux parties signent en présence.
+    //    SAUF si le contrat a déjà été signé manuellement (version papier) :
+    //    aucune signature numérique n'est exigée.
+    if (!body.promoterSignature && !body.signedManually) {
       return {
         success: false,
         message: 'La signature du promoteur est requise.',
@@ -135,16 +151,39 @@ export class ContractController {
     // 2. Construire les données du contrat si non fournies
     const contractData: ContractData = body.contractData || this.buildContractDataFromDraft(draft, body);
 
-    // 3. Générer le contrat PDF avec les signatures intégrées
+    // ⭐ Détection du flag « signé manuellement » (body explicite, contractData,
+    //    ou marquage persisté) — si actif, on NE prend PAS la signature numérique.
+    const signedManually = !!body.signedManually
+      || !!contractData.signedManually
+      || !!(body.paymentMarked as any)?.signedManually;
+
+    // 3. Générer le contrat PDF — avec signatures intégrées OU avec la mention
+    //    « déjà signé manuellement » (aucune signature numérique recueillie)
+    const nowIso = new Date().toISOString();
     const contractResult = await this.contractService.generateContractPdf({
       ...contractData,
-      promoterSignatureDataUrl: body.promoterSignature,
-      providerSignatureDataUrl: body.providerSignature,
-      promoterSignedAt: new Date().toISOString(),
-      providerSignedAt: body.providerSignature ? new Date().toISOString() : undefined,
+      ...(signedManually
+        ? {
+          promoterSignatureDataUrl: undefined,
+          providerSignatureDataUrl: undefined,
+          signedManually: true,
+          promoterSignedAt: nowIso,
+          providerSignedAt: nowIso,
+        }
+        : {
+          promoterSignatureDataUrl: body.promoterSignature,
+          providerSignatureDataUrl: body.providerSignature,
+          promoterSignedAt: nowIso,
+          providerSignedAt: body.providerSignature ? nowIso : undefined,
+        }),
     });
 
     this.logger.log(`✅ Contract PDF generated: ${contractResult.fileName}`);
+
+    // ⭐ 3bis. Convertir le HTML du contrat en VRAI PDF (pièce jointe email).
+    //    Le HTML reste servi pour la consultation en ligne (route :fileName) ;
+    //    le promoteur reçoit lui un vrai PDF en pièce jointe.
+    const contractPdf = await this.renderContractPdf(contractResult.filePath, contractResult.fileName);
 
     // 4. Créer le paiement en espèces + activer le tenant (flux unifié)
     let tenantInfo: {
@@ -169,6 +208,7 @@ export class ContractController {
     }
 
     // 5. Envoyer l'email avec le contrat PDF signé + credentials
+    //    (mention « déjà signé manuellement » si applicable)
     try {
       await this.sendSignedContractEmail(
         body.draftId,
@@ -177,6 +217,8 @@ export class ContractController {
         tenantInfo?.subdomain,
         tenantInfo?.hostname,
         tenantInfo?.portalUrl,
+        signedManually,
+        contractPdf,
       );
       this.logger.log(`✅ Signed contract email sent to promoter`);
     } catch (err: any) {
@@ -186,10 +228,13 @@ export class ContractController {
 
     return {
       success: true,
-      message: 'Contrat signé avec succès. Le PDF signé a été envoyé par email avec vos identifiants de connexion.',
+      message: signedManually
+        ? 'Contrat enregistré (déjà signé manuellement). Le PDF avec la mention « déjà signé manuellement » a été envoyé par email avec vos identifiants de connexion.'
+        : 'Contrat signé avec succès. Le PDF signé a été envoyé par email avec vos identifiants de connexion.',
       signLater: false,
-      promoterSigned: !!body.promoterSignature,
-      providerSigned: !!body.providerSignature,
+      signedManually,
+      promoterSigned: !!body.promoterSignature || signedManually,
+      providerSigned: !!body.providerSignature || signedManually,
       contractUrl: contractResult.fileUrl,
       tenantId: tenantInfo?.tenantId,
       subdomain: tenantInfo?.subdomain,
@@ -220,7 +265,52 @@ export class ContractController {
     stream.pipe(res);
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────
+  // ─── Helpers ───────────────────────────────────────────────────────────
+
+  /**
+   * ⭐ Convertit le HTML du contrat en vrai PDF (via Puppeteer, même pool que
+   *    les bulletins/fiches). Retourne :
+   *    - { buffer, filename } en cas de succès (PDF A4) ;
+   *    - { buffer, filename } du HTML brut en secours (si Chromium indisponible) ;
+   *    - null si le fichier contrat est introuvable.
+   */
+  private async renderContractPdf(
+    contractFilePath: string,
+    contractFileName: string,
+  ): Promise<{ buffer: Buffer; filename: string } | null> {
+    if (!fs.existsSync(contractFilePath)) {
+      this.logger.warn(`Contract file not found at ${contractFilePath} — no PDF to attach`);
+      return null;
+    }
+
+    try {
+      const html = fs.readFileSync(contractFilePath, 'utf-8');
+      const { page } = await this.puppeteerPool.acquirePage();
+      try {
+        await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // Laisser les images base64 (logos) se charger
+        await new Promise((r) => setTimeout(r, 300));
+        const pdf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '10mm', bottom: '10mm', left: '8mm', right: '8mm' },
+        });
+        return { buffer: Buffer.from(pdf), filename: contractFileName.replace(/\.html$/, '.pdf') };
+      } finally {
+        await this.puppeteerPool.releasePage(page);
+      }
+    } catch (err: any) {
+      // ⚠️ Fallback : Chromium indisponible → joindre le HTML tel quel
+      //    (pièce jointe ouvrable dans un navigateur). On garde l'extension
+      //    réelle pour éviter un PDF corrompu.
+      this.logger.warn(`⚠️  PDF rendering failed (${err.message}) — HTML file will be attached instead`);
+      try {
+        return { buffer: fs.readFileSync(contractFilePath), filename: contractFileName };
+      } catch {
+        return null;
+      }
+    }
+  }
 
   /**
    * Construit l'objet ContractData à partir du draft (si non fourni par le frontend).
@@ -275,6 +365,8 @@ export class ContractController {
   /**
    * Envoie l'email avec le contrat PDF signé + credentials au promoteur.
    * ⭐ Inclut le récapitulatif du paiement en espèces (mode YEHI OR Tech).
+   * ⭐ Si signedManually : mention « déjà signé manuellement » (version papier)
+   *    à la place de la confirmation de signature électronique.
    */
   private async sendSignedContractEmail(
     draftId: string,
@@ -283,6 +375,8 @@ export class ContractController {
     subdomain?: string,
     hostname?: string,
     portalUrl?: string,
+    signedManually?: boolean,
+    contractPdf?: { buffer: Buffer; filename: string } | null,
   ): Promise<void> {
     const draft = await this.onboardingService.getDraft(draftId);
     if (!draft) {
@@ -366,22 +460,38 @@ export class ContractController {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Contrat signé — Academia Helm</title>
+  <title>${signedManually ? 'Contrat (déjà signé manuellement)' : 'Contrat signé'} — Academia Helm</title>
 </head>
 <body style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1f2937;">
 
   <div style="background: linear-gradient(135deg, #0a1d3f 0%, #0b2f73 100%); padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
     <h1 style="color: #ffffff; margin: 0; font-size: 22px;">Academia <span style="color: #f5b335;">Helm</span></h1>
-    <p style="color: #bfdbfe; margin: 4px 0 0; font-size: 13px;">Contrat d'abonnement signé</p>
+    <p style="color: #bfdbfe; margin: 4px 0 0; font-size: 13px;">${signedManually ? 'Contrat d\'abonnement — déjà signé manuellement' : 'Contrat d\'abonnement signé'}</p>
   </div>
 
   <div style="background: #ffffff; padding: 24px; border: 1px solid #e5e7eb; border-top: none;">
 
     <p style="font-size: 16px;">Bonjour <strong>${promoterName}</strong>,</p>
 
+    ${signedManually ? `
+    <p style="font-size: 14px; line-height: 1.6;">
+      Nous confirmons que votre contrat d'abonnement à la plateforme
+      <strong>Academia Helm</strong> a été <strong>déjà signé manuellement</strong> par les deux parties
+      (signatures apposées sur la version papier). La version numérique du contrat est jointe à cet
+      email avec la mention « déjà signé manuellement », à titre de copie conforme pour archivage.
+    </p>
+    <div style="background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 12px 16px; margin: 16px 0; text-align: center;">
+      <p style="margin: 0; font-size: 13px; color: #92400e;">
+        ✒️ <strong>Contrat déjà signé manuellement</strong> — aucune signature numérique n'a été recueillie.
+      </p>
+    </div>
+    ` : `
     <p style="font-size: 14px; line-height: 1.6;">
       Nous avons le plaisir de vous confirmer que votre contrat d'abonnement à la plateforme
       <strong>Academia Helm</strong> a été signé électroniquement par les deux parties.
+    </p>
+    `}
+    <p style="font-size: 14px; line-height: 1.6;">
       Votre école <strong>${draft.schoolName}</strong> est désormais créée et active sur la plateforme.
     </p>
 
@@ -410,7 +520,7 @@ export class ContractController {
     </div>
 
     <p style="font-size: 13px; line-height: 1.6; color: #6b7280;">
-      📎 Le contrat signé est joint à cet email au format PDF. Conservez-le précieusement,
+      📎 ${signedManually ? 'Le contrat (mention « déjà signé manuellement ») est joint à cet email au format PDF' : 'Le contrat signé est joint à cet email au format PDF'}. Conservez-le précieusement,
       il constitue la preuve de votre abonnement et fait foi entre les parties.
     </p>
 
@@ -435,13 +545,20 @@ export class ContractController {
 </body>
 </html>`;
 
-    // Lire le fichier contrat pour l'attacher
-    let attachment: { filename: string; path: string } | undefined;
-    if (fs.existsSync(contractFilePath)) {
+    // ⭐ Pièce jointe : VRAI PDF (rendu via Puppeteer) ; fallback : fichier HTML
+    //    ⚠️ Resend n'accepte PAS `path` — le contenu doit être passé en Buffer
+    //    (l'email service l'encode en base64). Sans cela, la pièce jointe était
+    //    silencieusement ignorée.
+    let attachment: { filename: string; content: Buffer } | undefined;
+    if (contractPdf?.buffer?.length) {
+      attachment = { filename: contractPdf.filename, content: contractPdf.buffer };
+      this.logger.log(`📎 Attaching real PDF: ${attachment.filename} (${attachment.content.length} bytes)`);
+    } else if (fs.existsSync(contractFilePath)) {
       attachment = {
-        filename: contractFileName.replace(/\.html$/, '.pdf'),
-        path: contractFilePath,
+        filename: contractFileName,
+        content: fs.readFileSync(contractFilePath),
       };
+      this.logger.warn(`Attaching HTML file as fallback: ${contractFileName}`);
     } else {
       this.logger.warn(`Contract file not found at ${contractFilePath} — email will be sent without attachment`);
     }
@@ -450,7 +567,9 @@ export class ContractController {
       to,
       from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
       fromName: 'Academia Helm',
-      subject: `✅ Contrat signé — ${draft.schoolName} | Academia Helm`,
+      subject: signedManually
+        ? `✅ Contrat déjà signé manuellement — ${draft.schoolName} | Academia Helm`
+        : `✅ Contrat signé — ${draft.schoolName} | Academia Helm`,
       html,
       attachments: attachment ? [attachment] : undefined,
     });

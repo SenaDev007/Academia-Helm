@@ -50,6 +50,9 @@ export interface CashPaymentMarking {
   paymentPlan?: 'full' | 'installments';
   installments?: OnboardingInstallment[];
   downPaymentReceived?: boolean;
+  // ⭐ Contrat déjà signé manuellement (version papier) — persisté dans
+  //    priceSnapshot.paymentMarked pour la traçabilité et le contrat.
+  signedManually?: boolean;
 }
 
 @Injectable()

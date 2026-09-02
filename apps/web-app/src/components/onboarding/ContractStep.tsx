@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
-import { PenTool, Send, CheckCircle2, Loader2, User, Building2, FileText, Banknote } from 'lucide-react';
+import { PenTool, Send, CheckCircle2, Loader2, User, Building2, FileText, Banknote, Stamp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
@@ -81,6 +81,11 @@ export default function ContractStep({
 }: ContractStepProps) {
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
   const [providerSignature, setProviderSignature] = useState<string | null>(null);
+  // ⭐ Contrat déjà signé manuellement (version papier) : aucune signature
+  //    numérique n'est recueillie. Le contrat PDF part quand même par email
+  //    avec la mention « déjà signé manuellement », l'école est créée et le
+  //    promoteur reçoit ses identifiants.
+  const [signedManually, setSignedManually] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -105,7 +110,9 @@ export default function ContractStep({
   };
 
   const handleSignNow = async () => {
-    if (!promoterSignature) {
+    // ⭐ Signature numérique exigée — SAUF si le contrat a déjà été signé
+    //    manuellement sur papier (case à cocher).
+    if (!promoterSignature && !signedManually) {
       toast({
         title: 'Signature manquante',
         description: 'Le promoteur doit apposer sa signature avant de finaliser.',
@@ -122,6 +129,8 @@ export default function ContractStep({
         subscriptionPaid: isInstallments ? downPaymentReceived !== false : subscriptionPaid,
         bilingualPaid: isInstallments ? bilingual : (bilingual ? bilingualPaid : false),
         receivedBy,
+        // ⭐ Trace « signé manuellement » dans le draft (traçabilité + contrat)
+        ...(signedManually ? { signedManually: true as const } : {}),
         ...(isInstallments
           ? {
               paymentPlan: 'installments' as const,
@@ -142,10 +151,20 @@ export default function ContractStep({
           totalYearOne,
           paymentMethod: 'cash' as const,
           ...paymentMarked,
-          promoterSignatureDataUrl: promoterSignature,
-          providerSignatureDataUrl: providerSignature,
-          promoterSignedAt: new Date().toISOString(),
-          providerSignedAt: providerSignature ? new Date().toISOString() : undefined,
+          ...(signedManually
+            ? {
+                // ⭐ Contrat signé manuellement : PAS de signature numérique,
+                //    mention « déjà signé manuellement » dans le PDF
+                signedManually: true,
+                promoterSignedAt: new Date().toISOString(),
+                providerSignedAt: new Date().toISOString(),
+              }
+            : {
+                promoterSignatureDataUrl: promoterSignature,
+                providerSignatureDataUrl: providerSignature,
+                promoterSignedAt: new Date().toISOString(),
+                providerSignedAt: providerSignature ? new Date().toISOString() : undefined,
+              }),
         }),
       });
 
@@ -159,7 +178,11 @@ export default function ContractStep({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draftId, promoterSignature, providerSignature: providerSignature || undefined,
+          draftId,
+          promoterSignature: signedManually ? undefined : promoterSignature,
+          providerSignature: !signedManually && providerSignature ? providerSignature : undefined,
+          // ⭐ Contrat déjà signé manuellement — pas de signature numérique
+          signedManually,
           signLater: false,
           paymentMarked,
           contractData: {
@@ -170,6 +193,7 @@ export default function ContractStep({
             totalYearOne,
             paymentMethod: 'cash' as const,
             ...paymentMarked,
+            ...(signedManually ? { signedManually: true } : {}),
           },
         }),
       });
@@ -182,8 +206,10 @@ export default function ContractStep({
       }
 
       toast({
-        title: 'Contrat signé — école créée',
-        description: "Le contrat signé et les identifiants de connexion ont été envoyés par email au promoteur.",
+        title: signedManually ? 'Contrat enregistré — école créée' : 'Contrat signé — école créée',
+        description: signedManually
+          ? "Le contrat PDF (mention « déjà signé manuellement ») et les identifiants de connexion ont été envoyés par email au promoteur."
+          : "Le contrat signé et les identifiants de connexion ont été envoyés par email au promoteur.",
       });
       onComplete({
         signed: true,
@@ -547,36 +573,90 @@ export default function ContractStep({
               {/* ── Section signatures — intégrée en bas ── */}
               <section className="bg-gray-50 border border-gray-200 rounded p-1.5 mt-auto">
                 <h4 className="font-bold text-[#0a1d3f] mb-1 flex items-center gap-1 text-[9px]">
-                  <PenTool className="w-2.5 h-2.5" /> Signatures électroniques
+                  <PenTool className="w-2.5 h-2.5" />
+                  {signedManually ? 'Signatures — déjà apposées sur papier' : 'Signatures électroniques'}
                 </h4>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <div className="flex items-center gap-1 mb-px text-[8px] font-semibold text-gray-600">
-                      <User className="w-2 h-2" /> Pour le Client — {promoterName}
+
+                {/* ⭐ Case à cocher : contrat déjà signé manuellement (papier).
+                    Cochée → aucune signature numérique n'est recueillie ; le
+                    PDF part avec la mention « déjà signé manuellement ». */}
+                <label
+                  className={`flex items-start gap-1.5 cursor-pointer select-none text-[8px] leading-tight rounded px-1.5 py-1 mb-1 border ${
+                    signedManually
+                      ? 'bg-amber-100 border-amber-400 text-amber-900'
+                      : 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={signedManually}
+                    onChange={(e) => setSignedManually(e.target.checked)}
+                    disabled={loading}
+                    className="accent-amber-600 w-2.5 h-2.5 mt-0.5 shrink-0"
+                  />
+                  <Stamp className="w-2.5 h-2.5 text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Contrat déjà signé manuellement</strong> (version papier) — aucune
+                    signature numérique ne sera demandée. Le contrat PDF sera envoyé par email avec
+                    la mention « déjà signé manuellement », l'école sera créée et le promoteur
+                    recevra ses identifiants.
+                  </span>
+                </label>
+
+                {signedManually ? (
+                  /* ⭐ Mention « déjà signé manuellement » à la place des canvas */
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="border border-amber-300 bg-amber-50 rounded p-1 text-center">
+                      <div className="flex items-center gap-1 justify-center mb-0.5 text-[8px] font-semibold text-gray-600">
+                        <User className="w-2 h-2" /> Pour le Client — {promoterName}
+                      </div>
+                      <div className="text-[9px] font-bold text-amber-800 py-1 leading-tight">
+                        ✒️ Déjà signé manuellement
+                        <span className="block text-[7px] font-normal text-amber-700">(voir exemplaire papier)</span>
+                      </div>
+                      <p className="text-[7px] text-gray-400">Date : {today}</p>
                     </div>
-                    <SignatureCanvas
-                      width={250}
-                      height={55}
-                      onSignatureChange={setPromoterSignature}
-                      placeholder="Signature du promoteur"
-                    />
-                    <p className="text-[7px] text-gray-400">Date : {today}</p>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1 mb-px text-[8px] font-semibold text-gray-600">
-                      <Building2 className="w-2 h-2" /> Pour le Prestataire — YEHI OR Tech
+                    <div className="border border-amber-300 bg-amber-50 rounded p-1 text-center">
+                      <div className="flex items-center gap-1 justify-center mb-0.5 text-[8px] font-semibold text-gray-600">
+                        <Building2 className="w-2 h-2" /> Pour le Prestataire — YEHI OR Tech
+                      </div>
+                      <div className="text-[9px] font-bold text-amber-800 py-1 leading-tight">
+                        ✒️ Déjà signé manuellement
+                        <span className="block text-[7px] font-normal text-amber-700">(voir exemplaire papier)</span>
+                      </div>
+                      <p className="text-[7px] text-gray-400">Date : {today}</p>
                     </div>
-                    <SignatureCanvas
-                      width={250}
-                      height={55}
-                      onSignatureChange={setProviderSignature}
-                      placeholder="Signature YEHI OR Tech"
-                    />
-                    <p className="text-[7px] text-gray-400">
-                      Date : {providerSignature ? today : '____ / ____ / ________'}
-                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div>
+                      <div className="flex items-center gap-1 mb-px text-[8px] font-semibold text-gray-600">
+                        <User className="w-2 h-2" /> Pour le Client — {promoterName}
+                      </div>
+                      <SignatureCanvas
+                        width={250}
+                        height={55}
+                        onSignatureChange={setPromoterSignature}
+                        placeholder="Signature du promoteur"
+                      />
+                      <p className="text-[7px] text-gray-400">Date : {today}</p>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1 mb-px text-[8px] font-semibold text-gray-600">
+                        <Building2 className="w-2 h-2" /> Pour le Prestataire — YEHI OR Tech
+                      </div>
+                      <SignatureCanvas
+                        width={250}
+                        height={55}
+                        onSignatureChange={setProviderSignature}
+                        placeholder="Signature YEHI OR Tech"
+                      />
+                      <p className="text-[7px] text-gray-400">
+                        Date : {providerSignature ? today : '____ / ____ / ________'}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <p className="text-center text-[8px] text-gray-500 mt-1">
                   Fait à Parakou, le {today}, en deux (2) exemplaires originaux.
                 </p>
@@ -597,12 +677,12 @@ export default function ContractStep({
       <div className="flex-shrink-0 flex gap-2 justify-center px-4 py-1.5 bg-white border-t border-slate-200">
         <Button
           onClick={handleSignNow}
-          disabled={loading || !promoterSignature}
+          disabled={loading || (!promoterSignature && !signedManually)}
           size="sm"
           className="bg-emerald-600 hover:bg-emerald-700 text-xs h-8"
         >
           {loading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
-          Signer et créer l'école
+          {signedManually ? 'Créer l\'école (contrat signé)' : 'Signer et créer l\'école'}
         </Button>
         <Button
           onClick={handleSendForLater}

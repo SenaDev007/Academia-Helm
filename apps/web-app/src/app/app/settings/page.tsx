@@ -2463,13 +2463,17 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
+    // ⭐ Onglet Bilingue AVANT Structure : l'utilisateur doit activer le mode bilingue
+    //    AVANT de configurer la structure pédagogique, car l'activation bilingue
+    //    auto-crée la structure EN (Nursery/Primary) miroir de la structure FR.
+    //    Si on active le bilingue APRÈS avoir créé la structure FR, le seed
+    //    synchronise quand même, mais c'est plus propre de l'activer avant.
+    ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
     // ⭐ Cachets et Tampons déplacé vers le module RH → onglet "Administration".
     //    La génération des cachets (circulaire, rectangulaire, nominatif) se fait
     //    maintenant directement depuis l'espace administration du module RH.
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
-    // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
-    ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
     { id: 'billing' as TabId, label: 'Facturation', icon: CreditCard },

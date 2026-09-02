@@ -39,6 +39,15 @@ import { prismaCreateDefaults } from '../common/utils/prisma-helpers';
  *
  * ⭐ AUCUNE OPÉRATION SUR LE SECONDAIRE dans cette V1. L'utilisateur a
  *    explicitement demandé de laisser le secondaire de côté pour l'instant.
+ *
+ * ⭐ MODÈLES PRISMA (vérifié dans schema.prisma) :
+ *    - EducationLevel : tenantId, name, isEnabled, order  (PAS de isActive !)
+ *    - EducationCycle : levelId, name, order  (PAS de tenantId, PAS de isActive !)
+ *    - EducationGrade : cycleId, name, code, order, isEnabled  (PAS de tenantId, PAS de isActive !)
+ *    - Classroom      : tenantId, academicYearId, gradeId, name, code, capacity, isActive, isArchived
+ *    - AcademicLevel  : tenantId, academicYearId, name, orderIndex, isActive
+ *    - AcademicCycle  : tenantId, academicYearId, levelId, name, orderIndex, isActive
+ *    - AcademicClass  : tenantId, academicYearId, levelId, cycleId, name, code, capacity, languageTrack, isActive
  * ============================================================================
  */
 
@@ -102,14 +111,12 @@ export class BilingualStructureService {
     if (!frName) return '';
     let enName = frName;
     // Remplacer par ordre de longueur décroissante pour éviter les conflits
-    // (ex: "CM1" avant "CM2" pour ne pas matcher "CM" puis "1")
     const orderedKeys = ['Maternelle 1', 'Maternelle 2', 'CM1', 'CM2', 'CE1', 'CE2', 'CP', 'CI'];
     for (const frKey of orderedKeys) {
       const en = BilingualStructureService.CYCLE_FR_TO_EN[frKey];
       if (en && enName.includes(frKey)) {
-        // Remplacement global, case-sensitive (les noms officiels sont en majuscules ou title case)
         enName = enName.split(frKey).join(en);
-        break; // Un seul remplacement par nom (le premier match gagne)
+        break;
       }
     }
     return enName;
@@ -122,11 +129,9 @@ export class BilingualStructureService {
    */
   static translateClassCodeFrToEn(frCode: string): string {
     if (!frCode) return '';
-    // Chercher un match exact d'abord
     if (BilingualStructureService.GRADE_FR_TO_EN[frCode]) {
       return BilingualStructureService.GRADE_FR_TO_EN[frCode].code;
     }
-    // Chercher un match avec préfixe (ex: "CE1_A" → on cherche "CE1")
     for (const [frGrade, en] of Object.entries(BilingualStructureService.GRADE_FR_TO_EN)) {
       if (frCode.startsWith(frGrade)) {
         return frCode.replace(frGrade, en.code);
@@ -186,6 +191,10 @@ export class BilingualStructureService {
     };
 
     // ─── Étape 1-3 : EducationLevel + EducationCycle + EducationGrade EN ───
+    // ⭐ Attention aux champs Prisma réels :
+    //    - EducationLevel : isEnabled (pas isActive)
+    //    - EducationCycle : PAS de tenantId, PAS de isActive
+    //    - EducationGrade : isEnabled (pas isActive), PAS de tenantId
     for (const [frLevelName, enLevelName] of Object.entries(BilingualStructureService.LEVEL_FR_TO_EN)) {
       const frLevel = await this.prisma.educationLevel.findFirst({
         where: { tenantId, name: frLevelName },
@@ -196,7 +205,7 @@ export class BilingualStructureService {
         continue;
       }
 
-      // 1. Créer ou récupérer le niveau EN
+      // 1. Créer ou récupérer le niveau EN ( champ isEnabled, pas isActive )
       let enLevel = await this.prisma.educationLevel.findFirst({
         where: { tenantId, name: enLevelName },
       });
@@ -207,7 +216,7 @@ export class BilingualStructureService {
             tenantId,
             name: enLevelName,
             order: frLevel.order,
-            isActive: true,
+            isEnabled: true,
           },
         });
         stats.educationLevelsCreated++;
@@ -215,6 +224,7 @@ export class BilingualStructureService {
       }
 
       // 2-3. Pour chaque cycle FR, créer le cycle EN + son grade EN
+      //    ⭐ EducationCycle n'a PAS de tenantId ni isActive (uniquement levelId, name, order)
       for (const frCycle of frLevel.cycles) {
         const enCycleName = BilingualStructureService.CYCLE_FR_TO_EN[frCycle.name];
         if (!enCycleName) {
@@ -223,41 +233,41 @@ export class BilingualStructureService {
         }
 
         let enCycle = await this.prisma.educationCycle.findFirst({
-          where: { tenantId, levelId: enLevel.id, name: enCycleName },
+          where: { levelId: enLevel.id, name: enCycleName },
         });
         if (!enCycle) {
           enCycle = await this.prisma.educationCycle.create({
             data: {
               ...prismaCreateDefaults(),
-              tenantId,
               levelId: enLevel.id,
               name: enCycleName,
               order: frCycle.order,
-              isActive: true,
             },
           });
           stats.educationCyclesCreated++;
         }
 
+        // ⭐ EducationGrade : isEnabled (pas isActive), PAS de tenantId
         for (const frGrade of frCycle.grades) {
           const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGrade.code];
           if (!enGradeInfo) {
             stats.skipped++;
             continue;
           }
+          // ⭐ EducationGrade n'a pas de contrainte d'unicité sur (tenantId, code) —
+          //    seulement sur (cycleId, code). Donc on cherche par cycleId+code.
           const existingEnGrade = await this.prisma.educationGrade.findFirst({
-            where: { tenantId, code: enGradeInfo.code },
+            where: { cycleId: enCycle.id, code: enGradeInfo.code },
           });
           if (existingEnGrade) continue;
           await this.prisma.educationGrade.create({
             data: {
               ...prismaCreateDefaults(),
-              tenantId,
               cycleId: enCycle.id,
               name: enGradeInfo.name,
               code: enGradeInfo.code,
               order: frGrade.order,
-              isActive: true,
+              isEnabled: true,
             },
           });
           stats.educationGradesCreated++;
@@ -286,8 +296,21 @@ export class BilingualStructureService {
         const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frClassroom.grade.code];
         if (!enGradeInfo) continue;
 
+        // ⭐ Trouver le grade EN via le cycle EN correspondant
+        //    EducationGrade n'a pas de tenantId — on cherche via le cycle qui
+        //    appartient au niveau EN.
+        const enLevel = await this.prisma.educationLevel.findFirst({
+          where: { tenantId, name: { in: Object.values(BilingualStructureService.LEVEL_FR_TO_EN) } },
+        });
+        if (!enLevel) continue;
+
+        const enCycle = await this.prisma.educationCycle.findFirst({
+          where: { levelId: enLevel.id, name: enGradeInfo.name },
+        });
+        if (!enCycle) continue;
+
         const enGrade = await this.prisma.educationGrade.findFirst({
-          where: { tenantId, code: enGradeInfo.code },
+          where: { cycleId: enCycle.id, code: enGradeInfo.code },
         });
         if (!enGrade) continue;
 
@@ -317,6 +340,7 @@ export class BilingualStructureService {
     }
 
     // ─── Étape 5-7 : AcademicLevel + AcademicCycle + AcademicClass EN ───
+    // ⭐ AcademicLevel/AcademicCycle utilisent orderIndex (pas order) et isActive
     for (const year of academicYears) {
       const frAcademicLevels = await this.prisma.academicLevel.findMany({
         where: { tenantId, academicYearId: year.id },
@@ -333,7 +357,7 @@ export class BilingualStructureService {
         const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frAcademicLevel.name];
         if (!enLevelName) continue;
 
-        // 5. Créer AcademicLevel EN
+        // 5. Créer AcademicLevel EN (orderIndex, pas order)
         let enAcademicLevel = await this.prisma.academicLevel.findFirst({
           where: { tenantId, academicYearId: year.id, name: enLevelName },
         });
@@ -344,8 +368,7 @@ export class BilingualStructureService {
               tenantId,
               academicYearId: year.id,
               name: enLevelName,
-              code: enLevelName,
-              order: frAcademicLevel.order,
+              orderIndex: frAcademicLevel.orderIndex,
               isActive: true,
             },
           });
@@ -357,6 +380,7 @@ export class BilingualStructureService {
           const enCycleName = BilingualStructureService.CYCLE_FR_TO_EN[frAcademicCycle.name];
           if (!enCycleName) continue;
 
+          // ⭐ AcademicCycle a bien tenantId, academicYearId, levelId, orderIndex, isActive
           let enAcademicCycle = await this.prisma.academicCycle.findFirst({
             where: { tenantId, academicYearId: year.id, levelId: enAcademicLevel.id, name: enCycleName },
           });
@@ -369,7 +393,7 @@ export class BilingualStructureService {
                 levelId: enAcademicLevel.id,
                 name: enCycleName,
                 code: BilingualStructureService.translateClassCodeFrToEn(frAcademicCycle.code || frAcademicCycle.name),
-                order: frAcademicCycle.order,
+                orderIndex: frAcademicCycle.orderIndex,
                 isActive: true,
               },
             });
@@ -453,9 +477,27 @@ export class BilingualStructureService {
     const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGrade.code];
     if (!enGradeInfo) return null;
 
-    const enGrade = await this.prisma.educationGrade.findFirst({
-      where: { tenantId, code: enGradeInfo.code },
+    // ⭐ Trouver le grade EN via le cycle EN
+    //    EducationLevel a tenantId → on peut le chercher
+    //    EducationCycle n'a PAS de tenantId → on cherche via levelId
+    //    EducationGrade n'a PAS de tenantId → on cherche via cycleId
+    const enLevels = await this.prisma.educationLevel.findMany({
+      where: { tenantId, name: { in: Object.values(BilingualStructureService.LEVEL_FR_TO_EN) } },
     });
+    if (enLevels.length === 0) return null;
+
+    // Chercher le cycle EN qui porte le même nom que le grade EN ( Nursery 1, Primary 1, etc.)
+    let enGrade: any = null;
+    for (const enLevel of enLevels) {
+      const enCycle = await this.prisma.educationCycle.findFirst({
+        where: { levelId: enLevel.id, name: enGradeInfo.name },
+      });
+      if (!enCycle) continue;
+      enGrade = await this.prisma.educationGrade.findFirst({
+        where: { cycleId: enCycle.id, code: enGradeInfo.code },
+      });
+      if (enGrade) break;
+    }
     if (!enGrade) {
       this.logger.warn(`[BilingualStructure] EN grade ${enGradeInfo.code} not found — run seedEnglishStructureForTenant first`);
       return null;

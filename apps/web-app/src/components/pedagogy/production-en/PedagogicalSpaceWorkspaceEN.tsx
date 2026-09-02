@@ -78,7 +78,7 @@ const ALL_TABS = [
   //    in the scheme for ALL subjects assigned to their class.
   //    Same submission workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED.
   { id: 'monthly-planning', label: 'Scheme of Work', icon: CalendarClock, description: 'Term-based scheme', secondaryOnly: false, maternellePrimaireOnly: true },
-  { id: 'cahier-journal', label: 'Daily Log & Pedagogical Sheets', icon: FileSpreadsheet, description: 'Weekly grid + daily sheets', secondaryOnly: false, maternellePrimaireOnly: true },
+  { id: 'cahier-journal', label: 'Weekly Record of Work', icon: FileSpreadsheet, description: 'Weekly records + catalogue', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'weekly', label: 'Weekly Log', icon: CalendarDays, description: 'Institutional monitoring', secondaryOnly: false, maternellePrimaireOnly: false },
   // ⭐ Travaux & Suivi — accessible depuis l'Espace Pédagogique (directeurs/promoteurs)
   //    ET depuis la sidebar enseignant (/app/teacher/tasks)

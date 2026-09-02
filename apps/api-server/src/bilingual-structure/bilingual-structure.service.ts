@@ -276,6 +276,9 @@ export class BilingualStructureService {
     }
 
     // ─── Étape 4 : Classroom EN — pour chaque FR Classroom dans le scope ───
+    //    ⭐ On parcourt TOUTES les années académiques du tenant pour que le seed
+    //    rattrape aussi les classes créées AVANT l'activation du mode bilingue.
+    //    Opération idempotente : ne recrée pas ce qui existe déjà.
     const academicYears = await this.prisma.academicYear.findMany({
       where: { tenantId },
       select: { id: true },
@@ -289,26 +292,47 @@ export class BilingualStructureService {
           isArchived: false,
           grade: { code: { in: Object.keys(BilingualStructureService.GRADE_FR_TO_EN) } },
         },
-        include: { grade: true },
+        include: {
+          grade: {
+            include: {
+              cycle: {
+                include: {
+                  level: true, // ⭐ pour connaître le niveau FR (MATERNELLE/PRIMAIRE)
+                },
+              },
+            },
+          },
+        },
       });
 
       for (const frClassroom of frClassrooms) {
         const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frClassroom.grade.code];
         if (!enGradeInfo) continue;
 
-        // ⭐ Trouver le grade EN via le cycle EN correspondant
-        //    EducationGrade n'a pas de tenantId — on cherche via le cycle qui
-        //    appartient au niveau EN.
+        // ⭐ Déterminer le niveau EN correspondant au niveau FR du classroom
+        //    ex: frClassroom.grade.cycle.level.name = 'PRIMAIRE' → enLevelName = 'PRIMARY'
+        const frLevelName = frClassroom.grade?.cycle?.level?.name || '';
+        const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frLevelName];
+        if (!enLevelName) {
+          // Niveau FR hors scope (ex: SECONDAIRE) — skip
+          stats.skipped++;
+          continue;
+        }
+
+        // ⭐ Trouver le niveau EN SPÉCIFIQUE (NURSERY ou PRIMARY, pas n'importe lequel)
         const enLevel = await this.prisma.educationLevel.findFirst({
-          where: { tenantId, name: { in: Object.values(BilingualStructureService.LEVEL_FR_TO_EN) } },
+          where: { tenantId, name: enLevelName },
         });
         if (!enLevel) continue;
 
+        // ⭐ Trouver le cycle EN qui porte le même nom que le grade EN
+        //    ex: pour CE2 → enGradeInfo.name = 'Primary 3' → cycle EN 'Primary 3'
         const enCycle = await this.prisma.educationCycle.findFirst({
           where: { levelId: enLevel.id, name: enGradeInfo.name },
         });
         if (!enCycle) continue;
 
+        // ⭐ Trouver le grade EN dans ce cycle
         const enGrade = await this.prisma.educationGrade.findFirst({
           where: { cycleId: enCycle.id, code: enGradeInfo.code },
         });
@@ -477,27 +501,28 @@ export class BilingualStructureService {
     const enGradeInfo = BilingualStructureService.GRADE_FR_TO_EN[frGrade.code];
     if (!enGradeInfo) return null;
 
-    // ⭐ Trouver le grade EN via le cycle EN
-    //    EducationLevel a tenantId → on peut le chercher
-    //    EducationCycle n'a PAS de tenantId → on cherche via levelId
-    //    EducationGrade n'a PAS de tenantId → on cherche via cycleId
-    const enLevels = await this.prisma.educationLevel.findMany({
-      where: { tenantId, name: { in: Object.values(BilingualStructureService.LEVEL_FR_TO_EN) } },
-    });
-    if (enLevels.length === 0) return null;
+    // ⭐ Déterminer le niveau EN correspondant au niveau FR du classroom
+    //    ex: frGrade.cycle.level.name = 'PRIMAIRE' → enLevelName = 'PRIMARY'
+    const frLevelName = frGrade?.cycle?.level?.name || '';
+    const enLevelName = BilingualStructureService.LEVEL_FR_TO_EN[frLevelName];
+    if (!enLevelName) return null; // Niveau FR hors scope (ex: SECONDAIRE)
 
-    // Chercher le cycle EN qui porte le même nom que le grade EN ( Nursery 1, Primary 1, etc.)
-    let enGrade: any = null;
-    for (const enLevel of enLevels) {
-      const enCycle = await this.prisma.educationCycle.findFirst({
-        where: { levelId: enLevel.id, name: enGradeInfo.name },
-      });
-      if (!enCycle) continue;
-      enGrade = await this.prisma.educationGrade.findFirst({
-        where: { cycleId: enCycle.id, code: enGradeInfo.code },
-      });
-      if (enGrade) break;
-    }
+    // ⭐ Trouver le niveau EN SPÉCIFIQUE (NURSERY ou PRIMARY, pas n'importe lequel)
+    const enLevel = await this.prisma.educationLevel.findFirst({
+      where: { tenantId, name: enLevelName },
+    });
+    if (!enLevel) return null;
+
+    // ⭐ Trouver le cycle EN qui porte le même nom que le grade EN
+    const enCycle = await this.prisma.educationCycle.findFirst({
+      where: { levelId: enLevel.id, name: enGradeInfo.name },
+    });
+    if (!enCycle) return null;
+
+    // ⭐ Trouver le grade EN dans ce cycle
+    const enGrade = await this.prisma.educationGrade.findFirst({
+      where: { cycleId: enCycle.id, code: enGradeInfo.code },
+    });
     if (!enGrade) {
       this.logger.warn(`[BilingualStructure] EN grade ${enGradeInfo.code} not found — run seedEnglishStructureForTenant first`);
       return null;

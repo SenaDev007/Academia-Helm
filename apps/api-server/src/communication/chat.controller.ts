@@ -26,12 +26,18 @@ import {
   UseInterceptors, UploadedFile, BadRequestException, ForbiddenException, NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChatService } from './services/chat.service';
 import { StorageService } from '../common/services/storage.service';
 import { PushNotificationService } from './services/push-notification.service';
+// ⭐ V5 (chantier 1) : blocage d'utilisateurs (parité Yeshua blocks)
+import { ChatBlockService } from './services/chat-block.service';
+// ⭐ V5 (chantier 8) : ATLAS dans le chat (question + contexte utilisateur)
+import { ChatAtlasService } from './services/chat-atlas.service';
 // ⭐ V3-3: ORION-powered conversation summaries
 import { ChatSummaryService } from './services/chat-summary.service';
 // ⭐ V3-2: Whisper-powered audio transcriptions
@@ -49,6 +55,31 @@ import { LiveKitTokenService } from './services/livekit-token.service';
 //    the options INLINE to FileInterceptor below.
 import { memoryStorage } from 'multer';
 
+/**
+ * ⭐ V5 — Rôles globaux habilités aux actions d'administration transverses
+ *    (audit global, ajout de membres dans toute conversation du tenant).
+ *    Même logique que PUBLISHER_ROLES des annonces, élargie à la modération.
+ */
+const ADMIN_ROLES = new Set([
+  'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'PROMOTER', 'PROMOTEUR',
+  'DIRECTOR', 'DIRECTEUR', 'DIRECTOR_GENERAL', 'DIRECTEUR_GENERAL',
+  'SCHOOL_DIRECTOR', 'DIRECTEUR_ETABLISSEMENT', 'DEPUTY_DIRECTOR',
+  'PEDAGOGIC_DIRECTOR', 'DIRECTEUR_PEDAGOGIQUE', 'PEDAGOGIC_COORDINATOR',
+  'CENSEUR', 'SURVEILLANT_GENERAL',
+]);
+
+/**
+ * ⭐ V5 — Rôles autorisés à consulter l'audit global / modération de
+ *    communication (ADMIN/SUPER_ADMIN/DIRECTOR + rôles de modération).
+ */
+const MODERATION_ROLES = new Set([
+  'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'PROMOTER', 'PROMOTEUR',
+  'DIRECTOR', 'DIRECTEUR', 'DIRECTOR_GENERAL', 'DIRECTEUR_GENERAL',
+  'SCHOOL_DIRECTOR', 'DIRECTEUR_ETABLISSEMENT', 'DEPUTY_DIRECTOR',
+  'PEDAGOGIC_DIRECTOR', 'DIRECTEUR_PEDAGOGIQUE', 'PEDAGOGIC_COORDINATOR',
+  'CENSEUR', 'SURVEILLANT_GENERAL', 'MODERATOR',
+]);
+
 // ⭐ Multer options — passed inline to FileInterceptor('file', options)
 //    - Storage: memory (the StorageService uploads to R2/S3 afterwards)
 //    - Limit: 50 MB (audio files can be large)
@@ -64,6 +95,10 @@ export class ChatController {
     private readonly chatService: ChatService,
     private readonly storage: StorageService,
     private readonly pushService: PushNotificationService,
+    // ⭐ V5 (chantier 1) : blocage d'utilisateurs (parité Yeshua blocks)
+    private readonly chatBlockService: ChatBlockService,
+    // ⭐ V5 (chantier 8) : ATLAS dans le chat (alias /chat/atlas/ask)
+    private readonly chatAtlasService: ChatAtlasService,
     // ⭐ V3-3: ORION-powered conversation summaries
     private readonly summaryService: ChatSummaryService,
     // ⭐ V3-2: Whisper-powered audio transcriptions
@@ -75,6 +110,81 @@ export class ChatController {
     // ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
     private readonly livekitTokenService: LiveKitTokenService,
   ) {}
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 1) — BLOCAGE D'UTILISATEURS (parité Yeshua blocks)
+  //    POST   /chat/blocks/:userId        → bloque un membre
+  //    DELETE /chat/blocks/:userId        → débloque un membre
+  //    GET    /chat/blocks                → liste ( + ?includeBlockedMe=true )
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('blocks/:userId')
+  async blockUser(
+    @TenantId() tenantId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { userId: string },
+    @CurrentUser() jwtUser: { id?: string; role?: string },
+  ) {
+    // L'acteur = userId du body (pattern existant), à défaut l'identité JWT
+    const blockerId = body?.userId || jwtUser?.id;
+    if (!blockerId) throw new BadRequestException('userId is required');
+    const result = await this.chatBlockService.blockUser(tenantId, blockerId, targetUserId);
+    // Audit BLOCK_USER (modération transparente — même table que le reste du chat)
+    await this.chatService.writeAuditLog(null, blockerId, targetUserId, null, 'BLOCK_USER', { tenantId });
+    return result;
+  }
+
+  @Delete('blocks/:userId')
+  async unblockUser(
+    @TenantId() tenantId: string,
+    @Param('userId') targetUserId: string,
+    @Query('userId') userIdQuery?: string,
+    @Body() body?: { userId?: string },
+    @CurrentUser() jwtUser?: { id?: string; role?: string },
+  ) {
+    // DELETE avec ou sans body selon les clients — on accepte body ET query
+    const blockerId = body?.userId || userIdQuery || jwtUser?.id;
+    if (!blockerId) throw new BadRequestException('userId is required');
+    const result = await this.chatBlockService.unblockUser(tenantId, blockerId, targetUserId);
+    await this.chatService.writeAuditLog(null, blockerId, targetUserId, null, 'UNBLOCK_USER', { tenantId });
+    return result;
+  }
+
+  @Get('blocks')
+  async listBlocks(
+    @TenantId() tenantId: string,
+    @Query('userId') userId?: string,
+    @Query('includeBlockedMe') includeBlockedMe?: string,
+    @CurrentUser() jwtUser?: { id?: string },
+  ) {
+    const blockerId = userId || jwtUser?.id;
+    if (!blockerId) throw new BadRequestException('userId is required');
+    return this.chatBlockService.listBlocks(tenantId, blockerId, includeBlockedMe === 'true' || includeBlockedMe === '1' || includeBlockedMe === 'yes');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 8, spéc #18) — ATLAS DANS LE CHAT
+  //     POST /chat/atlas/ask { question, conversationId? }
+  //     Alias du endpoint POST /chat/v2/atlas/ask (helm-connect-v2.controller) :
+  //     même service, même garde-fou de contexte (conversations dont
+  //     l'utilisateur est participant, 50 derniers messages tronqués) et
+  //     même rate-limit 10 req/min. Réponse : { answer, model, … }.
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('atlas/ask')
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  async askAtlas(
+    @TenantId() tenantId: string,
+    @Body() body: { userId?: string; question: string; conversationId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    if (!body?.question || !body.question.trim()) {
+      throw new BadRequestException('question is required');
+    }
+    const userId = body.userId || jwtUser?.id;
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatAtlasService.ask(tenantId, userId, body.question, body.conversationId);
+  }
 
   // ═════════════════════════════════════════════════════════════════
   //  CONVERSATIONS
@@ -250,6 +360,11 @@ export class ChatController {
   }
 
   @Post('conversations/:id/messages/text')
+  // ⭐ V5 (chantier 4) — ANTI-SPAM : 30 messages/minute par IP pour l'envoi
+  //    de texte (les GET de polling restent au régime global — jamais throttlés
+  //    spécifiquement). Le guard global ThrottlerGuard (APP_GUARD) applique
+  //    ce décorateur au throttler nommé 'medium' pour CETTE route uniquement.
+  @Throttle({ medium: { limit: 30, ttl: 60000 } })
   async sendTextMessage(
     @TenantId() tenantId: string,
     @Param('id') conversationId: string,
@@ -263,6 +378,8 @@ export class ChatController {
 
   @Post('conversations/:id/messages/attachment')
   @UseInterceptors(FileInterceptor('file', CHAT_FILE_UPLOAD_OPTIONS))
+  // ⭐ V5 (chantier 4) — ANTI-SPAM : 30 envois/minute (pièces jointes comprises)
+  @Throttle({ medium: { limit: 30, ttl: 60000 } })
   async sendAttachmentMessage(
     @TenantId() tenantId: string,
     @Param('id') conversationId: string,
@@ -719,12 +836,33 @@ export class ChatController {
   }
 
   // ═════════════════════════════════════════════════════════════════
-  //  ⭐ GAP FILL: PEDAGOGICAL CONVERSATIONS
+  //  ⭐ V5 (chantier 7, spéc #8) — CONVERSATIONS PÉDAGOGIQUES
+  //     Body : { creatorId, type?: CLASS|SUBJECT|HOMEWORK|ACTIVITY|COURSE,
+  //              linkedEntityId?, participantIds?, classId?, subjectId?, name? }
+  //     (classId/subjectId restent acceptés — compatibilité V4)
   // ═════════════════════════════════════════════════════════════════
   @Post('conversations/pedagogical')
-  async createPedagogicalConversation(@TenantId() tenantId: string, @Body() body: { creatorId: string; classId: string; subjectId?: string; name?: string }) {
+  async createPedagogicalConversation(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      creatorId: string;
+      type?: 'CLASS' | 'SUBJECT' | 'HOMEWORK' | 'ACTIVITY' | 'COURSE';
+      linkedEntityId?: string;
+      participantIds?: string[];
+      classId?: string;
+      subjectId?: string;
+      name?: string;
+    },
+  ) {
     if (!body.creatorId) throw new BadRequestException('creatorId is required');
-    return this.chatService.createPedagogicalConversation(tenantId, body.creatorId, { classId: body.classId, subjectId: body.subjectId, name: body.name });
+    return this.chatService.createPedagogicalConversation(tenantId, body.creatorId, {
+      type: body.type,
+      linkedEntityId: body.linkedEntityId,
+      participantIds: body.participantIds,
+      classId: body.classId,
+      subjectId: body.subjectId,
+      name: body.name,
+    });
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -883,6 +1021,191 @@ export class ChatController {
   ) {
     if (!userId) throw new BadRequestException('userId is required');
     return this.chatService.getConversationMembers(tenantId, userId, conversationId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 3) — INVITABLE + ADD-MEMBERS + AUDIT GLOBAL
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /chat/conversations/:id/invitable?q=…
+   * Membres du tenant absents de la conversation (limite 50, filtre
+   * nom/prénom insensible à la casse, exclut les blocages dans les 2 sens).
+   */
+  @Get('conversations/:id/invitable')
+  async getInvitableMembers(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @Query('q') q?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.getInvitableMembers(tenantId, userId, conversationId, q);
+  }
+
+  /**
+   * POST /chat/conversations/:id/add-members { userIds: string[] } (1 à 50)
+   * Autorisé : ADMIN de la conversation, MODERATOR avec canInvite, ou rôle
+   * global ADMIN (ADMIN_ROLES). Idempotent — audit INVITE_MEMBERS.
+   */
+  @Post('conversations/:id/add-members')
+  async addMembers(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { userId: string; userIds: string[] },
+    @CurrentUser() jwtUser: { id?: string; role?: string },
+  ) {
+    const actorId = body?.userId || jwtUser?.id;
+    if (!actorId) throw new BadRequestException('userId is required');
+    if (!Array.isArray(body?.userIds)) throw new BadRequestException('userIds requis (liste de 1 à 50 identifiants)');
+    return this.chatService.addMembers(tenantId, actorId, jwtUser?.role, conversationId, body.userIds);
+  }
+
+  /**
+   * GET /chat/moderation/audit-log?channelId=&limit=
+   * Journal d'audit GLOBAL (toutes conversations du tenant) — réservé aux
+   * rôles ADMIN/SUPER_ADMIN/DIRECTOR + modérateurs de communication
+   * (MODERATION_ROLES — vérifié sur le rôle porté par le JWT).
+   */
+  @Get('moderation/audit-log')
+  async getGlobalAuditLog(
+    @TenantId() tenantId: string,
+    @Query('channelId') channelId?: string,
+    @Query('limit') limit?: string,
+    @CurrentUser() jwtUser?: { id?: string; role?: string },
+  ) {
+    const role = String(jwtUser?.role || '').toUpperCase();
+    if (!MODERATION_ROLES.has(role)) {
+      throw new ForbiddenException('Réservé aux administrateurs, directeurs et modérateurs de communication.');
+    }
+    return this.chatService.getGlobalAuditLogs(tenantId, channelId, limit ? parseInt(limit, 10) : 100);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 10) — RÔLES, DROITS & APPROBATION DES MEMBRES
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * PUT /chat/conversations/:id/members/:userId/role { role: ADMIN|MODERATOR|MEMBER }
+   * Seul un ADMIN de la conversation peut changer les rôles.
+   */
+  @Put('conversations/:id/members/:userId/role')
+  async setMemberRole(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId?: string; role: 'ADMIN' | 'MODERATOR' | 'MEMBER' },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const adminId = body?.adminId || jwtUser?.id;
+    if (!adminId) throw new BadRequestException('adminId is required');
+    if (!body?.role) throw new BadRequestException('role is required (ADMIN|MODERATOR|MEMBER)');
+    return this.chatService.setParticipantRole(tenantId, adminId, conversationId, targetUserId, body.role);
+  }
+
+  /**
+   * PUT /chat/conversations/:id/members/:userId/permissions { permissions }
+   * Droits personnalisés (canPin, canDeleteMessages, canInvite, canMute,
+   * canBroadcast) — ADMIN de la conversation uniquement.
+   */
+  @Put('conversations/:id/members/:userId/permissions')
+  async setMemberPermissions(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId?: string; permissions: Record<string, boolean> },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const adminId = body?.adminId || jwtUser?.id;
+    if (!adminId) throw new BadRequestException('adminId is required');
+    if (!body?.permissions || typeof body.permissions !== 'object') {
+      throw new BadRequestException('permissions is required');
+    }
+    return this.chatService.setParticipantPermissions(tenantId, adminId, conversationId, targetUserId, body.permissions);
+  }
+
+  /**
+   * POST /chat/conversations/:id/members/:userId/approve — approuve une
+   * adhésion PENDING (ADMIN). Passe ACTIVE + broadcast.
+   */
+  @Post('conversations/:id/members/:userId/approve')
+  async approveMember(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const adminId = body?.adminId || jwtUser?.id;
+    if (!adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.approveMember(tenantId, adminId, conversationId, targetUserId);
+  }
+
+  /**
+   * POST /chat/conversations/:id/members/:userId/reject — refuse une
+   * adhésion PENDING (ADMIN). Retire le participant.
+   */
+  @Post('conversations/:id/members/:userId/reject')
+  async rejectMember(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('userId') targetUserId: string,
+    @Body() body: { adminId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const adminId = body?.adminId || jwtUser?.id;
+    if (!adminId) throw new BadRequestException('adminId is required');
+    return this.chatService.rejectMember(tenantId, adminId, conversationId, targetUserId);
+  }
+
+  /**
+   * POST /chat/conversations/:id/messages/:msgId/pin — épingle un message
+   * (droit canPin : ADMIN et MODERATOR par défaut).
+   */
+  @Post('conversations/:id/messages/:msgId/pin')
+  async pinMessage(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const userId = body?.userId || jwtUser?.id;
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.setPinned(tenantId, userId, conversationId, messageId, true);
+  }
+
+  /**
+   * POST /chat/conversations/:id/messages/:msgId/unpin — détache un message
+   * (droit canPin : ADMIN et MODERATOR par défaut).
+   */
+  @Post('conversations/:id/messages/:msgId/unpin')
+  async unpinMessage(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Param('msgId') messageId: string,
+    @Body() body: { userId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const userId = body?.userId || jwtUser?.id;
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.setPinned(tenantId, userId, conversationId, messageId, false);
+  }
+
+  /**
+   * GET /chat/conversations/:id/my-permissions — droits effectifs de
+   * l'utilisateur courant dans la conversation (rôle + permissions fusionnées).
+   */
+  @Get('conversations/:id/my-permissions')
+  async getMyPermissions(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Query('userId') userId: string,
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const uid = userId || jwtUser?.id;
+    if (!uid) throw new BadRequestException('userId is required');
+    return this.chatService.getEffectivePermissions(tenantId, conversationId, uid);
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -1129,6 +1452,8 @@ export class ChatController {
   }
 
   @Post('conversations/:id/sticker')
+  // ⭐ V5 (chantier 4) — ANTI-SPAM : les stickers sont des messages aussi
+  @Throttle({ medium: { limit: 30, ttl: 60000 } })
   async sendStickerMessage(
     @TenantId() tenantId: string,
     @Param('id') conversationId: string,

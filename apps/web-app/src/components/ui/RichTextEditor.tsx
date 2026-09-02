@@ -26,6 +26,10 @@ interface RichTextEditorProps {
   placeholder?: string;
   disabled?: boolean;
   minHeight?: string;
+  /** ⭐ V5 — passthrough clavier : appelé AVANT les raccourcis internes.
+   *  Si le handler parent appelle e.preventDefault(), l'événement est
+   *  complètement intercepté (ex : Enter = envoyer dans le chat). */
+  onKeyDown?: (e: React.KeyboardEvent) => void;
 }
 
 export function RichTextEditor({
@@ -34,6 +38,7 @@ export function RichTextEditor({
   placeholder = "—",
   disabled = false,
   minHeight = "96px",
+  onKeyDown,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
@@ -66,6 +71,9 @@ export function RichTextEditor({
 
   // Raccourcis clavier
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // ⭐ V5 — le parent peut intercepter (Enter = envoyer, navigation mentions…)
+    onKeyDown?.(e);
+    if (e.defaultPrevented) return;
     if (disabled) return;
     if (e.ctrlKey || e.metaKey) {
       switch (e.key.toLowerCase()) {

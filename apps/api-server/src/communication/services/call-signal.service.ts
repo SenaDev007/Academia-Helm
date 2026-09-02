@@ -48,6 +48,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { ChatGateway } from '../chat.gateway';
 import { FcmSenderService } from '../../notifications/fcm-sender.service';
 import { PushNotificationService } from './push-notification.service';
+// ⭐ V5 (chantier 1) : blocage d'utilisateurs — un privé bloqué ne sonne plus
+import { ChatBlockService } from './chat-block.service';
 
 type CallMeta = {
   callType: 'audio' | 'video';
@@ -75,6 +77,8 @@ export class CallSignalService {
     private readonly chatGateway: ChatGateway,
     private readonly fcmSender: FcmSenderService,
     private readonly pushService: PushNotificationService,
+    // ⭐ V5 (chantier 1) : blocage — start() refusé sur un privé bloqué
+    private readonly chatBlockService: ChatBlockService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -226,6 +230,20 @@ export class CallSignalService {
     if (!convRows.length) throw new NotFoundException('Conversation introuvable');
     const conv = convRows[0];
 
+    // ⭐ V5 (chantier 1) — BLOCAGE : sur une conversation DIRECT (privé), on
+    //    refuse l'appel si l'un des deux membres a bloqué l'autre (les deux
+    //    sens — comme la création de DM et l'envoi de message). Les appels de
+    //    GROUPE restent OUVERTS.
+    if (conv.type === 'DIRECT') {
+      const otherRows = await this.prisma.$queryRawUnsafe<Array<{ userId: string }>>(
+        `SELECT "userId" FROM "chat_participants" WHERE "conversationId" = $1 AND "userId" <> $2 AND "leftAt" IS NULL LIMIT 1`,
+        conversationId, userId,
+      );
+      if (otherRows.length > 0) {
+        await this.chatBlockService.assertNotBlocked(conv.tenantId || tenantId, userId, otherRows[0].userId);
+      }
+    }
+
     const callId = randomUUID();
     const isGroupCall = conv.type === 'GROUP';
 
@@ -278,10 +296,19 @@ export class CallSignalService {
       const callee = participantIds.find((p) => p !== userId);
       if (callee) {
         // FCM mobile
+        // ⭐ V5 (chantier 9) — CORRECTIF DE LIVRISON des appels entrants :
+        //    - android : priority 'high', ttl '45s', channel_id 'helm_calls' ;
+        //    - apns : interruption-level 'time-sensitive', apns-expiration = now+45 s.
+        //    (avant : notification générique, écrasement du data.type par
+        //    'SYSTEM' — corrigé côté FcmSenderService par fusion des data)
         this.fcmSender.sendToUser(callee, {
           title: 'Appel entrant — Helm Connect',
           body: `${callerName} vous appelle (${type === 'video' ? 'vidéo' : 'audio'})`,
           data: { type: 'incoming_call', callId, conversationId },
+          delivery: {
+            android: { priority: 'high', ttl: '45s', channelId: 'helm_calls' },
+            apns: { interruptionLevel: 'time-sensitive', expirationSeconds: 45 },
+          },
         }).catch((e) => this.logger.warn(`FCM call push: ${e.message}`));
         // Web Push navigateur
         this.pushService.sendPushToUser(callee, {

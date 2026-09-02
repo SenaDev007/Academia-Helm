@@ -21,7 +21,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, UnsupportedMediaTypeException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -29,6 +29,12 @@ import { ParentUserProvisioningService } from '../../students/services/parent-us
 import { ChatGateway } from '../chat.gateway';
 import { FcmSenderService } from '../../notifications/fcm-sender.service';
 import { randomUUID } from 'crypto';
+// ⭐ V5 (chantier 1) : blocage d'utilisateurs (parité Yeshua blocks)
+import { ChatBlockService } from './chat-block.service';
+// ⭐ V5 (chantier 2) : matrice de permissions « qui contacte qui »
+import { CommunicationPermissionsService } from './communication-permissions.service';
+// ⭐ V5 (chantier 5) : antivirus optionnel des uploads (VirusTotal/ClamAV)
+import { FileScannerService } from './file-scanner.service';
 
 export interface ChatConversation {
   id: string;
@@ -98,6 +104,19 @@ export interface ChatMessage {
   reactions?: { emoji: string; userId: string; firstName?: string; lastName?: string }[];
 }
 
+/**
+ * ⭐ V5 (chantier 10) — Droits personnalisables d'un participant de conversation
+ *    (colonne JSONB chat_participants.permissions — vide = défauts du rôle).
+ *    ADMIN: tout ; MODERATOR: canPin+canDeleteMessages+canMute ; MEMBER: rien.
+ */
+export interface PermissionsShape {
+  canPin: boolean;
+  canDeleteMessages: boolean;
+  canInvite: boolean;
+  canMute: boolean;
+  canBroadcast: boolean;
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -113,6 +132,15 @@ export class ChatService {
     //    When a new chat message is sent, mobile users receive a push notification
     //    via FCM (in addition to the in-app Socket.io real-time event).
     private readonly fcmSender: FcmSenderService,
+    // ⭐ V5 (chantier 1) : blocage d'utilisateurs — vérifié à la création/ouverture
+    //    de DM, à l'envoi de message en privé et au démarrage d'appel.
+    private readonly chatBlockService: ChatBlockService,
+    // ⭐ V5 (chantier 2) : matrice « qui contacte qui » — appliquée UNIQUEMENT
+    //    à la création de DM (pas aux conversations existantes ni aux groupes).
+    private readonly permissionsService: CommunicationPermissionsService,
+    // ⭐ V5 (chantier 5) : antivirus optionnel des pièces jointes (scan AVANT
+    //    sauvegarde — refus 415 si malware détecté).
+    private readonly fileScanner: FileScannerService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -276,6 +304,11 @@ export class ChatService {
       this.logger.log(`Resolved tenantId for conversation: ${resolvedTenantId} (from user records)`);
     }
 
+    // ⭐ V5 (chantier 1) — BLOCAGE : on refuse la création/OUVERTURE d'un DM si
+    //    l'un des deux membres a bloqué l'autre (403, message uniforme).
+    //    Comme Yeshua : POST /conversations/dm → 403 si blocage dans un sens ou l'autre.
+    await this.chatBlockService.assertNotBlocked(resolvedTenantId, currentUserId, otherUserId);
+
     // Vérifier si une conversation DIRECT existe déjà entre ces deux utilisateurs
     const existing: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT c.* FROM chat_conversations c
@@ -294,6 +327,22 @@ export class ChatService {
     if (existing.length > 0) {
       return (await this.listConversations(resolvedTenantId, currentUserId))
         .find(c => c.id === existing[0].id)!;
+    }
+
+    // ⭐ V5 (chantier 2) — MATRICE « QUI CONTACTE QUI » (spéc école #7/#16) :
+    //    la règle s'applique UNIQUEMENT à la CRÉATION d'un DM (jamais aux
+    //    conversations existantes, ni aux groupes/canaux). Un STUDENT ne peut
+    //    initier un DM qu'avec ses enseignants/admin/parents liés ; un PARENT
+    //    qu'avec les enseignants de ses enfants + admin ; TEACHER/ADMIN/DIRECTOR libres.
+    const decision = await this.permissionsService.assertCanContact(resolvedTenantId, currentUserId, otherUserId);
+    if (!decision.allowed) {
+      this.logger.warn(
+        `createOrGetDirectConversation refusée (politique de contact) : ${currentUserId} → ${otherUserId} ` +
+        `(${decision.reason || 'non autorisé'})`
+      );
+      throw new ForbiddenException(
+        decision.reason || 'Vous n\'êtes pas autorisé à contacter ce membre.'
+      );
     }
 
     // Créer une nouvelle conversation DIRECT
@@ -426,6 +475,24 @@ export class ChatService {
     return conv;
   }
 
+  /**
+   * ⭐ V5 (chantier 1) — BLOCAGE sur conversation DIRECT à 2 participants :
+   *    si l'un des deux a bloqué l'autre, l'envoi est refusé (403). Les
+   *    conversations de GROUPE restent OUVERTES (on bloque la personne, pas
+   *    la communauté — comme Telegram/Yeshua).
+   *    Helper appelé par sendTextMessage / sendAttachmentMessage / sendStickerMessage.
+   */
+  private async assertDirectConversationNotBlocked(
+    tenantId: string,
+    senderId: string,
+    conv: ChatConversation,
+  ): Promise<void> {
+    if (conv?.type !== 'DIRECT') return; // groupes/canaux : jamais bloqués
+    const other = (conv.participants || []).find((p: any) => p.userId && p.userId !== senderId);
+    if (!other) return;
+    await this.chatBlockService.assertNotBlocked(tenantId, senderId, other.userId);
+  }
+
   // ═════════════════════════════════════════════════════════════════
   //  MESSAGES
   // ═════════════════════════════════════════════════════════════════
@@ -550,7 +617,18 @@ export class ChatService {
     conversationId: string,
     data: { content: string; replyToId?: string; mentionedUserIds?: string[] },
   ): Promise<ChatMessage> {
-    await this.getConversation(tenantId, senderId, conversationId);
+    const conv = await this.getConversation(tenantId, senderId, conversationId);
+
+    // ⭐ V5 (chantier 1) — BLOCAGE sur conversation DIRECT à 2 participants :
+    //    si l'un des deux a bloqué l'autre → 403 (les groupes restent OUVERTS).
+    await this.assertDirectConversationNotBlocked(tenantId, senderId, conv);
+
+    // ⭐ V5 (chantier 10) — APPROBATION : un participant PENDING (adhésion via
+    //    lien en attente d'approbation) ne peut pas encore écrire.
+    const selfParticipant = (conv.participants || []).find((p: any) => p.userId === senderId);
+    if (selfParticipant && (selfParticipant as any).joinStatus === 'PENDING') {
+      throw new ForbiddenException('Votre adhésion à cette conversation est en attente d\'approbation par un administrateur.');
+    }
 
     if (!data.content || data.content.trim().length === 0) {
       throw new BadRequestException('Message content cannot be empty');
@@ -757,7 +835,24 @@ export class ChatService {
       replyToId?: string;
     },
   ): Promise<ChatMessage> {
-    await this.getConversation(tenantId, senderId, conversationId);
+    const conv = await this.getConversation(tenantId, senderId, conversationId);
+
+    // ⭐ V5 (chantier 1) — BLOCAGE sur conversation DIRECT à 2 participants
+    await this.assertDirectConversationNotBlocked(tenantId, senderId, conv);
+
+    // ⭐ V5 (chantier 5) — ANTIVIRUS : scan AVANT sauvegarde (VirusTotal/ClamAV
+    //    optionnels — sans configuration, log « scan skipped » et acceptation,
+    //    comportement par défaut inchangé). Détection positive → 415.
+    const scan = await this.fileScanner.scanFile(data.file);
+    if (scan.scanned && !scan.clean) {
+      this.logger.warn(
+        `Fichier rejeté (malware détecté) : « ${data.file.originalname} » ` +
+        `moteur=${scan.engine} details=${scan.details} sha256=${scan.sha256 || 'n/a'}`
+      );
+      throw new UnsupportedMediaTypeException(
+        `Fichier rejeté (malware détecté) : ${scan.details || 'fichier infecté'}`
+      );
+    }
 
     // Upload le fichier via StorageService
     const folder = `chat/${data.type.toLowerCase()}`;
@@ -1110,26 +1205,86 @@ export class ChatService {
     return { inviteLink: `${process.env.NEXT_PUBLIC_APP_URL || 'https://app.academiahelm.com'}/app/communication?join=${token}`, token };
   }
 
-  async joinByInviteLink(tenantId: string, token: string, userId: string): Promise<{ conversationId: string; name?: string }> {
+  async joinByInviteLink(tenantId: string, token: string, userId: string): Promise<{ conversationId: string; name?: string; joinStatus: 'ACTIVE' | 'PENDING' }> {
     const conv: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT id, name FROM chat_conversations WHERE "inviteToken" = $1 AND "tenantId" = $2
+      SELECT id, name, "requireApproval" FROM chat_conversations WHERE "inviteToken" = $1 AND "tenantId" = $2
     `, token, tenantId);
     if (conv.length === 0) throw new NotFoundException('Invalid or expired invite link');
 
     const conversationId = conv[0].id;
+    const requireApproval = !!conv[0].requireApproval;
     // Check if already a participant
     const existing: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT id FROM chat_participants WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+      SELECT id, "joinStatus" FROM chat_participants WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
     `, conversationId, userId);
-    if (existing.length > 0) return { conversationId, name: conv[0].name };
+    if (existing.length > 0) {
+      return { conversationId, name: conv[0].name, joinStatus: (existing[0].joinStatus as 'ACTIVE' | 'PENDING') || 'ACTIVE' };
+    }
+
+    // ⭐ V5 (chantier 10) — APPROBATION D'ADHÉSION : si la conversation exige
+    //    une approbation, le membre est créé en PENDING (il ne peut pas encore
+    //    écrire) et les ADMIN sont notifiés (socket + push) pour approuver/refuser.
+    const joinStatus: 'ACTIVE' | 'PENDING' = requireApproval ? 'PENDING' : 'ACTIVE';
 
     // Add as MEMBER
     await this.prisma.$executeRawUnsafe(`
-      INSERT INTO chat_participants ("id", "conversationId", "userId", "tenantId", "role", "joinedAt")
-      VALUES ($1, $2, $3, $4, 'MEMBER', NOW())
-    `, randomUUID(), conversationId, userId, tenantId);
+      INSERT INTO chat_participants ("id", "conversationId", "userId", "tenantId", "role", "joinedAt", "joinStatus")
+      VALUES ($1, $2, $3, $4, 'MEMBER', NOW(), $5)
+    `, randomUUID(), conversationId, userId, tenantId, joinStatus);
 
-    return { conversationId, name: conv[0].name };
+    // Notification des ADMIN (demande d'adhésion en attente)
+    if (joinStatus === 'PENDING') {
+      await this.notifyAdminsOfPendingMember(tenantId, conversationId, conv[0].name, userId);
+    }
+
+    return { conversationId, name: conv[0].name, joinStatus };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Notifie les ADMIN d'une conversation qu'un membre
+   *    attend son approbation (broadcast socket temps réel + push best effort).
+   */
+  private async notifyAdminsOfPendingMember(tenantId: string, conversationId: string, conversationName: string | null, pendingUserId: string): Promise<void> {
+    try {
+      // Identité du demandeur (pour le libellé de la notification)
+      const userRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT "firstName", "lastName" FROM "users" WHERE id = $1`,
+        pendingUserId,
+      );
+      const pendingName = userRows.length
+        ? `${userRows[0].firstName || ''} ${userRows[0].lastName || ''}`.trim() || 'Un membre'
+        : 'Un membre';
+
+      // ADMIN de la conversation (role='ADMIN' + joinStatus actif)
+      const adminRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT "userId" FROM chat_participants WHERE "conversationId" = $1 AND "role" = 'ADMIN' AND "leftAt" IS NULL`,
+        conversationId,
+      );
+      const adminIds = adminRows.map((r) => r.userId);
+
+      // 1) Broadcast socket temps réel vers la room de conversation
+      if (this.chatGateway?.server) {
+        this.chatGateway.server.to(`conv:${conversationId}`).emit('member:join-request', {
+          conversationId,
+          conversationName,
+          pendingUserId,
+          pendingName,
+          adminIds,
+        });
+      }
+
+      // 2) Push in-app aux admins (best effort — jamais bloquant)
+      for (const adminId of adminIds) {
+        this.fcmSender?.sendToUser(adminId, {
+          title: 'Demande d\'adhésion — Helm Connect',
+          body: `${pendingName} demande à rejoindre « ${conversationName || 'la conversation'} » (approbation requise)`,
+          data: { conversationId, pendingUserId },
+          type: 'JOIN_REQUEST',
+        })?.catch?.((e: any) => this.logger?.warn?.(`FCM join-request: ${e.message}`));
+      }
+    } catch (e: any) {
+      this.logger?.warn?.(`notifyAdminsOfPendingMember: ${e.message}`);
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -1244,8 +1399,17 @@ export class ChatService {
     if (msg.length === 0) {
       throw new NotFoundException('Message not found');
     }
+    // ⭐ V5 (chantier 10) — DROITS delete-for-everyone :
+    //    - l'EXPÉDITEUR peut toujours supprimer son propre message (comportement
+    //      historique inchangé) ;
+    //    - un ADMIN de la conversation peut supprimer n'importe quel message ;
+    //    - un participant avec le droit canDeleteMessages (ex: MODERATOR) peut
+    //      supprimer les messages des autres (modération).
     if (msg[0].senderId !== userId) {
-      throw new ForbiddenException('Only the sender can delete a message for everyone');
+      const effective = await this.getEffectivePermissions(tenantId, conversationId, userId);
+      if (!effective.canDeleteMessages) {
+        throw new ForbiddenException('Only the sender or a moderator can delete a message for everyone');
+      }
     }
 
     // Mark as deleted (soft delete)
@@ -1886,6 +2050,135 @@ export class ChatService {
     const announcements = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_announcements WHERE "tenantId"=$1`, tenantId);
     const filesShared = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_messages m JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND m."attachmentUrl" IS NOT NULL`, tenantId);
     const reports = await this.prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int AS cnt FROM chat_message_reports r JOIN chat_messages m ON m.id=r."messageId" JOIN chat_conversations c ON c.id=m."conversationId" WHERE c."tenantId"=$1 AND r.status='PENDING'`, tenantId);
+
+    // ═══════════════════════════════════════════════════════════════
+    //  ⭐ V5 (chantier 6, spéc #21) — ANALYTICS ENRICHIS (additifs)
+    // ═══════════════════════════════════════════════════════════════
+
+    // 1) announcementReadRate — moyenne pondérée readCount/totalRecipients
+    //    sur les annonces publiées du tenant. L'estimation du nombre de
+    //    destinataires suit la même logique que announcement.service
+    //    (estimateRecipients) : ALL_SCHOOL/TEACHERS/PARENTS/CLASS/GROUP/CHANNEL.
+    let announcementReadRate = 0;
+    try {
+      const annStats: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          (SELECT count(*)::int FROM chat_announcement_reads r WHERE r."announcementId" = a.id) AS read_count,
+          CASE
+            WHEN a."targetType" = 'ALL_SCHOOL' THEN
+              (SELECT count(*)::int FROM "users" u WHERE u."tenantId" = a."tenantId")
+            WHEN a."targetType" = 'TEACHERS' THEN
+              (SELECT count(*)::int FROM "users" u WHERE u."tenantId" = a."tenantId"
+                 AND UPPER(u."role") IN ('ENSEIGNANT','TEACHER','TEACHER_RESP','RESP_SECONDAIRE','RESP_PRIMAIRE','RESP_MATERNELLE','PEDAGOGIC_COORDINATOR','DIRECTEUR_PEDAGOGIQUE'))
+            WHEN a."targetType" = 'PARENTS' THEN
+              (SELECT count(*)::int FROM "guardians" g WHERE g."tenantId" = a."tenantId" AND g."userId" IS NOT NULL)
+            WHEN a."targetType" = 'GROUP' AND a."targetGroupId" IS NOT NULL THEN
+              (SELECT count(*)::int FROM chat_participants p WHERE p."conversationId" = a."targetGroupId" AND p."leftAt" IS NULL)
+            WHEN a."targetType" = 'CHANNEL' AND a."targetChannelId" IS NOT NULL THEN
+              (SELECT count(*)::int FROM chat_channel_subscribers s WHERE s."channelId" = a."targetChannelId")
+            WHEN a."targetType" = 'CLASS' AND a."targetClassId" IS NOT NULL THEN (
+              (SELECT count(DISTINCT g."userId")::int FROM "student_enrollments" se
+                 JOIN "student_guardians" sg ON sg."studentId" = se."studentId"
+                 JOIN "guardians" g ON g.id = sg."guardianId"
+                 WHERE se."classId" = a."targetClassId" AND g."userId" IS NOT NULL)
+              + (SELECT count(DISTINCT u.id)::int FROM "teacher_class_assignments" tca
+                 JOIN "teachers" t ON t.id = tca."teacherId"
+                 JOIN "users" u ON u."email" = t."email"
+                 WHERE tca."classId" = a."targetClassId")
+            )
+            WHEN a."targetType" = 'LEVEL' AND a."targetLevel" IS NOT NULL THEN
+              (SELECT count(DISTINCT g."userId")::int FROM "students" s
+                 JOIN "student_guardians" sg ON sg."studentId" = s.id
+                 JOIN "guardians" g ON g.id = sg."guardianId"
+                 JOIN "school_levels" sl ON sl.id = s."schoolLevelId"
+                 WHERE s."tenantId" = a."tenantId" AND UPPER(sl."name") = UPPER(a."targetLevel") AND g."userId" IS NOT NULL)
+            ELSE 0
+          END AS est_recipients
+        FROM chat_announcements a
+        WHERE a."tenantId" = $1 AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      `, tenantId);
+      let sumReads = 0;
+      let sumRecipients = 0;
+      for (const a of annStats) {
+        const recipients = Number(a.est_recipients || 0);
+        if (recipients > 0) {
+          sumReads += Number(a.read_count || 0);
+          sumRecipients += recipients;
+        }
+      }
+      announcementReadRate = sumRecipients > 0 ? Math.round((sumReads / sumRecipients) * 1000) / 10 : 0;
+    } catch (e: any) {
+      this.logger?.warn?.(`announcementReadRate: ${e.message}`);
+    }
+
+    // 2) topActiveUsers — top 5 par nombre de messages sur 7 jours (avec nom)
+    let topActiveUsers: { userId: string; name: string; messageCount: number }[] = [];
+    try {
+      const topRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT u.id AS "userId",
+               TRIM(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) AS name,
+               count(*)::int AS "messageCount"
+        FROM chat_messages m
+        JOIN chat_conversations c ON c.id = m."conversationId"
+        LEFT JOIN "users" u ON u.id = m."senderId"
+        WHERE c."tenantId" = $1 AND m."createdAt" >= NOW() - INTERVAL '7 days'
+        GROUP BY u.id, name
+        ORDER BY "messageCount" DESC
+        LIMIT 5
+      `, tenantId);
+      topActiveUsers = topRows.map((r) => ({
+        userId: r.userId,
+        name: r.name || 'Utilisateur',
+        messageCount: Number(r.messageCount || 0),
+      }));
+    } catch (e: any) {
+      this.logger?.warn?.(`topActiveUsers: ${e.message}`);
+    }
+
+    // 3) averageResponseTimeMinutes — moyenne des (réponse.createdAt - parent.createdAt)
+    //    des réponses directes (replyToId, expéditeur différent) sur 7 jours —
+    //    échantillon LIMIT 500 pour rester raisonnable.
+    let averageResponseTimeMinutes: number | null = null;
+    try {
+      const rtRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT ROUND(AVG(EXTRACT(EPOCH FROM (r."createdAt" - r."parentCreatedAt")) / 60.0)::numeric, 1) AS avg_minutes
+        FROM (
+          SELECT m."createdAt", p."createdAt" AS "parentCreatedAt"
+          FROM chat_messages m
+          JOIN chat_messages p ON p.id = m."replyToId"
+          JOIN chat_conversations c ON c.id = m."conversationId"
+          WHERE c."tenantId" = $1
+            AND m."replyToId" IS NOT NULL
+            AND m."senderId" <> p."senderId"
+            AND m."createdAt" >= NOW() - INTERVAL '7 days'
+          ORDER BY m."createdAt" DESC
+          LIMIT 500
+        ) r
+      `, tenantId);
+      const avg = rtRows[0]?.avg_minutes;
+      averageResponseTimeMinutes = (avg !== null && avg !== undefined && Number.isFinite(Number(avg))) ? Number(avg) : null;
+    } catch (e: any) {
+      this.logger?.warn?.(`averageResponseTimeMinutes: ${e.message}`);
+    }
+
+    // 4) activeGroups7d — conversations GROUP avec ≥1 message sur 7 jours
+    let activeGroups7d = 0;
+    try {
+      const agRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT count(DISTINCT c.id)::int AS cnt
+        FROM chat_conversations c
+        WHERE c."tenantId" = $1 AND c."type" = 'GROUP'
+          AND EXISTS (
+            SELECT 1 FROM chat_messages m
+            WHERE m."conversationId" = c.id AND m."createdAt" >= NOW() - INTERVAL '7 days'
+          )
+      `, tenantId);
+      activeGroups7d = Number(agRows[0]?.cnt || 0);
+    } catch (e: any) {
+      this.logger?.warn?.(`activeGroups7d: ${e.message}`);
+    }
+
+    // ⭐ Réponse ADDITIVE — aucun champ existant supprimé/modifié
     return {
       messagesToday: msgs[0]?.cnt || 0,
       activeUsersToday: activeUsers[0]?.cnt || 0,
@@ -1894,20 +2187,186 @@ export class ChatService {
       totalAnnouncements: announcements[0]?.cnt || 0,
       filesShared: filesShared[0]?.cnt || 0,
       pendingReports: reports[0]?.cnt || 0,
+      // ⭐ V5 (spéc #21) — analytics enrichis
+      announcementReadRate,
+      topActiveUsers,
+      averageResponseTimeMinutes,
+      activeGroups7d,
     };
   }
 
   // ═════════════════════════════════════════════════════════════════
-  //  ⭐ GAP FILL: PEDAGOGICAL CONVERSATIONS — link to class/subject
+  //  ⭐ V5 (chantier 7, spéc #8) — CONVERSATIONS PÉDAGOGIQUES
+  //     Liaison à une entité : pedagogicalType (CLASS|SUBJECT|HOMEWORK|
+  //     ACTIVITY|COURSE) + linkedEntityId + population automatique.
   // ═════════════════════════════════════════════════════════════════
-  async createPedagogicalConversation(tenantId: string, creatorId: string, data: { classId: string; subjectId?: string; name?: string }) {
-    // Use existing group creation but with a pedagogical name
-    const name = data.name || `Classe — ${data.classId}`;
-    return this.createGroupConversation(tenantId, creatorId, {
-      name,
-      description: `Conversation pédagogique${data.subjectId ? ` — ${data.subjectId}` : ''}`,
-      participantIds: [], // Will be filled by dynamic group sync
+  async createPedagogicalConversation(
+    tenantId: string,
+    creatorId: string,
+    data: {
+      /** Type de liaison pédagogique. */
+      type?: 'CLASS' | 'SUBJECT' | 'HOMEWORK' | 'ACTIVITY' | 'COURSE';
+      /** Id de l'entité liée (classes.id, subjects.id, devoirs.id…). */
+      linkedEntityId?: string;
+      /** Participants explicites (si fournis, pas de population auto). */
+      participantIds?: string[];
+      /** ⭐ Compatibilité legacy : classId/subjectId/name (V4). */
+      classId?: string;
+      subjectId?: string;
+      name?: string;
+    },
+  ): Promise<ChatConversation> {
+    // 1. Résolution du type + de l'entité liée (compat legacy classId/subjectId)
+    const type = data.type || (data.classId ? (data.subjectId ? 'SUBJECT' : 'CLASS') : 'CLASS');
+    const linkedEntityId = data.linkedEntityId || data.subjectId || data.classId || '';
+    if (!linkedEntityId) {
+      throw new BadRequestException('linkedEntityId (ou classId/subjectId) est requis');
+    }
+    if (!['CLASS', 'SUBJECT', 'HOMEWORK', 'ACTIVITY', 'COURSE'].includes(type)) {
+      throw new BadRequestException('Type pédagogique invalide (CLASS|SUBJECT|HOMEWORK|ACTIVITY|COURSE)');
+    }
+
+    // 2. Nom de l'entité + participants automatiques
+    const { entityName, autoParticipantIds } = await this.resolvePedagogicalEntity(tenantId, type, linkedEntityId);
+
+    // 3. Nom de la conversation : « {label} — {nom entité} »
+    const labels: Record<string, string> = {
+      CLASS: 'Classe', SUBJECT: 'Matière', HOMEWORK: 'Devoir',
+      ACTIVITY: 'Activité', COURS: 'Cours', COURSE: 'Cours',
+    };
+    const label = labels[type] || 'Pédagogie';
+    const name = data.name?.trim() || `${label} — ${entityName}`;
+
+    // 4. Participants : explicites OU population auto (toujours + le créateur)
+    const participantIds = Array.from(new Set([
+      creatorId,
+      ...(data.participantIds && data.participantIds.length > 0 ? data.participantIds : autoParticipantIds),
+    ]));
+
+    // 5. Création de la conversation GROUP avec les colonnes pédagogiques
+    const convId = randomUUID();
+    const description = `Conversation pédagogique (${label}) liée à « ${entityName} »`;
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_conversations" (
+        "id", "tenantId", "type", "name", "description", "createdBy",
+        "pedagogicalType", "linkedEntityId", "createdAt", "updatedAt"
+      )
+      VALUES ($1, $2, 'GROUP', $3, $4, $5, $6, $7, NOW(), NOW())
+    `, convId, tenantId, name, description, creatorId, type, linkedEntityId);
+
+    // 6. Participants (créateur = ADMIN, autres = MEMBER)
+    for (const userId of participantIds) {
+      if (!userId) continue;
+      const role = userId === creatorId ? 'ADMIN' : 'MEMBER';
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO "chat_participants" ("id", "conversationId", "userId", "tenantId", "role", "joinedAt")
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        ON CONFLICT DO NOTHING
+      `, randomUUID(), convId, userId, tenantId, role);
+    }
+
+    // 7. Audit de création
+    await this.auditLog(convId, creatorId, null, null, 'CONVERSATION_CREATE', {
+      pedagogicalType: type,
+      linkedEntityId,
+      entityName,
+      participants: participantIds.length,
     });
+
+    return (await this.listConversations(tenantId, creatorId))
+      .find(c => c.id === convId)!;
+  }
+
+  /**
+   * Résout le nom d'affichage d'une entité pédagogique + calcule la
+   * population AUTOMATIQUE des participants :
+   *   - CLASS   → enseignants affectés à la classe (teacher_class_assignments
+   *               → teachers → users par email) + parents des élèves inscrits
+   *               (comme auto-group.service.ts) ;
+   *   - SUBJECT → enseignants de la matière (teacher_subjects → teachers → users) ;
+   *   - autres types (HOMEWORK/ACTIVITY/COURSE) → nom par défaut (id),
+   *     population vide (participants explicites attendus).
+   */
+  private async resolvePedagogicalEntity(
+    tenantId: string,
+    type: string,
+    linkedEntityId: string,
+  ): Promise<{ entityName: string; autoParticipantIds: string[] }> {
+    try {
+      if (type === 'CLASS') {
+        const cls: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT "id", "name", "mainTeacherId" FROM "classes" WHERE "id" = $1 AND "tenantId" = $2`,
+          linkedEntityId, tenantId,
+        );
+        if (cls.length === 0) throw new NotFoundException('Classe introuvable');
+        const entityName = cls[0].name || linkedEntityId;
+        // Enseignants affectés à la classe (+ titulaire) → userId via email
+        const teacherRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT DISTINCT u.id
+          FROM "teacher_class_assignments" tca
+          JOIN "teachers" t ON t.id = tca."teacherId"
+          JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $2
+          WHERE tca."classId" = $1
+          UNION
+          SELECT u.id
+          FROM "teachers" t
+          JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $2
+          WHERE t.id = $3
+        `, linkedEntityId, tenantId, cls[0].mainTeacherId || null);
+        // Parents des élèves inscrits dans la classe (comme auto-group.service)
+        const parentRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT DISTINCT g."userId"
+          FROM "student_enrollments" se
+          JOIN "student_guardians" sg ON sg."studentId" = se."studentId"
+          JOIN "guardians" g ON g.id = sg."guardianId"
+          WHERE se."classId" = $1 AND se."status" = 'ENROLLED' AND g."userId" IS NOT NULL
+        `, linkedEntityId);
+        const autoParticipantIds = Array.from(new Set([
+          ...teacherRows.map((r) => r.id).filter(Boolean),
+          ...parentRows.map((r) => r.userId).filter(Boolean),
+        ]));
+        return { entityName, autoParticipantIds };
+      }
+
+      if (type === 'SUBJECT') {
+        const subj: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT "id", "name" FROM "subjects" WHERE "id" = $1 AND "tenantId" = $2`,
+          linkedEntityId, tenantId,
+        );
+        if (subj.length === 0) throw new NotFoundException('Matière introuvable');
+        const entityName = subj[0].name || linkedEntityId;
+        // Enseignants de la matière → userId via email
+        const teacherRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT DISTINCT u.id
+          FROM "teacher_subjects" ts
+          JOIN "teachers" t ON t.id = ts."teacherId"
+          JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $2
+          WHERE ts."subjectId" = $1
+        `, linkedEntityId, tenantId);
+        return { entityName, autoParticipantIds: teacherRows.map((r) => r.id).filter(Boolean) };
+      }
+
+      // HOMEWORK / ACTIVITY / COURSE — nom lisible si l'entité est une classe
+      // ou une matière (repli), sinon l'id fait foi ; population explicite.
+      let entityName = linkedEntityId;
+      const asClass = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT "name" FROM "classes" WHERE "id" = $1 AND "tenantId" = $2`,
+        linkedEntityId, tenantId,
+      );
+      if (asClass.length > 0) entityName = asClass[0].name;
+      else {
+        const asSubject = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT "name" FROM "subjects" WHERE "id" = $1 AND "tenantId" = $2`,
+          linkedEntityId, tenantId,
+        );
+        if (asSubject.length > 0) entityName = asSubject[0].name;
+      }
+      return { entityName, autoParticipantIds: [] };
+    } catch (e: any) {
+      if (e instanceof NotFoundException || e instanceof BadRequestException) throw e;
+      this.logger?.warn?.(`resolvePedagogicalEntity: ${e.message}`);
+      return { entityName: linkedEntityId, autoParticipantIds: [] };
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -2030,6 +2489,389 @@ export class ChatService {
     `, conversationId, limit);
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 — MEMBRES, INVITABLE & AUDIT GLOBAL (chantiers 3 + 10)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ V5 (chantier 3) — Membres du tenant INVITABLES dans une conversation :
+   *    absents de la conversation, filtrables par nom/prénom (insensible à la
+   *    casse), limite 50. Exclut les blocages dans les DEUX sens (bloqués par
+   *    moi + ceux qui m'ont bloqué) et les comptes désactivés.
+   */
+  async getInvitableMembers(
+    tenantId: string,
+    userId: string,
+    conversationId: string,
+    q?: string,
+  ): Promise<any[]> {
+    // 1. L'utilisateur doit être participant de la conversation
+    const conv = await this.getConversation(tenantId, userId, conversationId);
+
+    // 2. Exclure les blocages dans les deux sens (parité Yeshua invitable)
+    const blockedRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "blockedId" AS uid FROM "chat_user_blocks" WHERE "blockerId" = $1 AND "tenantId" = $2
+      UNION
+      SELECT "blockerId" AS uid FROM "chat_user_blocks" WHERE "blockedId" = $1 AND "tenantId" = $2
+    `, userId, tenantId);
+    const blockedIds = blockedRows.map((r) => r.uid);
+
+    // 3. Membres du tenant absents de la conversation (DIRECT exclue tout ajout :
+    //    un privé reste entre ses 2 membres)
+    const params: any[] = [tenantId, conversationId, userId];
+    let excludeClause = '';
+    if (blockedIds.length > 0) {
+      params.push(blockedIds);
+      excludeClause = `AND u.id <> ALL($${params.length}::text[])`;
+    }
+    if (q && q.trim().length > 0) {
+      params.push(`%${q.trim().toLowerCase()}%`);
+      const qIdx = params.length;
+      params.push(`%${q.trim()}%`);
+      const qIdx2 = params.length;
+      excludeClause += ` AND (LOWER(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) LIKE $${qIdx} OR LOWER(u.email) LIKE $${qIdx} OR LOWER(COALESCE(u."lastName", '')) LIKE $${qIdx2})`;
+    }
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT u.id AS "userId",
+             TRIM(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) AS name,
+             u."avatarUrl", u."role", u.status
+      FROM "users" u
+      WHERE u."tenantId" = $1
+        AND u.id <> $3
+        AND u.status = 'active'
+        AND u.id NOT IN (
+          SELECT p."userId" FROM chat_participants p
+          WHERE p."conversationId" = $2 AND p."leftAt" IS NULL
+        )
+        ${excludeClause}
+      ORDER BY name ASC
+      LIMIT 50
+    `, ...params);
+
+    return rows.map((r) => ({
+      userId: r.userId,
+      name: r.name || r.email || 'Membre',
+      avatarUrl: r.avatarUrl || undefined,
+      role: r.role || undefined,
+    }));
+  }
+
+  /**
+   * ⭐ V5 (chantier 3 + 10) — Ajoute des membres à une conversation (1 à 50,
+   *    idempotent). Autorisé : ADMIN de la conversation, MODERATOR avec
+   *    canInvite, ou rôle global ADMIN (ADMIN_ROLES du contrôleur).
+   *    Les membres sont ajoutés en MEMBER (joinStatus ACTIVE) + audit
+   *    INVITE_MEMBERS + broadcast socket temps réel.
+   */
+  async addMembers(
+    tenantId: string,
+    actorUserId: string,
+    actorGlobalRole: string | undefined,
+    conversationId: string,
+    userIds: string[],
+  ): Promise<{ added: number; skipped: number; conversationId: string }> {
+    const conv = await this.getConversation(tenantId, actorUserId, conversationId);
+
+    // Un PRIVÉ (DIRECT) n'est pas invitable — historique confidentiel
+    if (conv.type === 'DIRECT') {
+      throw new ForbiddenException('Conversation privée — impossible d\'y ajouter d\'autres membres');
+    }
+
+    // Permission : ADMIN de conv OU canInvite (permissions/MODERATOR) OU admin global
+    const effective = await this.getEffectivePermissions(tenantId, conversationId, actorUserId);
+    const isGlobalAdmin = actorGlobalRole ? ['ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'].includes(String(actorGlobalRole).toUpperCase()) : false;
+    if (!isGlobalAdmin && !effective.canInvite) {
+      throw new ForbiddenException('Seuls les administrateurs de la conversation (ou les membres avec le droit d\'invitation) peuvent ajouter des membres');
+    }
+
+    // Nettoyage : uniques, sans l'acteur, 1 à 50
+    const uniqueIds = Array.from(new Set(userIds.filter((u) => u && u !== actorUserId)));
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException('userIds requis (1 à 50 identifiants)');
+    }
+    if (uniqueIds.length > 50) {
+      throw new BadRequestException('Maximum 50 membres par ajout');
+    }
+
+    // Les invités doivent appartenir au tenant (anti-injection d'ids arbitraires)
+    const validRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "users" WHERE "tenantId" = $1 AND id = ANY($2::text[]) AND status = 'active'`,
+      tenantId, uniqueIds,
+    );
+    const validIds = validRows.map((r) => r.id);
+
+    // Ajout idempotent (ON CONFLICT DO NOTHING sur l'unique actif conv+user)
+    let added = 0;
+    for (const uid of validIds) {
+      const res = await this.prisma.$executeRawUnsafe(`
+        INSERT INTO chat_participants ("id", "conversationId", "userId", "tenantId", "role", "joinedAt", "joinStatus")
+        VALUES ($1, $2, $3, $4, 'MEMBER', NOW(), 'ACTIVE')
+        ON CONFLICT DO NOTHING
+      `, randomUUID(), conversationId, uid, tenantId);
+      added += res;
+    }
+    const skipped = uniqueIds.length - added;
+
+    // Audit + broadcast temps réel
+    await this.auditLog(conversationId, actorUserId, null, null, 'INVITE_MEMBERS', {
+      added, skipped,
+      invitedUserIds: validIds,
+    });
+    if (added > 0 && this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit('members:added', {
+        conversationId,
+        addedUserIds: validIds,
+        addedBy: actorUserId,
+      });
+    }
+
+    return { added, skipped, conversationId };
+  }
+
+  /**
+   * ⭐ V5 (chantier 3) — Journal d'audit GLOBAL (toutes conversations du tenant).
+   *    Réservé aux rôles ADMIN/SUPER_ADMIN/DIRECTOR + modérateurs de
+   *    communication (le contrôleur vérifie le rôle JWT — la vérification du
+   *    service est une défense en profondeur sur le rôle passé en paramètre).
+   */
+  async getGlobalAuditLogs(
+    tenantId: string,
+    channelId: string | undefined,
+    limit = 100,
+  ): Promise<any[]> {
+    const params: any[] = [tenantId];
+    let channelClause = '';
+    if (channelId) {
+      params.push(channelId);
+      channelClause = `AND a."conversationId" = $2`;
+    }
+    const lim = Math.min(Math.max(limit || 100, 1), 500);
+    params.push(lim);
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT a.*, c."name" AS "conversationName",
+             u."firstName" AS "actorFirstName", u."lastName" AS "actorLastName",
+             t."firstName" AS "targetFirstName", t."lastName" AS "targetLastName"
+      FROM "chat_audit_logs" a
+      LEFT JOIN "chat_conversations" c ON c.id = a."conversationId"
+      LEFT JOIN "users" u ON u.id = a."actorUserId"
+      LEFT JOIN "users" t ON t.id = a."targetUserId"
+      WHERE (
+        -- Entrées liées à une conversation du tenant…
+        c."tenantId" = $1
+        -- …OU actions SANS conversation (ex: BLOCK_USER / UNBLOCK_USER) :
+        -- le filtre tenant porte alors sur l'acteur (toujours intra-tenant).
+        OR (
+          a."conversationId" IS NULL
+          AND EXISTS (SELECT 1 FROM "users" au WHERE au.id = a."actorUserId" AND au."tenantId" = $1)
+        )
+      )
+        ${channelClause}
+      ORDER BY a."createdAt" DESC
+      LIMIT $${params.length}
+    `, ...params);
+    return rows;
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 10) — RÔLES PARTICIPANTS, DROITS & APPROBATION
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * Droits EFFECTIFS d'un participant : fusion des défauts du rôle et de la
+   * colonne JSONB `permissions` (null/{} = défauts du rôle).
+   *   ADMIN : tout ; MODERATOR : canPin + canDeleteMessages + canMute ;
+   *   MEMBER : rien. Un ADMIN peut personnaliser via permissions (surcharge).
+   */
+  async getEffectivePermissions(
+    tenantId: string,
+    conversationId: string,
+    userId: string,
+  ): Promise<{
+    role: string;
+    canPin: boolean;
+    canDeleteMessages: boolean;
+    canInvite: boolean;
+    canMute: boolean;
+    canBroadcast: boolean;
+  }> {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT p."role", p."permissions"
+      FROM chat_participants p
+      JOIN chat_conversations c ON c.id = p."conversationId"
+      WHERE p."conversationId" = $1 AND p."userId" = $2 AND p."leftAt" IS NULL AND c."tenantId" = $3
+    `, conversationId, userId, tenantId);
+    const role = rows[0]?.role || 'MEMBER';
+    const overrides = (rows[0]?.permissions && typeof rows[0].permissions === 'object') ? rows[0].permissions : {};
+    const defaults: Record<string, Partial<PermissionsShape>> = {
+      ADMIN: { canPin: true, canDeleteMessages: true, canInvite: true, canMute: true, canBroadcast: true },
+      MODERATOR: { canPin: true, canDeleteMessages: true, canInvite: false, canMute: true, canBroadcast: false },
+      MEMBER: {},
+    };
+    const base = { canPin: false, canDeleteMessages: false, canInvite: false, canMute: false, canBroadcast: false, ...(defaults[role] || {}) };
+    // La surcharge JSONB ne peut qu'AJOUTER des droits au rôle (jamais retirer
+    // ceux de l'ADMIN) — évite qu'un ADMIN se piège lui-même.
+    const effective: PermissionsShape = { ...base };
+    for (const key of Object.keys(base) as (keyof PermissionsShape)[]) {
+      if (overrides[key] === true) effective[key] = true;
+    }
+    return { role, ...effective };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Change le rôle d'un participant (ADMIN uniquement de
+   *    la conversation) : ADMIN | MODERATOR | MEMBER. Audit MEMBER_ROLE_UPDATE.
+   */
+  async setParticipantRole(
+    tenantId: string,
+    adminId: string,
+    conversationId: string,
+    targetUserId: string,
+    role: 'ADMIN' | 'MODERATOR' | 'MEMBER',
+  ): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const actor = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!actor || actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs de la conversation peuvent changer les rôles.');
+    }
+    if (!['ADMIN', 'MODERATOR', 'MEMBER'].includes(role)) {
+      throw new BadRequestException('Rôle invalide (ADMIN|MODERATOR|MEMBER)');
+    }
+    if (targetUserId === adminId) {
+      throw new BadRequestException('Impossible de changer son propre rôle');
+    }
+    const res = await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_participants SET "role" = $3
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, conversationId, targetUserId, role);
+    if (res === 0) throw new NotFoundException('Participant introuvable dans cette conversation');
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'MEMBER_ROLE_UPDATE', { role });
+    if (this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit('member:role-updated', { conversationId, targetUserId, role, by: adminId });
+    }
+    return { success: true };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Définit les droits PERSONNALISÉS d'un participant
+   *    (colonne JSONB chat_participants.permissions : canPin, canDeleteMessages,
+   *    canInvite, canMute, canBroadcast). ADMIN de la conversation uniquement.
+   *    Les droits s'AJOUTENT à ceux du rôle (jamais retirés — un MEMBER peut
+   *    recevoir des droits ciblés, un ADMIN garde tout).
+   */
+  async setParticipantPermissions(
+    tenantId: string,
+    adminId: string,
+    conversationId: string,
+    targetUserId: string,
+    permissions: Record<string, boolean>,
+  ): Promise<{ success: boolean; permissions: Partial<PermissionsShape> }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const actor = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!actor || actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs de la conversation peuvent définir les droits des membres.');
+    }
+    // Filtrage : uniquement les clés connues, en booléens
+    const allowedKeys = ['canPin', 'canDeleteMessages', 'canInvite', 'canMute', 'canBroadcast'];
+    const clean: Partial<PermissionsShape> = {};
+    for (const key of allowedKeys) {
+      if (permissions[key] === true) clean[key as keyof PermissionsShape] = true;
+    }
+    const res = await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_participants SET "permissions" = $3::jsonb
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+    `, conversationId, targetUserId, JSON.stringify(clean));
+    if (res === 0) throw new NotFoundException('Participant introuvable dans cette conversation');
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'MEMBER_PERMISSIONS_SET', { permissions: clean });
+    return { success: true, permissions: clean };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Approuve un membre PENDING (ADMIN de la conversation).
+   *    Passe ACTIVE + broadcast + audit MEMBER_APPROVE.
+   */
+  async approveMember(
+    tenantId: string,
+    adminId: string,
+    conversationId: string,
+    targetUserId: string,
+  ): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const actor = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!actor || actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent approuver les membres.');
+    }
+    const res = await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_participants SET "joinStatus" = 'ACTIVE'
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL AND "joinStatus" = 'PENDING'
+    `, conversationId, targetUserId);
+    if (res === 0) throw new NotFoundException('Aucune adhésion en attente pour ce membre');
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'MEMBER_APPROVE', {});
+    if (this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit('member:approved', { conversationId, targetUserId, by: adminId });
+    }
+    return { success: true };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Refuse un membre PENDING (ADMIN de la conversation).
+   *    Retire le participant + broadcast + audit MEMBER_REJECT.
+   */
+  async rejectMember(
+    tenantId: string,
+    adminId: string,
+    conversationId: string,
+    targetUserId: string,
+  ): Promise<{ success: boolean }> {
+    const conv = await this.getConversation(tenantId, adminId, conversationId);
+    const actor = conv.participants?.find((p: any) => p.userId === adminId);
+    if (!actor || actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Seuls les administrateurs peuvent refuser les membres.');
+    }
+    const res = await this.prisma.$executeRawUnsafe(`
+      DELETE FROM chat_participants
+      WHERE "conversationId" = $1 AND "userId" = $2 AND "joinStatus" = 'PENDING' AND "leftAt" IS NULL
+    `, conversationId, targetUserId);
+    if (res === 0) throw new NotFoundException('Aucune adhésion en attente pour ce membre');
+    await this.auditLog(conversationId, adminId, targetUserId, null, 'MEMBER_REJECT', {});
+    if (this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit('member:rejected', { conversationId, targetUserId, by: adminId });
+    }
+    return { success: true };
+  }
+
+  /**
+   * ⭐ V5 (chantier 10) — Épingle / détache un message (droit canPin requis —
+   *    ADMIN et MODERATOR par défaut). Audit MESSAGE_PIN / MESSAGE_UNPIN.
+   */
+  async setPinned(
+    tenantId: string,
+    userId: string,
+    conversationId: string,
+    messageId: string,
+    pinned: boolean,
+  ): Promise<{ success: boolean; pinned: boolean }> {
+    await this.getConversation(tenantId, userId, conversationId);
+    // Permission canPin (ADMIN/MODERATOR par défaut, personnalisable)
+    const effective = await this.getEffectivePermissions(tenantId, conversationId, userId);
+    if (!effective.canPin) {
+      throw new ForbiddenException('Vous n\'avez pas le droit d\'épingler des messages dans cette conversation.');
+    }
+    // Le message doit exister dans la conversation
+    const msg: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, "senderId" FROM chat_messages WHERE id = $1 AND "conversationId" = $2 AND "deletedAt" IS NULL`,
+      messageId, conversationId,
+    );
+    if (msg.length === 0) throw new NotFoundException('Message introuvable');
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE chat_messages SET "isPinned" = $3 WHERE "id" = $1
+    `, messageId, conversationId, pinned);
+    await this.auditLog(conversationId, userId, null, messageId, pinned ? 'MESSAGE_PIN' : 'MESSAGE_UNPIN', {});
+    if (this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit(pinned ? 'message:pinned' : 'message:unpinned', { conversationId, messageId, by: userId });
+    }
+    return { success: true, pinned };
+  }
+
   /** Private helper: write an audit log entry. */
   private async auditLog(
     conversationId: string | null,
@@ -2047,6 +2889,21 @@ export class ChatService {
     } catch (e: any) {
       this.logger?.warn?.(`Audit log write failed: ${e.message}`);
     }
+  }
+
+  /**
+   * ⭐ V5 — Écrit une entrée d'audit public (utilisée par les contrôleurs pour
+   *    les actions SANS conversation : blocage/déblocage, politique…).
+   */
+  async writeAuditLog(
+    conversationId: string | null,
+    actorUserId: string,
+    targetUserId: string | null,
+    targetMessageId: string | null,
+    action: string,
+    details: any,
+  ): Promise<void> {
+    return this.auditLog(conversationId, actorUserId, targetUserId, targetMessageId, action, details);
   }
 
   /** Get conversation members with online status + role colors. Discord-style member list. */
@@ -2403,7 +3260,9 @@ export class ChatService {
 
   /** Send a sticker as a chat message (type=STICKER). */
   async sendStickerMessage(tenantId: string, senderId: string, conversationId: string, stickerId: string): Promise<ChatMessage> {
-    await this.getConversation(tenantId, senderId, conversationId);
+    const conv = await this.getConversation(tenantId, senderId, conversationId);
+    // ⭐ V5 (chantier 1) — BLOCAGE sur conversation DIRECT à 2 participants
+    await this.assertDirectConversationNotBlocked(tenantId, senderId, conv);
     const stickers: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT * FROM "stickers" WHERE id = $1
     `, stickerId);

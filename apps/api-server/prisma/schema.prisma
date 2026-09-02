@@ -16725,3 +16725,42 @@ model AppRelease {
 
 // Cache bust: force prisma generate to re-run with @map annotations
 // Timestamp: 2026-07-30T14:36:09Z
+
+// ============================================================================
+// HELM CONNECT V5 — Blocage d'utilisateurs + politique de contact
+// (tables créées par la migration 20260907120000_helm_connect_v5_backend_features)
+// ============================================================================
+
+/// ⭐ V5 — Blocage des membres Helm Connect (parité Yeshua UserBlock).
+/// Une ligne = « blockerId a bloqué blockedId » (dans UN sens).
+/// Vérifié dans les DEUX sens à chaque création/ouverture de DM, envoi de
+/// message en privé et démarrage d'appel (403 « Vous ne pouvez pas contacter
+/// ce membre »). Les groupes/canaux communs restent OUVERTS.
+model ChatUserBlock {
+  id        String   @id @default(uuid())
+  tenantId  String
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId, tenantId])
+  @@index([blockedId])
+  @@index([tenantId])
+  @@map("chat_user_blocks")
+}
+
+/// ⭐ V5 — Matrice de permissions « qui contacte qui » (spéc école #7/#16).
+/// policy = { allowStudentToTeacher, allowStudentToParent,
+///            allowParentToTeacher, restrictStudents }
+/// Une seule ligne par tenant — absence de ligne = défauts sûrs côté service.
+model ChatContactPolicy {
+  id        String   @id @default(uuid())
+  tenantId  String   @unique
+  policy    Json
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_contact_policy")
+}
+
+// Cache bust: force prisma generate to re-run after V5 chat models
+// Timestamp: 2026-09-07T12:00:00Z

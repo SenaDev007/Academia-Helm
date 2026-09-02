@@ -113,6 +113,12 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     ScheduleModule.forRoot(),
 
     // Rate Limiting
+    // ⭐ V5 (chantier 4) — ANTI-SPAM : le throttler nommé 'medium' est le régime
+    //    GLOBAL par défaut → 300 requêtes/minute pour toutes les routes (les GET
+    //    de polling restent à ce régime, jamais throttlés spécifiquement).
+    //    Les POST d'ENVOI de messages surchargent localement 'medium' à 30/min
+    //    via @Throttle({ medium: { limit: 30, ttl: 60000 } }) — voir
+    //    chat.controller.ts (messages/text, messages/attachment, sticker).
     ThrottlerModule.forRoot([
       {
         name: 'short',
@@ -122,7 +128,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
       {
         name: 'medium',
         ttl: 60000, // 1 minute
-        limit: 100, // 100 requêtes par minute
+        limit: 300, // ⭐ V5 — 300 requêtes/minute (global, spec anti-spam Helm Connect)
       },
       {
         name: 'long',

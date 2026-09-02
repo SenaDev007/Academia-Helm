@@ -29,11 +29,13 @@
 
 import {
   Controller, Get, Post, Put, Body, Param, Query, UseGuards,
-  BadRequestException,
+  BadRequestException, ForbiddenException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { DynamicGroupService, DynamicGroupSourceType } from './services/dynamic-group.service';
 import { NotificationPreferencesService, MuteDuration, EventType } from './services/notification-preferences.service';
 import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
@@ -42,6 +44,17 @@ import { ConversationDocumentCenterService } from './services/document-center.se
 // ⭐ V4 — Fichiers transverses + historique d'appels global
 import { FilesCenterService } from './services/files-center.service';
 import { CallSignalService } from './services/call-signal.service';
+// ⭐ V5 (chantier 2) — Matrice « qui contacte qui » (politique par tenant)
+import { CommunicationPermissionsService } from './services/communication-permissions.service';
+// ⭐ V5 (chantier 8) — ATLAS dans le chat
+import { ChatAtlasService } from './services/chat-atlas.service';
+
+/** Rôles autorisés à modifier la politique de contact du tenant. */
+const POLICY_ADMIN_ROLES = new Set([
+  'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'PROMOTER', 'PROMOTEUR',
+  'DIRECTOR', 'DIRECTEUR', 'DIRECTOR_GENERAL', 'DIRECTEUR_GENERAL',
+  'SCHOOL_DIRECTOR', 'DIRECTEUR_ETABLISSEMENT',
+]);
 
 @Controller('chat/v2')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -55,6 +68,10 @@ export class HelmConnectV2Controller {
     // ⭐ V4 — Fichiers transverses + historique d'appels global
     private readonly filesCenterService: FilesCenterService,
     private readonly callSignalService: CallSignalService,
+    // ⭐ V5 (chantier 2) — Matrice « qui contacte qui »
+    private readonly permissionsService: CommunicationPermissionsService,
+    // ⭐ V5 (chantier 8) — ATLAS dans le chat
+    private readonly chatAtlasService: ChatAtlasService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -370,5 +387,66 @@ export class HelmConnectV2Controller {
   ) {
     if (!body.userId) throw new BadRequestException('userId is required');
     return this.documentCenterService.unpinMessage(tenantId, body.userId, messageId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 2, spéc école #7/#16) — POLITIQUE DE CONTACT
+  //     GET /chat/v2/contact-policy  → lit la politique (défauts sûrs si absente)
+  //     PUT /chat/v2/contact-policy  → met à jour (rôles admin/direction)
+  // ═════════════════════════════════════════════════════════════════
+
+  @Get('contact-policy')
+  async getContactPolicy(@TenantId() tenantId: string) {
+    const policy = await this.permissionsService.getPolicy(tenantId);
+    return { tenantId, policy };
+  }
+
+  @Put('contact-policy')
+  async updateContactPolicy(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      allowStudentToTeacher?: boolean;
+      allowStudentToParent?: boolean;
+      allowParentToTeacher?: boolean;
+      restrictStudents?: boolean;
+    },
+    @CurrentUser() jwtUser: { id?: string; role?: string },
+  ) {
+    const role = String(jwtUser?.role || '').toUpperCase();
+    if (!POLICY_ADMIN_ROLES.has(role)) {
+      throw new ForbiddenException('Seuls les administrateurs de l\'établissement peuvent modifier la politique de contact.');
+    }
+    // Fusion partielle — seules les clés booléennes fournies sont appliquées
+    const patch: any = {};
+    for (const key of ['allowStudentToTeacher', 'allowStudentToParent', 'allowParentToTeacher', 'restrictStudents']) {
+      if (typeof (body as any)[key] === 'boolean') patch[key] = (body as any)[key];
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Au moins un champ de politique est requis (allowStudentToTeacher, allowStudentToParent, allowParentToTeacher, restrictStudents)');
+    }
+    const policy = await this.permissionsService.setPolicy(tenantId, patch);
+    return { tenantId, policy, updatedBy: jwtUser?.id };
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (chantier 8, spéc #18) — ATLAS DANS LE CHAT
+  //     POST /chat/v2/atlas/ask { question, conversationId? }
+  //     Contexte STRICTEMENT limité aux données du tenant et de l'utilisateur.
+  //     Rate-limit : 10 requêtes/minute (throttler 'medium' surcharge locale).
+  // ═════════════════════════════════════════════════════════════════
+
+  @Post('atlas/ask')
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  async askAtlas(
+    @TenantId() tenantId: string,
+    @Body() body: { userId?: string; question: string; conversationId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    if (!body?.question || !body.question.trim()) {
+      throw new BadRequestException('question is required');
+    }
+    const userId = body.userId || jwtUser?.id;
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatAtlasService.ask(tenantId, userId, body.question, body.conversationId);
   }
 }

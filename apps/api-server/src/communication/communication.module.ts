@@ -76,6 +76,14 @@ import { CallSignalService } from './services/call-signal.service';
 import { CallProviderChainService } from './services/call-provider-chain.service';
 // ⭐ V4 — Fichiers transverses (sections Fichiers/Vocaux/Appels)
 import { FilesCenterService } from './services/files-center.service';
+// ⭐ V5 (chantier 1) — Blocage d'utilisateurs (parité Yeshua blocks)
+import { ChatBlockService } from './services/chat-block.service';
+// ⭐ V5 (chantier 2) — Matrice « qui contacte qui » (politique par tenant)
+import { CommunicationPermissionsService } from './services/communication-permissions.service';
+// ⭐ V5 (chantier 5) — Antivirus optionnel des uploads (VirusTotal/ClamAV)
+import { FileScannerService } from './services/file-scanner.service';
+// ⭐ V5 (chantier 8) — ATLAS dans le chat (question + contexte utilisateur)
+import { ChatAtlasService } from './services/chat-atlas.service';
 
 @Module({
   imports: [
@@ -176,6 +184,11 @@ import { FilesCenterService } from './services/files-center.service';
     CallProviderChainService,
     CallSignalService,
     FilesCenterService,
+    // ⭐ V5 — Blocage d'utilisateurs + matrice de contact + antivirus + ATLAS chat
+    ChatBlockService,
+    CommunicationPermissionsService,
+    FileScannerService,
+    ChatAtlasService,
   ],
   exports: [
     EmailService,

@@ -42,6 +42,35 @@ export interface FcmSendResult {
   errors: string[];
 }
 
+/**
+ * ⭐ V5 (chantier 9) — Options de livraison spécifiques aux APPELS ENTRANTS.
+ *    - android : priority 'high', ttl '45s' (45 s), channel_id 'helm_calls' ;
+ *    - apns    : interruption-level 'time-sensitive' + apns-expiration à +45 s.
+ *    Sans ces options, le comportement par défaut (notifications classiques)
+ *    est inchangé.
+ */
+export interface FcmCallDeliveryOptions {
+  android?: {
+    priority?: 'high' | 'normal';
+    ttl?: string;           // ex. '45s'
+    channelId?: string;     // ex. 'helm_calls'
+  };
+  apns?: {
+    interruptionLevel?: 'passive' | 'active' | 'time-sensitive' | 'critical';
+    expirationSeconds?: number; // ex. 45 → headers['apns-expiration'] = now + 45
+  };
+}
+
+/** Payload FCM — avec surcharges optionnelles de livraison (appels). */
+export interface FcmPayload {
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  type?: string;
+  /** ⭐ V5 (chantier 9) — options de livraison (priorités/TTL/canal des appels). */
+  delivery?: FcmCallDeliveryOptions;
+}
+
 @Injectable()
 export class FcmSenderService {
   private readonly logger = new Logger(FcmSenderService.name);
@@ -141,12 +170,7 @@ export class FcmSenderService {
    */
   async sendToUser(
     userId: string,
-    payload: {
-      title: string;
-      body: string;
-      data?: Record<string, string>;
-      type?: string; // ABSENCE_CREATED | EXAM_SCHEDULED | etc. — for client routing
-    },
+    payload: FcmPayload,
   ): Promise<FcmSendResult> {
     await this.initialize();
     if (!this.isConfigured) {
@@ -180,7 +204,7 @@ export class FcmSenderService {
    */
   async sendToUsers(
     userIds: string[],
-    payload: { title: string; body: string; data?: Record<string, string>; type?: string },
+    payload: FcmPayload,
   ): Promise<FcmSendResult> {
     await this.initialize();
     if (!this.isConfigured || userIds.length === 0) {
@@ -216,7 +240,7 @@ export class FcmSenderService {
    */
   private async sendToTokens(
     tokens: string[],
-    payload: { title: string; body: string; data?: Record<string, string>; type?: string },
+    payload: FcmPayload,
   ): Promise<FcmSendResult> {
     const result: FcmSendResult = {
       success: true,
@@ -231,23 +255,39 @@ export class FcmSenderService {
       const messaging = this._getMessaging ? this._getMessaging() : (admin as any).messaging(this.firebaseApp);
 
       // Build the multicast message
+      // ⭐ V5 (chantier 9) — FIX de l'écrasement du data.type : on FUSIONNE les
+      //    data existantes avec payload.type (au lieu d'écraser data.type par
+      //    'SYSTEM' quand payload.type est absent — ex: appels entrants qui
+      //    passent type='incoming_call' DANS data).
+      const dataPayload: Record<string, string> = {
+        ...(payload.data || {}),
+        ...(payload.type ? { type: payload.type } : {}),
+        // Add timestamp for client-side ordering
+        timestamp: Date.now().toString(),
+      };
+      // ⭐ V5 (chantier 9) — Livraison des APPELS : surcharge android/apns
+      //    (priorité high, TTL 45 s, canal helm_calls, interruption-level
+      //    time-sensitive, expiration apns +45 s) sans toucher au défaut.
+      const d = payload.delivery || {};
+      const androidPriority = d.android?.priority || 'high';
+      const androidTtl = d.android?.ttl; // ex. '45s' pour les appels
+      const androidChannelId = d.android?.channelId || 'academia_helm_notifications';
+      const apnsInterruptionLevel = d.apns?.interruptionLevel; // ex. 'time-sensitive'
+      const apnsExpiration = d.apns?.expirationSeconds
+        ? String(Math.floor(Date.now() / 1000) + d.apns.expirationSeconds)
+        : undefined;
       const message = {
         notification: {
           title: payload.title,
           body: payload.body,
         },
-        data: {
-          // FCM data payload must be all strings
-          ...(payload.data || {}),
-          type: payload.type || 'SYSTEM',
-          // Add timestamp for client-side ordering
-          timestamp: Date.now().toString(),
-        },
+        data: dataPayload,
         android: {
-          priority: 'high' as const,
+          priority: androidPriority as 'high' | 'normal',
+          ...(androidTtl ? { ttl: androidTtl } : {}),
           notification: {
-            channelId: 'academia_helm_notifications',
-            priority: 'high' as const,
+            channelId: androidChannelId,
+            priority: androidPriority as 'high' | 'normal',
             icon: '@mipmap/ic_notification',
             color: '#CFA63A', // Academia Helm gold
             sound: 'default',
@@ -255,10 +295,12 @@ export class FcmSenderService {
           },
         },
         apns: {
+          ...(apnsExpiration ? { headers: { 'apns-expiration': apnsExpiration } } : {}),
           payload: {
             aps: {
               sound: 'default',
               badge: 1,
+              ...(apnsInterruptionLevel ? { 'interruption-level': apnsInterruptionLevel } : {}),
             },
           },
         },

@@ -73,6 +73,12 @@ export interface CallSessionOverlayProps {
   /** Attache la vidéo locale (PiP) au <video> fourni — via le handle de
    *  session média du parent (aucun état local dupliqué). */
   localVideoAttacher?: (el: HTMLVideoElement) => boolean;
+  /** ⭐ V5 (parité Yeshua) — issue de l'appel affichée en grand ~2 s AVANT la
+   *  fermeture de l'overlay (« Appel refusé / Pas de réponse / Appel annulé /
+   *  Appel terminé · 3 min 12 s »). */
+  endStatus?: { status: string; durationSec?: number } | null;
+  /** ⭐ V5 (parité Yeshua) — acceptation en cours (spinner sur Accepter). */
+  accepting?: boolean;
 }
 
 /** Halo pulsant or (extérieur) + azur (milieu) — identité Helm. */
@@ -98,6 +104,30 @@ function PulsingAvatar({ name, avatarUrl, size = 128, initials }: {
 function initialsOf(name: string | undefined): string {
   if (!name) return '?';
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?';
+}
+
+/** ⭐ V5 — durée lisible « 3 min 12 s » (parité Yeshua). */
+function formatDur(sec: number): string {
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return s > 0 ? `${m} min ${s} s` : `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** ⭐ V5 (parité Yeshua) — barres equalizer animées pendant la sonnerie. */
+function EqualizerBars() {
+  return (
+    <div className="flex items-end gap-1 h-5 justify-center" aria-hidden>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <span
+          key={i}
+          className="w-1 rounded-full bg-[#FFE08A]"
+          style={{ height: '100%', transformOrigin: 'bottom', animation: `helm-eq 0.9s ease-in-out ${i * 0.12}s infinite` }}
+        />
+      ))}
+    </div>
+  );
 }
 
 /** Une tuile de la grille de participants. */
@@ -126,7 +156,7 @@ function ParticipantTile({ p, isSpeaking, isMe, name, avatarUrl }: {
         : 'border border-white/10 bg-[#0A2A5E]/50',
     )}>
       {hasVideo ? (
-        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-contain" />
       ) : (
         <div className="flex flex-col items-center gap-2">
           <div className={cn(
@@ -219,8 +249,19 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
     state, info, participants, activeSpeakers, duration, provider, mediaSwitching,
     muted, videoOff, isSharingScreen, speakerOn, myName,
     onAccept, onDecline, onHangup, onToggleMute, onToggleVideo, onToggleScreenShare, onToggleSpeaker,
-    resolveName, resolveAvatar, localVideoAttacher,
+    resolveName, resolveAvatar, localVideoAttacher, endStatus, accepting,
   } = props;
+
+  // ⭐ V5 — libellé de l'issue (affiché en grand avant fermeture)
+  const endStatusLabel = (() => {
+    if (!endStatus) return null;
+    const s = String(endStatus.status).toLowerCase();
+    if (s === 'declined' || s === 'rejected') return { text: 'Appel refusé', ok: false };
+    if (s === 'missed') return { text: 'Pas de réponse', ok: false };
+    if (s === 'cancelled') return { text: 'Appel annulé', ok: false };
+    const d = endStatus.durationSec ? ` · ${formatDur(endStatus.durationSec)}` : '';
+    return { text: `Appel terminé${d}`, ok: true };
+  })();
 
   // Vibration mobile sur appel entrant (porté de Yeshua — 400 ms)
   useEffect(() => {
@@ -245,6 +286,11 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
   if (state === 'incoming') {
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between p-8">
+        {/* ⭐ V5 — keyframes locales : halo vert du bouton Accepter + equalizer */}
+        <style>{`
+          @keyframes helm-call-halo { 0%,100% { box-shadow: 0 0 0 0 rgba(52,211,153,.45); } 50% { box-shadow: 0 0 0 14px rgba(52,211,153,0); } }
+          @keyframes helm-eq { 0%,100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+        `}</style>
         <div className="pt-8 text-center">
           <p className="text-sm text-[#FFE08A] font-medium tracking-wider uppercase">
             Appel {info.isGroup ? 'de groupe ' : ''}entrant Helm Connect
@@ -253,6 +299,8 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
         <div className="text-center">
           <PulsingAvatar name={info.title} avatarUrl={info.avatarUrl} initials={initialsOf(info.title)} />
           <h2 className="text-2xl font-bold text-white mb-1">{info.title}</h2>
+          {/* ⭐ V5 (parité Yeshua) — sous-ligne « X vous appelle » */}
+          <p className="text-white/80 text-sm mb-2">{info.title} vous appelle{info.isGroup ? ' depuis ce groupe' : ''}</p>
           {info.subtitle && (
             <p className="text-sm text-white/70 mb-3 flex items-center justify-center gap-1">
               <Users className="w-3.5 h-3.5" /> {info.subtitle}
@@ -267,6 +315,8 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
             </span>
             <span className="text-sm font-semibold text-white">{isVideo ? 'Appel vidéo' : 'Appel audio'}</span>
           </div>
+          {/* ⭐ V5 (parité Yeshua) — barres equalizer pendant la sonnerie */}
+          <div className="mt-4"><EqualizerBars /></div>
         </div>
         <div className="flex justify-center gap-16 pb-10">
           <button onClick={onDecline} className="flex flex-col items-center gap-2">
@@ -275,11 +325,19 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
             </div>
             <span className="text-xs text-white/80">Refuser</span>
           </button>
-          <button onClick={onAccept} className="flex flex-col items-center gap-2">
-            <div className="w-16 h-16 rounded-full bg-[#FFE08A] hover:bg-[#CFA63A] flex items-center justify-center text-[#0A2A5E] shadow-lg animate-pulse">
-              <Phone className="w-7 h-7" />
+          <button onClick={onAccept} disabled={accepting} className="flex flex-col items-center gap-2">
+            {/* ⭐ V5 (parité Yeshua) — halo vert pulsant + état « accepting »
+                (spinner) au lieu d'un simple animate-pulse or. */}
+            <div
+              className={cn(
+                'w-16 h-16 rounded-full flex items-center justify-center text-[#0A2A5E] shadow-lg transition-transform hover:scale-110',
+                accepting ? 'bg-white/20 text-white' : 'bg-emerald-400 hover:bg-emerald-500',
+              )}
+              style={!accepting ? { animation: 'helm-call-halo 1.6s ease-in-out infinite' } : undefined}
+            >
+              {accepting ? <Loader2 className="w-7 h-7 animate-spin" /> : <Phone className="w-7 h-7" />}
             </div>
-            <span className="text-xs text-white/80">Accepter</span>
+            <span className="text-xs text-white/80">{accepting ? 'Connexion…' : 'Accepter'}</span>
           </button>
         </div>
       </div>
@@ -291,6 +349,15 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
   // ═════════════════════════════════════════════════════════════════
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between">
+      {/* ⭐ V5 — issue de l'appel affichée en GRAND avant fermeture (parité
+          Yeshua) : recouvre l'overlay ~2 s le temps de lire le motif. */}
+      {endStatusLabel && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#0A2A5E]/80 backdrop-blur-sm">
+          <p className={cn('text-2xl font-bold px-6 text-center', endStatusLabel.ok ? 'text-emerald-400' : 'text-red-400')}>
+            {endStatusLabel.text}
+          </p>
+        </div>
+      )}
       {/* ⭐ Bandeau failover (porté de Yeshua) : bascule automatique réseau */}
       {mediaSwitching && (
         <div className="absolute top-0 left-0 right-0 z-30 bg-[#CFA63A]/95 text-[#0A2A5E] text-center py-1.5 px-3 flex items-center justify-center gap-2">
@@ -307,10 +374,11 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
             {Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')}
           </span>
         )}
-        {/* ⭐ Badge réseau (diagnostic — aucun secret) */}
+        {/* ⭐ Badge réseau (diagnostic — aucun secret). V5 : suffixe « (secours) »
+            quand on n'est PAS sur le réseau principal (parité Yeshua). */}
         <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/90 text-[10px] font-medium">
           <Signal className="w-3 h-3 text-[#FFE08A]" />
-          Réseau : {providerLabel(provider)}
+          Réseau : {providerLabel(provider)}{provider && provider !== 'livekit' ? ' (secours)' : ''}
         </span>
         {state === 'active' && totalParticipants > 1 && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/90 text-[10px] font-medium">
@@ -342,6 +410,10 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
           <PulsingAvatar name={info.title} avatarUrl={info.avatarUrl} size={128} initials={initialsOf(info.title)} />
           <h2 className="text-2xl font-bold text-white mb-1">{info.title}</h2>
           <p className="text-[#FFE08A]/90 mb-2">Appel en cours…</p>
+          {/* ⭐ V5 (parité Yeshua) — attente explicite de l'autre participant */}
+          {participants.length === 0 && (
+            <p className="text-white/70 text-sm mb-2">En attente que l'autre participant rejoigne l'appel…</p>
+          )}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-[#FFE08A]/30">
             <span className="relative flex h-7 w-7">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FFE08A] opacity-50" />
@@ -355,16 +427,18 @@ export function CallSessionOverlay(props: CallSessionOverlayProps) {
         </div>
       )}
 
-      {/* PiP vidéo locale (appels vidéo actifs) */}
+      {/* PiP vidéo locale (appels vidéo actifs) — ⭐ V5 : miroir (selfie)
+          + étiquette « Vous » (parité Yeshua). */}
       {isVideo && state === 'active' && (
-        <video
-          ref={(el) => { if (el) localVideoAttacher?.(el); }}
-          autoPlay playsInline muted
-          className={cn(
-            'absolute bottom-32 right-4 w-32 h-48 rounded-2xl object-cover border-2 border-[#FFE08A]/40 z-20 bg-black/40',
-            (videoOff || isSharingScreen) && 'opacity-60',
-          )}
-        />
+        <div className={cn('absolute bottom-32 right-4 z-20', (videoOff || isSharingScreen) && 'opacity-60')}>
+          <video
+            ref={(el) => { if (el) localVideoAttacher?.(el); }}
+            autoPlay playsInline muted
+            className="w-32 h-48 rounded-2xl object-cover border-2 border-[#FFE08A]/40 bg-black/40"
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium">Vous</span>
+        </div>
       )}
 
       <ControlBar

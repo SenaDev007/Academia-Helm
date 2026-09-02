@@ -30,8 +30,9 @@ import {
   BellOff, Play, Pause, CheckCircle2, Reply, Forward, Copy, Pin, Trash2,
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
-  ChevronUp, Monitor, Smile,
-  PhoneMissed, PhoneOff, Radio,
+  ChevronUp, ChevronDown, Monitor, Smile,
+  PhoneMissed, PhoneOff, Radio, FileAudio, FileVideo, MessageCircle, Ban, Lock,
+  Menu, ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -48,7 +49,7 @@ import VoiceChannelPanel from './call/VoiceChannelPanel';
 // ⭐ V4 Phase 2 — Rendu chat enrichi (porté de Yeshua Connect)
 import LinkEmbed from './LinkEmbed';
 import MediaGalleryModal from './MediaGalleryModal';
-import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
+import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage, isEncrypted } from '@/lib/chat/crypto';
 // ⭐ V3-1: Offline-first chat — IndexedDB cache + send queue + retry on reconnect
 import {
   getMessages as getOfflineMessages,
@@ -171,6 +172,22 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** ⭐ V5 (parité Yeshua) — Heure de la sidebar intelligente :
+ *  aujourd'hui → HH:MM · hier → « Hier » · < 7 j → jour abrégé (mar.) ·
+ *  sinon → jj/mm/aa. */
+function formatConvTime(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const that = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - that.getTime()) / 86400000);
+  if (diffDays <= 0) return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Hier';
+  if (diffDays < 7) return d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
 function formatDateSeparator(dateStr: string): string {
   const d = new Date(dateStr);
   const today = new Date();
@@ -179,6 +196,113 @@ function formatDateSeparator(dateStr: string): string {
   if (d.toDateString() === today.toDateString()) return "Aujourd'hui";
   if (d.toDateString() === yesterday.toDateString()) return 'Hier';
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+/** ⭐ V5 (parité Yeshua + spec #12) — LECTEUR VOCAL façon WhatsApp :
+ *    bouton play/pause rond, waveform de 28 barres DÉTERMINISTES (seed =
+ *    longueur de l'URL — stable d'un rendu à l'autre), barres colorées
+ *    jusqu'à la position de lecture, seek au CLIC sur la waveform, temps
+ *    courant/total tabular-nums, téléchargement, et VITESSE DE LECTURE
+ *    (0,5× / 1× / 1,5× / 2×) via audio.playbackRate — exigée par la spec. */
+function VoiceNotePlayer({ src, name, isMine }: { src: string; name?: string; isMine: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0); // 0..1
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+  // Waveform déterministe : 28 barres, hauteurs 0.25..1
+  const bars = useMemo(() => {
+    let h = 5381 + src.length * 2654435761;
+    const arr: number[] = [];
+    for (let i = 0; i < 28; i++) {
+      h = (h * 1103515245 + 12345) & 0x7fffffff;
+      arr.push(0.25 + ((h % 1000) / 1000) * 0.75);
+    }
+    return arr;
+  }, [src]);
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) { a.play().catch(() => {}); } else { a.pause(); }
+  };
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const a = audioRef.current;
+    if (!a || !a.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    a.currentTime = ratio * a.duration;
+    setProgress(ratio);
+  };
+  const cycleRate = () => {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : rate === 2 ? 0.5 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+  const playedBars = Math.round(progress * bars.length);
+  return (
+    <div className="flex items-center gap-2 py-0.5 min-w-[210px]">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); setCurrent(0); }}
+        onTimeUpdate={(e) => {
+          const a = e.currentTarget;
+          setCurrent(a.currentTime);
+          if (a.duration) setProgress(a.currentTime / a.duration);
+        }}
+        onLoadedMetadata={(e) => { const d = e.currentTarget.duration; if (isFinite(d)) setDuration(d); }}
+      />
+      <button
+        onClick={toggle}
+        className={cn('w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm transition-transform hover:scale-105',
+          isMine ? 'bg-white/25 text-white' : 'bg-[#1677FF] text-white')}
+        title={playing ? 'Pause' : 'Lecture'}
+      >
+        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      {/* Waveform cliquable (seek) */}
+      <div
+        onClick={seek}
+        className="flex items-center gap-[2px] h-8 cursor-pointer flex-1 min-w-[90px] select-none"
+        title="Cliquer pour avancer/reculer"
+      >
+        {bars.map((b, i) => (
+          <span
+            key={i}
+            className={cn('flex-1 rounded-full transition-colors',
+              i < playedBars
+                ? (isMine ? 'bg-white' : 'bg-[#1677FF]')
+                : (isMine ? 'bg-white/40' : 'bg-slate-300'))}
+            style={{ height: `${Math.round(b * 100)}%` }}
+          />
+        ))}
+      </div>
+      <div className={cn('text-[10px] font-mono tabular-nums flex-shrink-0', isMine ? 'text-white/90' : 'text-slate-500')}>
+        {fmt(current)}{duration > 0 ? ` / ${fmt(duration)}` : ''}
+      </div>
+      <button
+        onClick={cycleRate}
+        className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 tabular-nums',
+          isMine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}
+        title="Vitesse de lecture"
+      >
+        {rate === 0.5 ? '0,5×' : rate === 1 ? '1×' : rate === 1.5 ? '1,5×' : '2×'}
+      </button>
+      <a
+        href={src}
+        download={name || 'message-vocal'}
+        className={cn('p-1 rounded flex-shrink-0', isMine ? 'text-white/80 hover:bg-white/20' : 'text-slate-400 hover:bg-slate-200')}
+        title="Télécharger"
+      >
+        <Download className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  );
 }
 
 /**
@@ -217,20 +341,33 @@ function renderRichContent(html: string): string {
 
   // ⭐ DISCORD PARITY: Multi-line code blocks ```language\ncode\n```
   //    Must be processed BEFORE inline code (backticks) to avoid double-processing.
-  //    Discord-style: gray background, monospace, preserved whitespace, optional language label.
+  //    ⭐ V5 (parité Yeshua) : header avec label du langage + bouton COPIER
+  //    (copie via délégation d'événement — voir effet dédié dans le composant).
   if (hasCodeBlock) {
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang, code) => {
-      const langLabel = lang ? `<span style="font-size:0.7em;color:#94a3b8;display:block;margin-bottom:4px;">${lang}</span>` : '';
-      const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').trim();
-      return `<pre style="background-color:#0f172a;color:#f1f5f9;border-radius:6px;padding:10px 12px;margin:6px 0;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.85em;line-height:1.5;">${langLabel}<code>${escapedCode}</code></pre>`;
+      const raw = String(code).trim();
+      const escapedCode = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Attribut sûr : encodeURIComponent échappe < > & " — aucune fermeture de tag possible
+      const attr = encodeURIComponent(raw);
+      return `<div class="code-block" style="position:relative;margin:6px 0;border-radius:8px;overflow:hidden;border:1px solid #1e293b;">` +
+        `<div style="display:flex;align-items:center;justify-content:space-between;background-color:#0b1322;padding:4px 10px;">` +
+        `<span style="font-size:0.7em;color:#94a3b8;font-family:ui-monospace,monospace;">${lang || 'code'}</span>` +
+        `<button class="code-copy-btn" type="button" data-code="${attr}" style="font-size:0.7em;color:#94a3b8;background:transparent;border:0;cursor:pointer;font-family:inherit;padding:2px 6px;border-radius:4px;">Copier</button>` +
+        `</div>` +
+        `<pre style="background-color:#0f172a;color:#f1f5f9;padding:10px 12px;margin:0;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.85em;line-height:1.5;"><code>${escapedCode}</code></pre>` +
+        `</div>`;
     });
   }
 
   // Split into HTML tags and text content
   const parts = html.split(/(<[^>]+>)/);
+  let inCodeBlock = false;
   return parts.map(part => {
-    // Skip HTML tags (start with <) — but allow <pre><code> blocks we just inserted
-    if (part.startsWith('<pre')) return part;
+    // ⭐ V5 — ne JAMAIS transformer le CONTENU d'un bloc de code (les @, ~~,
+    //    || et ` du code doivent rester du texte brut affiché).
+    if (part.startsWith('<pre')) { inCodeBlock = true; return part; }
+    if (part.startsWith('</pre')) { inCodeBlock = false; return part; }
+    if (inCodeBlock) return part;
     if (part.startsWith('<')) return part;
 
     let result = part;
@@ -535,6 +672,20 @@ const USER_BUBBLE_COLORS = [
   'bg-[#F5F5F4] border-[#E7E5E4]',     // pierre clair
 ];
 
+/** ⭐ V5 (parité Yeshua) — couleurs SIGNATURE (texte/avatar) : teintes franches
+ *    associées au même hash djb2 que les bulles — nom + avatar identifiés
+ *    instantanément, façon Discord/Telegram. Palette accordée à Helm. */
+const USER_TEXT_COLORS = [
+  '#0958D9', // bleu Helm
+  '#059669', // vert
+  '#D97706', // ambre
+  '#7C3AED', // violet
+  '#0891B2', // cyan
+  '#CA8A04', // jaune doré
+  '#DB2777', // rose
+  '#57534E', // pierre
+];
+
 /** Hash djb2 → index stable dans la palette (même logique que Yeshua). */
 function hashUserId(userId: string): number {
   let h = 5381;
@@ -544,13 +695,63 @@ function hashUserId(userId: string): number {
   return h % USER_BUBBLE_COLORS.length;
 }
 
+/** ⭐ V5 (parité Yeshua) — Durée d'appel lisible façon WhatsApp :
+ *  45 s → « 45 s » · 192 s → « 3 min 12 s » · 7 200 s → « 2 h 0 min ». */
+function formatCallDurationFr(sec?: number | null): string {
+  if (!sec || sec <= 0) return '';
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return s > 0 ? `${m} min ${s} s` : `${m} min`;
+  const h = Math.floor(m / 60);
+  return `${h} h ${m % 60} min`;
+}
+
+/** ⭐ V5 (parité Yeshua — Plan C des grands appels de groupe) — room Jitsi
+ *    DÉTERMINISTE (même room pour tous les participants d'un même appel,
+ *    sans configuration serveur) quand la chaîne LiveKit→Agora→Daily est
+ *    épuisée ET que le mesh WebRTC (≤ 5) est dépassé. */
+function jitsiRoomFor(kind: 'call' | 'voice', id: string): string {
+  return `helm-connect-${kind}-${id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+}
+function jitsiUrlFor(room: string, displayName: string): string {
+  return `https://meet.jit.si/${room}#config.prejoinPageEnabled=false&userInfo.displayName=%22${encodeURIComponent(displayName)}%22`;
+}
+
+/** ⭐ V5 (parité Yeshua — indispensable derrière les CGNAT des réseaux
+ *  mobiles) — serveurs ICE pour le mesh WebRTC : STUN Google ×3 + TURN
+ *  public Open Relay, surchargeables via NEXT_PUBLIC_TURN_*. */
+function getIceServers(): RTCIceServer[] {
+  const servers: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    {
+      urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ];
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  if (turnUrl) {
+    servers.push({
+      urls: turnUrl,
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || undefined,
+      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || undefined,
+    });
+  }
+  return servers;
+}
+
 /** ⭐ V4 Phase 3 — URL absolue du backend (fini les URLS en dur
  *  https://api.academiahelm.com éparpillées) : une seule source de vérité. */
 function getBackendBaseUrl(): string {
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  return getBackendBaseUrl();
+  // ⭐ V5 — FIX auto-récursion (stack overflow) : valeur de repli explicite
+  //    plutôt qu'un appel récursif infini quand la variable d'env est absente.
+  return 'https://api.academiahelm.com';
 }
 
 function getRoleColor(roleOrLabel: string | undefined): string {
@@ -610,6 +811,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    records the mention so the backend can send a push notification.
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionStartPos, setMentionStartPos] = useState<number>(-1);
+  // ⭐ V5 (parité Yeshua) — index sélectionné pour la navigation clavier (↑/↓/Tab/Entrée/Échap)
+  const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
+  useEffect(() => { setMentionSelectedIdx(0); }, [mentionQuery]);
 
   // ⭐ ROLE-BASED CATEGORY FILTER (Tout / Enseignants / Parents / Administration)
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -753,6 +957,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showMemberList, setShowMemberList] = useState(false);
   const [conversationMembers, setConversationMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  // ⭐ V5 (parité Yeshua) — fiche membre (clic sur un membre) + blocages +
+  //    onglet Inviter du panneau des membres
+  const [memberProfile, setMemberProfile] = useState<any | null>(null);
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [memberPanelTab, setMemberPanelTab] = useState<'members' | 'invite'>('members');
+  const [invitableUsers, setInvitableUsers] = useState<any[]>([]);
+  const [inviteQuery, setInviteQuery] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [invitedIds, setInvitedIds] = useState<Set<string>>(new Set());
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
   // ⭐ DISCORD PARITY: Audit log modal
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -827,6 +1041,45 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showConvSearch, setShowConvSearch] = useState(false);
   const [convSearchQuery, setConvSearchQuery] = useState('');
   const [convSearchResults, setConvSearchResults] = useState<any[]>([]);
+  // ⭐ V5 (parité Yeshua) — bannière des messages épinglés + liste déroulante
+  const [showPinnedList, setShowPinnedList] = useState(false);
+  const pinnedMessages = useMemo(
+    () => messages.filter((m: any) => m.isPinned),
+    [messages]
+  );
+  // ⭐ V5 (parité Yeshua — THREADS) — fil de discussion latéral sur un
+  //    message : panneau droit listant les réponses (replyToId = parent) +
+  //    saisie dédiée + badge « N réponses » sur la bulle parent.
+  const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  const [threadDraft, setThreadDraft] = useState('');
+  const threadParent = useMemo(
+    () => messages.find(m => m.id === threadParentId) || null,
+    [messages, threadParentId]
+  );
+  const threadReplies = useMemo(
+    () => messages.filter((m: any) => m.replyToId === threadParentId),
+    [messages, threadParentId]
+  );
+  const replyCountByParent = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of messages as any[]) {
+      if (m.replyToId) counts[m.replyToId] = (counts[m.replyToId] || 0) + 1;
+    }
+    return counts;
+  }, [messages]);
+  // ⭐ V5 — aperçu compact d'un message épinglé (texte strippé ou type média)
+  const pinnedPreview = (m: any): string => {
+    const t = String(m.type || 'TEXT');
+    if (t === 'AUDIO') return '🎤 Message vocal';
+    if (t === 'IMAGE') return '📷 Photo';
+    if (t === 'VIDEO') return '🎥 Vidéo';
+    if (t === 'DOCUMENT') return `📎 ${m.attachmentName || 'Document'}`;
+    if (t === 'POLL') return '📊 Sondage';
+    if (t === 'CALL_LOG') return '📞 Appel';
+    if (t === 'STICKER') return '🏷️ Sticker';
+    const txt = stripHtml(m.content || '').trim();
+    return txt ? txt.substring(0, 60) + (txt.length > 60 ? '…' : '') : 'Message';
+  };
   const handleConvSearch = async (q: string) => {
     setConvSearchQuery(q);
     if (q.trim().length < 2) { setConvSearchResults([]); return; }
@@ -958,6 +1211,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const ringtoneRef = useRef<{ ctx: AudioContext; interval: any } | null>(null);
+  // ⭐ V5 (parité Yeshua) — vibration mobile en boucle pendant la sonnerie
+  const vibrateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ⭐ V4 (porté de Yeshua Connect) — CHAÎNE MÉDIA LiveKit → Agora → Daily :
   //    mediaSessionRef détient la session SFU courante, les participants
@@ -974,6 +1229,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [v4CallInfo, setV4CallInfo] = useState<CallSessionInfo | null>(null);
   const [signalCallId, setSignalCallId] = useState<string | null>(null);
   const [incomingSignal, setIncomingSignal] = useState<any | null>(null);
+  // ⭐ V5 (parité Yeshua) — issue d'appel affichée 2 s dans l'overlay AVANT la
+  //    fermeture (« Appel refusé / Pas de réponse / Appel annulé / Appel
+  //    terminé · 3 min 12 s ») au lieu d'un simple toast.
+  const [callEndStatus, setCallEndStatus] = useState<{ status: string; durationSec?: number } | null>(null);
+  // ⭐ V5 (parité Yeshua) — appels de groupe refusés localement : ne jamais
+  //    re-sonner pour ces callId (le signal continue pour les autres membres).
+  const declinedCallIdsRef = useRef<Set<string>>(new Set());
+  // ⭐ V5 (parité Yeshua) — bascule chaude de fournisseur par convergence du
+  //    polling statut : si le serveur a failoveré l'appel, on bascule aussi.
+  const mediaProviderRef = useRef<MediaProviderName | 'mesh' | null>(null);
+  mediaProviderRef.current = mediaProvider;
+  const mediaFailoverInFlightRef = useRef(false);
   // Refs stables pour les callbacks de session média (évitent les re-créations)
   const callStateRef = useRef(callState);
   callStateRef.current = callState;
@@ -981,6 +1248,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V4 Phase 3 — ref stable de la conversation ouverte (listeners socket)
   const activeConvIdRef = useRef<string | null>(null);
   activeConvIdRef.current = activeConvId;
+  // ⭐ V5 — ref stable des conversations (titre des notifications natives)
+  const conversationsRef = useRef<any[]>([]);
+  conversationsRef.current = conversations;
 
   // ⭐ FIX: Ringtone — softer volume + different patterns for outgoing vs incoming
   //    Outgoing (caller): single soft "calling" tone every 2s (gentle beep)
@@ -1051,16 +1321,78 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, []);
 
   // ⭐ FIX: Play/stop ringtone based on call state — different sounds for caller vs callee
+  // ⭐ V5 — couvre AUSSI les appels entrants V4 (chat_call_signals) : callState
+  //    reste 'idle' dans ce flux, donc la sonnerie doit se déclencher sur
+  //    incomingSignal. Remplace le composant <IncomingSignalRingtone /> qui
+  //    n'existait pas (→ ReferenceError → écran blanc à chaque appel entrant).
+  //    + vibration en boucle (400 ms / 2 s) + notification navigateur si la
+  //    page est en arrière-plan + reprise audio au premier tap (autoplay).
   useEffect(() => {
+    const resumeAudio = () => { try { ringtoneRef.current?.ctx.resume(); } catch {} };
     if (callState === 'outgoing') {
       playRingtone('outgoing');
-    } else if (callState === 'incoming') {
+    } else if (callState === 'incoming' || incomingSignal) {
       playRingtone('incoming');
+      try { navigator.vibrate?.(400); } catch {}
+      if (vibrateIntervalRef.current) clearInterval(vibrateIntervalRef.current);
+      vibrateIntervalRef.current = setInterval(() => {
+        try { navigator.vibrate?.(400); } catch {}
+      }, 2000);
+      // Notification navigateur quand la page est cachée (parité Yeshua)
+      if (typeof document !== 'undefined' && document.hidden &&
+          typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const who = incomingSignal?.initiatorName || incomingSignal?.convName || 'Quelqu\u2019un';
+          new Notification(`${who} vous appelle`, {
+            body: `${incomingSignal?.callType === 'video' ? 'Appel vidéo' : 'Appel audio'}${incomingSignal?.convName ? ` · ${incomingSignal.convName}` : ''}`,
+            tag: `helm-call-${incomingSignal?.callId || 'x'}`,
+          });
+        } catch { /* ignore */ }
+      }
+      // Reprise audio au premier tap (autoplay bloqué sur mobile)
+      document.addEventListener('pointerdown', resumeAudio, { once: true });
     } else {
       stopRingtone();
     }
-    return () => stopRingtone();
-  }, [callState, playRingtone, stopRingtone]);
+    return () => {
+      stopRingtone();
+      document.removeEventListener('pointerdown', resumeAudio);
+      if (vibrateIntervalRef.current) {
+        clearInterval(vibrateIntervalRef.current);
+        vibrateIntervalRef.current = null;
+      }
+      try { navigator.vibrate?.(0); } catch {}
+    };
+  }, [callState, incomingSignal, playRingtone, stopRingtone]);
+
+  // ⭐ V5 (parité Yeshua) — demander la permission de notification au 1er
+  //    chargement (pour les notifications d'appels et de messages en arrière-plan)
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // ⭐ V5 (parité Yeshua) — BOUTON COPIER des blocs de code : les blocs sont
+  //    rendus via innerHTML → délégation d'événement globale sur .code-copy-btn.
+  //    Copie le code (data-code encodé URI), affiche « Copié ✓ » 2 s.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.('.code-copy-btn') as HTMLButtonElement | null;
+      if (!btn) return;
+      const encoded = btn.getAttribute('data-code');
+      if (!encoded) return;
+      try {
+        const text = decodeURIComponent(encoded);
+        navigator.clipboard?.writeText(text).then(() => {
+          btn.textContent = 'Copié ✓';
+          setTimeout(() => { btn.textContent = 'Copier'; }, 2000);
+        }).catch(() => toast.error('Copie impossible'));
+      } catch { /* ignore */ }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
 
   // ⭐ V2.5: Cleanup call resources
   const cleanupCall = useCallback(() => {
@@ -1107,6 +1439,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V4 Phase 2 — Galerie de médias (porté de Yeshua) + recherche sidebar
   const [showGallery, setShowGallery] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState('');
+  // ⭐ V5 (parité Yeshua) — sidebar en OVERLAY sur mobile : le bouton retour
+  //    DÉPLIE la liste des conversations au lieu de vider le chat.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   // ⭐ V4 — Session média des CANAUX VOCAUX (référence DISTINCTE de celle
   //    des appels : on peut être en canal vocal ET recevoir un appel)
   const voiceSessionRef = useRef<MediaSessionHandle | null>(null);
@@ -1114,6 +1449,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [voiceProvider, setVoiceProvider] = useState<MediaProviderName | 'mesh' | null>(null);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [voiceVideoMode, setVoiceVideoMode] = useState(false);
+  // ⭐ V5 — participants MÉDIA du canal vocal (grille vidéo en mode vidéo)
+  const [voiceMediaParticipants, setVoiceMediaParticipants] = useState<HcRemoteParticipant[]>([]);
+  // ⭐ V5 — repli JITSI (Plan C des grands appels de groupe, chaîne épuisée
+  //    + mesh ≤ 5 dépassé) : room déterministe + iframe plein écran
+  const [jitsiFallback, setJitsiFallback] = useState<{ room: string; title: string } | null>(null);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -1166,6 +1506,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           // Only beep for messages in OTHER conversations (not the one currently open)
           if (data?.conversationId !== activeConvId) {
             playNotificationSound();
+          }
+          // ⭐ V5 (parité Yeshua) — NOTIFICATION NATIVE quand la page est en
+          //    arrière-plan : titre = nom de la conversation, body =
+          //    « auteur : aperçu », tag = id du message (déduplication).
+          //    Aucune notification pour la conversation ouverte.
+          if (
+            typeof document !== 'undefined' && document.hidden &&
+            data?.conversationId !== activeConvId &&
+            typeof Notification !== 'undefined' && Notification.permission === 'granted'
+          ) {
+            try {
+              const m: any = data.message || {};
+              const senderName = `${m.senderFirstName || m.sender?.firstName || ''} ${m.senderLastName || m.sender?.lastName || ''}`.trim() || 'Nouveau message';
+              const conv = conversationsRef.current.find(c => c.id === data.conversationId);
+              const title = conv?.name || senderName;
+              let preview = String(m.content || '');
+              if (m.type === 'AUDIO') preview = '🎤 Message vocal';
+              else if (m.type === 'IMAGE') preview = '📷 Image';
+              else if (m.type === 'DOCUMENT') preview = `📎 ${m.attachmentName || 'Document'}`;
+              else preview = preview.replace(/<[^>]*>/g, '');
+              preview = preview.substring(0, 80);
+              new Notification(title, {
+                body: `${senderName} : ${preview}${String(m.content || '').length > 80 ? '…' : ''}`,
+                tag: m.id,
+              });
+            } catch { /* ignore */ }
           }
         }
       } catch { /* ignore audio errors */ }
@@ -1240,7 +1606,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    Declared AFTER `socket` to avoid TDZ — useCallback deps reference `socket`.
   const setupPeerConnection = useCallback((otherUserId: string, callId: string) => {
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+      iceServers: getIceServers(), // ⭐ V5 — STUN ×3 + TURN (CGNAT/4G)
     });
 
     // Add local tracks
@@ -1390,6 +1756,98 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     () => conversations.find(c => c.id === activeConvId) || null,
     [conversations, activeConvId]
   );
+
+  // ⭐ V5 — correspondances de mentions calculées UNE fois (popover + clavier).
+  //    Déclarées APRÈS activeConv (ordre TDZ).
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null || !activeConv) return [] as any[];
+    const query = mentionQuery.toLowerCase();
+    return (activeConv.participants || [])
+      .filter((p: any) => p.userId !== currentUserId)
+      .filter((p: any) => {
+        const fullName = `${p.firstName || ''} ${p.lastName || ''}`.trim().toLowerCase();
+        return !query || fullName.includes(query);
+      })
+      .slice(0, 5);
+  }, [mentionQuery, activeConv, currentUserId]);
+  // ⭐ V5 — insère la mention à la place du « @requête » tapé (au lieu de
+  //    l'ajouter en fin de texte) : position réelle du jeton, pas un append.
+  const selectMention = useCallback((p: any) => {
+    const firstName = p.firstName || p.lastName || 'utilisateur';
+    const mentionText = `@${firstName} `;
+    const mentionHtml = `<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">${mentionText}</span>`;
+    setText(prev => {
+      const query = mentionQuery || '';
+      const token = '@' + query;
+      const idx = query ? prev.lastIndexOf(token) : prev.lastIndexOf('@');
+      if (idx !== -1) {
+        const after = query ? idx + token.length : idx + 1;
+        return prev.slice(0, idx) + mentionHtml + prev.slice(after);
+      }
+      return prev + mentionHtml;
+    });
+    setMentionQuery(null);
+  }, [mentionQuery]);
+
+  // ⭐ V5 — ACTIVATION E2EE (les helpers étaient importés mais JAMAIS appelés) :
+  //    en conversation DIRECTE, si les DEUX parties ont publié une clé, les
+  //    messages texte sont chiffrés (RSA-OAEP) pour le destinataire. La copie
+  //    locale de l'expéditeur (optimiste + cache offline) reste en clair.
+  const [e2eAvailable, setE2eAvailable] = useState(false);
+  const [otherPublicKey, setOtherPublicKey] = useState<string | null>(null);
+  const otherPublicKeyRef = useRef<string | null>(null);
+  otherPublicKeyRef.current = otherPublicKey;
+  useEffect(() => {
+    setOtherPublicKey(null);
+    setE2eAvailable(false);
+    if (!activeConvId || !activeConv || activeConv.type !== 'DIRECT') return;
+    const other = activeConv.participants?.find((p: any) => p.userId !== currentUserId);
+    if (!other) return;
+    (async () => {
+      try {
+        const mine = await hasPrivateKey();
+        const res = await fetch(`/api/chat/keys?userIds=${other.userId}`, { credentials: 'include' });
+        if (res.ok) {
+          const keys = await res.json();
+          const k = Array.isArray(keys) ? keys[0]?.publicKey : null;
+          setOtherPublicKey(k || null);
+          setE2eAvailable(!!mine && !!k);
+        }
+      } catch { /* silencieux — E2E reste désactivé */ }
+    })();
+  }, [activeConvId, activeConv, currentUserId]);
+
+  // ⭐ V5 — DÉCHIFFREMENT à l'affichage : messages « E2E: » → déchiffrement par
+  //    clé privée. Pour MES PROPRES messages (chiffrés pour le destinataire,
+  //    indéchiffrables par moi), repli sur la copie en clair du cache offline.
+  const [decryptedContents, setDecryptedContents] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const encrypted = messages.filter((m: any) => isEncrypted(m.content || ''));
+      if (encrypted.length === 0) return;
+      let offlineMine: Record<string, string> = {};
+      if (isOfflineStoreAvailable() && activeConvId) {
+        try {
+          const cached = await getOfflineMessages(activeConvId);
+          offlineMine = Object.fromEntries(cached.map((c: any) => [c.id, String(c.content || '')]));
+        } catch { /* ignore */ }
+      }
+      const updates: Record<string, string> = {};
+      for (const m of encrypted as any[]) {
+        if (m.senderId === currentUserId && offlineMine[m.id] && !isEncrypted(offlineMine[m.id])) {
+          updates[m.id] = offlineMine[m.id];
+        } else {
+          const dec = await decryptMessage(m.content);
+          if (dec !== m.content) updates[m.id] = dec;
+        }
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setDecryptedContents(prev => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [messages, activeConvId, currentUserId]);
 
   // ───────────────────────────────────────────────────────────────────
   // Load conversations
@@ -1581,14 +2039,58 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setVoiceMuted(!voiceMuted);
   }, [voiceMuted]);
 
-  /** Caméra du canal vocal (mode vidéo activé par l'admin). */
+  /** Caméra du canal vocal (mode vidéo activé par l'admin) — bascule personnelle. */
+  const [voiceCameraOn, setVoiceCameraOn] = useState(false);
   const toggleVoiceVideo = useCallback(() => {
     const session = voiceSessionRef.current;
+    const next = !voiceCameraOn;
     if (session) {
-      // Bascule simple : on réutilise setCameraEnabled (idempotent)
-      session.setCameraEnabled(true).catch(() => {});
-      toast.info('Caméra activée dans le canal vocal');
+      session.setCameraEnabled(next).catch(() => {});
     }
+    setVoiceCameraOn(next);
+  }, [voiceCameraOn]);
+
+  /** ⭐ V5 (parité Yeshua) — BASCULE AUDIO↔VIDÉO DU CANAL : CONTRÔLE ADMIN
+   *    COLLECTIF. PUT /voice-channels/:id/video-mode — le serveur diffuse
+   *    voice:video-mode à tous les membres et les caméras suivent. Avant V5 :
+   *    n'activait que SA propre caméra et l'événement socket était écrit dans
+   *    window._voiceVideoMode SANS JAMAIS être consommé. */
+  const toggleVoiceVideoMode = useCallback(async () => {
+    if (!activeVoiceChannel) return;
+    const next = !voiceVideoMode;
+    try {
+      const res = await fetch(`/api/chat/voice-channels/${activeVoiceChannel}/video-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoMode: next }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.message || `Erreur ${res.status}`);
+      }
+      setVoiceVideoMode(next);
+      voiceSessionRef.current?.setCameraEnabled(next).catch(() => {});
+      toast.success(next ? 'Mode vidéo activé pour tout le canal' : 'Mode audio activé pour tout le canal');
+    } catch (e: any) {
+      toast.error('Bascule impossible : ' + e.message);
+    }
+  }, [activeVoiceChannel, voiceVideoMode]);
+
+  // ⭐ V5 (parité Yeshua) — autoplay bloqué par le navigateur : bandeau
+  //    « Le son est coupé — cliquez ici » dans le panneau vocal.
+  const [voiceAutoplayBlocked, setVoiceAutoplayBlocked] = useState(false);
+  const unlockAudioPlayback = useCallback(async () => {
+    try {
+      const ctx = new AudioContext();
+      await ctx.resume();
+      ctx.close().catch(() => {});
+    } catch { /* ignore */ }
+    // Relancer la lecture des <audio> distants cachés des adaptateurs
+    document.querySelectorAll('audio[data-hc]').forEach((el) => {
+      (el as HTMLAudioElement).play().catch(() => {});
+    });
+    setVoiceAutoplayBlocked(false);
   }, []);
 
     // ⭐ V4 (porté de Yeshua Connect) : Join a voice channel via la CHAÎNE
@@ -1627,7 +2129,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               participantName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur',
             },
             {
-              onParticipants: () => {
+              onParticipants: (participants) => {
+                // ⭐ V5 — stocker les participants média (grille vidéo du canal)
+                setVoiceMediaParticipants(participants);
                 // Rafraîchir la liste des présents (source REST = vérité)
                 fetch(`/api/chat/voice-channels/${channelId}/users`, { credentials: 'include' })
                   .then((r) => (r.ok ? r.json() : null))
@@ -1649,6 +2153,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         voiceSessionRef.current = session;
         setVoiceProvider(bundle.provider);
         toast.success(`Rejoint : ${channel.name || 'Voix'} (${bundle.provider === 'livekit' ? 'LiveKit SFU' : bundle.provider})`);
+        // ⭐ V5 — détection autoplay bloqué (AudioContext suspendu = le
+        //    navigateur refusera de jouer l'audio distant sans interaction)
+        try {
+          const probe = new AudioContext();
+          setVoiceAutoplayBlocked(probe.state === 'suspended');
+          probe.close().catch(() => {});
+        } catch { /* ignore */ }
+        // ⭐ V5 — auto-rejoin après refresh (clé localStorage)
+        try { localStorage.setItem(`helm-voice-${currentUserId}`, channelId); } catch {}
       } catch (e: any) {
         setVoiceProvider('mesh');
         toast.success(`Rejoint : ${channel.name || 'Voix'} (mesh WebRTC)`);
@@ -1682,18 +2195,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         credentials: 'include',
       });
     } catch { /* ignore */ }
+    // ⭐ V5 — quitter explicitement EFFACE la clé d'auto-rejoin (sinon un
+    //    simple refresh nous reconnecterait — comportement Telegram/Yeshua)
+    try { localStorage.removeItem(`helm-voice-${currentUserId}`); } catch {}
+    setVoiceCameraOn(false);
     setActiveVoiceChannel(null);
     setVoiceChannelUsers([]);
+    setVoiceMediaParticipants([]);
   }, [activeVoiceChannel, currentUserId]);
+
+  // ⭐ V5 (parité Yeshua) — AUTO-REJOIN après refresh : la clé localStorage
+  //    helm-voice-<uid> est posée au join ; au montage, si le canal existe
+  //    encore, on s'y reconnecte automatiquement (UNE tentative par chargement).
+  const voiceAutoRejoinRef = useRef(false);
+  useEffect(() => {
+    if (voiceAutoRejoinRef.current || activeVoiceChannel || !currentUserId) return;
+    const saved = typeof window !== 'undefined' ? localStorage.getItem(`helm-voice-${currentUserId}`) : null;
+    if (!saved || voiceChannels.length === 0) return;
+    voiceAutoRejoinRef.current = true;
+    if (voiceChannels.some((c: any) => c.id === saved)) {
+      joinVoiceChannel(saved).catch(() => {
+        try { localStorage.removeItem(`helm-voice-${currentUserId}`); } catch {}
+      });
+    }
+  }, [voiceChannels, activeVoiceChannel, currentUserId, joinVoiceChannel]);
 
   // ───────────────────────────────────────────────────────────────────
   // Load messages for active conversation
   // ───────────────────────────────────────────────────────────────────
   const loadMessages = useCallback(async () => {
     if (!activeConvId) return;
-
-    // ⭐ PAGINATION: reset hasMore on every fresh load (switching conv or refresh)
-    setHasMoreMessages(true);
 
     // ⭐ V3-1: Lire le cache IndexedDB d'abord (affichage instantané)
     if (isOfflineStoreAvailable()) {
@@ -1722,10 +2253,41 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         seen.add(m.id);
         return true;
       });
-      setMessages(unique);
-      // ⭐ PAGINATION: if backend returned fewer than 100 messages,
-      //    we've reached the beginning of the conversation history.
-      setHasMoreMessages(unique.length >= 100);
+      // ⭐ V5 — Fusion à signature (remplace le setMessages intégral).
+      //    Ne JAMAIS remplacer tout le tableau : on garde les pages plus
+      //    anciennes chargées par pagination + les messages locaux pending,
+      //    on adopte les versions serveur de la fenêtre fraîche, on retire
+      //    les supprimés. Si la signature (contenu+statuts) est inchangée →
+      //    on retourne l'identité précédente → AUCUN re-render → le scroll
+      //    n'est jamais perturbé par le polling de secours.
+      setMessages(prev => {
+        if (prev.length === 0) return unique;
+        const serverIds = new Set<string>(unique.map((m: ChatMessage) => m.id));
+        const oldestTime = new Date(unique[0]?.createdAt || 0).getTime();
+        const olderPages: ChatMessage[] = [];
+        const tailPending: ChatMessage[] = [];
+        for (const m of prev) {
+          if (serverIds.has(m.id)) continue; // la version serveur remplace
+          if ((m as any).status === 'pending' || (m as any).localId) {
+            tailPending.push(m); // message optimiste local (le plus récent) → en fin
+          } else if (new Date(m.createdAt || 0).getTime() < oldestTime) {
+            olderPages.push(m); // page de pagination plus ancienne → en tête
+          }
+          // sinon : message récent absent du serveur (supprimé) → retiré
+        }
+        const merged: ChatMessage[] = [...olderPages, ...unique, ...tailPending];
+        const sig = (list: ChatMessage[]) => list.map((m: any) =>
+          `${m.id}:${m.updatedAt || m.editedAt || ''}:${(m.reactions || []).length}:${m.isPinned ? 1 : 0}:${m.status || ''}:${m.readAt || ''}:${m.deliveredAt || ''}`
+        ).join('|');
+        return sig(merged) === sig(prev) ? prev : merged;
+      });
+      // ⭐ V5 : hasMore n'est calculé que sur un chargement FRAIS de conversation
+      //    (sinon le bouton « Charger les messages précédents » réapparaissait
+      //    à chaque poll après avoir atteint le début de l'historique).
+      if (freshLoadRef.current) {
+        setHasMoreMessages(unique.length >= 100);
+        freshLoadRef.current = false;
+      }
 
       // ⭐ V3-1: Sauvegarder dans le cache offline (bulk)
       if (isOfflineStoreAvailable() && unique.length > 0) {
@@ -1806,25 +2368,81 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   }, [activeConvId, currentUserId, messages, loadingMore, hasMoreMessages]);
 
+  // ⭐ V5 — sauter à un message (bannière épinglés / citations) : scroll dans le
+  //    CONTENEUR de messages (pas la page) + halo bleu 1,5 s. Si le message est
+  //    hors fenêtre (pagination), on charge une page plus ancienne puis réessaie.
+  const jumpToMessage = useCallback((messageId: string) => {
+    const doJump = (el: HTMLElement, container: HTMLElement) => {
+      const targetScroll = el.offsetTop - (container.clientHeight - el.offsetHeight) / 2;
+      container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+      el.classList.add('ring-2', 'ring-blue-400');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 1500);
+    };
+    const el = document.querySelector(`[data-msg-id="${messageId}"]`) as HTMLElement | null;
+    const container = messagesContainerRef.current;
+    if (el && container) {
+      doJump(el, container);
+      setShowPinnedList(false);
+    } else {
+      toast.info('Message plus ancien — chargement…');
+      loadOlderMessages().finally(() => {
+        setTimeout(() => {
+          const el2 = document.querySelector(`[data-msg-id="${messageId}"]`) as HTMLElement | null;
+          const c = messagesContainerRef.current;
+          if (el2 && c) doJump(el2, c);
+          setShowPinnedList(false);
+        }, 400);
+      });
+    }
+  }, [loadOlderMessages]);
+
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
+  // ⭐ V5 (parité Yeshua) — au FOCUS de la fenêtre : rafraîchir l'avatar + les
+  //    conversations (rattrapage après un onglet en veille). L'événement custom
+  //    « profile-updated » (émis ailleurs dans l'app) y est aussi écouté pour
+  //    resynchroniser la photo partout sans rechargement.
+  useEffect(() => {
+    const refreshProfileAndConvs = () => {
+      loadConversations();
+      if (!currentUserId) return;
+      fetch(`/api/chat/profile/${currentUserId}`, { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : null))
+        .then((p: any) => { if (p?.avatarUrl) setMyAvatarUrl(p.avatarUrl); })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', refreshProfileAndConvs);
+    window.addEventListener('profile-updated', refreshProfileAndConvs as EventListener);
+    return () => {
+      window.removeEventListener('focus', refreshProfileAndConvs);
+      window.removeEventListener('profile-updated', refreshProfileAndConvs as EventListener);
+    };
+  }, [loadConversations, currentUserId]);
+
   useEffect(() => {
     if (activeConvId) {
       setLoadingMsgs(true);
+      // ⭐ V5 : reset de pagination UNE fois par changement de conversation
+      //    (auparavant à chaque poll — le bouton revenait après pagination).
+      freshLoadRef.current = true;
+      setHasMoreMessages(true);
       loadMessages();
     }
   }, [activeConvId, loadMessages]);
 
-  // ⭐ Polling : rafraîchir les messages toutes les 5s
+  // ⭐ V5 : le polling n'est plus qu'un filet de secours — rapide (5 s) quand
+  //    le socket est déconnecté, lent (30 s) quand il est actif (le temps réel
+  //    suffit). La fusion à signature dans loadMessages garantit zéro re-render
+  //    quand rien n'a changé → aucune perturbation du scroll.
   useEffect(() => {
     if (!activeConvId) return;
     const interval = setInterval(() => {
       loadMessages();
-    }, 5000);
+    }, socket.isConnected ? 30000 : 5000);
     return () => clearInterval(interval);
-  }, [activeConvId, loadMessages]);
+  }, [activeConvId, loadMessages, socket.isConnected]);
 
   // ⭐ Polling : rafraîchir les conversations toutes les 15s
   useEffect(() => {
@@ -1858,6 +2476,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       for (const chunk of chunks) {
         await Promise.all(chunk.map(async (p) => {
           try {
+            // ⭐ V5 — E2EE au re-flush : chiffrer comme l'envoi principal quand
+            //    la clé du destinataire de la conversation courante est connue.
+            let contentOut = p.content;
+            try {
+              const otherKey = otherPublicKeyRef.current;
+              if (otherKey && p.conversationId === activeConvIdRef.current && p.content.length < 400 && !isEncrypted(p.content)) {
+                contentOut = await encryptMessage(p.content, otherKey);
+              }
+            } catch { /* repli : envoi en clair */ }
             const res = await fetch(
               `/api/chat/conversations/${p.conversationId}/messages/text`,
               {
@@ -1865,7 +2492,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   senderId: p.senderId,
-                  content: p.content,
+                  content: contentOut,
                   ...(p.replyToId ? { replyToId: p.replyToId } : {}),
                 }),
                 credentials: 'include',
@@ -2202,152 +2829,65 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    'X' before initialization" if sendRecordedAudio appeared before
   //    handleSendAttachment in the source.
 
-  // ⭐ V3-11: Smart scroll-to-bottom — uses container.scrollTop directly
-  //    (NOT scrollIntoView, which scrolls ALL scrollable ancestors including the
-  //    page itself — causing the chat to get stuck at the top of the viewport on
-  //    teacher/parent pages where the page is taller than the viewport).
-  //    Only auto-scrolls if the user is near the bottom OR on first load.
+  // ⭐ V5 — Moteur de scroll UNIQUE (façon Yeshua Connect — stabilité).
+  //    Un seul déclencheur : un effet sur [messages, activeConvId] qui ne
+  //    scrolle QUE si l'utilisateur est près du bas (isNearBottomRef, 120 px).
+  //    Les anciens mécanismes concurrents (cascade setTimeout 300/800/1500 ms,
+  //    ResizeObserver + queueMicrotask, effet loadingMsgs, retries rAF ×10,
+  //    reset forcé de userIsNearBottom) ont été SUPPRIMÉS : ce sont eux qui
+  //    créaient les allers-retours de scroll en entrant dans une conversation.
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const userIsNearBottomRef = useRef(true); // true if user is within 200px of bottom
-  const isFirstLoadRef = useRef(true);
-  // Track previous messages length to detect new message arrivals
-  const prevMessagesLengthRef = useRef(0);
-  // Track the last scrollHeight we scrolled to — used by the ResizeObserver to
-  // detect when new content (images loading, new messages) increases the
-  // scrollHeight, so we can re-scroll to the bottom.
-  const lastScrolledHeightRef = useRef(0);
-  // If the user has manually scrolled up (away from bottom), we stop auto-
-  // scrolling until they scroll back near the bottom.
-  const userScrolledAwayRef = useRef(false);
+  const isNearBottomRef = useRef(true); // l'utilisateur est-il à moins de 120 px du bas ?
+  const firstPaintRef = useRef(true);   // premier rendu de la conv → saut instantané
+  const freshLoadRef = useRef(true);    // chargement frais (reset par changement de conv)
 
-  // Reset scroll-following when switching conversations
+  // Réinitialiser le suivi du scroll quand on change de conversation
   useEffect(() => {
-    isFirstLoadRef.current = true;
-    userIsNearBottomRef.current = true;
-    prevMessagesLengthRef.current = 0;
-    lastScrolledHeightRef.current = 0;
-    userScrolledAwayRef.current = false;
+    isNearBottomRef.current = true;
+    firstPaintRef.current = true;
     // ⭐ Reset mention popover when switching conversations
     setMentionQuery(null);
     setMentionStartPos(-1);
-  }, [activeConvId]);
+    // ⭐ V5 — vider la file d'attente de pièces jointes (les URLs d'aperçu
+    //    sont révoquées pour éviter les fuites mémoire)
+    clearPendingFiles();
+  }, [activeConvId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ⭐ V3-11: Scroll the messages container to the bottom (NOT the page).
-  //   Polls for the container up to 500ms in case the ref isn't attached yet
-  //   (the messages div is conditionally rendered when activeConv is set).
+  // ⭐ V5: Scroll le conteneur de messages (PAS la page) vers le bas.
+  //    Simple et déterministe : pas de retry, pas de timers.
   const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'smooth') => {
-    const tryScroll = (attempts = 0) => {
-      const container = messagesContainerRef.current;
-      if (!container) {
-        // Ref not attached yet — retry up to 10 times (500ms total)
-        if (attempts < 10) {
-          requestAnimationFrame(() => tryScroll(attempts + 1));
-        }
-        return;
-      }
-      const targetScroll = container.scrollHeight - container.clientHeight;
-      if (behavior === 'auto') {
-        container.scrollTop = targetScroll;
-      } else {
-        container.scrollTo({ top: targetScroll, behavior: 'smooth' });
-      }
-      lastScrolledHeightRef.current = container.scrollHeight;
-      userIsNearBottomRef.current = true;
-    };
-    tryScroll();
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const targetScroll = container.scrollHeight - container.clientHeight;
+    container.scrollTo({ top: targetScroll, behavior });
   }, []);
 
-  // Track user scroll position via passive listener on the messages container.
-  // ⭐ V3-11: This is the KEY fix — we track whether the user has manually
-  //   scrolled away from the bottom. If they did, we NEVER auto-scroll (even
-  //   when scrollHeight changes from images loading). This prevents the
-  //   "yank back to bottom" feeling while reading history.
+  // Suivi passif de la position : « près du bas » = à moins de 120 px.
+  //    Si l'utilisateur remonte, on n'ESSAIE JAMAIS de le rattraper (sauf
+  //    s'il revient lui-même près du bas).
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      userIsNearBottomRef.current = distanceFromBottom < 100;
-      if (distanceFromBottom > 100) {
-        userScrolledAwayRef.current = true;
-      } else {
-        userScrolledAwayRef.current = false;
-      }
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 120;
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [activeConvId]);
 
-  // ⭐ V3-11: ResizeObserver — watches the messages container for scrollHeight
-  //   changes (caused by images loading, new messages, polls). When the height
-  //   grows AND the user hasn't scrolled away, we re-scroll to the bottom.
-  //   This is the robust fix for the oscillation bug (scrollHeight going
-  //   2554 → 2062 → 2554 as images load).
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const newHeight = entry.contentRect.height;
-        // Only auto-scroll if:
-        // 1. The container grew (new content appeared), AND
-        // 2. The user hasn't manually scrolled away from the bottom
-        if (newHeight > lastScrolledHeightRef.current && !userScrolledAwayRef.current) {
-          // Use a microtask to ensure the DOM has settled before scrolling
-          queueMicrotask(() => {
-            const c = messagesContainerRef.current;
-            if (c) {
-              c.scrollTop = c.scrollHeight - c.clientHeight;
-              lastScrolledHeightRef.current = c.scrollHeight;
-            }
-          });
-        }
-      }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [activeConvId]);
-
-  // ⭐ V3-11: Auto-scroll on first load / conversation switch
+  // ⭐ V5 — LE déclencheur unique : à chaque changement de messages (nouveau
+  //    message, édition, réaction, polling de secours), si et seulement si
+  //    l'utilisateur est près du bas → scroll. Premier rendu de la conv ou
+  //    pendant le chargement = instantané ('auto' — masque le double rendu
+  //    cache→serveur, aucun mouvement visible) ; ensuite = 'smooth'.
   useEffect(() => {
     if (messages.length === 0) return;
-    if (isFirstLoadRef.current) {
-      // First load → instant jump to bottom. Use multiple rAF passes + a
-      // setTimeout to catch slow-loading images.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            scrollToBottom('auto');
-            setTimeout(() => scrollToBottom('auto'), 300);
-            setTimeout(() => scrollToBottom('auto'), 800);
-            setTimeout(() => scrollToBottom('auto'), 1500);
-          });
-        });
-      });
-      isFirstLoadRef.current = false;
-      prevMessagesLengthRef.current = messages.length;
-      return;
-    }
-    // New messages arrived (length increased)
-    const isNewMessage = messages.length > prevMessagesLengthRef.current;
-    prevMessagesLengthRef.current = messages.length;
-    if (isNewMessage && !userScrolledAwayRef.current) {
-      scrollToBottom('smooth');
-    }
-  }, [messages.length, scrollToBottom]);
-
-  // ⭐ V3-11: Also scroll to bottom when loadingMsgs transitions from true→false
-  useEffect(() => {
-    if (!loadingMsgs && messages.length > 0 && isFirstLoadRef.current) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom('auto');
-        });
-      });
-      isFirstLoadRef.current = false;
-    }
-  }, [loadingMsgs, messages.length, scrollToBottom]);
+    if (!isNearBottomRef.current) return;
+    const instant = firstPaintRef.current || loadingMsgs;
+    requestAnimationFrame(() => scrollToBottom(instant ? 'auto' : 'smooth'));
+    firstPaintRef.current = false;
+  }, [messages, activeConvId, loadingMsgs, scrollToBottom]);
 
   // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar
   useEffect(() => {
@@ -2481,12 +3021,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const mentionedUserIds = activeConv
         ? extractMentionedUserIds(content, activeConv.participants as any, currentUserId)
         : [];
+      // ⭐ V5 — E2EE : chiffrement DESTINATAIRE en conversation DIRECTE (clés
+      //    des deux côtés). La copie locale (optimiste + cache offline) reste
+      //    en clair pour l'affichage côté expéditeur.
+      let contentToSend = content;
+      if (e2eAvailable && otherPublicKey && content.length < 400) {
+        try { contentToSend = await encryptMessage(content, otherPublicKey); } catch { /* repli clair */ }
+      }
       const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderId: currentUserId,
-          content,
+          content: contentToSend,
           ...(replyToId ? { replyToId } : {}),
           ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
         }),
@@ -2555,6 +3102,77 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ───────────────────────────────────────────────────────────────────
   // Message actions (reply/forward/delete/pin/copy)
   // ───────────────────────────────────────────────────────────────────
+  // ⭐ V5 — Envoyer une réponse DANS LE FIL (replyToId = parent). Logique
+  //    AUTONOME (le composer principal lit l'état `text` ; le fil a son
+  //    propre champ) : optimisme + queue offline + mentions, comme
+  //    handleSendText mais avec paramètres explicites (pas de closure périmée).
+  const sendThreadReply = async () => {
+    const content = threadDraft.trim();
+    if (!content || !threadParentId || !activeConvId || sending) return;
+    setThreadDraft('');
+    setSending(true);
+    const localId = generateLocalId();
+    const now = new Date().toISOString();
+    const localMessage: any = {
+      id: localId,
+      conversationId: activeConvId,
+      senderId: currentUserId,
+      type: 'TEXT',
+      content,
+      replyToId: threadParentId,
+      createdAt: now,
+      localId,
+      status: 'pending',
+    };
+    setMessages(prev => [...prev, localMessage]);
+    if (isOfflineStoreAvailable()) {
+      saveOfflineMessage(localMessage as OfflineChatMessage).catch(() => {});
+      addPendingMessage({
+        localId,
+        conversationId: activeConvId,
+        senderId: currentUserId,
+        content,
+        replyToId: threadParentId,
+        queuedAt: now,
+        attempts: 0,
+      }).catch(() => {});
+    }
+    try {
+      const mentionedUserIds = activeConv
+        ? extractMentionedUserIds(content, activeConv.participants as any, currentUserId)
+        : [];
+      // ⭐ V5 — E2EE (même logique que handleSendText)
+      let contentToSend = content;
+      if (e2eAvailable && otherPublicKey && content.length < 400) {
+        try { contentToSend = await encryptMessage(content, otherPublicKey); } catch { /* repli clair */ }
+      }
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/messages/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: currentUserId,
+          content: contentToSend,
+          replyToId: threadParentId,
+          ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
+        }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      const newMsg = await res.json();
+      if (isOfflineStoreAvailable()) {
+        markMessageSent(localId, newMsg.id, newMsg.createdAt).catch(() => {});
+        removePendingMessage(localId).catch(() => {});
+      }
+      setMessages(prev => prev.map(m => (m as any).localId === localId ? newMsg : m));
+      loadConversations();
+    } catch (e: any) {
+      toast.error("Échec d'envoi : " + e.message);
+      if (isOfflineStoreAvailable()) incrementPendingAttempts(localId, e.message).catch(() => {});
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleMessageReply = (messageId: string) => {
     const msg = messages.find(m => m.id === messageId);
     if (!msg) return;
@@ -2722,7 +3340,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         credentials: 'include',
       });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, deletedAt: new Date().toISOString() } : m));
+      // ⭐ V5 (parité Yeshua) — retrait IMMÉDIAT de la bulle (comme Yeshua) :
+      //    avant, on marquait seulement deletedAt SANS aucune logique de rendu
+      //    → le message restait affiché jusqu'au prochain polling.
+      setMessages(prev => prev.filter(m => m.id !== messageId));
       toast.success('Message supprimé pour tous');
     } catch (e: any) {
       toast.error('Échec : ' + e.message);
@@ -2957,7 +3578,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
    * historique (compatible mobile Flutter).
    */
   const handleStartCall = async (callType: 'AUDIO' | 'VIDEO') => {
-    if (!activeConvId || callState !== 'idle') return;
+    if (!activeConvId || callState !== 'idle') {
+      // ⭐ V5 (parité Yeshua) — feedback visible quand un appel est déjà en cours
+      if (callState !== 'idle' || incomingSignal) toast.info('Un appel est déjà en cours');
+      return;
+    }
     const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
     if (!other) return;
     const otherName = `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Utilisateur';
@@ -3177,8 +3802,135 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       }
     }
 
+    // ⭐ V5 — PLAN C (parité Yeshua) : appel de GROUPE au-delà de la limite
+    //    mesh (5 participants) avec chaîne épuisée → room Jitsi déterministe
+    //    (« Mode secours ») au lieu d'un échec silencieux.
+    const totalCallSize = (groupCallParticipants.size || 0) + 1;
+    if (totalCallSize > 5) {
+      setSignalCallId(null);
+      setV4CallInfo(null);
+      setCallState('idle');
+      setCallData(null);
+      disconnectMediaSession();
+      setJitsiFallback({
+        room: jitsiRoomFor('call', activeConvId),
+        title: activeConv.name || 'Appel de groupe',
+      });
+      toast.info('Réseau de secours Jitsi (grand groupe)');
+      return;
+    }
+
     await handleStartGroupCallMesh(callType);
   };
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 (parité Yeshua) — ACTIONS MEMBRE : DM / appel / blocage depuis
+  //  la fiche membre du panneau latéral
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Ouvrir/créer le DM avec un membre croisé dans un groupe (fiche membre). */
+  const openDirectMessage = useCallback(async (userId: string) => {
+    try {
+      const res = await fetch('/api/chat/conversations/direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentUserId, otherUserId: userId }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.message || (err as any)?.error || `Erreur ${res.status}`);
+      }
+      const conv = await res.json();
+      setMemberProfile(null);
+      setActiveConvId(conv.id);
+      await loadConversations();
+    } catch (e: any) {
+      toast.error("Impossible d'ouvrir la conversation : " + e.message);
+    }
+  }, [currentUserId, loadConversations]);
+
+  /** Appeler un membre croisé : crée/ouvre le DM PUIS lance l'appel dessus. */
+  const callMemberDirect = useCallback((userId: string, callType: 'AUDIO' | 'VIDEO') => {
+    setMemberProfile(null);
+    openDirectMessage(userId).then(() => {
+      setTimeout(() => handleStartCall(callType), 300);
+    });
+  }, [openDirectMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Bloquer/débloquer un membre (POST/DELETE /api/chat/blocks/:userId). */
+  const toggleBlockMember = useCallback(async (userId: string) => {
+    const wasBlocked = blockedUserIds.has(userId);
+    try {
+      const res = await fetch(`/api/chat/blocks/${userId}`, {
+        method: wasBlocked ? 'DELETE' : 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setBlockedUserIds(prev => {
+        const n = new Set(prev);
+        if (wasBlocked) n.delete(userId); else n.add(userId);
+        return n;
+      });
+      toast.success(wasBlocked ? 'Membre débloqué' : 'Membre bloqué — il ne peut plus vous contacter');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    }
+  }, [blockedUserIds]);
+
+  // Charger la liste des blocages à l'ouverture d'une fiche membre
+  useEffect(() => {
+    if (!memberProfile) return;
+    fetch('/api/chat/blocks', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: any) => {
+        if (!data) return;
+        const ids = Array.isArray(data.blocked)
+          ? data.blocked.map((b: any) => b.blockedId || b.userId || b.id)
+          : [];
+        setBlockedUserIds(new Set(ids));
+      })
+      .catch(() => {});
+  }, [memberProfile]);
+
+  // Invitable (onglet Inviter) — recherche debouncée 250 ms
+  useEffect(() => {
+    if (memberPanelTab !== 'invite' || !activeConvId) return;
+    const timeout = setTimeout(async () => {
+      setInviteLoading(true);
+      try {
+        const res = await fetch(`/api/chat/conversations/${activeConvId}/invitable?q=${encodeURIComponent(inviteQuery)}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setInvitableUsers(Array.isArray(data) ? data : (data?.users || []));
+        }
+      } catch { /* silencieux */ }
+      finally { setInviteLoading(false); }
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [memberPanelTab, activeConvId, inviteQuery]);
+
+  /** Inviter un membre dans le groupe (add-members, idempotent). */
+  const inviteMember = useCallback(async (userId: string) => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/add-members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: [userId] }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.message || (err as any)?.error || `Erreur ${res.status}`);
+      }
+      setInvitedIds(prev => new Set(prev).add(userId));
+      loadConversationMembers(activeConvId);
+      loadConversations();
+    } catch (e: any) {
+      toast.error("Échec de l'invitation : " + e.message);
+    }
+  }, [activeConvId, loadConversationMembers, loadConversations]);
 
   // ⭐ V3-6 (historique) : GROUP call mesh — invite selected participants
   const handleStartGroupCallMesh = async (callType: 'AUDIO' | 'VIDEO') => {
@@ -3242,7 +3994,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       // 6. For each invitee, create a peer connection + send a call:offer
       for (const invitee of invitees) {
         const pc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+          iceServers: getIceServers(), // ⭐ V5 — STUN ×3 + TURN (CGNAT/4G)
         });
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
         pc.onicecandidate = (event) => {
@@ -3331,9 +4083,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ═════════════════════════════════════════════════════════════════
 
   /** Décrocher un appel signalisé (overlay entrant) : accept serveur + chaîne média. */
+  const [acceptingCall, setAcceptingCall] = useState(false);
   const acceptSignalCall = async () => {
     const sig = incomingSignal;
-    if (!sig) return;
+    if (!sig || acceptingCall) return;
+    setAcceptingCall(true); // ⭐ V5 — spinner « Connexion… » sur le bouton Accepter
+    const finishAccepting = () => setAcceptingCall(false);
     setIncomingSignal(null);
     failoverAttemptsRef.current = 0;
     const callType: 'AUDIO' | 'VIDEO' = sig.callType === 'video' ? 'VIDEO' : 'AUDIO';
@@ -3373,8 +4128,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         callId: sig.callId,
         video: callType === 'VIDEO',
       });
+      finishAccepting();
       return; // ⭐ SFU connecté
     } catch (e: any) {
+      finishAccepting();
       // Chaîne épuisée ou en échec :
       //  - si l'appelant est retombé en mesh, une offre brute est en attente
       //    (window._pendingCallOffer) → on y répond en mesh ;
@@ -3390,8 +4147,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         acceptCall(pending.fromUserId, pending.callId, pending.callType, pending.offer);
         return;
       }
+      // ⭐ V5 — Plan C (parité Yeshua) : appel de GROUPE avec chaîne épuisée
+      //    et sans offre mesh en attente → room Jitsi déterministe (même room
+      //    que l'appelant) au lieu de raccrocher immédiatement.
+      if (isGroup && sig.conversationId) {
+        setSignalCallId(null);
+        setV4CallInfo(null);
+        setCallState('idle');
+        setCallData(null);
+        if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+        setJitsiFallback({
+          room: jitsiRoomFor('call', sig.conversationId),
+          title: sig.convName || 'Appel de groupe',
+        });
+        toast.info('Réseau de secours Jitsi (grand groupe)');
+        return;
+      }
       toast.error("Impossible de rejoindre l'appel : " + (e.message || 'réseau indisponible'));
       endSignalCall();
+    } finally {
+      // ⭐ V5 — toujours relâcher l'état « accepting » (anti-blocage du bouton)
+      finishAccepting();
     }
   };
 
@@ -3399,12 +4175,27 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const declineSignalCall = () => {
     const sig = incomingSignal;
     if (!sig) return;
+    // ⭐ V5 — mémoriser le refus : un appel de GROUPE continue de sonner pour
+    //    les autres membres, mais ne doit plus jamais re-sonner chez moi
+    //    (le polling 3 s le re-détecterait sinon toutes les 3 s).
+    declinedCallIdsRef.current.add(sig.callId);
     setIncomingSignal(null);
     fetch('/api/chat/calls/signal', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'decline', callId: sig.callId }),
       credentials: 'include',
     }).catch(() => {});
+  };
+
+  /** ⭐ V5 (parité Yeshua) — Terminer avec affichage de l'issue : l'overlay
+   *    montre le motif (refusé / manqué / annulé / terminé · durée) pendant
+   *    2 s AVANT la fermeture complète. */
+  const endSignalCallWithStatus = (status: string, durationSec?: number) => {
+    setCallEndStatus({ status, durationSec });
+    setTimeout(() => {
+      setCallEndStatus(null);
+      endSignalCall();
+    }, 2000);
   };
 
   /** Terminer l'appel V4 courant (raccrocher) — journal CALL_LOG côté serveur. */
@@ -3587,8 +4378,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           const res = await fetch('/api/chat/calls/signal?incoming=1', { credentials: 'include' });
           if (res.ok) {
             const data = await res.json();
-            if (!cancelled && data?.incoming?.length > 0 && callStateRef.current === 'idle' && !groupCallActive && !incomingSignal) {
-              setIncomingSignal(data.incoming[0]);
+            // ⭐ V5 — filtrer les appels de groupe que J'ai déjà refusés :
+            //    le signal continue de sonner pour les autres membres, mais ne
+            //    doit plus jamais re-sonner chez moi (parité Yeshua).
+            const next = Array.isArray(data?.incoming)
+              ? data.incoming.find((c: any) => !declinedCallIdsRef.current.has(c.callId))
+              : undefined;
+            if (!cancelled && next && callStateRef.current === 'idle' && !groupCallActive && !incomingSignal) {
+              setIncomingSignal(next);
             }
           }
         } catch { /* silencieux */ }
@@ -3599,9 +4396,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => { cancelled = true; clearInterval(interval); };
   }, [readOnly, groupCallActive, incomingSignal]);
 
-  // Statut de l'appel sortant V4 (2 s) : refusé/manqué/annulé/terminé à distance
+  // Statut de l'appel V4 (2 s) — ⭐ V5 : pour les DEUX parties et pendant
+  //    outgoing ET active (l'appel distant raccroché doit nous fermer aussi).
+  //    + bascule chaude : si le serveur a failoveré (data.mediaProvider ≠ le
+  //    nôtre), on rejoint le NOUVEAU réseau — sinon les deux parties se
+  //    retrouvent sur des rooms différentes (bug de convergence).
   useEffect(() => {
-    if (!signalCallId || callState !== 'outgoing' || !v4CallInfo?.isInitiator) return;
+    if (!signalCallId) return;
+    if (callState !== 'outgoing' && callState !== 'active') return;
     let cancelled = false;
     const poll = async () => {
       if (cancelled) return;
@@ -3611,25 +4413,47 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           const data = await res.json();
           if (cancelled) return;
           if (data.status === 'declined') {
-            toast.info('Appel refusé');
-            endSignalCall();
+            endSignalCallWithStatus('declined');
           } else if (data.status === 'missed') {
-            toast.info('Appel manqué (pas de réponse)');
-            endSignalCall();
-          } else if (data.status === 'cancelled' || data.status === 'ended') {
-            endSignalCall();
+            endSignalCallWithStatus('missed');
+          } else if (data.status === 'cancelled') {
+            endSignalCallWithStatus('cancelled');
+          } else if (data.status === 'ended') {
+            endSignalCallWithStatus('ended', data.durationSec);
           } else if (data.status === 'accepted' && callStateRef.current === 'outgoing') {
             setCallState('active');
             if (!callTimerRef.current) {
               callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
             }
           }
+          // ⭐ V5 — convergence de fournisseur (bascule chaude, garde anti-boucle)
+          if (
+            data.mediaProvider &&
+            mediaSessionRef.current &&
+            data.mediaProvider !== mediaProviderRef.current &&
+            !mediaFailoverInFlightRef.current &&
+            v4CallInfo?.conversationId
+          ) {
+            mediaFailoverInFlightRef.current = true;
+            (async () => {
+              try {
+                disconnectMediaSession();
+                await connectMediaChain({
+                  kind: 'call',
+                  conversationId: v4CallInfo.conversationId,
+                  callId: signalCallId,
+                  video: v4CallInfo.callType === 'VIDEO',
+                });
+              } catch { /* la prochaine itération réessayera */ }
+              finally { mediaFailoverInFlightRef.current = false; }
+            })();
+          }
         }
       } catch { /* silencieux */ }
     };
     const interval = setInterval(poll, 2000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [signalCallId, callState, v4CallInfo]);
+  }, [signalCallId, callState, v4CallInfo, connectMediaChain, disconnectMediaSession]);
 
   // ⭐ V4 Phase 3 — ACCUSÉS DE LECTURE TEMPS RÉEL (message:read) : le
   //    serveur broadcaste maintenant (broadcastReadReceipt) quand un
@@ -3660,9 +4484,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     };
     socket.on('message:read', onMessageRead);
     socket.on('inbox:new', onInboxNew);
+    // ⭐ V5 (parité Yeshua — le serveur émet message:pinned/message:unpinned
+    //    via chat.service.ts:2870 mais PERSONNE ne l'écoutait) : bannière
+    //    d'épinglés mise à jour en TEMPS RÉEL chez tous les membres.
+    const onMessagePinned = (data: { conversationId: string; messageId: string }) => {
+      setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, isPinned: true } as any : m));
+    };
+    const onMessageUnpinned = (data: { conversationId: string; messageId: string }) => {
+      setMessages(prev => prev.map(m => m.id === data.messageId ? { ...m, isPinned: false } as any : m));
+    };
+    socket.on('message:pinned', onMessagePinned);
+    socket.on('message:unpinned', onMessageUnpinned);
     return () => {
       socket.off('message:read', onMessageRead);
       socket.off('inbox:new', onInboxNew);
+      socket.off('message:pinned', onMessagePinned);
+      socket.off('message:unpinned', onMessageUnpinned);
     };
   }, [socket, loadConversations]);
 
@@ -3671,6 +4508,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (!socket) return;
     const onCallOffer = (data: { fromUserId: string; callId: string; callType: string; offer: any; callerName?: string; callerAvatarUrl?: string }) => {
       if (callState !== 'idle') return; // Already in a call — auto-reject
+      // ⭐ V5 — ANTI-DUEL D'OVERLAYS : si un signal V4 sonne déjà (overlay
+      //    Accepter/Refuser affiché), l'offre mesh brute est mise en attente
+      //    (elle servira de repli dans acceptSignalCall) mais ne DOIT PAS
+      //    ouvrir le second overlay ni écraser l'état.
+      if (incomingSignal) {
+        (window as any)._pendingCallOffer = data;
+        return;
+      }
       // ⭐ FIX: Use callerName from the payload (sent by the caller) instead of
       //    looking up from activeConv.participants (which may be empty for a
       //    newly opened conversation). Fallback to participants lookup, then 'Utilisateur'.
@@ -3711,13 +4556,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     //    que le polling 3 s qui reste le filet de sécurité (voir effet dédié).
     const onCallIncoming = (payload: any) => {
       if (callStateRef.current !== 'idle' || groupCallActive || incomingSignal) return;
+      // ⭐ V5 — ne jamais re-sonner un appel de groupe déjà refusé localement
+      if (payload?.callId && declinedCallIdsRef.current.has(payload.callId)) return;
       setIncomingSignal(payload);
     };
     socket.on('call:incoming', onCallIncoming);
     // ⭐ V4 : la bascule audio↔vidéo d'un canal vocal (contrôle admin)
     socket.on('voice:video-mode', (payload: any) => {
-      if (activeVoiceChannel && payload?.conversationId === activeVoiceChannel) {
-        try { (window as any)._voiceVideoMode = !!payload.videoMode; } catch {}
+      // ⭐ V5 — la bascule collective EST CONSOMMÉE (avant : écrite dans
+      //    window._voiceVideoMode sans jamais être lue) : l'état + la caméra
+      //    de TOUS les participants suivent le mode diffusé par l'admin.
+      if (activeVoiceChannel && (payload?.conversationId === activeVoiceChannel || payload?.channelId === activeVoiceChannel)) {
+        setVoiceVideoMode(!!payload.videoMode);
+        voiceSessionRef.current?.setCameraEnabled(!!payload.videoMode).catch(() => {});
       }
     });
 
@@ -3768,7 +4619,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
         // Establish a peer connection back to the initiator
         const pc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
+          iceServers: getIceServers(), // ⭐ V5 — STUN ×3 + TURN (CGNAT/4G)
         });
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
         pc.onicecandidate = (event) => {
@@ -3931,18 +4782,66 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // ⭐ V5 (parité Yeshua) — FILE D'ATTENTE MULTI-FICHIERS AVANT ENVOI : les
+  //    fichiers sélectionnés / collés / déposés passent dans une file visuelle
+  //    (vignettes, suppression individuelle, « Tout annuler ») et ne partent
+  //    QU'AU CLIC ENVOYER, la légende (texte saisi) partant en premier.
+  //    Avant V5 : envoi immédiat à la sélection — impossible d'annuler ni de
+  //    légender, pas de multi-sélection.
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; type: 'AUDIO' | 'DOCUMENT' | 'IMAGE'; previewUrl?: string }[]>([]);
+  const [sendingFiles, setSendingFiles] = useState(false);
+  const fileTypeOf = (file: File): 'AUDIO' | 'DOCUMENT' | 'IMAGE' => {
     const mime = file.type;
-    let type: 'AUDIO' | 'DOCUMENT' | 'IMAGE' = 'DOCUMENT';
-    if (mime.startsWith('audio/')) type = 'AUDIO';
-    else if (mime.startsWith('image/')) type = 'IMAGE';
-    // ⭐ DISCORD PARITY: Videos are sent as DOCUMENT (the backend stores them
-    //    via StorageService and the message type 'DOCUMENT' handles any file).
-    //    The frontend renders video attachments inline with a <video> element.
-    else if (mime.startsWith('video/')) type = 'DOCUMENT';
-    handleSendAttachment(file, type);
+    if (mime.startsWith('audio/')) return 'AUDIO';
+    if (mime.startsWith('image/')) return 'IMAGE';
+    return 'DOCUMENT'; // vidéos incluses (rendu <video> inline côté messages)
+  };
+  const addPendingFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setPendingFiles(prev => [...prev, ...files.map(file => ({
+      file,
+      type: fileTypeOf(file),
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+    }))]);
+  }, []);
+  const removePendingFile = useCallback((idx: number) => {
+    setPendingFiles(prev => {
+      const copy = [...prev];
+      const [removed] = copy.splice(idx, 1);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return copy;
+    });
+  }, []);
+  const clearPendingFiles = useCallback(() => {
+    setPendingFiles(prev => {
+      prev.forEach(p => { if (p.previewUrl) URL.revokeObjectURL(p.previewUrl); });
+      return [];
+    });
+  }, []);
+  /** ⭐ V5 — Envoyer la file : légende d'abord (message texte), puis les
+   *    fichiers un à un dans l'ordre de sélection. */
+  const sendPendingFiles = useCallback(async () => {
+    if (pendingFiles.length === 0 || sendingFiles || sending) return;
+    setSendingFiles(true);
+    try {
+      const caption = text.replace(/<[^>]*>/g, '').trim();
+      if (caption && activeConvId) {
+        await handleSendText();
+      }
+      for (const p of pendingFiles) {
+        await handleSendAttachment(p.file, p.type);
+      }
+      clearPendingFiles();
+    } finally {
+      setSendingFiles(false);
+    }
+  }, [pendingFiles, sendingFiles, sending, text, activeConvId, handleSendText, handleSendAttachment, clearPendingFiles]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // ⭐ V5 — multi-sélection + file d'attente visuelle (plus d'envoi immédiat)
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    addPendingFiles(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -3956,16 +4855,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     if (!activeConvId || isReadOnly) return;
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length === 0) return;
-    files.forEach(file => {
-      const mime = file.type;
-      let type: 'AUDIO' | 'DOCUMENT' | 'IMAGE' = 'DOCUMENT';
-      if (mime.startsWith('audio/')) type = 'AUDIO';
-      else if (mime.startsWith('image/')) type = 'IMAGE';
-      // ⭐ Videos sent as DOCUMENT (backend stores them; frontend renders inline <video>).
-      else if (mime.startsWith('video/')) type = 'DOCUMENT';
-      handleSendAttachment(file, type);
-    });
-  }, [activeConvId, isReadOnly, handleSendAttachment]);
+    // ⭐ V5 — les fichiers déposés passent dans la file d'attente visuelle
+    //    (plus d'upload immédiat) : vignettes + annulation + légende possibles.
+    addPendingFiles(files);
+  }, [activeConvId, isReadOnly, addPendingFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -3998,13 +4891,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     const imageItems = items.filter(item => item.type.startsWith('image/'));
     if (imageItems.length === 0) return; // Let normal paste happen for text
     e.preventDefault();
-    imageItems.forEach(item => {
-      const file = item.getAsFile();
-      if (file) {
-        handleSendAttachment(file, 'IMAGE');
-      }
-    });
-  }, [activeConvId, isReadOnly, handleSendAttachment]);
+    // ⭐ V5 — les images collées passent dans la file d'attente visuelle
+    const files = imageItems.map(item => item.getAsFile()).filter(Boolean) as File[];
+    addPendingFiles(files);
+  }, [activeConvId, isReadOnly, addPendingFiles]);
 
   // ⭐ SEND the audio from preview state (declared AFTER handleSendAttachment to avoid TDZ)
   const sendRecordedAudio = useCallback(async () => {
@@ -4053,6 +4943,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           } else {
             // Normal click → open conversation
             setActiveConvId(conv.id);
+            // ⭐ V5 — repli automatique de la sidebar overlay mobile
+            setMobileSidebarOpen(false);
           }
         }}
         onContextMenu={(e) => {
@@ -4113,7 +5005,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <span className={cn(
                   'text-[10px]',
                   (conv as any).unreadCount && (conv as any).unreadCount > 0 ? 'text-[#1677FF] font-semibold' : 'text-slate-400'
-                )}>{formatTime(conv.lastMessageAt)}</span>
+                )}>{formatConvTime(conv.lastMessageAt)}</span>
               )}
             </div>
           </div>
@@ -4124,7 +5016,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 ? 'text-slate-700 font-medium'
                 : 'text-slate-500'
             )}>
-              {conv.lastMessagePreview || '—'}
+              {isEncrypted(conv.lastMessagePreview || '') ? '🔒 Message chiffré' : (conv.lastMessagePreview || '—')}
             </span>
           </div>
           {/* Role label (DIRECT only) or member count (GROUP only) */}
@@ -4154,6 +5046,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
         onChange={handleFileSelect}
         accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.md,.json,.xml"
@@ -4241,11 +5134,57 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         </button>
       </div>
 
+      {/* ═════ V5 (parité Yeshua) — RAIL MOBILE D'AVATARS ═════ */}
+      {/* Vertical, 56px, visible <md quand une conversation est ouverte :
+          bouton déployer (ouvre la sidebar en overlay) + avatars des 8
+          dernières conversations (badge non-lus, point présence, sélection). */}
+      {activeConvId && !mobileSidebarOpen && !showNewChat && !showNewGroup && (
+        <div className="md:hidden w-14 flex flex-col items-center gap-1 py-2 bg-white border-r border-slate-100 overflow-y-auto no-scrollbar">
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="w-10 h-10 rounded-lg bg-[#0958D9] text-white flex items-center justify-center flex-shrink-0 mb-1"
+            title="Afficher les conversations"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          {visibleConversations.slice(0, 8).map(conv => {
+            const railDisplay = getConversationDisplay(conv, currentUserId);
+            const isActive = conv.id === activeConvId;
+            const unread = (conv as any).unreadCount || 0;
+            const other = conv.type === 'DIRECT' ? conv.participants.find((p: any) => p.userId !== currentUserId) : null;
+            const online = !!(other && onlineUsers.has(other.userId));
+            return (
+              <button key={conv.id} onClick={() => setActiveConvId(conv.id)} className="relative flex-shrink-0" title={railDisplay.name}>
+                <div className={cn(
+                  'w-10 h-10 rounded-full flex items-center justify-center text-white text-[10px] font-bold border-2 overflow-hidden',
+                  isActive ? 'border-[#1677FF]' : 'border-transparent',
+                  railDisplay.avatarUrl ? 'bg-slate-200' : getAvatarColor(railDisplay.name)
+                )}>
+                  {railDisplay.avatarUrl
+                    ? <img src={railDisplay.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    : getInitials(railDisplay.name)}
+                </div>
+                {unread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-[#1677FF] text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+                {online && <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ═════ LEFT SIDEBAR — Conversation List ═════ */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40 md:hidden" onClick={() => setMobileSidebarOpen(false)} />
+      )}
       <div className={cn(
-        'border-r border-slate-100 flex flex-col bg-white',
-        activeConvId ? 'hidden md:flex' : 'flex',
-        'w-full md:w-80'
+        'border-r border-slate-100 flex-col bg-white',
+        activeConvId && !mobileSidebarOpen ? 'hidden md:flex' : 'flex',
+        mobileSidebarOpen && 'fixed inset-y-0 left-0 z-50 w-[85vw] max-w-sm shadow-2xl md:static md:w-80 md:shadow-none',
+        !mobileSidebarOpen && 'w-full md:w-80'
       )}>
         {/* ⭐ MOBILE: Horizontal scrollable section bar — replaces the vertical
             icon rail on touch devices. Shows the same 12 sections as a
@@ -4444,6 +5383,26 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           )}
         </div>
 
+        {/* ⭐ V5 (parité Yeshua) — BANNIÈRE D'ERREUR de chargement des
+            conversations : état d'erreur distinct de l'état vide, distinction
+            session expirée / erreur serveur, bouton Réessayer. */}
+        {error && !loadingConvs && (
+          <div className="mx-3 mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-700 flex items-center justify-between gap-2">
+            <span className="truncate flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 flex-shrink-0" />
+              {/401|session|unauthor/i.test(error)
+                ? 'Session expirée — reconnectez-vous.'
+                : 'Impossible de charger les conversations.'}
+            </span>
+            <button
+              onClick={() => { setError(null); loadConversations(); }}
+              className="font-bold text-red-600 hover:underline flex-shrink-0"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+
         {/* List */}
         <div className="flex-1 overflow-y-auto">
           {/* ⭐ V3-11: Discord-like section content — switches based on activeHelmSection.
@@ -4550,7 +5509,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 //   - 'communautes' → GROUP convs only (auto-groups)
                 //   - 'canaux' → broadcast channels only
                 if (activeHelmSection === 'communautes') {
-                  const groupConvs = visibleConversations.filter(c => c.type === 'GROUP');
+                  // ⭐ V5 — la recherche de la sidebar filtre aussi les communautés
+                  const sidebarQ = sidebarSearch.trim().toLowerCase();
+                  const groupConvs = visibleConversations.filter(c => c.type === 'GROUP')
+                    .filter(c => !sidebarQ || (c.name || '').toLowerCase().includes(sidebarQ));
                   if (groupConvs.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -4610,7 +5572,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   );
                 }
                 if (activeHelmSection === 'canaux') {
-                  if (channels.length === 0) {
+                  // ⭐ V5 — la recherche de la sidebar filtre aussi les canaux
+                  const sidebarQ = sidebarSearch.trim().toLowerCase();
+                  const listChannels = channels.filter((ch: any) => !sidebarQ || (ch.name || '').toLowerCase().includes(sidebarQ));
+                  if (listChannels.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                         <Megaphone className="w-12 h-12 text-slate-300 mb-2" />
@@ -4630,9 +5595,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   return (
                     <>
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
-                        <Megaphone className="w-3 h-3" /> Canaux ({channels.length})
+                        <Megaphone className="w-3 h-3" /> Canaux ({listChannels.length})
                       </div>
-                      {channels.map((ch: any) => (
+                      {listChannels.map((ch: any) => (
                         <button
                           key={ch.id}
                           onClick={() => setActiveChannelId(ch.id)}
@@ -4661,12 +5626,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   );
                 }
                 // Default: 'discussions' section
-                // ⭐ Filter DIRECT conversations by role category
+                // ⭐ Filter DIRECT conversations by role category + recherche
+                //    sidebar (nom de la conv OU nom de l'interlocuteur — parité
+                //    Yeshua : la recherche ne faitait RIEN avant V5).
+                const sidebarQ2 = sidebarSearch.trim().toLowerCase();
                 const directConvs = visibleConversations.filter(c => {
                   if (c.type !== 'DIRECT') return false;
+                  const other = c.participants.find(p => p.userId !== currentUserId);
+                  if (sidebarQ2) {
+                    const otherName = other ? `${other.firstName || ''} ${other.lastName || ''}`.trim().toLowerCase() : '';
+                    if (!(c.name || '').toLowerCase().includes(sidebarQ2) && !otherName.includes(sidebarQ2)) return false;
+                  }
                   if (categoryFilter === 'all') return true;
                   // Find the other participant
-                  const other = c.participants.find(p => p.userId !== currentUserId);
                   if (!other) return false;
                   const role = (other.role_label || '').toUpperCase();
                   if (categoryFilter === 'enseignants') {
@@ -4813,8 +5785,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {/* Header */}
           <div className="p-3 bg-[#0958D9] text-white flex items-center gap-3 shadow-sm">
             <button
-              onClick={() => setActiveConvId(null)}
+              onClick={() => setMobileSidebarOpen(true)}
               className="md:hidden p-1 rounded hover:bg-[#0958D9]"
+              title="Afficher les conversations"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -4845,28 +5818,36 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   {typingUsers.map(t => `${t.firstName || ''} ${t.lastName || ''}`.trim()).join(', ')} tape…
                 </p>
               ) : (
-                <p className="text-[10px] text-[#BAE0FF]">
-                  {(() => {
+                <p className="text-[10px] text-[#BAE0FF] flex items-center gap-1">
+                  {/* ⭐ V5 — badge E2E (parité Yeshua) : cadenas quand le
+                      chiffrement de bout en bout est actif sur le direct. */}
+                  {e2eAvailable && (
+                    <Lock className="w-2.5 h-2.5 flex-shrink-0" aria-label="Chiffré de bout en bout" />
+                  )}
+                  <span className="truncate">{(() => {
                     const other = activeConv.participants.find(p => p.userId !== currentUserId);
                     const isOnline = other && onlineUsers.has(other.userId);
                     const roleLabel = getConversationDisplay(activeConv, currentUserId).roleLabel;
                     if (isOnline) return roleLabel ? `${roleLabel} — en ligne` : 'en ligne';
                     return roleLabel || getConversationDisplay(activeConv, currentUserId).subtitle || 'hors ligne';
-                  })()}
+                  })()}</span>
                 </p>
               )}
             </div>
-            {/* ⭐ V2: Call buttons (audio + video) + invite link (groups only) */}
+            {/* ⭐ V2: Call buttons (audio + video) + invite link (groups only).
+                ⭐ V5 (parité Yeshua) : désactivés pendant un appel en cours. */}
             <button
               onClick={() => activeConv.type === 'GROUP' ? setShowGroupCallModal(true) : handleStartCall('AUDIO')}
-              className="p-1.5 rounded hover:bg-[#0958D9]"
+              disabled={callState !== 'idle' || !!incomingSignal}
+              className="p-1.5 rounded hover:bg-[#0958D9] disabled:opacity-40 disabled:pointer-events-none"
               title={activeConv.type === 'GROUP' ? 'Appel audio de groupe' : 'Appel audio'}
             >
               <Phone className="w-4 h-4" />
             </button>
             <button
               onClick={() => activeConv.type === 'GROUP' ? setShowGroupCallModal(true) : handleStartCall('VIDEO')}
-              className="p-1.5 rounded hover:bg-[#0958D9]"
+              disabled={callState !== 'idle' || !!incomingSignal}
+              className="p-1.5 rounded hover:bg-[#0958D9] disabled:opacity-40 disabled:pointer-events-none"
               title={activeConv.type === 'GROUP' ? 'Appel vidéo de groupe' : 'Appel vidéo'}
             >
               <Video className="w-4 h-4" />
@@ -4930,10 +5911,63 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </button>
           </div>
 
+          {/* ⭐ V5 (parité Yeshua) — BANNIÈRE DES MESSAGES ÉPINGLÉS : barre sous
+              le header avec aperçu du dernier épinglé + chevron ouvrant la liste
+              complète → clic = saut vers le message + désépinglage direct. */}
+          {pinnedMessages.length > 0 && (
+            <div className="relative bg-[#EFF6FF] border-b border-[#DBEAFE] px-3 py-1.5 flex items-center gap-2">
+              <Pin className="w-3.5 h-3.5 text-[#0958D9] flex-shrink-0 fill-[#0958D9]/20" />
+              <button
+                onClick={() => jumpToMessage(pinnedMessages[pinnedMessages.length - 1].id)}
+                className="flex-1 min-w-0 text-left"
+                title="Aller au message épinglé"
+              >
+                <span className="text-[11px] font-semibold text-[#0958D9]">
+                  {pinnedMessages.length === 1 ? 'Message épinglé' : `${pinnedMessages.length} messages épinglés`}
+                </span>
+                <span className="text-[11px] text-slate-600 truncate block">
+                  {(() => {
+                    const last = pinnedMessages[pinnedMessages.length - 1] as any;
+                    const who = last.sender?.firstName || last.senderFirstName || '';
+                    return `${who ? who + ' : ' : ''}${pinnedPreview(last)}`;
+                  })()}
+                </span>
+              </button>
+              <button
+                onClick={() => setShowPinnedList(v => !v)}
+                className="p-1 rounded hover:bg-[#DBEAFE] text-[#0958D9] flex-shrink-0"
+                title={showPinnedList ? 'Masquer la liste' : 'Voir tous les épinglés'}
+              >
+                <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showPinnedList && 'rotate-180')} />
+              </button>
+              {showPinnedList && (
+                <div className="absolute top-full left-0 right-0 z-30 bg-white border-b border-slate-200 shadow-lg max-h-56 overflow-y-auto">
+                  {pinnedMessages.slice().reverse().map((m: any) => (
+                    <div key={m.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-0">
+                      <button onClick={() => jumpToMessage(m.id)} className="flex-1 min-w-0 text-left">
+                        <div className="text-[11px] font-semibold text-slate-800 truncate">
+                          {m.sender?.firstName || m.senderFirstName || 'Message'} · {formatTime(m.createdAt)}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate">{pinnedPreview(m)}</div>
+                      </button>
+                      <button
+                        onClick={() => handleMessagePin(m.id)}
+                        className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 flex-shrink-0"
+                        title="Désépingler"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Messages */}
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto p-4 space-y-2 relative"
+            className="flex-1 overflow-y-auto p-4 space-y-1 relative [overflow-anchor:auto]"
             style={getHelmWatermarkStyle({ opacity: 0.05 })}
           >
             {loadingMsgs ? (
@@ -4973,6 +6007,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 )}
                 {messages.map((msg, idx) => {
                 const isMine = msg.senderId === currentUserId;
+                // ⭐ V5 (parité Yeshua) — infos d'expéditeur pour CHAQUE message
+                //    d'autrui : avatar (photo ou initiales SUR la couleur
+                //    signature) + nom au-dessus de la bulle dans la même couleur.
+                const senderParticipant = !isMine
+                  ? activeConv?.participants?.find((p: any) => p.userId === msg.senderId)
+                  : null;
+                const senderName = !isMine
+                  ? `${(msg as any).senderFirstName || (msg as any).sender?.firstName || senderParticipant?.firstName || ''} ${(msg as any).senderLastName || (msg as any).sender?.lastName || senderParticipant?.lastName || ''}`.trim() || 'Utilisateur'
+                  : '';
+                const senderColorIdx = !isMine ? hashUserId(msg.senderId || 'x') : 0;
+                const senderAvatar = !isMine
+                  ? ((msg as any).sender?.avatarUrl || (msg as any).sender?.photoUrl || (senderParticipant as any)?.avatarUrl || null)
+                  : null;
+                const senderIsAdmin = !isMine && /ADMIN|DIRECTEUR|DIRECTOR|SUPER/i
+                  .test(String(senderParticipant?.roleLabel || (senderParticipant as any)?.role_label || (msg as any).sender?.role || ''));
                 const showDateSeparator = idx === 0 ||
                   new Date(messages[idx - 1].createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
                 return (
@@ -4984,11 +6033,37 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         </span>
                       </div>
                     )}
-                    <div className={cn('flex group', isMine ? 'justify-end' : 'justify-start')}>
+                    <div className={cn('flex group gap-1.5', isMine ? 'justify-end' : 'justify-start')}>
+                      {/* ⭐ V5 (parité Yeshua) — avatar de l'expéditeur sur chaque
+                          message d'autrui (photo réelle ou initiales sur fond de
+                          la couleur signature). */}
+                      {!isMine && (
+                        <div
+                          className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 self-end flex items-center justify-center text-white text-[11px] font-bold shadow-sm"
+                          style={{ backgroundColor: USER_TEXT_COLORS[senderColorIdx] }}
+                        >
+                          {senderAvatar
+                            ? <img src={senderAvatar} alt="" className="w-full h-full object-cover" />
+                            : getInitials(senderName)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex flex-col max-w-full">
+                        {/* ⭐ V5 (parité Yeshua) — nom « signature » au-dessus de
+                            la bulle, couleur stable par expéditeur + ★ admin. */}
+                        {!isMine && (
+                          <div className="flex items-center gap-1 px-1 mb-0.5">
+                            <span className="text-[11px] font-bold truncate" style={{ color: USER_TEXT_COLORS[senderColorIdx] }}>
+                              {senderName}
+                            </span>
+                            {senderIsAdmin && (
+                              <span className="text-[9px] text-amber-500 font-bold" title="Administrateur">★</span>
+                            )}
+                          </div>
+                        )}
                       <div
                         data-msg-id={msg.id}
                         className={cn(
-                          'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
+                          'max-w-[min(82%,640px)] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
                           isMine
                             ? 'bg-[#3B9EFF] text-white rounded-br-sm'
                             : activeConv?.type === 'GROUP' && (msg as any).senderId
@@ -5074,6 +6149,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                             >
                               <Reply className="w-3.5 h-3.5" /> Répondre
+                            </button>
+                            {/* ⭐ V5 (parité Yeshua) — ouvrir le FIL de discussion */}
+                            <button
+                              onClick={() => { setThreadParentId(msg.id); setActiveMenuMsgId(null); }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" /> Fil de discussion
+                              {(replyCountByParent[msg.id] || 0) > 0 && (
+                                <span className="ml-auto bg-slate-100 text-slate-600 text-[9px] font-bold px-1.5 py-px rounded-full">
+                                  {replyCountByParent[msg.id]}
+                                </span>
+                              )}
                             </button>
                             {/* ⭐ FIX: Réagir — opens the floating reaction bar above the bubble */}
                             <button
@@ -5182,28 +6269,37 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             )}
                           </div>
                         )}
-                        {/* Sender name (for group) — ⭐ DISCORD PARITY: role-colored username */}
-                        {!isMine && activeConv.type === 'GROUP' && msg.sender && (
-                          <div
-                            className="text-[10px] font-bold mb-0.5"
-                            style={{ color: getRoleColor((msg.sender as any).roleLabel || (msg.sender as any).role) }}
-                          >
-                            {msg.sender.firstName} {msg.sender.lastName}
-                          </div>
-                        )}
+                        {/* Sender name (for group) — ⭐ V5 : SUPPRIMÉ (doublon) — le nom
+                            « signature » coloré est désormais affiché au-dessus de
+                            CHAQUE bulle d'autrui (voir wrapper V5 ci-dessus). */}
                         {/* Content based on message type */}
-                        {/* ⭐ V4 — JOURNAL D'APPEL (porté de Yeshua) : manqué /
-                            refusé / annulé / terminé · durée, affiché comme un
-                            badge centré discret (pas une bulle). */}
-                        {msg.type === 'CALL_LOG' ? (
-                          <div className="flex items-center justify-center gap-1.5 py-1 px-3 rounded-full bg-slate-100/90 text-[11px] text-slate-600 font-medium">
-                            <Phone className={cn(
-                              'w-3 h-3 flex-shrink-0',
-                              (msg as any).callMeta?.status === 'missed' ? 'text-red-500 rotate-[135deg]' : 'text-slate-400',
-                            )} />
+                        {/* ⭐ V5 — JOURNAL D'APPEL RICHE (parité Yeshua) :
+                            pastille centrée avec couleur par statut (rouge =
+                            manqué, ambre = refusé, gris = annulé, vert =
+                            terminé), auteur de l'appel, durée lisible, heure,
+                            icône audio/vidéo et tooltip du texte complet. */}
+                        {msg.type === 'CALL_LOG' ? (() => {
+                          const meta = (msg as any).callMeta || {};
+                          const status = String(meta.status || '').toLowerCase();
+                          const isVideo = meta.callType === 'video';
+                          const style =
+                            status === 'missed' ? 'bg-red-50 text-red-700 border-red-100' :
+                            status === 'declined' || status === 'rejected' ? 'bg-amber-50 text-amber-800 border-amber-100' :
+                            status === 'cancelled' ? 'bg-stone-100 text-stone-600 border-stone-200' :
+                            'bg-emerald-50 text-emerald-700 border-emerald-100';
+                          const CallIcon = status === 'missed' ? PhoneMissed : isVideo ? Video : Phone;
+                          return (
+                          <div
+                            title={msg.content || 'Appel'}
+                            className={cn('mx-auto flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-full border text-[11px] font-medium max-w-[85%]', style)}
+                          >
+                            <CallIcon className="w-3 h-3 flex-shrink-0" />
                             <span className="truncate">{msg.content || 'Appel'}</span>
+                            {meta.byName ? <span className="opacity-70">· {meta.byName}</span> : null}
+                            <span className="opacity-50">· {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                        ) : msg.type === 'TEXT' && editingMessageId === msg.id ? (
+                          );
+                        })() : msg.type === 'TEXT' && editingMessageId === msg.id ? (
                           // ⭐ V1.5: Inline edit mode
                           <div className="flex flex-col gap-1">
                             <textarea
@@ -5261,7 +6357,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                 alt={msg.attachmentName || 'Image'}
                                 className="max-w-full rounded-lg mb-1 cursor-pointer hover:opacity-90 transition-opacity"
                                 style={{ maxHeight: '300px' }}
-                                loading="lazy"
+                                decoding="async"
                               />
                             </a>
                             {msg.content && <p className="text-xs mt-1">{msg.content}</p>}
@@ -5273,21 +6369,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           <LinkEmbed text={stripHtml(msg.content) || ''} />
                         )}
                         {msg.type === 'AUDIO' && msg.attachmentUrl && (
-                          <div className="flex items-center gap-2">
-                            <audio
-                              controls
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            {/* ⭐ V5 — lecteur vocal waveform + vitesse (spec #12) */}
+                            <VoiceNotePlayer
                               src={getAttachmentUrl(msg.attachmentUrl)}
-                              className="h-9 max-w-[240px]"
-                              preload="metadata"
+                              name={msg.attachmentName}
+                              isMine={isMine}
                             />
-                            <a
-                              href={getAttachmentUrl(msg.attachmentUrl)}
-                              download={msg.attachmentName || 'audio'}
-                              className="p-1 rounded hover:bg-slate-200"
-                              title="Télécharger"
-                            >
-                              <Download className="w-4 h-4" />
-                            </a>
                             {msg.content && <span className="text-xs">{msg.content}</span>}
                           </div>
                         )}
@@ -5340,7 +6428,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                     'whitespace-pre-wrap break-words text-xs mt-1',
                                     isMine ? 'text-white/90' : 'text-slate-700',
                                   )}
-                                  dangerouslySetInnerHTML={{ __html: renderRichContent(msg.content) }}
+                                  dangerouslySetInnerHTML={{ __html: renderRichContent(decryptedContents[msg.id] ?? msg.content) }}
                                 />
                               )}
                             </div>
@@ -5367,15 +6455,31 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                         key={idx}
                                         onClick={async () => {
                                           try {
+                                            // ⭐ V5 (parité Yeshua) — mise à jour OPTIMISTE du sondage :
+                                            //    avant, le vote rechargeait TOUTE la conversation
+                                            //    (loadMessages complet → re-render + saut de scroll).
+                                            setMessages(prev => prev.map(m => {
+                                              if (m.id !== msg.id) return m;
+                                              try {
+                                                const p = JSON.parse(m.content);
+                                                const opts = (p.options || []).map((o: any) =>
+                                                  o.id === opt.id ? { ...o, voteCount: (o.voteCount || 0) + 1 } : o);
+                                                return { ...m, content: JSON.stringify({ ...p, options: opts }) } as any;
+                                              } catch { return m; }
+                                            }));
                                             await fetch(`/api/chat/v2/polls/${msg.id}/vote`, {
                                               method: 'POST',
                                               headers: { 'Content-Type': 'application/json' },
                                               body: JSON.stringify({ userId: currentUserId, optionIds: [opt.id] }),
                                               credentials: 'include',
                                             });
+                                            // Réconciliation silencieuse (fusion à signature → zéro
+                                            // perturbation de scroll si rien d'autre n'a changé)
                                             if (activeConvId) loadMessages();
                                           } catch (e) {
                                             toast.error('Échec du vote');
+                                            // Rollback : relire la vérité serveur
+                                            if (activeConvId) loadMessages();
                                           }
                                         }}
                                         className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-[#E6F4FF] transition-colors relative overflow-hidden border border-slate-200"
@@ -5478,12 +6582,48 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             })}
                           </div>
                         )}
+                        {/* ⭐ V5 (parité Yeshua — Threads) — badge « N réponses »
+                            sur la bulle parent : clic = ouvrir le fil. */}
+                        {(replyCountByParent[msg.id] || 0) > 0 && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setThreadParentId(msg.id); }}
+                            className={cn('mt-1 flex items-center gap-1 text-[10px] font-semibold hover:underline',
+                              isMine ? 'text-white/85' : 'text-[#0958D9]')}
+                            title="Ouvrir le fil de discussion"
+                          >
+                            <MessageCircle className="w-3 h-3" />
+                            {replyCountByParent[msg.id]} réponse{(replyCountByParent[msg.id] || 0) > 1 ? 's' : ''}
+                          </button>
+                        )}
                       </div>
+                    </div>
                     </div>
                   </React.Fragment>
                 );
               })
               }
+              {/* ⭐ V5 (parité Yeshua) — bulle « tape… » en BAS de la liste :
+                  3 points animés (délais 0/150/300 ms) + libellé pluriel
+                  « X et Y écrivent… / X et N autres » — au lieu d'un simple
+                  libellé dans le header. */}
+              {typingUsers.length > 0 && !loadingMsgs && (
+                <div className="flex items-end gap-1.5 mt-1">
+                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center gap-[3px] flex-shrink-0">
+                    {[0, 1, 2].map(i => (
+                      <span key={i} className="w-1 h-1 rounded-full bg-slate-500 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                    ))}
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3 py-1.5 shadow-sm">
+                    <span className="text-xs text-slate-500">
+                      {typingUsers.length === 1
+                        ? `${(typingUsers[0].firstName || typingUsers[0].lastName || 'Quelqu\u2019un').trim()} tape…`
+                        : typingUsers.length === 2
+                          ? `${(typingUsers[0].firstName || '').trim()} et ${(typingUsers[1].firstName || '').trim()} écrivent…`
+                          : `${(typingUsers[0].firstName || '').trim()} et ${typingUsers.length - 1} autres écrivent…`}
+                    </span>
+                  </div>
+                </div>
+              )}
               </>
             )}
             <div ref={messagesEndRef} />
@@ -5602,6 +6742,60 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         <X className="w-3 h-3 text-slate-500" />
                       </button>
                     </div>
+                  </div>
+                )}
+                {/* ⭐ V5 (parité Yeshua) — FILE D'ATTENTE DES PIÈCES JOINTES AVANT
+                    ENVOI : vignettes 96×96 (aperçu image ou icône + nom + taille),
+                    suppression individuelle, « Tout annuler », spinner d'envoi. */}
+                {pendingFiles.length > 0 && (
+                  <div className="mb-2 rounded-xl border border-[#BAE0FF] bg-[#E6F4FF]/60 p-2">
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <span className="text-[10px] font-bold text-[#0958D9] uppercase tracking-wider">
+                        {pendingFiles.length} pièce{pendingFiles.length > 1 ? 's' : ''} jointe{pendingFiles.length > 1 ? 's' : ''} prête{pendingFiles.length > 1 ? 's' : ''}
+                      </span>
+                      <button onClick={clearPendingFiles} className="text-[10px] font-semibold text-red-500 hover:underline">
+                        Tout annuler
+                      </button>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {pendingFiles.map((p, idx) => (
+                        <div key={idx} className="relative flex-shrink-0 w-24">
+                          <div className="w-24 h-24 rounded-lg border border-slate-200 bg-white overflow-hidden flex items-center justify-center">
+                            {p.previewUrl ? (
+                              <img src={p.previewUrl} alt={p.file.name} className="w-full h-full object-cover" />
+                            ) : p.file.type.startsWith('video/') ? (
+                              <div className="flex flex-col items-center gap-1 text-slate-400">
+                                <FileVideo className="w-6 h-6" />
+                                <span className="text-[9px] text-slate-500 max-w-full px-1 truncate">{p.file.name}</span>
+                              </div>
+                            ) : p.type === 'AUDIO' ? (
+                              <div className="flex flex-col items-center gap-1 text-slate-400">
+                                <FileAudio className="w-6 h-6" />
+                                <span className="text-[9px] text-slate-500 max-w-full px-1 truncate">{p.file.name}</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-1 p-2 text-center">
+                                <FileText className="w-6 h-6 text-slate-400" />
+                                <span className="text-[9px] text-slate-600 max-w-full truncate">{p.file.name}</span>
+                                <span className="text-[9px] text-slate-400">{(p.file.size / 1048576).toFixed(1)} Mo</span>
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removePendingFile(idx)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600"
+                            title="Retirer ce fichier"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {sendingFiles && (
+                      <div className="flex items-center gap-1.5 px-1 pt-1 text-[10px] text-[#0958D9] font-medium">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Envoi en cours…
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="flex items-end gap-1.5 sm:gap-2">
@@ -5782,34 +6976,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         followed by letters. Shows matching conversation participants.
                         Clicking a participant inserts @FirstName into the message. */}
                     {mentionQuery !== null && activeConv && (() => {
-                      const query = mentionQuery.toLowerCase();
-                      const matches = (activeConv.participants || [])
-                        .filter(p => p.userId !== currentUserId)
-                        .filter(p => {
-                          const fullName = `${p.firstName || ''} ${p.lastName || ''}`.trim().toLowerCase();
-                          return !query || fullName.includes(query);
-                        })
-                        .slice(0, 5);
+                      const matches = mentionMatches;
                       if (matches.length === 0) return null;
                       return (
                         <div className="absolute bottom-full left-0 right-0 mb-1 sm:right-auto sm:w-64 max-w-[calc(100vw-1rem)] bg-white rounded-lg shadow-xl border border-slate-200 z-30 max-h-60 overflow-y-auto">
                           <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
                             Mentionner un participant
                           </div>
-                          {matches.map(p => (
+                          {matches.map((p, idx) => (
                             <button
                               key={p.userId}
-                              onClick={() => {
-                                // Insert @FirstName at the current cursor position
-                                const firstName = p.firstName || p.lastName || 'utilisateur';
-                                const mentionText = `@${firstName} `;
-                                // Append the mention to the current text (simple approach)
-                                // For contentEditable, we append HTML to the end
-                                const mentionHtml = `<span style="background-color:rgba(22,119,255,0.15);color:#0958D9;font-weight:600;border-radius:3px;padding:0 2px;">${mentionText}</span>`;
-                                setText(prev => prev + mentionHtml);
-                                setMentionQuery(null);
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-blue-50 text-left transition"
+                              onMouseEnter={() => setMentionSelectedIdx(idx)}
+                              onClick={() => selectMention(p)}
+                              className={cn(
+                                'w-full flex items-center gap-2 px-3 py-2 text-left transition',
+                                idx === mentionSelectedIdx ? 'bg-blue-50' : 'hover:bg-blue-50'
+                              )}
                             >
                               <div className={cn(
                                 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0',
@@ -5832,6 +7014,38 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     })()}
                     <RichTextEditor
                       value={text}
+                      onKeyDown={(e) => {
+                        // ⭐ V5 (parité Yeshua) — ENTER = ENVOYER (Shift+Enter =
+                        //    nouvelle ligne). Avant : impossible d'envoyer au
+                        //    clavier depuis le composer contentEditable.
+                        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                          // Popover mentions ouvert → Entrée sélectionne la mention surlignée
+                          if (mentionQuery !== null && mentionMatches.length > 0) {
+                            e.preventDefault();
+                            selectMention(mentionMatches[mentionSelectedIdx] || mentionMatches[0]);
+                            return;
+                          }
+                          if (mentionQuery !== null) setMentionQuery(null);
+                          e.preventDefault();
+                          // ⭐ V5 — pièces jointes en attente → légende + fichiers
+                          if (pendingFiles.length > 0) { sendPendingFiles(); return; }
+                          handleSendText();
+                          return;
+                        }
+                        // ⭐ V5 — navigation clavier du popover mentions
+                        if (mentionQuery !== null && mentionMatches.length > 0) {
+                          if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
+                            e.preventDefault();
+                            setMentionSelectedIdx(i => (i + 1) % mentionMatches.length);
+                          } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
+                            e.preventDefault();
+                            setMentionSelectedIdx(i => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setMentionQuery(null);
+                          }
+                        }
+                      }}
                       onChange={(html) => {
                         setText(html);
                         handleTyping();
@@ -5867,8 +7081,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       placeholder="Tapez un message... @mention, /commande, ||spoiler||, ou `code`"
                     />
                   </div>
-                  {/* Mic button (idle state — only when text is empty) */}
-                  {!text.replace(/<[^>]*>/g, '').trim() && (
+                  {/* Mic button (idle state — only when text is empty and no pending files) */}
+                  {!text.replace(/<[^>]*>/g, '').trim() && pendingFiles.length === 0 && (
                     <button
                       onClick={startRecording}
                       disabled={readOnly || sending}
@@ -5878,14 +7092,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <Mic className="w-5 h-5" />
                     </button>
                   )}
-                  {/* Send button — always visible */}
+                  {/* Send button — always visible.
+                      ⭐ V5 : avec des pièces jointes en attente, Envoyer envoie
+                      la légende PUIS les fichiers (file d'attente visuelle). */}
                   <button
-                    onClick={handleSendText}
-                    disabled={!text.replace(/<[^>]*>/g, '').trim() || sending}
+                    onClick={() => pendingFiles.length > 0 ? sendPendingFiles() : handleSendText()}
+                    disabled={sending || sendingFiles || (!text.replace(/<[^>]*>/g, '').trim() && pendingFiles.length === 0)}
                     className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
-                    title="Envoyer le message"
+                    title={pendingFiles.length > 0 ? 'Envoyer la légende et les fichiers' : 'Envoyer le message'}
                   >
-                    {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                    {sending || sendingFiles ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   </button>
                   {/* ⭐ V2: Schedule message button */}
                   <button
@@ -5908,7 +7124,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         {showMemberList && activeConv?.type === 'GROUP' && (
           <div className="hidden md:flex flex-col w-64 bg-white border-l border-slate-200 flex-shrink-0">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Membres</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                Membres — {conversationMembers.length}
+                {conversationMembers.filter(m => m.isOnline).length > 0 && (
+                  <span className="text-[10px] font-semibold text-green-600 ml-1">
+                    · {conversationMembers.filter(m => m.isOnline).length} en ligne
+                  </span>
+                )}
+              </h3>
               <button
                 onClick={() => setShowMemberList(false)}
                 className="p-1 hover:bg-slate-100 rounded"
@@ -5917,69 +7140,234 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              {loadingMembers ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+            {/* ⭐ V5 (parité Yeshua) — onglets Membres / Inviter */}
+            <div className="flex border-b border-slate-100">
+              <button
+                onClick={() => setMemberPanelTab('members')}
+                className={cn('flex-1 px-3 py-2 text-[11px] font-bold transition',
+                  memberPanelTab === 'members' ? 'text-[#0958D9] border-b-2 border-[#0958D9]' : 'text-slate-500 hover:text-slate-700')}
+              >
+                Membres
+              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => setMemberPanelTab('invite')}
+                  className={cn('flex-1 px-3 py-2 text-[11px] font-bold transition',
+                    memberPanelTab === 'invite' ? 'text-[#0958D9] border-b-2 border-[#0958D9]' : 'text-slate-500 hover:text-slate-700')}
+                >
+                  Inviter
+                </button>
+              )}
+            </div>
+            {memberPanelTab === 'invite' ? (
+              /* ⭐ V5 — ONGLET INVITER : membres du tenant absents du groupe */
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-2">
+                  <input
+                    value={inviteQuery}
+                    onChange={(e) => setInviteQuery(e.target.value)}
+                    placeholder="Rechercher à inviter…"
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
+                  />
                 </div>
-              ) : (
-                <>
-                  {/* Online members */}
-                  {conversationMembers.filter(m => m.isOnline).length > 0 && (
-                    <div className="px-3 pt-3 pb-1">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                        <span className="w-2 h-2 bg-green-400 rounded-full" />
-                        En ligne — {conversationMembers.filter(m => m.isOnline).length}
+                {inviteLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  </div>
+                ) : invitableUsers.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-[11px] text-slate-400">
+                    Aucun membre invitable{inviteQuery ? ' pour cette recherche' : ' — tout le monde est déjà dans le groupe'}.
+                  </div>
+                ) : (
+                  invitableUsers.map((u: any) => {
+                    const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Membre';
+                    const invited = invitedIds.has(u.userId || u.id);
+                    return (
+                      <div key={u.userId || u.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50">
+                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0', u.avatarUrl ? 'bg-slate-200' : getAvatarColor(name))}>
+                          {u.avatarUrl ? <img src={u.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" /> : getInitials(name)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold truncate text-slate-800">{name}</div>
+                          {u.roleLabel && <div className="text-[10px] text-slate-500 truncate">{u.roleLabel}</div>}
+                        </div>
+                        <button
+                          onClick={() => inviteMember(u.userId || u.id)}
+                          disabled={invited}
+                          className={cn('px-2 py-1 rounded-lg text-[10px] font-bold flex-shrink-0 transition',
+                            invited ? 'bg-emerald-50 text-emerald-600' : 'bg-[#1677FF] text-white hover:bg-[#0958D9]')}
+                        >
+                          {invited ? 'Invité ✓' : 'Inviter'}
+                        </button>
                       </div>
-                    </div>
-                  )}
-                  {conversationMembers.filter(m => m.isOnline).map((m: any) => (
-                    <div key={m.userId} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer" onClick={() => { setShowProfile(true); }}>
+                    );
+                  })
+                )}
+              </div>
+            ) : (
+              /* ⭐ V5 — ONGLET MEMBRES : recherche + admins d'abord (Yeshua),
+                  clic = FICHE DU MEMBRE (avant : ça ouvrait SON PROPRE profil). */
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-2">
+                  <input
+                    value={memberSearchQuery}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    placeholder="Rechercher un membre…"
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
+                  />
+                </div>
+                {loadingMembers ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                  </div>
+                ) : (() => {
+                  const q = memberSearchQuery.trim().toLowerCase();
+                  const filtered = conversationMembers.filter(m => {
+                    if (m.userId === currentUserId) return true; // toujours visible
+                    const name = `${m.firstName || ''} ${m.lastName || ''}`.trim().toLowerCase();
+                    return !q || name.includes(q);
+                  });
+                  // Admins/modérateurs d'abord, en ligne avant hors ligne, puis alpha
+                  const rank = (m: any) => (m.role === 'ADMIN' ? 0 : m.role === 'MODERATOR' ? 1 : 2) * 10 + (m.isOnline ? 0 : 1);
+                  const sorted = [...filtered].sort((a, b) => rank(a) - rank(b) ||
+                    `${a.firstName || ''}${a.lastName || ''}`.localeCompare(`${b.firstName || ''}${b.lastName || ''}`));
+                  const admins = sorted.filter(m => m.role === 'ADMIN' || m.role === 'MODERATOR');
+                  const others = sorted.filter(m => m.role !== 'ADMIN' && m.role !== 'MODERATOR');
+                  const renderMemberRow = (m: any) => (
+                    <div
+                      key={m.userId}
+                      className={cn('flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer', !m.isOnline && 'opacity-60')}
+                      onClick={() => setMemberProfile(m)}
+                      title="Voir le profil"
+                    >
                       <div className="relative flex-shrink-0">
-                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold', m.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${m.firstName || ''} ${m.lastName || ''}`))}>
+                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold', m.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${m.firstName || ''} ${m.lastName || ''}`), !m.isOnline && 'grayscale')}>
                           {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" /> : getInitials(`${m.firstName || ''} ${m.lastName || ''}`)}
                         </div>
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white" />
+                        <span className={cn('absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white', m.isOnline ? 'bg-green-400' : 'bg-slate-300')} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold truncate" style={{ color: getRoleColor(m.userRole) }}>
-                          {m.firstName} {m.lastName}
-                          {m.role === 'ADMIN' && <span className="ml-1 text-[9px] text-amber-600">(Admin)</span>}
+                        <div className="text-xs font-semibold truncate flex items-center gap-1" style={{ color: m.userId === currentUserId ? '#64748b' : getRoleColor(m.userRole) }}>
+                          <span className="truncate">{m.userId === currentUserId ? 'Vous' : `${m.firstName} ${m.lastName}`}</span>
+                          {m.role === 'ADMIN' && <span className="text-[9px] text-amber-600 flex-shrink-0">★</span>}
+                          {m.role === 'MODERATOR' && <span className="text-[9px] text-slate-500 flex-shrink-0" title="Modérateur">M</span>}
+                          {blockedUserIds.has(m.userId) && <Ban className="w-2.5 h-2.5 text-red-500 flex-shrink-0" />}
                         </div>
                         {m.customStatus && <div className="text-[10px] text-slate-500 truncate">{m.customStatus}</div>}
                         {!m.customStatus && m.activityStatus && <div className="text-[10px] text-slate-400 truncate">{m.activityStatus}</div>}
                       </div>
                     </div>
-                  ))}
-                  {/* Offline members */}
-                  {conversationMembers.filter(m => !m.isOnline).length > 0 && (
-                    <div className="px-3 pt-3 pb-1 mt-2">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                        <span className="w-2 h-2 bg-slate-300 rounded-full" />
-                        Hors ligne — {conversationMembers.filter(m => !m.isOnline).length}
-                      </div>
-                    </div>
-                  )}
-                  {conversationMembers.filter(m => !m.isOnline).map((m: any) => (
-                    <div key={m.userId} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 opacity-60 cursor-pointer" onClick={() => { setShowProfile(true); }}>
-                      <div className="relative flex-shrink-0">
-                        <div className={cn('w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold grayscale', m.avatarUrl ? 'bg-slate-200' : getAvatarColor(`${m.firstName || ''} ${m.lastName || ''}`))}>
-                          {m.avatarUrl ? <img src={m.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" /> : getInitials(`${m.firstName || ''} ${m.lastName || ''}`)}
+                  );
+                  return (
+                    <>
+                      {admins.length > 0 && (
+                        <div className="px-3 pt-2 pb-1">
+                          <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                            Administration — {admins.length}
+                          </div>
                         </div>
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-slate-300 rounded-full border-2 border-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold truncate text-slate-500" style={{ color: getRoleColor(m.userRole) }}>
-                          {m.firstName} {m.lastName}
-                          {m.role === 'ADMIN' && <span className="ml-1 text-[9px] text-amber-600">(Admin)</span>}
+                      )}
+                      {admins.map(renderMemberRow)}
+                      {others.length > 0 && (
+                        <div className="px-3 pt-3 pb-1">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                            <span className={cn('w-2 h-2 rounded-full', conversationMembers.some(m => m.isOnline) ? 'bg-green-400' : 'bg-slate-300')} />
+                            Membres — {others.length}
+                          </div>
                         </div>
-                        {m.customStatus && <div className="text-[10px] text-slate-400 truncate">{m.customStatus}</div>}
-                      </div>
-                    </div>
-                  ))}
-                </>
-              )}
+                      )}
+                      {others.map(renderMemberRow)}
+                      {sorted.length === 0 && (
+                        <div className="px-3 py-6 text-center text-[11px] text-slate-400">Aucun membre trouvé.</div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+        {/* ⭐ V5 (parité Yeshua — THREADS) — panneau latéral du fil de
+            discussion : message parent en citation + liste des réponses +
+            champ de saisie dédié (envoi avec replyToId = parent). */}
+        {threadParent && (
+          <div className="fixed inset-y-0 right-0 w-80 z-40 md:static md:inset-auto md:w-72 flex flex-col bg-white border-l border-slate-200 flex-shrink-0 shadow-2xl md:shadow-none">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <MessageCircle className="w-4 h-4 text-[#0958D9]" />
+                Fil · {threadReplies.length} réponse{threadReplies.length > 1 ? 's' : ''}
+              </h3>
+              <button
+                onClick={() => { setThreadParentId(null); setThreadDraft(''); }}
+                className="p-1 hover:bg-slate-100 rounded"
+                title="Fermer le fil"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
             </div>
+            {/* Message parent en citation */}
+            <div className="mx-3 mt-2 px-3 py-2 bg-slate-100 rounded-lg border-l-2 border-[#1677FF]">
+              <div className="text-[10px] font-bold text-slate-700">
+                {`${(threadParent as any).senderFirstName || (threadParent as any).sender?.firstName || ''} ${(threadParent as any).senderLastName || (threadParent as any).sender?.lastName || ''}`.trim() || 'Message'}
+              </div>
+              <div className="text-[11px] text-slate-500 truncate">
+                {stripHtml((threadParent as any).content) || 'Message d\u2019origine'}
+              </div>
+            </div>
+            {/* Réponses */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+              {threadReplies.length === 0 ? (
+                <div className="py-6 text-center text-[11px] text-slate-400">
+                  Aucune réponse pour le moment — démarrez le fil !
+                </div>
+              ) : threadReplies.map((m: any) => {
+                const mine = m.senderId === currentUserId;
+                const name = `${m.senderFirstName || m.sender?.firstName || ''} ${m.senderLastName || m.sender?.lastName || ''}`.trim() || 'Membre';
+                return (
+                  <div key={m.id} className={cn('flex gap-1.5', mine ? 'justify-end' : 'justify-start')}>
+                    {!mine && (
+                      <div className={cn('w-6 h-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 self-end', getAvatarColor(name))}>
+                        {getInitials(name)}
+                      </div>
+                    )}
+                    <div className={cn('max-w-[80%] rounded-2xl px-2.5 py-1.5 text-xs shadow-sm',
+                      mine ? 'bg-[#3B9EFF] text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm')}>
+                      {!mine && <div className="text-[9px] font-bold text-slate-600 mb-0.5">{name}</div>}
+                      <div dangerouslySetInnerHTML={{ __html: renderRichContent(m.content || '') }} />
+                      <div className={cn('text-[9px] mt-0.5 flex items-center gap-1 justify-end', mine ? 'text-white/70' : 'text-slate-400')}>
+                        {formatTime(m.createdAt)}
+                        {mine && (m as any).status === 'pending' && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Saisie dédiée du fil */}
+            {!isReadOnly && (
+              <div className="p-2 border-t border-slate-100 flex items-center gap-1.5">
+                <input
+                  value={threadDraft}
+                  onChange={(e) => setThreadDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendThreadReply();
+                    }
+                  }}
+                  placeholder="Répondre dans le fil…"
+                  className="flex-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
+                />
+                <button
+                  onClick={sendThreadReply}
+                  disabled={!threadDraft.trim() || sending}
+                  className="p-2 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
+                  title="Envoyer dans le fil"
+                >
+                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            )}
           </div>
         )}
         </>
@@ -6014,6 +7402,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       )}
 
       {/* ═════ MODALS ═════ */}
+      {/* ⭐ V5 (parité Yeshua) — FICHE D'UN MEMBRE (clic dans le panneau) */}
+      {memberProfile && (
+        <MemberProfileModal
+          member={memberProfile}
+          currentUserId={currentUserId}
+          onClose={() => setMemberProfile(null)}
+          onDirectMessage={openDirectMessage}
+          onCall={callMemberDirect}
+          isBlocked={blockedUserIds.has(memberProfile.userId)}
+          onToggleBlock={toggleBlockMember}
+        />
+      )}
       {showNewChat && (
         <NewChatModal
           currentUserId={currentUserId}
@@ -6372,7 +7772,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           currentUserId={currentUserId}
           conversationId={activeConvId}
           onClose={() => setShowAttachmentMenu(false)}
-          onSendFile={handleSendAttachment}
+          onSendFile={async (file) => { addPendingFiles([file]); }}
           onOpenPoll={() => setShowPollModal(true)}
         />
       )}
@@ -6523,14 +7923,48 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             speaking: !!u.speaking,
             avatarUrl: u.avatarUrl || null,
           }))}
+          participants={voiceMediaParticipants}
           activeSpeakers={voiceActiveSpeakers}
           meMuted={voiceMuted}
           videoMode={voiceVideoMode}
           isStage={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.type === 'STAGE'}
+          isAdmin={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.createdBy === currentUserId}
+          autoplayBlocked={voiceAutoplayBlocked}
           onToggleMute={toggleVoiceMute}
           onToggleVideo={toggleVoiceVideo}
+          onToggleVideoMode={toggleVoiceVideoMode}
+          onUnlockAudio={unlockAudioPlayback}
+          resolveName={(identity: string) => {
+            const u = (voiceChannelUsers || []).find((x: any) => (x.userId || x.id) === identity);
+            return u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name : undefined;
+          }}
+          localVideoAttacher={(el: HTMLVideoElement) => voiceSessionRef.current?.attachLocalVideo(el) ?? false}
           onLeave={() => { leaveVoiceChannel(); }}
         />
+      )}
+
+      {/* ⭐ V5 (parité Yeshua — Plan C) — MODE SECOURS JITSI : iframe plein
+          écran avec room déterministe quand la chaîne média est épuisée sur un
+          appel de groupe trop grand pour le mesh (≤ 5). */}
+      {jitsiFallback && (
+        <div className="fixed inset-0 z-[70] bg-[#0A2A5E] flex flex-col">
+          <div className="bg-[#CFA63A] text-[#0A2A5E] text-center py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold">
+            <Radio className="w-4 h-4" />
+            <span className="truncate">Mode secours Jitsi — {jitsiFallback.title}</span>
+            <button
+              onClick={() => { setJitsiFallback(null); toast.info('Appel de secours quitté'); }}
+              className="ml-3 px-3 py-1 rounded-lg bg-[#0A2A5E] text-white text-[10px] font-bold hover:bg-[#114FC4]"
+            >
+              Quitter
+            </button>
+          </div>
+          <iframe
+            src={jitsiUrlFor(jitsiFallback.room, `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur')}
+            allow="camera; microphone; fullscreen; display-capture; autoplay"
+            className="flex-1 w-full border-0"
+            title="Appel de groupe (secours Jitsi)"
+          />
+        </div>
       )}
 
       {/* ⭐ V4 (porté de Yeshua Connect) — OVERLAY UNIFIÉ : signalisation
@@ -6546,6 +7980,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           duration={callDuration}
           provider={mediaProvider}
           mediaSwitching={mediaSwitching}
+          endStatus={callEndStatus}
           muted={muted}
           videoOff={videoOff}
           isSharingScreen={isSharingScreen}
@@ -6605,6 +8040,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           duration={0}
           provider={null}
           mediaSwitching={false}
+          accepting={acceptingCall}
           muted={false}
           videoOff={false}
           isSharingScreen={false}
@@ -6623,7 +8059,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
       {/* Sonnerie de l'appel entrant V4 (l'effet callState ne gère pas
           incomingSignal seul) */}
-      {incomingSignal && callState === 'idle' && <IncomingSignalRingtone />}
+          {/* ⭐ V5 — La sonnerie/vibration des appels entrants V4 est gérée par
+              l'effet ringtone ci-dessus (couvre callState ET incomingSignal) —
+              le composant <IncomingSignalRingtone /> d'origine n'existait pas
+              (crash ReferenceError à chaque appel entrant). */}
 
       {/* Anciens overlays mesh — uniquement quand l'appel n'est PAS signalisé */}
       {!v4CallInfo && callState === 'incoming' && callData && (
@@ -6851,6 +8290,122 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 // ═════════════════════════════════════════════════════════════════
 //  MODAL : Nouvelle conversation 1-à-1
 // ═════════════════════════════════════════════════════════════════
+
+/** ⭐ V5 (parité Yeshua — MemberProfileModal) — Fiche d'un MEMBRE au clic :
+ *    grande photo + présence, badge de rôle, bio/-statut (fetch lazy
+ *    /api/chat/profile/:userId), actions Message privé / Appel audio / Appel
+ *    vidéo / Bloquer-Débloquer. Remplace l'ancien comportement qui ouvrait
+ *    SON PROPRE profil au clic sur un membre. */
+function MemberProfileModal({
+  member, currentUserId, onClose, onDirectMessage, onCall, isBlocked, onToggleBlock,
+}: {
+  member: any;
+  currentUserId: string;
+  onClose: () => void;
+  onDirectMessage: (userId: string) => void;
+  onCall: (userId: string, callType: 'AUDIO' | 'VIDEO') => void;
+  isBlocked: boolean;
+  onToggleBlock: (userId: string) => void;
+}) {
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/profile/${member.userId}`, { credentials: 'include' });
+        if (res.ok && !cancelled) setProfile(await res.json());
+      } catch { /* silencieux */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [member.userId]);
+
+  const fullName = `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Membre';
+  const isOnline = !!member.isOnline;
+  const roleLabel = member.roleLabel || member.userRole || profile?.roleLabel || profile?.role || '';
+  const bio = profile?.bio || member.bio || '';
+  const availability = profile?.availabilityStatus || member.activityStatus || '';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Bandeau + avatar */}
+        <div className="bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] px-5 pt-5 pb-4 relative">
+          <button onClick={onClose} className="absolute top-3 right-3 p-1 rounded hover:bg-white/20 text-white">
+            <X className="w-4 h-4" />
+          </button>
+          <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white/60 shadow-lg mx-auto bg-slate-200 flex items-center justify-center text-white text-2xl font-bold">
+            {member.avatarUrl || profile?.avatarUrl
+              ? <img src={member.avatarUrl || profile?.avatarUrl} alt={fullName} className="w-full h-full object-cover" />
+              : getInitials(fullName)}
+          </div>
+          <h3 className="text-lg font-bold text-white text-center mt-2 truncate">{fullName}</h3>
+          <p className="text-xs text-white/80 text-center flex items-center justify-center gap-1.5">
+            <span className={cn('w-2 h-2 rounded-full inline-block', isOnline ? 'bg-green-400' : 'bg-slate-400')} />
+            {isOnline ? 'En ligne' : 'Hors ligne'}
+            {roleLabel ? ` · ${roleLabel}` : ''}
+          </p>
+        </div>
+        {/* Détails */}
+        <div className="p-4 space-y-2 max-h-48 overflow-y-auto">
+          {loading && <div className="flex justify-center py-2"><Loader2 className="w-4 h-4 animate-spin text-slate-400" /></div>}
+          {availability && (
+            <div className="flex items-start gap-2 text-xs text-slate-600">
+              <Clock className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+              <span>{availability === 'away' ? 'Absent' : availability === 'dnd' ? 'Ne pas déranger' : 'Disponible'}</span>
+            </div>
+          )}
+          {bio && (
+            <div className="flex items-start gap-2 text-xs text-slate-600">
+              <UserIcon className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+              <span className="line-clamp-3">{bio}</span>
+            </div>
+          )}
+          {isBlocked && (
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
+              <Ban className="w-3.5 h-3.5" /> Membre bloqué — il ne peut plus vous contacter
+            </div>
+          )}
+        </div>
+        {/* Actions */}
+        <div className="p-4 pt-0 grid grid-cols-2 gap-2">
+          {member.userId !== currentUserId && (
+            <>
+              <button
+                onClick={() => onDirectMessage(member.userId)}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#1677FF] text-white text-xs font-semibold rounded-lg hover:bg-[#0958D9]"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> Message privé
+              </button>
+              <button
+                onClick={() => onCall(member.userId, 'AUDIO')}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200"
+              >
+                <Phone className="w-3.5 h-3.5" /> Appel audio
+              </button>
+              <button
+                onClick={() => onCall(member.userId, 'VIDEO')}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-200"
+              >
+                <Video className="w-3.5 h-3.5" /> Appel vidéo
+              </button>
+              <button
+                onClick={() => onToggleBlock(member.userId)}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg',
+                  isBlocked ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                )}
+              >
+                {isBlocked ? <><CheckCircle2 className="w-3.5 h-3.5" /> Débloquer</> : <><Ban className="w-3.5 h-3.5" /> Bloquer</>}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NewChatModal({
   currentUserId,

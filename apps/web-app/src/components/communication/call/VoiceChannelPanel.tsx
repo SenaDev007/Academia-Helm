@@ -10,15 +10,22 @@
  * (coin bas-gauche) affiche les participants connectés, les locuteurs actifs
  * (anneau doré), les contrôles micro/vidéo et le bouton Quitter.
  *
+ * ⭐ V5 (parité Yeshua VoiceChannelView) :
+ *   - GRILLE VIDÉO en mode vidéo (tuiles distantes + PiP locale « Vous »)
+ *   - switch Audio↔Vidéo ADMIN (bascule collective du canal, propagée par
+ *     le serveur à tous les membres via l'événement voice:video-mode)
+ *   - bandeau « Le son est coupé par votre navigateur — cliquez ici »
+ *     (autoplay bloqué) qui débloque la lecture audio distante
+ *
  * La session média (LiveKit → Agora → Daily, fallback mesh) vit dans le
  * parent (WhatsAppChat) — ce composant est purement présentationnel.
  * ============================================================================
  */
 
-import React from 'react';
-import { Mic, MicOff, Video, VideoOff, Phone, Volume2, Users, Radio } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Mic, MicOff, Video, Phone, Volume2, Users, Radio, VolumeX } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { providerLabel, type MediaProviderName } from '@/lib/chat/media-chain';
+import { providerLabel, type MediaProviderName, type HcRemoteParticipant } from '@/lib/chat/media-chain';
 
 export interface VoiceChannelPanelProps {
   channelName: string;
@@ -26,20 +33,71 @@ export interface VoiceChannelPanelProps {
   provider: MediaProviderName | 'mesh' | null;
   /** Utilisateurs connectés (état REST chat_voice_states, enrichi media). */
   users: Array<{ userId: string; name: string; muted?: boolean; speaking?: boolean; avatarUrl?: string | null }>;
+  /** ⭐ V5 — participants média normalisés (grille vidéo en mode vidéo). */
+  participants: HcRemoteParticipant[];
   activeSpeakers: Set<string>;
   meMuted: boolean;
   videoMode: boolean;
   isStage: boolean;
+  /** ⭐ V5 — l'utilisateur est-il admin du canal (switch Audio↔Vidéo). */
+  isAdmin?: boolean;
+  /** ⭐ V5 — autoplay audio bloqué par le navigateur (bandeau de déblocage). */
+  autoplayBlocked?: boolean;
   onToggleMute: () => void;
   onToggleVideo: () => void;
+  /** ⭐ V5 — bascule COLLECTIVE audio↔vidéo du canal (admin). */
+  onToggleVideoMode: () => void;
+  /** ⭐ V5 — débloquer la lecture audio (bandeau autoplay). */
+  onUnlockAudio: () => void;
+  resolveName?: (identity: string) => string | undefined;
+  localVideoAttacher?: (el: HTMLVideoElement) => boolean;
   onLeave: () => void;
+}
+
+/** ⭐ V5 — Tuile vidéo d'un participant distant du canal vocal. */
+function VoiceVideoTile({ p, isSpeaking, name, avatarUrl }: {
+  p: HcRemoteParticipant; isSpeaking: boolean; name: string; avatarUrl?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hasVideo = p.isCameraEnabled;
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (hasVideo) p.attachVideo(el);
+    else p.detachVideo(el);
+    return () => { if (el) { try { p.detachVideo(el); } catch {} } };
+  }, [p, hasVideo]);
+  return (
+    <div className={cn(
+      'relative aspect-video rounded-xl overflow-hidden bg-black/40 flex items-center justify-center',
+      isSpeaking ? 'ring-2 ring-[#FFE08A]' : 'ring-1 ring-white/10',
+    )}>
+      {hasVideo ? (
+        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-contain" />
+      ) : (
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#114FC4] to-[#1C6FE8] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
+          {avatarUrl ? <img src={avatarUrl} alt={name} className="w-full h-full object-cover" /> : (name || '?').slice(0, 2).toUpperCase()}
+        </div>
+      )}
+      <span className="absolute bottom-1 left-1.5 px-1.5 py-px rounded bg-black/60 text-white text-[9px] font-medium max-w-[85%] truncate">{name}</span>
+      {!p.isMicrophoneEnabled && <MicOff className="absolute top-1 right-1 w-3 h-3 text-red-400" />}
+    </div>
+  );
 }
 
 export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
   const {
-    channelName, channelType, provider, users, activeSpeakers,
-    meMuted, videoMode, isStage, onToggleMute, onToggleVideo, onLeave,
+    channelName, channelType, provider, users, participants, activeSpeakers,
+    meMuted, videoMode, isStage, isAdmin, autoplayBlocked,
+    onToggleMute, onToggleVideo, onToggleVideoMode, onUnlockAudio, resolveName, localVideoAttacher, onLeave,
   } = props;
+
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (localVideoRef.current && localVideoAttacher) {
+      localVideoAttacher(localVideoRef.current);
+    }
+  }, [localVideoAttacher, videoMode, participants.length]);
 
   return (
     <div className="fixed bottom-4 left-4 z-40 w-64 rounded-2xl border border-[#FFE08A]/25 bg-[#0A2A5E]/95 backdrop-blur-md shadow-2xl text-white overflow-hidden">
@@ -59,10 +117,69 @@ export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
             </div>
           </div>
         </div>
+        {/* ⭐ V5 — switch Audio↔Vidéo COLLECTIF (admin du canal uniquement) */}
+        {isAdmin && (
+          <button
+            onClick={onToggleVideoMode}
+            className={cn(
+              'px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 flex-shrink-0 transition',
+              videoMode ? 'bg-[#FFE08A] text-[#0A2A5E]' : 'bg-white/15 text-white hover:bg-white/25',
+            )}
+            title={videoMode ? 'Repasser le canal en audio' : 'Passer le canal en vidéo (tous les participants)'}
+          >
+            <Video className="w-3 h-3" />
+            {videoMode ? 'Vidéo' : 'Audio'}
+          </button>
+        )}
       </div>
 
-      {/* Participants */}
-      <div className="max-h-44 overflow-y-auto px-2 py-2 space-y-0.5">
+      {/* ⭐ V5 — bandeau autoplay bloqué : « Le son est coupé par votre
+          navigateur — cliquez ici pour l'activer » (parité Yeshua). */}
+      {autoplayBlocked && (
+        <button
+          onClick={onUnlockAudio}
+          className="w-full px-3 py-2 bg-amber-500/90 hover:bg-amber-500 text-[#0A2A5E] text-[10px] font-bold flex items-center justify-center gap-1.5 transition"
+          title="Le navigateur a bloqué la lecture automatique de l'audio"
+        >
+          <VolumeX className="w-3.5 h-3.5" />
+          Le son est coupé par votre navigateur — cliquez ici
+        </button>
+      )}
+
+      {/* ⭐ V5 — GRILLE VIDÉO en mode vidéo (tuiles distantes + PiP locale) */}
+      {videoMode && (
+        <div className="p-2 space-y-2 border-b border-white/10 max-h-56 overflow-y-auto">
+          {participants.length > 0 ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              {participants.map((p) => {
+                const user = users.find(u => u.userId === p.identity);
+                const name = p.name || resolveName?.(p.identity) || user?.name || 'Participant';
+                return (
+                  <VoiceVideoTile
+                    key={p.identity}
+                    p={p}
+                    isSpeaking={activeSpeakers.has(p.identity) || !!user?.speaking}
+                    name={name}
+                    avatarUrl={user?.avatarUrl || undefined}
+                  />
+                );
+              })}
+              {/* PiP locale « Vous » (miroir) */}
+              <div className="relative aspect-video rounded-xl overflow-hidden bg-black/40 ring-1 ring-white/10 flex items-center justify-center">
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" style={{ transform: 'scaleX(-1)' }} />
+                <span className="absolute bottom-1 left-1.5 px-1.5 py-px rounded bg-black/60 text-white text-[9px] font-medium">Vous</span>
+              </div>
+            </div>
+          ) : (
+            <div className="px-1 py-2 text-center text-[10px] text-white/50">
+              Mode vidéo activé — en attente d'autres participants…
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Participants (liste audio) */}
+      <div className={cn('overflow-y-auto px-2 py-2 space-y-0.5', !videoMode && 'max-h-44')}>
         {users.map((u) => {
           const speaking = activeSpeakers.has(u.userId) || u.speaking;
           return (
@@ -85,7 +202,7 @@ export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
               {/* Icônes d'état */}
               <span className="flex items-center gap-1 flex-shrink-0">
                 {speaking && <Volume2 className="w-3 h-3 text-[#FFE08A]" />}
-                {(u.muted || (props.meMuted && false)) && <MicOff className="w-3 h-3 text-red-400" />}
+                {u.muted && <MicOff className="w-3 h-3 text-red-400" />}
               </span>
             </div>
           );
@@ -113,7 +230,7 @@ export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
           <button
             onClick={onToggleVideo}
             className="w-9 h-9 rounded-full bg-white/15 text-white hover:bg-white/25 flex items-center justify-center"
-            title="Caméra"
+            title="Caméra (personnelle)"
           >
             <Video className="w-4 h-4" />
           </button>

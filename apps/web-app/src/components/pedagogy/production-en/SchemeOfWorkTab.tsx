@@ -196,16 +196,13 @@ export function SchemeOfWorkTab({
 
   // ───────────────────────────────────────────────────────────────────
   // Load classes (and their subjects) from my-classes endpoint
+  // ⭐ ALWAYS fetch from /api/pedagogy-space/my-classes?language=EN to get
+  //    the full class data INCLUDING subjects. The `availableClasses` prop
+  //    from the parent only has {value, label} — no subjects — so we can't
+  //    use it directly. We need the API response to get subjects per class.
   // ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      // ⭐ If availableClasses is provided (director view), use it directly
-      if (availableClasses && availableClasses.length > 0) {
-        setLoadedClasses(availableClasses);
-        if (availableClasses[0]) setSelectedClassValue(availableClasses[0].value);
-        return;
-      }
-      // ⭐ Otherwise fetch from /api/pedagogy-space/my-classes?language=EN
       try {
         const res = await fetch(
           `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}&language=EN`,
@@ -224,11 +221,28 @@ export function SchemeOfWorkTab({
           }),
           totalStudents: c.totalStudents,
         }));
-        setLoadedClasses(list);
+
+        // ⭐ If availableClasses is provided (director view with pre-selected
+        //    class codes like P1, P2...), use it to filter the API results
+        //    to only show classes the director has access to.
+        if (availableClasses && availableClasses.length > 0) {
+          const allowedValues = new Set(availableClasses.map(c => c.value));
+          const filtered = list.filter(c => allowedValues.has(c.value) || allowedValues.has(c.className));
+          setLoadedClasses(filtered.length > 0 ? filtered : list);
+        } else {
+          setLoadedClasses(list);
+        }
+
         if (list.length > 0) setSelectedClassValue(list[0].value);
       } catch (e: any) {
         console.error("Failed to load classes:", e);
-        setLoadedClasses([]);
+        // ⭐ Fallback: if API fails, use availableClasses if provided
+        if (availableClasses && availableClasses.length > 0) {
+          setLoadedClasses(availableClasses);
+          if (availableClasses[0]) setSelectedClassValue(availableClasses[0].value);
+        } else {
+          setLoadedClasses([]);
+        }
       }
     })();
   }, [teacherId, academicYearId, availableClasses]);

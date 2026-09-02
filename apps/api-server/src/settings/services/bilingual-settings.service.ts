@@ -21,6 +21,17 @@ const BILINGUAL_OTP_VALIDITY_MINUTES = 30; // ⭐ 30 min (plus long que l'OTP lo
 const BILINGUAL_OTP_MAX_ATTEMPTS = 5;
 
 /**
+ * ⭐ Tenants exemptés d'OTP — considérés comme déjà en règle (paiement effectué).
+ *    Ces tenants peuvent activer le mode bilingue sans code OTP et ont une
+ *    expiration très lointaine (10 ans).
+ *
+ *    CSPEB-Eveil d'Afrique Education : école pilote du projet, déjà en règle.
+ */
+const OTP_EXEMPTED_TENANTS = new Set([
+  '59b8c348-ae5f-4d67-8fbd-af6aefa1f394', // CSPEB-Eveil d'Afrique Education
+]);
+
+/**
  * Service pour la gestion de l'option bilingue (mode académique structurant).
  * Impacte : structure pédagogique, matières, notes, bulletins, statistiques, tarification, ORION.
  *
@@ -105,36 +116,41 @@ export class BilingualSettingsService {
 
     // Activation : vérifier OTP + migration si données existantes
     if (data.isEnabled === true && !existing.isEnabled) {
-      // ⭐ Vérification OTP obligatoire — le code doit avoir été vérifié avant l'activation
-      if (!data.otpCode) {
-        throw new BadRequestException(
-          'Code OTP requis pour activer le mode bilingue. ' +
-          'Cliquez sur « Demander un code OTP » pour recevoir un code par email à YEHI OR Tech.',
-        );
-      }
-      // Vérifier le code OTP stocké dans pendingOtpCode
-      const now = new Date();
-      if (!existing.pendingOtpCode || !existing.pendingOtpExpiresAt || existing.pendingOtpExpiresAt < now) {
-        throw new BadRequestException(
-          'Aucun code OTP valide. Veuillez demander un nouveau code OTP.',
-        );
-      }
-      if (existing.pendingOtpAttempts >= BILINGUAL_OTP_MAX_ATTEMPTS) {
-        throw new BadRequestException(
-          'Trop de tentatives OTP échouées. Veuillez demander un nouveau code OTP.',
-        );
-      }
-      const hashedInput = this.hashCode(data.otpCode);
-      if (hashedInput !== existing.pendingOtpCode) {
-        // Incrémenter le compteur de tentatives
-        await this.prisma.settingsBilingual.update({
-          where: { tenantId },
-          data: { pendingOtpAttempts: { increment: 1 } },
-        });
-        throw new BadRequestException('Code OTP incorrect. Veuillez réessayer.');
+      // ⭐ Bypass OTP pour les tenants exemptés (ex: CSPEB — déjà en règle)
+      if (!OTP_EXEMPTED_TENANTS.has(tenantId)) {
+        // Vérification OTP obligatoire — le code doit avoir été vérifié avant l'activation
+        if (!data.otpCode) {
+          throw new BadRequestException(
+            'Code OTP requis pour activer le mode bilingue. ' +
+            'Cliquez sur « Demander un code OTP » pour recevoir un code par email à YEHI OR Tech.',
+          );
+        }
+        // Vérifier le code OTP stocké dans pendingOtpCode
+        const now = new Date();
+        if (!existing.pendingOtpCode || !existing.pendingOtpExpiresAt || existing.pendingOtpExpiresAt < now) {
+          throw new BadRequestException(
+            'Aucun code OTP valide. Veuillez demander un nouveau code OTP.',
+          );
+        }
+        if (existing.pendingOtpAttempts >= BILINGUAL_OTP_MAX_ATTEMPTS) {
+          throw new BadRequestException(
+            'Trop de tentatives OTP échouées. Veuillez demander un nouveau code OTP.',
+          );
+        }
+        const hashedInput = this.hashCode(data.otpCode);
+        if (hashedInput !== existing.pendingOtpCode) {
+          // Incrémenter le compteur de tentatives
+          await this.prisma.settingsBilingual.update({
+            where: { tenantId },
+            data: { pendingOtpAttempts: { increment: 1 } },
+          });
+          throw new BadRequestException('Code OTP incorrect. Veuillez réessayer.');
+        }
+      } else {
+        this.logger.log(`[Bilingual] Tenant ${tenantId} is OTP-exempted — skipping OTP verification`);
       }
 
-      // OTP valide — réinitialiser les champs OTP et marquer l'activation
+      // OTP valide (ou tenant exempté) — marquer l'activation
       const migrationNeeded = await this.checkMigrationNeeded(tenantId);
       if (migrationNeeded) {
         data['migrationRequired'] = true;
@@ -143,10 +159,8 @@ export class BilingualSettingsService {
       const activatedAt = new Date();
       data['activatedAt'] = activatedAt;
       data['otpActivatedAt'] = activatedAt;
-      // ⭐ Expiration : 31 août de l'année suivante (fin de l'année scolaire)
-      //    Si on est entre janvier et août, l'expiration est le 31 août de cette année.
-      //    Si on est entre septembre et décembre, l'expiration est le 31 août de l'année suivante.
-      const expiresAt = this.computeBilingualExpiry(activatedAt);
+      // ⭐ Expiration : 31 août de l'année suivante (ou 10 ans pour les tenants exemptés)
+      const expiresAt = this.computeBilingualExpiry(activatedAt, tenantId);
       data['expiresAt'] = expiresAt;
       data['isExpired'] = false;
       // Réinitialiser les champs OTP
@@ -550,10 +564,18 @@ export class BilingualSettingsService {
    *    - Si on active entre janvier et août → expiration le 31 août de cette année
    *    - Si on active entre septembre et décembre → expiration le 31 août de l'année suivante
    *
+   *    ⭐ Tenants exemptés (ex: CSPEB) : expiration à 10 ans (considérés comme toujours en règle).
+   *
    *    L'école doit re-activer avec un nouveau OTP avant le 1er septembre de
    *    chaque année scolaire (rentrée).
    */
-  private computeBilingualExpiry(activatedAt: Date): Date {
+  private computeBilingualExpiry(activatedAt: Date, tenantId: string): Date {
+    // ⭐ Tenants exemptés : expiration à 10 ans (considérés comme toujours en règle)
+    if (OTP_EXEMPTED_TENANTS.has(tenantId)) {
+      const tenYears = new Date(activatedAt);
+      tenYears.setFullYear(tenYears.getFullYear() + 10);
+      return tenYears;
+    }
     const year = activatedAt.getFullYear();
     const month = activatedAt.getMonth(); // 0 = janvier, 8 = septembre
     // Si on est entre janvier et août (mois 0-7), expiration = 31 août de cette année

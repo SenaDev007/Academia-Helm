@@ -4676,18 +4676,9 @@ export default function SettingsPage() {
                 )}
                 <button
                   onClick={handleSaveBilingual}
-                  disabled={
-                    saving ||
-                    // ⭐ Si on veut activer le bilingue mais qu'il n'est pas encore activé,
-                    //    on doit saisir un code OTP valide (6 chiffres) avant de pouvoir enregistrer.
-                    (bilingualForm.isEnabled && !bilingualSettings?.isEnabled && bilingualOtpInput.length !== 6)
-                  }
+                  disabled={saving}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  title={
-                    (bilingualForm.isEnabled && !bilingualSettings?.isEnabled && bilingualOtpInput.length !== 6)
-                      ? 'Saisissez un code OTP à 6 chiffres pour activer le mode bilingue'
-                      : 'Enregistrer les paramètres bilingues'
-                  }
+                  title="Enregistrer les paramètres bilingues"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Enregistrer

@@ -526,6 +526,34 @@ export async function seedBilingualEnStructure(tenantId?: string | null) {
   return fetchWithAuth(`${BASE_URL}/bilingual/seed-en-structure${qs}`, { method: 'POST' });
 }
 
+/**
+ * ⭐ Demande d'un code OTP pour activer le mode bilingue.
+ *    Le backend génère un code à 6 chiffres et l'envoie par email à
+ *    s.akpovitohou@gmail.com (YEHI OR Tech). L'école doit ensuite contacter
+ *    YEHI OR Tech (après paiement) pour obtenir le code et le saisir dans
+ *    l'interface.
+ *
+ *    Le code est valable 30 minutes.
+ */
+export async function requestBilingualOtp(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/request-otp${qs}`, { method: 'POST' });
+}
+
+/**
+ * ⭐ Récupère le statut d'expiration du mode bilingue + le statut OTP.
+ *    Renvoie :
+ *    - isEnabled, isExpired, expiresAt, daysUntilExpiry
+ *    - otpPending, otpExpiresAt, otpAttempts
+ *
+ *    Le backend vérifie l'expiration avant de renvoyer le statut (et désactive
+ *    automatiquement le mode bilingue si expiré).
+ */
+export async function getBilingualExpiryStatus(tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/bilingual/expiry-status${qs}`);
+}
+
 // ============================================================================
 // FEATURE FLAGS (Modules & fonctionnalités)
 // ============================================================================

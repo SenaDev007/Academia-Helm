@@ -457,6 +457,7 @@ export class BilingualStructureService {
           if (!enCycleName) continue;
 
           // ⭐ AcademicCycle a bien tenantId, academicYearId, levelId, orderIndex, isActive
+          //    ⚠️ PAS de champ 'code' sur AcademicCycle (uniquement name)
           let enAcademicCycle = await this.prisma.academicCycle.findFirst({
             where: { tenantId, academicYearId: year.id, levelId: enAcademicLevel.id, name: { equals: enCycleName, mode: 'insensitive' } },
           });
@@ -468,7 +469,6 @@ export class BilingualStructureService {
                 academicYearId: year.id,
                 levelId: enAcademicLevel.id,
                 name: enCycleName,
-                code: BilingualStructureService.translateClassCodeFrToEn(frAcademicCycle.code || frAcademicCycle.name),
                 orderIndex: frAcademicCycle.orderIndex,
                 isActive: true,
               },

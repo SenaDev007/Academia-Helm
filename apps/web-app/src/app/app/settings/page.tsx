@@ -29,7 +29,7 @@ import {
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
   Pencil, CopyPlus, Layers, Wallet, Plus, X, Trash2,
-  GitMerge, Split, Info
+  GitMerge, Split, Info, Clock
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import StampDesigner from '@/components/settings/StampDesigner';
@@ -2112,11 +2112,24 @@ export default function SettingsPage() {
   const handleSaveBilingual = async () => {
     try {
       setSaving(true);
-      await settingsService.updateBilingualSettings(bilingualForm, effectiveTenantId ?? undefined);
+      // ⭐ Si l'utilisateur veut activer le bilingue ET qu'il n'est pas encore activé,
+      //    on doit envoyer le code OTP saisi.
+      const payload = { ...bilingualForm };
+      if (bilingualForm.isEnabled && !bilingualSettings?.isEnabled && bilingualOtpInput) {
+        payload.otpCode = bilingualOtpInput;
+      }
+      await settingsService.updateBilingualSettings(payload, effectiveTenantId ?? undefined);
       showToast('success', 'Paramètres bilingues enregistrés');
       const updated = await settingsService.getBilingualSettings(effectiveTenantId ?? undefined);
       setBilingualSettings(updated);
       setBilingualForm(updated || {});
+      // ⭐ Recharger aussi le statut d'expiration
+      try {
+        const status = await settingsService.getBilingualExpiryStatus(effectiveTenantId ?? undefined);
+        setBilingualExpiryStatus(status);
+      } catch {}
+      // Réinitialiser le champ OTP après succès
+      setBilingualOtpInput('');
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(SETTINGS_BILINGUAL_UPDATED_EVENT));
       }
@@ -2126,6 +2139,24 @@ export default function SettingsPage() {
       setSaving(false);
     }
   };
+
+  // ⭐ State pour le flux OTP d'activation bilingue
+  const [bilingualOtpInput, setBilingualOtpInput] = useState('');
+  const [requestingOtp, setRequestingOtp] = useState(false);
+  const [bilingualExpiryStatus, setBilingualExpiryStatus] = useState<any>(null);
+
+  // ⭐ Charger le statut d'expiration au montage + quand le tenant change
+  useEffect(() => {
+    if (!effectiveTenantId) return;
+    (async () => {
+      try {
+        const status = await settingsService.getBilingualExpiryStatus(effectiveTenantId);
+        setBilingualExpiryStatus(status);
+      } catch (e) {
+        console.warn('Failed to load bilingual expiry status:', e);
+      }
+    })();
+  }, [effectiveTenantId, activeTab === 'bilingual']);
 
   // ⭐ Re-seed manuel de la structure pédagogique EN
   //    Appelé par le bouton "Créer la structure EN" dans l'onglet Bilingue.
@@ -4444,10 +4475,13 @@ export default function SettingsPage() {
               )}
 
               <div className="space-y-4">
+                {/* ⭐ Toggle principal — Activer le mode bilingue */}
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Activer le mode bilingue</h4>
-                    <p className="text-sm text-gray-600">Séparation pédagogique FR / EN (notes, bulletins, statistiques)</p>
+                    <p className="text-sm text-gray-600">
+                      Séparation pédagogique automatique FR / EN (matières, bulletins, statistiques)
+                    </p>
                   </div>
                   <button
                     onClick={() => setBilingualForm({ ...bilingualForm, isEnabled: !bilingualForm.isEnabled })}
@@ -4460,67 +4494,123 @@ export default function SettingsPage() {
                     )}
                   </button>
                 </div>
+
+                {/* ⭐ Info sur ce qui se passe automatiquement quand le bilingue est activé */}
                 {bilingualForm.isEnabled && (
-                  <>
-                    <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                      <div>
-                        <h4 className="font-semibold text-gray-800">Séparer les matières</h4>
-                        <p className="text-sm text-gray-600">Matières distinctes pour FR et EN</p>
-                      </div>
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                      <Info className="w-4 h-4" />
+                      Ce qui se passe automatiquement
+                    </h4>
+                    <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                      <li>Séparation automatique des <strong>matières anglophones</strong> et <strong>francophones</strong></li>
+                      <li><strong>Bulletins séparés</strong> par piste linguistique (FR et EN)</li>
+                      <li>Création automatique de la <strong>structure EN miroir</strong> (Nursery 1/2, Primary 1-6) dans l&apos;onglet Structure</li>
+                      <li>Espace Pédagogique EN dédié (Scheme of Work, Attendance, etc.)</li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* ⭐ Section OTP — affichée quand l'utilisateur veut activer le bilingue
+                     ET qu'il n'est pas encore activé (isEnabled = false en DB) */}
+                {bilingualForm.isEnabled && !bilingualSettings?.isEnabled && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg space-y-3">
+                    <h4 className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                      <Shield className="w-4 h-4" />
+                      Activation sécurisée par code OTP
+                    </h4>
+                    <p className="text-sm text-amber-800">
+                      Le mode bilingue est <strong>payant</strong>. Pour l&apos;activer, vous devez
+                      effectuer le paiement auprès de <strong>YEHI OR Tech</strong>, puis saisir le
+                      code OTP ci-dessous. Le code est envoyé par email à YEHI OR Tech après votre demande.
+                    </p>
+
+                    {/* Bouton pour demander un OTP */}
+                    <div className="flex items-center gap-3 flex-wrap">
                       <button
-                        onClick={() => setBilingualForm({ ...bilingualForm, separateSubjects: !bilingualForm.separateSubjects })}
-                        className="p-2"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            setRequestingOtp(true);
+                            await settingsService.requestBilingualOtp(effectiveTenantId ?? undefined);
+                            showToast('success', 'Code OTP envoyé à YEHI OR Tech (s.akpovitohou@gmail.com). Contactez-les après paiement pour obtenir le code.');
+                            // Recharger le statut OTP
+                            const status = await settingsService.getBilingualExpiryStatus(effectiveTenantId ?? undefined);
+                            setBilingualExpiryStatus(status);
+                          } catch (e: any) {
+                            showToast('error', e.message ?? 'Erreur lors de l\'envoi du code OTP');
+                          } finally {
+                            setRequestingOtp(false);
+                          }
+                        }}
+                        disabled={requestingOtp}
+                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 text-sm font-medium"
                       >
-                        {bilingualForm.separateSubjects ? (
-                          <ToggleRight className="w-6 h-6 text-green-600" />
-                        ) : (
-                          <ToggleLeft className="w-6 h-6 text-gray-400" />
-                        )}
+                        {requestingOtp ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                        Demander un code OTP
                       </button>
+                      {bilingualExpiryStatus?.otpPending && (
+                        <span className="text-xs text-amber-700">
+                          Code OTP en attente (valable 30 min)
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                      <div>
-                        <h4 className="font-semibold text-gray-800">Séparer les moyennes</h4>
-                        <p className="text-sm text-gray-600">Calculer des moyennes par langue</p>
-                      </div>
-                      <button
-                        onClick={() => setBilingualForm({ ...bilingualForm, separateGrades: !bilingualForm.separateGrades })}
-                        className="p-2"
-                      >
-                        {bilingualForm.separateGrades ? (
-                          <ToggleRight className="w-6 h-6 text-green-600" />
-                        ) : (
-                          <ToggleLeft className="w-6 h-6 text-gray-400" />
-                        )}
-                      </button>
+
+                    {/* Champ pour saisir le code OTP */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="Code OTP (6 chiffres)"
+                        value={bilingualOtpInput}
+                        onChange={(e) => setBilingualOtpInput(e.target.value.replace(/\D/g, '').substring(0, 6))}
+                        className="w-48 px-3 py-2 border border-amber-300 rounded-md text-center text-lg tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                      <span className="text-xs text-amber-700">
+                        Saisissez le code reçu de YEHI OR Tech
+                      </span>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Langue par défaut pour les évaluations (bulletins, moyennes)
-                      </label>
-                      <select
-                        className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={bilingualForm.defaultLanguage ?? bilingualForm.defaultUILanguage ?? 'FR'}
-                        onChange={(e) => setBilingualForm({ ...bilingualForm, defaultLanguage: e.target.value })}
-                  >
-                    <option value="FR">Français</option>
-                    <option value="EN">English</option>
-                  </select>
-                </div>
-                <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Langue par défaut de l&apos;interface
-                      </label>
-                  <select
-                        className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        value={bilingualForm.defaultUILanguage || 'FR'}
-                        onChange={(e) => setBilingualForm({ ...bilingualForm, defaultUILanguage: e.target.value })}
-                  >
-                        <option value="FR">Français</option>
-                        <option value="EN">English</option>
-                  </select>
-                </div>
-                  </>
+                  </div>
+                )}
+
+                {/* ⭐ Section expiration — affichée quand le bilingue est activé */}
+                {bilingualForm.isEnabled && bilingualSettings?.isEnabled && (
+                  <div className={`p-4 rounded-lg border ${
+                    bilingualExpiryStatus?.isExpired
+                      ? 'bg-red-50 border-red-300'
+                      : (bilingualExpiryStatus?.daysUntilExpiry ?? 999) <= 30
+                      ? 'bg-amber-50 border-amber-300'
+                      : 'bg-emerald-50 border-emerald-200'
+                  }`}>
+                    <h4 className={`text-sm font-semibold mb-2 flex items-center gap-2 ${
+                      bilingualExpiryStatus?.isExpired ? 'text-red-900' :
+                      (bilingualExpiryStatus?.daysUntilExpiry ?? 999) <= 30 ? 'text-amber-900' : 'text-emerald-900'
+                    }`}>
+                      <Clock className="w-4 h-4" />
+                      {bilingualExpiryStatus?.isExpired
+                        ? 'Mode bilingue expiré'
+                        : (bilingualExpiryStatus?.daysUntilExpiry ?? 999) <= 30
+                        ? 'Expiration prochaine'
+                        : 'Mode bilingue actif'}
+                    </h4>
+                    {bilingualExpiryStatus?.isExpired ? (
+                      <p className="text-sm text-red-800">
+                        Votre mode bilingue a expiré. Veuillez demander un nouveau code OTP pour le réactiver.
+                      </p>
+                    ) : bilingualExpiryStatus?.expiresAt ? (
+                      <p className="text-sm">
+                        {(() => {
+                          const days = bilingualExpiryStatus?.daysUntilExpiry ?? 0;
+                          const expires = new Date(bilingualExpiryStatus.expiresAt).toLocaleDateString('fr-FR');
+                          if (days <= 30) {
+                            return <span className="text-amber-800">Expire le <strong>{expires}</strong> (dans {days} jour{days > 1 ? 's' : ''}). Pensez à renouveler avant la rentrée scolaire.</span>;
+                          }
+                          return <span className="text-emerald-800">Expire le <strong>{expires}</strong> (dans {days} jours).</span>;
+                        })()}
+                      </p>
+                    ) : null}
+                  </div>
                 )}
               </div>
 
@@ -4573,7 +4663,7 @@ export default function SettingsPage() {
               )}
               <div className="mt-6 flex justify-end gap-2 flex-wrap">
                 {/* ⭐ Bouton "Créer la structure EN" — visible uniquement si bilingue activé */}
-                {bilingualForm.isEnabled && (
+                {bilingualForm.isEnabled && bilingualSettings?.isEnabled && (
                   <button
                     onClick={handleSeedEnStructure}
                     disabled={seedingEnStructure}
@@ -4586,8 +4676,18 @@ export default function SettingsPage() {
                 )}
                 <button
                   onClick={handleSaveBilingual}
-                  disabled={saving || (wantsToEnable && migrationNeeded && !bilingualForm.billingImpactAcknowledged)}
+                  disabled={
+                    saving ||
+                    // ⭐ Si on veut activer le bilingue mais qu'il n'est pas encore activé,
+                    //    on doit saisir un code OTP valide (6 chiffres) avant de pouvoir enregistrer.
+                    (bilingualForm.isEnabled && !bilingualSettings?.isEnabled && bilingualOtpInput.length !== 6)
+                  }
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  title={
+                    (bilingualForm.isEnabled && !bilingualSettings?.isEnabled && bilingualOtpInput.length !== 6)
+                      ? 'Saisissez un code OTP à 6 chiffres pour activer le mode bilingue'
+                      : 'Enregistrer les paramètres bilingues'
+                  }
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   Enregistrer

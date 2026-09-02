@@ -3817,6 +3817,17 @@ model SettingsBilingual {
   defaultLanguage           String    @default("FR")
   activatedAt               DateTime?
   pricingSupplement         Int?      @default(0)
+  // ⭐ OTP verification for bilingual activation
+  //    The school must enter a code sent to YEHI OR Tech (s.akpovitohou@gmail.com)
+  //    before the bilingual mode can be activated — ensures payment was made.
+  pendingOtpCode            String?
+  pendingOtpExpiresAt       DateTime?
+  pendingOtpAttempts        Int       @default(0)
+  otpActivatedAt            DateTime?
+  // ⭐ Annual expiry — bilingual mode expires on August 31 of each year.
+  //    The school must re-activate with a new OTP at the start of each school year.
+  expiresAt                 DateTime?
+  isExpired                 Boolean   @default(false)
   tenant                    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("settings_bilingual")

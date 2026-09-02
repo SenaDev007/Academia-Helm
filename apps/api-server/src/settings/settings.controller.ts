@@ -1629,6 +1629,42 @@ export class SettingsController {
     );
   }
 
+  /**
+   * ⭐ POST /settings/bilingual/request-otp
+   *    Demande un code OTP pour activer le mode bilingue.
+   *    Le code est envoyé par email à s.akpovitohou@gmail.com (YEHI OR Tech).
+   *    L'école doit ensuite contacter YEHI OR Tech pour obtenir le code
+   *    (après paiement) et le saisir dans l'interface.
+   */
+  @Post('bilingual/request-otp')
+  async requestBilingualOtp(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.bilingualSettingsService.requestActivationOtp(
+      this.resolveTid(tenantId, user, req),
+    );
+  }
+
+  /**
+   * ⭐ GET /settings/bilingual/expiry-status
+   *    Renvoie le statut d'expiration du mode bilingue + le statut OTP.
+   *    Utilisé par le frontend pour afficher le compteur de jours restants
+   *    et l'état de la demande OTP en cours.
+   */
+  @Get('bilingual/expiry-status')
+  async getBilingualExpiryStatus(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    // ⭐ Vérifier l'expiration avant de renvoyer le statut
+    const tid = this.resolveTid(tenantId, user, req);
+    await this.bilingualSettingsService.checkAndApplyExpiry(tid);
+    return this.bilingualSettingsService.getExpiryStatus(tid);
+  }
+
   // ============================================================================
   // COMMUNICATION
   // ============================================================================

@@ -6,6 +6,19 @@ import { BilingualValidationService } from '../../tenant-features/bilingual-vali
 import { TenantFeaturesService } from '../../tenant-features/tenant-features.service';
 import { FeatureCode } from '../../tenant-features/entities/tenant-feature.entity';
 import { BilingualStructureService } from '../../bilingual-structure/bilingual-structure.service';
+import { EmailService } from '../../communication/services/email.service';
+import * as crypto from 'crypto';
+
+/**
+ * ⭐ Adresse email de YEHI OR Tech qui reçoit les OTP d'activation bilingue.
+ *    Quand une école clique sur « Activer le mode bilingue », un code OTP est
+ *    envoyé à cette adresse. L'école doit ensuite saisir le code reçu pour
+ *    confirmer l'activation — cela garantit que le paiement a été effectué
+ *    (YEHI OR Tech communique le code à l'école après paiement).
+ */
+const BILINGUAL_OTP_RECIPIENT_EMAIL = 's.akpovitohou@gmail.com';
+const BILINGUAL_OTP_VALIDITY_MINUTES = 30; // ⭐ 30 min (plus long que l'OTP login classique car l'école doit contacter YEHI OR Tech)
+const BILINGUAL_OTP_MAX_ATTEMPTS = 5;
 
 /**
  * Service pour la gestion de l'option bilingue (mode académique structurant).
@@ -27,6 +40,7 @@ export class BilingualSettingsService {
     private readonly bilingualValidation: BilingualValidationService,
     private readonly tenantFeaturesService: TenantFeaturesService,
     private readonly bilingualStructureService: BilingualStructureService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -89,20 +103,56 @@ export class BilingualSettingsService {
       }
     }
 
-    // Activation : vérifier migration si données existantes + avertissement facturation
+    // Activation : vérifier OTP + migration si données existantes
     if (data.isEnabled === true && !existing.isEnabled) {
-      const migrationNeeded = await this.checkMigrationNeeded(tenantId);
-      if (migrationNeeded && !data.billingImpactAcknowledged) {
+      // ⭐ Vérification OTP obligatoire — le code doit avoir été vérifié avant l'activation
+      if (!data.otpCode) {
         throw new BadRequestException(
-          'Des données existent déjà. L\'activation du bilingue nécessite une migration. ' +
-          'Veuillez confirmer l\'impact sur la facturation (case à cocher).',
+          'Code OTP requis pour activer le mode bilingue. ' +
+          'Cliquez sur « Demander un code OTP » pour recevoir un code par email à YEHI OR Tech.',
         );
       }
+      // Vérifier le code OTP stocké dans pendingOtpCode
+      const now = new Date();
+      if (!existing.pendingOtpCode || !existing.pendingOtpExpiresAt || existing.pendingOtpExpiresAt < now) {
+        throw new BadRequestException(
+          'Aucun code OTP valide. Veuillez demander un nouveau code OTP.',
+        );
+      }
+      if (existing.pendingOtpAttempts >= BILINGUAL_OTP_MAX_ATTEMPTS) {
+        throw new BadRequestException(
+          'Trop de tentatives OTP échouées. Veuillez demander un nouveau code OTP.',
+        );
+      }
+      const hashedInput = this.hashCode(data.otpCode);
+      if (hashedInput !== existing.pendingOtpCode) {
+        // Incrémenter le compteur de tentatives
+        await this.prisma.settingsBilingual.update({
+          where: { tenantId },
+          data: { pendingOtpAttempts: { increment: 1 } },
+        });
+        throw new BadRequestException('Code OTP incorrect. Veuillez réessayer.');
+      }
+
+      // OTP valide — réinitialiser les champs OTP et marquer l'activation
+      const migrationNeeded = await this.checkMigrationNeeded(tenantId);
       if (migrationNeeded) {
         data['migrationRequired'] = true;
         data['migrationStatus'] = 'PENDING';
       }
-      data['activatedAt'] = new Date();
+      const activatedAt = new Date();
+      data['activatedAt'] = activatedAt;
+      data['otpActivatedAt'] = activatedAt;
+      // ⭐ Expiration : 31 août de l'année suivante (fin de l'année scolaire)
+      //    Si on est entre janvier et août, l'expiration est le 31 août de cette année.
+      //    Si on est entre septembre et décembre, l'expiration est le 31 août de l'année suivante.
+      const expiresAt = this.computeBilingualExpiry(activatedAt);
+      data['expiresAt'] = expiresAt;
+      data['isExpired'] = false;
+      // Réinitialiser les champs OTP
+      data['pendingOtpCode'] = null;
+      data['pendingOtpExpiresAt'] = null;
+      data['pendingOtpAttempts'] = 0;
     }
 
     const updatePayload: Record<string, unknown> = { ...data, updatedAt: new Date() };
@@ -473,6 +523,222 @@ export class BilingualSettingsService {
       monthly: Math.round(baseMonthly * bilingualSurcharge),
       annual: Math.round(baseAnnual * bilingualSurcharge),
       currency,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⭐ OTP pour activation bilingue
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Hash un code OTP pour stockage sécurisé (jamais en clair en DB).
+   */
+  private hashCode(code: string): string {
+    return crypto.createHash('sha256').update(code).digest('hex');
+  }
+
+  /**
+   * Génère un code OTP à 6 chiffres.
+   */
+  private generateOtpCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  /**
+   * ⭐ Calcule la date d'expiration du mode bilingue.
+   *    Règle : le mode bilingue expire le 31 août de l'année scolaire en cours.
+   *    - Si on active entre janvier et août → expiration le 31 août de cette année
+   *    - Si on active entre septembre et décembre → expiration le 31 août de l'année suivante
+   *
+   *    L'école doit re-activer avec un nouveau OTP avant le 1er septembre de
+   *    chaque année scolaire (rentrée).
+   */
+  private computeBilingualExpiry(activatedAt: Date): Date {
+    const year = activatedAt.getFullYear();
+    const month = activatedAt.getMonth(); // 0 = janvier, 8 = septembre
+    // Si on est entre janvier et août (mois 0-7), expiration = 31 août de cette année
+    // Si on est entre septembre et décembre (mois 8-11), expiration = 31 août de l'année suivante
+    const expiryYear = month <= 7 ? year : year + 1;
+    // 31 août à 23:59:59 (fin de journée)
+    return new Date(expiryYear, 7, 31, 23, 59, 59, 999); // mois 7 = août (0-indexed)
+  }
+
+  /**
+   * ⭐ Demande d'un code OTP pour activer le mode bilingue.
+   *    Génère un code à 6 chiffres, le hash en DB, et envoie l'email à
+   *    s.akpovitohou@gmail.com (YEHI OR Tech). L'école doit ensuite contacter
+   *    YEHI OR Tech pour obtenir le code (après paiement).
+   *
+   *    Le code est valable 30 minutes (plus long que l'OTP login classique car
+   *    l'école doit contacter YEHI OR Tech par téléphone/WhatsApp pour obtenir
+   *    le code après paiement).
+   */
+  async requestActivationOtp(tenantId: string): Promise<{ sent: boolean; expiresAt: Date }> {
+    const settings = await this.getSettings(tenantId);
+    const code = this.generateOtpCode();
+    const codeHash = this.hashCode(code);
+    const expiresAt = new Date(Date.now() + BILINGUAL_OTP_VALIDITY_MINUTES * 60 * 1000);
+
+    // Stocker le hash du code en DB
+    await this.prisma.settingsBilingual.update({
+      where: { tenantId },
+      data: {
+        ...prismaUpdateDefaults(),
+        pendingOtpCode: codeHash,
+        pendingOtpExpiresAt: expiresAt,
+        pendingOtpAttempts: 0,
+      },
+    });
+
+    // Récupérer le nom du tenant pour l'email
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
+    const tenantName = tenant?.name || 'École non identifiée';
+
+    // Envoyer l'email à YEHI OR Tech
+    try {
+      await this.emailService.sendEmail({
+        to: BILINGUAL_OTP_RECIPIENT_EMAIL,
+        subject: `[Academia Helm] Code OTP d'activation bilingue — ${tenantName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+            <h2 style="color: #1e3a8a;">Demande d'activation du mode bilingue</h2>
+            <p>Une école a demandé à activer le mode bilingue sur Academia Helm.</p>
+            <p><strong>École :</strong> ${tenantName}</p>
+            <p><strong>Tenant ID :</strong> ${tenantId}</p>
+            <p>Code OTP à communiquer à l'école (après vérification du paiement) :</p>
+            <div style="text-align: center; margin: 24px 0;">
+              <span style="display: inline-block; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1e3a8a; background: #eff6ff; padding: 12px 24px; border-radius: 12px;">${code}</span>
+            </div>
+            <p style="color: #6b7280; font-size: 13px;">Ce code est valable ${BILINGUAL_OTP_VALIDITY_MINUTES} minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;">
+            <p style="color: #9ca3af; font-size: 12px;">Academia Helm — YEHI OR Tech</p>
+          </div>
+        `,
+        text: `Demande d'activation bilingue — École: ${tenantName} (Tenant: ${tenantId}). Code OTP: ${code}. Valable ${BILINGUAL_OTP_VALIDITY_MINUTES} minutes.`,
+      });
+      this.logger.log(`[Bilingual OTP] Code sent to ${BILINGUAL_OTP_RECIPIENT_EMAIL} for tenant ${tenantId} (${tenantName})`);
+      return { sent: true, expiresAt };
+    } catch (err: any) {
+      this.logger.error(`[Bilingual OTP] Failed to send email to ${BILINGUAL_OTP_RECIPIENT_EMAIL}: ${err.message}`, err.stack);
+      throw new BadRequestException(
+        `Impossible d'envoyer l'email OTP à YEHI OR Tech. Veuillez réessayer ou contacter le support. Détail: ${err.message}`,
+      );
+    }
+  }
+
+  /**
+   * ⭐ Vérifie l'expiration du mode bilingue et le désactive si expiré.
+   *    À appeler avant chaque lecture des settings bilingue (getSettings) ou
+   *    avant chaque opération qui dépend du mode bilingue.
+   *
+   *    Si expiresAt est dans le passé ET isEnabled est true, on désactive
+   *    automatiquement le mode bilingue (isEnabled = false, isExpired = true).
+   *    L'école devra demander un nouveau code OTP pour ré-activer.
+   */
+  async checkAndApplyExpiry(tenantId: string): Promise<{ expired: boolean; expiresAt: Date | null }> {
+    const settings = await this.prisma.settingsBilingual.findUnique({
+      where: { tenantId },
+      select: { isEnabled: true, expiresAt: true, isExpired: true },
+    });
+    if (!settings || !settings.isEnabled || !settings.expiresAt) {
+      return { expired: false, expiresAt: settings?.expiresAt || null };
+    }
+    const now = new Date();
+    if (settings.expiresAt > now) {
+      // Pas encore expiré
+      if (settings.isExpired) {
+        // Réinitialiser isExpired si on a re-activé entre-temps
+        await this.prisma.settingsBilingual.update({
+          where: { tenantId },
+          data: { ...prismaUpdateDefaults(), isExpired: false },
+        });
+      }
+      return { expired: false, expiresAt: settings.expiresAt };
+    }
+    // ⭐ Expiré — désactiver le mode bilingue automatiquement
+    this.logger.warn(`[Bilingual] Mode bilingue expiré pour tenant ${tenantId} (expiresAt=${settings.expiresAt.toISOString()}). Désactivation automatique.`);
+    await this.prisma.settingsBilingual.update({
+      where: { tenantId },
+      data: {
+        ...prismaUpdateDefaults(),
+        isEnabled: false,
+        isExpired: true,
+      },
+    });
+    // ⭐ Aussi désactiver le feature flag BILINGUAL_TRACK
+    try {
+      const isEnabled = await this.tenantFeaturesService.isFeatureEnabled(
+        FeatureCode.BILINGUAL_TRACK,
+        tenantId,
+      );
+      if (isEnabled) {
+        await this.tenantFeaturesService.disableFeature(
+          FeatureCode.BILINGUAL_TRACK,
+          tenantId,
+          'system',
+          'Bilingual mode expired (annual expiry on August 31)',
+        );
+        this.logger.log(`[Bilingual] BILINGUAL_TRACK feature flag disabled for tenant ${tenantId} due to expiry`);
+      }
+    } catch (syncErr: any) {
+      this.logger.warn(`[Bilingual] Failed to disable BILINGUAL_TRACK feature flag on expiry: ${syncErr.message}`);
+    }
+    return { expired: true, expiresAt: settings.expiresAt };
+  }
+
+  /**
+   * ⭐ Renvoie le statut d'expiration du mode bilingue (sans le modifier).
+   *    Utilisé par le frontend pour afficher le compteur de jours restants.
+   */
+  async getExpiryStatus(tenantId: string): Promise<{
+    isEnabled: boolean;
+    isExpired: boolean;
+    expiresAt: Date | null;
+    daysUntilExpiry: number | null;
+    otpPending: boolean;
+    otpExpiresAt: Date | null;
+    otpAttempts: number;
+  }> {
+    const settings = await this.prisma.settingsBilingual.findUnique({
+      where: { tenantId },
+      select: {
+        isEnabled: true,
+        isExpired: true,
+        expiresAt: true,
+        pendingOtpCode: true,
+        pendingOtpExpiresAt: true,
+        pendingOtpAttempts: true,
+      },
+    });
+    if (!settings) {
+      return {
+        isEnabled: false,
+        isExpired: false,
+        expiresAt: null,
+        daysUntilExpiry: null,
+        otpPending: false,
+        otpExpiresAt: null,
+        otpAttempts: 0,
+      };
+    }
+    let daysUntilExpiry: number | null = null;
+    if (settings.expiresAt) {
+      const now = new Date();
+      const diffMs = settings.expiresAt.getTime() - now.getTime();
+      daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    }
+    const otpPending = !!settings.pendingOtpCode && !!settings.pendingOtpExpiresAt && settings.pendingOtpExpiresAt > new Date();
+    return {
+      isEnabled: settings.isEnabled,
+      isExpired: settings.isExpired,
+      expiresAt: settings.expiresAt,
+      daysUntilExpiry,
+      otpPending,
+      otpExpiresAt: settings.pendingOtpExpiresAt,
+      otpAttempts: settings.pendingOtpAttempts,
     };
   }
 }

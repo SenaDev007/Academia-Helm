@@ -43,6 +43,14 @@ export interface ContractData {
   activationFee: number;
   annualFee: number;
   totalYearOne: number;
+  bilingualFee?: number;
+
+  // ⭐ Paiement en espèces (mode YEHI OR Tech) — aligne le contrat sur
+  //    ce qui a été renseigné/marqué dans le wizard
+  paymentMethod?: 'cash' | 'online';
+  subscriptionPaid?: boolean;
+  bilingualPaid?: boolean;
+  receivedBy?: string; // Email de l'agent YEHI OR Tech qui a encaissé
 
   // Signatures
   promoterSignatureDataUrl?: string | null; // Canvas signature (base64 PNG)
@@ -318,6 +326,15 @@ export class ContractGenerationService {
       color: #b45309;
       margin-top: 2px;
     }
+    .payment-box {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin-top: 4px;
+      font-size: 9.5px;
+    }
+    .payment-box p { margin-bottom: 2px; text-align: left; }
     @media print {
       body { padding: 0; }
       .signature-section { page-break-inside: avoid; }
@@ -397,6 +414,12 @@ export class ContractGenerationService {
 
     <h2 class="article">Article 4 — Prix et modalités de paiement</h2>
     <p>Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
+    ${data.paymentMethod === 'cash' ? `
+    <div class="payment-box">
+      <p><strong>Modalité retenue pour la présente souscription : paiement en espèces.</strong></p>
+      <p>Souscription (frais d'activation + frais annuels du plan ${data.planName}) : <strong>${data.subscriptionPaid ? 'réglée en espèces à la signature' : 'à régler'}</strong>${data.receivedBy ? `, encaissée par ${data.receivedBy} pour YEHI OR Tech` : ''}.</p>
+      ${data.bilingual ? `<p>Option bilingue FR/EN : <strong>${(data.bilingualFee ?? 50000).toLocaleString('fr-FR')} FCFA/an</strong>, facturation <strong>annuelle</strong> — ${data.bilingualPaid ? 'frais de la première année réglés en espèces' : 'à régler'}.</p>` : ''}
+    </div>` : ''}
 
     <h2 class="article">Article 5 — Durée et reconduction</h2>
     <p>Durée initiale d'un (1) an à compter de la date d'effet. Renouvelable par tacite reconduction pour des périodes successives d'un (1) an, sauf dénonciation par écrit au moins 60 jours avant la <strong>date d'échéance annuelle</strong>. Le Prestataire se réserve le droit de réviser la grille tarifaire pour les périodes de reconduction futures, sous réserve d'en informer le Client au moins 60 jours avant l'échéance.</p>

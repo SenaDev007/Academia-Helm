@@ -537,12 +537,15 @@ export class FedaPayService implements OnModuleInit {
       // IMPORTANT: Vérifier que tous les paramètres requis sont présents
       // Documentation: https://docs.fedapay.com/sdks/fr/nodejs-fr
       // FedaPay API attend amount en entier.
-      // ⭐ TEST LIVE : montant fixé à 100 FCFA pour tester le flux en live.
-      // Le compte FedaPay live retourne "Le montant maximum de transactions
-      // autorisées est 20000" même en mode live. On teste avec 100 FCFA.
-      // Une fois le problème résolu avec FedaPay, remettre le montant réel.
-      let amountInteger = 100; // TEST LIVE — montant fixe pour test
-      this.logger.warn(`⚠️ TEST LIVE : montant fixé à ${amountInteger} XOF (au lieu de ${Math.round(Number(data.amount))})`);
+      // ⭐ FIX DETTE : le montant n'est PLUS hardcodé à 100 XOF — on envoie le
+      //    montant RÉEL de la transaction (arrondi). L'ancien hardcode "TEST LIVE"
+      //    faisait débiter 100 FCFA alors que la DB enregistrait le montant réel.
+      //    Le plafonnement sandbox (max 20 000 XOF) reste géré en amont dans
+      //    createOnboardingPaymentSession / createRenewalPaymentSession.
+      let amountInteger = Math.max(1, Math.round(Number(data.amount) || 0));
+      if (!Number.isFinite(amountInteger) || amountInteger <= 0) {
+        throw new BadRequestException('Transaction amount must be greater than 0');
+      }
       transactionData = {
         description: data.description,
         amount: amountInteger,
@@ -1546,26 +1549,39 @@ export class FedaPayService implements OnModuleInit {
     const skipSignatureDebug =
       this.configService.get<string>('SKIP_WEBHOOK_SIGNATURE') === 'true' && !isProduction;
 
-    // ⭐ Si pas de signature header ET pas de secret configuré, on accepte le webhook
-    // (mode permissif). Cela permet au webhook de fonctionner même si la signature
-    // n'est pas configurée dans le dashboard FedaPay.
-    // En production, on log un warning pour rappeler de configurer le secret.
+    // ⭐ SÉCURITÉ (fail-closed) : en PRODUCTION, un webhook sans signature ou
+    //    sans secret configuré est REJETÉ — plus de « mode permissif » qui
+    //    permettait à quiconque connaissant l'URL de déclencher des activations
+    //    factices. Hors production (dev/staging), le mode permissif reste
+    //    toléré avec un warning pour ne pas bloquer le développement local.
     if (!signatureHeader || typeof signatureHeader !== 'string') {
       if (!webhookSecret) {
+        if (isProduction) {
+          this.logger.error(
+            '❌ FedaPay webhook received WITHOUT signature and FEDAPAY_WEBHOOK_SECRET is not set (production). REJECTED — configure FEDAPAY_WEBHOOK_SECRET.',
+          );
+          throw new BadRequestException('Webhook signature required (production)');
+        }
         this.logger.warn(
-          '⚠️  FedaPay webhook received WITHOUT signature and FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode). Configure FEDAPAY_WEBHOOK_SECRET for security.',
+          '⚠️  FedaPay webhook received WITHOUT signature and FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode, dev only). Configure FEDAPAY_WEBHOOK_SECRET for security.',
         );
-        return; // Accept
+        return; // Accept (dev uniquement)
       }
       this.logger.error('❌ Missing webhook signature header but FEDAPAY_WEBHOOK_SECRET is set.');
       throw new BadRequestException('Missing webhook signature');
     }
 
     if (!webhookSecret) {
+      if (isProduction) {
+        this.logger.error(
+          '❌ FEDAPAY_WEBHOOK_SECRET is not set (production) — impossible de vérifier la signature. REJECTED.',
+        );
+        throw new BadRequestException('Webhook secret not configured (production)');
+      }
       this.logger.warn(
-        '⚠️  FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode).',
+        '⚠️  FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode, dev only).',
       );
-      return; // Accept
+      return; // Accept (dev uniquement)
     }
 
     let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);

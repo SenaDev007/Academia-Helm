@@ -182,6 +182,9 @@ export class OnboardingService {
       phone: string;
       password: string;
       otpCode?: string;
+      creationMode?: string;
+      adminEmail?: string;
+      adminPassword?: string;
     },
   ) {
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -224,13 +227,34 @@ export class OnboardingService {
     // Vérifier l'OTP si fourni
     let otpVerified = false;
 
-    // ⭐ Mode YEHI OR Tech : skip OTP, valider les credentials admin à la place
-    if ((data as any).creationMode === 'yehi-or-tech') {
-      this.logger.log(`🔧 Mode YEHI OR Tech : OTP skipé pour draft ${draftId}`);
-      otpVerified = true;
-      // TODO: valider les credentials admin contre la DB
-      // Pour l'instant, on accepte et on continue
-    } else if (data.otpCode) {
+    // ⭐ Mode YEHI OR Tech : l'équipe YEHI OR Tech crée l'école elle-même.
+    //    Pas d'OTP : la sécurité repose sur la validation des credentials
+    //    d'un compte plateforme (SUPER_ADMIN / isSuperAdmin) contre la DB.
+    if (data.creationMode === 'yehi-or-tech') {
+      const adminEmail = data.adminEmail;
+      const adminPassword = data.adminPassword;
+      if (!adminEmail || !adminPassword) {
+        throw new BadRequestException(
+          'Identifiants plateforme requis : email et mot de passe de votre compte YEHI OR Tech.'
+        );
+      }
+      const admin = await this.validatePlatformAdminCredentials(adminEmail, adminPassword);
+      if (!admin) {
+        throw new BadRequestException(
+          'Identifiants plateforme invalides. Seul un compte Super Admin / Platform Owner peut créer une école via le mode YEHI OR Tech.'
+        );
+      }
+      this.logger.log(`🔐 Mode YEHI OR Tech : credentials plateforme validés (${adminEmail}) pour draft ${draftId}`);
+      otpVerified = true; // Email vérifié par l'agent YEHI OR Tech en présentiel
+    } else {
+      // ⭐ Mode self-service : verrouillable par env (ENABLE_SELF_SIGNUP=true pour le réactiver).
+      //    Par défaut le mode self-service est désactivé — seul le mode YEHI OR Tech est autorisé.
+      if (process.env.ENABLE_SELF_SIGNUP !== 'true') {
+        throw new BadRequestException(
+          'Le mode de création en ligne (self-service) est actuellement verrouillé. La création des écoles est assurée par YEHI OR Tech.'
+        );
+      }
+      if (data.otpCode) {
       // D'abord, vérifier si un OTP a déjà été vérifié pour ce draft et ce téléphone (normalisé)
       const hasValidOTP = await this.otpService.hasValidOTP(draftId, normalizedPhone);
       if (hasValidOTP) {
@@ -244,7 +268,7 @@ export class OnboardingService {
           throw new BadRequestException('Code OTP invalide ou expiré');
         }
       }
-    } else {
+      } else {
       // Si aucun code OTP n'est fourni, vérifier si un OTP a déjà été vérifié (avec le numéro normalisé)
       const hasValidOTP = await this.otpService.hasValidOTP(draftId, normalizedPhone);
       if (hasValidOTP) {
@@ -258,6 +282,7 @@ export class OnboardingService {
         } else {
           throw new BadRequestException('Code OTP requis pour valider le numéro de téléphone');
         }
+      }
       }
     }
 
@@ -279,6 +304,57 @@ export class OnboardingService {
     this.logger.log(`👤 Promoter info added to draft: ${draftId}`);
 
     return updated;
+  }
+
+  /**
+   * ⭐ Valide les credentials d'un compte plateforme (mode YEHI OR Tech).
+   *
+   * Autorisé : les Users avec role = 'SUPER_ADMIN' OU isSuperAdmin = true,
+   * actifs, avec un mot de passe qui matche (bcrypt).
+   *
+   * Ne JAMAIS révéler si c'est l'email ou le mot de passe qui est faux —
+   * on retourne null dans tous les cas d'échec (anti-énumération).
+   *
+   * @returns l'utilisateur admin (sans le hash) ou null
+   */
+  async validatePlatformAdminCredentials(
+    email: string,
+    password: string,
+  ): Promise<{ id: string; email: string; firstName: string | null; lastName: string | null } | null> {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      return null;
+    }
+
+    const admin = await this.prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        status: 'active',
+        OR: [
+          { role: 'SUPER_ADMIN' },
+          { isSuperAdmin: true },
+        ],
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, passwordHash: true },
+    });
+
+    if (!admin?.passwordHash) {
+      this.logger.warn(`🔐 Platform admin validation failed: no matching SUPER_ADMIN account for ${normalizedEmail}`);
+      return null;
+    }
+
+    const passwordMatches = await bcrypt.compare(password, admin.passwordHash);
+    if (!passwordMatches) {
+      this.logger.warn(`🔐 Platform admin validation failed: wrong password for ${normalizedEmail}`);
+      return null;
+    }
+
+    return {
+      id: admin.id,
+      email: admin.email,
+      firstName: admin.firstName,
+      lastName: admin.lastName,
+    };
   }
 
   /**
@@ -379,6 +455,43 @@ export class OnboardingService {
       throw new NotFoundException(`Payment not found: ${paymentId}`);
     }
 
+    // ⭐ Paiement en espèces (mode YEHI OR Tech) : pas de transaction FedaPay
+    //    à interroger ni de webhook. Le paiement est déjà COMPLETED/SUCCESS en DB.
+    //    On retourne directement le statut (avec activation idempotente si besoin).
+    if (payment.provider === 'cash') {
+      if (payment.status === 'COMPLETED') {
+        // Paiement marqué payé mais tenant pas encore activé (échec antérieur) → activer
+        try {
+          await this.activateTenantAfterPayment(paymentId);
+          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
+          if (refreshed) {
+            payment.status = refreshed.status;
+            payment.metadata = refreshed.metadata;
+          }
+        } catch (activationErr: any) {
+          this.logger.error(`❌ Cash payment activation failed for ${paymentId}: ${activationErr.message}`);
+        }
+      }
+      const cashMeta = (payment.metadata as any) || {};
+      return {
+        paymentId: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        verified: payment.status === 'SUCCESS',
+        transactionStatus: null,
+        draftId: payment.draftId,
+        tenantActivated: payment.status === 'SUCCESS',
+        firstTenantSubdomain: cashMeta.firstTenantSubdomain as string | undefined,
+        firstTenantHostname: cashMeta.firstTenantHostname as string | undefined,
+        firstTenantSiteUrl: cashMeta.firstTenantSiteUrl as string | undefined,
+        firstTenantPortalUrl: cashMeta.firstTenantPortalUrl as string | undefined,
+        reference: payment.reference || undefined,
+        fedapayReference: undefined,
+        transactionId: undefined,
+        verifyError: undefined,
+      };
+    }
+
     // Récupérer le transactionId depuis les métadonnées
     const metadata = payment.metadata as any;
     const transactionId = metadata?.transactionId;
@@ -405,6 +518,10 @@ export class OnboardingService {
 
       // ⭐ FALLBACK : si le payment est COMPLETED en DB mais pas encore activé
       // (status !== SUCCESS), on tente l'activation directement.
+      // ⚠️ On NE marque JAMAIS un paiement PENDING comme COMPLETED sans
+      //    confirmation FedaPay : un paiement PENDING reste PENDING tant que
+      //    le webhook ou l'API FedaPay ne l'a pas confirmé (pas d'activation
+      //    sur simple échec réseau — risque d'activation sans paiement réel).
       if (payment.status === 'COMPLETED') {
         this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED, tentative d'activation...`);
         try {
@@ -427,35 +544,12 @@ export class OnboardingService {
           verifyError = `${verifyError} | Activation fallback failed: ${activationErr.message}`;
         }
       } else if (payment.status === 'PENDING') {
-        // ⭐ FALLBACK 2 : si le payment est PENDING mais que l'utilisateur a
-        // confirmé le paiement sur FedaPay (dashboard montre "Approuvée"),
-        // on marque le payment comme COMPLETED et on tente l'activation.
-        // Cela gère le cas où le webhook FedaPay n'arrive pas.
-        this.logger.log(`🔧 Fallback 2 : payment ${paymentId} est PENDING, marquage COMPLETED + activation...`);
-        try {
-          await this.prisma.onboardingPayment.update({
-            where: { id: paymentId },
-            data: { status: 'COMPLETED' },
-          });
-          payment.status = 'COMPLETED';
-          const activation = await this.activateTenantAfterPayment(paymentId);
-          this.logger.log(`✅ Fallback 2 activation réussie pour payment ${paymentId}`);
-          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
-          if (refreshed) {
-            payment.status = refreshed.status;
-            payment.metadata = refreshed.metadata;
-          }
-          // ⭐ Envoyer l'email de bienvenue
-          if (!(activation as any)?.alreadyActivated) {
-            this.logger.log(`📧 Envoi email bienvenue via fallback 2 verify pour payment ${paymentId}...`);
-            await this.sendWelcomeEmailForPayment(paymentId, transactionId).catch((e: any) => {
-              this.logger.error(`❌ ÉCHEC envoi email bienvenue (fallback 2 verify): ${e.message}`);
-            });
-          }
-        } catch (activationErr: any) {
-          this.logger.error(`❌ Fallback 2 activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
-          verifyError = `${verifyError} | Fallback 2 failed: ${activationErr.message}`;
-        }
+        // Paiement toujours PENDING et FedaPay injoignable → on ne fait rien.
+        // Le webhook (chemin nominal) ou un prochain verify tranchera.
+        this.logger.warn(
+          `⚠️  Payment ${paymentId} toujours PENDING et API FedaPay injoignable — pas d'activation sans confirmation du PSP.`,
+        );
+        verifyError = `${verifyError} | Paiement PENDING non confirmé (API FedaPay injoignable)`;
       }
     }
 
@@ -774,7 +868,10 @@ export class OnboardingService {
         const helmPlanEnum = (['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(helmPlan) ? helmPlan : 'SEED') as any;
         const monthlyAmount = pricing?.monthlyPrice || 0;
         const annualAmount = pricing?.yearlyPrice || 0;
-        const setupFee = Number(payment.amount) || 0;
+        // ⭐ setupFee = frais d'activation réels (Article 4 : 300 000 FCFA).
+        //    En mode espèces, payment.amount = total Année 1 (activation + annuel + bilingue)
+        //    → on ne doit PAS le confondre avec les frais d'activation seuls.
+        const setupFee = Number(pricing?.initialPayment ?? pricing?.initialFee ?? payment.amount) || 0;
 
         // Éviter le doublon : HelmSubscription a tenantId @unique
         const existingHelmSub = await tx.helmSubscription.findUnique({
@@ -796,7 +893,7 @@ export class OnboardingService {
               trialEnd: null, // ⭐ Pas de trial
               bilingualEnabled: draft.bilingual,
               lastPaymentDate: new Date(),
-              lastPaymentAmount: setupFee,
+              lastPaymentAmount: Number(payment.amount) || 0, // Montant réellement encaissé
             },
           });
           this.logger.log(`✅ HelmSubscription created for tenant ${tenant.id} (plan=${helmPlanEnum})`);
@@ -820,6 +917,28 @@ export class OnboardingService {
         this.logger.log(
           `✅ Created ${schoolLevelsToCreate.length} school level(s) for tenant ${tenant.id} (${subdomain})`
         );
+
+        // ⭐ Créer l'année académique par défaut (unification des flux paiement/contrat).
+        //    Pattern identique à AcademicYearSettingsService : label requis +
+        //    contrainte @@unique([tenantId, label]).
+        try {
+          const currentYear = new Date().getFullYear();
+          const nextYear = currentYear + 1;
+          await tx.academicYear.create({
+            data: {
+              tenantId: tenant.id,
+              name: `${currentYear}-${nextYear}`,
+              label: `Année scolaire ${currentYear}-${nextYear}`,
+              startDate: new Date(currentYear, 8, 1), // 1er septembre
+              endDate: new Date(nextYear, 7, 31), // 31 août
+              isActive: true,
+              isAutoGenerated: true,
+            },
+          });
+        } catch (yearErr: any) {
+          // Non-bloquant : l'année peut déjà exister (reprise/idempotence)
+          this.logger.warn(`⚠️  Could not create default academic year for tenant ${tenant.id}: ${yearErr.message}`);
+        }
 
         // Créer les AcademicTracks selon le mode bilingue
         if (draft.bilingual) {
@@ -889,7 +1008,8 @@ export class OnboardingService {
             subscriptionId: subscription.id,
             type: 'INITIAL_SUBSCRIPTION',
             amount: payment.amount,
-            channel: 'fedapay',
+            // ⭐ Canal réel du paiement : 'fedapay' (self-service) ou 'cash' (mode YEHI OR Tech)
+            channel: (payment.provider as string) || 'fedapay',
             reference: payment.reference,
             metadata: {
               draftId: draft.id,
@@ -998,6 +1118,34 @@ export class OnboardingService {
         this.logger.log(`✅ Promoter created (new user): ${promoter.id} → tenant ${tenants[0].id}`);
       }
 
+      // ⭐ 3bis. Assigner le rôle système PROMOTEUR à l'utilisateur (unification des flux).
+      //    Le rôle système est créé sous le nom 'PROMOTEUR' (français) par
+      //    RolesPermissionsBootstrapService — on cherche les deux variantes
+      //    ('PROMOTEUR' et 'PROMOTER') pour être résilient au nom utilisé.
+      try {
+        const promoterRole = await tx.role.findFirst({
+          where: { name: { in: ['PROMOTEUR', 'PROMOTER'] }, isSystemRole: true },
+        });
+        if (promoterRole) {
+          const existingUserRole = await tx.userRole.findFirst({
+            where: { userId: promoter.id, roleId: promoterRole.id, tenantId: tenants[0].id },
+          });
+          if (!existingUserRole) {
+            await tx.userRole.create({
+              data: {
+                userId: promoter.id,
+                roleId: promoterRole.id,
+                tenantId: tenants[0].id,
+              },
+            });
+          }
+        } else {
+          this.logger.warn(`⚠️  System role PROMOTEUR/PROMOTER not found — skipping UserRole assignment`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`⚠️  Could not assign PROMOTER role: ${err.message}`);
+      }
+
       // 4. Si plusieurs tenants, créer des entrées UserTenant pour lier le promoteur aux autres tenants
       if (schoolsCount > 1) {
         // Note: Si une table UserTenant existe, créer les relations ici
@@ -1009,10 +1157,14 @@ export class OnboardingService {
       }
 
       // 5. Mettre à jour le draft
+      //    ⭐ Purger le hash du mot de passe : le compte promoteur est créé,
+      //    conserver le hash bcrypt dans le draft n'a plus d'utilité et constitue
+      //    une surface d'attaque inutile (les drafts COMPLETED ne sont jamais purgés).
       await tx.onboardingDraft.update({
         where: { id: draft.id },
         data: {
           status: 'COMPLETED',
+          promoterPasswordHash: null,
         },
       });
 
@@ -1341,26 +1493,74 @@ export class OnboardingService {
   }
 
   /**
+   * ⭐ Enregistre le marquage de paiement en espèces (mode YEHI OR Tech).
+   *
+   * Le wizard collecte les cases « souscription payée (espèces) » et
+   * « frais bilingue payés (annuel) » à l'étape plan/paiement. On les
+   * persiste dans priceSnapshot.paymentMarked pour :
+   *   - la génération du contrat (affichage « payé en espèces ») ;
+   *   - la signature différée (les flags survivent au rechargement du draft) ;
+   *   - l'activation (montant + métadonnées du paiement cash).
+   */
+  async markCashPayment(
+    draftId: string,
+    marking: { subscriptionPaid?: boolean; bilingualPaid?: boolean; receivedBy?: string },
+  ) {
+    const draft = await this.prisma.onboardingDraft.findUnique({
+      where: { id: draftId },
+    });
+    if (!draft) {
+      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    }
+    const snapshot = ((draft.priceSnapshot as any) || {});
+    const existing = snapshot.paymentMarked || {};
+    const paymentMarked = {
+      ...existing,
+      ...marking,
+      markedAt: new Date().toISOString(),
+    };
+    await this.prisma.onboardingDraft.update({
+      where: { id: draftId },
+      data: {
+        priceSnapshot: {
+          ...snapshot,
+          paymentMarked,
+        } as any,
+      },
+    });
+    this.logger.log(`💵 Payment marking saved for draft ${draftId}: ${JSON.stringify(paymentMarked)}`);
+    return paymentMarked;
+  }
+
+  /**
    * ⭐ Active le tenant après signature du contrat (mode YEHI OR Tech).
    *
    * Ce flux est déclenché par ContractController.signContract() quand le
-   * promoteur et le représentant YEHI OR Tech signent le contrat en présence.
-   * Il n'y a PAS de paiement FedaPay (le paiement se fait hors-ligne ou est
-   * géré séparément).
+   * promoteur et le représentant YEHI OR Tech signent le contrat.
+   * Il n'y a PAS de paiement FedaPay : le paiement est encaissé en ESPÈCES
+   * par l'agent YEHI OR Tech, qui le marque comme payé dans le wizard
+   * (cases « souscription payée » et « frais bilingue payés »).
    *
-   * Étapes :
-   *   1. Récupère le draft (avec infos école + promoteur)
-   *   2. Idempotence : si le draft est déjà COMPLETED, retourne le tenant existant
-   *   3. Transaction atomique : crée tenant + subscription + user + school levels
-   *   4. Marque le draft comme COMPLETED
-   *   5. Crée le sous-domaine (Cloudflare + Vercel) en arrière-plan
+   * ⭐ UNIFICATION : ce flux crée un OnboardingPayment provider='cash'
+   *    en statut COMPLETED, puis DÉLÈGUE à activateTenantAfterPayment() —
+   *    exactement le même flux d'activation que le mode self-service :
+   *    policies pays, Subscription, HelmSubscription, SchoolLevels,
+   *    AcademicTracks, AcademicYear, BillingEvent, School, User promoteur
+   *    (+ rôle système PROMOTEUR + UserTenant). Les deux modes produisent
+   *    donc des écoles strictement identiques.
    *
    * @param draftId ID du draft d'onboarding
-   * @returns { tenantId, subdomain }
+   * @param options Flags de paiement en espèces marqués par l'agent
+   * @returns { tenantId, subdomain, hostname, portalUrl }
    */
   async activateTenantAfterContractSign(
     draftId: string,
-  ): Promise<{ tenantId: string; subdomain: string }> {
+    options?: {
+      subscriptionPaid?: boolean;
+      bilingualPaid?: boolean;
+      receivedBy?: string;
+    },
+  ): Promise<{ tenantId: string | null; subdomain: string; hostname?: string; portalUrl?: string }> {
     this.logger.log(`🔧 Activating tenant after contract sign for draft ${draftId}`);
 
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -1375,214 +1575,111 @@ export class OnboardingService {
     // Idempotence : si le draft est déjà COMPLETED, le tenant a déjà été créé
     if (draft.status === 'COMPLETED') {
       this.logger.log(`✅ Draft ${draftId} already completed — finding existing tenant`);
-      const existingTenant = await this.prisma.tenant.findFirst({
-        where: {
-          name: draft.schoolName,
-          // On pourrait aussi filtrer par slug/subdomain si nécessaire
-        },
+      // ⭐ Retrouver le tenant via le paiement SUCCESS (métadonnées firstTenantSubdomain),
+      //    fallback par preferredSubdomain, fallback par nom d'école.
+      const successPayment = draft.payments.find((p) => p.status === 'SUCCESS');
+      const successMeta = (successPayment?.metadata as any) || {};
+      if (successMeta.firstTenantSubdomain) {
+        const existingTenant = await this.prisma.tenant.findUnique({
+          where: { subdomain: successMeta.firstTenantSubdomain },
+          select: { id: true, subdomain: true },
+        });
+        if (existingTenant) {
+          return {
+            tenantId: existingTenant.id,
+            subdomain: existingTenant.subdomain || '',
+            hostname: successMeta.firstTenantHostname,
+            portalUrl: successMeta.firstTenantPortalUrl,
+          };
+        }
+      }
+      const bySubdomain = draft.preferredSubdomain
+        ? await this.prisma.tenant.findUnique({
+            where: { subdomain: draft.preferredSubdomain },
+            select: { id: true, subdomain: true },
+          })
+        : null;
+      if (bySubdomain) {
+        return { tenantId: bySubdomain.id, subdomain: bySubdomain.subdomain || '' };
+      }
+      const byName = await this.prisma.tenant.findFirst({
+        where: { name: draft.schoolName },
         select: { id: true, subdomain: true },
       });
-      if (existingTenant) {
-        return { tenantId: existingTenant.id, subdomain: existingTenant.subdomain || '' };
+      if (byName) {
+        return { tenantId: byName.id, subdomain: byName.subdomain || '' };
       }
       // Draft COMPLETED mais tenant introuvable — on continue la création
       this.logger.warn(`⚠️  Draft ${draftId} is COMPLETED but no tenant found — recreating`);
     }
 
-    if (!draft.promoterEmail || !draft.promoterPasswordHash) {
-      throw new BadRequestException('Promoter information is incomplete (missing email or password)');
+    if (!draft.promoterEmail) {
+      throw new BadRequestException('Promoter information is incomplete (missing email)');
     }
 
     if (!draft.selectedPlanId || !draft.priceSnapshot) {
       throw new BadRequestException('Plan information is incomplete');
     }
 
-    // Transaction atomique : créer tenant, subscription, user, etc.
-    // (Réutilise la même logique que activateTenantAfterPayment)
-    const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Trouver ou créer le pays
-      let country = await tx.country.findFirst({
-        where: { name: { contains: draft.country, mode: 'insensitive' } },
-      });
+    // ─── 1. Enregistrer le paiement en espèces (OnboardingPayment CASH) ───
+    const pricing = (draft.priceSnapshot as any) || {};
+    // Flags de marquage : options explicites > flags persistés dans le snapshot > défauts
+    const snapshotMarked = (pricing.paymentMarked as any) || {};
+    const subscriptionPaid = options?.subscriptionPaid ?? snapshotMarked.subscriptionPaid ?? true;
+    const bilingualPaid = options?.bilingualPaid ?? snapshotMarked.bilingualPaid ?? draft.bilingual;
+    const receivedBy = options?.receivedBy ?? snapshotMarked.receivedBy ?? undefined;
 
-      if (!country) {
-        country = await tx.country.create({
-          data: {
-            code: 'XX',
-            name: draft.country || 'Bénin',
-            isActive: true,
-          },
-        });
-      }
+    // Montant total Année 1 encaissé en espèces :
+    //   frais d'activation + frais annuels du plan + option bilingue (annuelle)
+    // subscriptionPrice (snapshot PricingService) inclut déjà l'option bilingue.
+    const activationFee = Number(pricing.initialPayment ?? pricing.initialFee ?? 300000) || 0;
+    const annualFee = Number(pricing.yearlyPrice ?? 50000) || 0;
+    const bilingualFee = draft.bilingual ? Number(pricing.bilingualFee ?? 50000) || 0 : 0;
+    const totalFromSnapshot = Number(pricing.subscriptionPrice ?? 0) || 0;
+    const totalAmount = totalFromSnapshot > 0
+      ? Math.round(activationFee + totalFromSnapshot)
+      : Math.round(activationFee + annualFee + bilingualFee);
 
-      // 2. Sous-domaine
-      let firstTenantSubdomain: string;
-      if (draft.preferredSubdomain) {
-        const validation = this.subdomainService.validateSubdomain(draft.preferredSubdomain);
-        if (!validation.valid) {
-          throw new BadRequestException(`Sous-domaine invalide: ${validation.error}`);
-        }
-        const existing = await tx.tenant.findUnique({ where: { subdomain: draft.preferredSubdomain } });
-        if (existing) {
-          // Si le tenant existe déjà (idempotence), on le retourne
-          this.logger.log(`✅ Subdomain ${draft.preferredSubdomain} already exists — returning existing tenant`);
-          return { tenant: existing, subdomain: existing.subdomain };
-        }
-        firstTenantSubdomain = draft.preferredSubdomain;
-      } else {
-        firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
-      }
-
-      // 3. Créer le tenant
-      const tenant = await tx.tenant.create({
+    // Réutiliser un paiement cash existant (idempotence), sinon le créer
+    let payment = draft.payments.find((p) => p.provider === 'cash');
+    if (!payment) {
+      payment = await this.prisma.onboardingPayment.create({
         data: {
-          name: draft.schoolName,
-          slug: firstTenantSubdomain,
-          subdomain: firstTenantSubdomain,
-          countryId: country.id,
-          type: draft.schoolType,
-          status: 'active',
-          subscriptionStatus: 'ACTIVE',
+          draftId: draft.id,
+          provider: 'cash',
+          reference: `CASH-${draft.id.substring(0, 8).toUpperCase()}-${Date.now()}`,
+          amount: totalAmount,
+          currency: (pricing.currency as string) || 'XOF',
+          status: 'COMPLETED', // Encaissé en espèces — marqué payé par l'agent YEHI OR Tech
+          metadata: {
+            paymentMarked: {
+              subscriptionPaid,
+              bilingualPaid,
+              receivedBy: receivedBy || null,
+              markedAt: new Date().toISOString(),
+            },
+            breakdown: { activationFee, annualFee, bilingualFee, total: totalAmount },
+            note: "Paiement encaissé en espèces par YEHI OR Tech (aucun PSP en ligne — pas de webhook)",
+          } as any,
         },
       });
-
-      // 4. Créer la subscription (sans paiement, marquée ACTIVE)
-      const pricing = (draft.priceSnapshot as any) || {};
-      const subscriptionStart = new Date();
-      const subscriptionEnd = new Date(subscriptionStart);
-      subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1);
-
-      await tx.subscription.create({
-        data: {
-          tenant: { connect: { id: tenant.id } },
-          plan: pricing.planCode || 'SEED',
-          status: 'ACTIVE',
-          startDate: subscriptionStart,
-          endDate: subscriptionEnd,
-          amountPaid: 0, // Pas de paiement en ligne (mode YEHI OR Tech)
-          paymentMethod: 'CONTRACT_SIGN',
-          bilingual: draft.bilingual || false,
-          // ⭐ Sauvegarder les montants pour référence future
-          // (utilisé pour le renouvellement annuel)
-        } as any,
-      });
-
-      // 5. Créer les niveaux scolaires selon le type d'établissement
-      const levels = this.getSchoolLevelsForType(draft.schoolType);
-      for (const level of levels) {
-        await tx.schoolLevel.create({
-          data: {
-            tenantId: tenant.id,
-            code: level.code,
-            name: level.name,
-            label: level.label,
-            order: level.order,
-            isActive: true,
-          } as any,
-        });
-      }
-
-      // 6. Créer l'utilisateur promoteur (admin école)
-      const user = await tx.user.create({
-        data: {
-          email: draft.promoterEmail,
-          passwordHash: draft.promoterPasswordHash,
-          firstName: draft.promoterFirstName || '',
-          lastName: draft.promoterLastName || '',
-          phone: draft.promoterPhone || '',
-          tenantId: tenant.id,
-          status: 'ACTIVE',
-          isEmailVerified: true, // Email vérifié via OTP ou mode YEHI OR Tech
-        } as any,
-      });
-
-      // 7. Assigner le rôle PROMOTEUR à l'utilisateur
-      //    ⭐ FIX: Le rôle système est créé sous le nom 'PROMOTEUR' (français) par
-      //    RolesPermissionsBootstrapService. On cherche les deux variantes
-      //    ('PROMOTEUR' et 'PROMOTER') pour être résilient au nom utilisé.
-      try {
-        const promoterRole = await tx.role.findFirst({
-          where: { name: { in: ['PROMOTEUR', 'PROMOTER'] }, isSystemRole: true },
-        });
-        if (promoterRole) {
-          await tx.userRole.create({
-            data: {
-              userId: user.id,
-              roleId: promoterRole.id,
-              tenantId: tenant.id,
-            } as any,
-          });
-        }
-      } catch (err: any) {
-        this.logger.warn(`⚠️  Could not assign PROMOTER role: ${err.message}`);
-      }
-
-      // 8. Créer l'année académique par défaut
-      const currentYear = new Date().getFullYear();
-      const nextYear = currentYear + 1;
-      await tx.academicYear.create({
-        data: {
-          tenantId: tenant.id,
-          name: `${currentYear}-${nextYear}`,
-          startDate: new Date(currentYear, 8, 1), // 1er septembre
-          endDate: new Date(nextYear, 7, 31), // 31 août
-          isCurrent: true,
-          isActive: true,
-        } as any,
-      });
-
-      // 9. Marquer le draft comme COMPLETED
-      await tx.onboardingDraft.update({
-        where: { id: draftId },
-        data: { status: 'COMPLETED' },
-      });
-
-      this.logger.log(`✅ Tenant ${tenant.id} created for school ${draft.schoolName} (subdomain: ${firstTenantSubdomain})`);
-
-      return { tenant, subdomain: firstTenantSubdomain };
-    });
-
-    // 10. Créer le sous-domaine (Cloudflare + Vercel) en arrière-plan (non bloquant)
-    this.createSubdomainInBackground(result.tenant.id).catch((err) => {
-      this.logger.error(`❌ Background subdomain creation failed: ${err.message}`);
-    });
-
-    return { tenantId: result.tenant.id, subdomain: result.subdomain };
-  }
-
-  /**
-   * Crée le sous-domaine en arrière-plan (Cloudflare + Vercel).
-   * Non bloquant — ne fait pas échouer l'activation du tenant.
-   */
-  private async createSubdomainInBackground(tenantId: string): Promise<void> {
-    try {
-      const tenant = await this.prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { id: true, subdomain: true },
-      });
-      if (!tenant?.subdomain) {
-        this.logger.warn(`⚠️  No subdomain for tenant ${tenantId} — skipping domain creation`);
-        return;
-      }
-
-      const result = await this.domainManagementService.createSchoolSubdomain(
-        tenant.subdomain,
-        tenant.id,
-      );
-
-      if (result.success) {
-        this.logger.log(
-          `✅ Subdomain ${result.domain} created for tenant ${tenant.id}`,
-        );
-      } else {
-        this.logger.warn(
-          `⚠️  Subdomain creation partial/failed for ${result.domain}: ${result.error}`,
-        );
-      }
-    } catch (error: any) {
-      this.logger.error(
-        `❌ Unexpected error creating subdomain for tenant ${tenantId}: ${error.message}`,
-      );
+      this.logger.log(`💵 Cash payment recorded for draft ${draftId}: ${totalAmount} XOF (réf. ${payment.reference})`);
     }
+
+    // ─── 2. Déléguer au flux d'activation UNIFIÉ (identique au mode self-service) ───
+    const activation = await this.activateTenantAfterPayment(payment.id) as any;
+    this.logger.log(`✅ Tenant activated after contract sign for draft ${draftId}`);
+
+    // ─── 3. Retourner les infos de connexion (sous-domaine, portail) ───
+    const refreshedPayment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: payment.id },
+    });
+    const meta = (refreshedPayment?.metadata as any) || {};
+    return {
+      tenantId: activation?.tenants?.[0]?.id || null,
+      subdomain: meta.firstTenantSubdomain || draft.preferredSubdomain || '',
+      hostname: meta.firstTenantHostname,
+      portalUrl: meta.firstTenantPortalUrl,
+    };
   }
 }

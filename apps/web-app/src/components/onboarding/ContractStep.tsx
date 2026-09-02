@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
-import { PenTool, Send, CheckCircle2, Loader2, User, Building2, FileText } from 'lucide-react';
+import { PenTool, Send, CheckCircle2, Loader2, User, Building2, FileText, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
 import { formatCurrency } from '@/lib/utils';
+import { HELM_PLANS, BILINGUAL_ADDON } from '@/lib/services/HelmPricingService';
 
 interface ContractStepProps {
   draftId: string;
@@ -25,16 +26,37 @@ interface ContractStepProps {
   subdomain: string;
   activationFee: number;
   annualFee: number;
-  onComplete: (result: { signed: boolean; contractUrl?: string }) => void;
+  // ⭐ Paiement en espèces (mode YEHI OR Tech) — aligne le contrat sur ce
+  //    qui a été marqué payé à l'étape 3
+  subscriptionPaid?: boolean;
+  bilingualPaid?: boolean;
+  receivedBy?: string;
+  onComplete: (result: {
+    signed: boolean;
+    contractUrl?: string;
+    subdomain?: string;
+    hostname?: string;
+    portalUrl?: string;
+  }) => void;
   onBack: () => void;
 }
 
-const PLAN_TABLE = [
-  { name: 'Helm Essentiel', range: '1 à 50', activation: '300 000', annual: '50 000', total: '350 000', code: 'SEED' },
-  { name: 'Helm Croissance', range: '51 à 150', activation: '300 000', annual: '75 000', total: '375 000', code: 'GROW' },
-  { name: 'Helm Performance', range: '151 à 400', activation: '300 000', annual: '100 000', total: '400 000', code: 'LEAD' },
-  { name: 'Helm Institution', range: '401 et +', activation: '300 000', annual: '150 000', total: '450 000', code: 'NETWORK' },
-];
+// ⭐ Grille tarifaire dérivée de HELM_PLANS (source unique — fin de la
+//    duplication PLAN_TABLE qui pouvait diverger du reste de l'app).
+const BILINGUAL_FEE = BILINGUAL_ADDON.annual ?? 50000;
+const PLAN_TABLE = (['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((code) => {
+  const plan = HELM_PLANS[code];
+  const annual = plan.annualPrice;
+  const activation = plan.setupFee ?? 300000;
+  return {
+    code,
+    name: plan.name,
+    range: code === 'SEED' ? '1 à 50' : code === 'GROW' ? '51 à 150' : code === 'LEAD' ? '151 à 400' : '401 et +',
+    activation: activation.toLocaleString('fr-FR'),
+    annual: annual.toLocaleString('fr-FR'),
+    total: (activation + annual).toLocaleString('fr-FR'),
+  };
+});
 
 const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 const SUPPORT_EMAIL = 'support@academiahelm.com';
@@ -42,14 +64,15 @@ const SUPPORT_EMAIL = 'support@academiahelm.com';
 export default function ContractStep({
   draftId, schoolName, promoterName, directorName, schoolAddress, schoolCity,
   schoolPhone, schoolEmail, studentCount, planCode, planName, bilingual,
-  subdomain, activationFee, annualFee, onComplete, onBack,
+  subdomain, activationFee, annualFee, subscriptionPaid = true, bilingualPaid = false,
+  receivedBy, onComplete, onBack,
 }: ContractStepProps) {
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
   const [providerSignature, setProviderSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const totalYearOne = activationFee + annualFee + (bilingual ? 50000 : 0);
+  const totalYearOne = activationFee + annualFee + (bilingual ? BILINGUAL_FEE : 0);
   const contractRef = `CT-AH-2026-${subdomain.toUpperCase().substring(0, 12)}`;
 
   const handleSignNow = async () => {
@@ -63,6 +86,14 @@ export default function ContractStep({
     }
     setLoading(true);
     try {
+      // ⭐ Le paiement est marqué « payé en espèces » à l'étape 3 — on aligne
+      //    le contrat ET la création de l'école sur ces infos.
+      const paymentMarked = {
+        subscriptionPaid,
+        bilingualPaid: bilingual ? bilingualPaid : false,
+        receivedBy,
+      };
+
       const genResponse = await fetch('/api/onboarding/contract/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,7 +101,10 @@ export default function ContractStep({
           schoolName, promoterName, directorName: directorName || promoterName,
           schoolAddress, schoolCity, schoolPhone, schoolEmail,
           studentCount, planCode, planName, bilingual, subdomain,
-          effectiveDate: today, activationFee, annualFee, totalYearOne,
+          effectiveDate: today, activationFee, annualFee, bilingualFee: bilingual ? BILINGUAL_FEE : 0,
+          totalYearOne,
+          paymentMethod: 'cash' as const,
+          ...paymentMarked,
           promoterSignatureDataUrl: promoterSignature,
           providerSignatureDataUrl: providerSignature,
           promoterSignedAt: new Date().toISOString(),
@@ -81,28 +115,46 @@ export default function ContractStep({
       if (!genResponse.ok) throw new Error(`HTTP ${genResponse.status}`);
       const genData = await genResponse.json();
 
+      // ⭐ sign : enregistre les signatures, crée le paiement CASH, active
+      //    l'école via le même flux que le mode self-service, envoie l'email
+      //    (contrat + identifiants). La réponse contient subdomain/portalUrl.
       const signResponse = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           draftId, promoterSignature, providerSignature: providerSignature || undefined,
           signLater: false,
+          paymentMarked,
           contractData: {
             schoolName, promoterName, directorName: directorName || promoterName,
             schoolAddress, schoolCity, schoolPhone, schoolEmail,
             studentCount, planCode, planName, bilingual, subdomain,
-            effectiveDate: today, activationFee, annualFee, totalYearOne,
+            effectiveDate: today, activationFee, annualFee, bilingualFee: bilingual ? BILINGUAL_FEE : 0,
+            totalYearOne,
+            paymentMethod: 'cash' as const,
+            ...paymentMarked,
           },
         }),
       });
 
       if (!signResponse.ok) throw new Error(`HTTP ${signResponse.status}`);
+      const signData = await signResponse.json();
+
+      if (!signData.success) {
+        throw new Error(signData.message || 'Erreur lors de la signature du contrat');
+      }
 
       toast({
-        title: 'Contrat signé',
-        description: "Le contrat signé a été envoyé par email avec les identifiants de connexion de l'école.",
+        title: 'Contrat signé — école créée',
+        description: "Le contrat signé et les identifiants de connexion ont été envoyés par email au promoteur.",
       });
-      onComplete({ signed: true, contractUrl: genData.fileUrl });
+      onComplete({
+        signed: true,
+        contractUrl: genData.fileUrl,
+        subdomain: signData.subdomain,
+        hostname: signData.hostname,
+        portalUrl: signData.portalUrl,
+      });
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
     } finally {
@@ -113,10 +165,22 @@ export default function ContractStep({
   const handleSendForLater = async () => {
     setLoading(true);
     try {
+      // ⭐ Conserver le marquage de paiement pour la signature différée :
+      //    le backend le persiste dans le draft pour que la page
+      //    /signup/contract-sign génère un contrat identique.
       const response = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ draftId, promoterSignature: null, signLater: true }),
+        body: JSON.stringify({
+          draftId,
+          promoterSignature: null,
+          signLater: true,
+          paymentMarked: {
+            subscriptionPaid,
+            bilingualPaid: bilingual ? bilingualPaid : false,
+            receivedBy,
+          },
+        }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       toast({
@@ -278,7 +342,7 @@ export default function ContractStep({
                 </table>
                 {bilingual && (
                   <p className="text-[8px] mt-px text-amber-700">
-                    Option bilingue FR/EN : <strong>50 000 FCFA/an</strong> (supplément)
+                    Option bilingue FR/EN : <strong>{formatCurrency(BILINGUAL_FEE)} FCFA/an</strong> (supplément, facturation annuelle)
                   </p>
                 )}
                 <p className="text-[9px] mt-px font-bold text-emerald-700">
@@ -294,6 +358,22 @@ export default function ContractStep({
                   <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money
                   (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité.
                 </p>
+                {/* ⭐ Modalité réellement retenue : paiement en espèces (mode YEHI OR Tech) */}
+                <div className="mt-1 bg-green-50 border border-green-300 rounded p-1 text-[8px] leading-tight">
+                  <div className="flex items-center gap-1 font-bold text-green-800">
+                    <Banknote className="w-2.5 h-2.5" /> Modalité retenue : paiement en espèces
+                  </div>
+                  <p className="text-green-900 mt-px">
+                    Souscription (activation + annuel {planName}) :{' '}
+                    <strong>{subscriptionPaid ? 'réglée en espèces à la signature' : 'à régler'}</strong>
+                    {receivedBy ? `, encaissée par ${receivedBy} pour YEHI OR Tech` : ''}.
+                    {bilingual && (
+                      <> Option bilingue FR/EN : <strong>{formatCurrency(BILINGUAL_FEE)} FCFA/an</strong>,
+                      facturation <strong>annuelle</strong> —{' '}
+                      {bilingualPaid ? 'frais de la première année réglés en espèces' : 'à régler'}.</>
+                    )}
+                  </p>
+                </div>
               </section>
 
               <section>

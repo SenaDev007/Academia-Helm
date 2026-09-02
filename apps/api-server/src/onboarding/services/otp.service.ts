@@ -22,12 +22,21 @@ import { VoiceService } from '../../communication/services/voice.service';
 import { EmailService } from '../../communication/services/email.service';
 import { renderEmail, renderHeader, renderFooter } from '../../hr/recruitment-email-templates';
 import type { TenantBranding } from '../../hr/recruitment-email-templates';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
   private readonly OTP_LENGTH = 6;
   private readonly OTP_EXPIRY_MINUTES = 3;
+
+  // ⭐ Anti brute-force (sans migration DB) : compteur d'échecs par draft en mémoire.
+  //    Après MAX_VERIFY_ATTEMPTS échecs → lockout du draft pendant LOCKOUT_MINUTES.
+  //    Best-effort multi-instances (chaque instance garde son compteur) ;
+  //    complété par le ThrottlerGuard global.
+  private readonly MAX_VERIFY_ATTEMPTS = 5;
+  private readonly LOCKOUT_MINUTES = 10;
+  private verifyAttempts = new Map<string, { count: number; lockedUntil: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -69,10 +78,11 @@ export class OtpService {
   }
 
   /**
-   * Génère un code OTP (6 chiffres)
+   * Génère un code OTP (6 chiffres) — PRNG cryptographique
+   * (Math.random n'est PAS sûr pour des codes de vérification).
    */
   private generateOTP(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 1000000).toString();
   }
 
   /**
@@ -276,6 +286,16 @@ export class OtpService {
    * Vérifie un code OTP
    */
   async verifyOTP(draftId: string, phone: string, code: string): Promise<boolean> {
+    // ⭐ Anti brute-force : vérifier le lockout du draft
+    const attemptState = this.verifyAttempts.get(draftId);
+    if (attemptState?.lockedUntil && attemptState.lockedUntil > Date.now()) {
+      const minutesLeft = Math.ceil((attemptState.lockedUntil - Date.now()) / 60000);
+      this.logger.warn(`🔒 OTP verification LOCKED for draft ${draftId} (${minutesLeft} min restantes)`);
+      throw new BadRequestException(
+        `Trop de tentatives incorrectes. Veuillez réessayer dans ${minutesLeft} minute(s) ou demander un nouveau code.`
+      );
+    }
+
     // Normaliser le numéro de téléphone de manière cohérente (même fonction que lors de la génération)
     const normalizedPhone = this.normalizePhone(phone);
     
@@ -289,7 +309,7 @@ export class OtpService {
       : [normalizedPhone];
     
     // Trouver l'OTP valide (non vérifié, non expiré) avec le numéro normalisé ou ses variantes
-    const otp = await this.prisma.onboardingOTP.findFirst({
+    let otp = await this.prisma.onboardingOTP.findFirst({
       where: {
         draftId,
         phone: { in: phoneVariants }, // Chercher avec le numéro normalisé ou ses variantes
@@ -302,6 +322,27 @@ export class OtpService {
       },
     });
 
+    // ⭐ FIX OTP email : si aucun match sur le numéro (ex: OTP envoyé par email
+    //    alors que le téléphone promoteur diffère, ou phone='N/A' envoyé par le
+    //    wizard), retomber sur une recherche par draftId + code uniquement.
+    //    Le code reste le secret principal (6 chiffres, 3 min, lockout).
+    if (!otp) {
+      otp = await this.prisma.onboardingOTP.findFirst({
+        where: {
+          draftId,
+          code,
+          verified: false,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+      if (otp) {
+        this.logger.log(`📧 OTP matched by draftId+code only (email flow) for draft ${draftId}`);
+      }
+    }
+    
     if (!otp) {
       // Log détaillé pour le débogage
       const allOtps = await this.prisma.onboardingOTP.findMany({
@@ -317,6 +358,10 @@ export class OtpService {
           this.logger.warn(`  ${idx + 1}. Phone: ${o.phone}, Verified: ${o.verified}, Expires: ${o.expiresAt.toISOString()}, Created: ${o.createdAt.toISOString()}`);
         });
       }
+
+      // ⭐ Anti brute-force : incrémenter le compteur d'échecs du draft
+      this.registerFailedAttempt(draftId);
+
       return false;
     }
 
@@ -329,8 +374,25 @@ export class OtpService {
       },
     });
 
+    // ⭐ Succès : reset du compteur d'échecs
+    this.verifyAttempts.delete(draftId);
+
     this.logger.log(`✅ OTP verified for draft ${draftId} - Phone: ${otp.phone} (requested: ${phone})`);
     return true;
+  }
+
+  /**
+   * ⭐ Enregistre un échec de vérification et déclenche le lockout si nécessaire.
+   */
+  private registerFailedAttempt(draftId: string): void {
+    const state = this.verifyAttempts.get(draftId) || { count: 0, lockedUntil: 0 };
+    state.count += 1;
+    if (state.count >= this.MAX_VERIFY_ATTEMPTS) {
+      state.lockedUntil = Date.now() + this.LOCKOUT_MINUTES * 60 * 1000;
+      state.count = 0;
+      this.logger.warn(`🔒 OTP verification LOCKED for draft ${draftId} pendant ${this.LOCKOUT_MINUTES} min (${this.MAX_VERIFY_ATTEMPTS} échecs)`);
+    }
+    this.verifyAttempts.set(draftId, state);
   }
 
   /**

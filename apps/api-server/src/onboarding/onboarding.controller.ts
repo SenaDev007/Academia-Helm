@@ -70,6 +70,45 @@ export class OnboardingController {
   }
 
   /**
+   * ⭐ Valide les credentials d'un compte plateforme (mode YEHI OR Tech).
+   *
+   * Appelé par le wizard (étape 2) pour vérifier que l'agent YEHI OR Tech
+   * qui crée l'école dispose d'un compte plateforme valide (SUPER_ADMIN /
+   * isSuperAdmin). La réponse ne révèle jamais si c'est l'email ou le mot
+   * de passe qui est invalide (anti-énumération).
+   *
+   * ⚠️ La validation est REFAITE côté serveur à la soumission du promoteur
+   * (addPromoterInfo) — ce endpoint n'est qu'une pré-verification UX.
+   */
+  @Post('validate-admin')
+  @HttpCode(HttpStatus.OK)
+  async validateAdmin(
+    @Body() body: { email: string; password: string },
+  ) {
+    if (!body?.email || !body?.password) {
+      return { valid: false, message: 'Email et mot de passe requis.' };
+    }
+    const admin = await this.onboardingService.validatePlatformAdminCredentials(
+      body.email,
+      body.password,
+    );
+    if (!admin) {
+      return {
+        valid: false,
+        message: 'Identifiants invalides. Seul un compte Super Admin / Platform Owner peut créer une école.',
+      };
+    }
+    return {
+      valid: true,
+      message: 'Identifiants validés.',
+      admin: {
+        email: admin.email,
+        name: [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email,
+      },
+    };
+  }
+
+  /**
    * PHASE 3 : Sélectionner le plan
    */
   @Post('draft/:draftId/plan')

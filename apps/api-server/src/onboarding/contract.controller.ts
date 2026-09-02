@@ -61,16 +61,19 @@ export class ContractController {
   /**
    * Enregistre les signatures et finalise le contrat.
    *
-   * Flux "Signer et créer l'école" (signLater=false) :
-   *   1. Génère le contrat PDF avec les signatures intégrées
-   *   2. Crée le tenant (école) en arrière-plan via OnboardingService
-   *   3. Envoie un email au promoteur avec :
+   * Flux "Signer et créer l'école" (signLater=false) — mode YEHI OR Tech :
+   *   1. Persiste le marquage de paiement en espèces (cases du wizard)
+   *   2. Génère le contrat PDF avec les signatures intégrées
+   *   3. Crée le paiement CASH (provider='cash', status COMPLETED) puis active
+   *      le tenant via le MÊME flux que le mode self-service (activation unifiée)
+   *   4. Envoie un email au promoteur avec :
    *      - Le contrat PDF signé en pièce jointe
    *      - Les credentials de connexion (email + URL de login)
-   *      - Le mot de passe n'est PAS inclus (l'utilisateur l'a choisi à l'étape 2)
+   *      - Le mot de passe n'est PAS inclus (choisi à l'étape 2)
    *
    * Flux "Envoyer pour signature différée" (signLater=true) :
    *   1. Envoie un email au promoteur avec un lien pour signer plus tard
+   *      (/signup/contract-sign?draftId=...)
    *   2. Le tenant n'est PAS créé (sera créé après signature finale)
    */
   @Post('sign')
@@ -81,9 +84,26 @@ export class ContractController {
       providerSignature?: string;
       signLater?: boolean;
       contractData?: ContractData;
+      paymentMarked?: {
+        subscriptionPaid?: boolean;
+        bilingualPaid?: boolean;
+        receivedBy?: string;
+      };
     },
   ) {
     this.logger.log(`Contract sign request: draft=${body.draftId}, signLater=${body.signLater}`);
+
+    // ⭐ Persister le marquage de paiement en espèces avant tout (signature
+    //    immédiate OU différée) — les flags survivent ainsi au rechargement
+    //    du draft et alimentent le contrat + l'activation.
+    if (body.paymentMarked && body.draftId) {
+      try {
+        await this.onboardingService.markCashPayment(body.draftId, body.paymentMarked);
+      } catch (err: any) {
+        // Non-bloquant : l'activation relira les flags depuis le draft
+        this.logger.warn(`⚠️  Failed to persist payment marking: ${err.message}`);
+      }
+    }
 
     if (body.signLater) {
       // ⭐ Signature différée : envoyer un email au promoteur avec le lien de signature
@@ -128,10 +148,19 @@ export class ContractController {
 
     this.logger.log(`✅ Contract PDF generated: ${contractResult.fileName}`);
 
-    // 4. Créer le tenant (école) en arrière-plan
-    let tenantInfo: { tenantId: string; subdomain: string } | null = null;
+    // 4. Créer le paiement en espèces + activer le tenant (flux unifié)
+    let tenantInfo: {
+      tenantId: string | null;
+      subdomain: string;
+      hostname?: string;
+      portalUrl?: string;
+    } | null = null;
     try {
-      tenantInfo = await this.onboardingService.activateTenantAfterContractSign(body.draftId);
+      tenantInfo = await this.onboardingService.activateTenantAfterContractSign(body.draftId, {
+        subscriptionPaid: body.paymentMarked?.subscriptionPaid,
+        bilingualPaid: body.paymentMarked?.bilingualPaid,
+        receivedBy: body.paymentMarked?.receivedBy,
+      });
       this.logger.log(`✅ Tenant created: ${tenantInfo.tenantId} (subdomain: ${tenantInfo.subdomain})`);
     } catch (err: any) {
       // Si le tenant existe déjà (idempotence), on continue
@@ -145,6 +174,8 @@ export class ContractController {
         contractResult.filePath,
         contractResult.fileName,
         tenantInfo?.subdomain,
+        tenantInfo?.hostname,
+        tenantInfo?.portalUrl,
       );
       this.logger.log(`✅ Signed contract email sent to promoter`);
     } catch (err: any) {
@@ -161,6 +192,8 @@ export class ContractController {
       contractUrl: contractResult.fileUrl,
       tenantId: tenantInfo?.tenantId,
       subdomain: tenantInfo?.subdomain,
+      hostname: tenantInfo?.hostname,
+      portalUrl: tenantInfo?.portalUrl,
     };
   }
 
@@ -190,15 +223,22 @@ export class ContractController {
 
   /**
    * Construit l'objet ContractData à partir du draft (si non fourni par le frontend).
+   * ⭐ Inclut le marquage de paiement en espèces persisté dans priceSnapshot.paymentMarked
+   *    (utile pour la signature différée — la page /signup/contract-sign ne renvoie
+   *    pas de contractData complet).
    */
   private buildContractDataFromDraft(draft: any, body: any): ContractData {
     const today = new Date().toLocaleDateString('fr-FR', {
       day: '2-digit', month: 'long', year: 'numeric',
     });
     const priceSnap = (draft.priceSnapshot as any) || {};
+    const marked = priceSnap.paymentMarked || {};
     const subdomain = draft.preferredSubdomain
       || draft.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
       || 'ecole';
+    const bilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
+    const activationFee = Number(priceSnap.initialFee || priceSnap.initialPayment || 300000) || 300000;
+    const annualFee = Number(priceSnap.yearlyPrice || 50000) || 50000;
 
     return {
       schoolName: draft.schoolName || '',
@@ -206,7 +246,7 @@ export class ContractController {
       directorName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim(),
       schoolAddress: draft.city || '',
       schoolCity: draft.city || '',
-      schoolPhone: draft.promoterPhone || '',
+      schoolPhone: draft.promoterPhone || draft.phone || '',
       schoolEmail: draft.promoterEmail || draft.email || '',
       studentCount: draft.estimatedStudentCount || 0,
       planCode: priceSnap.planCode || 'SEED',
@@ -214,20 +254,30 @@ export class ContractController {
       bilingual: draft.bilingual || false,
       subdomain,
       effectiveDate: today,
-      activationFee: priceSnap.initialFee || 300000,
-      annualFee: priceSnap.yearlyPrice || 50000,
-      totalYearOne: (priceSnap.initialFee || 300000) + (priceSnap.yearlyPrice || 50000) + (draft.bilingual ? 50000 : 0),
+      activationFee,
+      annualFee,
+      bilingualFee,
+      totalYearOne: activationFee + annualFee + (draft.bilingual ? bilingualFee : 0),
+      // ⭐ Paiement en espèces (mode YEHI OR Tech)
+      paymentMethod: 'cash',
+      subscriptionPaid: marked.subscriptionPaid ?? true,
+      bilingualPaid: marked.bilingualPaid ?? draft.bilingual ?? false,
+      receivedBy: marked.receivedBy || undefined,
+      ...(body?.paymentMarked || {}),
     };
   }
 
   /**
    * Envoie l'email avec le contrat PDF signé + credentials au promoteur.
+   * ⭐ Inclut le récapitulatif du paiement en espèces (mode YEHI OR Tech).
    */
   private async sendSignedContractEmail(
     draftId: string,
     contractFilePath: string,
     contractFileName: string,
     subdomain?: string,
+    hostname?: string,
+    portalUrl?: string,
   ): Promise<void> {
     const draft = await this.onboardingService.getDraft(draftId);
     if (!draft) {
@@ -241,13 +291,21 @@ export class ContractController {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || 'https://academiahelm.com';
-    const loginUrl = subdomain
-      ? `${frontendUrl.replace('https://', `https://${subdomain}.`)}`
-      : `${frontendUrl}/login`;
+    const loginUrl = portalUrl
+      || (hostname ? `https://${hostname}/login?portal=SCHOOL&tenant=${subdomain}` : undefined)
+      || (subdomain
+        ? `${frontendUrl.replace('https://', `https://${subdomain}.`)}/login?portal=SCHOOL&tenant=${subdomain}`
+        : `${frontendUrl}/login`);
 
     const promoterName = `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || 'Promoteur';
     const priceSnap = (draft.priceSnapshot as any) || {};
     const planName = priceSnap.planName || 'Helm Essentiel';
+    const marked = priceSnap.paymentMarked || {};
+    // Breakdown depuis le priceSnapshot (source de vérité du pricing)
+    const emailActivationFee = Number(priceSnap.initialPayment ?? priceSnap.initialFee ?? 300000) || 0;
+    const emailAnnualFee = Number(priceSnap.yearlyPrice ?? 0) || 0;
+    const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
+    const totalPaid = emailActivationFee + emailAnnualFee + emailBilingualFee;
 
     const html = `
 <!DOCTYPE html>
@@ -280,6 +338,17 @@ export class ContractController {
         <tr><td style="padding: 2px 0; color: #6b7280;">École :</td><td style="padding: 2px 0;"><strong>${draft.schoolName}</strong></td></tr>
         <tr><td style="padding: 2px 0; color: #6b7280;">Plan :</td><td style="padding: 2px 0;"><strong>${planName}</strong></td></tr>
         ${subdomain ? `<tr><td style="padding: 2px 0; color: #6b7280;">Sous-domaine :</td><td style="padding: 2px 0;"><strong>${subdomain}.academiahelm.com</strong></td></tr>` : ''}
+      </table>
+    </div>
+
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">💵 Paiement en espèces</h3>
+      <table style="width: 100%; font-size: 13px; color: #1f2937;">
+        <tr><td style="padding: 2px 0; color: #6b7280;">Souscription :</td><td style="padding: 2px 0;"><strong>${marked.subscriptionPaid !== false ? 'Payée (espèces)' : 'À régler'}</strong></td></tr>
+        ${draft.bilingual ? `<tr><td style="padding: 2px 0; color: #6b7280;">Option bilingue FR/EN :</td><td style="padding: 2px 0;"><strong>${marked.bilingualPaid !== false ? 'Payée — facturation annuelle' : 'À régler (annuelle)'}</strong></td></tr>` : ''}
+        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Détail :</td><td style="padding: 2px 0;">Activation ${emailActivationFee.toLocaleString('fr-FR')} + Annuel ${emailAnnualFee.toLocaleString('fr-FR')}${emailBilingualFee > 0 ? ' + Bilingue ' + emailBilingualFee.toLocaleString('fr-FR') : ''} FCFA</td></tr>` : ''}
+        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Total encaissé :</td><td style="padding: 2px 0;"><strong>${totalPaid.toLocaleString('fr-FR')} FCFA</strong></td></tr>` : ''}
+        ${marked.receivedBy ? `<tr><td style="padding: 2px 0; color: #6b7280;">Encaissé par :</td><td style="padding: 2px 0;">${marked.receivedBy} (YEHI OR Tech)</td></tr>` : ''}
       </table>
     </div>
 

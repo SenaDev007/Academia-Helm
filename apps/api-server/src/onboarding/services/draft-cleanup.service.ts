@@ -48,6 +48,12 @@ export class DraftCleanupService {
 
       this.logger.log(`✅ Cleanup completed: ${result.count} expired draft(s) deleted`);
 
+      // ⭐ Purge RGPD/sécurité : nullifier les promoterPasswordHash résiduels des
+      //    drafts COMPLETED/PAYMENT_COMPLETED de plus de 7 jours. Ces drafts ne
+      //    sont jamais supprimés (traçabilité) mais le hash bcrypt n'a plus
+      //    aucune utilité une fois le compte promoteur créé.
+      await this.purgeStalePasswordHashes();
+
       return {
         success: true,
         deletedCount: result.count,
@@ -56,6 +62,35 @@ export class DraftCleanupService {
     } catch (error: any) {
       this.logger.error(`❌ Error during draft cleanup: ${error.message}`, error.stack);
       throw error;
+    }
+  }
+
+  /**
+   * ⭐ Nullifie les promoterPasswordHash des drafts terminés de plus de 7 jours.
+   *    Les drafts COMPLETED/PAYMENT_COMPLETED sont conservés (audit/traçabilité)
+   *    mais le hash du mot de passe promoteur doit disparaître (l'activation
+   *    le nullifie déjà — ceci nettoie les drafts antérieurs / échecs d'activation).
+   */
+  private async purgeStalePasswordHashes(): Promise<void> {
+    try {
+      const staleThreshold = new Date();
+      staleThreshold.setDate(staleThreshold.getDate() - 7);
+
+      const result = await this.prisma.onboardingDraft.updateMany({
+        where: {
+          status: { in: ['COMPLETED', 'PAYMENT_COMPLETED', 'CANCELLED'] },
+          createdAt: { lt: staleThreshold },
+          promoterPasswordHash: { not: null },
+        },
+        data: { promoterPasswordHash: null },
+      });
+
+      if (result.count > 0) {
+        this.logger.log(`🧹 Purged stale promoterPasswordHash on ${result.count} old completed draft(s)`);
+      }
+    } catch (error: any) {
+      // Non-bloquant : ne pas faire échouer le cron principal
+      this.logger.warn(`⚠️  Password hash purge failed: ${error.message}`);
     }
   }
 

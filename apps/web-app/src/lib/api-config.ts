@@ -24,9 +24,6 @@ export const ENDPOINTS = {
   portal: `${API_URL}/portal`,
   portalLogin: `${API_URL}/portal/login`,
 
-  onboardingDraft: `${API_URL}/onboarding/draft`,
-  onboardingSubmit: `${API_URL}/onboarding/submit`,
-
   /** Liveness Nest (hors préfixe /api) */
   health: `${API_BASE_URL}/health`,
 } as const;

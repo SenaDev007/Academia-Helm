@@ -1,0 +1,342 @@
+'use client';
+
+/**
+ * Client de la page /signup/contract-sign — signature différée du contrat.
+ * Voir la docstring de page.tsx.
+ */
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import {
+  CheckCircle2,
+  Loader2,
+  PenTool,
+  AlertCircle,
+  FileText,
+  Building2,
+  User,
+  Banknote,
+  ArrowLeft,
+} from 'lucide-react';
+import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
+import { formatCurrency } from '@/lib/utils';
+import { HELM_PLANS } from '@/lib/services/HelmPricingService';
+
+interface DraftData {
+  id: string;
+  schoolName: string;
+  city?: string;
+  country?: string;
+  bilingual: boolean;
+  promoterFirstName?: string;
+  promoterLastName?: string;
+  promoterEmail?: string;
+  email?: string;
+  promoterPhone?: string;
+  preferredSubdomain?: string;
+  selectedPlanId?: string;
+  status: string;
+  priceSnapshot?: any;
+}
+
+interface SignResult {
+  success: boolean;
+  subdomain?: string;
+  hostname?: string;
+  portalUrl?: string;
+  contractUrl?: string;
+  message?: string;
+}
+
+export function ContractSignClient({ draftId }: { draftId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftData | null>(null);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [result, setResult] = useState<SignResult | null>(null);
+
+  useEffect(() => {
+    if (!draftId) {
+      setLoadError('Lien de signature incomplet : identifiant de dossier manquant.');
+      setLoading(false);
+      return;
+    }
+    fetch(`/api/onboarding/draft?draftId=${encodeURIComponent(draftId)}`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(
+            err.message ||
+              (res.status === 404
+                ? "Ce dossier de signature n'existe plus ou a expiré. Contactez l'équipe YEHI OR Tech."
+                : 'Erreur lors du chargement du dossier.'),
+          );
+        }
+        return res.json();
+      })
+      .then((data) => setDraft(data))
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setLoading(false));
+  }, [draftId]);
+
+  const handleSign = async () => {
+    if (!signature || !draft) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      // ⭐ Pas de contractData : le backend le reconstruit depuis le draft
+      //    (buildContractDataFromDraft), y compris le marquage de paiement en
+      //    espèces persisté dans priceSnapshot.paymentMarked.
+      const response = await fetch('/api/onboarding/contract/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draftId: draft.id,
+          promoterSignature: signature,
+          signLater: false,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Erreur lors de la signature du contrat.');
+      }
+      setResult(data);
+    } catch (err: any) {
+      setSubmitError(err.message || 'Erreur lors de la signature.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ─── États : chargement / erreur / succès / signature ───
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-blue-900 animate-spin mx-auto" />
+          <p className="mt-3 text-sm text-slate-600">Chargement du contrat…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8 max-w-md w-full text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-slate-900">Impossible d'afficher le contrat</h1>
+          <p className="text-sm text-slate-600 mt-2">{loadError}</p>
+          <Link
+            href="/"
+            className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-900"
+          >
+            <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (result) {
+    // Écran de succès après signature
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8 max-w-lg w-full">
+          <div className="text-center mb-6">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-8 h-8 text-green-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-blue-900">Contrat signé</h1>
+            <p className="text-sm text-slate-600 mt-2">
+              <strong>{draft?.schoolName}</strong> est désormais créée et active sur Academia Helm.
+            </p>
+          </div>
+
+          <div className="space-y-3 text-sm">
+            {result.hostname && (
+              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <span className="text-slate-600">Adresse de l'école</span>
+                <span className="font-semibold text-blue-900">{result.hostname}</span>
+              </div>
+            )}
+            {result.portalUrl && (
+              <a
+                href={result.portalUrl}
+                className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 hover:border-green-400 transition-colors"
+              >
+                <span className="text-slate-600">Se connecter à la plateforme</span>
+                <span className="font-semibold text-green-700">→ {result.subdomain}.academiahelm.com/login</span>
+              </a>
+            )}
+          </div>
+
+          <p className="text-xs text-slate-500 mt-4 text-center">
+            Un email de confirmation avec le contrat signé en pièce jointe et vos identifiants vous a été envoyé.
+          </p>
+
+          {result.contractUrl && (
+            <a
+              href={result.contractUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors"
+            >
+              <FileText className="w-4 h-4" /> Voir le contrat signé
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Résumé du contrat + signature ───
+  const snapshot = (draft?.priceSnapshot as any) || {};
+  const marked = snapshot.paymentMarked || {};
+  const planCode = ['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(snapshot.planCode)
+    ? snapshot.planCode
+    : 'SEED';
+  const plan = HELM_PLANS[planCode as keyof typeof HELM_PLANS];
+  const activationFee = Number(snapshot.initialPayment ?? snapshot.initialFee ?? 300000) || 300000;
+  const annualFee = Number(snapshot.yearlyPrice ?? plan?.annualPrice ?? 50000) || 50000;
+  const bilingualFee = draft?.bilingual ? Number(snapshot.bilingualFee ?? 50000) || 50000 : 0;
+  const totalYearOne = activationFee + annualFee + bilingualFee;
+  const promoterName = `${draft?.promoterFirstName || ''} ${draft?.promoterLastName || ''}`.trim();
+  const alreadyCompleted = draft?.status === 'COMPLETED';
+
+  return (
+    <div className="min-h-screen bg-slate-50 py-10 px-4">
+      <div className="max-w-2xl mx-auto">
+        <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-900 mb-6">
+          <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
+        </Link>
+
+        <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-gradient-to-br from-blue-900 to-blue-800 rounded-lg">
+              <FileText className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-blue-900">Contrat d'abonnement Academia Helm</h1>
+              <p className="text-sm text-slate-500">Signature électronique — {draft?.schoolName}</p>
+            </div>
+          </div>
+
+          {alreadyCompleted && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-800">
+                Ce contrat a déjà été signé et l'école a été créée. Vous pouvez consulter le récapitulatif ci-dessous.
+              </p>
+            </div>
+          )}
+
+          {/* Résumé de la fiche de souscription */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-blue-700 flex-shrink-0" />
+                <div>
+                  <div className="text-xs text-slate-500">École</div>
+                  <div className="text-sm font-semibold text-slate-900">{draft?.schoolName}</div>
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-2">
+                <User className="w-4 h-4 text-blue-700 flex-shrink-0" />
+                <div>
+                  <div className="text-xs text-slate-500">Promoteur</div>
+                  <div className="text-sm font-semibold text-slate-900">{promoterName || '—'}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Plan souscrit</span>
+                <span className="font-semibold text-blue-900">{plan?.name || snapshot.planName || planCode}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm mt-2">
+                <span className="text-slate-600">Frais d'activation</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(activationFee)} FCFA</span>
+              </div>
+              <div className="flex items-center justify-between text-sm mt-2">
+                <span className="text-slate-600">Frais annuels</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(annualFee)} FCFA</span>
+              </div>
+              {draft?.bilingual && (
+                <div className="flex items-center justify-between text-sm mt-2">
+                  <span className="text-slate-600">Option bilingue FR/EN (annuelle)</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(bilingualFee)} FCFA / an</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-blue-200">
+                <span className="font-semibold text-blue-900">Total Année 1</span>
+                <span className="font-bold text-green-700">{formatCurrency(totalYearOne)} FCFA</span>
+              </div>
+            </div>
+
+            {/* Paiement en espèces */}
+            <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-start gap-3">
+              <Banknote className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-green-900">
+                <strong>Paiement en espèces</strong> — souscription{' '}
+                {marked.subscriptionPaid !== false ? 'réglée en espèces' : 'à régler'}
+                {draft?.bilingual && (
+                  <>
+                    , option bilingue (facturation annuelle){' '}
+                    {marked.bilingualPaid !== false ? 'réglée' : 'à régler'}
+                  </>
+                )}
+                .
+              </div>
+            </div>
+
+            {/* Signature */}
+            {!alreadyCompleted && (
+              <div className="border-t pt-6">
+                <label className="block text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                  <PenTool className="w-4 h-4 text-blue-700" /> Votre signature
+                  <span className="text-red-600">*</span>
+                </label>
+                <SignatureCanvas
+                  width={520}
+                  height={110}
+                  onSignatureChange={setSignature}
+                  placeholder="Signez dans ce cadre (souris ou doigt)"
+                />
+              </div>
+            )}
+
+            {submitError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-800">{submitError}</p>
+              </div>
+            )}
+
+            {!alreadyCompleted && (
+              <button
+                onClick={handleSign}
+                disabled={submitting || !signature}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Signature en cours…</>
+                ) : (
+                  <><CheckCircle2 className="w-5 h-5" /> Signer et activer mon école</>
+                )}
+              </button>
+            )}
+          </div>
+
+          <p className="text-[11px] text-slate-400 mt-4 text-center">
+            En signant, vous acceptez les 14 articles du contrat d'abonnement Academia Helm.
+            Le contrat complet signé vous sera envoyé par email.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

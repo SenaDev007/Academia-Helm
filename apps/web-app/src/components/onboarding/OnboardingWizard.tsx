@@ -4,18 +4,24 @@
  * ============================================================================
  * 
  * Composant React pour l'onboarding complet en 4 phases :
- * 1. Établissement (nom, type, pays, ville, téléphone, email, bilingue, nb écoles, logo)
- * 2. Promoteur (nom, prénom, téléphone, email, password, OTP)
- * 3. Plan & Options (pricing dynamique, mensuel/annuel, total)
- * 4. Paiement Initial (FedaPay)
- * 
+ * 1. Établissement (nom, type, pays, ville, téléphone, email, bilingue, logo)
+ * 2. Promoteur (nom, prénom, téléphone, email, password + credentials plateforme YEHI OR Tech)
+ * 3. Plan & Options (plan SEED/GROW/LEAD/NETWORK, paiement espèces marqué)
+ * 4. Contrat d'abonnement (signature + création de l'école)
+ * 5. Écran de succès (école créée, URL du portail)
+ *
+ * ⭐ MODE PAR DÉFAUT : YEHI OR TECH (création par l'équipe YEHI OR Tech).
+ *    Le mode self-service (OTP + paiement FedaPay en ligne) est VERROUILLÉ :
+ *    - masqué dans l'UI (le sélecteur de mode n'apparaît plus) ;
+ *    - le backend le rejette aussi (ENABLE_SELF_SIGNUP ≠ 'true').
+ *    Pour le réactiver : NEXT_PUBLIC_ENABLE_SELF_SIGNUP=true (frontend)
+ *    + ENABLE_SELF_SIGNUP=true (api-server).
  * ============================================================================
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Building,
@@ -51,8 +57,9 @@ import {
   Send,
   Crown,
   Lock,
+  FileText,
 } from 'lucide-react';
-import { HELM_PLANS, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, BILINGUAL_ADDON, fetchPricingPlans, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import FedaPayCheckout from './FedaPayCheckout';
@@ -68,7 +75,6 @@ interface OnboardingData {
   phone: string;
   email: string;
   bilingual: boolean;
-  schoolsCount: number;
   estimatedStudentCount: number;
   logoUrl?: string;
   /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academiahelm.com) */
@@ -95,8 +101,12 @@ interface FormErrors {
   [key: string]: string;
 }
 
+// ⭐ VERROUILLAGE DU MODE SELF-SERVICE : désactivé par défaut.
+//    NEXT_PUBLIC_ENABLE_SELF_SIGNUP=true pour le réactiver (dev / futur).
+//    Par défaut, seul le mode YEHI OR Tech est proposé.
+const SELF_SIGNUP_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SELF_SIGNUP === 'true';
+
 export default function OnboardingWizard() {
-  const router = useRouter();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -120,13 +130,33 @@ export default function OnboardingWizard() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
   const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
 
-  // ⭐ MODE DE CRÉATION : 'self-service' (le promoteur fait tout en ligne)
-  //    ou 'yehi-or-tech' (YEHI OR Tech crée l'école, skip OTP + paiement, add contrat)
-  const [creationMode, setCreationMode] = useState<'self-service' | 'yehi-or-tech'>('self-service');
+  // ⭐ MODE DE CRÉATION : 'yehi-or-tech' (YEHI OR Tech crée l'école — MODE PAR
+  //    DÉFAUT, le seul visible) ou 'self-service' (verrouillé derrière
+  //    NEXT_PUBLIC_ENABLE_SELF_SIGNUP). En mode yehi-or-tech : pas d'OTP,
+  //    validation des credentials plateforme, paiement en espèces marqué
+  //    payé, puis signature du contrat.
+  const [creationMode, setCreationMode] = useState<'self-service' | 'yehi-or-tech'>(
+    SELF_SIGNUP_ENABLED ? 'self-service' : 'yehi-or-tech'
+  );
   // ⭐ Credentials admin back-office (pour mode 'yehi-or-tech')
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminVerified, setAdminVerified] = useState(false);
+  const [adminDisplayName, setAdminDisplayName] = useState<string | null>(null);
+  const [isValidatingAdmin, setIsValidatingAdmin] = useState(false);
+  // ⭐ Paiement en espèces (mode yehi-or-tech) : cases marquées par l'agent
+  const [paymentMarked, setPaymentMarked] = useState<{ subscriptionPaid: boolean; bilingualPaid: boolean }>({
+    subscriptionPaid: false,
+    bilingualPaid: false,
+  });
+  // ⭐ Résultat de la création (écran de succès)
+  const [creationResult, setCreationResult] = useState<{
+    schoolName: string;
+    subdomain?: string;
+    hostname?: string;
+    portalUrl?: string;
+    contractUrl?: string;
+  } | null>(null);
   const [passwordStrength, setPasswordStrength] = useState<{
     score: number; // 0-4
     label: string; // 'Très faible', 'Faible', 'Moyen', 'Fort', 'Très fort'
@@ -181,7 +211,6 @@ export default function OnboardingWizard() {
     phone: '',
     email: '',
     bilingual: false,
-    schoolsCount: 1,
     estimatedStudentCount: 0,
     firstName: '',
     lastName: '',
@@ -215,19 +244,10 @@ export default function OnboardingWizard() {
     }
   }, []);
 
-  // Sauvegarder les données dans localStorage à chaque changement
-  useEffect(() => {
-    if (typeof window !== 'undefined' && data.draftId) {
-      try {
-        localStorage.setItem('onboarding-draft', JSON.stringify({
-          data,
-          timestamp: Date.now(),
-        }));
-      } catch (error) {
-        console.error('Error saving onboarding data:', error);
-      }
-    }
-  }, [data]);
+  // ⭐ NOTE : plus de persistance localStorage « onboarding-draft » — elle était
+  //    écrite 4× mais jamais relue (persistance morte). La reprise de
+  //    l'inscription passe par la détection serveur du draft par email
+  //    (bannière « Un brouillon a été trouvé » + modal).
 
   // Vérifier si un draft existe pour l'email quand l'utilisateur saisit l'email
   useEffect(() => {
@@ -649,20 +669,29 @@ export default function OnboardingWizard() {
       if (data.password && data.confirmPassword && data.password !== data.confirmPassword) {
         newErrors.confirmPassword = 'Les mots de passe ne correspondent pas';
       }
-      // ⭐ Mode self-service : OTP requis. Mode yehi-or-tech : credentials admin requis.
+      // ⭐ Mode self-service (verrouillé) : OTP requis. Mode yehi-or-tech :
+      //    credentials plateforme validés requis.
       if (creationMode === 'self-service') {
         if (!otpVerified) newErrors.otp = 'Veuillez vérifier votre code OTP';
       } else {
-        if (!adminEmail) newErrors.admin = 'Email admin requis';
-        if (!adminPassword) newErrors.admin = 'Mot de passe admin requis';
+        if (!adminEmail) newErrors.admin = 'Email plateforme requis';
+        else if (!adminPassword) newErrors.admin = 'Mot de passe plateforme requis';
+        else if (!adminVerified) newErrors.admin = 'Veuillez valider vos identifiants plateforme (bouton « Valider mes accès »)';
       }
     }
 
     if (stepNumber === 3) {
       if (!data.planCode) newErrors.planCode = 'Veuillez sélectionner un plan';
-      // ⭐ estimatedStudentCount n'est plus saisi par l'utilisateur — il est
-      // automatiquement rempli quand un plan est sélectionné (1 pour SEED,
-      // 151 pour GROW, 401 pour LEAD). On ne valide donc plus ce champ ici.
+      // ⭐ Mode YEHI OR Tech : le paiement est encaissé en espèces — l'agent
+      //    doit confirmer que la souscription a été payée avant de continuer.
+      if (creationMode === 'yehi-or-tech') {
+        if (!paymentMarked.subscriptionPaid) {
+          newErrors.paymentMarked = 'Veuillez confirmer que la souscription a été payée (paiement en espèces).';
+        }
+        if (data.bilingual && !paymentMarked.bilingualPaid) {
+          newErrors.paymentMarked = 'Veuillez confirmer que les frais de l\'option bilingue (annuels) ont été payés.';
+        }
+      }
     }
 
     setErrors(newErrors);
@@ -722,6 +751,42 @@ export default function OnboardingWizard() {
     const fileInput = document.getElementById('logo-upload') as HTMLInputElement;
     if (fileInput) {
       fileInput.value = '';
+    }
+  };
+
+  // ⭐ Valide les credentials plateforme (mode YEHI OR Tech) avant de continuer.
+  //    Appelle POST /api/onboarding/validate-admin qui vérifie le compte
+  //    SUPER_ADMIN / Platform Owner contre la base (bcrypt). Le résultat
+  //    est revalidé côté backend à la soumission du promoteur.
+  const handleValidateAdmin = async () => {
+    if (!adminEmail || !adminPassword) {
+      setErrors({ admin: 'Renseignez votre email et mot de passe plateforme.' });
+      return;
+    }
+    setIsValidatingAdmin(true);
+    setErrors((prev) => ({ ...prev, admin: '' }));
+    try {
+      const response = await fetch('/api/onboarding/validate-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+      });
+      const result = await response.json();
+      if (response.ok && result.valid) {
+        setAdminVerified(true);
+        setAdminDisplayName(result.admin?.name || adminEmail);
+        setErrors((prev) => ({ ...prev, admin: '' }));
+      } else {
+        setAdminVerified(false);
+        setAdminDisplayName(null);
+        setErrors({ admin: result.message || 'Identifiants plateforme invalides.' });
+      }
+    } catch (error: any) {
+      setAdminVerified(false);
+      setAdminDisplayName(null);
+      setErrors({ admin: error.message || 'Erreur lors de la validation des identifiants.' });
+    } finally {
+      setIsValidatingAdmin(false);
     }
   };
 
@@ -811,23 +876,10 @@ export default function OnboardingWizard() {
 
         const result = await response.json();
         const newDraftId = result.id;
-        const updatedData = { ...data, draftId: newDraftId };
-        setData(updatedData);
+        setData({ ...data, draftId: newDraftId });
         // Le logo est déjà stocké comme data URL dans data.logoUrl (pattern data URL)
         // Plus besoin d'upload différé via BFF route.
 
-        // Sauvegarder dans localStorage
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('onboarding-draft', JSON.stringify({
-              data: updatedData,
-              timestamp: Date.now(),
-            }));
-          } catch (error) {
-            console.error('Error saving draft to localStorage:', error);
-          }
-        }
-        
         setStep(2);
         requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
       } catch (error: any) {
@@ -1232,10 +1284,12 @@ export default function OnboardingWizard() {
   };
 
   // Fonction helper pour vérifier si le draft expire bientôt
+  // ⭐ TTL backend réel : 4 heures (DRAFT_EXPIRY_HOURS) → avertir si moins
+  //    d'une heure reste (draft créé depuis plus de 3 h).
   const isExpiringSoon = (createdAt: string) => {
     if (!createdAt) return false;
     const hoursSinceCreation = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
-    return hoursSinceCreation > 20; // Avertir si moins de 4h restantes
+    return hoursSinceCreation > 3;
   };
 
   // Restaurer le draft depuis la bannière
@@ -1251,6 +1305,14 @@ export default function OnboardingWizard() {
       
       const existingDraft = await response.json();
       
+      // ⭐ Restaurer le plan sélectionné depuis le draft (priceSnapshot.planCode)
+      //    — sinon l'étape 4 pouvait s'afficher avec un plan/prix différent de
+      //    celui réellement enregistré côté serveur.
+      const restoredSnapshot = (existingDraft.priceSnapshot as any) || {};
+      const restoredPlanCode = ['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(restoredSnapshot.planCode)
+        ? restoredSnapshot.planCode
+        : existingDraft.selectedPlanId || data.planCode;
+      
       // Charger toutes les données du draft existant
       const updatedData = {
         ...data,
@@ -1263,32 +1325,23 @@ export default function OnboardingWizard() {
         phone: existingDraft.phone || '',
         email: existingDraft.email || '',
         bilingual: existingDraft.bilingual ?? false,
-        schoolsCount: existingDraft.schoolsCount || 1,
         preferredSubdomain: existingDraft.preferredSubdomain || '',
         // Phase 2: Promoteur
         firstName: existingDraft.promoterFirstName || '',
         lastName: existingDraft.promoterLastName || '',
         promoterPhone: existingDraft.promoterPhone || '',
         promoterEmail: existingDraft.promoterEmail || '',
-        // Phase 3: Plan (si disponible dans priceSnapshot)
-        planCode: data.planCode,
-        billingPeriod: data.billingPeriod,
+        // Phase 3: Plan
+        planCode: restoredPlanCode,
+        billingPeriod: restoredSnapshot.periodType === 'MONTHLY' ? 'monthly' : 'yearly',
       };
-      
-      // Si un plan a été sélectionné, extraire les infos du priceSnapshot
-      if (existingDraft.selectedPlanId && existingDraft.priceSnapshot) {
-        const priceSnapshot = existingDraft.priceSnapshot as any;
-        if (priceSnapshot.periodType) {
-          updatedData.billingPeriod = priceSnapshot.periodType === 'MONTHLY' ? 'monthly' : 'yearly';
-        }
-      }
       
       setData(updatedData);
       
       // Déterminer l'étape à afficher selon l'état du draft
       let targetStep = 1;
       if (existingDraft.promoterEmail && existingDraft.selectedPlanId) {
-        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement)
+        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement/Contrat)
       } else if (existingDraft.promoterEmail) {
         targetStep = 3; // Promoteur renseigné = Étape 3 (Plan)
       } else if (existingDraft.promoterFirstName) {
@@ -1296,14 +1349,6 @@ export default function OnboardingWizard() {
       }
       
       setStep(targetStep);
-      
-      // Sauvegarder dans localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('onboarding-draft', JSON.stringify({
-          data: updatedData,
-          timestamp: Date.now(),
-        }));
-      }
       
       // Fermer la bannière
       setShowDraftRestoreBanner(false);
@@ -1321,11 +1366,6 @@ export default function OnboardingWizard() {
 
   // Ignorer le draft et commencer une nouvelle inscription
   const handleStartNewDraft = () => {
-    // Nettoyer localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('onboarding-draft');
-    }
-    
     // Réinitialiser le formulaire
     setData({
       schoolName: '',
@@ -1335,7 +1375,6 @@ export default function OnboardingWizard() {
       phone: '',
       email: '',
       bilingual: false,
-      schoolsCount: 1,
       estimatedStudentCount: 0,
       preferredSubdomain: '',
       firstName: '',
@@ -1355,6 +1394,9 @@ export default function OnboardingWizard() {
     setErrors({});
     setShowDraftRestoreBanner(false);
     setPendingDraftInfo(null);
+    setPaymentMarked({ subscriptionPaid: false, bilingualPaid: false });
+    setAdminVerified(false);
+    setAdminDisplayName(null);
   };
 
   // Gérer le choix de l'utilisateur pour le draft existant
@@ -1370,6 +1412,12 @@ export default function OnboardingWizard() {
       
       const existingDraft = await response.json();
       
+      // ⭐ Restaurer le plan sélectionné depuis le draft (priceSnapshot.planCode)
+      const restoredSnapshot = (existingDraft.priceSnapshot as any) || {};
+      const restoredPlanCode = ['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(restoredSnapshot.planCode)
+        ? restoredSnapshot.planCode
+        : existingDraft.selectedPlanId || data.planCode;
+      
       // Charger toutes les données du draft existant
       const updatedData = {
         ...data,
@@ -1382,32 +1430,23 @@ export default function OnboardingWizard() {
         phone: existingDraft.phone || data.phone,
         email: existingDraft.email || data.email,
         bilingual: existingDraft.bilingual ?? data.bilingual,
-        schoolsCount: existingDraft.schoolsCount || data.schoolsCount,
         preferredSubdomain: existingDraft.preferredSubdomain || data.preferredSubdomain || '',
         // Phase 2: Promoteur
         firstName: existingDraft.promoterFirstName || data.firstName,
         lastName: existingDraft.promoterLastName || data.lastName,
         promoterPhone: existingDraft.promoterPhone || data.promoterPhone,
         promoterEmail: existingDraft.promoterEmail || data.promoterEmail,
-        // Phase 3: Plan (si disponible dans priceSnapshot)
-        planCode: data.planCode, // Garder le planCode actuel ou le calculer
-        billingPeriod: data.billingPeriod, // Garder la période actuelle
+        // Phase 3: Plan
+        planCode: restoredPlanCode,
+        billingPeriod: restoredSnapshot.periodType === 'MONTHLY' ? 'monthly' : 'yearly',
       };
-      
-      // Si un plan a été sélectionné, extraire les infos du priceSnapshot
-      if (existingDraft.selectedPlanId && existingDraft.priceSnapshot) {
-        const priceSnapshot = existingDraft.priceSnapshot as any;
-        if (priceSnapshot.cycle) {
-          updatedData.billingPeriod = priceSnapshot.cycle === 'MONTHLY' ? 'monthly' : 'yearly';
-        }
-      }
       
       setData(updatedData);
       
       // Déterminer l'étape à afficher selon l'état du draft
       let targetStep = 1;
       if (existingDraft.promoterEmail && existingDraft.selectedPlanId) {
-        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement)
+        targetStep = 4; // Promoteur + Plan sélectionné = Étape 4 (Paiement/Contrat)
       } else if (existingDraft.promoterEmail) {
         targetStep = 3; // Promoteur renseigné = Étape 3 (Plan)
       } else if (existingDraft.promoterFirstName) {
@@ -1415,14 +1454,6 @@ export default function OnboardingWizard() {
       }
       
       setStep(targetStep);
-      
-      // Sauvegarder dans localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('onboarding-draft', JSON.stringify({
-          data: updatedData,
-          timestamp: Date.now(),
-        }));
-      }
       
       // Afficher un message informatif
       setErrors({
@@ -1471,7 +1502,6 @@ export default function OnboardingWizard() {
           phone: normalizedPhone,
           email: data.email,
           bilingual: data.bilingual,
-          schoolsCount: data.schoolsCount,
           preferredSubdomain: (data.preferredSubdomain || '').trim() || undefined,
         }),
       });
@@ -1482,8 +1512,7 @@ export default function OnboardingWizard() {
       }
 
       const result = await response.json();
-      const updatedData = { ...data, draftId: result.id };
-      setData(updatedData);
+      setData({ ...data, draftId: result.id });
       
       setShowDraftChoiceModal(false);
       setExistingDraftInfo(null);
@@ -1507,14 +1536,15 @@ export default function OnboardingWizard() {
           {/* Titre centré — texte blanc sur fond navy avec animation */}
           <div className="text-center mb-5">
             <h1 className="text-2xl md:text-3xl font-bold text-white leading-tight tracking-tight drop-shadow-sm">
-              Créez votre école sur Academia Helm
+              {step === 5 ? 'École créée avec succès' : 'Créez votre école sur Academia Helm'}
             </h1>
             <p className="text-sm md:text-base text-gold-400 mt-2 font-medium tracking-wide">
-              Prenez le gouvernail de votre institution
+              {step === 5 ? "L'établissement est actif sur la plateforme" : 'Prenez le gouvernail de votre institution'}
             </p>
           </div>
 
-          {/* Progress Steps — dots navy/gold */}
+          {/* Progress Steps — dots navy/gold (masqués à l'écran de succès) */}
+          {step < 5 && (
           <div className="flex items-center justify-between">
             {[1, 2, 3, 4].map((s) => (
               <div key={s} className="flex items-center flex-1">
@@ -1531,8 +1561,8 @@ export default function OnboardingWizard() {
                   }`}>
                     {s === 1 && 'Établissement'}
                     {s === 2 && 'Promoteur'}
-                    {s === 3 && 'Plan & Options'}
-                    {s === 4 && 'Paiement'}
+                    {s === 3 && 'Plan & Paiement'}
+                    {s === 4 && (creationMode === 'yehi-or-tech' ? 'Contrat' : 'Paiement')}
                   </span>
                 </div>
                 {s < 4 && (
@@ -1543,6 +1573,7 @@ export default function OnboardingWizard() {
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
 
@@ -2199,9 +2230,10 @@ export default function OnboardingWizard() {
                   )}
                 </div>
 
-                {/* ⭐ TOGGLE MODE DE CRÉATION — après infos promoteur, avant OTP
-                    'self-service' : le promoteur fait tout en ligne (OTP + paiement)
-                    'yehi-or-tech' : YEHI OR Tech crée l'école (skip OTP + paiement, add contrat) */}
+                {/* ⭐ TOGGLE MODE DE CRÉATION — masqué : le mode self-service est
+                    VERROUILLÉ (NEXT_PUBLIC_ENABLE_SELF_SIGNUP≠true). Seul le mode
+                    YEHI OR Tech est disponible — pas de sélection à l'écran. */}
+                {SELF_SIGNUP_ENABLED && (
                 <div className="border-t pt-6 mb-6">
                   <label className="block text-sm font-medium text-gray-900 mb-3">
                     Mode de création <span className="text-red-600">*</span>
@@ -2239,6 +2271,7 @@ export default function OnboardingWizard() {
                     </button>
                   </div>
                 </div>
+                )}
 
                 {/* ⭐ MODE SELF-SERVICE : OTP normal (flux existant) */}
                 {creationMode === 'self-service' && (
@@ -2466,7 +2499,10 @@ export default function OnboardingWizard() {
                   </div>
                 )}
 
-              {/* ⭐ MODE YEHI OR TECH : credentials admin back-office (au lieu d'OTP) */}
+              {/* ⭐ MODE YEHI OR TECH : credentials plateforme (au lieu d'OTP).
+                  Validés en direct via POST /api/onboarding/validate-admin
+                  (compte SUPER_ADMIN / Platform Owner) puis REvalidés côté
+                  backend à la soumission. */}
               {creationMode === 'yehi-or-tech' && (
                 <div className="border-t pt-6">
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
@@ -2475,43 +2511,77 @@ export default function OnboardingWizard() {
                       <span className="font-semibold text-amber-800 text-sm">Création par YEHI OR Tech</span>
                     </div>
                     <p className="text-xs text-amber-700">
-                      Veuillez saisir vos identifiants pour valider la création.
-                      L'étape de paiement sera remplacée par la signature du contrat d'abonnement.
+                      Saisissez les identifiants de votre compte plateforme (Super Admin / Platform Owner)
+                      pour autoriser la création. La souscription et l'option bilingue (annuelle) seront
+                      réglées en espèces et marquées comme payées — le contrat d'abonnement sera signé
+                      à l'étape suivante, sans paiement en ligne.
                     </p>
                   </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email <span className="text-red-600">*</span>
+                        Email plateforme <span className="text-red-600">*</span>
                       </label>
                       <input
                         type="email"
                         value={adminEmail}
-                        onChange={(e) => setAdminEmail(e.target.value)}
-                        placeholder="exemple@email.com"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        onChange={(e) => {
+                          setAdminEmail(e.target.value);
+                          if (adminVerified) {
+                            setAdminVerified(false);
+                            setAdminDisplayName(null);
+                          }
+                        }}
+                        placeholder="exemple@yehiortech.com"
+                        disabled={adminVerified}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Mot de passe <span className="text-red-600">*</span>
+                        Mot de passe plateforme <span className="text-red-600">*</span>
                       </label>
                       <input
                         type="password"
                         value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
+                        onChange={(e) => {
+                          setAdminPassword(e.target.value);
+                          if (adminVerified) {
+                            setAdminVerified(false);
+                            setAdminDisplayName(null);
+                          }
+                        }}
                         placeholder="••••••••"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        disabled={adminVerified}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500"
                       />
                     </div>
-                    {adminVerified && (
+
+                    {/* Bouton de validation des identifiants plateforme */}
+                    {!adminVerified ? (
+                      <button
+                        type="button"
+                        onClick={handleValidateAdmin}
+                        disabled={isValidatingAdmin || !adminEmail || !adminPassword}
+                        className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                      >
+                        {isValidatingAdmin ? (
+                          <><Loader className="w-4 h-4 animate-spin" /> Validation...</>
+                        ) : (
+                          <><Lock className="w-4 h-4" /> Valider mes accès plateforme</>
+                        )}
+                      </button>
+                    ) : (
                       <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg">
                         <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
                           <Check className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-sm font-medium text-green-700">Identifiants validés</span>
+                        <span className="text-sm font-medium text-green-700">
+                          Identifiants validés{adminDisplayName ? ` — ${adminDisplayName}` : ''}
+                        </span>
                       </div>
                     )}
+
                     {errors.admin && (
                       <p className="text-xs text-red-600">{errors.admin}</p>
                     )}
@@ -2805,6 +2875,69 @@ export default function OnboardingWizard() {
                     </div>
                   </div>
                 </div>
+
+                {/* ⭐ Section 4 (mode YEHI OR Tech) : Paiement en espèces.
+                    Le paiement est encaissé en espèces par l'agent YEHI OR Tech :
+                    on marque simplement ce qui a été payé. Pas de FedaPay, pas
+                    de webhook — le reçu est le contrat signé à l'étape suivante. */}
+                {creationMode === 'yehi-or-tech' && (
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-6 border-2 border-amber-300 shadow-md">
+                  <div className="flex items-center mb-4">
+                    <div className="p-3 bg-amber-500 rounded-lg mr-4">
+                      <DollarSign className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-lg text-blue-900">Paiement en espèces</div>
+                      <div className="text-xs text-graphite-600 mt-0.5">
+                        Encaissé par l'agent YEHI OR Tech — cochez ce qui a été payé
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Case 1 : souscription payée (espèces) */}
+                    <label className="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={paymentMarked.subscriptionPaid}
+                        onChange={(e) => setPaymentMarked((prev) => ({ ...prev, subscriptionPaid: e.target.checked }))}
+                        className="mt-1 w-4 h-4 accent-amber-600"
+                      />
+                      <span className="text-sm text-graphite-800">
+                        <strong>La souscription a été payée</strong> — frais d'activation 300 000 FCFA + frais annuels du
+                        plan {HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || ''} (
+                        {formatCurrency(HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000)} FCFA),
+                        en espèces
+                      </span>
+                    </label>
+
+                    {/* Case 2 : frais bilingue payés (annuels) */}
+                    {data.bilingual && (
+                    <label className="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={paymentMarked.bilingualPaid}
+                        onChange={(e) => setPaymentMarked((prev) => ({ ...prev, bilingualPaid: e.target.checked }))}
+                        className="mt-1 w-4 h-4 accent-amber-600"
+                      />
+                      <span className="text-sm text-graphite-800">
+                        <strong>Les frais de l'option bilingue ont été payés</strong> — facturation
+                        annuelle ({formatCurrency(BILINGUAL_ADDON.annual || 0)} FCFA / an), en espèces
+                      </span>
+                    </label>
+                    )}
+                  </div>
+
+                  <p className="mt-3 text-[11px] text-graphite-500">
+                    Aucun paiement en ligne : le contrat signé à l'étape suivante tient lieu de reçu
+                    (souscription + option bilingue le cas échéant).
+                  </p>
+
+                  {errors.paymentMarked && (
+                    <p className="mt-2 text-sm text-red-600">{errors.paymentMarked}</p>
+                  )}
+                </div>
+                )}
               </div>
 
               {errors.info && (
@@ -2847,7 +2980,10 @@ export default function OnboardingWizard() {
             </div>
           )}
 
-          {/* ⭐ PHASE 4 (YEHI OR Tech) : Contrat d'abonnement avec signature */}
+          {/* ⭐ PHASE 4 (YEHI OR Tech) : Contrat d'abonnement avec signature.
+              Le paiement en espèces a été marqué à l'étape 3 — le contrat est
+              aligné sur TOUTES les infos renseignées (école, promoteur, plan,
+              montants, sous-domaine réel, paiement marqué payé). */}
           {step === 4 && creationMode === 'yehi-or-tech' && (
             <ContractStep
               draftId={data.draftId || ''}
@@ -2861,16 +2997,37 @@ export default function OnboardingWizard() {
               planCode={data.planCode}
               planName={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || data.planCode}
               bilingual={data.bilingual}
-              subdomain={data.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) || 'ecole'}
+              subdomain={
+                data.preferredSubdomain?.trim()
+                || data.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
+                || 'ecole'
+              }
               activationFee={300000}
               annualFee={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000}
+              subscriptionPaid={paymentMarked.subscriptionPaid}
+              bilingualPaid={paymentMarked.bilingualPaid}
+              receivedBy={adminEmail || undefined}
               onComplete={(result) => {
                 if (result.signed) {
-                  // ⭐ Contrat signé → créer l'école (skip paiement)
-                  handleNext();
+                  // ⭐ Contrat signé + école créée (backend) → écran de succès
+                  const r = result as any;
+                  setCreationResult({
+                    schoolName: data.schoolName,
+                    subdomain: r.subdomain || data.preferredSubdomain || undefined,
+                    hostname: r.hostname || undefined,
+                    portalUrl: r.portalUrl || undefined,
+                    contractUrl: result.contractUrl,
+                  });
+                  setStep(5);
+                  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
                 } else {
-                  // ⭐ Signature différée → avancer quand même
-                  handleNext();
+                  // ⭐ Signature différée : email envoyé au promoteur — on repart
+                  //    à l'étape 1 pour pouvoir créer une autre école.
+                  //    (reset d'abord, message ensuite pour ne pas l'écraser)
+                  handleStartNewDraft();
+                  setErrors({
+                    info: '✅ Le lien de signature a été envoyé par email au promoteur. L\'école sera créée dès qu\'il aura signé le contrat.',
+                  });
                 }
               }}
               onBack={handleBack}
@@ -3023,6 +3180,102 @@ export default function OnboardingWizard() {
                 >
                   <ArrowLeft className="w-5 h-5 mr-2" /> Retour
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* ⭐ PHASE 5 : Écran de succès — école créée (mode YEHI OR Tech).
+              Le backend a créé l'école via le MÊME flux que le mode self-service
+              (activation unifiée) ; les identifiants ont été envoyés par email
+              au promoteur avec le contrat signé en pièce jointe. */}
+          {step === 5 && (
+            <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-8">
+              <div className="text-center mb-8">
+                <div className="mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle className="w-10 h-10 text-green-600" />
+                </div>
+                <h2 className="text-3xl font-bold text-blue-900">École créée avec succès</h2>
+                <p className="text-sm text-slate-500 mt-2">
+                  <strong>{creationResult?.schoolName}</strong> est active sur la plateforme Academia Helm.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Portail de l'école */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+                  <div className="flex items-center mb-3">
+                    <div className="p-2.5 bg-blue-900 rounded-lg mr-3">
+                      <School className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="font-semibold text-blue-900">Accès à l'école</span>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    {creationResult?.hostname && (
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-blue-100">
+                        <span className="text-graphite-600">Adresse de l'école</span>
+                        <span className="font-semibold text-blue-900">{creationResult.hostname}</span>
+                      </div>
+                    )}
+                    {creationResult?.portalUrl && (
+                      <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-blue-100">
+                        <span className="text-graphite-600">Page de connexion</span>
+                        <a
+                          href={creationResult.portalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-blue-700 hover:underline"
+                        >
+                          {creationResult.subdomain ? `${creationResult.subdomain}.academiahelm.com/login` : 'Se connecter'}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Identifiants + contrat */}
+                <div className="bg-green-50 border border-green-200 rounded-xl p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-100 rounded-lg flex-shrink-0">
+                      <Send className="w-4 h-4 text-green-700" />
+                    </div>
+                    <div className="text-sm text-green-900 space-y-1">
+                      <p>
+                        <strong>Email envoyé au promoteur</strong> avec le contrat signé en pièce jointe
+                        et l'URL de connexion{creationResult?.subdomain ? ` (${creationResult.subdomain}.academiahelm.com)` : ''}.
+                      </p>
+                      <p className="text-xs text-green-700">
+                        Le mot de passe choisi à l'étape 2 n'est pas inclus dans l'email — communiquez-le
+                        au promoteur en main propre.
+                      </p>
+                    </div>
+                  </div>
+                  {creationResult?.contractUrl && (
+                    <a
+                      href={creationResult.contractUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-green-700 hover:text-green-800 hover:underline"
+                    >
+                      <FileText className="w-4 h-4" /> Voir le contrat signé
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3 mt-8">
+                <button
+                  onClick={handleStartNewDraft}
+                  className="flex-1 px-6 py-3 bg-gold-600 text-blue-900 rounded-md font-semibold hover:bg-gold-500 transition-all duration-300 flex items-center justify-center shadow-sm"
+                >
+                  <RotateCcw className="w-5 h-5 mr-2" /> Créer une autre école
+                </button>
+                <Link
+                  href="/"
+                  className="flex-1 px-6 py-3 border-2 border-slate-200 text-slate-700 rounded-md font-semibold hover:border-slate-300 hover:bg-slate-50 transition-all duration-300 flex items-center justify-center"
+                >
+                  Retour à l'accueil
+                </Link>
               </div>
             </div>
           )}

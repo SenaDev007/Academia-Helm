@@ -289,7 +289,7 @@ export function SchemeOfWorkTab({
     setLoading(true);
     try {
       const data = await pedagogyFetch<SchemePlanResponse>(
-        `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${encodeURIComponent(selectedClassValue)}&month=${encodeURIComponent(selectedTerm)}&teacherId=${teacherId}`
+        `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${encodeURIComponent(selectedClassValue)}&month=${encodeURIComponent(selectedTerm)}&teacherId=${teacherId}&documentType=SCHEME_OF_WORK`
       );
       setCells(data.cells || []);
       setHasExistingCustom(data.hasExistingCustom || false);
@@ -353,6 +353,7 @@ export function SchemeOfWorkTab({
           month: selectedTerm,
           teacherId,
           cells,
+          documentType: "SCHEME_OF_WORK",
         },
       });
       setHasExistingCustom(true);
@@ -408,6 +409,7 @@ export function SchemeOfWorkTab({
         classLevel: selectedClassValue,
         month: selectedTerm,
         teacherId: teacherId || 'unknown',
+        documentType: 'SCHEME_OF_WORK',
       });
 
       const res = await fetch(
@@ -514,7 +516,7 @@ export function SchemeOfWorkTab({
       for (const term of ALL_TERMS) {
         try {
           const res = await fetch(
-            `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${encodeURIComponent(selectedClassValue)}&month=${encodeURIComponent(term)}&teacherId=${teacherId}`,
+            `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${encodeURIComponent(selectedClassValue)}&month=${encodeURIComponent(term)}&teacherId=${teacherId}&documentType=SCHEME_OF_WORK`,
             { credentials: 'include' }
           );
           if (res.ok) {

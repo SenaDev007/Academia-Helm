@@ -46,13 +46,14 @@ export class MonthlyPlanController {
     @Query('month') month: string,
     @Query('teacherId') teacherId?: string,
     @Query('academicClassId') academicClassId?: string,
+    @Query('documentType') documentType?: string,
   ) {
     if (!academicYearId || !classLevel || !month) {
       throw new BadRequestException('academicYearId, classLevel et month sont requis');
     }
     return this.monthlyPlanService.getMonthlyPlan(
       tenantId, academicYearId, classLevel, month,
-      { teacherId, academicClassId },
+      { teacherId, academicClassId, documentType },
     );
   }
 
@@ -93,6 +94,11 @@ export class MonthlyPlanController {
       academicClassId?: string;
       schoolLevelId?: string;
       cells: MonthlyPlanCell[];
+      documentType?: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+      weekDates?: string | null;
     },
   ) {
     if (!body.academicYearId || !body.classLevel || !body.month || !Array.isArray(body.cells)) {
@@ -104,6 +110,11 @@ export class MonthlyPlanController {
         teacherId: body.teacherId,
         academicClassId: body.academicClassId,
         schoolLevelId: body.schoolLevelId,
+        documentType: body.documentType,
+        headTeacherInitials: body.headTeacherInitials,
+        headTeacherDate: body.headTeacherDate,
+        headTeacherSignature: body.headTeacherSignature,
+        weekDates: body.weekDates,
       },
     );
   }
@@ -140,7 +151,13 @@ export class MonthlyPlanController {
     @Query('classLevel') classLevel: string,
     @Query('month') month: string,
     @Query('teacherId') teacherId: string,
-    @Body() body: { teacherSignature: string },
+    @Body() body: {
+      teacherSignature: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+    },
+    @Query('documentType') documentType?: string,
   ) {
     if (!academicYearId || !classLevel || !month || !teacherId) {
       throw new BadRequestException('academicYearId, classLevel, month, teacherId requis (query params)');
@@ -149,7 +166,13 @@ export class MonthlyPlanController {
       throw new BadRequestException('teacherSignature requise (body)');
     }
     return this.monthlyPlanService.submitMonthlyPlan(
-      tenantId, academicYearId, classLevel, month, teacherId, body.teacherSignature
+      tenantId, academicYearId, classLevel, month, teacherId, body.teacherSignature,
+      {
+        documentType,
+        headTeacherInitials: body.headTeacherInitials,
+        headTeacherDate: body.headTeacherDate,
+        headTeacherSignature: body.headTeacherSignature,
+      },
     );
   }
 
@@ -166,6 +189,7 @@ export class MonthlyPlanController {
     @Query('month') month: string,
     @Query('teacherId') teacherId: string,
     @Body() body: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string },
+    @Query('documentType') documentType?: string,
   ) {
     if (!academicYearId || !classLevel || !month || !teacherId) {
       throw new BadRequestException('academicYearId, classLevel, month, teacherId requis (query params)');
@@ -174,7 +198,66 @@ export class MonthlyPlanController {
       throw new BadRequestException('action requis (VALIDATE ou REJECT)');
     }
     return this.monthlyPlanService.validateMonthlyPlan(
-      tenantId, academicYearId, classLevel, month, teacherId, body
+      tenantId, academicYearId, classLevel, month, teacherId,
+      { ...body, documentType },
+    );
+  }
+
+  /**
+   * ⭐ POST /pedagogy/monthly-plans/director-observations
+   *    ?academicYearId=Y&classLevel=CM2&month=First Term&teacherId=T
+   *    body: { observations: [{ subject, content }], generalObservation }
+   *
+   * Sauvegarde les observations du directeur sur un Weekly Record of Work :
+   *   - observations par matière (colonne Observations du tableau directeur)
+   *   - observation générale (section Observations générales)
+   */
+  @Post('director-observations')
+  async saveDirectorObservations(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classLevel') classLevel: string,
+    @Query('month') month: string,
+    @Query('teacherId') teacherId: string,
+    @Body() body: {
+      observations?: Array<{ subject: string; content: string }>;
+      generalObservation?: string;
+    },
+  ) {
+    if (!academicYearId || !classLevel || !month || !teacherId) {
+      throw new BadRequestException('academicYearId, classLevel, month, teacherId requis (query params)');
+    }
+    return this.monthlyPlanService.saveDirectorWeeklyObservations(
+      tenantId, academicYearId, classLevel, month, teacherId, body,
+    );
+  }
+
+  /**
+   * ⭐ POST /pedagogy/monthly-plans/duplicate-to-year
+   *    body: { academicYearId, classLevel, month, teacherId,
+   *            targetAcademicYearId, targetTeacherId? }
+   *
+   * Duplique un Weekly Record of Work vers l'année cible (bouton Réutiliser
+   * du Catalogue) — copie en DRAFT, signatures/dates effacées.
+   */
+  @Post('duplicate-to-year')
+  async duplicateToYear(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      classLevel: string;
+      month: string;
+      teacherId: string;
+      targetAcademicYearId: string;
+      targetTeacherId?: string;
+    },
+  ) {
+    if (!body.academicYearId || !body.classLevel || !body.month || !body.teacherId || !body.targetAcademicYearId) {
+      throw new BadRequestException('academicYearId, classLevel, month, teacherId, targetAcademicYearId requis');
+    }
+    return this.monthlyPlanService.duplicateWeeklyRecordToYear(
+      tenantId, body.academicYearId, body.classLevel, body.month, body.teacherId,
+      body.targetAcademicYearId, body.targetTeacherId,
     );
   }
 
@@ -187,11 +270,12 @@ export class MonthlyPlanController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('status') status?: string,
+    @Query('documentType') documentType?: string,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId requis');
     }
-    return this.monthlyPlanService.getPendingMonthlyPlans(tenantId, academicYearId, status);
+    return this.monthlyPlanService.getPendingMonthlyPlans(tenantId, academicYearId, status, documentType);
   }
 
   // ⭐ Export PDF de la planification mensuelle

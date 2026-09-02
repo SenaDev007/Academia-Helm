@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { WeeklyRecordOfWorkTab } from "./WeeklyRecordOfWorkTab";
-import { CatalogueTab } from "./CatalogueTab";
+import { WeeklyRecordCatalogueTab } from "./WeeklyRecordCatalogueTab";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
 
@@ -103,7 +103,7 @@ export function CahierJournalFichesContainer({
       )}
 
       {subTab === "catalogue" && showCatalogue && (
-        <CatalogueTab
+        <WeeklyRecordCatalogueTab
           tenantId={tenantId}
           academicYearId={academicYearId}
           teacherId={teacherId}

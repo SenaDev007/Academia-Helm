@@ -66,6 +66,7 @@ interface DirectorPedagogyControlProps {
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, maternellePrimaireOnly: false },
   { id: "scheme-of-work", label: "Scheme of Work", icon: BookOpen, maternellePrimaireOnly: true },
+  { id: "weekly-record", label: "Weekly Record", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Attendance Registers", icon: ClipboardList, maternellePrimaireOnly: false },
 ] as const;
 
@@ -174,6 +175,9 @@ export function DirectorPedagogyControlEN({ tenantId, academicYearId, userId }: 
         )}
         {tab === "scheme-of-work" && (
           <PendingSchemeOfWorkTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
+        )}
+        {tab === "weekly-record" && (
+          <PendingWeeklyRecordsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
         {tab === "cahier-journal" && (
           <PendingCahierJournalsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
@@ -5901,7 +5905,7 @@ function PendingSchemeOfWorkTab({
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}&status=${statusTab}`,
+        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}&status=${statusTab}&documentType=SCHEME_OF_WORK`,
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to fetch pending scheme of work");
@@ -5945,7 +5949,7 @@ function PendingSchemeOfWorkTab({
     setDirectorObservation(plan.directorObservation || "");
     try {
       const res = await fetch(
-        `/api/pedagogy/monthly-plans?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId || '')}`,
+        `/api/pedagogy/monthly-plans?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId || '')}&documentType=SCHEME_OF_WORK`,
         { credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to load plan detail");
@@ -5973,6 +5977,7 @@ function PendingSchemeOfWorkTab({
         classLevel: selectedPlan.classLevel,
         month: selectedPlan.month,
         teacherId: selectedPlan.teacherId || '',
+        documentType: 'SCHEME_OF_WORK',
       });
       const res = await fetch(
         `/api/pedagogy/monthly-plans/validate?${params.toString()}`,
@@ -6172,6 +6177,524 @@ function PendingSchemeOfWorkTab({
                 <div className="font-bold text-slate-900">{plan.classLevel} — {plan.month}</div>
                 <div className="text-xs text-slate-500 mt-0.5">
                   Teacher: {plan.teacherName || '—'} · Submitted: {plan.submittedAt ? new Date(plan.submittedAt).toLocaleDateString('en-GB') : '—'}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "px-2 py-1 rounded-full text-xs font-bold",
+                  plan.status === 'SUBMITTED' ? "bg-blue-100 text-blue-700" :
+                  plan.status === 'VALIDATED' ? "bg-emerald-100 text-emerald-700" :
+                  "bg-red-100 text-red-700"
+                )}>
+                  {plan.status}
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ PendingWeeklyRecordsTab — Director validation for Weekly Record of Work
+//    Receives submitted Weekly Records (monthly_plans with month = EN term
+//    + documentType='WEEKLY_RECORD'). Displays the SAME 13-column grid as
+//    the teacher's tab + an extra "Observations" column per subject row
+//    + a "General Observations" section (per user request).
+//    Pattern: same as PendingSchemeOfWorkTab.
+// ============================================================================
+function PendingWeeklyRecordsTab({
+  tenantId, academicYearId, userId, refreshKey, onRefresh,
+}: {
+  tenantId: string;
+  academicYearId: string;
+  userId: string;
+  refreshKey: number;
+  onRefresh: () => void;
+}) {
+  const [statusTab, setStatusTab] = useState<'SUBMITTED' | 'VALIDATED' | 'REJECTED'>('SUBMITTED');
+  const [pendingPlans, setPendingPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPlan, setSelectedPlan] = useState<any | null>(null);
+  const [planDetail, setPlanDetail] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(null);
+  const [directorName, setDirectorName] = useState<string>("");
+  const [generalObservation, setGeneralObservation] = useState("");
+  const [subjectObservations, setSubjectObservations] = useState<Record<string, string>>({});
+  const [savingObs, setSavingObs] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Load pending weekly record plans
+  const loadPending = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/pending?academicYearId=${encodeURIComponent(academicYearId)}&status=${statusTab}&documentType=WEEKLY_RECORD`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch pending weekly records");
+      const data = await res.json();
+      // ⭐ Mapping teacherName depuis teacherFirstName/teacherLastName
+      const plans = (Array.isArray(data) ? data : []).map((p: any) => ({
+        ...p,
+        teacherName: p.teacherName || [p.teacherFirstName, p.teacherLastName].filter(Boolean).join(' ') || null,
+      }));
+      setPendingPlans(plans);
+    } catch (e: any) {
+      console.error("Failed to load pending weekly records:", e);
+      setPendingPlans([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId, statusTab]);
+
+  useEffect(() => { loadPending(); }, [loadPending, refreshKey]);
+
+  useEffect(() => {
+    setSelectedPlan(null);
+    setPlanDetail(null);
+  }, [statusTab]);
+
+  // Load director signature + name
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/school-directors?userId=${encodeURIComponent(userId)}`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          const sig = data?.signatureDataUrl || data?.signatureUploadedUrl || null;
+          setDirectorSignature(sig);
+        }
+      } catch { /* silent */ }
+      try {
+        const res = await fetch('/api/settings/identity', { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setDirectorName(data.directorName || data.director_name || '');
+        }
+      } catch { /* silent */ }
+    })();
+  }, [userId]);
+
+  // Load plan detail when selected
+  const loadPlanDetail = useCallback(async (plan: any) => {
+    setSelectedPlan(plan);
+    setDetailLoading(true);
+    setGeneralObservation(plan.directorObservation || "");
+    setSubjectObservations({});
+    try {
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans?academicYearId=${encodeURIComponent(academicYearId)}&classLevel=${encodeURIComponent(plan.classLevel)}&month=${encodeURIComponent(plan.month)}&teacherId=${encodeURIComponent(plan.teacherId || '')}&documentType=WEEKLY_RECORD`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to load plan detail");
+      const data = await res.json();
+      setPlanDetail(data);
+      // ⭐ Pré-remplir les observations par matière depuis les lignes DIRECTOR_OBS
+      const obs: Record<string, string> = {};
+      for (const cell of (data.cells || [])) {
+        if ((cell.subDomain || '') === 'DIRECTOR_OBS' && cell.domain) {
+          obs[cell.domain] = (cell.content || '').replace(/<[^>]*>/g, ' ').trim();
+        }
+      }
+      setSubjectObservations(obs);
+    } catch (e: any) {
+      console.error("Failed to load plan detail:", e);
+      setPlanDetail(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [academicYearId]);
+
+  // ⭐ Save observations (per-subject + general)
+  const handleSaveObservations = async () => {
+    if (!selectedPlan) return;
+    setSavingObs(true);
+    try {
+      const observations = Object.entries(subjectObservations)
+        .filter(([subject, content]) => content.trim().length > 0)
+        .map(([subject, content]) => ({ subject, content }));
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: selectedPlan.classLevel,
+        month: selectedPlan.month,
+        teacherId: selectedPlan.teacherId || '',
+      });
+      const res = await fetch(`/api/pedagogy/monthly-plans/director-observations?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ observations, generalObservation }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error || `HTTP ${res.status}`);
+      }
+      toast.success("✅ Observations saved");
+      await loadPending();
+    } catch (e: any) {
+      toast.error("Failed to save observations: " + e.message);
+    } finally {
+      setSavingObs(false);
+    }
+  };
+
+  // Validate / Reject
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED') => {
+    if (!selectedPlan) return;
+    if (action === 'VALIDATED' && !directorSignature) {
+      toast.error("Director signature required. Configure your signature in your profile.");
+      return;
+    }
+    setValidating(true);
+    try {
+      // Sauvegarder d'abord les observations
+      const observations = Object.entries(subjectObservations)
+        .filter(([subject, content]) => content.trim().length > 0)
+        .map(([subject, content]) => ({ subject, content }));
+      const obsParams = new URLSearchParams({
+        academicYearId,
+        classLevel: selectedPlan.classLevel,
+        month: selectedPlan.month,
+        teacherId: selectedPlan.teacherId || '',
+      });
+      await fetch(`/api/pedagogy/monthly-plans/director-observations?${obsParams.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ observations, generalObservation }),
+      }).catch(() => { /* silent — la validation prime */ });
+
+      const params = new URLSearchParams({
+        academicYearId,
+        classLevel: selectedPlan.classLevel,
+        month: selectedPlan.month,
+        teacherId: selectedPlan.teacherId || '',
+        documentType: 'WEEKLY_RECORD',
+      });
+      const res = await fetch(
+        `/api/pedagogy/monthly-plans/validate?${params.toString()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            action,
+            directorSignature: directorSignature,
+            directorObservation: generalObservation,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error || `HTTP ${res.status}`);
+      }
+      toast.success(action === 'VALIDATED' ? "✅ Weekly Record validated" : "Weekly Record rejected");
+      setSelectedPlan(null);
+      setPlanDetail(null);
+      await loadPending();
+      onRefresh();
+    } catch (e: any) {
+      toast.error("Validation failed: " + e.message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  // ⭐ PDF export (même lib que l'onglet enseignant)
+  const handleExportPdf = async () => {
+    if (!selectedPlan || !planDetail) return;
+    setExportingPdf(true);
+    try {
+      const { exportWeeklyRecordPdf } = await import("@/lib/pedagogy/weekly-record-pdf");
+      let schoolInfo: any = {};
+      try {
+        const idRes = await fetch('/api/settings/identity', { credentials: 'include' });
+        if (idRes.ok) schoolInfo = await idRes.json();
+      } catch {}
+
+      const cells = (planDetail.cells || []).filter((c: any) => (c.subDomain || '') !== 'DIRECTOR_OBS');
+      const subjectNames = [...new Set(cells.map((c: any) => c.domain))];
+      let weekDates: string[] = [];
+      try {
+        const parsed = JSON.parse(planDetail.weekDates || '[]');
+        if (Array.isArray(parsed)) weekDates = parsed;
+      } catch { /* ignore */ }
+
+      await exportWeeklyRecordPdf({
+        subjectNames,
+        cells,
+        weekDates,
+        termLabel: selectedPlan.month,
+        classLabel: selectedPlan.className || selectedPlan.classLevel,
+        teacherName: selectedPlan.teacherName,
+        teacherSignature: planDetail.teacherSignature || null,
+        directorSignature,
+        directorName,
+        headTeacherInitials: planDetail.headTeacherInitials || null,
+        headTeacherDate: planDetail.headTeacherDate || null,
+        headTeacherSignature: planDetail.headTeacherSignature || null,
+        header: {
+          schoolName: schoolInfo.schoolName || schoolInfo.name || 'School',
+          schoolLogoUrl: schoolInfo.logoUrl || schoolInfo.logo || null,
+          schoolAddress: schoolInfo.address || schoolInfo.schoolAddress || null,
+          schoolPhone: schoolInfo.phone || schoolInfo.schoolPhone || null,
+          schoolEmail: schoolInfo.email || schoolInfo.schoolEmail || null,
+          schoolLevel: 'PRIMAIRE',
+        },
+      });
+      toast.success('✅ PDF exported successfully');
+    } catch (e: any) {
+      toast.error("Export error", { description: e.message });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
+  // ⭐ Render detail view
+  if (selectedPlan && planDetail) {
+    const cells = planDetail.cells || [];
+    const subjects = [...new Set(cells.filter((c: any) => (c.subDomain || '') !== 'DIRECTOR_OBS').map((c: any) => c.domain))].filter(Boolean);
+    const WEEKS = Array.from({ length: 12 }, (_, i) => i + 1);
+    let weekDates: string[] = [];
+    try {
+      const parsed = JSON.parse(planDetail.weekDates || '[]');
+      if (Array.isArray(parsed)) weekDates = parsed;
+    } catch { /* ignore */ }
+
+    const fmtDate = (s: string) => {
+      if (!s) return '—';
+      const parts = s.split('-');
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return s;
+    };
+
+    const getCellHtml = (week: number, subject: string) => {
+      const c = cells.find((x: any) => x.domain === subject && (x.subDomain || '') === String(week));
+      return c?.content || '';
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Back button + actions */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <button
+            onClick={() => { setSelectedPlan(null); setPlanDetail(null); }}
+            className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" /> Back to list
+          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={handleExportPdf} disabled={exportingPdf}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold hover:bg-rose-700 disabled:opacity-50">
+              {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              PDF
+            </button>
+            <button
+              onClick={() => handleValidate('REJECTED')}
+              disabled={validating}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+            >
+              {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+              Reject
+            </button>
+            <button
+              onClick={() => handleValidate('VALIDATED')}
+              disabled={validating || !directorSignature}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-50"
+              title={!directorSignature ? "Signature required" : "Validate"}
+            >
+              {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Validate
+            </button>
+          </div>
+        </div>
+
+        {/* Plan info */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <h3 className="text-lg font-bold text-slate-900">
+            Weekly Record of Work — {selectedPlan.classLevel} — {selectedPlan.month}
+          </h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Teacher: {selectedPlan.teacherName || '—'} · Status: {selectedPlan.status} · Submitted: {selectedPlan.submittedAt ? new Date(selectedPlan.submittedAt).toLocaleDateString('en-GB') : '—'}
+          </p>
+        </div>
+
+        {/* ⭐ Same table as teacher's view + Observations column */}
+        <div className="bg-white rounded-xl border-2 border-slate-800 overflow-hidden shadow-sm">
+          <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-base font-bold tracking-wide">WEEKLY RECORD OF WORK</span>
+            <span className="text-sm font-semibold">{selectedPlan.className || selectedPlan.classLevel} — {selectedPlan.month}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs" style={{ minWidth: "2950px" }}>
+              <colgroup>
+                <col style={{ width: "8%" }} />
+                {WEEKS.map((_, i) => <col key={i} style={{ width: "6.5%" }} />)}
+                <col style={{ width: "14%" }} />
+              </colgroup>
+              <thead>
+                <tr className="bg-slate-100">
+                  <th rowSpan={2} className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">SUBJECTS</th>
+                  {WEEKS.map((week) => {
+                    const n = week;
+                    const suffix = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
+                    return (
+                      <th key={week} className="px-1.5 py-2 border border-slate-300 text-center font-bold text-slate-700 uppercase text-[9px]">
+                        {n}{suffix.toUpperCase()} WEEK ENDING
+                      </th>
+                    );
+                  })}
+                  <th rowSpan={2} className="p-2 border border-slate-300 text-center font-bold text-red-700 uppercase bg-red-50">
+                    OBSERVATIONS
+                  </th>
+                </tr>
+                <tr className="bg-amber-50">
+                  {WEEKS.map((week) => (
+                    <th key={week} className="px-1.5 py-1 border border-slate-300 text-center font-bold text-amber-800 text-[9px] tabular-nums">
+                      {weekDates[week - 1] ? fmtDate(weekDates[week - 1]) : '—'}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {subjects.map((subject: string, subjIdx: number) => (
+                  <tr key={subjIdx} className={subjIdx % 2 === 1 ? "bg-slate-50/50" : ""}>
+                    <td className="p-2 border border-slate-300 font-bold text-slate-800 bg-slate-100">{subject}</td>
+                    {WEEKS.map((week) => (
+                      <td key={week} className="p-1.5 border border-slate-200 align-top text-slate-700">
+                        <div className="max-h-24 overflow-y-auto" dangerouslySetInnerHTML={{ __html: getCellHtml(week, subject) || '—' }} />
+                      </td>
+                    ))}
+                    <td className="p-1.5 border border-slate-300 bg-red-50/30 align-top">
+                      <textarea
+                        value={subjectObservations[subject] || ''}
+                        onChange={(e) => setSubjectObservations(prev => ({ ...prev, [subject]: e.target.value }))}
+                        placeholder="Your observation for this subject…"
+                        rows={3}
+                        className="w-full px-2 py-1.5 border border-slate-200 rounded text-[11px] resize-y focus:ring-2 focus:ring-red-300 focus:border-red-300"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="p-3 bg-slate-50 border-t border-slate-200 text-center">
+            <p className="text-xs font-semibold text-slate-500 italic">
+              NOTE: WHEN THE SCHOOL IS SHUT DURING A COMPLETE WEEK NO ENTRY SHOULD BE MADE
+            </p>
+          </div>
+        </div>
+
+        {/* ⭐ General Observations section */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <label className="text-sm font-bold text-slate-700">General Observations</label>
+            <button
+              onClick={handleSaveObservations}
+              disabled={savingObs}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold"
+            >
+              {savingObs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save Observations
+            </button>
+          </div>
+          <textarea
+            value={generalObservation}
+            onChange={(e) => setGeneralObservation(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            rows={3}
+            placeholder="General observations on this Weekly Record of Work (visible to the teacher)…"
+          />
+        </div>
+
+        {/* Head Teacher + Signatures */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div className="text-sm font-bold text-slate-800">Head Teacher&apos;s Initial and Date</div>
+              {planDetail.headTeacherInitials || planDetail.headTeacherDate ? (
+                <div className="text-sm text-slate-600 mt-1">
+                  {planDetail.headTeacherInitials || '—'} — {planDetail.headTeacherDate ? fmtDate(planDetail.headTeacherDate) : '—'}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 mt-1">Not filled</div>
+              )}
+              {planDetail.headTeacherSignature && (
+                <img src={planDetail.headTeacherSignature} alt="Head teacher signature" className="max-h-16 mt-2" />
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm font-bold text-slate-800">Class Teacher</div>
+                {planDetail.teacherSignature ? (
+                  <img src={planDetail.teacherSignature} alt="Teacher signature" className="max-h-20 mt-2" />
+                ) : (
+                  <div className="text-xs text-slate-400 mt-2">No signature</div>
+                )}
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-800">Director</div>
+                {directorSignature ? (
+                  <img src={directorSignature} alt="Director signature" className="max-h-20 mt-2" />
+                ) : (
+                  <div className="text-xs text-slate-400 mt-2">No signature configured</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ⭐ Render list view
+  return (
+    <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+        {(['SUBMITTED', 'VALIDATED', 'REJECTED'] as const).map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusTab(s)}
+            className={cn(
+              "flex-1 px-4 py-2 rounded-lg text-sm font-bold transition-all",
+              statusTab === s ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"
+            )}
+          >
+            {s === 'SUBMITTED' ? 'Pending' : s === 'VALIDATED' ? 'Validated' : 'Rejected'}
+            {s === 'SUBMITTED' && pendingPlans.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">{pendingPlans.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+      ) : pendingPlans.length === 0 ? (
+        <div className="text-center py-12 text-slate-400">
+          <FileSpreadsheet className="h-12 w-12 mx-auto mb-3 opacity-30" />
+          <p>No Weekly Record {statusTab === 'SUBMITTED' ? 'pending' : statusTab === 'VALIDATED' ? 'validated' : 'rejected'}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pendingPlans.map((plan, idx) => (
+            <button
+              key={plan.id || idx}
+              onClick={() => loadPlanDetail(plan)}
+              className="w-full flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-300 hover:bg-blue-50/30 transition-all text-left"
+            >
+              <div>
+                <div className="font-bold text-slate-900">{plan.classLevel} — {plan.month}</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Teacher: {plan.teacherName || '—'} · Submitted: {plan.submittedAt ? new Date(plan.submittedAt).toLocaleDateString('en-GB') : '—'}
+                  {plan.headTeacherInitials ? ` · Head Teacher: ${plan.headTeacherInitials}` : ''}
                 </div>
               </div>
               <div className="flex items-center gap-2">

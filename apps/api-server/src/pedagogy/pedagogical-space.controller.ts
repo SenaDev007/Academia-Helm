@@ -836,6 +836,24 @@ export class PedagogicalSpaceController {
   }
 
   // ===========================================================================
+  // ⭐ CATALOGUE WEEKLY RECORD OF WORK (EN track)
+  //    Hiérarchie : Classe → Année → Terme (First/Second/Third Term)
+  //    Pattern identique au catalogue cahier journal + fiches — permet de
+  //    retrouver les Weekly Records d'année en année (Voir / PDF / Réutiliser)
+  // ===========================================================================
+
+  @Get('weekly-record-catalogue')
+  async getWeeklyRecordCatalogue(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+  ) {
+    if (!teacherId) {
+      throw new BadRequestException('teacherId est requis');
+    }
+    return this.service.getWeeklyRecordCatalogue(tenantId, teacherId);
+  }
+
+  // ===========================================================================
   // REGISTRE D'APPEL — Registre mensuel + Évaluation + Tableau annuel
   // ===========================================================================
 

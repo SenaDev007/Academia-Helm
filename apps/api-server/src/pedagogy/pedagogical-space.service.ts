@@ -3707,6 +3707,175 @@ export class PedagogicalSpaceService {
     return academicYears;
   }
 
+  // ===========================================================================
+  // ⭐ CATALOGUE WEEKLY RECORD OF WORK (EN track)
+  //    Hiérarchie : Classe → Année → Terme (First/Second/Third Term)
+  //    Pattern identique au catalogue cahier journal + fiches (explorateur
+  //    Windows) — permet de retrouver les Weekly Records d'année en année.
+  // ===========================================================================
+
+  /**
+   * Catalogue hiérarchique des Weekly Records of Work d'un enseignant
+   * (ou de toutes les classes pour le directeur/promoteur), sur TOUTES les
+   * années scolaires du tenant.
+   *
+   * Hiérarchie :
+   *   Classe → Année (ex: 2025-2026) → Terme (First/Second/Third Term)
+   *     └── Weekly Record (carte avec statut + boutons Voir / PDF / Réutiliser)
+   */
+  async getWeeklyRecordCatalogue(tenantId: string, teacherId: string) {
+    // 1. Résoudre le filtre enseignant (mode "teacher" ou mode "direction")
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') {
+      return { classes: [] };
+    }
+
+    // 2. Charger TOUTES les années scolaires du tenant
+    const years: any[] = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name, label, "startDate", "endDate", "isActive"
+       FROM "academic_years"
+       WHERE "tenantId" = $1
+       ORDER BY "startDate" DESC`,
+      tenantId,
+    );
+    if (!years || years.length === 0) {
+      return { classes: [] };
+    }
+
+    // 3. Charger tous les Weekly Records du tenant (+ filtre enseignant)
+    const EN_TERMS = ['First Term', 'Second Term', 'Third Term'];
+    const recordQuery = filter.mode === 'teacher'
+      ? `SELECT mp."id", mp."academicYearId", mp."classLevel", mp."month",
+                mp."trimester", mp."status", mp."submittedAt", mp."validatedAt",
+                mp."teacherId", mp."documentType", mp."weekDates",
+                mp."headTeacherInitials", mp."headTeacherDate",
+                mp."teacherSignature", mp."directorSignature",
+                u."firstName" AS "teacherFirstName", u."lastName" AS "teacherLastName",
+                COUNT(mp.id) OVER (PARTITION BY mp."academicYearId", mp."classLevel", mp."month", mp."teacherId") AS "cellCount"
+         FROM "monthly_plans" mp
+         LEFT JOIN "users" u ON u.id = mp."teacherId"
+         WHERE mp."tenantId" = $1 AND mp."documentType" = 'WEEKLY_RECORD'
+           AND mp."month" IN ('First Term','Second Term','Third Term')
+           AND mp."teacherId" = $2
+         ORDER BY mp."trimester" ASC`
+      : `SELECT mp."id", mp."academicYearId", mp."classLevel", mp."month",
+                mp."trimester", mp."status", mp."submittedAt", mp."validatedAt",
+                mp."teacherId", mp."documentType", mp."weekDates",
+                mp."headTeacherInitials", mp."headTeacherDate",
+                mp."teacherSignature", mp."directorSignature",
+                u."firstName" AS "teacherFirstName", u."lastName" AS "teacherLastName",
+                COUNT(mp.id) OVER (PARTITION BY mp."academicYearId", mp."classLevel", mp."month", mp."teacherId") AS "cellCount"
+         FROM "monthly_plans" mp
+         LEFT JOIN "users" u ON u.id = mp."teacherId"
+         WHERE mp."tenantId" = $1 AND mp."documentType" = 'WEEKLY_RECORD'
+           AND mp."month" IN ('First Term','Second Term','Third Term')
+         ORDER BY mp."trimester" ASC`;
+    let records: any[] = [];
+    try {
+      records = await this.prisma.$queryRawUnsafe(
+        recordQuery,
+        ...(filter.mode === 'teacher' ? [tenantId, filter.teacherId] : [tenantId]),
+      );
+    } catch (err: any) {
+      this.logger.warn(`getWeeklyRecordCatalogue: records query failed: ${err.message}`);
+      records = [];
+    }
+
+    // 4. Déduire la liste des classes distinctes (classLevel) présentes
+    //    + résoudre le nom de classe via classes.officialClassId
+    const classLevels = [...new Set(records.map(r => r.classLevel))];
+    let classLevelNames: Record<string, string> = {};
+    if (classLevels.length > 0) {
+      try {
+        const classRows: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT "officialClassId", MIN("name") AS "name"
+           FROM "classes"
+           WHERE "tenantId" = $1 AND "officialClassId" = ANY($2::text[])
+           GROUP BY "officialClassId"`,
+          tenantId, classLevels,
+        );
+        classLevelNames = classRows.reduce((acc, r) => {
+          acc[r.officialClassId] = r.name;
+          return acc;
+        }, {} as Record<string, string>);
+      } catch (err: any) {
+        this.logger.warn(`getWeeklyRecordCatalogue: class names resolution failed: ${err.message}`);
+      }
+    }
+
+    // 5. Construire l'arbre classes → années → termes
+    //    (dédupliqué par (year, classLevel, month, teacherId) — plusieurs
+    //     lignes = un seul document)
+    const seen = new Set<string>();
+    const documents = records.filter(r => {
+      const key = `${r.academicYearId}|${r.classLevel}|${r.month}|${r.teacherId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Grouper par classLevel
+    const byClassLevel = new Map<string, any[]>();
+    for (const doc of documents) {
+      if (!byClassLevel.has(doc.classLevel)) byClassLevel.set(doc.classLevel, []);
+      byClassLevel.get(doc.classLevel)!.push(doc);
+    }
+
+    const classes = [];
+    for (const [classLevel, docs] of byClassLevel.entries()) {
+      // Pour chaque année de la liste, trouver les documents
+      const academicYears = [];
+      for (const year of years) {
+        const yearDocs = docs.filter(d => d.academicYearId === year.id);
+        // Tri des termes dans l'ordre officiel
+        yearDocs.sort((a, b) =>
+          EN_TERMS.indexOf(a.month) - EN_TERMS.indexOf(b.month));
+
+        const terms = EN_TERMS
+          .filter(term => yearDocs.some(d => d.month === term))
+          .map(term => {
+            const doc = yearDocs.find(d => d.month === term)!;
+            return {
+              term,
+              label: term,
+              status: doc.status,
+              submittedAt: doc.submittedAt,
+              validatedAt: doc.validatedAt,
+              teacherId: doc.teacherId,
+              teacherName: [doc.teacherFirstName, doc.teacherLastName].filter(Boolean).join(' ') || null,
+              cellCount: doc.cellCount,
+              weekDates: doc.weekDates,
+              headTeacherInitials: doc.headTeacherInitials,
+              headTeacherDate: doc.headTeacherDate,
+              teacherSignature: doc.teacherSignature,
+              directorSignature: doc.directorSignature,
+              academicYearId: doc.academicYearId,
+              classLevel: doc.classLevel,
+            };
+          });
+
+        academicYears.push({
+          id: year.id,
+          name: year.name,
+          label: year.label,
+          startDate: year.startDate,
+          endDate: year.endDate,
+          isActive: year.isActive,
+          terms,
+        });
+      }
+
+      classes.push({
+        id: classLevel,
+        name: classLevelNames[classLevel] || classLevel,
+        classLevel,
+        academicYears,
+      });
+    }
+
+    return { classes };
+  }
+
   /// Met à jour une entrée du cahier journal (grille, observations, etc.)
   async updateCahierJournal(
     tenantId: string,

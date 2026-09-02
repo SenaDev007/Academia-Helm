@@ -50,6 +50,12 @@ export interface MonthlyPlanResponse {
   teacherSignature?: string | null;
   directorSignature?: string | null;
   directorObservation?: string | null;
+  // ⭐ Weekly Record of Work — champs Head Teacher + dates de semaines
+  documentType?: string;
+  headTeacherInitials?: string | null;
+  headTeacherDate?: string | null;
+  headTeacherSignature?: string | null;
+  weekDates?: string | null;
 }
 
 @Injectable()
@@ -61,30 +67,32 @@ export class MonthlyPlanService {
   /**
    * Récupère la planification mensuelle pour une classe + enseignant + mois donné.
    * Si aucune donnée n'existe, retourne un tableau vide (l'UI proposera l'auto-proposition).
+   *
+   * ⭐ documentType (optionnel) : 'SCHEME_OF_WORK' | 'WEEKLY_RECORD' | 'PLAN'
+   *    Permet de séparer le Scheme of Work du Weekly Record of Work (les deux
+   *    utilisent month = "First Term"/"Second Term"/"Third Term" en EN track).
+   *    Si non fourni → aucun filtre (rétro-compatible avec la planif FR).
    */
   async getMonthlyPlan(
     tenantId: string,
     academicYearId: string,
     classLevel: string,
     month: string,
-    options: { teacherId?: string; academicClassId?: string } = {},
+    options: { teacherId?: string; academicClassId?: string; documentType?: string } = {},
   ): Promise<MonthlyPlanResponse> {
+    // ⭐ Construction dynamique des filtres (params positionnels)
+    const filters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4'];
+    const params: any[] = [tenantId, academicYearId, classLevel, month];
+    let pIdx = 5;
+    if (options.teacherId) { filters.push(`"teacherId" = $${pIdx++}`); params.push(options.teacherId); }
+    if (options.academicClassId) { filters.push(`"academicClassId" = $${pIdx++}`); params.push(options.academicClassId); }
+    if (options.documentType) { filters.push(`"documentType" = $${pIdx++}`); params.push(options.documentType); }
+
     const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT * FROM "monthly_plans"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4
-        ${options.teacherId ? 'AND "teacherId" = $5' : ''}
-        ${options.academicClassId ? `AND "academicClassId" = ${options.teacherId ? '$6' : '$5'}` : ''}
+      WHERE ${filters.join(' AND ')}
       ORDER BY "weekNumber" ASC, "domain" ASC, "subDomain" ASC, "activityNumber" ASC NULLS LAST
-    `,
-      ...(options.teacherId && options.academicClassId
-        ? [tenantId, academicYearId, classLevel, month, options.teacherId, options.academicClassId]
-        : options.teacherId
-          ? [tenantId, academicYearId, classLevel, month, options.teacherId]
-          : options.academicClassId
-            ? [tenantId, academicYearId, classLevel, month, options.academicClassId]
-            : [tenantId, academicYearId, classLevel, month]),
-    );
+    `, ...params);
 
     const cells: MonthlyPlanCell[] = rows.map(r => ({
       id: r.id,
@@ -113,6 +121,11 @@ export class MonthlyPlanService {
       teacherSignature: first.teacherSignature || null,
       directorSignature: first.directorSignature || null,
       directorObservation: first.directorObservation || null,
+      documentType: first.documentType || options.documentType || 'PLAN',
+      headTeacherInitials: first.headTeacherInitials || null,
+      headTeacherDate: first.headTeacherDate || null,
+      headTeacherSignature: first.headTeacherSignature || null,
+      weekDates: first.weekDates || null,
     };
   }
 
@@ -298,6 +311,11 @@ export class MonthlyPlanService {
    * SAUVEGARDE — insère ou met à jour la planification mensuelle d'un enseignant.
    * Si isCustom=true pour une cellule existante → on ne l'écrase pas (l'auto-proposition
    *   ne touche que les cellules non-modifiées).
+   *
+   * ⭐ options.documentType : 'SCHEME_OF_WORK' | 'WEEKLY_RECORD' — scope le DELETE/INSERT
+   *    à ce type de document uniquement (évite d'écraser l'autre document du même terme).
+   * ⭐ Weekly Record : headTeacherInitials/headTeacherDate/headTeacherSignature/weekDates
+   *    sont stockés (partagés par toutes les lignes du document, comme status).
    */
   async saveMonthlyPlan(
     tenantId: string,
@@ -305,7 +323,16 @@ export class MonthlyPlanService {
     classLevel: string,
     month: string,
     cells: MonthlyPlanCell[],
-    options: { teacherId?: string; academicClassId?: string; schoolLevelId?: string } = {},
+    options: {
+      teacherId?: string;
+      academicClassId?: string;
+      schoolLevelId?: string;
+      documentType?: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+      weekDates?: string | null;
+    } = {},
   ): Promise<{ saved: number; updated: number; skipped: number }> {
     if (!academicYearId || !classLevel || !month) {
       throw new BadRequestException('academicYearId, classLevel, month requis');
@@ -340,18 +367,20 @@ export class MonthlyPlanService {
       throw new BadRequestException(`Mois invalide: ${month}`);
     }
 
+    // ⭐ Filtres de scope du document — params positionnels dynamiques
+    //    (scopés par documentType pour ne jamais toucher l'autre document du même terme)
+    const scopeFilters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4'];
+    const scopeParams: any[] = [tenantId, academicYearId, classLevel, month];
+    let sp = 5;
+    if (options.teacherId) { scopeFilters.push(`"teacherId" = $${sp++}`); scopeParams.push(options.teacherId); }
+    if (options.documentType) { scopeFilters.push(`"documentType" = $${sp++}`); scopeParams.push(options.documentType); }
+
     // Récupérer les cellules existantes (isCustom=true) pour ne pas les écraser
     const existingCustoms = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT "weekNumber", "domain", "subDomain" FROM "monthly_plans"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4
-        ${options.teacherId ? 'AND "teacherId" = $5' : ''}
+      WHERE ${scopeFilters.join(' AND ')}
         AND "isCustom" = true
-    `,
-      ...(options.teacherId
-        ? [tenantId, academicYearId, classLevel, month, options.teacherId]
-        : [tenantId, academicYearId, classLevel, month]),
-    );
+    `, ...scopeParams);
     const customKeys: Set<string> = new Set(
       existingCustoms.map(c => `${c.weekNumber}|${c.domain}|${c.subDomain || ''}`)
     );
@@ -359,15 +388,35 @@ export class MonthlyPlanService {
     // Supprimer les anciennes cellules non-custom pour réinsérer
     await this.prisma.$executeRawUnsafe(`
       DELETE FROM "monthly_plans"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4
-        ${options.teacherId ? 'AND "teacherId" = $5' : ''}
+      WHERE ${scopeFilters.join(' AND ')}
         AND "isCustom" = false
-    `,
-      ...(options.teacherId
-        ? [tenantId, academicYearId, classLevel, month, options.teacherId]
-        : [tenantId, academicYearId, classLevel, month]),
-    );
+    `, ...scopeParams);
+
+    // ⭐ Weekly Record : mettre à jour les méta-champs Head Teacher + dates de semaines
+    //    sur TOUTES les lignes existantes du document (même pattern que status).
+    //    Les nouvelles lignes insérées ci-dessous reçoivent les mêmes valeurs.
+    if (options.documentType === 'WEEKLY_RECORD') {
+      const setClauses: string[] = [];
+      const updateParams: any[] = [];
+      if (options.headTeacherInitials !== undefined) { setClauses.push(`"headTeacherInitials" = $${updateParams.length + 1}`); updateParams.push(options.headTeacherInitials ?? null); }
+      if (options.headTeacherDate !== undefined) { setClauses.push(`"headTeacherDate" = $${updateParams.length + 1}`); updateParams.push(options.headTeacherDate ?? null); }
+      if (options.headTeacherSignature !== undefined) { setClauses.push(`"headTeacherSignature" = $${updateParams.length + 1}`); updateParams.push(options.headTeacherSignature ?? null); }
+      if (options.weekDates !== undefined) { setClauses.push(`"weekDates" = $${updateParams.length + 1}`); updateParams.push(options.weekDates ?? null); }
+      if (setClauses.length > 0) {
+        setClauses.push(`"updatedAt" = NOW()`);
+        const whereClauses: string[] = [];
+        whereClauses.push(`"tenantId" = $${updateParams.length + 1}`); updateParams.push(tenantId);
+        whereClauses.push(`"academicYearId" = $${updateParams.length + 1}`); updateParams.push(academicYearId);
+        whereClauses.push(`"classLevel" = $${updateParams.length + 1}`); updateParams.push(classLevel);
+        whereClauses.push(`"month" = $${updateParams.length + 1}`); updateParams.push(month);
+        if (options.teacherId) { whereClauses.push(`"teacherId" = $${updateParams.length + 1}`); updateParams.push(options.teacherId); }
+        whereClauses.push(`"documentType" = $${updateParams.length + 1}`); updateParams.push(options.documentType);
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "monthly_plans" SET ${setClauses.join(', ')} WHERE ${whereClauses.join(' AND ')}`,
+          ...updateParams,
+        );
+      }
+    }
 
     // Insérer les nouvelles cellules (sauf celles qui sont isCustom=true existantes)
     let saved = 0;
@@ -389,10 +438,13 @@ export class MonthlyPlanService {
             "teacherId", "academicClassId", "trimester", "month", "weekNumber",
             "domain", "subDomain", "activityType", "activityNumber", "sequenceNumber",
             "content", "isAutoProposed", "isCustom", "annualPlanId",
+            "documentType", "headTeacherInitials", "headTeacherDate",
+            "headTeacherSignature", "weekDates",
             "createdAt", "updatedAt"
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19,
+            $20, $21, $22, $23, $24,
             NOW(), NOW()
           )
           ON CONFLICT ("id") DO NOTHING
@@ -405,6 +457,11 @@ export class MonthlyPlanService {
           cell.activityType || null, cell.activityNumber || null, cell.sequenceNumber || null,
           cell.content, cell.isAutoProposed, cell.isCustom,
           cell.annualPlanId || null,
+          options.documentType || 'PLAN',
+          options.headTeacherInitials || null,
+          options.headTeacherDate || null,
+          options.headTeacherSignature || null,
+          options.weekDates || null,
         );
         saved++;
       } catch (e: any) {
@@ -482,6 +539,12 @@ export class MonthlyPlanService {
    *    - Set submittedAt = NOW()
    *    - La planification devient READ-ONLY pour l'enseignant
    *
+   * ⭐ documentType (optionnel) : scope la soumission à un type de document
+   *    (SCHEME_OF_WORK / WEEKLY_RECORD) — évite de marquer l'autre document
+   *    du même terme comme soumis.
+   * ⭐ Weekly Record : les champs Head Teacher (initiales/date/signature) sont
+   *    également persistés à la soumission.
+   *
    * ⭐ Note : à chaque début de mois, le système vérifiera (via une règle côté
    *    Cahier Journal) si la planification mensuelle a été soumise+validée
    *    avant d'autoriser la soumission du 1er cahier journal du mois.
@@ -494,18 +557,28 @@ export class MonthlyPlanService {
     month: string,
     teacherId: string,
     teacherSignature: string,
+    options: {
+      documentType?: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+    } = {},
   ): Promise<{ success: boolean; submittedAt: Date }> {
     if (!teacherSignature) {
       throw new BadRequestException('Signature du titulaire requise');
     }
 
+    // ⭐ Scope du document (params dynamiques)
+    const scopeFilters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4', '"teacherId" = $5'];
+    const scopeParams: any[] = [tenantId, academicYearId, classLevel, month, teacherId];
+    if (options.documentType) { scopeFilters.push(`"documentType" = $${scopeParams.length + 1}`); scopeParams.push(options.documentType); }
+
     // Vérifier qu'au moins une cellule existe
     const existing = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT id, status FROM "monthly_plans"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      WHERE ${scopeFilters.join(' AND ')}
       LIMIT 1
-    `, tenantId, academicYearId, classLevel, month, teacherId);
+    `, ...scopeParams);
 
     if (existing.length === 0) {
       throw new BadRequestException('Aucune planification à soumettre. Créez/enregistrez d\'abord le contenu.');
@@ -520,17 +593,32 @@ export class MonthlyPlanService {
     }
 
     // ⭐ Mettre à jour TOUTES les cellules de cette planification
+    //    (+ champs Head Teacher pour le Weekly Record)
+    //    Construction avec indices positionnels CORRECTS : SET d'abord, WHERE ensuite.
+    const isWeeklyRecord = options.documentType === 'WEEKLY_RECORD';
+    const sets: string[] = [`"status" = 'SUBMITTED'`, `"submittedAt" = NOW()`, `"updatedAt" = NOW()`];
+    const params: any[] = [teacherSignature];
+    sets.push(`"teacherSignature" = $1`);
+    let pIdx = 2;
+    if (isWeeklyRecord) {
+      if (options.headTeacherInitials !== undefined) { sets.push(`"headTeacherInitials" = $${pIdx++}`); params.push(options.headTeacherInitials); }
+      if (options.headTeacherDate !== undefined) { sets.push(`"headTeacherDate" = $${pIdx++}`); params.push(options.headTeacherDate); }
+      if (options.headTeacherSignature !== undefined) { sets.push(`"headTeacherSignature" = $${pIdx++}`); params.push(options.headTeacherSignature); }
+    }
+    const whereClauses: string[] = [];
+    whereClauses.push(`"tenantId" = $${pIdx++}`); params.push(tenantId);
+    whereClauses.push(`"academicYearId" = $${pIdx++}`); params.push(academicYearId);
+    whereClauses.push(`"classLevel" = $${pIdx++}`); params.push(classLevel);
+    whereClauses.push(`"month" = $${pIdx++}`); params.push(month);
+    whereClauses.push(`"teacherId" = $${pIdx++}`); params.push(teacherId);
+    if (options.documentType) { whereClauses.push(`"documentType" = $${pIdx++}`); params.push(options.documentType); }
     await this.prisma.$executeRawUnsafe(`
       UPDATE "monthly_plans"
-      SET "status" = 'SUBMITTED',
-          "teacherSignature" = $6,
-          "submittedAt" = NOW(),
-          "updatedAt" = NOW()
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
-    `, tenantId, academicYearId, classLevel, month, teacherId, teacherSignature);
+      SET ${sets.join(', ')}
+      WHERE ${whereClauses.join(' AND ')}
+    `, ...params);
 
-    this.logger.log(`Monthly plan submitted: tenant=${tenantId}, class=${classLevel}, month=${month}, teacher=${teacherId}`);
+    this.logger.log(`Monthly plan submitted: tenant=${tenantId}, class=${classLevel}, month=${month}, teacher=${teacherId}, doc=${options.documentType || 'PLAN'}`);
 
     return { success: true, submittedAt: new Date() };
   }
@@ -539,6 +627,8 @@ export class MonthlyPlanService {
    * ⭐ VALIDER ou REJETER une planification mensuelle (côté directeur).
    *    - Si action=VALIDATE : status=VALIDATED, directorSignature capturée
    *    - Si action=REJECT : status=REJECTED, directorObservation stockée
+   * ⭐ documentType (optionnel) : scope la validation à un type de document
+   *    (SCHEME_OF_WORK / WEEKLY_RECORD).
    */
   async validateMonthlyPlan(
     tenantId: string,
@@ -546,14 +636,17 @@ export class MonthlyPlanService {
     classLevel: string,
     month: string,
     teacherId: string,
-    options: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string },
+    options: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string; documentType?: string },
   ): Promise<{ success: boolean; validatedAt: Date }> {
+    const scopeFilters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4', '"teacherId" = $5'];
+    const scopeParams: any[] = [tenantId, academicYearId, classLevel, month, teacherId];
+    if (options.documentType) { scopeFilters.push(`"documentType" = $${scopeParams.length + 1}`); scopeParams.push(options.documentType); }
+
     const existing = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT id, status FROM "monthly_plans"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2
-        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+      WHERE ${scopeFilters.join(' AND ')}
       LIMIT 1
-    `, tenantId, academicYearId, classLevel, month, teacherId);
+    `, ...scopeParams);
 
     if (existing.length === 0) {
       throw new NotFoundException('Planification introuvable');
@@ -562,33 +655,44 @@ export class MonthlyPlanService {
       throw new BadRequestException(`Planification non soumise (status=${existing[0].status})`);
     }
 
+    // ⭐ Construction SET-then-WHERE avec indices positionnels corrects
+    const sets: string[] = [];
+    const params: any[] = [];
+    let pIdx = 1;
     if (options.action === 'VALIDATE') {
       if (!options.directorSignature) {
         throw new BadRequestException('Signature du directeur requise pour valider');
       }
-      await this.prisma.$executeRawUnsafe(`
-        UPDATE "monthly_plans"
-        SET "status" = 'VALIDATED',
-            "directorSignature" = $6,
-            "validatedAt" = NOW(),
-            "updatedAt" = NOW()
-        WHERE "tenantId" = $1 AND "academicYearId" = $2
-          AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
-      `, tenantId, academicYearId, classLevel, month, teacherId, options.directorSignature);
-      this.logger.log(`Monthly plan VALIDATED: class=${classLevel}, month=${month}, teacher=${teacherId}`);
+      sets.push(`"status" = 'VALIDATED'`);
+      sets.push(`"directorSignature" = $${pIdx++}`); params.push(options.directorSignature);
+      sets.push(`"validatedAt" = NOW()`);
+      sets.push(`"updatedAt" = NOW()`);
+      // ⭐ Weekly Record : on préserve l'observation générale du directeur
+      if (options.directorObservation !== undefined) {
+        sets.push(`"directorObservation" = $${pIdx++}`); params.push(options.directorObservation);
+      }
+      this.logger.log(`Monthly plan VALIDATED: class=${classLevel}, month=${month}, teacher=${teacherId}, doc=${options.documentType || 'PLAN'}`);
     } else {
       // REJECT
-      await this.prisma.$executeRawUnsafe(`
-        UPDATE "monthly_plans"
-        SET "status" = 'REJECTED',
-            "directorObservation" = $6,
-            "validatedAt" = NOW(),
-            "updatedAt" = NOW()
-        WHERE "tenantId" = $1 AND "academicYearId" = $2
-          AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
-      `, tenantId, academicYearId, classLevel, month, teacherId, options.directorObservation || null);
-      this.logger.log(`Monthly plan REJECTED: class=${classLevel}, month=${month}, teacher=${teacherId}`);
+      sets.push(`"status" = 'REJECTED'`);
+      sets.push(`"directorObservation" = $${pIdx++}`); params.push(options.directorObservation || null);
+      sets.push(`"validatedAt" = NOW()`);
+      sets.push(`"updatedAt" = NOW()`);
+      this.logger.log(`Monthly plan REJECTED: class=${classLevel}, month=${month}, teacher=${teacherId}, doc=${options.documentType || 'PLAN'}`);
     }
+    const whereClauses: string[] = [];
+    whereClauses.push(`"tenantId" = $${pIdx++}`); params.push(tenantId);
+    whereClauses.push(`"academicYearId" = $${pIdx++}`); params.push(academicYearId);
+    whereClauses.push(`"classLevel" = $${pIdx++}`); params.push(classLevel);
+    whereClauses.push(`"month" = $${pIdx++}`); params.push(month);
+    whereClauses.push(`"teacherId" = $${pIdx++}`); params.push(teacherId);
+    if (options.documentType) { whereClauses.push(`"documentType" = $${pIdx++}`); params.push(options.documentType); }
+
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "monthly_plans"
+      SET ${sets.join(', ')}
+      WHERE ${whereClauses.join(' AND ')}
+    `, ...params);
 
     return { success: true, validatedAt: new Date() };
   }
@@ -596,8 +700,12 @@ export class MonthlyPlanService {
   /**
    * ⭐ Liste les planifications mensuelles en attente de validation (côté directeur).
    *    Utilisé par l'espace "Validation Direction".
+   * ⭐ documentType (optionnel) : filtre par type de document
+   *    (SCHEME_OF_WORK / WEEKLY_RECORD / PLAN). Ajouté au SELECT + GROUP BY pour
+   *    que le Scheme of Work et le Weekly Record d'un même terme apparaissent
+   *    comme 2 entrées distinctes.
    */
-  async getPendingMonthlyPlans(tenantId: string, academicYearId: string, status?: string): Promise<any[]> {
+  async getPendingMonthlyPlans(tenantId: string, academicYearId: string, status?: string, documentType?: string): Promise<any[]> {
     // ⭐ Accept optional status filter (SUBMITTED / VALIDATED / REJECTED)
     //    Default to SUBMITTED if not provided
     const statusFilter = status || 'SUBMITTED';
@@ -606,6 +714,10 @@ export class MonthlyPlanService {
         mp."classLevel",
         mp."month",
         mp."teacherId",
+        mp."documentType",
+        mp."headTeacherInitials",
+        mp."headTeacherDate",
+        mp."weekDates",
         mp."submittedAt",
         mp."teacherSignature",
         mp."directorSignature",
@@ -622,24 +734,202 @@ export class MonthlyPlanService {
       LEFT JOIN "classes" c ON c."officialClassId" = mp."classLevel"
       WHERE mp."tenantId" = $1 AND mp."academicYearId" = $2
         AND mp."status" = $3
-      GROUP BY mp."classLevel", mp."month", mp."teacherId", mp."submittedAt", mp."teacherSignature",
+        ${documentType ? 'AND mp."documentType" = $4' : ''}
+      GROUP BY mp."classLevel", mp."month", mp."teacherId", mp."documentType",
+               mp."headTeacherInitials", mp."headTeacherDate", mp."weekDates",
+               mp."submittedAt", mp."teacherSignature",
                mp."directorSignature", mp."directorObservation", mp."validatedAt",
                u."firstName", u."lastName", u."role", c."name"
       ORDER BY mp."submittedAt" DESC
-    `, tenantId, academicYearId, statusFilter);
+    `, tenantId, academicYearId, statusFilter, ...(documentType ? [documentType] : []));
   }
 
   // ⭐ Get cells for a specific plan (for PDF export + director detail view)
   async getMonthlyPlanCells(
-    tenantId: string, academicYearId: string, classLevel: string, month: string, teacherId: string,
+    tenantId: string, academicYearId: string, classLevel: string, month: string, teacherId: string, documentType?: string,
   ): Promise<any[]> {
     return await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT * FROM "monthly_plans"
       WHERE "tenantId" = $1 AND "academicYearId" = $2
         AND "classLevel" = $3 AND "month" = $4
         ${teacherId ? 'AND "teacherId" = $5' : ''}
+        ${documentType ? `AND "documentType" = $${teacherId ? 6 : 5}` : ''}
       ORDER BY "weekNumber" ASC, "domain" ASC
-    `, tenantId, academicYearId, classLevel, month, ...(teacherId ? [teacherId] : []));
+    `, tenantId, academicYearId, classLevel, month, ...(teacherId ? [teacherId] : []), ...(documentType ? [documentType] : []));
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ WEEKLY RECORD OF WORK — Observations directeur + Duplication
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ Sauvegarde les observations du directeur sur un Weekly Record of Work.
+   *
+   * Deux niveaux d'observations (per request utilisateur) :
+   *   1. Par matière — une colonne "Observations" par ligne (par subject)
+   *      → stockée comme lignes monthly_plans avec subDomain = 'DIRECTOR_OBS',
+   *         weekNumber = 0, domain = nom de la matière, isCustom = true
+   *   2. Observations générales — une section pour tout le document
+   *      → stockée dans la colonne directorObservation (partagée par toutes
+   *         les lignes du document, même pattern que status)
+   */
+  async saveDirectorWeeklyObservations(
+    tenantId: string,
+    academicYearId: string,
+    classLevel: string,
+    month: string,
+    teacherId: string,
+    payload: {
+      observations?: Array<{ subject: string; content: string }>;
+      generalObservation?: string;
+    },
+  ): Promise<{ saved: number; generalUpdated: boolean }> {
+    const scopeFilters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4', '"teacherId" = $5', '"documentType" = $6'];
+    const scopeParams: any[] = [tenantId, academicYearId, classLevel, month, teacherId, 'WEEKLY_RECORD'];
+
+    // 1. Supprimer les anciennes observations par matière
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM "monthly_plans"
+      WHERE ${scopeFilters.join(' AND ')} AND "subDomain" = 'DIRECTOR_OBS'
+    `, ...scopeParams);
+
+    // 2. Insérer les nouvelles observations par matière
+    let saved = 0;
+    const TRIMESTER_OF: Record<string, number> = {
+      'First Term': 1, 'Second Term': 2, 'Third Term': 3,
+    };
+    const trimester = TRIMESTER_OF[month] || 1;
+    let schoolLevelId: string | undefined;
+    const sl = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM "school_levels" WHERE "tenantId" = $1 LIMIT 1
+    `, tenantId);
+    schoolLevelId = sl[0]?.id;
+
+    for (const obs of payload.observations || []) {
+      if (!obs.subject || !obs.content) continue;
+      try {
+        await this.prisma.$executeRawUnsafe(`
+          INSERT INTO "monthly_plans" (
+            "id", "tenantId", "academicYearId", "schoolLevelId", "classLevel",
+            "teacherId", "trimester", "month", "weekNumber",
+            "domain", "subDomain", "content", "isAutoProposed", "isCustom",
+            "documentType",
+            "createdAt", "updatedAt"
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, 0,
+            $9, 'DIRECTOR_OBS', $10, false, true,
+            'WEEKLY_RECORD',
+            NOW(), NOW()
+          )
+          ON CONFLICT ("id") DO NOTHING
+        `,
+          randomUUID(), tenantId, academicYearId, schoolLevelId || null, classLevel,
+          teacherId, trimester, month,
+          obs.subject, obs.content,
+        );
+        saved++;
+      } catch (e: any) {
+        this.logger.error(`Failed to insert director observation: ${e.message}`);
+      }
+    }
+
+    // 3. Mettre à jour l'observation générale (colonne directorObservation)
+    let generalUpdated = false;
+    if (payload.generalObservation !== undefined) {
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE "monthly_plans"
+        SET "directorObservation" = $7, "updatedAt" = NOW()
+        WHERE ${scopeFilters.join(' AND ')}
+      `, ...scopeParams, payload.generalObservation);
+      generalUpdated = true;
+    }
+
+    this.logger.log(`Director observations saved: class=${classLevel}, month=${month}, teacher=${teacherId}, perSubject=${saved}, general=${generalUpdated}`);
+    return { saved, generalUpdated };
+  }
+
+  /**
+   * ⭐ Duplique un Weekly Record of Work vers une autre année scolaire
+   *    (bouton "Réutiliser" du Catalogue — pattern identique au cahier journal).
+   *
+   *    - Copie toutes les cellules (contenu des 12 semaines par matière)
+   *    - Statut → DRAFT, signatures effacées, dates de soumission effacées
+   *    - Les dates de semaines (weekDates) NE sont PAS copiées (recalculées
+   *      par l'enseignant pour la nouvelle année)
+   *    - Les observations du directeur ne sont PAS copiées
+   */
+  async duplicateWeeklyRecordToYear(
+    tenantId: string,
+    sourceAcademicYearId: string,
+    classLevel: string,
+    month: string,
+    sourceTeacherId: string,
+    targetAcademicYearId: string,
+    targetTeacherId?: string,
+  ): Promise<{ success: boolean; copied: number }> {
+    if (!targetAcademicYearId) {
+      throw new BadRequestException('targetAcademicYearId requis');
+    }
+    if (sourceAcademicYearId === targetAcademicYearId) {
+      throw new BadRequestException('La source et la cible sont la même année scolaire');
+    }
+
+    // 1. Récupérer les cellules source (hors observations directeur)
+    const sourceCells = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM "monthly_plans"
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+        AND "documentType" = 'WEEKLY_RECORD'
+        AND "subDomain" != 'DIRECTOR_OBS'
+      ORDER BY "domain" ASC, "subDomain" ASC
+    `, tenantId, sourceAcademicYearId, classLevel, month, sourceTeacherId);
+
+    if (sourceCells.length === 0) {
+      throw new NotFoundException('Aucun Weekly Record à dupliquer pour ces paramètres');
+    }
+
+    // 2. Supprimer un éventuel document cible existant (même class + term + teacher)
+    const finalTeacherId = targetTeacherId || sourceTeacherId;
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM "monthly_plans"
+      WHERE "tenantId" = $1 AND "academicYearId" = $2
+        AND "classLevel" = $3 AND "month" = $4 AND "teacherId" = $5
+        AND "documentType" = 'WEEKLY_RECORD'
+    `, tenantId, targetAcademicYearId, classLevel, month, finalTeacherId);
+
+    // 3. Insérer les copies en DRAFT (signatures/dates effacées)
+    let copied = 0;
+    for (const cell of sourceCells) {
+      try {
+        await this.prisma.$executeRawUnsafe(`
+          INSERT INTO "monthly_plans" (
+            "id", "tenantId", "academicYearId", "schoolLevelId", "classLevel",
+            "teacherId", "academicClassId", "trimester", "month", "weekNumber",
+            "domain", "subDomain", "activityType", "activityNumber", "sequenceNumber",
+            "content", "isAutoProposed", "isCustom", "annualPlanId",
+            "documentType",
+            "createdAt", "updatedAt"
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19,
+            'WEEKLY_RECORD',
+            NOW(), NOW()
+          )
+          ON CONFLICT ("id") DO NOTHING
+        `,
+          randomUUID(), tenantId, targetAcademicYearId, cell.schoolLevelId, classLevel,
+          finalTeacherId, cell.academicClassId, cell.trimester, month, cell.weekNumber,
+          cell.domain, cell.subDomain, cell.activityType, cell.activityNumber, cell.sequenceNumber,
+          cell.content, false, cell.isCustom, cell.annualPlanId,
+        );
+        copied++;
+      } catch (e: any) {
+        this.logger.error(`Failed to duplicate weekly record cell: ${e.message}`);
+      }
+    }
+
+    this.logger.log(`Weekly record duplicated: class=${classLevel}, month=${month}, ${sourceAcademicYearId} → ${targetAcademicYearId}, ${copied} cells`);
+    return { success: true, copied };
   }
 
   // ⭐ Generate printable HTML for the planification (for PDF export)

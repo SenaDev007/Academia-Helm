@@ -584,8 +584,16 @@ export default function OnboardingWizard() {
     // Prix de base annuel (contrat : pas d'option mensuelle)
     const yearlyBase = plan.annualPrice;
 
-    // Prix de l'option bilingue (contrat Article 4 : 50 000 FCFA/an)
-    const bilingualYearly = data.bilingual ? 50000 : 0;
+    // Prix de l'option bilingue — dynamique (pricing_plans via API publique,
+    // tarif central piloté depuis le back-office), fallback BILINGUAL_ADDON
+    // (5 000 F CFA/mois de référence → 50 000 F CFA/an, 2 mois offerts)
+    const bilingualYearly = data.bilingual
+      ? Number(
+          pricingPlans.find((p: any) => p.code === data.planCode)?.bilingualYearly
+            ?? BILINGUAL_ADDON.annual
+            ?? 50000,
+        )
+      : 0;
 
     setPriceCalculation({
       monthly: {
@@ -1937,7 +1945,7 @@ export default function OnboardingWizard() {
                   {data.bilingual && (
                     <div className="mt-2 space-y-1">
                       <p className="text-sm font-semibold text-blue-600">
-                        +{formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualYearly || 50000)} / an pour l'option bilingue
+                        +{formatCurrency(pricingPlans.find((p: any) => p.code === data.planCode)?.bilingualYearly ?? BILINGUAL_ADDON.annual)} / an pour l'option bilingue
                         <span className="text-xs text-slate-500 font-normal ml-1">
                           (FR/EN — facturée annuellement, contrat Article 4)
                         </span>

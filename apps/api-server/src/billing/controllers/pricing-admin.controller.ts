@@ -25,6 +25,7 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../database/prisma.service';
 import { PricingService } from '../services/pricing.service';
+import { invalidateBilingualAddonPriceCache } from '../../common/utils/bilingual-addon-pricing';
 
 @Controller('admin/pricing')
 @UseGuards(JwtAuthGuard)
@@ -119,8 +120,9 @@ export class PricingAdminController {
       },
     });
 
-    // Invalider le cache
+    // Invalider les caches (config pricing + tarif bilingue central)
     (this.pricingService as any).activeConfigCache = null;
+    invalidateBilingualAddonPriceCache();
 
     this.logger.log(`✅ New pricing config created: version ${newVersion} by ${req.user.id}`);
 

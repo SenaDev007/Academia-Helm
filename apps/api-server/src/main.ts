@@ -559,6 +559,17 @@ async function bootstrap() {
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
        SELECT gen_random_uuid(), 'NETWORK', 'Helm Institution', 'La catégorie multi-école', 'Pour les réseaux d''écoles et les établissements multi-école.', 401, NULL, 150000, 50000, 500000, 5000, 50000, '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', false, true, 4, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'NETWORK')`,
+      // ⭐ Option bilingue (add-on) — plan BILINGUAL : SOURCE DE VÉRITÉ du tarif
+      //    bilingue, éditable depuis le back-office /platform/subscriptions
+      //    (carte « Option bilingue FR/EN », champs Bilingue mensuel/annuel).
+      //    Tarif : 5 000 F CFA/mois de référence → 50 000 F CFA/an (2 mois offerts).
+      //    Exclu de la liste publique des plans (affiché à part comme add-on).
+      `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
+       SELECT gen_random_uuid(), 'BILINGUAL', 'Option bilingue FR/EN', 'Supplément option bilingue', 'Option bilingue FR/EN — en supplément de n''importe quel plan. Facturée annuellement (contrat Article 4) : 5 000 F CFA/mois de référence, 50 000 F CFA/an (2 mois offerts).', 0, NULL, 0, NULL, NULL, 5000, 50000, '["Classes, matières, examens et bulletins en français ET en anglais","Structure EN miroir (Nursery 1/2, Primary 1-6) créée automatiquement","Espace Pédagogique EN dédié (Scheme of Work, Attendance)","Facturation annuelle — tarif piloté depuis le back-office"]', false, true, 5, NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'BILINGUAL')`,
+      // Sécurité : ne remplir les tarifs add-on que s'ils sont NULL (ne JAMAIS
+      // écraser une valeur modifiée depuis le back-office au redémarrage).
+      `UPDATE "pricing_plans" SET "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "bilingualMonthly" IS NULL AND "bilingualYearly" IS NULL`,
 
       // ─── Update features des plans existants (pour corriger les features initiales) ───
       // ⭐ UPDATE pricing — nouveaux tarifs août 2026

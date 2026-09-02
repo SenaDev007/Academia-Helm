@@ -391,7 +391,7 @@ export default function SettingsPage() {
   const [newSeriesName, setNewSeriesName] = useState('');
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [bilingualForm, setBilingualForm] = useState<any>({});
-  const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number; annual?: number; currency?: string } | null>(null);
+  const [bilingualBillingImpact, setBilingualBillingImpact] = useState<{ monthly?: number | null; annual?: number; monthsFree?: number; currency?: string; source?: string } | null>(null);
   const [bilingualMigrationNeeded, setBilingualMigrationNeeded] = useState<boolean | null>(null);
 
   const allGradesFromStructure = useMemo(() => {
@@ -4619,7 +4619,26 @@ export default function SettingsPage() {
                 <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h4 className="text-sm font-semibold text-blue-900 mb-2">Impact sur la facturation</h4>
                   <p className="text-sm text-blue-800">
-                    Supplément option bilingue : <strong>{bilingualBillingImpact.monthly ?? 0} {bilingualBillingImpact.currency ?? ''}</strong> / mois, ou <strong>{bilingualBillingImpact.annual ?? 0} {bilingualBillingImpact.currency ?? ''}</strong> / an.
+                    Supplément option bilingue :{' '}
+                    {(bilingualBillingImpact.monthly ?? 0) > 0 && (
+                      <>
+                        <strong>{Number(bilingualBillingImpact.monthly).toLocaleString('fr-FR')} F CFA / mois</strong>
+                        {' de référence, ou '}
+                      </>
+                    )}
+                    <strong>{Number(bilingualBillingImpact.annual ?? 0).toLocaleString('fr-FR')} F CFA / an</strong>
+                    {(bilingualBillingImpact.monthsFree ?? 0) > 0 && (bilingualBillingImpact.monthly ?? 0) > 0 && (
+                      <>
+                        {' — soit '}
+                        <strong>{bilingualBillingImpact.monthsFree} mois offerts</strong>
+                        {' (12 × '}{Number(bilingualBillingImpact.monthly).toLocaleString('fr-FR')}{' = '}
+                        {Number((bilingualBillingImpact.monthly ?? 0) * 12).toLocaleString('fr-FR')}{' F CFA)'}
+                      </>
+                    )}
+                    .
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1.5">
+                    Tarif facturé annuellement (contrat Article 4), paramétré par YEHI OR Tech depuis le back-office.
                   </p>
                 </div>
               )}

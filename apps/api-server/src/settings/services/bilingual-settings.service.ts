@@ -1,4 +1,5 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { getBilingualAddonPrice } from '../../common/utils/bilingual-addon-pricing';
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
@@ -495,49 +496,57 @@ export class BilingualSettingsService {
 
   /**
    * Calcule l'impact sur la facturation (supplément bilingue).
-   * Utilise pricingSupplement des paramètres si défini, sinon plan ou estimation.
+   *
+   * ⭐ Source centrale en base, contrôlable depuis le back-office
+   *    (admin.academiahelm.com → Abonnements & Plans → carte « BILINGUAL ») :
+   *      1. pricing_plans code 'BILINGUAL' (bilingualMonthly / bilingualYearly)
+   *      2. pricing_configs active (bilingualMonthlyAddon / bilingualYearlyAddon)
+   *      3. settings_bilingual.pricingSupplement (override legacy par tenant,
+   *         uniquement si aucune source centrale n'existe en base)
+   *      4. Défauts (5 000 FCFA/mois de référence → 50 000 FCFA/an, 2 mois offerts)
+   *
+   * Retourne { monthly, annual, monthsFree, currency, source } — monthsFree
+   * indique la réduction annuelle en mois offerts (ex. 50 000 vs 60 000 → 2).
    */
   async getBillingImpact(tenantId: string) {
     const settings = await this.getSettings(tenantId);
     const subscription = await this.prisma.subscription.findUnique({
       where: { tenantId },
-      include: { subscriptionPlan: true },
     });
 
     const currency = subscription?.currency ?? 'XOF';
 
-    if (settings.pricingSupplement != null && settings.pricingSupplement > 0) {
-      return {
-        monthly: settings.pricingSupplement,
-        annual: settings.pricingSupplement * 12,
-        currency,
-      };
+    // Source centrale (BILINGUAL → config → défauts), lue en DB avec cache 60 s
+    const addon = await getBilingualAddonPrice(this.prisma);
+    let monthly = addon.monthly;
+    let annual = addon.yearly;
+    let source = addon.source;
+
+    // Override legacy par tenant — n'entre en jeu que si AUCUNE source centrale
+    // (plan BILINGUAL ou pricing_configs) n'est définie en base.
+    if (
+      source === 'DEFAULT' &&
+      settings.pricingSupplement != null &&
+      settings.pricingSupplement > 0
+    ) {
+      monthly = settings.pricingSupplement;
+      annual = settings.pricingSupplement * 12;
+      source = 'TENANT_OVERRIDE';
+      this.logger.warn(
+        `Bilingue ${tenantId} : tarif issu de l'override legacy pricingSupplement ` +
+          `(${settings.pricingSupplement}/mois) — aucune source centrale en base. ` +
+          `Créez le plan BILINGUAL (back-office) pour piloter ce tarif centralement.`,
+      );
     }
 
-    if (!subscription) {
-      return { monthly: 0, annual: 0, currency };
-    }
+    // Mois offerts en annuel (arrondi prudent vers le bas, jamais surestimé) :
+    // ex. 5 000/mois → 50 000/an = 10 000 économisés = 2 mois offerts.
+    const monthsFree =
+      monthly && monthly > 0 && annual < monthly * 12
+        ? Math.max(0, Math.floor((monthly * 12 - annual) / monthly))
+        : 0;
 
-    const plan = subscription.subscriptionPlan as any;
-    const monthlyAddon = plan?.bilingualMonthlyAddon ?? plan?.bilingual_monthly_addon;
-    const yearlyAddon = plan?.bilingualYearlyAddon ?? plan?.bilingual_yearly_addon;
-    if (monthlyAddon != null || yearlyAddon != null) {
-      return {
-        monthly: monthlyAddon ?? 0,
-        annual: yearlyAddon ?? (monthlyAddon ?? 0) * 12,
-        currency,
-      };
-    }
-
-    const bilingualSurcharge = 0.20;
-    const baseMonthly = plan?.monthlyPrice ?? subscription.amount ?? 0;
-    const baseAnnual = plan?.yearlyPrice ?? (subscription.amount ?? 0) * 12;
-
-    return {
-      monthly: Math.round(baseMonthly * bilingualSurcharge),
-      annual: Math.round(baseAnnual * bilingualSurcharge),
-      currency,
-    };
+    return { monthly, annual, monthsFree, currency, source };
   }
 
   // ─────────────────────────────────────────────────────────────────────────

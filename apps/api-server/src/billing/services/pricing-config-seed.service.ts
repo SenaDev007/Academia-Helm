@@ -46,12 +46,12 @@ export class PricingConfigSeedService implements OnModuleInit {
     }
 
     // Créer la configuration par défaut
-    // ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
-    //   - Frais d'activation uniques : 300 000 FCFA (uniforme)
-    //   - Facturation annuelle uniquement (monthlyBasePrice = 0)
-    //   - Base annuelle (Helm Essentiel) : 50 000 FCFA/an
-    //   - Option bilingue : 50 000 FCFA/an (pas d'option mensuelle)
-    //   - Plus de réduction annuelle (l'annuel est le seul cycle)
+    // ⭐ Alignée sur le tarif officiel de l'option bilingue :
+    //   - 5 000 FCFA/mois de référence → 50 000 FCFA/an (2 mois offerts)
+    //   - Seul le tarif annuel est facturé (contrat Article 4)
+    //   - La source de vérité principale reste le plan add-on BILINGUAL
+    //     (pricing_plans), éditable depuis le back-office /platform/subscriptions ;
+    //     cette config n'est qu'un fallback versionné.
     const defaultConfig = await this.prisma.pricingConfig.create({
       data: {
         initialSubscriptionFee: 300000, // 300 000 FCFA — frais d'activation uniformes
@@ -59,7 +59,7 @@ export class PricingConfigSeedService implements OnModuleInit {
         monthlyBasePrice: 0, // 0 — plus d'option mensuelle (contrat en annuel uniquement)
         yearlyBasePrice: 50000, // 50 000 FCFA/an — base Helm Essentiel
         yearlyDiscountPercent: 0, // 0% — pas de remise (annuel = seul cycle)
-        bilingualMonthlyAddon: 0, // 0 — plus d'option mensuelle
+        bilingualMonthlyAddon: 5000, // 5 000 FCFA/mois — référence (affichage : 2 mois offerts en annuel)
         bilingualYearlyAddon: 50000, // 50 000 FCFA/an (contrat Article 4)
         schoolAdditionalPrice: 0, // 0 — plus de surcoût par école (pricing par tranche d'élèves)
         trialDays: 30,

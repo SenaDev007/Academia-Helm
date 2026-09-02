@@ -48,8 +48,9 @@ interface SubscriptionStatus {
 interface BilingualStatus {
   enabled: boolean;
   billingCycle: string;
-  monthlyAddon: number;
+  monthlyAddon: number | null;
   yearlyAddon: number;
+  monthsFree?: number;
   subscriptionStatus: string;
 }
 
@@ -460,6 +461,15 @@ export default function BillingPage() {
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   Facturation annuelle uniquement — pas d&apos;option mensuelle.
+                  {(bilingualStatus.monthlyAddon ?? 0) > 0 && (
+                    <>
+                      {' Tarif mensuel de référence : '}
+                      <strong>{Number(bilingualStatus.monthlyAddon).toLocaleString('fr-FR')} FCFA / mois</strong>
+                      {(bilingualStatus.monthsFree ?? 0) > 0 && (
+                        <>{' — soit '}{bilingualStatus.monthsFree}{' mois offerts en annuel.'}</>
+                      )}
+                    </>
+                  )}
                 </p>
               </div>
             </div>

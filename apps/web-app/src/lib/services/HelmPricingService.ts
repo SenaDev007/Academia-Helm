@@ -87,10 +87,16 @@ export const HELM_PLANS = {
 export type HelmPlanKey = keyof typeof HELM_PLANS;
 
 // ⭐ Option bilingue (FR/EN) — payante, ajoutée au plan de base
-// Contrat Article 4 : 50 000 FCFA/an (pas d'option mensuelle)
+// Tarif officiel : 5 000 FCFA/mois de référence → 50 000 FCFA/an, soit
+// 2 mois offerts (12 × 5 000 = 60 000 → 50 000). Facturée annuellement
+// (contrat Article 4).
+// ⚠️ Ces constantes ne sont qu'un FALLBACK d'affichage : la valeur active est
+// pilotée en base (pricing_plans code 'BILINGUAL') depuis le back-office
+// /platform/subscriptions → carte « Option bilingue FR/EN », et servie par
+// /api/public/pricing/plans (champs bilingualMonthly/bilingualYearly).
 export const BILINGUAL_ADDON = {
-  monthly: null as number | null, // Plus d'option mensuelle
-  annual: 50000, // 50 000 FCFA/an
+  monthly: null as number | null, // Pas de facturation mensuelle (annuel uniquement)
+  annual: 50000, // 50 000 FCFA/an (référence mensuelle : 5 000 FCFA)
 } as const;
 
 // ⭐ Tous les modules inclus quel que soit le plan

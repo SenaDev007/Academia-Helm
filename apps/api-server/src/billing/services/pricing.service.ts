@@ -16,6 +16,10 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  getBilingualAddonPrice,
+  type BilingualAddonPrice,
+} from '../../common/utils/bilingual-addon-pricing';
 
 export interface PricingInput {
   planId?: string;
@@ -111,7 +115,7 @@ export class PricingService {
       monthlyBasePrice: 0, // 0 — plus d'option mensuelle
       yearlyBasePrice: 50000, // 50 000 FCFA/an (base Helm Essentiel)
       yearlyDiscountPercent: 0, // 0% — pas de remise (annuel = seul cycle)
-      bilingualMonthlyAddon: 0, // 0 — plus d'option mensuelle
+      bilingualMonthlyAddon: 5000, // 5 000 FCFA/mois — référence (5 000 × 12 = 60 000 → 50 000 en annuel = 2 mois offerts)
       bilingualYearlyAddon: 50000, // 50 000 FCFA/an
       schoolAdditionalPrice: 0, // 0 — pricing par tranche d'élèves, pas par école
       trialDays: 30,
@@ -158,15 +162,18 @@ export class PricingService {
       config
     );
 
-    // 6. Calculer le prix de l'option bilingue (depuis config)
-    // ⭐ Utiliser le prix bilingue du PLAN (pricing_plans.bilingualMonthly/Yearly)
-    // en priorité. Fallback sur config.bilingualMonthlyAddon si le plan n'a pas
-    // de prix bilingue défini.
+    // 6. Calculer le prix de l'option bilingue
+    // ⭐ Priorité : source CENTRALE (plan add-on BILINGUAL / pricing_configs,
+    // pilotée depuis le back-office /platform/subscriptions) > prix bilingue du
+    // PLAN (pricing_plans.bilingualMonthly/Yearly, legacy par plan) >
+    // config.bilingualMonthlyAddon (fallback).
+    const bilingualAddon = await getBilingualAddonPrice(this.prisma);
     const bilingualPrice = this.calculateBilingualPrice(
       input.bilingual,
       input.cycle,
       config,
       plan,
+      bilingualAddon,
     );
 
     // 7. Calculer le sous-total
@@ -327,20 +334,31 @@ export class PricingService {
   /**
    * Calcule le prix de l'option bilingue.
    *
-   * ⭐ Priorité : prix du PLAN (pricing_plans.bilingualMonthly/Yearly) >
-   * config.bilingualMonthlyAddon (fallback).
+   * ⭐ Priorité : source CENTRALE (plan add-on BILINGUAL → pricing_configs,
+   * éditable depuis le back-office /platform/subscriptions — 5 000 F CFA/mois
+   * de référence, 50 000 F CFA/an, 2 mois offerts) > prix bilingue du PLAN
+   * (pricing_plans.bilingualMonthly/Yearly, legacy) > config (fallback).
    */
   private calculateBilingualPrice(
     bilingual: boolean,
     cycle: 'MONTHLY' | 'YEARLY',
     config: any,
     plan?: any,
+    centralAddon?: BilingualAddonPrice,
   ): number {
     if (!bilingual) {
       return 0;
     }
 
-    // 1. Prix bilingue du plan (pricing_plans)
+    // 1. Source centrale DB (plan BILINGUAL ou pricing_configs) — back-office
+    if (centralAddon && centralAddon.source !== 'DEFAULT') {
+      if (cycle === 'MONTHLY') {
+        return centralAddon.monthly ?? 0;
+      }
+      return centralAddon.yearly;
+    }
+
+    // 2. Prix bilingue du plan (pricing_plans) — legacy par plan
     if (plan) {
       if (cycle === 'MONTHLY' && plan.bilingualMonthly != null) {
         return Number(plan.bilingualMonthly) || 0;
@@ -350,7 +368,7 @@ export class PricingService {
       }
     }
 
-    // 2. Fallback : config.bilingualMonthlyAddon
+    // 3. Fallback : config.bilingualMonthlyAddon
     return cycle === 'MONTHLY'
       ? (config.bilingualMonthlyAddon || 0)
       : (config.bilingualYearlyAddon || 0);

@@ -22,6 +22,10 @@
 
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  getBilingualAddonPrice,
+  invalidateBilingualAddonPriceCache,
+} from '../../common/utils/bilingual-addon-pricing';
 
 @Injectable()
 export class PlatformService {
@@ -1269,7 +1273,7 @@ export class PlatformService {
     const features = data.features ? (Array.isArray(data.features) ? JSON.stringify(data.features) : data.features) : null;
     if (data.id) {
       // Update
-      return this.prisma.pricingPlan.update({
+      const updated = await this.prisma.pricingPlan.update({
         where: { id: data.id },
         data: {
           code: data.code,
@@ -1289,9 +1293,13 @@ export class PlatformService {
           sortOrder: data.sortOrder ?? 0,
         },
       });
+      // ⭐ Le tarif bilingue central peut avoir changé (plan BILINGUAL) →
+      // invalider le cache pour une application immédiate.
+      invalidateBilingualAddonPriceCache();
+      return updated;
     }
     // Create
-    return this.prisma.pricingPlan.create({
+    const created = await this.prisma.pricingPlan.create({
       data: {
         code: data.code,
         name: data.name,
@@ -1310,37 +1318,51 @@ export class PlatformService {
         sortOrder: data.sortOrder ?? 0,
       },
     });
+    invalidateBilingualAddonPriceCache();
+    return created;
   }
 
   async deletePricingPlan(id: string) {
-    return this.prisma.pricingPlan.delete({ where: { id } });
+    const deleted = await this.prisma.pricingPlan.delete({ where: { id } });
+    invalidateBilingualAddonPriceCache();
+    return deleted;
   }
 
   /**
    * Récupère les plans publics pour la page /tarification.
    * Endpoint @Public — pas d'auth requise.
+   *
+   * ⭐ Le plan add-on BILINGUAL est EXCLU de la liste (c'est un add-on affiché
+   * à part, pas un plan). Son tarif central (5 000 F CFA/mois de référence →
+   * 50 000 F CFA/an, 2 mois offerts) est tamponné sur chaque plan via les
+   * champs bilingualMonthly / bilingualYearly — la page /tarification et le
+   * wizard d'onboarding reflètent ainsi automatiquement le tarif piloté depuis
+   * le back-office /platform/subscriptions.
    */
   async getPublicPricingPlans() {
     const plans = await this.prisma.pricingPlan.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
     });
-    return plans.map(p => ({
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      tagline: p.tagline,
-      description: p.description,
-      studentMin: p.studentMin,
-      studentMax: p.studentMax,
-      initialFee: p.initialFee,
-      monthlyAmount: p.monthlyAmount,
-      yearlyAmount: p.yearlyAmount,
-      bilingualMonthly: p.bilingualMonthly,
-      bilingualYearly: p.bilingualYearly,
-      features: p.features ? JSON.parse(p.features) : [],
-      isPopular: p.isPopular,
-    }));
+    const bilingualAddon = await getBilingualAddonPrice(this.prisma);
+    return plans
+      .filter((p) => p.code !== 'BILINGUAL')
+      .map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        tagline: p.tagline,
+        description: p.description,
+        studentMin: p.studentMin,
+        studentMax: p.studentMax,
+        initialFee: p.initialFee,
+        monthlyAmount: p.monthlyAmount,
+        yearlyAmount: p.yearlyAmount,
+        bilingualMonthly: bilingualAddon.monthly,
+        bilingualYearly: bilingualAddon.yearly,
+        features: p.features ? JSON.parse(p.features) : [],
+        isPopular: p.isPopular,
+      }));
   }
 
   // ============================================================================

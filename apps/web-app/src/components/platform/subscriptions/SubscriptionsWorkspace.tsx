@@ -89,6 +89,7 @@ const PLAN_BADGE: Record<string, string> = {
   GROW: 'bg-sky-100 text-sky-700',
   LEAD: 'bg-violet-100 text-violet-700',
   NETWORK: 'bg-amber-100 text-amber-700',
+  BILINGUAL: 'bg-violet-100 text-violet-700',
 };
 
 function formatFCFA(amount: number | null | undefined): string {
@@ -404,9 +405,13 @@ export default function SubscriptionsWorkspace() {
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {plans.map((plan) => (
-                <PlanCard key={plan.id} plan={plan} />
-              ))}
+              {plans.map((plan) =>
+                plan.code === 'BILINGUAL' ? (
+                  <AddonCard key={plan.id} plan={plan} />
+                ) : (
+                  <PlanCard key={plan.id} plan={plan} />
+                ),
+              )}
             </div>
           </div>
         )
@@ -542,6 +547,80 @@ function StatCard({
   );
 }
 
+// ─── CARTE ADD-ON BILINGUAL (pricing_plans code 'BILINGUAL') ────────────────
+//
+// ⭐ Source de vérité du tarif de l'option bilingue. Les champs
+// bilingualMonthly / bilingualYearly éditables via le modal pilotent le tarif
+// affiché dans l'onglet « Bilingue » des paramètres des écoles, la page
+// /tarification, le wizard d'onboarding et la facturation (activation
+// bilingue, renouvellement). Tarif officiel : 5 000 F CFA/mois de référence
+// → 50 000 F CFA/an (2 mois offerts).
+// ──────────────────────────────────────────────────────────────────────────
+function AddonCard({ plan }: { plan: Plan }) {
+  const features: string[] = Array.isArray(plan.features) ? plan.features : [];
+  const monthly = plan.bilingualMonthly ?? 0;
+  const yearly = plan.bilingualYearly ?? 0;
+  // Mois offerts en annuel — arrondi prudent vers le bas (ex. 5 000/mois,
+  // 50 000/an → 10 000 économisés = 2 mois offerts)
+  const monthsFree =
+    monthly > 0 && yearly > 0 && yearly < monthly * 12
+      ? Math.max(0, Math.floor((monthly * 12 - yearly) / monthly))
+      : 0;
+  return (
+    <div className="relative p-6 bg-gradient-to-br from-violet-50 via-white to-white rounded-2xl border-2 border-violet-200 shadow-sm flex flex-col md:col-span-2">
+      <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 bg-violet-500 text-white rounded-full text-[10px] font-extrabold uppercase shadow">
+        Add-on
+      </span>
+      <div className="flex items-center justify-between mb-3">
+        <div className="w-10 h-10 bg-violet-100 text-violet-600 rounded-xl flex items-center justify-center">
+          <Languages className="w-5 h-5" />
+        </div>
+        <span
+          className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${planBadgeClass(plan.code)}`}
+        >
+          {plan.code}
+        </span>
+      </div>
+      <h3 className="font-bold text-blue-900 text-lg leading-tight">{plan.name}</h3>
+      {plan.tagline && <p className="text-xs text-slate-500 mt-1">{plan.tagline}</p>}
+      <p className="text-xs text-violet-700 mt-1.5">
+        En supplément de n&apos;importe quel plan — facturée annuellement (contrat Article 4).
+      </p>
+
+      <div className="mt-4 mb-3">
+        <div className="text-2xl font-extrabold text-slate-900">
+          {formatFCFA(plan.bilingualMonthly)}
+          <span className="text-xs font-medium text-slate-500"> / mois (référence)</span>
+        </div>
+        <div className="text-xs text-slate-600 mt-0.5">
+          ou <span className="font-bold text-slate-900">{formatFCFA(plan.bilingualYearly)}</span> / an — seul tarif facturé
+          {monthsFree > 0 && (
+            <span className="text-emerald-600 font-semibold"> ({monthsFree} mois offerts)</span>
+          )}
+        </div>
+      </div>
+
+      {features.length > 0 && (
+        <ul className="space-y-1.5 text-xs text-slate-700 mb-4 flex-1">
+          {features.slice(0, 4).map((f, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <Check className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
+              <span className="leading-snug">{f}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-auto pt-3 border-t border-violet-100">
+        <p className="text-[11px] leading-snug text-violet-700">
+          Source de vérité du tarif bilingue : onglet « Bilingue » des paramètres des écoles,
+          page /tarification, wizard d&apos;onboarding et facturation lisent ces montants.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function PlanCard({ plan }: { plan: Plan }) {
   const features: string[] = Array.isArray(plan.features) ? plan.features : [];
   return (
@@ -643,8 +722,8 @@ function CatalogEditModal({
             <h2 className="text-lg font-bold text-blue-900">Éditer le catalogue des plans</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Modifiez les tarifs, fonctionnalités et options des plans
-              SEED, GROW, LEAD, NETWORK. Les montants vides sont envoyés comme
-              « Sur devis » (null).
+              SEED, GROW, LEAD, NETWORK et de l&apos;add-on BILINGUAL. Les montants
+              vides sont envoyés comme « Sur devis » (null).
             </p>
           </div>
           <button
@@ -671,6 +750,19 @@ function CatalogEditModal({
               <span className="leading-snug">{editSuccess}</span>
             </div>
           )}
+
+          {/* ⭐ Bannière add-on bilingue — point de contrôle central du tarif */}
+          <div className="flex items-start gap-2 p-3 bg-violet-50 border border-violet-200 rounded-lg text-xs text-violet-800">
+            <Languages className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span className="leading-snug">
+              <strong>Option bilingue :</strong> le tarif appliqué partout (onglet « Bilingue » des
+              paramètres des écoles, page /tarification, wizard d&apos;onboarding, facturation et
+              activation) provient de la carte <strong>BILINGUAL</strong> — champs « Bilingue
+              mensuel / annuel ». Les champs bilingues des autres plans ne sont qu&apos;un fallback
+              si la carte BILINGUAL est absente ou désactivée. Exemple de tarif officiel :
+              5 000 F CFA/mois de référence → 50 000 F CFA/an (2 mois offerts).
+            </span>
+          </div>
 
           {plans.map((plan) => {
             const draft = drafts[plan.id];
@@ -728,8 +820,12 @@ function PlanEditCard({
   onChange: (patch: Partial<EditablePlan>) => void;
 }) {
   const isNetwork = plan.code?.toUpperCase() === 'NETWORK';
+  const isBilingual = plan.code?.toUpperCase() === 'BILINGUAL';
   const inputClass =
     'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 transition-colors';
+  const bilingualInputClass = isBilingual
+    ? `${inputClass} border-violet-300 bg-violet-50/60 font-semibold`
+    : inputClass;
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 border-b border-slate-200">
@@ -837,22 +933,22 @@ function PlanEditCard({
           />
         </Field>
 
-        <Field label="Bilingue mensuel (FCFA)">
+        <Field label={isBilingual ? 'Bilingue mensuel (FCFA) — tarif de référence appliqué partout' : 'Bilingue mensuel (FCFA)'}>
           <input
             type="number"
             value={draft.bilingualMonthly}
             onChange={(e) => onChange({ bilingualMonthly: e.target.value })}
-            placeholder="Optionnel"
-            className={inputClass}
+            placeholder={isBilingual ? 'Ex : 5000' : 'Optionnel'}
+            className={bilingualInputClass}
           />
         </Field>
-        <Field label="Bilingue annuel (FCFA)">
+        <Field label={isBilingual ? 'Bilingue annuel (FCFA) — seul tarif facturé' : 'Bilingue annuel (FCFA)'}>
           <input
             type="number"
             value={draft.bilingualYearly}
             onChange={(e) => onChange({ bilingualYearly: e.target.value })}
-            placeholder="Optionnel"
-            className={inputClass}
+            placeholder={isBilingual ? 'Ex : 50000' : 'Optionnel'}
+            className={bilingualInputClass}
           />
         </Field>
 

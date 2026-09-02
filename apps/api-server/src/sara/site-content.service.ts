@@ -24,6 +24,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { getBilingualAddonPrice } from '../common/utils/bilingual-addon-pricing';
 
 /** Structure du contenu site injecté dans le prompt SARA */
 export interface SiteContent {
@@ -151,7 +152,10 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
         orderBy: { version: 'desc' },
       });
 
-      if (plans.length === 0) {
+      // ⭐ Exclure l'add-on BILINGUAL du catalogue (affiché à part, ci-dessous)
+      const catalogPlans = plans.filter((p) => p.code !== 'BILINGUAL');
+
+      if (catalogPlans.length === 0) {
         return '(Plans non configurés — consultez /pricing sur le site)';
       }
 
@@ -164,7 +168,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
         'PLANS D\'ABONNEMENT (par tranche d\'élèves) :',
       ];
 
-      for (const plan of plans) {
+      for (const plan of catalogPlans) {
         const studentRange = plan.studentMax == null
           ? `${plan.studentMin} élèves et +`
           : `${plan.studentMin} à ${plan.studentMax} élèves`;
@@ -179,7 +183,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
       // Coût total Année 1 pour chaque plan
       lines.push('');
       lines.push('COÛT TOTAL ANNÉE 1 (activation + frais annuels) :');
-      for (const plan of plans) {
+      for (const plan of catalogPlans) {
         const total = (plan.yearlyAmount ?? 0) + (plan.initialFee ?? config?.initialSubscriptionFee ?? 0);
         lines.push(
           `- ${plan.name} : ${this.toFCFA(total)} FCFA`,
@@ -200,7 +204,13 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
 
         lines.push('');
         lines.push('ADD-ONS (Article 4 du contrat) :');
-        lines.push(`- Option bilingue FR/EN : ${this.toFCFA(config.bilingualYearlyAddon || 50000)} FCFA/an (en supplément du plan, quel que soit le plan)`);
+        const bilingualAddon = await getBilingualAddonPrice(this.prisma);
+        lines.push(
+          `- Option bilingue FR/EN : ${this.toFCFA(bilingualAddon.yearly)} FCFA/an (en supplément du plan, quel que soit le plan)` +
+            (bilingualAddon.monthly
+              ? ` — tarif mensuel de référence ${this.toFCFA(bilingualAddon.monthly)} FCFA${bilingualAddon.monthsFree > 0 ? `, soit ${bilingualAddon.monthsFree} mois offerts en annuel` : ''}`
+              : ''),
+        );
         lines.push('- WhatsApp : GRATUIT et illimité (inclus dans tous les plans)');
         lines.push('- SMS : facturé au prix coûtant (selon pays de destination)');
         lines.push('- Email : facturé au prix coûtant');

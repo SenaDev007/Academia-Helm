@@ -38,6 +38,7 @@ import { StudentCountVerifierService } from './services/student-count-verifier.s
 import { FedaPayService } from './services/fedapay.service';
 import { PricingService } from './services/pricing.service';
 import { InvoiceService } from './services/invoice.service';
+import { getBilingualAddonPrice } from '../common/utils/bilingual-addon-pricing';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('billing')
@@ -328,21 +329,20 @@ export class SubscriptionLifecycleController {
       },
     });
 
-    // Récupérer les prix bilingue depuis pricing_plans (table dynamique)
-    const bilingualPlan = await this.prisma.pricingPlan.findFirst({
-      where: { code: 'BILINGUAL' as any },
-    });
-
-    // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
-    // Fallback si le plan bilingue n'existe pas en DB.
-    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? null; // null = plus d'option mensuelle
-    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 50000;
+    // ⭐ Tarif bilingue : source centrale en DB (plan add-on BILINGUAL →
+    // pricing_configs), pilotée depuis le back-office /platform/subscriptions.
+    // monthly = tarif mensuel de référence (5 000 F CFA), yearly = 50 000 F CFA/an
+    // (2 mois offerts) — seul le tarif annuel est facturé (contrat Article 4).
+    const bilingualAddon = await getBilingualAddonPrice(this.prisma);
+    const monthlyAddon = bilingualAddon.monthly;
+    const yearlyAddon = bilingualAddon.yearly;
 
     return {
       enabled: sub?.bilingualEnabled || false,
       billingCycle: sub?.billingCycle || 'MONTHLY',
       monthlyAddon,
       yearlyAddon,
+      monthsFree: bilingualAddon.monthsFree,
       subscriptionStatus: sub?.status || 'NONE',
     };
   }
@@ -389,13 +389,11 @@ export class SubscriptionLifecycleController {
       return { success: true, message: 'Option bilingue déjà active', alreadyActive: true };
     }
 
-    // Récupérer le prix bilingue depuis pricing_plans
-    const bilingualPlan = await this.prisma.pricingPlan.findFirst({
-      where: { code: 'BILINGUAL' as any },
-    });
-    // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
-    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? null; // null = plus d'option mensuelle
-    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 50000;
+    // ⭐ Tarif bilingue : source centrale en DB (plan add-on BILINGUAL →
+    // pricing_configs), pilotée depuis le back-office /platform/subscriptions.
+    const bilingualAddon = await getBilingualAddonPrice(this.prisma);
+    const monthlyAddon = bilingualAddon.monthly; // tarif mensuel de référence
+    const yearlyAddon = bilingualAddon.yearly;
 
     // ⭐ Contrat : facturation annuelle uniquement. Si billingCycle est MONTHLY
     // (anciennes données), on force l'usage du tarif annuel.

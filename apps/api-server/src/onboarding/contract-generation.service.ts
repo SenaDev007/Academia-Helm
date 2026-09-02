@@ -368,7 +368,7 @@ export class ContractGenerationService {
 
   <div class="title-block">
     <h1>Contrat d'abonnement et de licence d'utilisation</h1>
-    <div class="ref">Plateforme SaaS Academia Helm · Réf. CT-AH-2026-${data.subdomain.toUpperCase().substring(0, 12)}</div>
+    <div class="ref">Plateforme SaaS Academia Helm · Réf. CT-AH-${new Date().getFullYear()}-${data.subdomain.toUpperCase().substring(0, 12)}</div>
   </div>
 
   <div class="brand">

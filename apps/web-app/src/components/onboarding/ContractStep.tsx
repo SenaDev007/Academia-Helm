@@ -85,7 +85,7 @@ export default function ContractStep({
   const { toast } = useToast();
 
   const totalYearOne = activationFee + annualFee + (bilingual ? BILINGUAL_FEE : 0);
-  const contractRef = `CT-AH-2026-${subdomain.toUpperCase().substring(0, 12)}`;
+  const contractRef = `CT-AH-${new Date().getFullYear()}-${subdomain.toUpperCase().substring(0, 12)}`;
 
   // ⭐ Échéancier de tranches (mode paiement par tranches) : montants nettoyés
   //    + total/solde pour l'Article 4 et les payloads de signature.

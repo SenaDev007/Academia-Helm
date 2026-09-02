@@ -329,8 +329,16 @@ export class OnboardingService {
   /**
    * ⭐ Valide les credentials d'un compte plateforme (mode YEHI OR Tech).
    *
-   * Autorisé : les Users avec role = 'SUPER_ADMIN' OU isSuperAdmin = true,
-   * actifs, avec un mot de passe qui matche (bcrypt).
+   * 2 sources acceptées (dans l'ordre) :
+   *   1. DB — Users avec role = 'SUPER_ADMIN' OU isSuperAdmin = true, actifs,
+   *      avec un mot de passe qui matche (bcrypt).
+   *   2. ENV (fallback) — ADMIN_EMAILS (whitelist) + ADMIN_PASSWORDS
+   *      (JSON { email: hash bcrypt }), exactement comme le login du
+   *      back-office admin.academiahelm.com, qui ne passe PAS par la table
+   *      users. Si l'api-server (Railway) partage ces variables, les
+   *      identifiants back-office fonctionnent donc aussi ici, même sans
+   *      compte SUPER_ADMIN en DB (ou après un changement de mot de passe
+   *      back-office non répliqué en DB).
    *
    * Ne JAMAIS révéler si c'est l'email ou le mot de passe qui est faux —
    * on retourne null dans tous les cas d'échec (anti-énumération).
@@ -359,14 +367,18 @@ export class OnboardingService {
     });
 
     if (!admin?.passwordHash) {
-      this.logger.warn(`🔐 Platform admin validation failed: no matching SUPER_ADMIN account for ${normalizedEmail}`);
-      return null;
+      this.logger.warn(
+        `🔐 Platform admin validation failed: no matching SUPER_ADMIN account for ${normalizedEmail} — tentative fallback env`,
+      );
+      return this.validateAdminViaEnvCredentials(normalizedEmail, password);
     }
 
     const passwordMatches = await bcrypt.compare(password, admin.passwordHash);
     if (!passwordMatches) {
-      this.logger.warn(`🔐 Platform admin validation failed: wrong password for ${normalizedEmail}`);
-      return null;
+      this.logger.warn(
+        `🔐 Platform admin validation failed: wrong password for ${normalizedEmail} — tentative fallback env`,
+      );
+      return this.validateAdminViaEnvCredentials(normalizedEmail, password);
     }
 
     return {
@@ -375,6 +387,67 @@ export class OnboardingService {
       firstName: admin.firstName,
       lastName: admin.lastName,
     };
+  }
+
+  /**
+   * ⭐ Fallback env — synchronisation avec le back-office admin.academiahelm.com.
+   *
+   * Le login back-office s'authentifie via ADMIN_EMAILS (whitelist, liste
+   * d'emails séparés par des virgules) + ADMIN_PASSWORDS (JSON
+   * { "email": "<hash bcrypt>" }) — SANS passer par la table users. Pour que
+   * les mêmes identifiants plateforme fonctionnent dans le wizard
+   * d'onboarding même sans compte SUPER_ADMIN en DB, on accepte aussi ces
+   * sources si elles sont configurées côté api-server (Railway).
+   *
+   * Règles (fail-safe) :
+   *   - ADMIN_PASSWORDS absent → fallback désactivé (DB uniquement, comportement
+   *     historique inchangé).
+   *   - ADMIN_EMAILS absent OU vide → whitelist ignorée (ADMIN_PASSWORDS seul
+   *     décide) ; sinon l'email DOIT y figurer.
+   *   - Anti-énumération conservée : null dans tous les cas d'échec.
+   *
+   * @returns un pseudo-compte admin (sans le hash) ou null
+   */
+  private async validateAdminViaEnvCredentials(
+    email: string,
+    password: string,
+  ): Promise<{ id: string; email: string; firstName: string | null; lastName: string | null } | null> {
+    const passwordsRaw = process.env.ADMIN_PASSWORDS;
+    if (!passwordsRaw) {
+      return null; // Fallback désactivé — DB uniquement
+    }
+
+    const whitelistRaw = process.env.ADMIN_EMAILS || '';
+    const whitelist = whitelistRaw
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (whitelist.length > 0 && !whitelist.includes(email)) {
+      return null;
+    }
+
+    try {
+      const passwords = JSON.parse(passwordsRaw) as Record<string, string>;
+      const hash = passwords[email];
+      if (!hash) {
+        return null;
+      }
+      const matches = await bcrypt.compare(password, hash);
+      if (!matches) {
+        return null;
+      }
+      return {
+        id: `platform-${email}`,
+        email,
+        firstName: null,
+        lastName: null,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `🔐 Platform admin env fallback: ADMIN_PASSWORDS illisible (${err instanceof Error ? err.message : 'erreur inconnue'})`,
+      );
+      return null;
+    }
   }
 
   /**

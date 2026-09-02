@@ -163,30 +163,49 @@ export function PedagogicalSpaceWorkspaceEN({
   }, [tab, TABS]);
 
   // ⭐ Fetch classes assigned to the teacher — for the Scheme of Work class selector.
-  //    A teacher should only see THEIR classes (not all the school's classes).
   //    Uses the SAME pattern as the FR PedagogicalSpaceWorkspace (commit 8afcc18):
   //    /api/pedagogy/teacher-profiles → resolve user.id → teacher.id
   //    /api/pedagogy/teacher-class-assignments → get AcademicClass list
-  //    Filter on ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'] (MATERNELLE excluded for monthly plan).
-  //    For director/promoter roles, we use ALL primary classes.
+  //
+  //    ⭐ KEY DIFFERENCE from FR: the EN workspace uses EN class codes (P1, P2, P3...)
+  //    as values, NOT FR codes (CI, CP, CE1...). This is because the backend
+  //    monthly-plans endpoint stores plans by classLevel, and the EN plans are
+  //    stored with EN codes (P1-P6, NUR1-NUR2).
+  //
+  //    Mapping FR → EN:
+  //      MATERNELLE_GRANDS → MATERNELLE_GRANDS (kept as-is, Nursery label)
+  //      CI → P1 (Primary 1), CP → P2, CE1 → P3, CE2 → P4, CM1 → P5, CM2 → P6
   useEffect(() => {
     if (tab !== 'monthly-planning') return;
     if (!resolvedAcademicYearId || !teacherId) return;
-    // ⭐ Global access (director/promoter) — return all standard classes
-    //    with EN labels (Nursery, Primary 1-6)
+
+    // ⭐ Mapping FR class code → EN class code + EN label
+    const FR_TO_EN: Record<string, { value: string; label: string }> = {
+      'MATERNELLE_GRANDS': { value: 'MATERNELLE_GRANDS', label: 'Nursery' },
+      'MATERNELLE': { value: 'MATERNELLE_GRANDS', label: 'Nursery' },
+      'CI': { value: 'P1', label: 'Primary 1' },
+      'CP': { value: 'P2', label: 'Primary 2' },
+      'CE1': { value: 'P3', label: 'Primary 3' },
+      'CE2': { value: 'P4', label: 'Primary 4' },
+      'CM1': { value: 'P5', label: 'Primary 5' },
+      'CM2': { value: 'P6', label: 'Primary 6' },
+    };
+
+    // ⭐ Global access (director/promoter) — return all standard EN classes
     if (hasGlobalAccess) {
       setTeacherClasses([
         { value: 'MATERNELLE_GRANDS', label: 'Nursery' },
-        { value: 'CI', label: 'Primary 1' }, { value: 'CP', label: 'Primary 2' },
-        { value: 'CE1', label: 'Primary 3' }, { value: 'CE2', label: 'Primary 4' },
-        { value: 'CM1', label: 'Primary 5' }, { value: 'CM2', label: 'Primary 6' },
+        { value: 'P1', label: 'Primary 1' },
+        { value: 'P2', label: 'Primary 2' },
+        { value: 'P3', label: 'Primary 3' },
+        { value: 'P4', label: 'Primary 4' },
+        { value: 'P5', label: 'Primary 5' },
+        { value: 'P6', label: 'Primary 6' },
       ]);
       return;
     }
-    // ⭐ Teacher: fetch their assigned classes via the SAME pattern as the FR workspace
-    //    (commit 8afcc18 — this version was tested and worked).
-    //    We extract `officialClassId` from the assignments and filter on the 6 primary
-    //    class codes. The label is translated to English via a labelMap.
+
+    // ⭐ Teacher: fetch their assigned FR classes, then map to EN equivalents
     (async () => {
       try {
         // 1. Récupérer le profil enseignant (user.id → teacher.id)
@@ -214,24 +233,18 @@ export function PedagogicalSpaceWorkspaceEN({
         const assignments = Array.isArray(assignList) ? assignList : (assignList?.data || []);
 
         // 3. Extraire les officialClassId uniques (ex: "CI", "CP", "CE1", ...)
-        //    On ne retient que les classes primaires (CI à CM2) — pas maternelle pour la planif mensuelle.
-        //    Les labels sont traduits en anglais (Nursery, Primary 1-6).
+        //    Mapper vers les codes EN (P1, P2, P3...)
         const classSet = new Map<string, string>(); // value → label
-        const enLabelMap: Record<string, string> = {
-          'CI': 'Primary 1', 'CP': 'Primary 2',
-          'CE1': 'Primary 3', 'CE2': 'Primary 4',
-          'CM1': 'Primary 5', 'CM2': 'Primary 6',
-        };
         for (const a of assignments) {
           const officialClassId = a.classSubject?.academicClass?.officialClassId
             || a.classSubject?.academicClass?.name
             || a.academicClass?.officialClassId
             || a.academicClass?.name;
           if (officialClassId) {
-            const validClasses = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2'];
             const upperId = String(officialClassId).toUpperCase();
-            if (validClasses.includes(upperId) && !classSet.has(upperId)) {
-              classSet.set(upperId, enLabelMap[upperId] || upperId);
+            const enInfo = FR_TO_EN[upperId];
+            if (enInfo && !classSet.has(enInfo.value)) {
+              classSet.set(enInfo.value, enInfo.label);
             }
           }
         }

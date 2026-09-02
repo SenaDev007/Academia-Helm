@@ -226,7 +226,14 @@ export function SchemeOfWorkTab({
           subjects: (c.subjects || []).filter((s: any) => {
             const lang = String(s?.subjectLanguage || s?.language || '').toUpperCase();
             return lang === 'EN' || lang === '';
-          }),
+          }).map((s: any) => ({
+            id: s.subjectId || s.id,
+            name: s.subjectName || s.name || '',
+            code: s.subjectCode || s.code || '',
+            language: s.subjectLanguage || s.language || '',
+            weeklyHours: s.weeklyHours,
+            coefficient: s.coefficient,
+          })),
           totalStudents: c.totalStudents,
         }));
 
@@ -856,18 +863,10 @@ export function SchemeOfWorkTab({
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-              {/* Subject selector dropdown */}
-              <select
-                value={currentSubjectIndex}
-                onChange={(e) => setCurrentSubjectIndex(parseInt(e.target.value, 10))}
-                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white min-w-[250px]"
-              >
-                {subjects.map((subj, idx) => (
-                  <option key={subj.id} value={idx}>
-                    {subj.name || `Subject ${idx + 1}`}
-                  </option>
-                ))}
-              </select>
+              {/* ⭐ Subject name displayed as text (NOT a dropdown) */}
+              <div className="text-sm font-bold text-slate-800 flex-1 text-center">
+                {subjects[currentSubjectIndex]?.name || `Subject ${currentSubjectIndex + 1}`}
+              </div>
             </div>
           </div>
 

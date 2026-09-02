@@ -57,6 +57,7 @@ import { useModuleContext } from "@/hooks/useModuleContext";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { translateClassName } from "@/lib/pedagogy/class-name-en";
+import { loadPdfLibs, drawOfficialHeader, drawFooter, type SchoolHeader } from "@/lib/exports/finance-exports";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -482,29 +483,33 @@ export function SchemeOfWorkTab({
   }, [selectedClassValue, selectedClass, selectedTerm, teacherId, confirmWarning]);
 
   // ───────────────────────────────────────────────────────────────────
-  // Export PDF — ALL terms × ALL subjects, with school header + footer
+  // Export PDF — jsPDF + drawOfficialHeader (same pattern as Finance/Students)
   // ───────────────────────────────────────────────────────────────────
   const handleExportPDF = useCallback(async () => {
     if (exportingPdf) return;
     setExportingPdf(true);
     try {
-      // ⭐ Fetch school identity for the official header
+      const { jsPDF, autoTable } = await loadPdfLibs();
+
+      // ⭐ Fetch school identity
       let schoolInfo: any = {};
       try {
         const idRes = await fetch('/api/settings/identity', { credentials: 'include' });
         if (idRes.ok) schoolInfo = await idRes.json();
       } catch {}
 
-      const schoolName = schoolInfo.schoolName || schoolInfo.name || tenant?.name || 'School';
-      const schoolLogo = schoolInfo.logoUrl || schoolInfo.logo || (tenant?.id ? `/api/tenants/${tenant.id}/logo` : null);
-      const schoolAddress = schoolInfo.address || schoolInfo.schoolAddress || '';
-      const schoolPhone = schoolInfo.phone || schoolInfo.schoolPhone || '';
-      const schoolEmail = schoolInfo.email || schoolInfo.schoolEmail || '';
+      const header: SchoolHeader = {
+        schoolName: schoolInfo.schoolName || schoolInfo.name || tenant?.name || 'School',
+        schoolLogoUrl: schoolInfo.logoUrl || schoolInfo.logo || (tenant?.id ? `/api/tenants/${tenant.id}/logo` : null),
+        schoolAddress: schoolInfo.address || schoolInfo.schoolAddress || null,
+        schoolPhone: schoolInfo.phone || schoolInfo.schoolPhone || null,
+        schoolEmail: schoolInfo.email || schoolInfo.schoolEmail || null,
+        schoolLevel: 'PRIMAIRE',
+      };
 
-      // ⭐ Fetch ALL terms data for the selected class
+      // ⭐ Fetch ALL terms data
       const ALL_TERMS: TermKey[] = ['First Term', 'Second Term', 'Third Term'];
       const termsData: { term: TermKey; cells: SchemeCell[] }[] = [];
-
       for (const term of ALL_TERMS) {
         try {
           const res = await fetch(
@@ -522,137 +527,90 @@ export function SchemeOfWorkTab({
         }
       }
 
-      // ⭐ Build HTML for all terms × all subjects
-      const termsHtml = termsData.map(({ term, cells: termCells }) => {
-        // Get unique subjects from the cells, or use the class's subjects if no cells
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // ⭐ Helper: strip HTML tags for PDF cells
+      const stripHtml = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+
+      let isFirstPage = true;
+
+      for (const { term, cells: termCells } of termsData) {
         const cellSubjects = [...new Set(termCells.map((c: any) => c.domain))].filter(Boolean);
         const allSubjects = cellSubjects.length > 0 ? cellSubjects : subjects.map(s => s.name);
 
-        const subjectsHtml = allSubjects.map((subjName: string) => {
-          const rowsHtml = WEEK_NUMBERS.map((week) => {
-            const topicCell = termCells.find((c: any) => c.weekNumber === week && c.domain === subjName && (c.subDomain || '') === 'Topic');
-            const objCell = termCells.find((c: any) => c.weekNumber === week && c.domain === subjName && (c.subDomain || '') === 'Objectives');
-            const actCell = termCells.find((c: any) => c.weekNumber === week && c.domain === subjName && (c.subDomain || '') === 'Activities');
-            const resCell = termCells.find((c: any) => c.weekNumber === week && c.domain === subjName && (c.subDomain || '') === 'Resources');
-            const evalCell = termCells.find((c: any) => c.weekNumber === week && c.domain === subjName && (c.subDomain || '') === 'Evaluation');
-            return `<tr>
-              <td style="text-align:center;font-weight:bold;">${week}</td>
-              <td>${topicCell?.content || ''}</td>
-              <td>${objCell?.content || ''}</td>
-              <td>${actCell?.content || ''}</td>
-              <td>${resCell?.content || ''}</td>
-              <td>${evalCell?.content || ''}</td>
-            </tr>`;
-          }).join('');
-          return `
-            <div style="page-break-after: always; margin-bottom: 20px;">
-              <table style="width:100%;border-collapse:collapse;border:2px solid #000;font-size:11px;">
-                <thead>
-                  <tr style="background:#1e293b;color:#fff;">
-                    <th colspan="6" style="padding:8px;border:1px solid #000;text-align:center;font-size:14px;">
-                      ${String(term || '').toUpperCase()} &nbsp;|&nbsp; SCHEME OF WORK &nbsp;|&nbsp; ${String(subjName || '').toUpperCase()}
-                    </th>
-                  </tr>
-                  <tr style="background:#e2e8f0;">
-                    <th style="padding:6px;border:1px solid #000;width:5%;">Week</th>
-                    <th style="padding:6px;border:1px solid #000;width:20%;">Topic</th>
-                    <th style="padding:6px;border:1px solid #000;width:22%;">Objectives</th>
-                    <th style="padding:6px;border:1px solid #000;width:22%;">Activities</th>
-                    <th style="padding:6px;border:1px solid #000;width:16%;">Resources</th>
-                    <th style="padding:6px;border:1px solid #000;width:15%;">Evaluation</th>
-                  </tr>
-                </thead>
-                <tbody>${rowsHtml}</tbody>
-              </table>
-            </div>
-          `;
-        }).join('');
+        for (const subjName of allSubjects) {
+          if (!isFirstPage) doc.addPage();
+          isFirstPage = false;
 
-        return `
-          <div style="page-break-before: always;">
-            <h2 style="text-align:center;font-size:16px;margin:20px 0 10px 0;">${String(term || '').toUpperCase()}</h2>
-          </div>
-          ${subjectsHtml}
-        `;
-      }).join('');
+          drawOfficialHeader(doc, header, pageWidth);
 
-      const printWindow = window.open('', '_blank', 'width=900,height=1200');
-      if (!printWindow) {
-        toast.error("Please allow pop-ups to export the PDF.");
-        return;
+          // Title
+          doc.setFont('times', 'bold');
+          doc.setFontSize(13);
+          doc.setTextColor(20, 20, 20);
+          doc.text(`SCHEME OF WORK — ${String(term || '').toUpperCase()}`, pageWidth / 2, 48, { align: 'center' });
+          doc.setFontSize(10);
+          doc.setFont('times', 'normal');
+          doc.text(`Class: ${selectedClass?.label || ''}   |   Subject: ${subjName}   |   Academic Year: ${new Date().getFullYear()}`, pageWidth / 2, 54, { align: 'center' });
+
+          // Table
+          const tableBody = WEEK_NUMBERS.map(week => {
+            const getCell = (col: string) => {
+              const c = termCells.find((x: any) => x.weekNumber === week && x.domain === subjName && (x.subDomain || '') === col);
+              return stripHtml(c?.content || '');
+            };
+            return [String(week), getCell('Topic'), getCell('Objectives'), getCell('Activities'), getCell('Resources'), getCell('Evaluation')];
+          });
+
+          autoTable(doc, {
+            head: [['Week', 'Topic', 'Objectives', 'Activities', 'Resources', 'Evaluation']],
+            body: tableBody,
+            startY: 60,
+            margin: { left: 14, right: 14 },
+            styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
+            headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
+            columnStyles: { 0: { cellWidth: 12, halign: 'center' } },
+            didDrawPage: (data: any) => {
+              drawFooter(doc, pageWidth, pageHeight, doc.internal.getNumberOfPages());
+            },
+          });
+        }
       }
 
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Scheme of Work — ${selectedClass?.label || ''}</title>
-          <style>
-            @page { size: A4 landscape; margin: 1.5cm; }
-            body { font-family: 'Times New Roman', serif; color: #000; margin: 0; padding: 0; }
-            .school-header { text-align: center; margin-bottom: 20px; border-bottom: 3px double #000; padding-bottom: 10px; }
-            .school-header img { max-height: 80px; margin-bottom: 5px; }
-            .school-header h1 { font-size: 20px; margin: 4px 0; font-weight: bold; }
-            .school-header p { font-size: 11px; margin: 1px 0; color: #333; }
-            .doc-title { text-align: center; margin: 15px 0; }
-            .doc-title h2 { font-size: 18px; margin: 4px 0; text-decoration: underline; }
-            .doc-title p { font-size: 13px; margin: 2px 0; }
-            .signatures { margin-top: 40px; display: flex; justify-content: space-around; page-break-inside: avoid; }
-            .sig-block { text-align: center; min-width: 200px; }
-            .sig-line { margin-top: 60px; border-top: 1px solid #000; padding-top: 4px; font-size: 11px; }
-            .footer { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; font-size: 9px; color: #999; border-top: 1px solid #ddd; padding: 5px; }
-          </style>
-        </head>
-        <body>
-          <!-- Official School Header -->
-          <div class="school-header">
-            ${schoolLogo ? `<img src="${schoolLogo}" alt="School logo" />` : ''}
-            <h1>${schoolName}</h1>
-            ${schoolAddress ? `<p>${schoolAddress}</p>` : ''}
-            ${(schoolPhone || schoolEmail) ? `<p>${[schoolPhone, schoolEmail].filter(Boolean).join(' · ')}</p>` : ''}
-          </div>
+      // ⭐ Signatures on the last page
+      doc.addPage();
+      drawOfficialHeader(doc, header, pageWidth);
+      doc.setFont('times', 'bold');
+      doc.setFontSize(12);
+      doc.text('Signatures', pageWidth / 2, 55, { align: 'center' });
 
-          <!-- Document Title -->
-          <div class="doc-title">
-            <h2>SCHEME OF WORK</h2>
-            <p>Class: <strong>${selectedClass?.label || ''}</strong> — Academic Year: ${new Date().getFullYear()}</p>
-          </div>
+      if (teacherSignature) {
+        try { doc.addImage(teacherSignature, 'PNG', 40, 62, 50, 25); } catch {}
+      }
+      doc.setFont('times', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Class Teacher: ${teacherName || ''}`, 65, 95);
 
-          <!-- All terms × all subjects -->
-          ${termsHtml}
+      if (directorSignature) {
+        try { doc.addImage(directorSignature, 'PNG', pageWidth - 90, 62, 50, 25); } catch {}
+      }
+      doc.text(`Director: ${directorName || ''}`, pageWidth - 65, 95);
 
-          <!-- Signatures -->
-          <div class="signatures">
-            <div class="sig-block">
-              ${teacherSignature ? `<img src="${teacherSignature}" style="max-height:60px;" />` : ''}
-              <div class="sig-line">Class Teacher: ${teacherName || ''}</div>
-            </div>
-            <div class="sig-block">
-              ${directorSignature ? `<img src="${directorSignature}" style="max-height:60px;" />` : ''}
-              <div class="sig-line">Director: ${directorName || ''}</div>
-            </div>
-          </div>
+      drawFooter(doc, pageWidth, pageHeight, doc.internal.getNumberOfPages());
 
-          <!-- Footer -->
-          <div class="footer">
-            ${schoolName} — Scheme of Work — ${selectedClass?.label || ''} — Generated on ${new Date().toLocaleDateString('en-GB')}
-          </div>
-
-          <script>
-            window.onload = function() { setTimeout(function() { window.print(); }, 500); };
-          </script>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
-      toast.success("PDF export ready — use your browser's print dialog to save as PDF.");
+      // ⭐ Download directly (same pattern as students/finance PDF)
+      const fileName = `Scheme_of_Work_${selectedClass?.label || ''}_${new Date().getFullYear()}.pdf`;
+      doc.save(fileName);
+      toast.success('✅ PDF exported successfully');
     } catch (e: any) {
       console.error('PDF export error:', e);
       toast.error("Export error", { description: e.message });
     } finally {
       setExportingPdf(false);
     }
-  }, [exportingPdf, subjects, cells, selectedTerm, selectedClass, tenant, teacherName, directorName, teacherSignature, directorSignature]);
+  }, [exportingPdf, subjects, cells, selectedClassValue, selectedClass, selectedTerm, teacherId, academicYearId, tenant, teacherSignature, directorSignature, teacherName, directorName]);
 
   // ───────────────────────────────────────────────────────────────────
   // Cell helpers

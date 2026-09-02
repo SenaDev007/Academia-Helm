@@ -324,10 +324,16 @@ export class MonthlyPlanService {
     }
 
     // Récupérer le trimestre du mois
+    // ⭐ Supporte les deux pistes :
+    //    - FR: mois français (Septembre → Décembre = T1, Janvier → Mars = T2, Avril → Juin = T3)
+    //    - EN: termes anglais (First Term = T1, Second Term = T2, Third Term = T3)
     const TRIMESTER_OF: Record<string, number> = {
+      // FR months
       'Septembre': 1, 'Octobre': 1, 'Novembre': 1, 'Décembre': 1,
       'Janvier': 2, 'Février': 2, 'Mars': 2,
       'Avril': 3, 'Mai': 3, 'Juin': 3,
+      // EN terms
+      'First Term': 1, 'Second Term': 2, 'Third Term': 3,
     };
     const trimester = TRIMESTER_OF[month];
     if (!trimester) {

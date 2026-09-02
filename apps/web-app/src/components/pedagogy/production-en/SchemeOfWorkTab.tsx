@@ -55,6 +55,7 @@ import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { translateClassName } from "@/lib/pedagogy/class-name-en";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -362,6 +363,27 @@ export function SchemeOfWorkTab({
 
   saveRef.current = handleSave;
 
+  // ⭐ Auto-save every 5 seconds if cells have changed (same as Cahier Journal)
+  const isDirtyRef = useRef(false);
+  const prevCellsRef = useRef<SchemeCell[]>(cells);
+  useEffect(() => {
+    // Mark dirty whenever cells change
+    if (prevCellsRef.current !== cells) {
+      isDirtyRef.current = true;
+      prevCellsRef.current = cells;
+    }
+  }, [cells]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (isDirtyRef.current && !isEditingRef.current && !saving && !loading && !submitting && cells.length > 0) {
+        isDirtyRef.current = false;
+        await saveRef.current();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [saving, loading, submitting, cells]);
+
   // ───────────────────────────────────────────────────────────────────
   // Submit to director (with teacher signature)
   // ───────────────────────────────────────────────────────────────────
@@ -617,81 +639,25 @@ export function SchemeOfWorkTab({
     );
   }
 
-  // ⭐ Render an editable cell
-  const renderCell = (week: number, subject: string, column: string) => {
-    const cellKey = `${selectedClassValue}|${selectedTerm}|${subject}|${column}|${week}`;
-    const cell = findCell(cells, week, subject, column);
-    const isEditing = editingCellKey === cellKey;
-
-    const handleSaveCell = async () => {
-      if (cell && cell.id) {
-        try {
-          await pedagogyFetch(`/api/pedagogy/monthly-plans/${cell.id}`, {
-            method: "PUT", body: { content: editContent },
-          });
-        } catch (e: any) {
-          toast.error("Save failed: " + e.message);
-        }
-      } else {
-        updateCellLocal(week, subject, column, editContent);
-      }
-      setEditingCellKey(null);
-      if (!cell || !cell.id) {
-        await saveRef.current();
-      }
-    };
+  // ⭐ Render an editable cell using RichTextEditor (same as Cahier Journal)
+  //    The RichTextEditor is always visible (no click-to-edit toggle) — the
+  //    teacher can directly type and format text (bold, italic, underline,
+  //    lists, etc.) just like in the Cahier Journal.
+  //    Content is saved to local state on every change, and persisted to DB
+  //    when the user clicks "Save" or auto-saved every 5 seconds.
+  const renderCell = (week: number, subjectName: string, column: string) => {
+    const cell = findCell(cells, week, subjectName, column);
+    const content = cell?.content || "";
 
     return (
-      <td key={cellKey} className="p-1 border border-slate-200 align-top" style={{ minHeight: "50px" }}>
-        {isEditing ? (
-          <div className="space-y-1">
-            <textarea
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="w-full px-1 py-0.5 border border-purple-300 rounded text-xs bg-white min-h-[60px]"
-              autoFocus
-              rows={3}
-            />
-            <div className="flex gap-0.5">
-              <button onClick={handleSaveCell} className="p-0.5 bg-emerald-600 text-white rounded" title="Save">
-                <Check className="w-3 h-3" />
-              </button>
-              <button onClick={() => setEditingCellKey(null)} className="p-0.5 bg-slate-200 rounded" title="Cancel">
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        ) : cell ? (
-          <div
-            className={cn2(
-              "text-[11px] leading-tight cursor-pointer p-1 rounded min-h-[40px] whitespace-pre-wrap",
-              cell.isCustom ? "bg-amber-50 text-amber-900 border border-amber-200"
-                : "text-slate-700"
-            )}
-            onClick={() => {
-              if (isReadOnly) return;
-              setEditingCellKey(cellKey);
-              setEditContent(cell.content);
-            }}
-            title={isReadOnly ? "Read-only" : "Click to edit"}
-          >
-            {cell.content || <span className="text-slate-300 italic">…</span>}
-          </div>
-        ) : (
-          <div
-            onClick={() => {
-              if (isReadOnly) return;
-              setEditingCellKey(cellKey);
-              setEditContent("");
-            }}
-            className={cn2(
-              "text-[11px] leading-tight cursor-pointer p-1 rounded min-h-[40px]",
-              isReadOnly ? "cursor-not-allowed text-slate-300" : "text-slate-400 hover:bg-purple-50 hover:text-purple-700 border border-dashed border-slate-200"
-            )}
-          >
-            {isReadOnly ? "" : "＋"}
-          </div>
-        )}
+      <td key={`${subjectName}-${column}-${week}`} className="p-0 border border-slate-200 align-top">
+        <RichTextEditor
+          value={content}
+          onChange={(html) => updateCellLocal(week, subjectName, column, html)}
+          disabled={isReadOnly}
+          placeholder="—"
+          minHeight="60px"
+        />
       </td>
     );
   };
@@ -839,7 +805,7 @@ export function SchemeOfWorkTab({
         </div>
       ) : (
         <>
-          {/* ⭐ Subject switcher — show ONE subject at a time with prev/next navigation */}
+          {/* ⭐ Subject switcher — dropdown + chevrons for fast navigation */}
           <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
@@ -863,10 +829,18 @@ export function SchemeOfWorkTab({
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
-              {/* ⭐ Subject name displayed as text (NOT a dropdown) */}
-              <div className="text-sm font-bold text-slate-800 flex-1 text-center">
-                {subjects[currentSubjectIndex]?.name || `Subject ${currentSubjectIndex + 1}`}
-              </div>
+              {/* ⭐ Subject selector dropdown — for fast switching between subjects */}
+              <select
+                value={currentSubjectIndex}
+                onChange={(e) => setCurrentSubjectIndex(parseInt(e.target.value, 10))}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white min-w-[280px]"
+              >
+                {subjects.map((subj, idx) => (
+                  <option key={subj.id || idx} value={idx}>
+                    {subj.name || `Subject ${idx + 1}`}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

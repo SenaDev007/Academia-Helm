@@ -174,7 +174,9 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
           </div>
 
           <p className="text-xs text-slate-500 mt-4 text-center">
-            Un email de confirmation avec le contrat signé en pièce jointe et vos identifiants vous a été envoyé.
+            Deux emails vous ont été envoyés : le contrat signé en pièce jointe, et le
+            message de bienvenue « Vos accès sont prêts » avec vos identifiants de connexion
+            (identique au processus de création en ligne).
           </p>
 
           {result.contractUrl && (

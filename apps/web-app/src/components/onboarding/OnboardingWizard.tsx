@@ -3485,12 +3485,16 @@ export default function OnboardingWizard() {
                     </div>
                     <div className="text-sm text-green-900 space-y-1">
                       <p>
-                        <strong>Email envoyé au promoteur</strong> avec le contrat signé en pièce jointe
-                        et l'URL de connexion{creationResult?.subdomain ? ` (${creationResult.subdomain}.academiahelm.com)` : ''}.
+                        <strong>Deux emails envoyés au promoteur</strong> : le contrat signé
+                        en pièce jointe, et le message de bienvenue « Vos accès sont prêts »
+                        avec ses identifiants et l'URL de connexion
+                        {creationResult?.subdomain ? ` (${creationResult.subdomain}.academiahelm.com)` : ''} —
+                        exactement le même email de création que le processus en ligne (FedaPay).
                       </p>
                       <p className="text-xs text-green-700">
-                        Le mot de passe choisi à l'étape 2 n'est pas inclus dans l'email — communiquez-le
-                        au promoteur en main propre.
+                        Le mot de passe n'est pas inclus dans les emails (choisi à l'étape 2 de
+                        l'inscription) — l'email de bienvenue rappelle d'utiliser « Mot de passe
+                        oublié » si besoin.
                       </p>
                     </div>
                   </div>

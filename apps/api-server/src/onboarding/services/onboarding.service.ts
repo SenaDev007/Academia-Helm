@@ -478,9 +478,17 @@ export class OnboardingService {
       cycle: data.periodType,
     });
 
-    // ⚠️ Prix initial depuis PricingService (paramétrable)
-    // Appliquer la réduction multi-écoles si applicable
-    const initialPayment = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+    // ⚠️ Prix initial — ⭐ priorité au plan (pricing_plans.initialFee, éditable
+    //    back-office, aligné contrat Article 4 : 500 000 FCFA uniformes).
+    //    Fallback : PricingService (pricing_configs + réduction multi-écoles le
+    //    cas échéant). Corrige l'ancien bug où le snapshot embarquait
+    //    initialPayment=100 000 (config de test) au lieu de 500 000.
+    const planInitialFee = pricingResult.plan.initialFee != null
+      ? Number(pricingResult.plan.initialFee)
+      : null;
+    const initialPayment = planInitialFee != null
+      ? planInitialFee
+      : await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
 
     // Construire le priceSnapshot avec le breakdown complet
     // ⭐ Inclure monthlyPrice et yearlPrice pour que HelmSubscription.monthlyAmount
@@ -495,9 +503,10 @@ export class OnboardingService {
       bilingualFee: pricingResult.breakdown.bilingualPrice,
       schoolsCount: draft.schoolsCount,
       subscriptionPrice: pricingResult.amount, // Prix de l'abonnement annuel
-      monthlyPrice: pricingResult.plan.monthlyPrice?.toNumber?.() ?? Number(pricingResult.plan.monthlyPrice ?? 0),
-      yearlyPrice: pricingResult.plan.yearlyPrice?.toNumber?.() ?? Number(pricingResult.plan.yearlyPrice ?? 0),
-      initialPayment, // Prix initial (100k FCFA)
+      monthlyPrice: pricingResult.plan.monthlyPrice ?? 0,
+      yearlyPrice: pricingResult.plan.yearlyPrice ?? 0,
+      initialFee: planInitialFee ?? initialPayment, // ⭐ Frais d'activation (contrat Article 4 — lu en priorité par le contrat / paiement cash)
+      initialPayment, // Alias historique (mêmes frais d'activation)
       breakdown: pricingResult.breakdown as unknown as Prisma.InputJsonValue, // Breakdown complet pour audit
       currency: 'XOF',
     };
@@ -1803,6 +1812,19 @@ export class OnboardingService {
     // ─── 2. Déléguer au flux d'activation UNIFIÉ (identique au mode self-service) ───
     const activation = await this.activateTenantAfterPayment(payment.id) as any;
     this.logger.log(`✅ Tenant activated after contract sign for draft ${draftId}`);
+
+    // ─── 2bis. Envoyer l'email de bienvenue avec les identifiants ───
+    // ⭐ EXACTEMENT le même email que le flux self-service FedaPay
+    //    (sendOnboardingPaymentSuccessEmail → template paymentSuccess
+    //    « ✅ Bienvenue sur Academia Helm — Vos accès sont prêts » :
+    //    récapitulatif du plan, carte identifiants or, URL de connexion).
+    //    Le contrôleur envoie en parallèle l'email du contrat signé (PDF
+    //    en pièce jointe) — le promoteur reçoit donc les DEUX messages.
+    //    Non-bloquant (l'email est catché en interne) ; uniquement sur
+    //    activation fraîche (pas en mode idempotent déjà activé).
+    if (!activation?.alreadyActivated) {
+      await this.sendWelcomeEmailForPayment(payment.id, payment.reference);
+    }
 
     // ─── 3. Retourner les infos de connexion (sous-domaine, portail) ───
     const refreshedPayment = await this.prisma.onboardingPayment.findUnique({

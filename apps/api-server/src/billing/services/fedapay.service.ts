@@ -2318,6 +2318,10 @@ export class FedaPayService implements OnModuleInit {
       etablissementNom: draft.schoolName,
       plan,
       transactionRef: String(transaction.reference || transaction.id || payment.reference),
+      // ⭐ Flux espèces (mode YEHI OR Tech / signature de contrat) : le libellé
+      //    de la référence s'adapte — même email, même template que le flux
+      //    self-service FedaPay.
+      referenceLabel: payment.provider === 'cash' ? 'Référence de paiement' : undefined,
       // ⭐ Utiliser payment.amount (montant RÉEL stocké en DB) et NON
       // transaction.amount (qui peut être plafonné à 20000 en sandbox FedaPay).
       montant: Number(payment.amount) || 0,

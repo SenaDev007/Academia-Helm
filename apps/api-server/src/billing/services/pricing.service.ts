@@ -56,6 +56,12 @@ export interface PricingResult {
     name: string;
     maxSchools: number;
     bilingualAllowed: boolean;
+    // ⭐ Prix du plan (pricing_plans) exposés aux consommateurs — le
+    //    priceSnapshot d'onboarding les copie (montants HelmSubscription,
+    //    contrat, paiement cash).
+    monthlyPrice: number | null;
+    yearlyPrice: number | null;
+    initialFee: number | null;
   };
   configVersion: number; // Version de la config utilisée
 }
@@ -149,14 +155,24 @@ export class PricingService {
     // 3. Valider les paramètres
     this.validatePricingInput(input, plan);
 
-    // 4. Calculer le prix de base selon le cycle (depuis config)
+    // 4. Calculer le prix de base selon le cycle
+    // ⭐ Source : le PLAN (pricing_plans.yearlyAmount / monthlyAmount — éditable
+    //    depuis le back-office /platform/subscriptions, aligné sur le contrat
+    //    Article 4) ; la config reste un FALLBACK si le plan n'a pas de prix
+    //    pour ce cycle (ex. monthlyAmount NULL → facturation annuelle seule).
+    const planMonthly = plan.monthlyAmount != null ? Number(plan.monthlyAmount) : null;
+    const planYearly = plan.yearlyAmount != null ? Number(plan.yearlyAmount) : null;
     const basePrice = input.cycle === 'MONTHLY' 
-      ? config.monthlyBasePrice 
-      : config.yearlyBasePrice;
+      ? (planMonthly ?? (Number(config.monthlyBasePrice) || 0))
+      : (planYearly ?? (Number(config.yearlyBasePrice) || 0));
 
     // 5. Calculer le prix des écoles supplémentaires (depuis config ou group tiers)
+    // ⭐ Garde : pricing_plans n'a pas de colonne maxSchools — on utilise
+    //    studentMax (nombre max d'élèves) comme proxy, sinon illimité.
+    //    Sans cette garde, `schoolsCount <= undefined` est toujours faux et
+    //    schoolsPrice remonte null → subtotal/total nulls dans le snapshot.
     const schoolsPrice = await this.calculateSchoolsPrice(
-      plan.maxSchools,
+      plan.maxSchools ?? plan.studentMax ?? Infinity,
       input.schoolsCount,
       input.cycle,
       config
@@ -180,11 +196,14 @@ export class PricingService {
     const subtotal = basePrice + schoolsPrice + bilingualPrice;
 
     // 8. Calculer la remise annuelle (depuis config)
+    // ⭐ basePrice est désormais le prix ANNUEL du plan : la remise est un
+    //    simple pourcentage sur le sous-total annuel (plus de ×12 — l'ancienne
+    //    formule supposait une base mensuelle et produisait des montants
+    //    aberrants type 408 000 FCFA de remise sur 200 000 FCFA).
     let discount = 0;
     let discountPercent = 0;
-    if (input.cycle === 'YEARLY') {
-      const monthlyEquivalent = (basePrice + schoolsPrice + bilingualPrice) * 12;
-      discount = Math.round(monthlyEquivalent * (config.yearlyDiscountPercent / 100));
+    if (input.cycle === 'YEARLY' && config.yearlyDiscountPercent) {
+      discount = Math.round(subtotal * (config.yearlyDiscountPercent / 100));
       discountPercent = config.yearlyDiscountPercent;
     }
 
@@ -224,6 +243,12 @@ export class PricingService {
         name: plan.name,
         maxSchools: plan.maxSchools,
         bilingualAllowed: plan.bilingualAllowed,
+        // ⭐ Champs prix exposés aux consommateurs (onboarding selectPlan construit
+        //    le priceSnapshot à partir de ces valeurs — elles doivent être
+        //    présentes et correctes, sinon snapshot.yearlyPrice = 0).
+        monthlyPrice: planMonthly,
+        yearlyPrice: planYearly,
+        initialFee: plan.initialFee != null ? Number(plan.initialFee) : null,
       },
       configVersion: config.version,
     };

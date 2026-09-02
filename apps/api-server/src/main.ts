@@ -547,17 +547,21 @@ async function bootstrap() {
       `CREATE INDEX IF NOT EXISTS "pricing_plans_sortOrder_idx" ON "pricing_plans"("sortOrder")`,
 
       // ─── Seed pricing_plans (idempotent — WHERE NOT EXISTS) ───
+      // ⭐ Contrat Article 4 — facturation ANNUELLE uniquement (monthlyAmount NULL)
+      //    + frais d'activation UNIFORMES 500 000 FCFA : 
+      //    SEED 50 000/an · GROW 75 000/an · LEAD 100 000/an · NETWORK 150 000/an
+      //    (totaux Année 1 : 550 000 / 575 000 / 600 000 / 650 000 FCFA).
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'SEED', 'Helm Essentiel', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 50, 500000, 10000, 100000, 5000, 50000, '["Tous les modules inclus sans restriction","Jusqu''à 50 élèves","Abonnement de 30 jours offert","Support par email","Sauvegarde automatique (restauration 24h)"]', false, true, 1, NOW(), NOW()
+       SELECT gen_random_uuid(), 'SEED', 'Helm Essentiel', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 50, 500000, NULL, 50000, 5000, 50000, '["Tous les modules inclus sans restriction","Jusqu''à 50 élèves","Abonnement de 30 jours offert","Support par email","Sauvegarde automatique (restauration 24h)"]', false, true, 1, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'SEED')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'GROW', 'Helm Croissance', 'Pilotez votre croissance', 'Pour les écoles en pleine expansion qui ont besoin d''outils avancés.', 51, 150, 500000, 15000, 150000, 5000, 50000, '["Tous les modules inclus sans restriction","51 à 150 élèves","Abonnement de 30 jours offert","Support prioritaire email + WhatsApp","Sauvegarde automatique (restauration 24h)","Tableaux de bord ORION"]', true, true, 2, NOW(), NOW()
+       SELECT gen_random_uuid(), 'GROW', 'Helm Croissance', 'Pilotez votre croissance', 'Pour les écoles en pleine expansion qui ont besoin d''outils avancés.', 51, 150, 500000, NULL, 75000, 5000, 50000, '["Tous les modules inclus sans restriction","51 à 150 élèves","Abonnement de 30 jours offert","Support prioritaire email + WhatsApp","Sauvegarde automatique (restauration 24h)","Tableaux de bord ORION"]', true, true, 2, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'GROW')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'LEAD', 'Helm Performance', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 151, 400, 500000, 25000, 250000, 5000, 50000, '["Tous les modules inclus sans restriction","151 à 400 élèves","Abonnement de 30 jours offert","Support dédié 7j/7","Sauvegarde automatique (restauration 1h)","Tableaux de bord ORION + alertes intelligentes"]', false, true, 3, NOW(), NOW()
+       SELECT gen_random_uuid(), 'LEAD', 'Helm Performance', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 151, 400, 500000, NULL, 100000, 5000, 50000, '["Tous les modules inclus sans restriction","151 à 400 élèves","Abonnement de 30 jours offert","Support dédié 7j/7","Sauvegarde automatique (restauration 1h)","Tableaux de bord ORION + alertes intelligentes"]', false, true, 3, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'LEAD')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'NETWORK', 'Helm Institution', 'La catégorie multi-école', 'Pour les réseaux d''écoles et les établissements multi-école.', 401, NULL, 500000, 50000, 500000, 5000, 50000, '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', false, true, 4, NOW(), NOW()
+       SELECT gen_random_uuid(), 'NETWORK', 'Helm Institution', 'La catégorie multi-école', 'Pour les réseaux d''écoles et les établissements multi-école.', 401, NULL, 500000, NULL, 150000, 5000, 50000, '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', false, true, 4, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'NETWORK')`,
       // ⭐ Option bilingue (add-on) — plan BILINGUAL : SOURCE DE VÉRITÉ du tarif
       //    bilingue, éditable depuis le back-office /platform/subscriptions
@@ -571,24 +575,34 @@ async function bootstrap() {
       // écraser une valeur modifiée depuis le back-office au redémarrage).
       `UPDATE "pricing_plans" SET "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "bilingualMonthly" IS NULL AND "bilingualYearly" IS NULL`,
 
-      // ─── Update features des plans existants (pour corriger les features initiales) ───
-      // ⭐ UPDATE pricing — révision tarifaire : frais d'activation UNIFORMES à
-      //    500 000 FCFA (contrat Article 4 — ancienne valeur 300 000). Les frais
-      //    annuels mensuels/annuels par plan restent inchangés.
-      // Helm Essentiel : 1-50 élèves, 10 000/mois, 100 000/an, activation 500 000
-      `UPDATE "pricing_plans" SET "name" = 'Helm Essentiel', "studentMin" = 1, "studentMax" = 50, "initialFee" = 500000, "monthlyAmount" = 10000, "yearlyAmount" = 100000, "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "features" = '["Tous les modules inclus sans restriction","Jusqu''à 50 élèves","Abonnement de 30 jours offert","Support par email","Sauvegarde automatique (restauration 24h)"]', "updatedAt" = NOW() WHERE "code" = 'SEED'`,
-      // Helm Croissance : 51-150 élèves, 15 000/mois, 150 000/an, activation 500 000
-      `UPDATE "pricing_plans" SET "name" = 'Helm Croissance', "studentMin" = 51, "studentMax" = 150, "initialFee" = 500000, "monthlyAmount" = 15000, "yearlyAmount" = 150000, "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "features" = '["Tous les modules inclus sans restriction","51 à 150 élèves","Abonnement de 30 jours offert","Support prioritaire email + WhatsApp","Sauvegarde automatique (restauration 24h)","Tableaux de bord ORION"]', "updatedAt" = NOW() WHERE "code" = 'GROW'`,
-      // Helm Performance : 151-400 élèves, 25 000/mois, 250 000/an, activation 500 000
-      `UPDATE "pricing_plans" SET "name" = 'Helm Performance', "studentMin" = 151, "studentMax" = 400, "initialFee" = 500000, "monthlyAmount" = 25000, "yearlyAmount" = 250000, "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "features" = '["Tous les modules inclus sans restriction","151 à 400 élèves","Abonnement de 30 jours offert","Support dédié 7j/7","Sauvegarde automatique (restauration 1h)","Tableaux de bord ORION + alertes intelligentes"]', "updatedAt" = NOW() WHERE "code" = 'LEAD'`,
-      // Helm Institution : 401+ élèves, 50 000/mois, 500 000/an, activation 500 000
-      `UPDATE "pricing_plans" SET "name" = 'Helm Institution', "studentMin" = 401, "studentMax" = NULL, "initialFee" = 500000, "monthlyAmount" = 50000, "yearlyAmount" = 500000, "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "features" = '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', "updatedAt" = NOW() WHERE "code" = 'NETWORK'`,
+      // ─── Migration tarifaire conditionnelle (contrat Article 4) ───
+      // ⭐ Révision tarifaire complète : activation UNIFORME 500 000 FCFA +
+      //    frais annuels 50 000/75 000/100 000/150 000 selon le plan (totaux
+      //    Année 1 : 550/575/600/650 k) + facturation annuelle uniquement
+      //    (monthlyAmount NULL).
+      //    CONDITIONNELLE sur les anciennes valeurs connues (100 000/150 000/
+      //    250 000/500 000 annuels, mensuels 10 000-50 000, activation 300 000)
+      //    afin de ne JAMAIS écraser un tarif personnalisé modifié depuis le
+      //    back-office au redémarrage.
+      `UPDATE "pricing_plans" SET "initialFee" = 500000, "monthlyAmount" = NULL, "yearlyAmount" = 50000, "updatedAt" = NOW() WHERE "code" = 'SEED' AND ("initialFee" = 300000 OR "monthlyAmount" = 10000 OR "yearlyAmount" = 100000)`,
+      `UPDATE "pricing_plans" SET "initialFee" = 500000, "monthlyAmount" = NULL, "yearlyAmount" = 75000, "updatedAt" = NOW() WHERE "code" = 'GROW' AND ("initialFee" = 300000 OR "monthlyAmount" = 15000 OR "yearlyAmount" = 150000)`,
+      `UPDATE "pricing_plans" SET "initialFee" = 500000, "monthlyAmount" = NULL, "yearlyAmount" = 100000, "updatedAt" = NOW() WHERE "code" = 'LEAD' AND ("initialFee" = 300000 OR "monthlyAmount" = 25000 OR "yearlyAmount" = 250000)`,
+      `UPDATE "pricing_plans" SET "initialFee" = 500000, "monthlyAmount" = NULL, "yearlyAmount" = 150000, "updatedAt" = NOW() WHERE "code" = 'NETWORK' AND ("initialFee" = 300000 OR "monthlyAmount" = 50000 OR "yearlyAmount" = 500000)`,
 
-      // ─── Révision tarifaire (contrat Article 4) : frais d'activation 300 000 → 500 000 ───
-      // Migre la pricing_configs active existante (source de /public/pricing/initial).
-      // Conditionnel (uniquement si ancienne valeur 300 000) pour ne pas écraser
-      // un tarif personnalisé modifié depuis le back-office.
-      `UPDATE "pricing_configs" SET "initialSubscriptionFee" = 500000, "metadata" = jsonb_set(COALESCE("metadata", '{}'::jsonb), '{activationFeeRevision}', '"300000->500000"'), "updatedAt" = NOW() WHERE "isActive" = true AND "initialSubscriptionFee" = 300000`,
+      // ─── Révision tarifaire (contrat Article 4) : pricing_configs de secours ───
+      // Migre la pricing_configs active existante (fallback de
+      // PricingService.calculateInitialPaymentPrice / calculateTenantPrice).
+      // ⭐ ATTENTION : cette table utilise des colonnes SNAKE_CASE (créée par
+      //    une migration Prisma, contrairement à pricing_plans en camelCase) —
+      //    l'ancienne UPDATE en camelCase échouait silencieusement (warning
+      //    « column does not exist » avalé par le try/catch de alterStatements).
+      //    Pas de colonne updated_at non plus (created_at seulement).
+      // ⭐ Conditionnel sur les ANCIENNES valeurs connues (100 000 = config de
+      //    test, 300 000 = pré-révision) pour ne pas écraser un tarif
+      //    personnalisé modifié depuis le back-office. Aligné contrat :
+      //    activation 500 000 uniforme (0% multi-écoles), base annuelle 50 000,
+      //    annuel seul (base mensuelle 0, remise annuelle 0).
+      `UPDATE "pricing_configs" SET "initial_subscription_fee" = 500000, "monthly_base_price" = 0, "yearly_base_price" = 50000, "yearly_discount_percent" = 0, "school_additional_price" = 0, "multi_school_initial_discount_percent" = 0, "metadata" = jsonb_set(COALESCE("metadata", '{}'::jsonb), '{activationFeeRevision}', '"contract-article4-500000"') WHERE "is_active" = true AND ("initial_subscription_fee" IN (100000, 300000) OR "yearly_base_price" = 150000)`,
 
       // ─── HelmSubscription: champs cycle de vie (migration 20260620100000) ───
       // Pas de @@map sur ce modèle → nom de table = "HelmSubscription" (casse Prisma)

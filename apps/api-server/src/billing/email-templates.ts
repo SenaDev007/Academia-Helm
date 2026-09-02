@@ -75,6 +75,9 @@ export const emailTemplates = {
       /** ⭐ Nom AFFICHABLE du plan (ex: "Helm Essentiel") — NE PAS passer le code (SEED/GROW). */
       plan: string;
       transactionRef: string;
+      /** ⭐ Libellé de la ligne référence — « Référence FedaPay » (défaut, flux
+       *    self-service) ou « Référence de paiement » (flux espèces/contrat). */
+      referenceLabel?: string;
       montant: number;
       /** URL de connexion directe au portail école : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant=...&school_name=... */
       loginUrl: string;
@@ -118,7 +121,7 @@ export const emailTemplates = {
                 <td style="padding:8px 0;font-size:15px;font-weight:bold;color:#0D1F6E;">${escHtml(formatFCFA(data.montant))}</td>
               </tr>
               <tr>
-                <td style="padding:8px 0;font-size:14px;color:#64748b;">Référence FedaPay</td>
+                <td style="padding:8px 0;font-size:14px;color:#64748b;">${escHtml(data.referenceLabel || 'Référence FedaPay')}</td>
                 <td style="padding:8px 0;font-size:13px;font-family:monospace;color:#334155;">${escHtml(data.transactionRef)}</td>
               </tr>
             </table>

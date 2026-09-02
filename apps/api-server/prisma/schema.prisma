@@ -13118,7 +13118,7 @@ model PricingConfig {
 ///   - 4 plans : Helm Essentiel (SEED), Helm Croissance (GROW),
 ///     Helm Performance (LEAD), Helm Institution (NETWORK)
 ///   - Tranches d'élèves : 1-50, 51-150, 151-400, 401+
-///   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+///   - Frais d'activation uniques : 500 000 FCFA (uniforme — révision tarifaire, ex 300 000)
 ///   - Facturation annuelle uniquement (plus d'option mensuelle)
 ///   - Add-on bilingue FR/EN : 50 000 FCFA/an
 ///   - Add-on BILINGUAL : plan code 'BILINGUAL' pour l'option bilingue

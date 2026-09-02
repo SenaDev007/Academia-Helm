@@ -30,6 +30,7 @@ import {
   Query,
   Headers,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
@@ -125,6 +126,11 @@ export class SubscriptionLifecycleController {
    * POST /api/billing/renew/:tenantId
    * Renouvelle un abonnement après paiement.
    * Body: { amount: number, paymentReference?: string }
+   *
+   * ⭐ Garde-fou : une école SUSPENDED / BLOCKED ne peut pas se renouveler
+   *    elle-même — la réactivation est réservée au back-office plateforme
+   *    (règlement encaissé par YEHI OR Tech) ou au webhook FedaPay (appel
+   *    interne au service, non concerné ici).
    */
   @Public()
   @Post('renew/:tenantId')
@@ -135,6 +141,22 @@ export class SubscriptionLifecycleController {
   ) {
     if (!body?.amount) {
       throw new BadRequestException('Le montant est requis');
+    }
+
+    if (!adminEmail) {
+      const current = await this.prisma.helmSubscription.findUnique({
+        where: { tenantId },
+        select: { status: true },
+      });
+      if (current && (current.status === 'SUSPENDED' || current.status === 'BLOCKED')) {
+        throw new ForbiddenException({
+          code: 'RENEWAL_REQUIRES_PLATFORM',
+          message:
+            "Le renouvellement d'un abonnement suspendu ou bloqué est réservé à la plateforme. " +
+            'Merci de régler votre facture auprès de YEHI OR Tech — la réactivation est effectuée ' +
+            'depuis le back-office dès encaissement du règlement.',
+        });
+      }
     }
 
     // Si admin email fourni, logger pour audit
@@ -164,6 +186,10 @@ export class SubscriptionLifecycleController {
    * POST /api/billing/reactivate/:tenantId
    * Réactive un abonnement bloqué après paiement des frais (5 000 FCFA).
    * Body: { paymentReference?: string }
+   *
+   * ⭐ Réservé au back-office plateforme (header x-platform-admin-email) :
+   *    la page publique /reactivate avec « référence » de paiement fictive
+   *    ne peut plus lever un blocage sans règlement réel.
    */
   @Public()
   @Post('reactivate/:tenantId')
@@ -172,6 +198,15 @@ export class SubscriptionLifecycleController {
     @Body() body: { paymentReference?: string },
     @Headers('x-platform-admin-email') adminEmail?: string,
   ) {
+    if (!adminEmail) {
+      throw new ForbiddenException({
+        code: 'REACTIVATION_REQUIRES_PLATFORM',
+        message:
+          'La réactivation est réservée à la plateforme. Merci de régler les frais de réactivation ' +
+          'auprès de YEHI OR Tech — elle est effectuée depuis le back-office dès encaissement.',
+      });
+    }
+
     if (adminEmail) {
       this.logger.log(`Reactivate subscription for tenant ${tenantId} by admin ${adminEmail}`);
     }
@@ -841,14 +876,14 @@ export class SubscriptionLifecycleController {
 
       // ⭐ Aligné sur le contrat d'abonnement Academia Helm (Article 4) :
       //   - Facturation ANNUELLE uniquement (plus de mensuel)
-      //   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+      //   - Frais d'activation uniques : 500 000 FCFA (uniforme)
       //   - Helm Essentiel (SEED) : 50 000 FCFA/an — 1-50 élèves
       //   - Helm Croissance (GROW) : 75 000 FCFA/an — 51-150 élèves
       const plan = isCspeb ? 'GROW' : 'SEED';
       const billingCycle = 'ANNUAL';
       const monthlyAmount = 0; // Plus d'option mensuelle (contrat Article 4)
       const annualAmount = isCspeb ? 75000 : 50000;
-      const setupFee = 300000; // Frais d'activation uniformes
+      const setupFee = 500000; // Frais d'activation uniformes
       const status = isCspeb ? 'ACTIVE' : 'TRIALING';
 
       const now = new Date();
@@ -1022,7 +1057,7 @@ export class SubscriptionLifecycleController {
         data: {
           tenantId: cspeb.id,
           type: 'INITIAL_SUBSCRIPTION' as any,
-          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
+          amount: 500000, // Frais d'activation — contrat Article 4 (uniforme)
           channel: 'FEDAPAY',
           reference: `CSPEB-INIT-${Date.now()}`,
           metadata: {
@@ -1035,7 +1070,7 @@ export class SubscriptionLifecycleController {
           },
         },
       });
-      results.push({ step: 'BillingEvent créé', eventId: event.id, amount: 300000 });
+      results.push({ step: 'BillingEvent créé', eventId: event.id, amount: 500000 });
     } else {
       results.push({ step: 'BillingEvent existe déjà', eventId: existingEvent.id });
     }
@@ -1051,7 +1086,7 @@ export class SubscriptionLifecycleController {
         data: {
           subscriptionId: sub.id,
           tenantId: cspeb.id,
-          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
+          amount: 500000, // Frais d'activation — contrat Article 4 (uniforme)
           currency: 'XOF',
           plan: 'GROW' as any,
           billingCycle: 'ANNUAL' as any, // Contrat Article 4 — annuel uniquement
@@ -1061,7 +1096,7 @@ export class SubscriptionLifecycleController {
           invoiceNumber,
           customerEmail: 's.akpovitohou@gmail.com',
           customerName: cspeb.name,
-          description: 'Frais d\'activation — Helm Croissance (annuel, contrat Article 4) — 300 000 FCFA',
+          description: 'Frais d\'activation — Helm Croissance (annuel, contrat Article 4) — 500 000 FCFA',
           type: 'INITIAL_SUBSCRIPTION',
           paymentReference: `CSPEB-INIT-${Date.now()}`,
           paymentMethod: 'MOBILE_MONEY',
@@ -1167,7 +1202,7 @@ export class SubscriptionLifecycleController {
           promoterPasswordHash: '$2b$12$placeholder.hash.for.seed.data',
           otpVerified: true,
           selectedPlanId: null,
-          priceSnapshot: { planCode: 'GROW', billingCycle: 'ANNUAL', yearlyPrice: 75000, setupFee: 300000 } as any,
+          priceSnapshot: { planCode: 'GROW', billingCycle: 'ANNUAL', yearlyPrice: 75000, setupFee: 500000 } as any,
           status: 'COMPLETED',
         },
       });
@@ -1177,7 +1212,7 @@ export class SubscriptionLifecycleController {
           draftId: draft.id,
           provider: 'fedapay',
           reference: `CSPEB-ONBOARD-${Date.now()}`,
-          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
+          amount: 500000, // Frais d'activation — contrat Article 4 (uniforme)
           currency: 'XOF',
           status: 'SUCCESS',
           metadata: {
@@ -1191,7 +1226,7 @@ export class SubscriptionLifecycleController {
       });
 
       results.push({ step: 'OnboardingDraft créé', draftId: draft.id });
-      results.push({ step: 'OnboardingPayment créé', paymentId: payment.id, amount: 300000 });
+      results.push({ step: 'OnboardingPayment créé', paymentId: payment.id, amount: 500000 });
     } else {
       results.push({ step: 'OnboardingDraft existe déjà', draftId: existingDraft.id });
     }

@@ -425,7 +425,7 @@ export class ContractGenerationService {
     <div class="highlight-box">Coût total Année 1 : ${data.totalYearOne.toLocaleString('fr-FR')} FCFA</div>
 
     <h2 class="article">Article 4 — Prix et modalités de paiement</h2>
-    <p>Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
+    <p>Frais d'activation de <strong>500 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
     ${this.buildPaymentBoxHtml(data)}
 
     <h2 class="article">Article 5 — Durée et reconduction</h2>
@@ -583,10 +583,10 @@ export class ContractGenerationService {
    */
   private getPlanTable(selectedPlanCode: string): string {
     const plans = [
-      { code: 'SEED', name: 'Helm Essentiel', range: '1 à 50', activation: '300 000', annual: '50 000', total: '350 000' },
-      { code: 'GROW', name: 'Helm Croissance', range: '51 à 150', activation: '300 000', annual: '75 000', total: '375 000' },
-      { code: 'LEAD', name: 'Helm Performance', range: '151 à 400', activation: '300 000', annual: '100 000', total: '400 000' },
-      { code: 'NETWORK', name: 'Helm Institution', range: '401 et +', activation: '300 000', annual: '150 000', total: '450 000' },
+      { code: 'SEED', name: 'Helm Essentiel', range: '1 à 50', activation: '500 000', annual: '50 000', total: '550 000' },
+      { code: 'GROW', name: 'Helm Croissance', range: '51 à 150', activation: '500 000', annual: '75 000', total: '575 000' },
+      { code: 'LEAD', name: 'Helm Performance', range: '151 à 400', activation: '500 000', annual: '100 000', total: '600 000' },
+      { code: 'NETWORK', name: 'Helm Institution', range: '401 et +', activation: '500 000', annual: '150 000', total: '650 000' },
     ];
 
     return plans.map(p => {

@@ -9,7 +9,7 @@
  * ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
  *   - 4 plans : Helm Essentiel / Croissance / Performance / Institution
  *   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
- *   - Frais d'activation uniformes : 300 000 FCFA
+ *   - Frais d'activation uniformes : 500 000 FCFA
  *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
  *
  * Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335, White
@@ -36,13 +36,17 @@ import { Footer2 } from '@/components/ui/footer-2';
 // ─── Liens FedaPay directs (page de paiement hébergée par FedaPay) ────────
 // ⭐ Configuration fournie par le client (14 août 2026) :
 //    Chaque plan a son propre lien FedaPay qui pré-remplit le montant
-//    d'activation (300 000 FCFA) + le libellé du plan.
+//    d'activation + le libellé du plan.
+//    ⚠️ RÉVISION TARIFAIRE : l'activation est passée de 300 000 à 500 000 FCFA.
+//    Les liens hébergés FedaPay ci-dessous doivent être recréés dans le
+//    tableau de bord FedaPay avec le NOUVEAU montant (500 000 FCFA), puis
+//    mis à jour ici (sinon la page de paiement FedaPay encaissera 300 000).
 //    L'option bilingue a son propre lien séparé (50 000 FCFA/an).
 const FEDAPAY_LINKS: Record<string, string> = {
-  SEED: 'https://me.fedapay.com/fR9fHMGM',     // Helm Essentiel — 300k activation
-  GROW: 'https://me.fedapay.com/C10KvvLW',     // Helm Croissance — 300k activation
-  LEAD: 'https://me.fedapay.com/UwOWk2GZ',     // Helm Performance — 300k activation
-  NETWORK: 'https://me.fedapay.com/IlZhBDDi',  // Helm Institution — 300k activation
+  SEED: 'https://me.fedapay.com/fR9fHMGM',     // Helm Essentiel — activation (à recréer à 500 000)
+  GROW: 'https://me.fedapay.com/C10KvvLW',     // Helm Croissance — activation (à recréer à 500 000)
+  LEAD: 'https://me.fedapay.com/UwOWk2GZ',     // Helm Performance — activation (à recréer à 500 000)
+  NETWORK: 'https://me.fedapay.com/IlZhBDDi',  // Helm Institution — activation (à recréer à 500 000)
   BILINGUAL: 'https://me.fedapay.com/JZSXICow', // Option bilingue — 50k/an
 };
 
@@ -121,7 +125,7 @@ export default function TarificationPage() {
             </h1>
             <p className="text-lg md:text-xl text-blue-100 max-w-2xl mx-auto mb-8">
               Choisissez le plan adapté à la taille de votre établissement. Facturation
-              annuelle, frais d&apos;activation uniques de 300 000 FCFA, WhatsApp illimité
+              annuelle, frais d&apos;activation uniques de 500 000 FCFA, WhatsApp illimité
               inclus dans tous les plans.
             </p>
 
@@ -130,7 +134,7 @@ export default function TarificationPage() {
                 Facturation annuelle
               </span>
               <span className="px-6 py-2 text-sm font-bold text-blue-100">
-                Frais d&apos;activation : 300 000 FCFA
+                Frais d&apos;activation : 500 000 FCFA
               </span>
             </div>
           </div>
@@ -252,7 +256,7 @@ export default function TarificationPage() {
               Prêt à transformer votre établissement ?
             </h2>
             <p className="text-blue-100 mb-8 text-lg">
-              Créez votre école sur Academia Helm. Frais d&apos;activation de 300 000 FCFA
+              Créez votre école sur Academia Helm. Frais d&apos;activation de 500 000 FCFA
               à la signature, puis abonnement annuel à partir de 50 000 FCFA/an.
             </p>
             <Link
@@ -270,8 +274,8 @@ export default function TarificationPage() {
             <h2 className="text-2xl font-black text-[#0b2f73] mb-8 text-center">Questions fréquentes</h2>
             <div className="space-y-4">
               <FAQItem
-                question="Que comprend le frais d'activation de 300 000 FCFA ?"
-                answer="Le frais d'activation unique de 300 000 FCFA est payable à la signature du contrat. Il couvre la configuration de votre établissement, l'initialisation de la plateforme, la formation initiale et le démarrage. Il est identique quel que soit le plan choisi."
+                question="Que comprend le frais d'activation de 500 000 FCFA ?"
+                answer="Le frais d'activation unique de 500 000 FCFA est payable à la signature du contrat. Il couvre la configuration de votre établissement, l'initialisation de la plateforme, la formation initiale et le démarrage. Il est identique quel que soit le plan choisi."
               />
               <FAQItem
                 question="Comment fonctionne la facturation annuelle ?"
@@ -291,7 +295,7 @@ export default function TarificationPage() {
               />
               <FAQItem
                 question="Comment payer l'activation de mon compte ?"
-                answer="Le paiement des frais d'activation (300 000 FCFA) se fait directement en ligne via FedaPay (Mobile Money ou carte bancaire). Cliquez sur le bouton « Payer l'activation via FedaPay » du plan choisi sur cette page. Après confirmation du paiement, vous recevez un email avec le lien de finalisation de votre contrat d'abonnement et la création de votre école."
+                answer="Le paiement des frais d'activation (500 000 FCFA) se fait directement en ligne via FedaPay (Mobile Money ou carte bancaire). Cliquez sur le bouton « Payer l'activation via FedaPay » du plan choisi sur cette page. Après confirmation du paiement, vous recevez un email avec le lien de finalisation de votre contrat d'abonnement et la création de votre école."
               />
               <FAQItem
                 question="Quels sont les autres moyens de paiement acceptés ?"

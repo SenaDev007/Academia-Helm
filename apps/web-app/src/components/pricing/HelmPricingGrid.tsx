@@ -11,7 +11,7 @@ export interface HelmPricingGridProps {
  *
  * ⭐ Aligné sur le contrat d'abonnement (Article 4) :
  *   - Facturation ANNUELLE uniquement (plus d'option mensuelle)
- *   - Frais d'activation uniformes : 300 000 FCFA
+ *   - Frais d'activation uniformes : 500 000 FCFA
  *   - 4 plans : Helm Essentiel / Croissance / Performance / Institution
  */
 export default function HelmPricingGrid({
@@ -30,7 +30,7 @@ export default function HelmPricingGrid({
       <div className="flex flex-col items-center mb-10">
         <div className="bg-white/80 rounded-full border border-gold-300 px-4 py-2 inline-flex items-center gap-3 shadow-sm">
           <span className="text-xs font-semibold text-slate-700">
-            Facturation annuelle — Frais d&apos;activation 300 000 FCFA
+            Facturation annuelle — Frais d&apos;activation 500 000 FCFA
           </span>
           <span className="ml-2 text-xs font-semibold text-gold-600">
             WhatsApp illimité inclus

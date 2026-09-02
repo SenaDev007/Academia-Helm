@@ -62,7 +62,7 @@ const QUICK_REPLIES: QuickReply[] = [
 
 const WELCOME_MESSAGE = `👋 Bonjour ! Je suis **SARA**, l'assistante IA d'Academia Helm.
 
-Je peux vous renseigner sur nos 4 plans du contrat d'abonnement (Helm Essentiel, Croissance, Performance, Institution — à partir de 50 000 FCFA/an, frais d'activation 300 000 FCFA), les 21 modules métier + 6 modules complémentaires, le free trial guidé, ou organiser une démonstration pour votre école.
+Je peux vous renseigner sur nos 4 plans du contrat d'abonnement (Helm Essentiel, Croissance, Performance, Institution — à partir de 50 000 FCFA/an, frais d'activation 500 000 FCFA), les 21 modules métier + 6 modules complémentaires, le free trial guidé, ou organiser une démonstration pour votre école.
 
 Comment puis-je vous aider aujourd'hui ? 😊`;
 
@@ -431,23 +431,23 @@ export default function SupportChatWidget() {
         if (intent.id === 'pricing_general') {
           answer =
             "📌 **Grille Academia Helm — contrat d'abonnement (Article 4)**\n\n" +
-            "Facturation annuelle uniquement · Frais d'activation 300 000 FCFA (uniforme)\n\n" +
+            "Facturation annuelle uniquement · Frais d'activation 500 000 FCFA (uniforme)\n\n" +
             "• **HELM ESSENTIEL** (1–50 élèves)\n" +
-            "  - Frais d'activation : 300 000 F CFA (one-shot)\n" +
+            "  - Frais d'activation : 500 000 F CFA (one-shot)\n" +
             "  - Frais annuels : 50 000 F CFA / an\n" +
-            "  - Coût total Année 1 : 350 000 F CFA\n\n" +
+            "  - Coût total Année 1 : 550 000 F CFA\n\n" +
             "• **HELM CROISSANCE** (51–150 élèves) — plan le plus choisi\n" +
-            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais d'activation : 500 000 F CFA\n" +
             "  - Frais annuels : 75 000 F CFA / an\n" +
-            "  - Coût total Année 1 : 375 000 F CFA\n\n" +
+            "  - Coût total Année 1 : 575 000 F CFA\n\n" +
             "• **HELM PERFORMANCE** (151–400 élèves)\n" +
-            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais d'activation : 500 000 F CFA\n" +
             "  - Frais annuels : 100 000 F CFA / an\n" +
-            "  - Coût total Année 1 : 400 000 F CFA\n\n" +
+            "  - Coût total Année 1 : 600 000 F CFA\n\n" +
             "• **HELM INSTITUTION** (401 élèves et +)\n" +
-            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais d'activation : 500 000 F CFA\n" +
             "  - Frais annuels : 150 000 F CFA / an\n" +
-            "  - Coût total Année 1 : 450 000 F CFA\n\n" +
+            "  - Coût total Année 1 : 650 000 F CFA\n\n" +
             "Tous les plans incluent les 21 modules métier + 6 modules complémentaires, Web + Desktop + Mobile, offline-first, agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque et site institutionnel.\n\n" +
             "Add-ons : Option bilingue FR/EN 50 000 FCFA/an · WhatsApp gratuit illimité · SMS/Email/Voice au prix coûtant.";
         } else if (faq[category] && faq[category].questions[0]) {

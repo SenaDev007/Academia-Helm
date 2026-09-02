@@ -103,7 +103,7 @@ export class PricingService {
    * Configuration par défaut (fallback si aucune config active)
    *
    * ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
-   *   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+   *   - Frais d'activation uniques : 500 000 FCFA (uniforme)
    *   - Facturation annuelle uniquement (monthlyBasePrice = 0)
    *   - Base annuelle (Helm Essentiel) : 50 000 FCFA/an
    *   - Option bilingue : 50 000 FCFA/an (pas d'option mensuelle)
@@ -111,7 +111,7 @@ export class PricingService {
   private getDefaultConfig() {
     return {
       id: 'default',
-      initialSubscriptionFee: 300000, // 300 000 FCFA — frais d'activation uniformes
+      initialSubscriptionFee: 500000, // 500 000 FCFA — frais d'activation uniformes
       monthlyBasePrice: 0, // 0 — plus d'option mensuelle
       yearlyBasePrice: 50000, // 50 000 FCFA/an (base Helm Essentiel)
       yearlyDiscountPercent: 0, // 0% — pas de remise (annuel = seul cycle)

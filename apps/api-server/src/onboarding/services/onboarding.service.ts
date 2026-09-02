@@ -888,7 +888,7 @@ export class OnboardingService {
         const helmPlanEnum = (['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(helmPlan) ? helmPlan : 'SEED') as any;
         const monthlyAmount = pricing?.monthlyPrice || 0;
         const annualAmount = pricing?.yearlyPrice || 0;
-        // ⭐ setupFee = frais d'activation réels (Article 4 : 300 000 FCFA).
+        // ⭐ setupFee = frais d'activation réels (Article 4 : 500 000 FCFA).
         //    En mode espèces, payment.amount = total Année 1 (activation + annuel + bilingue)
         //    → on ne doit PAS le confondre avec les frais d'activation seuls.
         const setupFee = Number(pricing?.initialPayment ?? pricing?.initialFee ?? payment.amount) || 0;
@@ -1671,7 +1671,7 @@ export class OnboardingService {
     // Montant total Année 1 encaissé en espèces :
     //   frais d'activation + frais annuels du plan + option bilingue (annuelle)
     // subscriptionPrice (snapshot PricingService) inclut déjà l'option bilingue.
-    const activationFee = Number(pricing.initialPayment ?? pricing.initialFee ?? 300000) || 0;
+    const activationFee = Number(pricing.initialPayment ?? pricing.initialFee ?? 500000) || 0;
     const annualFee = Number(pricing.yearlyPrice ?? 50000) || 0;
     const bilingualFee = draft.bilingual ? Number(pricing.bilingualFee ?? 50000) || 0 : 0;
     const totalFromSnapshot = Number(pricing.subscriptionPrice ?? 0) || 0;

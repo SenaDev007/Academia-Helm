@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
 import { formatCurrency } from '@/lib/utils';
-import { HELM_PLANS, BILINGUAL_ADDON } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE } from '@/lib/services/HelmPricingService';
 
 // ⭐ Tranche de l'échéancier de paiement (espèces — mode YEHI OR Tech)
 interface ContractInstallmentItem {
@@ -58,7 +58,7 @@ const BILINGUAL_FEE = BILINGUAL_ADDON.annual ?? 50000;
 const PLAN_TABLE = (['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((code) => {
   const plan = HELM_PLANS[code];
   const annual = plan.annualPrice;
-  const activation = plan.setupFee ?? 300000;
+  const activation = plan.setupFee ?? HELM_ACTIVATION_FEE;
   return {
     code,
     name: plan.name,
@@ -398,7 +398,7 @@ export default function ContractStep({
               <section>
                 <h4 className={articleTitle}>Article 4 — Prix et modalités de paiement</h4>
                 <p className={articleText}>
-                  Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de{' '}
+                  Frais d'activation de <strong>500 000 FCFA</strong> dus à la signature. Frais annuels de{' '}
                   <strong>{formatCurrency(annualFee)} FCFA</strong> dus chaque année à la{' '}
                   <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money
                   (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité.

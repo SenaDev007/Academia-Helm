@@ -54,7 +54,7 @@ export class PricingConfigSeedService implements OnModuleInit {
     //     cette config n'est qu'un fallback versionné.
     const defaultConfig = await this.prisma.pricingConfig.create({
       data: {
-        initialSubscriptionFee: 300000, // 300 000 FCFA — frais d'activation uniformes
+        initialSubscriptionFee: 500000, // 500 000 FCFA — frais d'activation uniformes
         multiSchoolInitialDiscountPercent: 10, // 10% de réduction sur la souscription initiale pour les promoteurs gérant plusieurs écoles
         monthlyBasePrice: 0, // 0 — plus d'option mensuelle (contrat en annuel uniquement)
         yearlyBasePrice: 50000, // 50 000 FCFA/an — base Helm Essentiel

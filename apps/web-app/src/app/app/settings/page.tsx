@@ -206,6 +206,34 @@ const SETTINGS_TAB_IDS: TabId[] = [
   'communication', 'payments', 'orion', 'atlas', 'offline',
 ];
 
+/* ⭐ Onglet « Modules » (Paramètres) — périmètre d'affichage.
+ * Seuls les modules ci-dessous figurent dans l'onglet. Les modules non
+ * disponibles sont masqués (filtrés) et listés dans SETTINGS_HIDDEN_MODULE_CODES.
+ * ⚠️ Libellé : le module COMMUNICATION s'appelle désormais « Helm Connect ». */
+const SETTINGS_VISIBLE_MODULE_CODES: string[] = [
+  'STUDENTS',      // Élèves & Scolarité
+  'FINANCE',       // Finances
+  'EXAMS',         // Examens, Notes
+  'PEDAGOGY',      // Organisation Pédagogique
+  'HR_PAYROLL',    // Personnel RH
+  'COMMUNICATION', // Helm Connect
+  'CANTEEN',       // Cantine
+  'INFIRMARY',     // Infirmerie
+  'EDUCAST',       // EduCast
+  'SHOP',          // Academia Shop
+];
+/* Modules masqués de l'onglet (pas encore disponibles / hors périmètre actuel).
+ * Retirer un code de cet ensemble (et le décommenter dans l'onglet) pour le réafficher. */
+const SETTINGS_HIDDEN_MODULE_CODES = new Set<string>([
+  'CMS',        // Site Institutionnel
+  'LIBRARY',    // Bibliothèque — non disponible
+  'TRANSPORT',  // Transport — non disponible
+  'QHSE',       // QHSE
+  'ORION',      // ORION
+  'ATLAS',      // ATLAS
+  'OFFLINE_SYNC', // Synchronisation en ligne
+]);
+
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
 
 interface Toast {
@@ -2206,15 +2234,30 @@ export default function SettingsPage() {
     try {
       setSaving(true);
       const tid = effectiveTenantId ?? undefined;
-      if (enableAll) {
-        const res = await settingsService.enableAllModules(undefined, tid);
-        const n = typeof res?.enabled === 'number' ? res.enabled : 0;
-        showToast('success', n > 0 ? `${n} module(s) activé(s)` : 'Tous les modules étaient déjà activés');
-      } else {
-        const res = await settingsService.disableAllModules(undefined, tid);
-        const n = typeof res?.disabled === 'number' ? res.disabled : 0;
-        showToast('success', n > 0 ? `${n} module(s) désactivé(s)` : 'Tous les modules étaient déjà désactivés');
+      // ⭐ Ne basculer que les modules AFFICHÉS dans l'onglet (les modules
+      //    masqués — Bibliothèque, Transport, QHSE, ORION, ATLAS, sync en
+      //    ligne… — restent intouchés).
+      const current = (features as { featureCode: string; isEnabled: boolean }[]);
+      const targets = current.filter(
+        (f) => SETTINGS_VISIBLE_MODULE_CODES.includes(f.featureCode) && Boolean(f.isEnabled) !== enableAll,
+      );
+      if (targets.length === 0) {
+        showToast(
+          'success',
+          enableAll
+            ? 'Tous les modules affichés sont déjà activés'
+            : 'Tous les modules affichés sont déjà désactivés',
+        );
+        return;
       }
+      await Promise.all(
+        targets.map((f) =>
+          enableAll
+            ? settingsService.enableFeature(f.featureCode, 'Activation globale depuis les paramètres', tid)
+            : settingsService.disableFeature(f.featureCode, 'Désactivation globale depuis les paramètres', tid),
+        ),
+      );
+      showToast('success', `${targets.length} module(s) ${enableAll ? 'activé(s)' : 'désactivé(s)'}`);
       const updated = await settingsService.getFeatures(tid);
       setFeatures(Array.isArray(updated) ? updated : []);
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('settings:features-updated'));
@@ -2301,7 +2344,7 @@ export default function SettingsPage() {
     DEPENSES: 'Dépenses',
     RH: 'Personnel, RH & Paie',
     PAIE: 'Paie',
-    COMMUNICATION: 'Communication',
+    COMMUNICATION: 'Helm Connect',
     PARAMETRES: 'Paramètres',
     ANNEES_SCOLAIRES: 'Années scolaires',
     ORION: 'ORION',
@@ -4709,10 +4752,20 @@ export default function SettingsPage() {
 
       case 'features':
         // Ordre d'affichage des modules (aligné sidebar / backend FEATURE_KEYS)
+        // ⭐ Modules MASQUÉS (indisponibles pour l'instant) : codes commentés —
+        //    décommenter un code (ici + dans featureLabels + le retirer de
+        //    SETTINGS_HIDDEN_MODULE_CODES) pour le réafficher dans l'onglet.
         const modulesDisplayOrder = [
-          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION', 'CMS',
-          'LIBRARY', 'TRANSPORT', 'CANTEEN', 'INFIRMARY', 'QHSE', 'EDUCAST', 'SHOP',
-          'ORION', 'ATLAS', 'OFFLINE_SYNC',
+          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION',
+          // 'CMS',          // Site Institutionnel — masqué
+          // 'LIBRARY',      // Bibliothèque — module non disponible pour l'instant
+          // 'TRANSPORT',    // Transport — module non disponible pour l'instant
+          'CANTEEN', 'INFIRMARY',
+          // 'QHSE',         // QHSE — masqué
+          'EDUCAST', 'SHOP',
+          // 'ORION',        // ORION — masqué
+          // 'ATLAS',        // ATLAS — masqué
+          // 'OFFLINE_SYNC', // Synchronisation en ligne — masquée
         ];
         const featureLabels: Record<string, string> = {
           STUDENTS: 'Élèves & Scolarité',
@@ -4720,20 +4773,25 @@ export default function SettingsPage() {
           EXAMS: 'Examens, Notes & Bulletins',
           PEDAGOGY: 'Organisation Pédagogique',
           HR_PAYROLL: 'Personnel, RH & Paie',
-          COMMUNICATION: 'Communication',
-          CMS: 'Site Institutionnel',
-          LIBRARY: 'Bibliothèque',
-          TRANSPORT: 'Transport',
+          COMMUNICATION: 'Helm Connect', // ⭐ renommé (anciennement « Communication »)
+          // CMS: 'Site Institutionnel',      // masqué
+          // LIBRARY: 'Bibliothèque',         // masqué
+          // TRANSPORT: 'Transport',          // masqué
           CANTEEN: 'Cantine',
           INFIRMARY: 'Infirmerie',
-          QHSE: 'QHSE',
+          // QHSE: 'QHSE',                    // masqué
           EDUCAST: 'EduCast',
           SHOP: 'Academia Shop',
-          ORION: 'ORION',
-          ATLAS: 'ATLAS',
-          OFFLINE_SYNC: 'Sync. hors ligne',
+          // ORION: 'ORION',                  // masqué
+          // ATLAS: 'ATLAS',                  // masqué
+          // OFFLINE_SYNC: 'Sync. hors ligne', // masquée
         };
-        const sortedFeatures = [...features].sort((a: { featureCode: string }, b: { featureCode: string }) => {
+        // Modules masqués → filtrés de l'affichage (Bibliothèque, Transport,
+        // QHSE, ORION, ATLAS, synchronisation en ligne, site institutionnel)
+        const visibleFeatures = (features as { featureCode: string; isEnabled: boolean; premium?: boolean }[]).filter(
+          (f: { featureCode: string }) => !SETTINGS_HIDDEN_MODULE_CODES.has(f.featureCode),
+        );
+        const sortedFeatures = [...visibleFeatures].sort((a: { featureCode: string }, b: { featureCode: string }) => {
           const ia = modulesDisplayOrder.indexOf(a.featureCode);
           const ib = modulesDisplayOrder.indexOf(b.featureCode);
           if (ia !== -1 && ib !== -1) return ia - ib;
@@ -4746,22 +4804,22 @@ export default function SettingsPage() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Modules & Fonctionnalités</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Modules activés par défaut : Élèves & Scolarité, Finances & Économat, Examens (Notes & Bulletins), Organisation Pédagogique, Personnel (RH & Paie), Communication. Les autres sont désactivés par défaut.
+                Modules activés par défaut : Élèves & Scolarité, Finances & Économat, Examens (Notes & Bulletins), Organisation Pédagogique, Personnel (RH & Paie), Helm Connect. Les autres modules listés sont désactivés par défaut.
               </p>
-              {features.length === 0 ? (
+              {visibleFeatures.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <ToggleLeft className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>Chargement des modules…</p>
                 </div>
               ) : (
               <div className="space-y-4">
-                  {/* Interrupteur global : activer/désactiver tous les modules */}
+                  {/* Interrupteur global : activer/désactiver tous les modules AFFICHÉS */}
                   {(() => {
-                    const allEnabled = features.every((f: { isEnabled: boolean }) => f.isEnabled);
+                    const allEnabled = sortedFeatures.every((f: { isEnabled: boolean }) => f.isEnabled);
                     return (
                       <div className="flex items-center justify-between p-4 border border-blue-200 rounded-lg bg-blue-50/50 mb-4">
                         <div>
-                          <h4 className="font-semibold text-gray-800">Tous les modules</h4>
+                          <h4 className="font-semibold text-gray-800">Tous les modules affichés</h4>
                           <p className="text-sm text-gray-600 mt-0.5">
                             {allEnabled ? 'Tous activés' : 'Tous désactivés ou partiellement'}
                           </p>
@@ -4770,7 +4828,7 @@ export default function SettingsPage() {
                           onClick={() => handleToggleAllModules(!allEnabled)}
                           disabled={saving}
                           className="p-2 rounded-lg hover:bg-blue-100 transition-colors"
-                          title={allEnabled ? 'Désactiver tous les modules' : 'Activer tous les modules'}
+                          title={allEnabled ? 'Désactiver tous les modules affichés' : 'Activer tous les modules affichés'}
                         >
                           {allEnabled ? (
                             <ToggleRight className="w-6 h-6 text-green-600" />

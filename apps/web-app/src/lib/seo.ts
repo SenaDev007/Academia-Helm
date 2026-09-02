@@ -512,7 +512,7 @@ export function generateProductSchema() {
           {
             '@type': 'UnitPriceSpecification',
             name: 'Frais d\'activation ESSENTIEL (one-shot, à la signature)',
-            price: '300000',
+            price: '500000',
             priceCurrency: 'XOF',
             priceType: 'https://schema.org/InvoicePrice',
           },
@@ -537,7 +537,7 @@ export function generateProductSchema() {
           {
             '@type': 'UnitPriceSpecification',
             name: 'Frais d\'activation CROISSANCE (one-shot, à la signature)',
-            price: '300000',
+            price: '500000',
             priceCurrency: 'XOF',
             priceType: 'https://schema.org/InvoicePrice',
           },
@@ -562,7 +562,7 @@ export function generateProductSchema() {
           {
             '@type': 'UnitPriceSpecification',
             name: 'Frais d\'activation PERFORMANCE (one-shot, à la signature)',
-            price: '300000',
+            price: '500000',
             priceCurrency: 'XOF',
             priceType: 'https://schema.org/InvoicePrice',
           },
@@ -587,7 +587,7 @@ export function generateProductSchema() {
           {
             '@type': 'UnitPriceSpecification',
             name: 'Frais d\'activation INSTITUTION (one-shot, à la signature)',
-            price: '300000',
+            price: '500000',
             priceCurrency: 'XOF',
             priceType: 'https://schema.org/InvoicePrice',
           },

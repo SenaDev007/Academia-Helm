@@ -59,7 +59,7 @@ import {
   Lock,
   FileText,
 } from 'lucide-react';
-import { HELM_PLANS, BILINGUAL_ADDON, fetchPricingPlans, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE, fetchPricingPlans, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import FedaPayCheckout from './FedaPayCheckout';
@@ -578,8 +578,8 @@ export default function OnboardingWizard() {
       return;
     }
 
-    // ⭐ Frais d'activation : 300 000 FCFA (uniforme, contrat Article 4)
-    setInitialPayment(300000);
+    // ⭐ Frais d'activation : 500 000 FCFA (uniforme, contrat Article 4)
+    setInitialPayment(HELM_ACTIVATION_FEE);
 
     // Prix de base annuel (contrat : pas d'option mensuelle)
     const yearlyBase = plan.annualPrice;
@@ -721,7 +721,7 @@ export default function OnboardingWizard() {
           // ⭐ Paiement échelonné : valider l'échéancier
           const list = paymentMarked.installments;
           const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-          const cashTotal = 300000 + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+          const cashTotal = HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
           const allocated = list.reduce((s, t) => s + (Number(t.amount) || 0), 0);
           if (list.length < 2) {
             newErrors.paymentMarked = 'Un paiement par tranches comporte au moins deux (2) tranches.';
@@ -2729,10 +2729,10 @@ export default function OnboardingWizard() {
                             ? '151 – 400 élèves'
                             : '401 élèves et +';
                       // ⭐ Contrat (Article 4) : valeurs fixes du contrat, pas de la DB
-                      //    Frais d'activation : 300 000 FCFA (uniforme pour tous les plans)
+                      //    Frais d'activation : 500 000 FCFA (uniforme pour tous les plans)
                       //    Frais annuels : 50k/75k/100k/150k selon le plan
                       const yearlyAmount = plan.annualPrice;
-                      const setupFee = 300000; // ⭐ Toujours 300 000 (contrat)
+                      const setupFee = plan.setupFee ?? HELM_ACTIVATION_FEE; // ⭐ Uniforme (contrat)
                       const yearOneTotal = yearlyAmount + setupFee;
 
                       return (
@@ -2810,7 +2810,7 @@ export default function OnboardingWizard() {
 
                   {/* Note contrat */}
                   <div className="mt-4 text-center text-xs text-graphite-600">
-                    Facturation annuelle · Frais d&apos;activation uniques de 300 000 FCFA ·
+                    Facturation annuelle · Frais d&apos;activation uniques de 500 000 FCFA ·
                     WhatsApp illimité inclus dans tous les plans
                   </div>
 
@@ -2830,7 +2830,7 @@ export default function OnboardingWizard() {
                   <p className="text-xs text-graphite-600 mb-4">
                     Conformément au contrat d&apos;abonnement (Article 4), Academia Helm
                     fonctionne en facturation <strong>annuelle</strong> uniquement. Les frais
-                    d&apos;activation de 300 000 FCFA sont payables à la signature.
+                    d&apos;activation de 500 000 FCFA sont payables à la signature.
                   </p>
                   <div className="grid grid-cols-1 gap-4">
                     <div
@@ -2921,10 +2921,10 @@ export default function OnboardingWizard() {
                       {priceCalculation.yearly ? (
                         <>
                           <div className="text-3xl font-bold text-green-700">
-                            {formatCurrency((priceCalculation.yearly.total || 0) + 300000)}
+                            {formatCurrency((priceCalculation.yearly.total || 0) + HELM_ACTIVATION_FEE)}
                           </div>
                           <div className="text-xs text-graphite-600 mt-1">
-                            / an (activation 300 000 + frais annuels)
+                            / an (activation 500 000 + frais annuels)
                           </div>
                         </>
                       ) : (
@@ -2942,7 +2942,7 @@ export default function OnboardingWizard() {
                 {creationMode === 'yehi-or-tech' && (() => {
                   // Totaux de référence pour l'échéancier (mêmes valeurs que l'affichage du plan)
                   const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-                  const cashTotal = 300000 + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+                  const cashTotal = HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
                   const allocated = paymentMarked.installments.reduce((s, t) => s + (Number(t.amount) || 0), 0);
                   const remaining = cashTotal - allocated;
 
@@ -3031,7 +3031,7 @@ export default function OnboardingWizard() {
                         className="mt-1 w-4 h-4 accent-amber-600"
                       />
                       <span className="text-sm text-graphite-800">
-                        <strong>La souscription a été payée</strong> — frais d'activation 300 000 FCFA + frais annuels du
+                        <strong>La souscription a été payée</strong> — frais d'activation 500 000 FCFA + frais annuels du
                         plan {HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || ''} (
                         {formatCurrency(HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000)} FCFA),
                         en espèces
@@ -3236,7 +3236,7 @@ export default function OnboardingWizard() {
                 || data.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
                 || 'ecole'
               }
-              activationFee={300000}
+              activationFee={HELM_ACTIVATION_FEE}
               annualFee={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000}
               subscriptionPaid={paymentMarked.paymentPlan === 'installments' ? paymentMarked.downPaymentReceived : paymentMarked.subscriptionPaid}
               bilingualPaid={paymentMarked.paymentPlan === 'installments' ? data.bilingual : paymentMarked.bilingualPaid}

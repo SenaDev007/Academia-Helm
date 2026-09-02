@@ -204,6 +204,8 @@ export class PlatformService {
           helmSubscriptions: {
             select: { plan: true, status: true, currentPeriodEnd: true, billingCycle: true, bilingualEnabled: true, trialEnd: true },
           },
+          // ⭐ Réglages bilingue (date d'expiration ajustable en back-office)
+          settingsBilingual: { select: { isEnabled: true, expiresAt: true, isExpired: true } },
         },
       }),
       this.prisma.tenant.count({ where }),
@@ -246,6 +248,9 @@ export class PlatformService {
         daysRemaining,
         trialEnd: sub?.trialEnd?.toISOString() || null,
         bilingualEnabled: (sub as any)?.bilingualEnabled || false,
+        // ⭐ Expiration bilingue (SettingsBilingual) — pilotable back-office
+        bilingualExpiresAt: t.settingsBilingual?.expiresAt?.toISOString() || null,
+        bilingualExpired: t.settingsBilingual?.isExpired || false,
         studentEnrollmentBlocked: (t as any).studentEnrollmentBlocked || false,
         createdAt: t.createdAt.toISOString(),
       };
@@ -988,24 +993,29 @@ export class PlatformService {
   // 11. MODULES — CATALOGUE COMPLET + ADOPTION PAR LES TENANTS
   // ─────────────────────────────────────────────────────────────────────────
 
-  /** Catalogue complet des modules Academia Helm (14 principaux + 8 complémentaires). */
+  /** Catalogue des modules contrôlables en back-office.
+   * ⚠️ Aligné sur l'onglet « Modules » des Paramètres école : seuls les modules
+   * DISPONIBLES sont listés. Communication est renommé « Helm Connect ».
+   * Modules non disponibles (masqués côté école) : CMS, LIBRARY, TRANSPORT,
+   * QHSE, ORION, ATLAS, OFFLINE_SYNC. */
   private readonly MODULE_CATALOG = [
     // Modules principaux
     { code: 'STUDENTS', name: 'Élèves & Scolarité', category: 'principal', icon: 'Users', description: 'Inscriptions, matricules, dossiers élèves, transferts' },
     { code: 'FINANCE', name: 'Finances & Économat', category: 'principal', icon: 'Calculator', description: 'Frais de scolarité, paiements, trésorerie, comptabilité' },
     { code: 'HR_PAYROLL', name: 'Personnel, RH & Paie', category: 'principal', icon: 'UserCheck', description: 'Staff, contrats, paie, CNSS, congés' },
     { code: 'PEDAGOGY', name: 'Organisation Pédagogique', category: 'principal', icon: 'Building', description: 'Classes, matières, emplois du temps, journaux de classe' },
-    { code: 'EXAMS', name: 'Examens & Bulletins', category: 'principal', icon: 'BookOpen', description: 'Évaluations, notes, bulletins, conseils de classe' },
-    { code: 'COMMUNICATION', name: 'Communication', category: 'principal', icon: 'MessageSquare', description: 'Emails, SMS, WhatsApp, annonces, campagnes' },
-    { code: 'ORION', name: 'ORION — Pilotage IA', category: 'principal', icon: 'Zap', description: 'Tableaux de bord, analytics, alertes intelligentes' },
+    { code: 'EXAMS', name: 'Examens, Notes & Bulletins', category: 'principal', icon: 'BookOpen', description: 'Évaluations, notes, bulletins, conseils de classe' },
+    { code: 'COMMUNICATION', name: 'Helm Connect', category: 'principal', icon: 'MessageSquare', description: 'Messagerie : emails, SMS, WhatsApp, annonces, notifications parents' },
     // Modules complémentaires
-    { code: 'LIBRARY', name: 'Bibliothèque', category: 'complementaire', icon: 'Library', description: 'Catalogue, emprunts, réservations, ressources numériques' },
-    { code: 'TRANSPORT', name: 'Transport', category: 'complementaire', icon: 'Bus', description: 'Véhicules, trajets, arrêts, affectations élèves' },
     { code: 'CANTEEN', name: 'Cantine', category: 'complementaire', icon: 'UtensilsCrossed', description: 'Menus, inscriptions, présences, stocks' },
     { code: 'INFIRMARY', name: 'Infirmerie', category: 'complementaire', icon: 'HeartPulse', description: 'Visites, urgences, autorisations, pharmacie' },
-    { code: 'QHSE', name: 'QHSE', category: 'complementaire', icon: 'ShieldCheck', description: 'Qualité, hygiène, sécurité, environnement, audits' },
     { code: 'EDUCAST', name: 'EduCast', category: 'complementaire', icon: 'Radio', description: 'Chaînes enseignants, vidéos, podcasts, webinaires' },
-    { code: 'SHOP', name: 'Boutique', category: 'complementaire', icon: 'ShoppingBag', description: 'Produits, commandes, point de vente, encaissements' },
+    { code: 'SHOP', name: 'Academia Shop', category: 'complementaire', icon: 'ShoppingBag', description: 'Produits, commandes, point de vente, encaissements' },
+  ];
+
+  /** Modules activés par défaut (aligné DEFAULT_ENABLED_FEATURES du module settings). */
+  private readonly DEFAULT_ENABLED_MODULES = [
+    'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION',
   ];
 
   async getModulesAdoption() {
@@ -1030,6 +1040,28 @@ export class PlatformService {
           adoptionRate: totalTenants > 0 ? Math.round((enabledCount / totalTenants) * 100) : 0,
         };
       }),
+    };
+  }
+
+  /** État RÉEL des modules d'un tenant donné (pour le back-office /platform/modules).
+ * Retourne le catalogue restreint aux modules disponibles + isEnabled par module. */
+  async getTenantModules(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+
+    const features = await this.prisma.tenantFeature.findMany({ where: { tenantId } });
+    const stateMap = new Map(features.map((f) => [f.featureCode, f.isEnabled]));
+
+    return {
+      tenantId,
+      tenantName: tenant.name,
+      modules: this.MODULE_CATALOG.map((m) => ({
+        ...m,
+        // État réel si ligne TenantFeature, sinon défauts (comme à l'activation)
+        isEnabled: stateMap.has(m.code)
+          ? Boolean(stateMap.get(m.code))
+          : this.DEFAULT_ENABLED_MODULES.includes(m.code),
+      })),
     };
   }
 
@@ -1372,9 +1404,48 @@ export class PlatformService {
   async updateTenantStatus(id: string, status: string, user: any) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) throw new BadRequestException('Tenant introuvable');
-    await this.prisma.tenant.update({ where: { id }, data: { status } });
-    this.logger.log(`Tenant ${id} status → ${status} by ${user?.email}`);
-    return { ok: true, id, status };
+
+    const normalized = String(status || '').toLowerCase();
+    if (!['active', 'suspended'].includes(normalized)) {
+      throw new BadRequestException('Statut invalide — valeurs admises : active, suspended');
+    }
+
+    if (normalized === 'suspended') {
+      // ⭐ SUSPENSION = MODE LECTURE SEULE : l'école peut consulter ses données
+      //    mais toute écriture est bloquée (guard back-end) jusqu'au règlement
+      //    et à la réactivation depuis le back-office.
+      await this.prisma.tenant.update({
+        where: { id },
+        data: { status: 'suspended', subscriptionStatus: 'SUSPENDED' },
+      });
+      await this.prisma.helmSubscription.updateMany({
+        where: { tenantId: id },
+        data: { status: 'SUSPENDED', suspendedAt: new Date() },
+      });
+    } else {
+      // ⭐ RÉACTIVATION (après règlement) : lève la lecture seule, remet
+      //    l'abonnement en ACTIVE et nettoie les dates du cycle de vie
+      //    (l'admin fixe la prochaine échéance via la modale d'édition / expiration).
+      await this.prisma.tenant.update({
+        where: { id },
+        data: { status: 'active', subscriptionStatus: 'ACTIVE' },
+      });
+      await this.prisma.helmSubscription.updateMany({
+        where: { tenantId: id },
+        data: {
+          status: 'ACTIVE',
+          expiredAt: null,
+          gracePeriodEnd: null,
+          suspendedAt: null,
+          blockedAt: null,
+        },
+      });
+    }
+
+    this.logger.log(
+      `Tenant ${id} (${tenant.name}) status → ${normalized} ${normalized === 'suspended' ? '(lecture seule)' : '(accès complet)'} by ${user?.email}`,
+    );
+    return { ok: true, id, status: normalized, readOnly: normalized === 'suspended' };
   }
 
   async updateTenant(id: string, body: any, user: any) {
@@ -1435,6 +1506,114 @@ export class PlatformService {
           },
         });
       }
+    }
+
+    // ⭐ BILINGUE — pilotage back-office (réactivation + date d'expiration).
+    //    SurchARGE ADMIN : contrairement au flux école (OTP obligatoire,
+    //    expiration calculée au 31 août), l'admin plateforme peut activer /
+    //    désactiver l'option et AJUSTER librement la date d'expiration
+    //    (ex. prolonger jusqu'au règlement, aligner sur l'année scolaire).
+    if (body.bilingualEnabled !== undefined || body.bilingualExpiresAt !== undefined) {
+      const enable = body.bilingualEnabled;
+      const now = new Date();
+
+      // Date d'expiration : valeur fournie, sinon défaut 31 août prochain
+      let expiresAt: Date | null = null;
+      if (body.bilingualExpiresAt) {
+        expiresAt = new Date(body.bilingualExpiresAt);
+        if (Number.isNaN(expiresAt.getTime())) {
+          throw new BadRequestException('Date d\'expiration bilingue invalide (format attendu : AAAA-MM-JJ)');
+        }
+      } else if (enable === true) {
+        const aug31 = new Date(now.getFullYear(), 7, 31, 23, 59, 59);
+        if (aug31 <= now) aug31.setFullYear(aug31.getFullYear() + 1);
+        expiresAt = aug31;
+      }
+
+      const bilingualData: any = {
+        updatedAt: now,
+        ...(enable !== undefined ? { isEnabled: enable, isExpired: false } : {}),
+        ...(enable === true ? { activatedAt: now } : {}),
+        ...(expiresAt ? { expiresAt, isExpired: false } : {}),
+      };
+
+      const existingBilingual = await this.prisma.settingsBilingual.findUnique({ where: { tenantId: id } });
+      if (existingBilingual) {
+        await this.prisma.settingsBilingual.update({ where: { tenantId: id }, data: bilingualData });
+      } else {
+        await this.prisma.settingsBilingual.create({
+          data: { tenantId: id, ...bilingualData },
+        });
+      }
+
+      if (enable !== undefined) {
+        // Feature flag BILINGUAL_TRACK — source de vérité du frontend école
+        try {
+          const existingFlag = await this.prisma.tenantFeature.findUnique({
+            where: { tenantId_featureCode: { tenantId: id, featureCode: 'BILINGUAL_TRACK' } },
+          });
+          const flagData = {
+            isEnabled: enable,
+            status: enable ? 'ENABLED' : 'DISABLED',
+            ...(enable
+              ? { enabledAt: now, enabledBy: user?.email ?? null, disabledAt: null, disabledBy: null }
+              : { disabledAt: now, disabledBy: user?.email ?? null, enabledAt: null, enabledBy: null }),
+          };
+          if (existingFlag) {
+            await this.prisma.tenantFeature.update({
+              where: { tenantId_featureCode: { tenantId: id, featureCode: 'BILINGUAL_TRACK' } },
+              data: flagData,
+            });
+          } else {
+            await this.prisma.tenantFeature.create({
+              data: { tenantId: id, featureCode: 'BILINGUAL_TRACK', ...flagData },
+            });
+          }
+        } catch (flagErr: any) {
+          this.logger.warn(`BILINGUAL_TRACK sync failed for tenant ${id}: ${flagErr?.message}`);
+        }
+
+        // Piste académique EN : créer si absente (activation), sinon basculer isActive
+        try {
+          const enTrack = await this.prisma.academicTrack.findFirst({ where: { tenantId: id, code: 'EN' } });
+          if (enable && !enTrack) {
+            await this.prisma.academicTrack.create({
+              data: {
+                tenantId: id,
+                code: 'EN',
+                name: 'Anglais',
+                description: 'Parcours académique en anglais',
+                order: 1,
+                isDefault: false,
+                isActive: true,
+                metadata: { language: 'en', bilingual: true, activatedBy: 'back-office' },
+              },
+            });
+          } else if (enTrack) {
+            await this.prisma.academicTrack.updateMany({
+              where: { tenantId: id, code: 'EN' },
+              data: { isActive: enable },
+            });
+          }
+        } catch (trackErr: any) {
+          this.logger.warn(`EN academic track sync failed for tenant ${id}: ${trackErr?.message}`);
+        }
+
+        // Souscription legacy (lue par l'ancien BillingGuard)
+        try {
+          await this.prisma.subscription.updateMany({
+            where: { tenantId: id },
+            data: { bilingualEnabled: enable },
+          });
+        } catch {
+          // table legacy absente éventuellement — non bloquant
+        }
+      }
+
+      this.logger.log(
+        `Bilingual ${enable === true ? 'enabled' : enable === false ? 'disabled' : 'expiry adjusted'} for tenant ${id}` +
+          `${expiresAt ? ` (expiresAt: ${expiresAt.toISOString().slice(0, 10)})` : ''} by ${user?.email}`,
+      );
     }
 
     // Mise à jour de l'entité School (1-1 avec Tenant) — ville, adresse, téléphone, email
@@ -1566,22 +1745,41 @@ export class PlatformService {
   // MODULES — Toggle
   // ============================================================================
 
-  async toggleModule(moduleId: string, body: { tenantId: string; enabled: boolean }, user: any) {
-    const existing = await this.prisma.tenantFeature.findFirst({
-      where: { tenantId: body.tenantId, moduleKey: moduleId },
+  async toggleModule(featureCode: string, body: { tenantId: string; enabled: boolean }, user: any) {
+    // ⭐ moduleId = featureCode (STUDENTS, FINANCE, …). Le catalogue restreint
+    //    les codes contrôlables depuis le back-office (modules disponibles).
+    const valid = this.MODULE_CATALOG.find((m) => m.code === featureCode);
+    if (!valid) {
+      throw new BadRequestException(`Module inconnu ou non contrôlable depuis le back-office : ${featureCode}`);
+    }
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: body.tenantId } });
+    if (!tenant) throw new BadRequestException('Tenant introuvable');
+
+    // ⭐ FIX : TenantFeature a une PK composite (tenantId, featureCode) —
+    //    l'ancien filtre `moduleKey` (champ inexistant) provoquait une erreur
+    //    Prisma « Unknown argument moduleKey » à chaque toggle.
+    const existing = await this.prisma.tenantFeature.findUnique({
+      where: { tenantId_featureCode: { tenantId: body.tenantId, featureCode } },
     });
+    const common = {
+      isEnabled: body.enabled,
+      status: body.enabled ? 'ENABLED' : 'DISABLED',
+      ...(body.enabled
+        ? { enabledAt: new Date(), enabledBy: user?.email ?? null, disabledAt: null, disabledBy: null }
+        : { disabledAt: new Date(), disabledBy: user?.email ?? null, enabledAt: null, enabledBy: null }),
+    };
     if (existing) {
       await this.prisma.tenantFeature.update({
-        where: { id: existing.id },
-        data: { isEnabled: body.enabled },
+        where: { tenantId_featureCode: { tenantId: body.tenantId, featureCode } },
+        data: common,
       });
     } else {
       await this.prisma.tenantFeature.create({
-        data: { tenantId: body.tenantId, moduleKey: moduleId, isEnabled: body.enabled },
+        data: { tenantId: body.tenantId, featureCode, ...common },
       });
     }
-    this.logger.log(`Module ${moduleId} ${body.enabled ? 'enabled' : 'disabled'} for tenant ${body.tenantId} by ${user?.email}`);
-    return { ok: true, moduleId, tenantId: body.tenantId, enabled: body.enabled };
+    this.logger.log(`Module ${featureCode} ${body.enabled ? 'enabled' : 'disabled'} for tenant ${body.tenantId} by ${user?.email}`);
+    return { ok: true, featureCode, tenantId: body.tenantId, enabled: body.enabled };
   }
 
   // ============================================================================

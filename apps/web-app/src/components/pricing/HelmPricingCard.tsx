@@ -15,7 +15,7 @@ export interface HelmPricingCardProps {
  * Affichage :
  *   - Tranche d'élèves
  *   - Frais annuels (50 000 → 150 000 FCFA selon le plan)
- *   - Frais d'activation : 300 000 FCFA (uniforme)
+ *   - Frais d'activation : 500 000 FCFA (uniforme)
  *   - Total Année 1 : activation + annuel
  */
 export default function HelmPricingCard({

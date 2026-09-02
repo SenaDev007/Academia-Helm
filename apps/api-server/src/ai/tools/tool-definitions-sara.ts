@@ -83,12 +83,12 @@ const PRODUCT_KNOWLEDGE = {
 
   // ─── TARIFICATION (contrat d'abonnement Academia Helm — Article 4) ─────────
   pricing: {
-    philosophy: 'Tous les plans incluent les 21 modules métier + 6 modules complémentaires (27 modules au total). Aucun module verrouillé. Facturation annuelle uniquement. Frais d\'activation uniques de 300 000 FCFA. Aucune surprise.',
+    philosophy: 'Tous les plans incluent les 21 modules métier + 6 modules complémentaires (27 modules au total). Aucun module verrouillé. Facturation annuelle uniquement. Frais d\'activation uniques de 500 000 FCFA. Aucune surprise.',
     plans: [
       {
         name: 'HELM ESSENTIEL',
         target: 'Petites écoles (1-50 élèves)',
-        activationFee: 300000, // one-shot, à la signature (uniforme)
+        activationFee: 500000, // one-shot, à la signature (uniforme)
         annual: 50000, // frais annuels (contrat Article 4)
         yearOneTotal: 350000, // activation + annuel
         currency: 'FCFA',
@@ -98,7 +98,7 @@ const PRODUCT_KNOWLEDGE = {
       {
         name: 'HELM CROISSANCE',
         target: 'Écoles en croissance (51-150 élèves)',
-        activationFee: 300000,
+        activationFee: 500000,
         annual: 75000,
         yearOneTotal: 375000,
         currency: 'FCFA',
@@ -109,7 +109,7 @@ const PRODUCT_KNOWLEDGE = {
       {
         name: 'HELM PERFORMANCE',
         target: 'Grands établissements (151-400 élèves)',
-        activationFee: 300000,
+        activationFee: 500000,
         annual: 100000,
         yearOneTotal: 400000,
         currency: 'FCFA',
@@ -119,7 +119,7 @@ const PRODUCT_KNOWLEDGE = {
       {
         name: 'HELM INSTITUTION',
         target: 'Réseau multi-campus (401+ élèves)',
-        activationFee: 300000,
+        activationFee: 500000,
         annual: 150000,
         yearOneTotal: 450000,
         currency: 'FCFA',
@@ -413,7 +413,7 @@ const PRODUCT_KNOWLEDGE = {
   faq: [
     {
       question: 'Combien coûte Academia Helm ?',
-      answer: 'Academia Helm propose 4 plans alignés sur le contrat d\'abonnement (Article 4) : HELM ESSENTIEL à 50 000 FCFA/an (1-50 élèves), HELM CROISSANCE à 75 000 FCFA/an (51-150 élèves, le plus populaire), HELM PERFORMANCE à 100 000 FCFA/an (151-400 élèves), et HELM INSTITUTION à 150 000 FCFA/an (401 élèves et +). Frais d\'activation uniques de 300 000 FCFA à la signature (uniforme). Facturation annuelle uniquement. Tous les plans incluent les 21 modules métier + 6 modules complémentaires et les 3 agents IA (ORION, SARA, ATLAS). Option bilingue FR/EN : 50 000 FCFA/an en supplément. WhatsApp gratuit et illimité.',
+      answer: 'Academia Helm propose 4 plans alignés sur le contrat d\'abonnement (Article 4) : HELM ESSENTIEL à 50 000 FCFA/an (1-50 élèves), HELM CROISSANCE à 75 000 FCFA/an (51-150 élèves, le plus populaire), HELM PERFORMANCE à 100 000 FCFA/an (151-400 élèves), et HELM INSTITUTION à 150 000 FCFA/an (401 élèves et +). Frais d\'activation uniques de 500 000 FCFA à la signature (uniforme). Facturation annuelle uniquement. Tous les plans incluent les 21 modules métier + 6 modules complémentaires et les 3 agents IA (ORION, SARA, ATLAS). Option bilingue FR/EN : 50 000 FCFA/an en supplément. WhatsApp gratuit et illimité.',
       category: 'PRICING',
     },
     {
@@ -484,7 +484,7 @@ const PRODUCT_KNOWLEDGE = {
     { title: 'Sécurité bancaire', description: 'Chiffrement, RBAC, audit logs, conformité RGPD' },
     { title: 'Support dédié', description: 'Assistance réactive, formation incluse, répond dans l\'heure' },
     { title: 'Déploiement rapide', description: 'Opérationnel en 48h, configuration et formation incluses' },
-    { title: 'Rapport qualité-prix imbattable', description: 'À partir de 50 000 FCFA/an (Helm Essentiel) + 300 000 FCFA d\'activation one-shot, pour un ERP complet avec IA intégrée' },
+    { title: 'Rapport qualité-prix imbattable', description: 'À partir de 50 000 FCFA/an (Helm Essentiel) + 500 000 FCFA d\'activation one-shot, pour un ERP complet avec IA intégrée' },
   ],
 
   // ─── GUIDE DE NAVIGATION ──────────────────────────────────────────────────

@@ -8,6 +8,11 @@
  * Consomme GET /api/platform/modules qui retourne :
  *   { totalTenants, modules: [{ code, name, category, icon, description,
  *                               enabledCount, adoptionRate }] }
+ * + GET /api/platform/modules/tenant/:tenantId pour l'état RÉEL des modules
+ *   de l'établissement sélectionné (activation/désactivation par école).
+ *
+ * ⭐ Le catalogue est restreint aux modules DISPONIBLES (aligné onglet
+ *    « Modules » des Paramètres école) — Communication s'affiche « Helm Connect ».
  *
  * - Les modules sont regroupés par catégorie :
  *     • "Modules principaux" (category === 'principal')
@@ -108,6 +113,7 @@ export default function ModulesWorkspace() {
   const [tenantModules, setTenantModules] = useState<Record<string, Record<string, boolean>>>({});
   const [toggling, setToggling] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [tenantModulesLoading, setTenantModulesLoading] = useState(false);
 
   const tenants = tenantsData?.tenants || [];
 
@@ -117,6 +123,35 @@ export default function ModulesWorkspace() {
       setSelectedTenantId(tenants[0].id);
     }
   }, [tenants, selectedTenantId]);
+
+  // ⭐ Charger l'état RÉEL des modules de l'établissement sélectionné.
+  //    (Avant : seule la bascule optimiste remplissait tenantModules → tout
+  //    apparaissait « Désactivé » au premier chargement.)
+  useEffect(() => {
+    if (!selectedTenantId) return;
+    let cancelled = false;
+    setTenantModulesLoading(true);
+    fetch(`/api/platform/modules/tenant/${selectedTenantId}`, { credentials: 'include' })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Erreur ${r.status}`);
+        return r.json() as Promise<{ modules: Array<{ code: string; isEnabled: boolean }> }>;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const state: Record<string, boolean> = {};
+        for (const m of payload?.modules || []) state[m.code] = Boolean(m.isEnabled);
+        setTenantModules((prev) => ({ ...prev, [selectedTenantId]: state }));
+      })
+      .catch(() => {
+        // Non bloquant : la sélection reste utilisable (état local)
+      })
+      .finally(() => {
+        if (!cancelled) setTenantModulesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTenantId]);
 
   const filteredModules = useMemo(() => {
     if (!data?.modules) return [];
@@ -218,6 +253,9 @@ export default function ModulesWorkspace() {
               <p className="text-sm font-bold text-slate-900">
                 {selectedTenant.name}{' '}
                 <span className="font-mono text-xs text-slate-400">({selectedTenant.slug})</span>
+                {tenantModulesLoading && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-amber-500" />
+                )}
               </p>
             ) : tenantsLoading ? (
               <p className="text-sm text-slate-400 inline-flex items-center gap-1">
@@ -282,7 +320,8 @@ export default function ModulesWorkspace() {
               <>
                 {' '}
                 Activez ou désactivez les modules ci-dessous pour{' '}
-                <strong>{selectedTenant.name}</strong>.
+                <strong>{selectedTenant.name}</strong> — le changement prend effet
+                immédiatement dans l'onglet Modules des Paramètres de l'école.
               </>
             )}
           </div>

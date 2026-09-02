@@ -238,7 +238,7 @@ export class ContractController {
       || draft.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
       || 'ecole';
     const bilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
-    const activationFee = Number(priceSnap.initialFee || priceSnap.initialPayment || 300000) || 300000;
+    const activationFee = Number(priceSnap.initialFee || priceSnap.initialPayment || 500000) || 500000;
     const annualFee = Number(priceSnap.yearlyPrice || 50000) || 50000;
 
     return {
@@ -307,7 +307,7 @@ export class ContractController {
     const planName = priceSnap.planName || 'Helm Essentiel';
     const marked = priceSnap.paymentMarked || {};
     // Breakdown depuis le priceSnapshot (source de vérité du pricing)
-    const emailActivationFee = Number(priceSnap.initialPayment ?? priceSnap.initialFee ?? 300000) || 0;
+    const emailActivationFee = Number(priceSnap.initialPayment ?? priceSnap.initialFee ?? 500000) || 0;
     const emailAnnualFee = Number(priceSnap.yearlyPrice ?? 0) || 0;
     const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
     const totalPaid = emailActivationFee + emailAnnualFee + emailBilingualFee;

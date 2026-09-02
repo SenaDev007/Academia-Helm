@@ -74,7 +74,7 @@ export class PricingController {
    *
    * GET /public/pricing/initial
    *
-   * ⭐ Contrat Article 4 : frais d'activation uniques de 300 000 FCFA,
+   * ⭐ Contrat Article 4 : frais d'activation uniques de 500 000 FCFA,
    * payables à la signature du contrat d'abonnement.
    */
   @Public()

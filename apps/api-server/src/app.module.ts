@@ -95,6 +95,7 @@ import { TenantIsolationGuard } from './common/guards/tenant-isolation.guard';
 import { ContextValidationGuard } from './common/guards/context-validation.guard';
 import { SchoolLevelIsolationGuard } from './common/guards/school-level-isolation.guard';
 import { AcademicYearEnforcementGuard } from './common/guards/academic-year-enforcement.guard';
+import { TenantSuspensionGuard } from './common/guards/tenant-suspension.guard';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { SchoolLevelEnforcementInterceptor } from './common/interceptors/school-level-enforcement.interceptor';
@@ -351,6 +352,14 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     {
       provide: APP_GUARD,
       useClass: AcademicYearEnforcementGuard, // Enforcement academic_year_id - seulement si tenant requis
+    },
+    {
+      // ⭐ MODE LECTURE SEULE : bloque toute écriture d'une école suspendue
+      //    (suspension pilotée depuis le back-office /platform/tenants).
+      //    Les lectures (GET) et les routes de règlement (/billing/renew…)
+      //    restent autorisées. Cache 30 s par tenant.
+      provide: APP_GUARD,
+      useClass: TenantSuspensionGuard,
     },
     {
       provide: APP_GUARD,

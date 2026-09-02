@@ -862,7 +862,7 @@ export default function CompleteLandingPage() {
                     Facturation annuelle
                   </span>
                   <span className="ml-2 px-3 py-1 bg-gold-500/20 text-gold-400 rounded-full text-xs font-medium">
-                    Frais d&apos;activation : 300 000 FCFA
+                    Frais d&apos;activation : 500 000 FCFA
                   </span>
                 </div>
               </div>
@@ -886,7 +886,7 @@ export default function CompleteLandingPage() {
                 </h3>
                 <p className={`${typo('base')} text-gray-700 mb-6 leading-relaxed`}>
                   Créez votre école sur Academia Helm en quelques minutes. Frais d&apos;activation
-                  de 300 000 FCFA à la signature du contrat, puis abonnement annuel à partir
+                  de 500 000 FCFA à la signature du contrat, puis abonnement annuel à partir
                   de 50 000 FCFA/an selon la taille de votre établissement.
                 </p>
                 <Link

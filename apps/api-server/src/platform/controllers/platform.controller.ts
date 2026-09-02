@@ -188,6 +188,19 @@ export class PlatformController {
     return this.platformService.getModulesAdoption();
   }
 
+  /** GET /platform/modules/tenant/:tenantId — État RÉEL des modules d'une école
+   * ⚔ Utilisé par /platform/modules pour charger l'état initial du sélecteur
+   *    (avant, seul le toggle optimiste remplissait l'état → tout apparaissait
+   *    « Désactivé » au chargement). */
+  @Get('modules/tenant/:tenantId')
+  async getTenantModules(
+    @Headers('x-platform-admin-email') adminEmail: string,
+    @Param('tenantId') tenantId: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.platformService.getTenantModules(tenantId);
+  }
+
   /** GET /platform/monitoring — État des services */
   @Get('monitoring')
   async getMonitoring(@Headers('x-platform-admin-email') adminEmail?: string) {
@@ -309,6 +322,9 @@ export class PlatformController {
   // CRUD TENANTS
   // ============================================================================
 
+  /** PATCH /platform/tenants/:id/status — Suspendre (LECTURE SEULE) / Réactiver
+   * ⭐ Suspension : l'école consulte mais n'écrit plus (guard back-end) jusqu'au
+   *    règlement. Réactivation : accès complet + cycle de vie nettoyé. */
   @Patch('tenants/:id/status')
   async updateTenantStatus(
     @Headers('x-platform-admin-email') adminEmail: string,
@@ -333,6 +349,8 @@ export class PlatformController {
       expiration?: string;
       trialEnd?: string;
       bilingualEnabled?: boolean;
+      /** ⭐ Date d'expiration de l'option bilingue (AAAA-MM-JJ) — ajustable back-office */
+      bilingualExpiresAt?: string;
       studentEnrollmentBlocked?: boolean;
       subscriptionStatus?: string;
       // Champs School (entité School 1-1 avec Tenant) — modifiables depuis le back-office

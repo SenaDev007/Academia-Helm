@@ -199,7 +199,7 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
     ? snapshot.planCode
     : 'SEED';
   const plan = HELM_PLANS[planCode as keyof typeof HELM_PLANS];
-  const activationFee = Number(snapshot.initialPayment ?? snapshot.initialFee ?? 300000) || 300000;
+  const activationFee = Number(snapshot.initialPayment ?? snapshot.initialFee ?? 500000) || 500000;
   const annualFee = Number(snapshot.yearlyPrice ?? plan?.annualPrice ?? 50000) || 50000;
   const bilingualFee = draft?.bilingual ? Number(snapshot.bilingualFee ?? 50000) || 50000 : 0;
   const totalYearOne = activationFee + annualFee + bilingualFee;

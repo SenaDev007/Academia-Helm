@@ -47,6 +47,10 @@ interface Tenant {
   trialEnd?: string | null;
   /** Mode bilingue activé pour l'abonnement. */
   bilingualEnabled?: boolean;
+  /** Date d'expiration de l'option bilingue (SettingsBilingual.expiresAt, ISO). */
+  bilingualExpiresAt?: string | null;
+  /** Option bilingue expirée (SettingsBilingual.isExpired). */
+  bilingualExpired?: boolean;
   /** Ajout d'élèves bloqué (dépassement + période de grâce expirée). */
   studentEnrollmentBlocked?: boolean;
   students: number;
@@ -170,6 +174,8 @@ type EditForm = {
   expiration: string;
   trialEnd: string;
   bilingualEnabled: boolean;
+  /** Date d'expiration de l'option bilingue (AAAA-MM-JJ) — ajustable back-office. */
+  bilingualExpiresAt: string;
   studentEnrollmentBlocked: boolean;
 };
 
@@ -245,7 +251,7 @@ export default function TenantsWorkspace() {
     country: '', city: '', address: '', phone: '', email: '',
     plan: 'SEED',
     planStatus: 'ACTIVE', billingCycle: 'MONTHLY',
-    expiration: '', trialEnd: '', bilingualEnabled: false,
+    expiration: '', trialEnd: '', bilingualEnabled: false, bilingualExpiresAt: '',
     studentEnrollmentBlocked: false,
   });
   const [editError, setEditError] = useState<string | null>(null);
@@ -445,6 +451,7 @@ export default function TenantsWorkspace() {
       expiration: t.expiration ? t.expiration.split('T')[0] : '',
       trialEnd: t.trialEnd ? t.trialEnd.split('T')[0] : '',
       bilingualEnabled: t.bilingualEnabled || false,
+      bilingualExpiresAt: t.bilingualExpiresAt ? t.bilingualExpiresAt.split('T')[0] : '',
       studentEnrollmentBlocked: t.studentEnrollmentBlocked || false,
     });
     setEditError(null);
@@ -486,6 +493,8 @@ export default function TenantsWorkspace() {
       if (editForm.subdomain.trim()) body.subdomain = editForm.subdomain.trim();
       if (editForm.expiration) body.expiration = editForm.expiration;
       if (editForm.trialEnd) body.trialEnd = editForm.trialEnd;
+      // ⭐ Date d'expiration de l'option bilingue — ajustement back-office
+      if (editForm.bilingualExpiresAt) body.bilingualExpiresAt = editForm.bilingualExpiresAt;
       const res = await fetch(`/api/platform/tenants/${editTarget.id}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -700,7 +709,11 @@ export default function TenantsWorkspace() {
                                 ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                                 : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
                             } disabled:opacity-50`}
-                            title={t.status === 'SUSPENDED' ? 'Réactiver' : 'Suspendre'}
+                            title={
+                              t.status === 'SUSPENDED'
+                                ? "Réactiver — lève le mode lecture seule (après règlement)"
+                                : "Suspendre — l'école passe en lecture seule jusqu'au règlement"
+                            }
                           >
                             {actionLoading === t.id ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -951,7 +964,12 @@ export default function TenantsWorkspace() {
                 <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
                   <div>
                     <span className="text-sm font-semibold text-slate-700">Option bilingue (FR + EN)</span>
-                    <p className="text-xs text-slate-400 mt-0.5">Active les parcours académiques bilingues</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Active les parcours académiques bilingues — l'expiration est ajustable ci-dessous
+                      {editTarget?.bilingualExpired && (
+                        <span className="text-red-600 font-semibold"> (actuellement expirée)</span>
+                      )}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -961,6 +979,25 @@ export default function TenantsWorkspace() {
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${editForm.bilingualEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
                 </label>
+
+                {/* ⭐ Expiration bilingue — réactivation + ajustement de la date */}
+                {editForm.bilingualEnabled && (
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg">
+                    <label className="block text-xs font-semibold text-amber-800 mb-1.5">
+                      Expiration de l'option bilingue
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.bilingualExpiresAt}
+                      onChange={(e) => setEditForm({ ...editForm, bilingualExpiresAt: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    />
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Laisser vide à l'activation = 31 août de l'année scolaire en cours. Réactiver ou
+                      prolonger la date lève immédiatement l'expiration côté école (sans OTP).
+                    </p>
+                  </div>
+                )}
 
                 <label className="flex items-center justify-between p-3 bg-slate-50 rounded-lg cursor-pointer">
                   <div>

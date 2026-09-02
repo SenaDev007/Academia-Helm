@@ -10,7 +10,7 @@
 //
 // Règles du contrat (Article 4) :
 //   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
-//   - Frais d'activation : 300 000 FCFA (uniforme, payables à la signature)
+//   - Frais d'activation : 500 000 FCFA (uniforme, payables à la signature)
 //   - Frais annuels : dus chaque année à la date d'échéance annuelle
 //   - Pénalité de retard : 15 jours après échéance → suspension possible
 //   - Réglement : virement bancaire, Mobile Money (FedaPay), espèces
@@ -23,11 +23,15 @@
 // ┌──────────────────┬────────────┬──────────┬──────────┬──────────┐
 // │ Plan              │ Élèves     │ Annuel   │ Setup    │ Total An │
 // ├──────────────────┼────────────┼──────────┼──────────┼──────────┤
-// │ Helm Essentiel    │ 1-50       │ 50 000   │ 300 000  │ 350 000  │
-// │ Helm Croissance   │ 51-150     │ 75 000   │ 300 000  │ 375 000  │
-// │ Helm Performance  │ 151-400    │ 100 000  │ 300 000  │ 400 000  │
-// │ Helm Institution  │ 401+       │ 150 000  │ 300 000  │ 450 000  │
+// │ Helm Essentiel    │ 1-50       │ 50 000   │ 500 000  │ 550 000  │
+// │ Helm Croissance   │ 51-150     │ 75 000   │ 500 000  │ 575 000  │
+// │ Helm Performance  │ 151-400    │ 100 000  │ 500 000  │ 600 000  │
+// │ Helm Institution  │ 401+       │ 150 000  │ 500 000  │ 650 000  │
 // └──────────────────┴────────────┴──────────┴──────────┴──────────┘
+
+// ⭐ Frais d'activation uniformes (contrat Article 4) — 500 000 FCFA
+//    depuis la révision tarifaire (ancienne valeur : 300 000 FCFA).
+export const HELM_ACTIVATION_FEE = 500000;
 
 export const HELM_PLANS = {
   SEED: {
@@ -39,7 +43,7 @@ export const HELM_PLANS = {
     maxStudents: 50,
     monthlyPrice: null as number | null, // Plus d'option mensuelle — contrat en annuel uniquement
     annualPrice: 50000,
-    setupFee: 300000, // Frais d'activation uniforme (Article 4)
+    setupFee: 500000, // Frais d'activation uniforme (Article 4) — HELM_ACTIVATION_FEE
     highlighted: false,
     badge: null as string | null,
   },
@@ -52,7 +56,7 @@ export const HELM_PLANS = {
     maxStudents: 150,
     monthlyPrice: null as number | null,
     annualPrice: 75000,
-    setupFee: 300000,
+    setupFee: 500000,
     highlighted: true,
     badge: 'Populaire',
   },
@@ -65,7 +69,7 @@ export const HELM_PLANS = {
     maxStudents: 400,
     monthlyPrice: null as number | null,
     annualPrice: 100000,
-    setupFee: 300000,
+    setupFee: 500000,
     highlighted: false,
     badge: null as string | null,
   },
@@ -78,7 +82,7 @@ export const HELM_PLANS = {
     maxStudents: Infinity,
     monthlyPrice: null as number | null,
     annualPrice: 150000,
-    setupFee: 300000,
+    setupFee: 500000,
     highlighted: false,
     badge: 'Multi-école',
   },
@@ -117,7 +121,7 @@ export const ALL_MODULES = [
 // Alignées sur le contrat d'abonnement Academia Helm (Article 4)
 export const PRICING_NOTES = [
   '21 modules métier + 6 modules complémentaires inclus dans TOUS les plans — aucune restriction',
-  'Frais d\'activation uniques : 300 000 FCFA (payables à la signature)',
+  'Frais d\'activation uniques : 500 000 FCFA (payables à la signature)',
   'Frais annuels dus chaque année à la date d\'échéance annuelle',
   'Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)',
   'WhatsApp inclus gratuitement et illimité dans tous les plans',

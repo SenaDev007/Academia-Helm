@@ -134,7 +134,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
    * ⭐ Aligné sur le contrat d'abonnement Academia Helm (Article 4) :
    *   - 4 plans : Helm Essentiel / Helm Croissance / Helm Performance / Helm Institution
    *   - Facturation annuelle uniquement (plus d'option mensuelle)
-   *   - Frais d'activation uniformes : 300 000 FCFA
+   *   - Frais d'activation uniformes : 500 000 FCFA
    *   - Tranches d'élèves : 1-50, 51-150, 151-400, 401+
    *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
    */
@@ -163,7 +163,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
         'GRILLE TARIFAIRE (données en temps réel du site — contrat Article 4) :',
         '',
         'FACTURATION ANNUELLE UNIQUEMENT — pas d\'option mensuelle.',
-        'Frais d\'activation uniques : 300 000 FCFA (payables à la signature, uniformes quel que soit le plan).',
+        'Frais d\'activation uniques : 500 000 FCFA (payables à la signature, uniformes quel que soit le plan).',
         '',
         'PLANS D\'ABONNEMENT (par tranche d\'élèves) :',
       ];

@@ -357,4 +357,56 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       messageIds,
     });
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V4 — SIGNALISATION DES APPELS (porté de Yeshua Connect)
+  //    Diffuse instantanément un appel entrant aux rooms personnelles
+  //    des destinataires (plus rapide que le polling 3 s — le polling
+  //    reste le filet de sécurité, comme dans Yeshua Connect).
+  // ═════════════════════════════════════════════════════════════════
+
+  broadcastCallIncoming(recipientUserIds: string[], payload: {
+    callId: string;
+    conversationId: string;
+    convName: string;
+    convAvatarUrl?: string;
+    convType: string;
+    isGroupCall: boolean;
+    callType: 'audio' | 'video';
+    initiatorId: string;
+    initiatorName: string;
+    initiatorAvatarUrl?: string;
+  }) {
+    for (const userId of recipientUserIds) {
+      this.server.to(`user:${userId}`).emit('call:incoming', payload);
+    }
+  }
+
+  /** ⭐ V4 — Filet de sécurité : la gateway ne connaît pas les ids
+   *  récipiendaires → variante broadcast large sur la room de conversation. */
+  broadcastCallIncomingToConversation(conversationId: string, payload: any) {
+    this.server.to(`conv:${conversationId}`).emit('call:incoming', payload);
+  }
+
+  /**
+   * ⭐ V4 — Bascule audio↔vidéo d'un canal vocal (contrôle admin) :
+   * notifie tous les clients du canal pour re-rendre la grille vidéo.
+   */
+  broadcastVoiceVideoMode(conversationId: string, videoMode: boolean) {
+    this.server.to(`conv:${conversationId}`).emit('voice:video-mode', {
+      conversationId,
+      videoMode,
+    });
+  }
+
+  /**
+   * ⭐ V4 — Changement d'état d'un canal vocal (join/leave/mute) :
+   * notifie les membres connectés pour rafraîchir la liste des présents.
+   */
+  broadcastVoiceUsersChanged(conversationId: string, users: any[]) {
+    this.server.to(`conv:${conversationId}`).emit('voice:users-changed', {
+      conversationId,
+      users,
+    });
+  }
 }

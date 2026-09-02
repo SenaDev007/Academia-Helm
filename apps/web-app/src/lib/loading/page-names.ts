@@ -130,18 +130,8 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/communication': 'Communication & Engagement',
   '/app/communication/dashboard': 'Pilotage',
   '/app/communication/messages': 'Messagerie',
-  '/app/communication/announcements': 'Annonces',
-  '/app/communication/automated-notifications': 'Automatisations',
-  '/app/communication/campaigns': 'Campagnes',
   '/app/communication/templates': 'Templates',
-  '/app/communication/parents': 'Parents',
-  '/app/communication/teachers': 'Enseignants',
-  '/app/communication/students': 'Élèves',
-  '/app/communication/administration': 'Administration',
-  '/app/communication/channels': 'Canaux',
   '/app/communication/history': 'Historique',
-  '/app/communication/reports': 'Rapports',
-  '/app/communication/settings': 'Paramètres',
 
   // ─── App — Pédagogie ───
   '/app/pedagogy': 'Pédagogie',

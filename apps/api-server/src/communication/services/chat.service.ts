@@ -805,7 +805,7 @@ export class ChatService {
     `, conversationId, userId);
 
     // Ajouter des read receipts pour les messages envoyés par d'autres
-    await this.prisma.$executeRawUnsafe(`
+    const newReceipts = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(`
       INSERT INTO "chat_message_read_receipts" ("id", "messageId", "userId", "readAt")
       SELECT $1, m.id, $2, NOW()
       FROM chat_messages m
@@ -816,7 +816,20 @@ export class ChatService {
           SELECT r."messageId" FROM chat_message_read_receipts r WHERE r."userId" = $2
         )
       ON CONFLICT DO NOTHING
+      RETURNING "id"
     `, randomUUID(), userId, conversationId);
+    // ⭐ V4 — Diffuser l'accusé de lecture EN TEMPS RÉEL (blue ticks) :
+    //    la gateway émet 'message:read' dans la room de conversation —
+    //    les expéditeurs connectés voient ✓✓ bleu instantanément au lieu
+    //    d'attendre le prochain polling 5 s.
+    //    (la méthode broadcastReadReceipt existait mais n'était jamais appelée)
+    if (newReceipts && newReceipts.length > 0) {
+      this.chatGateway?.broadcastReadReceipt(
+        conversationId,
+        userId,
+        newReceipts.map((r) => r.id),
+      );
+    }
   }
 
   /**
@@ -1689,7 +1702,7 @@ export class ChatService {
   async getPresence(userIds: string[]): Promise<{ userId: string; isOnline: boolean; lastActiveAt?: Date }[]> {
     if (userIds.length === 0) return [];
     const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT id, "lastActiveAt",
+      SELECT id, "lastActiveAt", "customStatus", "activityStatus",
              CASE
                WHEN "lastActiveAt" IS NOT NULL AND "lastActiveAt" > NOW() - INTERVAL '2 minutes'
                THEN true
@@ -1702,6 +1715,9 @@ export class ChatService {
       userId: r.id,
       isOnline: r.isOnline,
       lastActiveAt: r.lastActiveAt || undefined,
+      // ⭐ V4 — présence enrichie (statut d'activité + statut personnalisé)
+      activityStatus: r.activityStatus || undefined,
+      customStatus: r.customStatus || undefined,
     }));
   }
 
@@ -2257,6 +2273,33 @@ export class ChatService {
       this.chatGateway?.server?.to(`voice:${channelId}`).emit('voice:state-update', { userId, channelId, ...state });
     } catch { /* ignore */ }
     return { success: true };
+  }
+
+  /**
+   * ⭐ V4 — Bascule audio↔vidéo d'un canal vocal (porté de Yeshua Connect).
+   *    L'admin (créateur du canal) active/désactive le mode vidéo : tous les
+   *    clients connectés re-rendent la grille vidéo (event socket
+   *    'voice:video-mode') et les nouvelles sessions média publient la caméra.
+   */
+  async setVoiceVideoMode(tenantId: string, userId: string, channelId: string, videoMode: boolean): Promise<{ success: boolean; videoMode: boolean }> {
+    const channels: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT "createdBy", "conversationId" FROM "chat_voice_channels" WHERE id = $1 AND "tenantId" = $2
+    `, channelId, tenantId);
+    if (channels.length === 0) throw new NotFoundException('Voice channel not found');
+    if (channels[0].createdBy !== userId) {
+      throw new ForbiddenException('Seul le créateur du canal peut basculer le mode vidéo.');
+    }
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE "chat_voice_channels" SET "videoMode" = $3 WHERE id = $1
+    `, channelId, tenantId, videoMode);
+    // Notifier tous les clients du canal (room de conversation liée + room canal)
+    try {
+      this.chatGateway?.broadcastVoiceVideoMode(channelId, videoMode);
+      if (channels[0].conversationId) {
+        this.chatGateway?.broadcastVoiceVideoMode(channels[0].conversationId, videoMode);
+      }
+    } catch { /* ignore */ }
+    return { success: true, videoMode };
   }
 
   /** Delete a voice channel (admin only — verified by createdBy). */

@@ -39,6 +39,9 @@ import { NotificationPreferencesService, MuteDuration, EventType } from './servi
 import { ScheduledAnnouncementDispatcher } from './services/scheduled-announcement-dispatcher';
 import { GlobalSearchService, SearchType } from './services/global-search.service';
 import { ConversationDocumentCenterService } from './services/document-center.service';
+// ⭐ V4 — Fichiers transverses + historique d'appels global
+import { FilesCenterService } from './services/files-center.service';
+import { CallSignalService } from './services/call-signal.service';
 
 @Controller('chat/v2')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -49,6 +52,9 @@ export class HelmConnectV2Controller {
     private readonly scheduledDispatcher: ScheduledAnnouncementDispatcher,
     private readonly globalSearchService: GlobalSearchService,
     private readonly documentCenterService: ConversationDocumentCenterService,
+    // ⭐ V4 — Fichiers transverses + historique d'appels global
+    private readonly filesCenterService: FilesCenterService,
+    private readonly callSignalService: CallSignalService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -246,6 +252,46 @@ export class HelmConnectV2Controller {
       dateTo: dateTo ? new Date(dateTo) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V4 PHASE 2 — FICHIERS TRANSVERSES + HISTORIQUE D'APPELS GLOBAL
+  //    (alimente les sections « Fichiers », « Vocaux » et « Appels » du
+  //     panneau Helm Connect — toutes conversations confondues)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** GET /chat/v2/files?type=media|document|audio|all — centre documentaire global. */
+  @Get('files')
+  async getUserFiles(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('type') type?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    const validTypes = ['media', 'document', 'audio', 'all'] as const;
+    const fileType = validTypes.includes((type || 'all') as any) ? (type || 'all') as typeof validTypes[number] : 'all';
+    const files = await this.filesCenterService.getUserFiles(
+      tenantId, userId, fileType,
+      limit ? parseInt(limit, 10) : 100,
+      offset ? parseInt(offset, 10) : 0,
+    );
+    const stats = await this.filesCenterService.getUserFilesStats(tenantId, userId);
+    return { files, stats, type: fileType };
+  }
+
+  /** GET /chat/v2/call-history — historique d'appels (toutes conversations). */
+  @Get('call-history')
+  async getCallHistory(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.callSignalService.getCallHistory(
+      tenantId, userId, limit ? Math.min(parseInt(limit, 10) || 50, 200) : 50,
+    );
   }
 
   // ═════════════════════════════════════════════════════════════════

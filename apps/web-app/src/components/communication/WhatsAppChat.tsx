@@ -31,11 +31,23 @@ import {
   BarChart3, Download, Pencil, Star, MicOff, Volume2, RefreshCw, VideoOff, Flag, User as UserIcon,
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
   ChevronUp, Monitor, Smile,
+  PhoneMissed, PhoneOff, Radio,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useChatSocket } from '@/lib/chat/useChatSocket';
+// ⭐ V4 (porté de Yeshua Connect) : chaîne média des appels + overlay unifié
+import {
+  createMediaSession, fetchMediaJoin, fetchMediaFailover,
+  withTimeout, ChainExhaustedError,
+  type MediaSessionHandle, type MediaProviderName, type HcRemoteParticipant,
+} from '@/lib/chat/media-chain';
+import CallSessionOverlay, { type CallSessionInfo } from './call/CallSessionOverlay';
+import VoiceChannelPanel from './call/VoiceChannelPanel';
+// ⭐ V4 Phase 2 — Rendu chat enrichi (porté de Yeshua Connect)
+import LinkEmbed from './LinkEmbed';
+import MediaGalleryModal from './MediaGalleryModal';
 import { generateKeyPair, hasPrivateKey, encryptMessage, decryptMessage } from '@/lib/chat/crypto';
 // ⭐ V3-1: Offline-first chat — IndexedDB cache + send queue + retry on reconnect
 import {
@@ -507,6 +519,40 @@ function escapeHtml(s: string): string {
  *
  * Colors are chosen to be readable on white message bubbles.
  */
+// ⭐ V4 Phase 2 (porté de Yeshua Connect) — Couleur de bulle STABLE par
+//    utilisateur (hash djb2 + palette 8 teintes). Dans les conversations de
+//    groupe, chaque membre a sa teinte de fond — identification visuelle
+//    instantanée façon Discord/WhatsApp. Palette accordée à Helm (fond
+//    légèrement coloré pour les messages des AUTRES, le mien reste bleu).
+const USER_BUBBLE_COLORS = [
+  'bg-[#EFF6FF] border-[#DBEAFE]',     // bleu clair
+  'bg-[#F0FDF4] border-[#DCFCE7]',     // vert clair
+  'bg-[#FFF7ED] border-[#FFEDD5]',     // orange clair
+  'bg-[#FDF4FF] border-[#FAE8FF]',     // violet clair
+  'bg-[#ECFEFF] border-[#CFFAFE]',     // cyan clair
+  'bg-[#FEF9C3] border-[#FEF08A]',     // jaune clair
+  'bg-[#FDF2F8] border-[#FBCFE8]',     // rose clair
+  'bg-[#F5F5F4] border-[#E7E5E4]',     // pierre clair
+];
+
+/** Hash djb2 → index stable dans la palette (même logique que Yeshua). */
+function hashUserId(userId: string): number {
+  let h = 5381;
+  for (let i = 0; i < userId.length; i++) {
+    h = ((h << 5) + h + userId.charCodeAt(i)) >>> 0;
+  }
+  return h % USER_BUBBLE_COLORS.length;
+}
+
+/** ⭐ V4 Phase 3 — URL absolue du backend (fini les URLS en dur
+ *  https://api.academiahelm.com éparpillées) : une seule source de vérité. */
+function getBackendBaseUrl(): string {
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  return getBackendBaseUrl();
+}
+
 function getRoleColor(roleOrLabel: string | undefined): string {
   if (!roleOrLabel) return '#0958D9'; // default Helm blue
   const v = roleOrLabel.toLowerCase();
@@ -913,6 +959,29 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const ringtoneRef = useRef<{ ctx: AudioContext; interval: any } | null>(null);
 
+  // ⭐ V4 (porté de Yeshua Connect) — CHAÎNE MÉDIA LiveKit → Agora → Daily :
+  //    mediaSessionRef détient la session SFU courante, les participants
+  //    normalisés alimentent la grille de l'overlay unifié, activeSpeakers
+  //    pilote l'anneau doré, mediaProvider le badge « Réseau : … ».
+  const mediaSessionRef = useRef<MediaSessionHandle | null>(null);
+  const [mediaParticipants, setMediaParticipants] = useState<HcRemoteParticipant[]>([]);
+  const [activeSpeakers, setActiveSpeakers] = useState<Set<string>>(new Set());
+  const [mediaProvider, setMediaProvider] = useState<MediaProviderName | 'mesh' | null>(null);
+  const [mediaSwitching, setMediaSwitching] = useState(false);
+  // Signalisation V4 (chat_call_signals) — source de vérité des appels :
+  // signalCallId = l'appel courant que J'ai lancé, incomingSignal = l'appel
+  // qui sonne chez moi (socket call:incoming + polling 3 s de secours).
+  const [v4CallInfo, setV4CallInfo] = useState<CallSessionInfo | null>(null);
+  const [signalCallId, setSignalCallId] = useState<string | null>(null);
+  const [incomingSignal, setIncomingSignal] = useState<any | null>(null);
+  // Refs stables pour les callbacks de session média (évitent les re-créations)
+  const callStateRef = useRef(callState);
+  callStateRef.current = callState;
+  const failoverAttemptsRef = useRef(0);
+  // ⭐ V4 Phase 3 — ref stable de la conversation ouverte (listeners socket)
+  const activeConvIdRef = useRef<string | null>(null);
+  activeConvIdRef.current = activeConvId;
+
   // ⭐ FIX: Ringtone — softer volume + different patterns for outgoing vs incoming
   //    Outgoing (caller): single soft "calling" tone every 2s (gentle beep)
   //    Incoming (callee): classic double-ring pattern every 3s (ring ring... ring ring)
@@ -995,6 +1064,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
   // ⭐ V2.5: Cleanup call resources
   const cleanupCall = useCallback(() => {
+    // ⭐ V4 — déconnecter la session média (SFU) + reset de la chaîne
+    try { mediaSessionRef.current?.disconnect(); } catch {}
+    mediaSessionRef.current = null;
+    setMediaParticipants([]);
+    setActiveSpeakers(new Set());
+    setMediaProvider(null);
+    setMediaSwitching(false);
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -1027,6 +1103,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V2.5: setupPeerConnection is declared AFTER `socket` to avoid TDZ
   //    (useCallback deps array references `socket` — must be initialized first).
   //    See the block after the socket declaration below.
+
+  // ⭐ V4 Phase 2 — Galerie de médias (porté de Yeshua) + recherche sidebar
+  const [showGallery, setShowGallery] = useState(false);
+  const [sidebarSearch, setSidebarSearch] = useState('');
+  // ⭐ V4 — Session média des CANAUX VOCAUX (référence DISTINCTE de celle
+  //    des appels : on peut être en canal vocal ET recevoir un appel)
+  const voiceSessionRef = useRef<MediaSessionHandle | null>(null);
+  const [voiceActiveSpeakers, setVoiceActiveSpeakers] = useState<Set<string>>(new Set());
+  const [voiceProvider, setVoiceProvider] = useState<MediaProviderName | 'mesh' | null>(null);
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [voiceVideoMode, setVoiceVideoMode] = useState(false);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
@@ -1388,7 +1475,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       formData.append('file', file);
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
       const tenantId = typeof window !== 'undefined' ? localStorage.getItem('x-tenant-id') || document.cookie.match(/x-tenant-id=([^;]+)/)?.[1] || '' : '';
-      const uploadRes = await fetch(`https://api.academiahelm.com/api/chat/conversations/${activeConvId}/messages/attachment`, {
+      const uploadRes = await fetch(`${getBackendBaseUrl()}/api/chat/conversations/${activeConvId}/messages/attachment`, {
         method: 'POST',
         headers: {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -1466,24 +1553,51 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     } catch (e: any) { console.error('loadVoiceChannels:', e); }
   }, []);
 
-  // ⭐ DISCORD PARITY: Join a voice channel.
-  //    Requests a LiveKit token from the backend. If LiveKit is configured,
-  //    dynamically imports `livekit-client` and connects to the SFU room.
-  //    If LiveKit is NOT configured (fallbackToMesh: true), falls back to
-  //    the existing mesh WebRTC approach (≤5 participants).
+  // ⭐ V4 FIX (rendu) : les canaux vocaux n'étaient JAMAIS chargés — le
+  //    loadVoiceChannels ci-dessus n'était appelé nulle part. Chargement au
+  //    mount + rafraîchissement 30 s (la liste inclut activeUsers + videoMode).
+  useEffect(() => {
+    if (readOnly) return;
+    loadVoiceChannels();
+    const interval = setInterval(loadVoiceChannels, 30000);
+    return () => clearInterval(interval);
+  }, [readOnly, loadVoiceChannels]);
+
+  /** Déconnecte la session média du canal vocal courant. */
+  const disconnectVoiceSession = useCallback(() => {
+    try { voiceSessionRef.current?.disconnect(); } catch {}
+    voiceSessionRef.current = null;
+    setVoiceActiveSpeakers(new Set());
+    setVoiceProvider(null);
+    setVoiceMuted(false);
+  }, []);
+
+  /** Micro du canal vocal. */
+  const toggleVoiceMute = useCallback(() => {
+    const session = voiceSessionRef.current;
+    if (session) {
+      session.setMicEnabled(voiceMuted).catch(() => {});
+    }
+    setVoiceMuted(!voiceMuted);
+  }, [voiceMuted]);
+
+  /** Caméra du canal vocal (mode vidéo activé par l'admin). */
+  const toggleVoiceVideo = useCallback(() => {
+    const session = voiceSessionRef.current;
+    if (session) {
+      // Bascule simple : on réutilise setCameraEnabled (idempotent)
+      session.setCameraEnabled(true).catch(() => {});
+      toast.info('Caméra activée dans le canal vocal');
+    }
+  }, []);
+
+    // ⭐ V4 (porté de Yeshua Connect) : Join a voice channel via la CHAÎNE
+  //    MÉDIA — join-voice (arbitrage serveur LiveKit → Agora → Daily) qui
+  //    fournit : micro + vidéo (mode admin) + locuteurs actifs + participants
+  //    normalisés. Repli mesh si la chaîne est épuisée.
   const joinVoiceChannel = useCallback(async (channelId: string) => {
     try {
-      // 1. Request a LiveKit access token from the backend
-      const tokenRes = await fetch(`/api/chat/voice-channels/${channelId}/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId }),
-        credentials: 'include',
-      });
-      if (!tokenRes.ok) throw new Error('Token request failed');
-      const tokenData = await tokenRes.json();
-
-      // 2. Join the voice channel via the REST endpoint (records voice state)
+      // 1. Join via REST (enregistre l'état vocal + liste des présents)
       const joinRes = await fetch(`/api/chat/voice-channels/${channelId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1494,52 +1608,64 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const joinData = await joinRes.json();
       setActiveVoiceChannel(channelId);
       setVoiceChannelUsers(joinData.activeUsers || []);
+      const channel: any = joinData.channel || {};
+      setVoiceVideoMode(!!channel.videoMode);
 
-      // 3. Connect to LiveKit if configured, otherwise fall back to mesh
-      if (tokenData.configured && tokenData.token) {
-        try {
-          // Dynamic import — avoids bundling livekit-client if not installed.
-          // If the package is missing, this throws and we fall back to mesh.
-          const { Room, Track } = await import('livekit-client');
-          const room = new Room({ adaptiveStream: true, dynacast: true });
-          await room.connect(tokenData.url, tokenData.token);
-
-          // Publish microphone audio
-          try {
-            await room.localParticipant.setMicrophoneEnabled(true);
-          } catch (micErr: any) {
-            console.warn('Microphone publish failed:', micErr);
-          }
-
-          // Store the room reference for cleanup on leave
-          (window as any)._livekitRoom = room;
-
-          // Listen for participant events to update the UI
-          room.on('participant-connected', () => {
-            setVoiceChannelUsers(prev => [...prev]); // trigger re-render
-          });
-          room.on('participant-disconnected', () => {
-            setVoiceChannelUsers(prev => [...prev]);
-          });
-
-          toast.success(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (LiveKit SFU)`);
-        } catch (livekitErr: any) {
-          console.warn('LiveKit client not available, falling back to mesh:', livekitErr);
-          toast.info(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (mesh WebRTC)`);
+      // 2. Chaîne média (LiveKit → Agora → Daily)
+      try {
+        const bundle = await withTimeout(fetchMediaJoin('voice', channelId), 12000, 'voice-join');
+        if (bundle.exhausted) {
+          setVoiceProvider('mesh');
+          toast.success(`Rejoint : ${channel.name || 'Voix'} (mesh WebRTC)`);
+          return;
         }
-      } else {
-        toast.info(`Rejoint le canal vocal : ${joinData.channel?.name || 'Voix'} (mesh WebRTC)`);
+        const session = await withTimeout(
+          createMediaSession(
+            bundle,
+            {
+              video: !!channel.videoMode,
+              participantName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur',
+            },
+            {
+              onParticipants: () => {
+                // Rafraîchir la liste des présents (source REST = vérité)
+                fetch(`/api/chat/voice-channels/${channelId}/users`, { credentials: 'include' })
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((users) => { if (Array.isArray(users)) setVoiceChannelUsers(users); })
+                  .catch(() => {});
+              },
+              onActiveSpeakers: (ids) => setVoiceActiveSpeakers(ids),
+              onDisconnected: () => {
+                // Défaillance du canal vocal : on ne bascule PAS
+                // automatiquement (rooms persistantes) — on nettoie et
+                // l'utilisateur peut rejoindre à nouveau.
+                disconnectVoiceSession();
+              },
+            },
+          ),
+          12000,
+          'voice-session',
+        );
+        voiceSessionRef.current = session;
+        setVoiceProvider(bundle.provider);
+        toast.success(`Rejoint : ${channel.name || 'Voix'} (${bundle.provider === 'livekit' ? 'LiveKit SFU' : bundle.provider})`);
+      } catch (e: any) {
+        setVoiceProvider('mesh');
+        toast.success(`Rejoint : ${channel.name || 'Voix'} (mesh WebRTC)`);
+        console.warn('Voice media chain failed:', e.message);
       }
     } catch (e: any) {
       toast.error("Échec de l'audio : " + e.message);
     }
-  }, [currentUserId, socket]);
+  }, [currentUserId, socket, user, disconnectVoiceSession]);
 
-  // ⭐ DISCORD PARITY: Leave the active voice channel.
-  //    Disconnects the LiveKit room (if connected) and calls the REST leave endpoint.
+  // ⭐ V4: Leave the active voice channel — déconnecte la session média
+  //    (chaîne LiveKit → Agora → Daily) et l'état REST.
   const leaveVoiceChannel = useCallback(async () => {
     if (!activeVoiceChannel) return;
-    // Disconnect LiveKit room
+    // Déconnecter la session média V4
+    disconnectVoiceSession();
+    // Legacy : ancienne room LiveKit brute (au cas où)
     try {
       const room = (window as any)._livekitRoom;
       if (room) {
@@ -2641,9 +2767,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     const path = url.startsWith('/') ? url : `/${url}`;
     // Avoid double-prefixing if the path already starts with /api/chat/files/
     if (path.startsWith('/api/chat/files/')) {
-      return `https://api.academiahelm.com${path}`;
+      return `${getBackendBaseUrl()}${path}`;
     }
-    return `https://api.academiahelm.com/api/chat/files${path}`;
+    return `${getBackendBaseUrl()}/api/chat/files${path}`;
   };
 
   // ⭐ Helper: get file-type icon based on MIME or filename
@@ -2716,14 +2842,209 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     });
   };
 
-  // ⭐ V2.5: Start a call (audio/video) — full WebRTC flow
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V4 — ORCHESTRATION DE LA CHAÎNE MÉDIA (porté de Yeshua Connect)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Déconnecte la session média courante (fin d'appel / failover). */
+  const disconnectMediaSession = useCallback(() => {
+    try { mediaSessionRef.current?.disconnect(); } catch {}
+    mediaSessionRef.current = null;
+    setMediaParticipants([]);
+    setActiveSpeakers(new Set());
+    setMediaProvider(null);
+    setMediaSwitching(false);
+  }, []);
+
+  /**
+   * Connecte la chaîne média d'un appel : join bundle (arbitrage serveur
+   * LiveKit → Agora → Daily) → création de session bornée 12 s → câblage
+   * des events (participants, locuteurs actifs, déconnexion → failover).
+   * ⚠️ JETTE ChainExhaustedError quand la chaîne est épuisée → l'appelant
+   * retombe sur le mesh WebRTC existant (Plan C).
+   */
+  const connectMediaChain = useCallback(async (opts: {
+    kind: 'call' | 'voice';
+    conversationId: string;
+    callId?: string;
+    video: boolean;
+    onConnected?: () => void;
+    onRemoteJoined?: () => void;
+    onEnded?: (reason: string) => void;
+  }): Promise<void> => {
+    // 1. Join bundle — le serveur arbitre le fournisseur pour TOUT le monde
+    const bundle = await withTimeout(
+      fetchMediaJoin(opts.kind, opts.conversationId, opts.callId),
+      12000,
+      'join-bundle',
+    );
+    if (bundle.exhausted) {
+      throw new ChainExhaustedError(bundle.reason || 'Chaîne multimédia épuisée');
+    }
+
+    // 2. Création de session (bornée — un fournisseur muet = échec = failover)
+    const createSession = async (b: typeof bundle): Promise<MediaSessionHandle> => {
+      const session = await withTimeout(
+        createMediaSession(
+          b,
+          {
+            video: opts.video,
+            participantName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur',
+            resolveUser: (identity: string) => {
+              const p = activeConv?.participants?.find((pp: any) => pp.userId === identity);
+              return p ? { name: `${p.firstName || ''} ${p.lastName || ''}`.trim() } : undefined;
+            },
+          },
+          {
+            onParticipants: (participants) => {
+              setMediaParticipants(participants);
+              if (participants.length > 0 && callStateRef.current === 'outgoing') {
+                opts.onRemoteJoined?.();
+              }
+            },
+            onActiveSpeakers: (ids) => setActiveSpeakers(ids),
+            onDisconnected: async (reason) => {
+              // Failover serveur : l'appel avance au fournisseur SUIVANT —
+              // max 3 tentatives puis repli mesh (géré par le caller via
+              // ChainExhaustedError).
+              if (failoverAttemptsRef.current >= 3) {
+                opts.onEnded?.(reason);
+                return;
+              }
+              failoverAttemptsRef.current += 1;
+              setMediaSwitching(true);
+              try {
+                disconnectMediaSession();
+                const next = await withTimeout(
+                  fetchMediaFailover(opts.kind, opts.conversationId, opts.callId, b.provider, reason),
+                  12000,
+                  'failover',
+                );
+                if (next.exhausted) {
+                  setMediaSwitching(false);
+                  opts.onEnded?.('Chaîne multimédia épuisée');
+                  return;
+                }
+                const session2 = await createSession(next);
+                mediaSessionRef.current = session2;
+                setMediaProvider(next.provider);
+                opts.onConnected?.();
+              } catch {
+                setMediaSwitching(false);
+                opts.onEnded?.(reason);
+              } finally {
+                setMediaSwitching(false);
+              }
+            },
+          },
+        ),
+        12000,
+        'media-session',
+      );
+      return session;
+    };
+
+    const session = await createSession(bundle);
+    mediaSessionRef.current = session;
+    setMediaProvider(bundle.provider);
+    opts.onConnected?.();
+  }, [activeConv, user, disconnectMediaSession]);
+
+  /**
+   * ⭐ V4 — Lancer un appel (web) : signalisation serveur (ringing, missed
+   * sweep, journaux CALL_LOG, push) PUIS chaîne média. Si la chaîne est
+   * épuisée (aucun fournisseur configuré), repli sur le mesh WebRTC
+   * historique (compatible mobile Flutter).
+   */
   const handleStartCall = async (callType: 'AUDIO' | 'VIDEO') => {
     if (!activeConvId || callState !== 'idle') return;
     const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
     if (!other) return;
     const otherName = `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Utilisateur';
-    // ⭐ FIX: Include the caller's own name + avatar in the call:offer payload so the
-    //    recipient sees the real name (not "Utilisateur") without a DB lookup.
+    const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur';
+    const myAvatarUrl = (user as any)?.avatarUrl || (user as any)?.photoUrl || null;
+
+    // 1. Créer le signal d'appel (source de vérité côté serveur)
+    let sigId: string | null = null;
+    try {
+      const res = await fetch('/api/chat/calls/signal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', conversationId: activeConvId, type: callType === 'VIDEO' ? 'video' : 'audio' }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        sigId = data.callId || null;
+      }
+    } catch (e: any) {
+      console.warn('Signal start failed (continuing en mesh):', e.message);
+    }
+
+    // 2. Tenter la chaîne média (LiveKit → Agora → Daily)
+    if (sigId) {
+      failoverAttemptsRef.current = 0;
+      setSignalCallId(sigId);
+      setV4CallInfo({
+        callId: sigId,
+        callType,
+        title: otherName,
+        subtitle: activeConv?.type === 'GROUP' ? activeConv.name : undefined,
+        avatarUrl: (other as any).avatarUrl || null,
+        isGroup: activeConv?.type === 'GROUP',
+        isInitiator: true,
+        conversationId: activeConvId,
+      });
+      setCallData({ callId: sigId, callType, otherUserId: other.userId, otherUserName: otherName });
+      setCallState('outgoing');
+      try {
+        await connectMediaChain({
+          kind: 'call',
+          conversationId: activeConvId,
+          callId: sigId,
+          video: callType === 'VIDEO',
+          onRemoteJoined: () => {
+            if (callStateRef.current !== 'active') {
+              setCallState('active');
+              if (!callTimerRef.current) {
+                callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+              }
+            }
+          },
+          onEnded: (reason) => {
+            toast.info(`Appel interrompu (${reason}) — passage en réseau direct`);
+            // La chaîne est morte → repli mesh : l'offre part via le socket
+            handleStartCallMesh(callType);
+          },
+        });
+        return; // ⭐ Chaîne connectée : l'appel vit sur le SFU
+      } catch (e: any) {
+        if (e instanceof ChainExhaustedError) {
+          toast.info('Réseau direct navigateur-à-navigateur (mesh WebRTC)');
+        } else {
+          console.warn('Media chain failed, falling back to mesh:', e.message);
+        }
+        // Nettoyer l'état V4 avant le repli mesh
+        setSignalCallId(null);
+        setV4CallInfo(null);
+        setCallState('idle');
+        setCallData(null);
+        disconnectMediaSession();
+      }
+    }
+
+    // 3. Repli mesh WebRTC (flux historique — compatible mobile Flutter)
+    await handleStartCallMesh(callType);
+  };
+
+  /**
+   * ⭐ V2.5 (historique) : Start a call via mesh WebRTC navigateur-à-navigateur.
+   * Conservé comme Plan C (chaîne épuisée / appelant mobile).
+   */
+  const handleStartCallMesh = async (callType: 'AUDIO' | 'VIDEO') => {
+    if (!activeConvId || callState !== 'idle') return;
+    const other = activeConv?.participants?.find(p => p.userId !== currentUserId);
+    if (!other) return;
+    const otherName = `${other.firstName || ''} ${other.lastName || ''}`.trim() || other.email || 'Utilisateur';
     const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Utilisateur';
     const myAvatarUrl = (user as any)?.avatarUrl || (user as any)?.photoUrl || null;
 
@@ -2775,8 +3096,92 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   };
 
-  // ⭐ V3-6: Start a GROUP call (mesh topology) — invite selected participants
+  /**
+   * ⭐ V4 — Appel de GROUPE via la chaîne média (LiveKit SFU passe à
+   * l'échelle au-delà de 5 participants). Signalisation serveur (sonnerie
+   * chez tous les membres + overlay Accepter/Refuser) puis room partagée
+   * helm-call-<convId>. Repli mesh si la chaîne est épuisée.
+   */
   const handleStartGroupCall = async (callType: 'AUDIO' | 'VIDEO') => {
+    if (!activeConvId || !activeConv || activeConv.type !== 'GROUP') return;
+    setShowGroupCallModal(false);
+
+    // 1. Signal serveur — sonne pour TOUS les membres (pas seulement les
+    //    sélectionnés : quiconque décroche rejoint la room partagée)
+    let sigId: string | null = null;
+    try {
+      const res = await fetch('/api/chat/calls/signal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', conversationId: activeConvId, type: callType === 'VIDEO' ? 'video' : 'audio' }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        sigId = data.callId || null;
+      }
+    } catch (e: any) {
+      console.warn('Signal start (group) failed:', e.message);
+    }
+
+    if (sigId) {
+      failoverAttemptsRef.current = 0;
+      setSignalCallId(sigId);
+      setV4CallInfo({
+        callId: sigId,
+        callType,
+        title: activeConv.name || 'Appel de groupe',
+        subtitle: `${(activeConv.participants || []).length} participants`,
+        avatarUrl: (activeConv as any).avatarUrl || null,
+        isGroup: true,
+        isInitiator: true,
+        conversationId: activeConvId,
+      });
+      setCallData({ callId: sigId, callType, otherUserId: '', otherUserName: activeConv.name || 'Appel de groupe' });
+      setCallState('outgoing');
+      try {
+        await connectMediaChain({
+          kind: 'call',
+          conversationId: activeConvId,
+          callId: sigId,
+          video: callType === 'VIDEO',
+          onRemoteJoined: () => {
+            if (callStateRef.current !== 'active') {
+              setCallState('active');
+              if (!callTimerRef.current) {
+                callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+              }
+            }
+          },
+          onEnded: (reason) => {
+            toast.info(`Appel interrompu (${reason}) — passage en réseau direct`);
+            setSignalCallId(null);
+            setV4CallInfo(null);
+            setCallState('idle');
+            setCallData(null);
+            disconnectMediaSession();
+            handleStartGroupCallMesh(callType);
+          },
+        });
+        return; // ⭐ SFU connecté
+      } catch (e: any) {
+        if (e instanceof ChainExhaustedError) {
+          toast.info('Réseau direct navigateur-à-navigateur (mesh WebRTC)');
+        } else {
+          console.warn('Media chain (group) failed, falling back to mesh:', e.message);
+        }
+        setSignalCallId(null);
+        setV4CallInfo(null);
+        setCallState('idle');
+        setCallData(null);
+        disconnectMediaSession();
+      }
+    }
+
+    await handleStartGroupCallMesh(callType);
+  };
+
+  // ⭐ V3-6 (historique) : GROUP call mesh — invite selected participants
+  const handleStartGroupCallMesh = async (callType: 'AUDIO' | 'VIDEO') => {
     if (!activeConvId || !activeConv || activeConv.type !== 'GROUP') return;
     const invitees = activeConv.participants.filter(
       (p) => p.userId !== currentUserId && groupCallParticipants.has(p.userId)
@@ -2785,7 +3190,6 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       toast.error('Sélectionnez au moins un participant à appeler');
       return;
     }
-    setShowGroupCallModal(false);
 
     try {
       // 1. Get local media
@@ -2922,6 +3326,110 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     cleanupGroupCall();
   };
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V4 — ACCEPTER / REFUSER / TERMINER un appel signalisé
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Décrocher un appel signalisé (overlay entrant) : accept serveur + chaîne média. */
+  const acceptSignalCall = async () => {
+    const sig = incomingSignal;
+    if (!sig) return;
+    setIncomingSignal(null);
+    failoverAttemptsRef.current = 0;
+    const callType: 'AUDIO' | 'VIDEO' = sig.callType === 'video' ? 'VIDEO' : 'AUDIO';
+    const isGroup = !!sig.isGroupCall;
+    const title = isGroup ? (sig.convName || 'Appel de groupe') : (sig.initiatorName || 'Appel');
+    const subtitle = isGroup ? 'Appel de groupe' : (sig.convName && sig.convName !== title ? sig.convName : undefined);
+
+    setSignalCallId(sig.callId);
+    setV4CallInfo({
+      callId: sig.callId,
+      callType,
+      title,
+      subtitle,
+      avatarUrl: isGroup ? (sig.convAvatarUrl || null) : (sig.initiatorAvatarUrl || null),
+      isGroup,
+      isInitiator: false,
+      conversationId: sig.conversationId,
+    });
+    setCallData({ callId: sig.callId, callType, otherUserId: sig.initiatorId, otherUserName: title });
+    setCallState('active');
+    if (!callTimerRef.current) {
+      callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+    }
+
+    // 1. Accepter côté serveur (statut accepted + acceptedAt)
+    fetch('/api/chat/calls/signal', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'accept', callId: sig.callId }),
+      credentials: 'include',
+    }).catch(() => {});
+
+    // 2. Rejoindre la chaîne média (même room + même fournisseur que l'appelant)
+    try {
+      await connectMediaChain({
+        kind: 'call',
+        conversationId: sig.conversationId,
+        callId: sig.callId,
+        video: callType === 'VIDEO',
+      });
+      return; // ⭐ SFU connecté
+    } catch (e: any) {
+      // Chaîne épuisée ou en échec :
+      //  - si l'appelant est retombé en mesh, une offre brute est en attente
+      //    (window._pendingCallOffer) → on y répond en mesh ;
+      //  - sinon on raccroche proprement.
+      const pending = (window as any)._pendingCallOffer;
+      if (pending && pending.callId === sig.callId && pending.offer) {
+        toast.info('Réseau direct navigateur-à-navigateur (mesh WebRTC)');
+        setSignalCallId(null);
+        setV4CallInfo(null);
+        setCallState('idle');
+        setCallData(null);
+        if (callTimerRef.current) { clearInterval(callTimerRef.current); callTimerRef.current = null; }
+        acceptCall(pending.fromUserId, pending.callId, pending.callType, pending.offer);
+        return;
+      }
+      toast.error("Impossible de rejoindre l'appel : " + (e.message || 'réseau indisponible'));
+      endSignalCall();
+    }
+  };
+
+  /** Refuser un appel signalisé (overlay entrant). */
+  const declineSignalCall = () => {
+    const sig = incomingSignal;
+    if (!sig) return;
+    setIncomingSignal(null);
+    fetch('/api/chat/calls/signal', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'decline', callId: sig.callId }),
+      credentials: 'include',
+    }).catch(() => {});
+  };
+
+  /** Terminer l'appel V4 courant (raccrocher) — journal CALL_LOG côté serveur. */
+  const endSignalCall = () => {
+    const cid = signalCallId || v4CallInfo?.callId;
+    if (cid) {
+      fetch('/api/chat/calls/signal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'end', callId: cid }),
+        credentials: 'include',
+      }).catch(() => {});
+    }
+    // Compat : notifier l'autre partie en mesh si l'appel y vit aussi
+    if (callData?.otherUserId && socket && !mediaSessionRef.current) {
+      socket.emit('call:hangup', { toUserId: callData.otherUserId, callId: callData.callId });
+    }
+    disconnectMediaSession();
+    setSignalCallId(null);
+    setV4CallInfo(null);
+    setIncomingSignal(null);
+    cleanupCall();
+    // Rafraîchir la conversation pour afficher le journal CALL_LOG
+    if (activeConvId) { loadMessages(activeConvId); loadConversations(); }
+  };
+
   // ⭐ V2.5: Accept incoming call
   const acceptCall = async (fromUserId: string, callId: string, callType: string, offer: any) => {
     try {
@@ -2976,8 +3484,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     cleanupCall();
   };
 
-  // ⭐ V2.5: Toggle mute
+  // ⭐ V2.5: Toggle mute (mesh) + ⭐ V4 : session média SFU
   const toggleMute = () => {
+    if (mediaSessionRef.current) {
+      mediaSessionRef.current.setMicEnabled(!muted).catch(() => {});
+      setMuted(!muted);
+      return;
+    }
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
@@ -2985,8 +3498,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   };
 
-  // ⭐ V2.5: Toggle video
+  // ⭐ V2.5: Toggle video (mesh) + ⭐ V4 : session média SFU
   const toggleVideo = () => {
+    if (mediaSessionRef.current) {
+      mediaSessionRef.current.setCameraEnabled(!!videoOff).catch(() => {});
+      setVideoOff(!videoOff);
+      return;
+    }
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
@@ -3053,6 +3571,101 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
   };
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V4 (porté de Yeshua Connect) — POLLING DE SÉCURITÉ
+  //    Incoming 3 s : attrape les appels que le socket manquerait (reconnexion,
+  //    multi-onglets, gateway absente). Statut 2 s pendant l'appel sortant :
+  //    reflète refusé / manqué / annulé / terminé à distance.
+  // ═════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (readOnly) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      if (callStateRef.current === 'idle' && !groupCallActive && !incomingSignal) {
+        try {
+          const res = await fetch('/api/chat/calls/signal?incoming=1', { credentials: 'include' });
+          if (res.ok) {
+            const data = await res.json();
+            if (!cancelled && data?.incoming?.length > 0 && callStateRef.current === 'idle' && !groupCallActive && !incomingSignal) {
+              setIncomingSignal(data.incoming[0]);
+            }
+          }
+        } catch { /* silencieux */ }
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [readOnly, groupCallActive, incomingSignal]);
+
+  // Statut de l'appel sortant V4 (2 s) : refusé/manqué/annulé/terminé à distance
+  useEffect(() => {
+    if (!signalCallId || callState !== 'outgoing' || !v4CallInfo?.isInitiator) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/chat/calls/signal?callId=${signalCallId}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (cancelled) return;
+          if (data.status === 'declined') {
+            toast.info('Appel refusé');
+            endSignalCall();
+          } else if (data.status === 'missed') {
+            toast.info('Appel manqué (pas de réponse)');
+            endSignalCall();
+          } else if (data.status === 'cancelled' || data.status === 'ended') {
+            endSignalCall();
+          } else if (data.status === 'accepted' && callStateRef.current === 'outgoing') {
+            setCallState('active');
+            if (!callTimerRef.current) {
+              callTimerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+            }
+          }
+        }
+      } catch { /* silencieux */ }
+    };
+    const interval = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [signalCallId, callState, v4CallInfo]);
+
+  // ⭐ V4 Phase 3 — ACCUSÉS DE LECTURE TEMPS RÉEL (message:read) : le
+  //    serveur broadcaste maintenant (broadcastReadReceipt) quand un
+  //    destinataire marque la conversation comme lue → ✓✓ bleu instantané
+  //    au lieu d'attendre le polling 5 s.
+  useEffect(() => {
+    if (!socket) return;
+    const onMessageRead = (data: { conversationId: string; userId: string; messageIds: string[] }) => {
+      if (!data?.messageIds?.length) return;
+      const ids = new Set(data.messageIds);
+      setMessages(prev => prev.map((m: any) => {
+        if (ids.has(m.id)) {
+          const readBy = Array.isArray(m.readBy) ? m.readBy : [];
+          if (!readBy.includes(data.userId)) {
+            return { ...m, readBy: [...readBy, data.userId] };
+          }
+        }
+        return m;
+      }));
+    };
+    // ⭐ V4 Phase 3 — INBOX:NEW : badge non-lus + preview rafraîchis
+    //    instantanément quand un message arrive hors conversation ouverte.
+    const onInboxNew = (data: { conversationId: string; preview?: string; senderName?: string }) => {
+      loadConversations();
+      if (data?.conversationId !== activeConvIdRef.current && data?.senderName) {
+        playNotificationSound();
+      }
+    };
+    socket.on('message:read', onMessageRead);
+    socket.on('inbox:new', onInboxNew);
+    return () => {
+      socket.off('message:read', onMessageRead);
+      socket.off('inbox:new', onInboxNew);
+    };
+  }, [socket, loadConversations]);
+
   // ⭐ V2.5: Socket.io listeners for incoming call events
   useEffect(() => {
     if (!socket) return;
@@ -3093,6 +3706,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     const onCallReject = () => { toast.info('Appel refusé'); cleanupCall(); };
     const onCallHangup = () => { toast.info('Appel terminé par l\'interlocuteur'); cleanupCall(); };
 
+    // ⭐ V4 (porté de Yeshua Connect) : signal d'appel entrant — diffusé
+    //    instantanément par la gateway (broadcastCallIncoming). Plus rapide
+    //    que le polling 3 s qui reste le filet de sécurité (voir effet dédié).
+    const onCallIncoming = (payload: any) => {
+      if (callStateRef.current !== 'idle' || groupCallActive || incomingSignal) return;
+      setIncomingSignal(payload);
+    };
+    socket.on('call:incoming', onCallIncoming);
+    // ⭐ V4 : la bascule audio↔vidéo d'un canal vocal (contrôle admin)
+    socket.on('voice:video-mode', (payload: any) => {
+      if (activeVoiceChannel && payload?.conversationId === activeVoiceChannel) {
+        try { (window as any)._voiceVideoMode = !!payload.videoMode; } catch {}
+      }
+    });
+
     socket.on('call:offer', onCallOffer);
     socket.on('call:answer', onCallAnswer);
     socket.on('call:ice-candidate', onIceCandidate);
@@ -3102,6 +3730,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     // ⭐ V3-6: Group call listeners
     const onGroupCallInvite = async (data: { fromUserId: string; callId: string; callType: string; conversationId: string; callerName?: string; callerAvatarUrl?: string; participantNames?: Record<string, string> }) => {
       if (groupCallActive || callState !== 'idle') return; // Already in a call
+      // ⭐ V4 : si un SIGNAL gère déjà cet appel (appelant web), l'overlay
+      //    entrant Accepter/Refuser est déjà affiché — on n'auto-accepte PAS
+      //    (fin du TODO V3-6 « production version would show an incoming-call
+      //    modal »). L'auto-accept ne reste que pour les appelants mobiles
+      //    (mesh, sans signalisation).
+      if (incomingSignal || (window as any)._pendingCallSignal) return;
 
       // For V3-6, we auto-accept the group call (the user can hang up if they don't want to join).
       // A production version would show an incoming-call modal with Accept/Decline buttons.
@@ -3200,6 +3834,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     socket.on('group-call:leave', onGroupCallLeave);
 
     return () => {
+      socket.off('call:incoming', onCallIncoming);
       socket.off('call:offer', onCallOffer);
       socket.off('call:answer', onCallAnswer);
       socket.off('call:ice-candidate', onIceCandidate);
@@ -3261,7 +3896,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
       const tenantId = typeof window !== 'undefined' ? localStorage.getItem('x-tenant-id') || document.cookie.match(/x-tenant-id=([^;]+)/)?.[1] || '' : '';
 
-      const res = await fetch(`https://api.academiahelm.com/api/chat/conversations/${activeConvId}/messages/attachment`, {
+      const res = await fetch(`${getBackendBaseUrl()}/api/chat/conversations/${activeConvId}/messages/attachment`, {
         method: 'POST',
         headers: {
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
@@ -3793,9 +4428,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   : 'Rechercher un canal...'
                 }
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#3B9EFF]/30"
-                value={''}
-                onChange={() => {}}
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
               />
+              {sidebarSearch && (
+                <button
+                  onClick={() => setSidebarSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-slate-100 text-slate-400"
+                  title="Effacer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -3820,9 +4464,25 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           ) : activeHelmSection === 'fichiers' ? (
             <FichiersSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
           ) : activeHelmSection === 'vocaux' ? (
-            <VocauxSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+            <VocauxSection
+              conversations={conversations}
+              currentUserId={currentUserId}
+              onOpenConversation={(convId) => { setActiveConvId(convId); }}
+              voiceChannels={voiceChannels}
+              activeVoiceChannel={activeVoiceChannel}
+              onJoinVoice={joinVoiceChannel}
+              onLeaveVoice={() => { leaveVoiceChannel(); }}
+            />
           ) : activeHelmSection === 'appels' ? (
-            <AppelsSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+            <AppelsSection
+              conversations={conversations}
+              currentUserId={currentUserId}
+              onOpenConversation={(convId) => { setActiveConvId(convId); }}
+              onCallBack={(convId, callType) => {
+                setActiveConvId(convId);
+                setTimeout(() => handleStartCall(callType), 300);
+              }}
+            />
           ) : activeHelmSection === 'annonces' ? (
             <AnnoncesSection
               currentUserId={currentUserId}
@@ -3831,7 +4491,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               onNew={() => setShowAnnouncements(true)}
             />
           ) : activeHelmSection === 'moderation' ? (
-            <ModerationSection conversations={conversations} currentUserId={currentUserId} onOpenConversation={(convId) => { setActiveConvId(convId); }} />
+            <ModerationSection
+              conversations={conversations}
+              currentUserId={currentUserId}
+              onOpenConversation={(convId) => { setActiveConvId(convId); }}
+              onResolveReport={(reportId) => {
+                fetch(`/api/chat/reports/${reportId}/resolve`, {
+                  method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ resolvedBy: currentUserId }),
+                  credentials: 'include',
+                }).then(() => toast.success('Signalement résolu'))
+                  .catch(() => toast.error('Échec de la résolution'));
+              }}
+            />
           ) : activeHelmSection === 'analytics' ? (
             <AnalyticsSection conversations={conversations} currentUserId={currentUserId} />
           ) : conversations.length === 0 && activeHelmSection === 'discussions' ? (
@@ -4218,6 +4890,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             >
               <Search className="w-4 h-4" />
             </button>
+            {/* ⭐ V4 Phase 2 (porté de Yeshua) : Galerie de médias de la
+                conversation — grille + lightbox plein écran. */}
+            <button
+              onClick={() => setShowGallery(true)}
+              className="p-1.5 rounded hover:bg-[#0958D9] hidden sm:inline-flex"
+              title="Galerie de médias"
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
             {/* ⭐ V3-3: ORION-powered conversation summary button (Sparkles icon)
                 — hidden on mobile to save space. */}
             <button
@@ -4310,7 +4991,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           'max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm relative',
                           isMine
                             ? 'bg-[#3B9EFF] text-white rounded-br-sm'
-                            : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
+                            : activeConv?.type === 'GROUP' && (msg as any).senderId
+                              // ⭐ V4 (porté de Yeshua) — couleur de bulle STABLE
+                              //    par expéditeur dans les groupes (hash djb2 +
+                              //    palette 8) : identification visuelle instantanée.
+                              ? cn('border rounded-bl-sm', USER_BUBBLE_COLORS[hashUserId((msg as any).senderId)])
+                              : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
                         )}
                         // ⭐ V3-11: LEFT click on the message toggles the quick
                         //   reaction bar (no more hover — was too cluttered).
@@ -4455,6 +5141,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             >
                               <Flag className="w-3.5 h-3.5" /> Signaler
                             </button>
+                            {/* ⭐ V4 Phase 2 — Copier le texte du message
+                                (l'action n'existait que pour les blocs de code). */}
+                            {msg.content && (
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(stripHtml(msg.content) || '').then(
+                                    () => toast.success('Message copié'),
+                                    () => toast.error('Copie impossible'),
+                                  );
+                                  setActiveMenuMsgId(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                <Copy className="w-3.5 h-3.5" /> Copier le texte
+                              </button>
+                            )}
                             {/* ⭐ V3-2: Transcrire (audio messages only) */}
                             {msg.type === 'AUDIO' && (
                               <button
@@ -4490,7 +5192,18 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           </div>
                         )}
                         {/* Content based on message type */}
-                        {msg.type === 'TEXT' && editingMessageId === msg.id ? (
+                        {/* ⭐ V4 — JOURNAL D'APPEL (porté de Yeshua) : manqué /
+                            refusé / annulé / terminé · durée, affiché comme un
+                            badge centré discret (pas une bulle). */}
+                        {msg.type === 'CALL_LOG' ? (
+                          <div className="flex items-center justify-center gap-1.5 py-1 px-3 rounded-full bg-slate-100/90 text-[11px] text-slate-600 font-medium">
+                            <Phone className={cn(
+                              'w-3 h-3 flex-shrink-0',
+                              (msg as any).callMeta?.status === 'missed' ? 'text-red-500 rotate-[135deg]' : 'text-slate-400',
+                            )} />
+                            <span className="truncate">{msg.content || 'Appel'}</span>
+                          </div>
+                        ) : msg.type === 'TEXT' && editingMessageId === msg.id ? (
                           // ⭐ V1.5: Inline edit mode
                           <div className="flex flex-col gap-1">
                             <textarea
@@ -4553,6 +5266,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             </a>
                             {msg.content && <p className="text-xs mt-1">{msg.content}</p>}
                           </div>
+                        )}
+                        {/* ⭐ V4 Phase 2 (porté de Yeshua) — Aperçu de liens
+                            (OpenGraph) sous les messages texte contenant une URL. */}
+                        {msg.type === 'TEXT' && msg.content && /https?:\/\//i.test(stripHtml(msg.content) || '') && (
+                          <LinkEmbed text={stripHtml(msg.content) || ''} />
                         )}
                         {msg.type === 'AUDIO' && msg.attachmentUrl && (
                           <div className="flex items-center gap-2">
@@ -5431,8 +6149,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         </div>
       )}
-      {/* ⭐ V3-6 — Group call overlay (branded, multi-participant grid) */}
-      {groupCallActive && groupCallData && (
+      {/* ⭐ V3-6 — Group call overlay mesh (Plan C) */}
+      {!v4CallInfo && groupCallActive && groupCallData && (
         <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col">
           {/* Top bar */}
           <div className="absolute top-0 left-0 right-0 p-4 pt-6 flex items-center justify-center gap-2 z-10">
@@ -5782,7 +6500,133 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       <video ref={remoteVideoRef} autoPlay playsInline className="sr-only" aria-hidden />
 
       {/* Incoming call — Helm Connect branded full-screen modal */}
-      {callState === 'incoming' && callData && (
+      {/* ⭐ V4 Phase 2 — Galerie de médias (porté de Yeshua : grille +
+          lightbox + téléchargements) */}
+      {showGallery && (
+        <MediaGalleryModal
+          onClose={() => setShowGallery(false)}
+          onOpenConversation={(convId) => { setActiveConvId(convId); setShowGallery(false); }}
+        />
+      )}
+
+      {/* ⭐ V4 — Panneau flottant du canal vocal rejoint (porté de Yeshua
+          VoiceChannelView) : participants, locuteurs actifs, contrôles. */}
+      {activeVoiceChannel && !v4CallInfo && callState === 'idle' && (
+        <VoiceChannelPanel
+          channelName={(voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.name) || 'Canal vocal'}
+          channelType={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.type}
+          provider={voiceProvider}
+          users={(voiceChannelUsers || []).map((u: any) => ({
+            userId: u.userId || u.id,
+            name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || 'Membre',
+            muted: !!u.muted,
+            speaking: !!u.speaking,
+            avatarUrl: u.avatarUrl || null,
+          }))}
+          activeSpeakers={voiceActiveSpeakers}
+          meMuted={voiceMuted}
+          videoMode={voiceVideoMode}
+          isStage={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.type === 'STAGE'}
+          onToggleMute={toggleVoiceMute}
+          onToggleVideo={toggleVoiceVideo}
+          onLeave={() => { leaveVoiceChannel(); }}
+        />
+      )}
+
+      {/* ⭐ V4 (porté de Yeshua Connect) — OVERLAY UNIFIÉ : signalisation
+          serveur + chaîne média LiveKit → Agora → Daily. Remplace les 3
+          overlays historiques QUAND l'appel est signalisé (v4CallInfo).
+          Les overlays mesh historiques restent pour le Plan C (mobile Flutter). */}
+      {v4CallInfo && callState !== 'idle' && (
+        <CallSessionOverlay
+          state={callState as 'incoming' | 'outgoing' | 'active'}
+          info={v4CallInfo}
+          participants={mediaParticipants}
+          activeSpeakers={activeSpeakers}
+          duration={callDuration}
+          provider={mediaProvider}
+          mediaSwitching={mediaSwitching}
+          muted={muted}
+          videoOff={videoOff}
+          isSharingScreen={isSharingScreen}
+          speakerOn={speakerOn}
+          myName={`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Moi'}
+          currentUserId={currentUserId}
+          onAccept={acceptSignalCall}
+          onDecline={declineSignalCall}
+          onHangup={endSignalCall}
+          onToggleMute={toggleMute}
+          onToggleVideo={toggleVideo}
+          onToggleScreenShare={() => {
+            if (mediaSessionRef.current) {
+              mediaSessionRef.current.setScreenShareEnabled(!isSharingScreen).then(() => {
+                setIsSharingScreen(!isSharingScreen);
+              }).catch(() => toast.error('Partage d\'écran indisponible sur ce réseau'));
+            } else {
+              toggleScreenShare();
+            }
+          }}
+          onToggleSpeaker={() => {
+            if (mediaSessionRef.current) {
+              mediaSessionRef.current.setSpeakerEnabled(!speakerOn);
+            }
+            setSpeakerOn(!speakerOn);
+          }}
+          resolveName={(identity) => {
+            const p = activeConv?.participants?.find((pp: any) => pp.userId === identity);
+            return p ? `${p.firstName || ''} ${p.lastName || ''}`.trim() : undefined;
+          }}
+          localVideoAttacher={(el) => mediaSessionRef.current?.attachLocalVideo(el) ?? false}
+        />
+      )}
+
+      {/* ⭐ V4 — Signal entrant (overlay unifié géré ci-dessus via callState) :
+          quand un appel sonne et que callState est encore 'idle', on force
+          l'affichage de l'état incoming de l'overlay unifié. */}
+      {incomingSignal && callState === 'idle' && !groupCallActive && (
+        <CallSessionOverlay
+          state={'incoming'}
+          info={{
+            callId: incomingSignal.callId,
+            callType: incomingSignal.callType === 'video' ? 'VIDEO' : 'AUDIO',
+            title: incomingSignal.isGroupCall
+              ? (incomingSignal.convName || 'Appel de groupe')
+              : (incomingSignal.initiatorName || 'Appel'),
+            subtitle: incomingSignal.isGroupCall ? 'Appel de groupe' : undefined,
+            avatarUrl: incomingSignal.isGroupCall
+              ? (incomingSignal.convAvatarUrl || null)
+              : (incomingSignal.initiatorAvatarUrl || null),
+            isGroup: !!incomingSignal.isGroupCall,
+            isInitiator: false,
+            conversationId: incomingSignal.conversationId,
+          }}
+          participants={[]}
+          activeSpeakers={new Set()}
+          duration={0}
+          provider={null}
+          mediaSwitching={false}
+          muted={false}
+          videoOff={false}
+          isSharingScreen={false}
+          speakerOn
+          myName={`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Moi'}
+          currentUserId={currentUserId}
+          onAccept={acceptSignalCall}
+          onDecline={declineSignalCall}
+          onHangup={declineSignalCall}
+          onToggleMute={() => {}}
+          onToggleVideo={() => {}}
+          onToggleScreenShare={() => {}}
+          onToggleSpeaker={() => {}}
+        />
+      )}
+
+      {/* Sonnerie de l'appel entrant V4 (l'effet callState ne gère pas
+          incomingSignal seul) */}
+      {incomingSignal && callState === 'idle' && <IncomingSignalRingtone />}
+
+      {/* Anciens overlays mesh — uniquement quand l'appel n'est PAS signalisé */}
+      {!v4CallInfo && callState === 'incoming' && callData && (
         <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between p-8">
           {/* Top: incoming label */}
           <div className="pt-8 text-center">
@@ -5833,8 +6677,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         </div>
       )}
 
-      {/* Outgoing + Active call — Helm Connect branded overlay */}
-      {(callState === 'outgoing' || callState === 'active') && callData && (
+      {/* Outgoing + Active call — Helm Connect branded overlay (mesh) */}
+      {!v4CallInfo && (callState === 'outgoing' || callState === 'active') && callData && (
         <div className="fixed inset-0 bg-gradient-to-br from-[#0A2A5E] via-[#114FC4] to-[#1C6FE8] z-[60] flex flex-col items-center justify-between">
           {/* Remote video (full screen for VIDEO calls when active) */}
           {callData.callType === 'VIDEO' && callState === 'active' && (
@@ -6518,7 +7362,7 @@ function ProfileModal({
 }) {
   // ⭐ Get absolute URL for avatar (same logic as attachments)
   const avatarUrl = myAvatarUrl
-    ? (myAvatarUrl.startsWith('http') ? myAvatarUrl : `https://api.academiahelm.com${myAvatarUrl.startsWith('/') ? myAvatarUrl : `/${myAvatarUrl}`}`)
+    ? (myAvatarUrl.startsWith('http') ? myAvatarUrl : `${getBackendBaseUrl()}${myAvatarUrl.startsWith('/') ? myAvatarUrl : `/${myAvatarUrl}`}`)
     : null;
 
   return (
@@ -6676,78 +7520,84 @@ function _getConvDisplay(conv: ChatConversation, currentUserId: string) {
 }
 
 // ─── 1. FICHIERS — shared files across conversations, with type filters ────
-function FichiersSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
-  const [filter, setFilter] = useState<'all' | 'image' | 'document' | 'audio'>('all');
-  const allFiles = conversations
-    .filter(c => c.lastMessagePreview && (c.lastMessagePreview.startsWith('[Image]') || c.lastMessagePreview.startsWith('[Document]') || c.lastMessagePreview.startsWith('[Audio]')))
-    .slice(0, 50);
-  const files = allFiles.filter(c => {
-    if (filter === 'all') return true;
-    if (filter === 'image') return c.lastMessagePreview!.startsWith('[Image]');
-    if (filter === 'document') return c.lastMessagePreview!.startsWith('[Document]');
-    if (filter === 'audio') return c.lastMessagePreview!.startsWith('[Audio]');
-    return true;
-  });
+function FichiersSection({ currentUserId, onOpenConversation }: SectionSharedProps) {
+  // ⭐ V4 Phase 2 — données RÉELLES : centre documentaire global (toutes
+  //    conversations) via GET /chat/v2/files?type=document (FilesCenterService).
+  const [files, setFiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/v2/files?type=document&limit=100', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setFiles(Array.isArray(data.files) ? data.files : []);
+            setStats(data.stats);
+          }
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fileMeta = (mime: string | null, name: string | null): { label: string; color: string } => {
+    const m = (mime || name || '').toLowerCase();
+    if (m.includes('pdf')) return { label: 'PDF', color: 'bg-red-500' };
+    if (m.includes('doc')) return { label: 'DOC', color: 'bg-blue-600' };
+    if (m.includes('xls') || m.includes('csv')) return { label: 'XLS', color: 'bg-emerald-600' };
+    if (m.includes('ppt')) return { label: 'PPT', color: 'bg-orange-500' };
+    if (m.includes('zip') || m.includes('rar') || m.includes('7z')) return { label: 'ZIP', color: 'bg-amber-600' };
+    return { label: 'FICHIER', color: 'bg-slate-500' };
+  };
+
+  const absUrl = (u: string) => u.startsWith('http') ? u : `${getBackendBaseUrl()}${u.startsWith('/') ? u : '/' + u}`;
+
   return (
     <div className="p-3">
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        <FileText className="w-3 h-3" /> Fichiers partagés ({files.length})
+        <FileText className="w-3 h-3" /> Centre documentaire {stats ? `(${stats.documents || 0})` : ''}
       </div>
-      {/* ⭐ V3-11: Type filter chips */}
-      <div className="flex gap-1 mb-3">
-        {([
-          { id: 'all', label: 'Tous', icon: <FileText className="w-3 h-3" /> },
-          { id: 'image', label: 'Images', icon: <ImageIcon className="w-3 h-3" /> },
-          { id: 'document', label: 'Documents', icon: <FileText className="w-3 h-3" /> },
-          { id: 'audio', label: 'Audio', icon: <Mic className="w-3 h-3" /> },
-        ] as const).map(f => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className={cn(
-              'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition flex items-center gap-1',
-              filter === f.id
-                ? 'bg-[#1677FF] text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            )}
-          >
-            {f.icon} {f.label}
-          </button>
-        ))}
-      </div>
-      {files.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : files.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
           <FileText className="w-12 h-12 text-slate-300 mb-2" />
-          <p className="text-sm font-medium text-slate-700">
-            {filter === 'all' ? 'Aucun fichier partagé' : `Aucun ${filter === 'image' ? 'image' : filter === 'document' ? 'document' : 'fichier audio'}`}
-          </p>
-          <p className="text-xs text-slate-500 mt-1">Les fichiers envoyés dans vos conversations apparaîtront ici.</p>
+          <p className="text-sm font-medium text-slate-700">Aucun document partagé</p>
+          <p className="text-xs text-slate-500 mt-1">Les documents des conversations apparaîtront ici.</p>
         </div>
       ) : (
-        files.map(c => {
-          const display = _getConvDisplay(c, currentUserId);
-          const isImage = c.lastMessagePreview!.startsWith('[Image]');
-          const isAudio = c.lastMessagePreview!.startsWith('[Audio]');
-          const Icon = isImage ? ImageIcon : isAudio ? Mic : FileText;
-          const color = isImage ? 'text-emerald-600 bg-emerald-50' : isAudio ? 'text-pink-600 bg-pink-50' : 'text-blue-600 bg-blue-50';
+        files.map(f => {
+          const meta = fileMeta(f.mime, f.name);
           return (
             <button
-              key={c.id}
-              onClick={() => onOpenConversation(c.id)}
-              className="w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+              key={f.id}
+              onClick={() => onOpenConversation(f.conversationId)}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
             >
-              <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', color)}>
-                <Icon className="w-4 h-4" />
+              <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0', meta.color)}>
+                {meta.label}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">
-                  {c.lastMessagePreview!.replace(/^\[(Image|Document|Audio)\]\s*/, '')}
-                </div>
+                <div className="text-sm font-semibold text-slate-900 truncate">{f.name || 'Document'}</div>
                 <div className="text-xs text-slate-500 truncate">
-                  {display.name} • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}
+                  {f.convName || 'Conversation'} · {f.senderName} · {f.createdAt ? formatTime(f.createdAt) : ''}
                 </div>
               </div>
-              <Download className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <a
+                href={absUrl(f.url)}
+                download={f.name || undefined}
+                onClick={(e) => e.stopPropagation()}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0 hover:bg-slate-200"
+                title="Télécharger"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </a>
             </button>
           );
         })
@@ -6756,7 +7606,6 @@ function FichiersSection({ conversations, currentUserId, onOpenConversation }: S
   );
 }
 
-// ─── 1b. ANNONCES — official announcements list (with create button) ──────
 function AnnoncesSection({ currentUserId, annonces, loading, onNew }: {
   currentUserId: string;
   annonces: any[];
@@ -6831,41 +7680,129 @@ function AnnoncesSection({ currentUserId, annonces, loading, onNew }: {
 }
 
 // ─── 2. VOCAUX — audio messages ────────────────────────────────────────────
-function VocauxSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
-  const voiceConvs = conversations.filter(c => c.lastMessagePreview && c.lastMessagePreview.startsWith('[Audio]'));
+function VocauxSection({
+  currentUserId, onOpenConversation,
+  voiceChannels, activeVoiceChannel, onJoinVoice, onLeaveVoice,
+}: SectionSharedProps & {
+  voiceChannels: any[];
+  activeVoiceChannel: string | null;
+  onJoinVoice: (channelId: string) => void;
+  onLeaveVoice: () => void;
+}) {
+  // ⭐ V4 — CANAUX VOCAUX Discord-style (porté de Yeshua) : rejoignables en un
+  //    clic, micro + locuteurs actifs + participants via la chaîne média.
+  //    Avant le V4, la liste des canaux n'était même pas affichée (le
+  //    loadVoiceChannels n'était jamais appelé). + messages vocaux réels
+  //    (GET /chat/v2/files?type=audio).
+  const [audioFiles, setAudioFiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/v2/files?type=audio&limit=50', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setAudioFiles(Array.isArray(data.files) ? data.files : []);
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="p-3">
+      {/* Canaux vocaux */}
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        <Mic className="w-3 h-3" /> Messages vocaux ({voiceConvs.length})
+        <Volume2 className="w-3 h-3" /> Canaux vocaux ({voiceChannels.length})
       </div>
-      {voiceConvs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-          <Mic className="w-12 h-12 text-slate-300 mb-2" />
+      {voiceChannels.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-6 text-center px-4 mb-3">
+          <Volume2 className="w-8 h-8 text-slate-300 mb-1" />
+          <p className="text-xs font-medium text-slate-700">Aucun canal vocal</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Créez un canal vocal pour parler en direct avec votre équipe.</p>
+        </div>
+      ) : (
+        voiceChannels.map(vc => {
+          const joined = activeVoiceChannel === vc.id;
+          const isStage = vc.type === 'STAGE';
+          return (
+            <div key={vc.id} className={cn(
+              'flex items-center gap-2.5 p-2.5 rounded-xl mb-1 transition-colors border',
+              joined ? 'bg-[#E6F4FF] border-[#3B9EFF]/30' : 'border-transparent hover:bg-slate-50',
+            )}>
+              <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                joined ? 'bg-[#FFE08A]' : isStage ? 'bg-purple-100' : 'bg-gradient-to-br from-[#CFA63A] to-[#FFE08A]',
+              )}>
+                <Radio className={cn('w-4 h-4', joined ? 'text-[#0A2A5E]' : 'text-white')} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate flex items-center gap-1.5">
+                  {vc.name || 'Canal'}
+                  {isStage && <span className="text-[8px] px-1 rounded bg-purple-100 text-purple-700 font-bold uppercase">Scène</span>}
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  {vc.activeUsers || 0} connecté{(vc.activeUsers || 0) > 1 ? 's' : ''}
+                  {vc.videoMode ? ' · vidéo' : ''}
+                </div>
+              </div>
+              {joined ? (
+                <button
+                  onClick={onLeaveVoice}
+                  className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-red-50 text-red-600 hover:bg-red-100 flex-shrink-0"
+                >
+                  Quitter
+                </button>
+              ) : (
+                <button
+                  onClick={() => onJoinVoice(vc.id)}
+                  className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-[#E6F4FF] text-[#1677FF] hover:bg-[#D0E8FF] flex-shrink-0"
+                >
+                  Rejoindre
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {/* Messages vocaux */}
+      <div className="flex items-center gap-1.5 px-1 py-1 mt-3 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <Mic className="w-3 h-3" /> Messages vocaux ({audioFiles.length})
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : audioFiles.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 text-center px-4">
+          <Mic className="w-10 h-10 text-slate-300 mb-2" />
           <p className="text-sm font-medium text-slate-700">Aucun message vocal</p>
           <p className="text-xs text-slate-500 mt-1">Les messages vocaux échangés apparaîtront ici, avec transcription Whisper.</p>
         </div>
       ) : (
-        voiceConvs.map(c => {
-          const display = _getConvDisplay(c, currentUserId);
+        audioFiles.map(f => {
+          const abs = f.url?.startsWith('http') ? f.url : `${getBackendBaseUrl()}${f.url?.startsWith('/') ? f.url : '/' + f.url}`;
           return (
             <button
-              key={c.id}
-              onClick={() => onOpenConversation(c.id)}
+              key={f.id}
+              onClick={() => onOpenConversation(f.conversationId)}
               className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
             >
               <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#CFA63A] to-[#FFE08A] flex items-center justify-center text-white flex-shrink-0">
                 <Mic className="w-4 h-4" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
-                <div className="text-xs text-slate-500 truncate">Message vocal • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}</div>
+                <div className="text-sm font-semibold text-slate-900 truncate">{f.convName || 'Conversation'}</div>
+                <div className="text-xs text-slate-500 truncate">{f.senderName} · {f.createdAt ? formatTime(f.createdAt) : ''}</div>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpenConversation(c.id); }}
+              <span
+                onClick={(e) => { e.stopPropagation(); }}
                 className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
               >
                 <Play className="w-3.5 h-3.5" />
-              </button>
+              </span>
             </button>
           );
         })
@@ -6875,49 +7812,97 @@ function VocauxSection({ conversations, currentUserId, onOpenConversation }: Sec
 }
 
 // ─── 3. APPELS — call history ─────────────────────────────────────────────
-function AppelsSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
-  const callConvs = conversations
-    .filter(c => c.type === 'DIRECT')
-    .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
-    .slice(0, 30);
+function AppelsSection({ currentUserId, onOpenConversation, onCallBack }: SectionSharedProps & { onCallBack?: (conversationId: string, callType: 'AUDIO' | 'VIDEO') => void }) {
+  // ⭐ V4 Phase 2 — historique d'appels RÉEL (journaux CALL_LOG + chat_call_history,
+  //    toutes conversations) via GET /chat/v2/call-history.
+  const [calls, setCalls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/v2/call-history?limit=60', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setCalls(Array.isArray(data) ? data : []);
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const statusMeta = (call: any): { label: string; icon: any; color: string } => {
+    const status = call.callMeta?.status || call.status || '';
+    switch (String(status).toLowerCase()) {
+      case 'missed': return { label: 'Appel manqué', icon: PhoneMissed, color: 'text-red-500' };
+      case 'declined': case 'rejected': return { label: 'Appel refusé', icon: PhoneOff, color: 'text-amber-500' };
+      case 'cancelled': return { label: 'Appel annulé', icon: PhoneOff, color: 'text-slate-400' };
+      case 'ended': case 'completed': return { label: 'Appel terminé', icon: Phone, color: 'text-emerald-500' };
+      default: return { label: 'Appel', icon: Phone, color: 'text-slate-400' };
+    }
+  };
+
+  const formatCallDuration = (sec?: number | null): string => {
+    if (!sec || sec <= 0) return '';
+    if (sec < 60) return `${sec} s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m < 60) return s > 0 ? `${m} min ${s} s` : `${m} min`;
+    const h = Math.floor(m / 60);
+    return `${h} h ${m % 60} min`;
+  };
+
   return (
     <div className="p-3">
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        <Phone className="w-3 h-3" /> Historique d'appels ({callConvs.length})
+        <Phone className="w-3 h-3" /> Historique d'appels ({calls.length})
       </div>
-      {callConvs.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : calls.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
           <Phone className="w-12 h-12 text-slate-300 mb-2" />
           <p className="text-sm font-medium text-slate-700">Aucun appel</p>
           <p className="text-xs text-slate-500 mt-1">Votre historique d'appels audio et vidéo apparaîtra ici.</p>
         </div>
       ) : (
-        callConvs.map(c => {
-          const display = _getConvDisplay(c, currentUserId);
+        calls.map(call => {
+          const isVideo = (call.callMeta?.callType === 'video') || call.callType === 'VIDEO';
+          const meta = statusMeta(call);
+          const durationSec = call.callMeta?.durationSec ?? call.duration;
+          const title = (call.initiatorName || '').trim() || 'Membre';
           return (
-            <button
-              key={c.id}
-              onClick={() => onOpenConversation(c.id)}
-              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            <div
+              key={call.id}
+              className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 border-b border-slate-50 transition"
             >
-              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0', getAvatarColor(display.name))}>
-                {getInitials(display.name)}
+              <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0', getAvatarColor(title))}>
+                {getInitials(title)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
-                <div className="text-xs text-slate-500 truncate flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-blue-500 rotate-180" />
-                  Appel récent • {c.lastMessageAt ? formatTime(c.lastMessageAt) : ''}
+                <div className="text-sm font-semibold text-slate-900 truncate">{title}</div>
+                <div className="text-xs text-slate-500 truncate flex items-center gap-1.5">
+                  <meta.icon className={cn('w-3 h-3', meta.color)} />
+                  <span>
+                    {isVideo ? 'Vidéo' : 'Audio'} · {meta.label}
+                    {durationSec ? ` · ${formatCallDuration(durationSec)}` : ''}
+                  </span>
+                  <span className="text-slate-400">· {call.createdAt ? formatTime(call.createdAt) : call.startedAt ? formatTime(call.startedAt) : ''}</span>
                 </div>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); onOpenConversation(c.id); }}
-                className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
-                title="Rappeler"
-              >
-                <Phone className="w-3.5 h-3.5" />
-              </button>
-            </button>
+              {onCallBack && (
+                <button
+                  onClick={() => onCallBack(call.conversationId, isVideo ? 'VIDEO' : 'AUDIO')}
+                  className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
+                  title="Rappeler"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           );
         })
       )}
@@ -6926,40 +7911,70 @@ function AppelsSection({ conversations, currentUserId, onOpenConversation }: Sec
 }
 
 // ─── 4. MODÉRATION — flagged content ──────────────────────────────────────
-function ModerationSection({ conversations, currentUserId, onOpenConversation }: SectionSharedProps) {
-  const groupConvs = conversations.filter(c => c.type === 'GROUP');
+function ModerationSection({ currentUserId, onOpenConversation, onResolveReport }: SectionSharedProps & { onResolveReport?: (reportId: string) => void }) {
+  // ⭐ V4 Phase 2 — signalements RÉELS (GET /chat/reports — modération :
+  //    messages signalés avec motif + statut de résolution).
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/reports', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setReports(Array.isArray(data) ? data : (data?.reports || []));
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="p-3">
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        <Flag className="w-3 h-3" /> Modération ({groupConvs.length})
+        <Flag className="w-3 h-3" /> Signalements ({reports.length})
       </div>
-      {groupConvs.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : reports.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center px-4">
           <Flag className="w-12 h-12 text-slate-300 mb-2" />
-          <p className="text-sm font-medium text-slate-700">Aucun contenu à modérer</p>
-          <p className="text-xs text-slate-500 mt-1">Les messages signalés ou épinglés par les administrateurs apparaîtront ici.</p>
+          <p className="text-sm font-medium text-slate-700">Aucun contenu signalé</p>
+          <p className="text-xs text-slate-500 mt-1">Les messages signalés par les utilisateurs apparaîtront ici.</p>
         </div>
       ) : (
-        groupConvs.map(c => {
-          const display = _getConvDisplay(c, currentUserId);
+        reports.map(r => {
+          const reporter = `${r.reporterFirstName || ''} ${r.reporterLastName || ''}`.trim() || 'Membre';
           return (
             <div
-              key={c.id}
-              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+              key={r.id}
+              className="w-full p-3 border-b border-slate-50 hover:bg-slate-50 transition"
             >
-              <div className="w-9 h-9 rounded-full bg-slate-400 flex items-center justify-center text-white flex-shrink-0">
-                <Users className="w-4 h-4" />
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0">
+                  <Flag className="w-4 h-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">
+                    Signalé par {reporter}
+                    {r.resolvedAt && <span className="ml-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold uppercase">Résolu</span>}
+                  </div>
+                  {r.reason && <div className="text-xs text-slate-600 italic truncate mt-0.5">« {r.reason} »</div>}
+                  {r.messagePreview && <div className="text-[11px] text-slate-500 truncate mt-0.5">{r.messagePreview}</div>}
+                </div>
+                {!r.resolvedAt && onResolveReport && (
+                  <button
+                    onClick={() => onResolveReport(r.id)}
+                    className="px-2 py-1 text-[10px] font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex-shrink-0"
+                  >
+                    Résoudre
+                  </button>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">{display.name}</div>
-                <div className="text-xs text-slate-500 truncate">{c.participants.length} membres • {c.lastMessagePreview || 'Aucun message'}</div>
-              </div>
-              <button
-                onClick={() => onOpenConversation(c.id)}
-                className="px-2 py-1 text-[10px] font-bold rounded bg-slate-100 text-slate-600 hover:bg-slate-200"
-              >
-                Examiner
-              </button>
             </div>
           );
         })
@@ -6969,67 +7984,90 @@ function ModerationSection({ conversations, currentUserId, onOpenConversation }:
 }
 
 // ─── 5. ANALYTICS — KPI dashboard ──────────────────────────────────────────
-function AnalyticsSection({ conversations, currentUserId }: { conversations: ChatConversation[]; currentUserId: string }) {
-  const total = conversations.length;
-  const direct = conversations.filter(c => c.type === 'DIRECT').length;
-  const group = conversations.filter(c => c.type === 'GROUP').length;
-  const unread = conversations.reduce((sum, c) => {
-    const me = c.participants.find(p => p.userId === currentUserId);
-    return sum + (me?.lastReadAt && c.lastMessageAt && me.lastReadAt < c.lastMessageAt ? 1 : 0);
-  }, 0);
-  const totalParticipants = conversations.reduce((sum, c) => sum + c.participants.length, 0);
+function AnalyticsSection({ currentUserId }: { conversations?: ChatConversation[]; currentUserId: string }) {
+  // ⭐ V4 Phase 2 — KPIs RÉELS via GET /chat/v2/analytics (l'endpoint existait,
+  //    l'UI affichait des compteurs locaux). Vue d'ensemble de la communication
+  //    de l'établissement + carte d'administration e-mail (journaux, envois
+  //    programmés, templates).
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chat/v2/analytics', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setStats(data);
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const kpis: Array<{ label: string; value: string | number; icon: any; tone: string }> = stats ? [
+    { label: 'Conversations', value: stats.totalConversations ?? '—', icon: MessageSquare, tone: 'helm' },
+    { label: 'Messages échangés', value: stats.totalMessages ?? '—', icon: MessageSquare, tone: 'light' },
+    { label: 'Groupes actifs', value: stats.totalGroups ?? stats.groupConversations ?? '—', icon: Users, tone: 'light' },
+    { label: 'Messages non lus', value: stats.totalUnread ?? '—', icon: Bell, tone: 'warn' },
+    { label: 'Annonces publiées', value: stats.totalAnnouncements ?? '—', icon: Megaphone, tone: 'helm' },
+    { label: 'Fichiers partagés', value: stats.totalFiles ?? stats.totalAttachments ?? '—', icon: FileText, tone: 'light' },
+    { label: 'Utilisateurs actifs', value: stats.activeUsers ?? '—', icon: UserIcon, tone: 'light' },
+    { label: 'Appels', value: stats.totalCalls ?? '—', icon: Phone, tone: 'helm' },
+  ] : [];
 
   return (
     <div className="p-3 space-y-3">
       <div className="flex items-center gap-1.5 px-1 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-        <BarChart3 className="w-3 h-3" /> Tableau de bord
+        <BarChart3 className="w-3 h-3" /> Tableau de bord de la communication
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="p-3 rounded-lg bg-gradient-to-br from-[#0A2A5E] to-[#1C6FE8] text-white">
-          <div className="flex items-center gap-2 mb-1">
-            <MessageSquare className="w-4 h-4 text-[#FFE08A]" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#FFE08A]">Conversations</span>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            {kpis.map((kpi) => (
+              <div key={kpi.label} className={cn(
+                'p-3 rounded-lg',
+                kpi.tone === 'helm' ? 'bg-gradient-to-br from-[#0A2A5E] to-[#1C6FE8] text-white' : 'bg-white border border-slate-200',
+              )}>
+                <div className="flex items-center gap-2 mb-1">
+                  <kpi.icon className={cn('w-4 h-4', kpi.tone === 'helm' ? 'text-[#FFE08A]' : 'text-slate-400')} />
+                  <span className={cn('text-[10px] font-bold uppercase tracking-wider', kpi.tone === 'helm' ? 'text-[#FFE08A]' : 'text-slate-500')}>{kpi.label}</span>
+                </div>
+                <div className={cn('text-2xl font-bold', kpi.tone === 'helm' ? 'text-white' : 'text-slate-900')}>{kpi.value}</div>
+              </div>
+            ))}
           </div>
-          <div className="text-2xl font-bold">{total}</div>
-        </div>
-        <div className="p-3 rounded-lg bg-white border border-slate-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Bell className="w-4 h-4 text-red-500" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Non lus</span>
+          {/* ⭐ V4 Phase 4 — Point d'entrée « Administration e-mail » : les
+              pages réelles (journaux d'emails, envois programmés, templates)
+              n'avaient AUCUN accès UI. */}
+          <div className="p-3 rounded-lg bg-white border border-slate-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Megaphone className="w-4 h-4 text-[#1677FF]" />
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Administration e-mail</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <a href="/app/communication/dashboard" className="px-2 py-1.5 text-[11px] font-medium text-[#1677FF] hover:bg-[#E6F4FF] rounded-lg flex items-center gap-1.5">
+                <BarChart3 className="w-3 h-3" /> Tableau de bord
+              </a>
+              <a href="/app/communication/history" className="px-2 py-1.5 text-[11px] font-medium text-[#1677FF] hover:bg-[#E6F4FF] rounded-lg flex items-center gap-1.5">
+                <Clock className="w-3 h-3" /> Historique
+              </a>
+              <a href="/app/communication/scheduled-emails" className="px-2 py-1.5 text-[11px] font-medium text-[#1677FF] hover:bg-[#E6F4FF] rounded-lg flex items-center gap-1.5">
+                <Clock className="w-3 h-3" /> Envois programmés
+              </a>
+              <a href="/app/communication/templates" className="px-2 py-1.5 text-[11px] font-medium text-[#1677FF] hover:bg-[#E6F4FF] rounded-lg flex items-center gap-1.5">
+                <FileText className="w-3 h-3" /> Modèles
+              </a>
+            </div>
           </div>
-          <div className="text-2xl font-bold text-red-600">{unread}</div>
-        </div>
-        <div className="p-3 rounded-lg bg-white border border-slate-200">
-          <div className="flex items-center gap-2 mb-1">
-            <MessageSquare className="w-4 h-4 text-blue-500" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Directs</span>
-          </div>
-          <div className="text-2xl font-bold text-blue-600">{direct}</div>
-        </div>
-        <div className="p-3 rounded-lg bg-white border border-slate-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="w-4 h-4 text-emerald-500" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Groupes</span>
-          </div>
-          <div className="text-2xl font-bold text-emerald-600">{group}</div>
-        </div>
-      </div>
-      <div className="p-3 rounded-lg bg-white border border-slate-200">
-        <div className="flex items-center gap-2 mb-1">
-          <Users className="w-4 h-4 text-[#CFA63A]" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Participants totaux</span>
-        </div>
-        <div className="text-2xl font-bold text-[#CFA63A]">{totalParticipants}</div>
-      </div>
-      <div className="p-3 rounded-lg bg-gradient-to-br from-[#0A2A5E] to-[#1C6FE8] text-white">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-[#FFE08A]" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold">Helm Connect Analytics</div>
-            <div className="text-[10px] text-[#FFE08A]">Statistiques de communication en temps réel.</div>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
+

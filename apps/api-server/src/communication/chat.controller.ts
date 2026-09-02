@@ -996,6 +996,20 @@ export class ChatController {
     });
   }
 
+  /**
+   * ⭐ V4 — Bascule audio↔vidéo d'un canal vocal (contrôle admin, porté de
+   *    Yeshua Connect) : tous les clients re-rendent la grille vidéo.
+   */
+  @Put('voice-channels/:id/video-mode')
+  async setVoiceVideoMode(
+    @TenantId() tenantId: string,
+    @Param('id') channelId: string,
+    @Body() body: { userId: string; videoMode: boolean },
+  ) {
+    if (!body.userId) throw new BadRequestException('userId is required');
+    return this.chatService.setVoiceVideoMode(tenantId, body.userId, channelId, !!body.videoMode);
+  }
+
   @Delete('voice-channels/:id')
   async deleteVoiceChannel(
     @TenantId() tenantId: string,

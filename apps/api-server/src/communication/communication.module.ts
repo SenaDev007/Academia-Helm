@@ -70,6 +70,12 @@ import { ChatTranscriptionService } from './services/chat-transcription.service'
 import { AutoGroupService } from './services/auto-group.service';
 // ⭐ LiveKit SFU — Discord-style voice/stage/live channels
 import { LiveKitTokenService } from './services/livekit-token.service';
+// ⭐ V4 — Chaîne média des appels (LiveKit → Agora → Daily) + signalisation
+import { CallSignalController } from './call-signal.controller';
+import { CallSignalService } from './services/call-signal.service';
+import { CallProviderChainService } from './services/call-provider-chain.service';
+// ⭐ V4 — Fichiers transverses (sections Fichiers/Vocaux/Appels)
+import { FilesCenterService } from './services/files-center.service';
 
 @Module({
   imports: [
@@ -111,6 +117,8 @@ import { LiveKitTokenService } from './services/livekit-token.service';
     HelmConnectV2Controller,
     // ⭐ Helm Connect V2.6 — Polls (Telegram-style)
     PollController,
+    // ⭐ V4 — Signalisation + arbitrage média des appels (porté de Yeshua Connect)
+    CallSignalController,
   ],
   providers: [
     EmailService,
@@ -163,6 +171,11 @@ import { LiveKitTokenService } from './services/livekit-token.service';
     AutoGroupService,
     // ⭐ LiveKit SFU — Discord-style voice/stage/live channels (token minting)
     LiveKitTokenService,
+    // ⭐ V4 — Chaîne média des appels (LiveKit → Agora → Daily, santé partagée,
+    //    arbitrage persisté par appel/canal) + signalisation (ringing/accept/…)
+    CallProviderChainService,
+    CallSignalService,
+    FilesCenterService,
   ],
   exports: [
     EmailService,

@@ -96,7 +96,7 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
         if (!cls.subjects || cls.subjects.length === 0) return cls;
         const enSubjects = cls.subjects.filter((s: any) => {
           // Filter by language — only keep EN subjects
-          const lang = (s.subjectLanguage || s.language || '').toUpperCase();
+          const lang = String(s?.subjectLanguage || s?.language || '').toUpperCase();
           return lang === 'EN' || lang === '';
         });
         return { ...cls, subjects: enSubjects };

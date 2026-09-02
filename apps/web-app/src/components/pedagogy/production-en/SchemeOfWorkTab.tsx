@@ -470,7 +470,7 @@ export function SchemeOfWorkTab({
               <thead>
                 <tr style="background:#1e293b;color:#fff;">
                   <th colspan="6" style="padding:8px;border:1px solid #000;text-align:center;font-size:14px;">
-                    ${selectedTerm.toUpperCase()} &nbsp;|&nbsp; SCHEME OF WORK &nbsp;|&nbsp; ${subj.name.toUpperCase()}
+                    ${String(selectedTerm || '').toUpperCase()} &nbsp;|&nbsp; SCHEME OF WORK &nbsp;|&nbsp; ${String(subj?.name || '').toUpperCase()}
                   </th>
                 </tr>
                 <tr style="background:#e2e8f0;">
@@ -508,7 +508,7 @@ export function SchemeOfWorkTab({
         <body>
           <div class="header">
             <h1>${tenant?.name || 'School'}</h1>
-            <p>SCHEME OF WORK — ${selectedTerm.toUpperCase()}</p>
+            <p>SCHEME OF WORK — ${String(selectedTerm || '').toUpperCase()}</p>
             <p>Class: <strong>${selectedClass?.label || ''}</strong> — Academic Year: ${new Date().getFullYear()}</p>
           </div>
           ${subjectsHtml}
@@ -825,7 +825,7 @@ export function SchemeOfWorkTab({
                   <span className="text-base font-bold tracking-wide">SCHEME OF WORK</span>
                 </div>
                 <div className="text-sm font-semibold text-right">
-                  {subject.name.toUpperCase()}
+                  {String(subject?.name || '').toUpperCase()}
                 </div>
               </div>
 

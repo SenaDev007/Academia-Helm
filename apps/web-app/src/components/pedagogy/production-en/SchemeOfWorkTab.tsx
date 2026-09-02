@@ -49,7 +49,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Loader2, RefreshCw, Calendar, Save, Send, Bell,
   BookOpen, AlertCircle, Info, CheckCircle2, XCircle, Clock,
-  Download, X, Check,
+  Download, X, Check, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -191,6 +191,8 @@ export function SchemeOfWorkTab({
   const [loadedClasses, setLoadedClasses] = useState<AvailableClass[]>([]);
   const [selectedClassValue, setSelectedClassValue] = useState<string>("");
   const [selectedTerm, setSelectedTerm] = useState<TermKey>("First Term");
+  // ⭐ Currently displayed subject index (for the subject switcher)
+  const [currentSubjectIndex, setCurrentSubjectIndex] = useState(0);
 
   const teacherName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
 
@@ -259,6 +261,11 @@ export function SchemeOfWorkTab({
     [loadedClasses, selectedClassValue]
   );
   const subjects = selectedClass?.subjects || [];
+
+  // ⭐ Reset subject index when class changes (avoid index out of bounds)
+  useEffect(() => {
+    setCurrentSubjectIndex(0);
+  }, [selectedClassValue]);
 
   // ───────────────────────────────────────────────────────────────────
   // Load scheme-of-work cells for the selected class + term
@@ -825,55 +832,98 @@ export function SchemeOfWorkTab({
         </div>
       ) : (
         <>
-          {/* ⭐ Scheme of Work — One section per subject */}
-          {subjects.map((subject) => (
-            <div key={subject.id} className="bg-white rounded-xl border-2 border-slate-800 overflow-hidden shadow-sm">
-              {/* Title bar — TERM | SCHEME OF WORK | SUBJECT */}
-              <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className={cn2("px-2 py-1 rounded text-xs font-bold", TERMS.find(t => t.value === selectedTerm)?.color)}>
-                    {TERMS.find(t => t.value === selectedTerm)?.short}
-                  </span>
-                  <span className="text-base font-bold tracking-wide">SCHEME OF WORK</span>
-                </div>
-                <div className="text-sm font-semibold text-right">
-                  {String(subject?.name || '').toUpperCase()}
-                </div>
+          {/* ⭐ Subject switcher — show ONE subject at a time with prev/next navigation */}
+          <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentSubjectIndex(Math.max(0, currentSubjectIndex - 1))}
+                  disabled={currentSubjectIndex === 0}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Previous subject"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm font-bold text-slate-700">
+                  {currentSubjectIndex + 1} / {subjects.length}
+                </span>
+                <button
+                  onClick={() => setCurrentSubjectIndex(Math.min(subjects.length - 1, currentSubjectIndex + 1))}
+                  disabled={currentSubjectIndex === subjects.length - 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Next subject"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-
-              {/* Editable table — Week | Topic | Objectives | Activities | Resources | Evaluation */}
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-xs" style={{ minWidth: "1000px" }}>
-                  <colgroup>
-                    <col style={{ width: "5%" }} />
-                    {SCHEME_COLUMNS.map(col => (
-                      <col key={col.key} style={{ width: col.width }} />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr className="bg-slate-100">
-                      <th className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">Week</th>
-                      {SCHEME_COLUMNS.map(col => (
-                        <th key={col.key} className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">
-                          {col.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {WEEK_NUMBERS.map(week => (
-                      <tr key={week} className={cn2("hover:bg-purple-50/30", week % 2 === 0 && "bg-slate-50/50")}>
-                        <td className="p-2 border border-slate-300 text-center font-bold text-slate-700 bg-slate-100">
-                          {week}
-                        </td>
-                        {SCHEME_COLUMNS.map(col => renderCell(week, subject.name, col.key))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* Subject selector dropdown */}
+              <select
+                value={currentSubjectIndex}
+                onChange={(e) => setCurrentSubjectIndex(parseInt(e.target.value, 10))}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm font-medium bg-white min-w-[250px]"
+              >
+                {subjects.map((subj, idx) => (
+                  <option key={subj.id} value={idx}>
+                    {subj.name || `Subject ${idx + 1}`}
+                  </option>
+                ))}
+              </select>
             </div>
-          ))}
+          </div>
+
+          {/* ⭐ Scheme of Work — ONE table for the currently selected subject */}
+          {(() => {
+            const subject = subjects[currentSubjectIndex];
+            if (!subject) return null;
+            return (
+              <div className="bg-white rounded-xl border-2 border-slate-800 overflow-hidden shadow-sm">
+                {/* Title bar — TERM | SCHEME OF WORK | SUBJECT */}
+                <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className={cn2("px-2 py-1 rounded text-xs font-bold", TERMS.find(t => t.value === selectedTerm)?.color)}>
+                      {TERMS.find(t => t.value === selectedTerm)?.short}
+                    </span>
+                    <span className="text-base font-bold tracking-wide">SCHEME OF WORK</span>
+                  </div>
+                  <div className="text-sm font-semibold text-right">
+                    {String(subject?.name || '').toUpperCase()}
+                  </div>
+                </div>
+
+                {/* Editable table — Week | Topic | Objectives | Activities | Resources | Evaluation */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs" style={{ minWidth: "1000px" }}>
+                    <colgroup>
+                      <col style={{ width: "5%" }} />
+                      {SCHEME_COLUMNS.map(col => (
+                        <col key={col.key} style={{ width: col.width }} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">Week</th>
+                        {SCHEME_COLUMNS.map(col => (
+                          <th key={col.key} className="p-2 border border-slate-300 text-center font-bold text-slate-700 uppercase">
+                            {col.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {WEEK_NUMBERS.map(week => (
+                        <tr key={week} className={cn2("hover:bg-purple-50/30", week % 2 === 0 && "bg-slate-50/50")}>
+                          <td className="p-2 border border-slate-300 text-center font-bold text-slate-700 bg-slate-100">
+                            {week}
+                          </td>
+                          {SCHEME_COLUMNS.map(col => renderCell(week, subject.name, col.key))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ⭐ Signatures section */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">

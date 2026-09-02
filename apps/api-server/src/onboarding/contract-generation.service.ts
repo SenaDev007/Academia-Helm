@@ -23,6 +23,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
 
+export interface ContractInstallment {
+  label: string;
+  amount: number; // FCFA
+  dueDate?: string; // ISO ou vide pour « à la signature »
+}
+
 export interface ContractData {
   // Fiche de souscription (Article 1)
   schoolName: string;
@@ -51,6 +57,12 @@ export interface ContractData {
   subscriptionPaid?: boolean;
   bilingualPaid?: boolean;
   receivedBy?: string; // Email de l'agent YEHI OR Tech qui a encaissé
+
+  // ⭐ Paiement échelonné par tranches (espèces) — échéancier saisi dans
+  //    le wizard (étape 3). Le contrat reprend l'échéancier tel quel.
+  paymentPlan?: 'full' | 'installments';
+  installments?: ContractInstallment[];
+  downPaymentReceived?: boolean; // Acompte (tranche n° 1) encaissé à la signature
 
   // Signatures
   promoterSignatureDataUrl?: string | null; // Canvas signature (base64 PNG)
@@ -414,12 +426,7 @@ export class ContractGenerationService {
 
     <h2 class="article">Article 4 — Prix et modalités de paiement</h2>
     <p>Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
-    ${data.paymentMethod === 'cash' ? `
-    <div class="payment-box">
-      <p><strong>Modalité retenue pour la présente souscription : paiement en espèces.</strong></p>
-      <p>Souscription (frais d'activation + frais annuels du plan ${data.planName}) : <strong>${data.subscriptionPaid ? 'réglée en espèces à la signature' : 'à régler'}</strong>${data.receivedBy ? `, encaissée par ${data.receivedBy} pour YEHI OR Tech` : ''}.</p>
-      ${data.bilingual ? `<p>Option bilingue FR/EN : <strong>${(data.bilingualFee ?? 50000).toLocaleString('fr-FR')} FCFA/an</strong>, facturation <strong>annuelle</strong> — ${data.bilingualPaid ? 'frais de la première année réglés en espèces' : 'à régler'}.</p>` : ''}
-    </div>` : ''}
+    ${this.buildPaymentBoxHtml(data)}
 
     <h2 class="article">Article 5 — Durée et reconduction</h2>
     <p>Durée initiale d'un (1) an à compter de la date d'effet. Renouvelable par tacite reconduction pour des périodes successives d'un (1) an, sauf dénonciation par écrit au moins 60 jours avant la <strong>date d'échéance annuelle</strong>. Le Prestataire se réserve le droit de réviser la grille tarifaire pour les périodes de reconduction futures, sous réserve d'en informer le Client au moins 60 jours avant l'échéance.</p>
@@ -502,6 +509,73 @@ export class ContractGenerationService {
 
 </body>
 </html>`;
+  }
+
+  /**
+   * Bloc « modalité retenue » de l'Article 4 :
+   * - paiement intégral en espèces (paymentPlan absent ou 'full') ;
+   * - paiement échelonné par tranches ('installments') avec échéancier.
+   */
+  private buildPaymentBoxHtml(data: ContractData): string {
+    if (data.paymentMethod !== 'cash') {
+      return '';
+    }
+
+    const esc = (s: string) => String(s ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const fmtDate = (iso?: string) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return esc(iso);
+      return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+
+    if (data.paymentPlan === 'installments' && data.installments && data.installments.length > 0) {
+      const rows = data.installments
+        .map((inst, i) => {
+          const due = i === 0 && !inst.dueDate ? 'À la signature' : fmtDate(inst.dueDate);
+          return `<tr>
+            <td>${i + 1}</td>
+            <td>${esc(inst.label || (i === 0 ? 'Acompte' : `Tranche ${i + 1}`))}</td>
+            <td>${due}</td>
+            <td style="text-align: right;">${Number(inst.amount || 0).toLocaleString('fr-FR')}</td>
+          </tr>`;
+        })
+        .join('\n');
+      const total = data.installments.reduce((sum, inst) => sum + Number(inst.amount || 0), 0);
+
+      return `
+    <div class="payment-box">
+      <p><strong>Modalité retenue pour la présente souscription : paiement en espèces par tranches.</strong></p>
+      <p>Souscription (frais d'activation + frais annuels du plan ${esc(data.planName)}${data.bilingual ? ' + option bilingue FR/EN (annuelle)' : ''}) réglée en <strong>${data.installments.length} tranche(s)</strong>${data.receivedBy ? `, encaissées et suivies par ${esc(data.receivedBy)} pour YEHI OR Tech` : ''}, selon l'échéancier ci-dessous :</p>
+      <table>
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Libellé</th>
+            <th>Échéance</th>
+            <th style="text-align: right;">Montant (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr style="background: #f0fdf4; font-weight: 700;">
+            <td colspan="3" style="text-align: right;">TOTAL ANNÉE 1</td>
+            <td style="text-align: right;">${total.toLocaleString('fr-FR')}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Acompte (tranche n° 1) : <strong>${data.downPaymentReceived !== false ? 'encaissé en espèces à la signature' : 'à encaisser à la signature'}</strong>${data.receivedBy ? `, par ${esc(data.receivedBy)}` : ''}. Chaque règlement donne lieu à un reçu établi par le Prestataire.</p>
+      <p>À défaut de règlement d'une tranche à son échéance, et après mise en demeure demeurée sans effet pendant trente (30) jours, le Prestataire peut suspendre l'accès à la plateforme puis engager la résiliation dans les conditions de l'Article 10, sans préjudice du recouvrement des sommes restant dues. Les sommes déjà réglées demeurent acquises au Prestataire.</p>
+    </div>`;
+    }
+
+    return `
+    <div class="payment-box">
+      <p><strong>Modalité retenue pour la présente souscription : paiement en espèces.</strong></p>
+      <p>Souscription (frais d'activation + frais annuels du plan ${esc(data.planName)}) : <strong>${data.subscriptionPaid ? 'réglée en espèces à la signature' : 'à régler'}</strong>${data.receivedBy ? `, encaissée par ${esc(data.receivedBy)} pour YEHI OR Tech` : ''}.</p>
+      ${data.bilingual ? `<p>Option bilingue FR/EN : <strong>${(data.bilingualFee ?? 50000).toLocaleString('fr-FR')} FCFA/an</strong>, facturation <strong>annuelle</strong> — ${data.bilingualPaid ? 'frais de la première année réglés en espèces' : 'à régler'}.</p>` : ''}
+    </div>`;
   }
 
   /**

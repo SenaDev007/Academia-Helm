@@ -277,21 +277,78 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
               </div>
             </div>
 
-            {/* Paiement en espèces */}
-            <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-start gap-3">
-              <Banknote className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-green-900">
-                <strong>Paiement en espèces</strong> — souscription{' '}
-                {marked.subscriptionPaid !== false ? 'réglée en espèces' : 'à régler'}
-                {draft?.bilingual && (
-                  <>
-                    , option bilingue (facturation annuelle){' '}
-                    {marked.bilingualPaid !== false ? 'réglée' : 'à régler'}
-                  </>
-                )}
-                .
-              </div>
-            </div>
+            {/* Paiement en espèces — intégral OU échéancier de tranches */}
+            {(() => {
+              const insts: { label?: string; amount?: number; dueDate?: string }[] =
+                Array.isArray(marked.installments) ? marked.installments : [];
+              if (marked.paymentPlan === 'installments' && insts.length > 0) {
+                const total = insts.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+                const downPayment = Number(insts[0]?.amount) || 0;
+                const received = marked.downPaymentReceived !== false;
+                const remaining = Math.max(0, total - (received ? downPayment : 0));
+                return (
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-start gap-3">
+                      <Banknote className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
+                      <div className="text-sm text-green-900 w-full">
+                        <strong>Paiement en espèces — par tranches ({insts.length})</strong>
+                        <table className="w-full text-xs mt-2 border-collapse">
+                          <thead>
+                            <tr className="text-left text-slate-500">
+                              <th className="py-1 pr-2 font-medium">N°</th>
+                              <th className="py-1 pr-2 font-medium">Libellé</th>
+                              <th className="py-1 pr-2 font-medium">Échéance</th>
+                              <th className="py-1 text-right font-medium">Montant</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {insts.map((t, i) => (
+                              <tr key={i} className={i === 0 && received ? 'bg-green-100 font-semibold' : ''}>
+                                <td className="py-1 pr-2">{i + 1}</td>
+                                <td className="py-1 pr-2">{t.label || (i === 0 ? 'Acompte' : `Tranche ${i + 1}`)}</td>
+                                <td className="py-1 pr-2">
+                                  {i === 0 && !t.dueDate
+                                    ? 'À la signature'
+                                    : t.dueDate
+                                      ? new Date(t.dueDate).toLocaleDateString('fr-FR')
+                                      : '—'}
+                                </td>
+                                <td className="py-1 text-right">{(Number(t.amount) || 0).toLocaleString('fr-FR')} FCFA</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-green-300 font-bold">
+                              <td className="py-1 pr-2" colSpan={3}>Total Année 1</td>
+                              <td className="py-1 text-right">{total.toLocaleString('fr-FR')} FCFA</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <p className="mt-2">
+                          Acompte : <strong>{received ? 'encaissé à la signature' : 'à encaisser'}</strong>
+                          {marked.receivedBy ? `, par ${marked.receivedBy} (YEHI OR Tech)` : ''} — solde restant{' '}
+                          <strong>{remaining.toLocaleString('fr-FR')} FCFA</strong> selon l'échéancier.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-start gap-3">
+                  <Banknote className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-green-900">
+                    <strong>Paiement en espèces</strong> — souscription{' '}
+                    {marked.subscriptionPaid !== false ? 'réglée en espèces' : 'à régler'}
+                    {draft?.bilingual && (
+                      <>
+                        , option bilingue (facturation annuelle){' '}
+                        {marked.bilingualPaid !== false ? 'réglée' : 'à régler'}
+                      </>
+                    )}
+                    .
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Signature */}
             {!alreadyCompleted && (

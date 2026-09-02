@@ -32,6 +32,26 @@ import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * ⭐ Échéancier de paiement par tranches (espèces — mode YEHI OR Tech).
+ * Saisi dans le wizard (étape 3), persisté dans priceSnapshot.paymentMarked,
+ * repris dans le contrat (Article 4) et les métadonnées du paiement cash.
+ */
+export interface OnboardingInstallment {
+  label: string;
+  amount: number; // FCFA (entier)
+  dueDate?: string; // ISO — tranche 1 = acompte à la signature si absent
+}
+
+export interface CashPaymentMarking {
+  subscriptionPaid?: boolean;
+  bilingualPaid?: boolean;
+  receivedBy?: string;
+  paymentPlan?: 'full' | 'installments';
+  installments?: OnboardingInstallment[];
+  downPaymentReceived?: boolean;
+}
+
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
@@ -1495,16 +1515,20 @@ export class OnboardingService {
   /**
    * ⭐ Enregistre le marquage de paiement en espèces (mode YEHI OR Tech).
    *
-   * Le wizard collecte les cases « souscription payée (espèces) » et
-   * « frais bilingue payés (annuel) » à l'étape plan/paiement. On les
-   * persiste dans priceSnapshot.paymentMarked pour :
-   *   - la génération du contrat (affichage « payé en espèces ») ;
-   *   - la signature différée (les flags survivent au rechargement du draft) ;
+   * Le wizard collecte à l'étape plan/paiement :
+   *   - paiement intégral : cases « souscription payée (espèces) » et
+   *     « frais bilingue payés (annuel) » ;
+   *   - paiement par tranches : échéancier (libellé, montant, échéance) +
+     *     flag « acompte encaissé à la signature ».
+   *
+   * On persiste le tout dans priceSnapshot.paymentMarked pour :
+   *   - la génération du contrat (échéancier à l'Article 4) ;
+   *   - la signature différée (les données survivent au rechargement) ;
    *   - l'activation (montant + métadonnées du paiement cash).
    */
   async markCashPayment(
     draftId: string,
-    marking: { subscriptionPaid?: boolean; bilingualPaid?: boolean; receivedBy?: string },
+    marking: CashPaymentMarking,
   ) {
     const draft = await this.prisma.onboardingDraft.findUnique({
       where: { id: draftId },
@@ -1514,9 +1538,23 @@ export class OnboardingService {
     }
     const snapshot = ((draft.priceSnapshot as any) || {});
     const existing = snapshot.paymentMarked || {};
+    // ⭐ Normaliser l'échéancier : montants entiers > 0, 6 tranches max,
+    //    labels par défaut — évite d'insérer des données incohérentes.
+    const rawInstallments = marking.installments ?? (existing as any).installments;
+    const installments = Array.isArray(rawInstallments)
+      ? rawInstallments
+          .map((inst: any, i: number) => ({
+            label: String(inst?.label || (i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`)),
+            amount: Math.max(0, Math.round(Number(inst?.amount) || 0)),
+            dueDate: inst?.dueDate || undefined,
+          }))
+          .filter((inst: any) => inst.amount > 0)
+          .slice(0, 6)
+      : undefined;
     const paymentMarked = {
       ...existing,
       ...marking,
+      ...(installments !== undefined ? { installments } : {}),
       markedAt: new Date().toISOString(),
     };
     await this.prisma.onboardingDraft.update({
@@ -1555,11 +1593,7 @@ export class OnboardingService {
    */
   async activateTenantAfterContractSign(
     draftId: string,
-    options?: {
-      subscriptionPaid?: boolean;
-      bilingualPaid?: boolean;
-      receivedBy?: string;
-    },
+    options?: CashPaymentMarking,
   ): Promise<{ tenantId: string | null; subdomain: string; hostname?: string; portalUrl?: string }> {
     this.logger.log(`🔧 Activating tenant after contract sign for draft ${draftId}`);
 
@@ -1628,6 +1662,11 @@ export class OnboardingService {
     const subscriptionPaid = options?.subscriptionPaid ?? snapshotMarked.subscriptionPaid ?? true;
     const bilingualPaid = options?.bilingualPaid ?? snapshotMarked.bilingualPaid ?? draft.bilingual;
     const receivedBy = options?.receivedBy ?? snapshotMarked.receivedBy ?? undefined;
+    // ⭐ Échéancier par tranches (paymentPlan='installments') : repris du
+    //    snapshot (persisté à l'étape 3) — les options explicites priment.
+    const paymentPlan = options?.paymentPlan ?? snapshotMarked.paymentPlan ?? 'full';
+    const installments = (options?.installments ?? snapshotMarked.installments) as any[] | undefined;
+    const downPaymentReceived = options?.downPaymentReceived ?? snapshotMarked.downPaymentReceived ?? undefined;
 
     // Montant total Année 1 encaissé en espèces :
     //   frais d'activation + frais annuels du plan + option bilingue (annuelle)
@@ -1643,12 +1682,20 @@ export class OnboardingService {
     // Réutiliser un paiement cash existant (idempotence), sinon le créer
     let payment = draft.payments.find((p) => p.provider === 'cash');
     if (!payment) {
+      const hasInstallments = paymentPlan === 'installments' && Array.isArray(installments) && installments.length > 0;
+      const scheduleTotal = hasInstallments
+        ? installments!.reduce((sum, inst) => sum + (Number(inst?.amount) || 0), 0)
+        : 0;
+      // ⭐ Mode tranches : le montant du paiement reste le TOTAL Année 1
+      //    (valeur de la souscription). L'échéancier est conservé en
+      //    métadonnées (installments) avec le statut d'encaissement de
+      //    l'acompte ; la collecte du solde est suivie hors plateforme.
       payment = await this.prisma.onboardingPayment.create({
         data: {
           draftId: draft.id,
           provider: 'cash',
           reference: `CASH-${draft.id.substring(0, 8).toUpperCase()}-${Date.now()}`,
-          amount: totalAmount,
+          amount: hasInstallments && scheduleTotal > 0 ? scheduleTotal : totalAmount,
           currency: (pricing.currency as string) || 'XOF',
           status: 'COMPLETED', // Encaissé en espèces — marqué payé par l'agent YEHI OR Tech
           metadata: {
@@ -1659,11 +1706,25 @@ export class OnboardingService {
               markedAt: new Date().toISOString(),
             },
             breakdown: { activationFee, annualFee, bilingualFee, total: totalAmount },
-            note: "Paiement encaissé en espèces par YEHI OR Tech (aucun PSP en ligne — pas de webhook)",
+            ...(hasInstallments
+              ? {
+                  paymentPlan: 'installments' as const,
+                  installments,
+                  downPaymentReceived: downPaymentReceived ?? false,
+                  scheduleTotal,
+                  remainingBalance: Math.max(0, scheduleTotal - (downPaymentReceived ? Number(installments![0]?.amount) || 0 : 0)),
+                  note: "Paiement en espèces PAR TRANCHES encaissé/suivi par YEHI OR Tech (aucun PSP en ligne — pas de webhook) — échéancier en métadonnées, solde suivi hors plateforme",
+                }
+              : {
+                  note: "Paiement encaissé en espèces par YEHI OR Tech (aucun PSP en ligne — pas de webhook)",
+                }),
           } as any,
         },
       });
-      this.logger.log(`💵 Cash payment recorded for draft ${draftId}: ${totalAmount} XOF (réf. ${payment.reference})`);
+      this.logger.log(
+        `💵 Cash payment recorded for draft ${draftId}: ${payment.amount} XOF (réf. ${payment.reference})` +
+        (hasInstallments ? ` — ${installments!.length} tranches (acompte ${downPaymentReceived ? 'encaissé' : 'à encaisser'})` : ''),
+      );
     }
 
     // ─── 2. Déléguer au flux d'activation UNIFIÉ (identique au mode self-service) ───

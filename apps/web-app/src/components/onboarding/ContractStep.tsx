@@ -10,6 +10,13 @@ import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/
 import { formatCurrency } from '@/lib/utils';
 import { HELM_PLANS, BILINGUAL_ADDON } from '@/lib/services/HelmPricingService';
 
+// ⭐ Tranche de l'échéancier de paiement (espèces — mode YEHI OR Tech)
+interface ContractInstallmentItem {
+  label: string;
+  amount: number; // FCFA
+  dueDate?: string; // ISO — tranche 1 = acompte à la signature si absent
+}
+
 interface ContractStepProps {
   draftId: string;
   schoolName: string;
@@ -31,6 +38,10 @@ interface ContractStepProps {
   subscriptionPaid?: boolean;
   bilingualPaid?: boolean;
   receivedBy?: string;
+  // ⭐ Paiement échelonné par tranches — échéancier saisi à l'étape 3
+  paymentPlan?: 'full' | 'installments';
+  installments?: ContractInstallmentItem[];
+  downPaymentReceived?: boolean;
   onComplete: (result: {
     signed: boolean;
     contractUrl?: string;
@@ -65,7 +76,8 @@ export default function ContractStep({
   draftId, schoolName, promoterName, directorName, schoolAddress, schoolCity,
   schoolPhone, schoolEmail, studentCount, planCode, planName, bilingual,
   subdomain, activationFee, annualFee, subscriptionPaid = true, bilingualPaid = false,
-  receivedBy, onComplete, onBack,
+  receivedBy, paymentPlan = 'full', installments, downPaymentReceived,
+  onComplete, onBack,
 }: ContractStepProps) {
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
   const [providerSignature, setProviderSignature] = useState<string | null>(null);
@@ -74,6 +86,23 @@ export default function ContractStep({
 
   const totalYearOne = activationFee + annualFee + (bilingual ? BILINGUAL_FEE : 0);
   const contractRef = `CT-AH-2026-${subdomain.toUpperCase().substring(0, 12)}`;
+
+  // ⭐ Échéancier de tranches (mode paiement par tranches) : montants nettoyés
+  //    + total/solde pour l'Article 4 et les payloads de signature.
+  const isInstallments = paymentPlan === 'installments' && !!installments && installments.length > 0;
+  const schedule = (installments || []).map((inst, i) => ({
+    label: inst.label || (i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`),
+    amount: Math.max(0, Math.round(Number(inst.amount) || 0)),
+    dueDate: inst.dueDate || undefined,
+  }));
+  const scheduleTotal = schedule.reduce((s, t) => s + t.amount, 0);
+  const downPayment = schedule[0]?.amount || 0;
+  const remainingBalance = Math.max(0, scheduleTotal - (downPaymentReceived ? downPayment : 0));
+  const fmtDue = (iso?: string) => {
+    if (!iso) return 'à la signature';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
   const handleSignNow = async () => {
     if (!promoterSignature) {
@@ -86,12 +115,20 @@ export default function ContractStep({
     }
     setLoading(true);
     try {
-      // ⭐ Le paiement est marqué « payé en espèces » à l'étape 3 — on aligne
-      //    le contrat ET la création de l'école sur ces infos.
+      // ⭐ Le paiement est marqué « payé en espèces » à l'étape 3 (intégral ou
+      //    par tranches) — on aligne le contrat ET la création de l'école sur
+      //    ces infos, échéancier compris.
       const paymentMarked = {
-        subscriptionPaid,
-        bilingualPaid: bilingual ? bilingualPaid : false,
+        subscriptionPaid: isInstallments ? downPaymentReceived !== false : subscriptionPaid,
+        bilingualPaid: isInstallments ? bilingual : (bilingual ? bilingualPaid : false),
         receivedBy,
+        ...(isInstallments
+          ? {
+              paymentPlan: 'installments' as const,
+              installments: schedule,
+              downPaymentReceived: downPaymentReceived !== false,
+            }
+          : {}),
       };
 
       const genResponse = await fetch('/api/onboarding/contract/generate', {
@@ -167,7 +204,8 @@ export default function ContractStep({
     try {
       // ⭐ Conserver le marquage de paiement pour la signature différée :
       //    le backend le persiste dans le draft pour que la page
-      //    /signup/contract-sign génère un contrat identique.
+      //    /signup/contract-sign génère un contrat identique (échéancier
+      //    de tranches compris).
       const response = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,9 +214,16 @@ export default function ContractStep({
           promoterSignature: null,
           signLater: true,
           paymentMarked: {
-            subscriptionPaid,
-            bilingualPaid: bilingual ? bilingualPaid : false,
+            subscriptionPaid: isInstallments ? downPaymentReceived !== false : subscriptionPaid,
+            bilingualPaid: isInstallments ? bilingual : (bilingual ? bilingualPaid : false),
             receivedBy,
+            ...(isInstallments
+              ? {
+                  paymentPlan: 'installments' as const,
+                  installments: schedule,
+                  downPaymentReceived: downPaymentReceived !== false,
+                }
+              : {}),
           },
         }),
       });
@@ -358,7 +403,44 @@ export default function ContractStep({
                   <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money
                   (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité.
                 </p>
-                {/* ⭐ Modalité réellement retenue : paiement en espèces (mode YEHI OR Tech) */}
+                {/* ⭐ Modalité réellement retenue : espèces (intégral ou tranches) */}
+                {isInstallments ? (
+                <div className="mt-1 bg-green-50 border border-green-300 rounded p-1 text-[8px] leading-tight">
+                  <div className="flex items-center gap-1 font-bold text-green-800">
+                    <Banknote className="w-2.5 h-2.5" /> Modalité retenue : paiement en espèces par tranches
+                  </div>
+                  <table className="w-full mt-px border border-gray-300 border-collapse">
+                    <thead className="bg-[#0a1d3f] text-white">
+                      <tr>
+                        <th className="px-1 py-0 text-left">N°</th>
+                        <th className="px-1 py-0 text-left">Libellé</th>
+                        <th className="px-1 py-0 text-left">Échéance</th>
+                        <th className="px-1 py-0 text-right">Montant</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedule.map((t, i) => (
+                        <tr key={i} className={i === 0 && downPaymentReceived ? 'bg-green-100 font-bold' : ''}>
+                          <td className="px-1 py-0">{i + 1}</td>
+                          <td className="px-1 py-0">{t.label}</td>
+                          <td className="px-1 py-0">{i === 0 && !t.dueDate ? 'signature' : fmtDue(t.dueDate)}</td>
+                          <td className="px-1 py-0 text-right">{formatCurrency(t.amount)} F</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-green-50 font-bold">
+                        <td className="px-1 py-0" colSpan={3}>TOTAL</td>
+                        <td className="px-1 py-0 text-right">{formatCurrency(scheduleTotal)} F</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p className="text-green-900 mt-px">
+                    Acompte (tranche 1) : <strong>{downPaymentReceived !== false ? 'encaissé à la signature' : 'à encaisser'}</strong>
+                    {receivedBy ? `, par ${receivedBy}` : ''}. Solde restant : <strong>{formatCurrency(remainingBalance)} FCFA</strong> selon l'échéancier.
+                    {bilingual && <> Option bilingue incluse dans le total (facturation annuelle).</>}
+                  </p>
+                  <p className="text-green-900">Défaut de règlement d'une tranche : suspension puis résiliation (Art. 10), sommes réglées demeurant acquises.</p>
+                </div>
+              ) : (
                 <div className="mt-1 bg-green-50 border border-green-300 rounded p-1 text-[8px] leading-tight">
                   <div className="flex items-center gap-1 font-bold text-green-800">
                     <Banknote className="w-2.5 h-2.5" /> Modalité retenue : paiement en espèces
@@ -374,6 +456,7 @@ export default function ContractStep({
                     )}
                   </p>
                 </div>
+              )}
               </section>
 
               <section>

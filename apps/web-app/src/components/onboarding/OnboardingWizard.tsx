@@ -66,6 +66,20 @@ import FedaPayCheckout from './FedaPayCheckout';
 import OnboardingAnimation from './OnboardingAnimation';
 import ContractStep from './ContractStep';
 
+// ⭐ Paiement échelonné par tranches (espèces — mode YEHI OR Tech).
+//    Saisi à l'étape 3, repris dans le contrat (Article 4) à l'étape 4.
+interface InstallmentDraft {
+  label: string;
+  amount: number | '';
+  dueDate: string; // ISO — vide = à la signature (acompte)
+}
+const MAX_INSTALLMENTS = 5;
+const defaultInstallments = (): InstallmentDraft[] => [
+  { label: 'Acompte à la signature', amount: '', dueDate: '' },
+  { label: 'Tranche 2', amount: '', dueDate: '' },
+  { label: 'Tranche 3', amount: '', dueDate: '' },
+];
+
 interface OnboardingData {
   // Phase 1: Établissement
   schoolName: string;
@@ -145,9 +159,19 @@ export default function OnboardingWizard() {
   const [adminDisplayName, setAdminDisplayName] = useState<string | null>(null);
   const [isValidatingAdmin, setIsValidatingAdmin] = useState(false);
   // ⭐ Paiement en espèces (mode yehi-or-tech) : cases marquées par l'agent
-  const [paymentMarked, setPaymentMarked] = useState<{ subscriptionPaid: boolean; bilingualPaid: boolean }>({
+  //    (paiement intégral) OU échéancier de tranches (paiement échelonné)
+  const [paymentMarked, setPaymentMarked] = useState<{
+    subscriptionPaid: boolean;
+    bilingualPaid: boolean;
+    paymentPlan: 'full' | 'installments';
+    installments: InstallmentDraft[];
+    downPaymentReceived: boolean;
+  }>({
     subscriptionPaid: false,
     bilingualPaid: false,
+    paymentPlan: 'full',
+    installments: defaultInstallments(),
+    downPaymentReceived: false,
   });
   // ⭐ Résultat de la création (écran de succès)
   const [creationResult, setCreationResult] = useState<{
@@ -683,13 +707,33 @@ export default function OnboardingWizard() {
     if (stepNumber === 3) {
       if (!data.planCode) newErrors.planCode = 'Veuillez sélectionner un plan';
       // ⭐ Mode YEHI OR Tech : le paiement est encaissé en espèces — l'agent
-      //    doit confirmer que la souscription a été payée avant de continuer.
-      if (creationMode === 'yehi-or-tech') {
-        if (!paymentMarked.subscriptionPaid) {
-          newErrors.paymentMarked = 'Veuillez confirmer que la souscription a été payée (paiement en espèces).';
-        }
-        if (data.bilingual && !paymentMarked.bilingualPaid) {
-          newErrors.paymentMarked = 'Veuillez confirmer que les frais de l\'option bilingue (annuels) ont été payés.';
+      //    doit confirmer ce qui a été payé avant de continuer.
+      if (creationMode === 'yehi-or-tech' && data.planCode) {
+        if (paymentMarked.paymentPlan === 'installments') {
+          // ⭐ Paiement échelonné : valider l'échéancier
+          const list = paymentMarked.installments;
+          const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
+          const cashTotal = 300000 + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+          const allocated = list.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+          if (list.length < 2) {
+            newErrors.paymentMarked = 'Un paiement par tranches comporte au moins deux (2) tranches.';
+          } else if (list.some((t) => !t.amount || Number(t.amount) <= 0)) {
+            newErrors.paymentMarked = 'Chaque tranche doit comporter un montant supérieur à zéro.';
+          } else if (list.slice(1).some((t) => !t.dueDate)) {
+            newErrors.paymentMarked = "Chaque tranche (hors acompte) doit avoir une date d'échéance.";
+          } else if (allocated !== cashTotal) {
+            newErrors.paymentMarked = `La somme des tranches (${formatCurrency(allocated)} FCFA) doit être égale au total à régler (${formatCurrency(cashTotal)} FCFA). Utilisez « Répartir équitablement » puis ajustez.`;
+          } else if (!paymentMarked.downPaymentReceived) {
+            newErrors.paymentMarked = "Veuillez confirmer que l'acompte (tranche 1) a été encaissé à la signature.";
+          }
+        } else {
+          // ⭐ Paiement intégral : cases existantes
+          if (!paymentMarked.subscriptionPaid) {
+            newErrors.paymentMarked = 'Veuillez confirmer que la souscription a été payée (paiement en espèces).';
+          }
+          if (data.bilingual && !paymentMarked.bilingualPaid) {
+            newErrors.paymentMarked = 'Veuillez confirmer que les frais de l\'option bilingue (annuels) ont été payés.';
+          }
         }
       }
     }
@@ -1394,7 +1438,13 @@ export default function OnboardingWizard() {
     setErrors({});
     setShowDraftRestoreBanner(false);
     setPendingDraftInfo(null);
-    setPaymentMarked({ subscriptionPaid: false, bilingualPaid: false });
+    setPaymentMarked({
+      subscriptionPaid: false,
+      bilingualPaid: false,
+      paymentPlan: 'full',
+      installments: defaultInstallments(),
+      downPaymentReceived: false,
+    });
     setAdminVerified(false);
     setAdminDisplayName(null);
   };
@@ -2878,9 +2928,51 @@ export default function OnboardingWizard() {
 
                 {/* ⭐ Section 4 (mode YEHI OR Tech) : Paiement en espèces.
                     Le paiement est encaissé en espèces par l'agent YEHI OR Tech :
-                    on marque simplement ce qui a été payé. Pas de FedaPay, pas
-                    de webhook — le reçu est le contrat signé à l'étape suivante. */}
-                {creationMode === 'yehi-or-tech' && (
+                    intégral (cases) OU échelonné par tranches (échéancier).
+                    Pas de FedaPay, pas de webhook — le reçu est le contrat
+                    signé à l'étape suivante. */}
+                {creationMode === 'yehi-or-tech' && (() => {
+                  // Totaux de référence pour l'échéancier (mêmes valeurs que l'affichage du plan)
+                  const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
+                  const cashTotal = 300000 + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+                  const allocated = paymentMarked.installments.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+                  const remaining = cashTotal - allocated;
+
+                  const setTrancheCount = (n: number) => {
+                    setPaymentMarked((prev) => {
+                      const list = [...prev.installments];
+                      while (list.length < n && list.length < MAX_INSTALLMENTS) {
+                        list.push({ label: `Tranche ${list.length + 1}`, amount: '', dueDate: '' });
+                      }
+                      while (list.length > n) list.pop();
+                      return { ...prev, installments: list };
+                    });
+                  };
+
+                  const splitEvenly = () => {
+                    const n = paymentMarked.installments.length;
+                    if (n === 0 || cashTotal <= 0) return;
+                    const base = Math.floor(cashTotal / n);
+                    const rest = cashTotal - base * n;
+                    setPaymentMarked((prev) => ({
+                      ...prev,
+                      installments: prev.installments.map((t, i) => ({
+                        ...t,
+                        amount: base + (i < rest ? 1 : 0),
+                      })),
+                    }));
+                  };
+
+                  const updateInstallment = (index: number, patch: Partial<InstallmentDraft>) => {
+                    setPaymentMarked((prev) => ({
+                      ...prev,
+                      installments: prev.installments.map((t, i) => (i === index ? { ...t, ...patch } : t)),
+                    }));
+                  };
+
+                  const inputCls = 'w-full px-2 py-1.5 text-sm border border-amber-200 rounded-md focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white';
+
+                  return (
                 <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-6 border-2 border-amber-300 shadow-md">
                   <div className="flex items-center mb-4">
                     <div className="p-3 bg-amber-500 rounded-lg mr-4">
@@ -2889,11 +2981,38 @@ export default function OnboardingWizard() {
                     <div>
                       <div className="font-bold text-lg text-blue-900">Paiement en espèces</div>
                       <div className="text-xs text-graphite-600 mt-0.5">
-                        Encaissé par l'agent YEHI OR Tech — cochez ce qui a été payé
+                        Encaissé par l'agent YEHI OR Tech — intégral ou par tranches
                       </div>
                     </div>
                   </div>
 
+                  {/* Choix de la modalité : intégral vs tranches */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-amber-100/70 rounded-lg border border-amber-200 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMarked((prev) => ({ ...prev, paymentPlan: 'full' }))}
+                      className={`px-3 py-2 rounded-md text-sm font-semibold transition-all ${
+                        paymentMarked.paymentPlan === 'full'
+                          ? 'bg-amber-500 text-white shadow'
+                          : 'text-graphite-700 hover:bg-amber-100'
+                      }`}
+                    >
+                      Paiement intégral
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMarked((prev) => ({ ...prev, paymentPlan: 'installments' }))}
+                      className={`px-3 py-2 rounded-md text-sm font-semibold transition-all ${
+                        paymentMarked.paymentPlan === 'installments'
+                          ? 'bg-amber-500 text-white shadow'
+                          : 'text-graphite-700 hover:bg-amber-100'
+                      }`}
+                    >
+                      Paiement par tranches
+                    </button>
+                  </div>
+
+                  {paymentMarked.paymentPlan === 'full' ? (
                   <div className="space-y-3">
                     {/* Case 1 : souscription payée (espèces) */}
                     <label className="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200 cursor-pointer hover:border-amber-400 transition-colors">
@@ -2927,17 +3046,124 @@ export default function OnboardingWizard() {
                     </label>
                     )}
                   </div>
+                  ) : (
+                  <div className="space-y-3">
+                    {/* Nombre de tranches + répartition automatique */}
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-graphite-700">Nombre de tranches :</span>
+                        {[2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setTrancheCount(n)}
+                            className={`w-7 h-7 rounded-md text-xs font-bold transition-all ${
+                              paymentMarked.installments.length === n
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-white border border-amber-200 text-graphite-700 hover:border-amber-400'
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={splitEvenly}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-900 bg-white border border-amber-300 rounded-md hover:bg-amber-50 transition-colors"
+                        title="Répartir le total équitablement entre les tranches"
+                      >
+                        Répartir équitablement ({formatCurrency(cashTotal)} FCFA)
+                      </button>
+                    </div>
+
+                    {/* Lignes de l'échéancier */}
+                    {paymentMarked.installments.map((t, i) => (
+                      <div key={i} className="p-3 bg-white rounded-lg border border-amber-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-blue-900">
+                            Tranche {i + 1}{i === 0 ? ' — acompte' : ''}
+                          </span>
+                          {i === 0 && (
+                            <label className="flex items-center gap-1.5 text-[11px] text-graphite-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={paymentMarked.downPaymentReceived}
+                                onChange={(e) => setPaymentMarked((prev) => ({ ...prev, downPaymentReceived: e.target.checked }))}
+                                className="w-3.5 h-3.5 accent-amber-600"
+                              />
+                              Encaissé à la signature
+                            </label>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={t.label}
+                            onChange={(e) => updateInstallment(i, { label: e.target.value })}
+                            placeholder={i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`}
+                            className={inputCls}
+                          />
+                          <input
+                            type="number"
+                            value={t.amount}
+                            onChange={(e) => updateInstallment(i, { amount: e.target.value === '' ? '' : Number(e.target.value) })}
+                            placeholder="Montant (FCFA)"
+                            min={0}
+                            className={inputCls}
+                          />
+                        </div>
+                        {i === 0 ? (
+                          <p className="mt-1.5 text-[10px] text-graphite-500">
+                            Échéance : à la signature du contrat (date du jour)
+                          </p>
+                        ) : (
+                          <div className="mt-2 flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                            <input
+                              type="date"
+                              value={t.dueDate}
+                              onChange={(e) => updateInstallment(i, { dueDate: e.target.value })}
+                              className={inputCls}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Totaux de contrôle */}
+                    <div className="flex items-center justify-between gap-2 p-3 bg-white rounded-lg border border-amber-200 text-sm">
+                      <span className="text-graphite-700">
+                        Réparti : <strong>{formatCurrency(allocated)} FCFA</strong>
+                        {data.bilingual && (
+                          <span className="text-[10px] text-graphite-500 block">
+                            (option bilingue {formatCurrency(BILINGUAL_ADDON.annual || 0)} FCFA incluse)
+                          </span>
+                        )}
+                      </span>
+                      <span className={`font-semibold ${remaining === 0 ? 'text-green-700' : 'text-amber-700'}`}>
+                        {remaining === 0
+                          ? '✓ Total couvert'
+                          : remaining > 0
+                            ? `Reste à répartir : ${formatCurrency(remaining)} FCFA`
+                            : `Excédent : ${formatCurrency(-remaining)} FCFA`}
+                      </span>
+                    </div>
+                  </div>
+                  )}
 
                   <p className="mt-3 text-[11px] text-graphite-500">
-                    Aucun paiement en ligne : le contrat signé à l'étape suivante tient lieu de reçu
-                    (souscription + option bilingue le cas échéant).
+                    {paymentMarked.paymentPlan === 'installments'
+                      ? "Aucun paiement en ligne : l'échéancier est repris dans le contrat (Article 4) — chaque encaissement donne lieu à un reçu manuscrit."
+                      : 'Aucun paiement en ligne : le contrat signé à l\'étape suivante tient lieu de reçu (souscription + option bilingue le cas échéant).'}
                   </p>
 
                   {errors.paymentMarked && (
                     <p className="mt-2 text-sm text-red-600">{errors.paymentMarked}</p>
                   )}
                 </div>
-                )}
+                  );
+                })()}
               </div>
 
               {errors.info && (
@@ -3004,9 +3230,20 @@ export default function OnboardingWizard() {
               }
               activationFee={300000}
               annualFee={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000}
-              subscriptionPaid={paymentMarked.subscriptionPaid}
-              bilingualPaid={paymentMarked.bilingualPaid}
+              subscriptionPaid={paymentMarked.paymentPlan === 'installments' ? paymentMarked.downPaymentReceived : paymentMarked.subscriptionPaid}
+              bilingualPaid={paymentMarked.paymentPlan === 'installments' ? data.bilingual : paymentMarked.bilingualPaid}
               receivedBy={adminEmail || undefined}
+              paymentPlan={paymentMarked.paymentPlan}
+              installments={
+                paymentMarked.paymentPlan === 'installments'
+                  ? paymentMarked.installments.map((t) => ({
+                      label: t.label,
+                      amount: Number(t.amount) || 0,
+                      dueDate: t.dueDate || undefined,
+                    }))
+                  : undefined
+              }
+              downPaymentReceived={paymentMarked.downPaymentReceived}
               onComplete={(result) => {
                 if (result.signed) {
                   // ⭐ Contrat signé + école créée (backend) → écran de succès

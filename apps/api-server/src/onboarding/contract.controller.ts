@@ -25,8 +25,8 @@ import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Public } from '../auth/decorators/public.decorator';
-import { ContractGenerationService, ContractData } from './contract-generation.service';
-import { OnboardingService } from './services/onboarding.service';
+import { ContractGenerationService, ContractData, ContractInstallment } from './contract-generation.service';
+import { OnboardingService, CashPaymentMarking } from './services/onboarding.service';
 import { EmailService } from '../communication/services/email.service';
 
 /**
@@ -84,10 +84,8 @@ export class ContractController {
       providerSignature?: string;
       signLater?: boolean;
       contractData?: ContractData;
-      paymentMarked?: {
-        subscriptionPaid?: boolean;
-        bilingualPaid?: boolean;
-        receivedBy?: string;
+      paymentMarked?: CashPaymentMarking & {
+        installments?: ContractInstallment[];
       };
     },
   ) {
@@ -160,6 +158,9 @@ export class ContractController {
         subscriptionPaid: body.paymentMarked?.subscriptionPaid,
         bilingualPaid: body.paymentMarked?.bilingualPaid,
         receivedBy: body.paymentMarked?.receivedBy,
+        paymentPlan: body.paymentMarked?.paymentPlan,
+        installments: body.paymentMarked?.installments,
+        downPaymentReceived: body.paymentMarked?.downPaymentReceived,
       });
       this.logger.log(`✅ Tenant created: ${tenantInfo.tenantId} (subdomain: ${tenantInfo.subdomain})`);
     } catch (err: any) {
@@ -263,6 +264,10 @@ export class ContractController {
       subscriptionPaid: marked.subscriptionPaid ?? true,
       bilingualPaid: marked.bilingualPaid ?? draft.bilingual ?? false,
       receivedBy: marked.receivedBy || undefined,
+      // ⭐ Paiement par tranches : échéancier persisté à l'étape 3 du wizard
+      paymentPlan: marked.paymentPlan === 'installments' ? 'installments' : 'full',
+      installments: Array.isArray(marked.installments) ? marked.installments : undefined,
+      downPaymentReceived: typeof marked.downPaymentReceived === 'boolean' ? marked.downPaymentReceived : undefined,
       ...(body?.paymentMarked || {}),
     };
   }
@@ -307,6 +312,54 @@ export class ContractController {
     const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
     const totalPaid = emailActivationFee + emailAnnualFee + emailBilingualFee;
 
+    // ⭐ Échéancier par tranches (si paymentPlan='installments' persisté à
+    //    l'étape 3) — remplace le bloc « payé en espèces » par le détail
+    //    de l'échéancier + le solde restant après l'acompte.
+    const installments: ContractInstallment[] = Array.isArray(marked.installments) ? marked.installments : [];
+    const isInstallments = marked.paymentPlan === 'installments' && installments.length > 0;
+    const fmtDate = (iso?: string) => {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const scheduleTotal = isInstallments ? installments.reduce((s, i) => s + (Number(i.amount) || 0), 0) : 0;
+    const downPaymentAmount = isInstallments ? Number(installments[0]?.amount) || 0 : 0;
+    const downPaymentReceived = marked.downPaymentReceived !== false;
+    const remaining = isInstallments ? Math.max(0, scheduleTotal - (downPaymentReceived ? downPaymentAmount : 0)) : 0;
+
+    const paymentBlockHtml = isInstallments
+      ? `
+      <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
+        <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">💵 Paiement en espèces — par tranches</h3>
+        <table style="width: 100%; font-size: 13px; color: #1f2937; border-collapse: collapse;">
+          <tr style="background: #dcfce7;"><td style="padding: 3px 6px; color: #6b7280;">N°</td><td style="padding: 3px 6px; color: #6b7280;">Libellé</td><td style="padding: 3px 6px; color: #6b7280;">Échéance</td><td style="padding: 3px 6px; color: #6b7280; text-align: right;">Montant</td></tr>
+          ${installments.map((inst, i) => `
+          <tr${i === 0 ? ' style="background: #f0fdf4;"' : ''}>
+            <td style="padding: 3px 6px;">${i + 1}</td>
+            <td style="padding: 3px 6px;">${inst.label || (i === 0 ? 'Acompte' : 'Tranche ' + (i + 1))}</td>
+            <td style="padding: 3px 6px;">${i === 0 && !inst.dueDate ? 'À la signature' : fmtDate(inst.dueDate)}</td>
+            <td style="padding: 3px 6px; text-align: right;">${(Number(inst.amount) || 0).toLocaleString('fr-FR')} FCFA</td>
+          </tr>`).join('')}
+          <tr style="border-top: 1px solid #86efac;"><td style="padding: 3px 6px; font-weight: bold;" colspan="3">Total Année 1</td><td style="padding: 3px 6px; text-align: right; font-weight: bold;">${scheduleTotal.toLocaleString('fr-FR')} FCFA</td></tr>
+        </table>
+        <table style="width: 100%; font-size: 13px; margin-top: 8px;">
+          <tr><td style="padding: 2px 0; color: #6b7280;">Acompte (tranche 1) :</td><td style="padding: 2px 0;"><strong>${downPaymentReceived ? 'Encaissé à la signature' : 'À encaisser'}</strong> — ${downPaymentAmount.toLocaleString('fr-FR')} FCFA</td></tr>
+          <tr><td style="padding: 2px 0; color: #6b7280;">Solde restant :</td><td style="padding: 2px 0;"><strong>${remaining.toLocaleString('fr-FR')} FCFA</strong> selon l'échéancier ci-dessus</td></tr>
+          ${marked.receivedBy ? `<tr><td style="padding: 2px 0; color: #6b7280;">Encaissé et suivi par :</td><td style="padding: 2px 0;">${marked.receivedBy} (YEHI OR Tech)</td></tr>` : ''}
+        </table>
+      </div>`
+      : `
+      <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">💵 Paiement en espèces</h3>
+      <table style="width: 100%; font-size: 13px; color: #1f2937;">
+        <tr><td style="padding: 2px 0; color: #6b7280;">Souscription :</td><td style="padding: 2px 0;"><strong>${marked.subscriptionPaid !== false ? 'Payée (espèces)' : 'À régler'}</strong></td></tr>
+        ${draft.bilingual ? `<tr><td style="padding: 2px 0; color: #6b7280;">Option bilingue FR/EN :</td><td style="padding: 2px 0;"><strong>${marked.bilingualPaid !== false ? 'Payée — facturation annuelle' : 'À régler (annuelle)'}</strong></td></tr>` : ''}
+        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Détail :</td><td style="padding: 2px 0;">Activation ${emailActivationFee.toLocaleString('fr-FR')} + Annuel ${emailAnnualFee.toLocaleString('fr-FR')}${emailBilingualFee > 0 ? ' + Bilingue ' + emailBilingualFee.toLocaleString('fr-FR') : ''} FCFA</td></tr>` : ''}
+        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Total encaissé :</td><td style="padding: 2px 0;"><strong>${totalPaid.toLocaleString('fr-FR')} FCFA</strong></td></tr>` : ''}
+        ${marked.receivedBy ? `<tr><td style="padding: 2px 0; color: #6b7280;">Encaissé par :</td><td style="padding: 2px 0;">${marked.receivedBy} (YEHI OR Tech)</td></tr>` : ''}
+      </table>
+    </div>`;
+
     const html = `
 <!DOCTYPE html>
 <html lang="fr">
@@ -341,16 +394,7 @@ export class ContractController {
       </table>
     </div>
 
-    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
-      <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">💵 Paiement en espèces</h3>
-      <table style="width: 100%; font-size: 13px; color: #1f2937;">
-        <tr><td style="padding: 2px 0; color: #6b7280;">Souscription :</td><td style="padding: 2px 0;"><strong>${marked.subscriptionPaid !== false ? 'Payée (espèces)' : 'À régler'}</strong></td></tr>
-        ${draft.bilingual ? `<tr><td style="padding: 2px 0; color: #6b7280;">Option bilingue FR/EN :</td><td style="padding: 2px 0;"><strong>${marked.bilingualPaid !== false ? 'Payée — facturation annuelle' : 'À régler (annuelle)'}</strong></td></tr>` : ''}
-        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Détail :</td><td style="padding: 2px 0;">Activation ${emailActivationFee.toLocaleString('fr-FR')} + Annuel ${emailAnnualFee.toLocaleString('fr-FR')}${emailBilingualFee > 0 ? ' + Bilingue ' + emailBilingualFee.toLocaleString('fr-FR') : ''} FCFA</td></tr>` : ''}
-        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Total encaissé :</td><td style="padding: 2px 0;"><strong>${totalPaid.toLocaleString('fr-FR')} FCFA</strong></td></tr>` : ''}
-        ${marked.receivedBy ? `<tr><td style="padding: 2px 0; color: #6b7280;">Encaissé par :</td><td style="padding: 2px 0;">${marked.receivedBy} (YEHI OR Tech)</td></tr>` : ''}
-      </table>
-    </div>
+    ${paymentBlockHtml}
 
     <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
       <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">🔑 Vos identifiants de connexion</h3>

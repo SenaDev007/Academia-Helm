@@ -9131,3 +9131,57 @@ Stage Summary:
   important, reactions, read receipts, FCM banner + deep-link) all implemented.
 - FCM sender backend ready — project owner must set FIREBASE_* env vars in .env
   to enable actual push dispatch (the in-app bell works without it).
+
+---
+Task ID: WR-V2
+Agent: main (Super Z, GLM-5.2)
+Task: Weekly Record of Work V2 — colonnes doublées, dates de semaines, catalogue année par année, validation direction avec Observations, champs Head Teacher persistés, PDF 3 semaines/page
+
+Work Log:
+- Cloné le repo et repris le contexte du commit 48381f89 (Weekly Record V1)
+- Migration Neon 20260903000000_add_weekly_record_fields appliquée via script pg :
+  * documentType ('PLAN'|'SCHEME_OF_WORK'|'WEEKLY_RECORD'), headTeacherInitials,
+    headTeacherDate, headTeacherSignature, weekDates (JSON 12 dates)
+  * Index monthly_plans_doc_type_idx + data fix (weekNumber=0 EN-term → WEEKLY_RECORD)
+  * Vérifié : 196 lignes PLAN existantes (aucune ligne EN-term → séparation préventive)
+- Backend monthly-plan.service.ts :
+  * getMonthlyPlan/save/submit/validate/pending/getMonthlyPlanCells scoped par documentType
+  * saveMonthlyPlan : UPDATE méta Head Teacher (SET-then-WHERE, indices positionnels corrects)
+  * submitMonthlyPlan : persiste les champs Head Teacher à la soumission
+  * Nouveau saveDirectorWeeklyObservations : obs par matière (lignes subDomain='DIRECTOR_OBS')
+    + obs générale (colonne directorObservation)
+  * Nouveau duplicateWeeklyRecordToYear (bouton Réutiliser du catalogue)
+- Backend monthly-plan.controller.ts : query params documentType + endpoints
+  POST /director-observations et POST /duplicate-to-year
+- Backend pedagogical-space : getWeeklyRecordCatalogue (arbre Classe→Année→Terme)
+  + endpoint GET /weekly-record-catalogue
+- Frontend lib/pedagogy/weekly-record-pdf.ts (partagée) :
+  * computeWeekDates/currentFriday/parseWeekDatesJson/formatDateEN (pattern cahier journal)
+  * exportWeeklyRecordPdf : pages de 3 semaines (1-3, 4-6, 7-9, 10-12), header officiel
+    sur chaque page, dates dans les en-têtes, note + Head Teacher + signatures sur la
+    dernière page
+- Frontend WeeklyRecordOfWorkTab.tsx (V2) :
+  * minWidth 2800px + éditeurs 100px (colonnes doublées)
+  * 2e rangée d'en-tête avec les 12 dates (dd/mm/yyyy) + sélecteur "1st week ends on"
+  * Bloc Head Teacher's Initial and Date : inputs initiales/date + pad de signature
+    (HeadTeacherSignaturePad) — tout persisté via save/auto-save 5s/submit
+  * Affichage des observations du directeur par matière dans le bandeau info
+- Frontend WeeklyRecordCatalogueTab.tsx (nouveau) : explorateur Classe→Année→Terme,
+  boutons View (grille read-only inline) / PDF / Reuse (duplicate-to-year)
+- CahierJournalFichesContainer (EN) : Catalogue → WeeklyRecordCatalogueTab
+- DirectorPedagogyControlEN : onglet "Weekly Record" + PendingWeeklyRecordsTab :
+  même grille 13 colonnes + colonne OBSERVATIONS éditable par matière + section
+  General Observations + Save Observations + Validate/Reject + PDF
+- SchemeOfWorkTab : documentType=SCHEME_OF_WORK (load/save/submit/export) —
+  évite la collision de données avec le Weekly Record
+- Vérifications : tsc web-app OK (aucune erreur dans mes fichiers) ; tsc api-server OK
+  (uniquement erreurs Prisma préexistantes, client non généré localement) ;
+  tests SQL passés sur Neon prod (insert/lecture/obs directeur/nettoyage)
+- Commit b64fd823 poussé sur main
+
+Stage Summary:
+- Toutes les 6 demandes utilisateur implémentées et poussées
+- documentType sépare proprement SOW et Weekly Record (même table monthly_plans)
+- Les dates de semaines, champs Head Teacher et observations directeur sont persistés
+- PDF : 4 pages de 3 semaines chacune, tous les sujets sur chaque page
+- Le catalogue permet de retrouver les Weekly Records d'année en année + réutilisation

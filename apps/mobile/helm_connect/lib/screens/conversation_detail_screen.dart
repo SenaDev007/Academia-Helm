@@ -95,6 +95,49 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   // ⭐ V3-11: Image preview before send (matches web's preview)
   File? _pendingImage;
   String? _pendingImageName;
+  // ⭐ V6 (parité web) — PRÉSENCE RÉELLE du correspondant (avant : « en ligne »
+  //    codé en dur pour TOUS les directs). getPresence + socket user:online/offline.
+  String? _otherUserId;
+  bool _otherOnline = false;
+  String? _otherLastSeen;
+
+  String get _presenceLabel {
+    if (widget.conversation.type == 'GROUP') {
+      return '${widget.conversation.participants.length} membres';
+    }
+    if (_otherOnline) return 'en ligne';
+    if (_otherLastSeen != null) {
+      final dt = _otherLastSeen!;
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) return 'vu il y a ${diff.inMinutes} min';
+      if (diff.inHours < 24) return 'vu il y a ${diff.inHours} h';
+      return 'vu le ${dt.day}/${dt.month}';
+    }
+    return 'hors ligne';
+  }
+
+  // ⭐ V6 — charge la présence du correspondant via l'API puis suit le socket
+  Future<void> _loadOtherPresence() async {
+    if (widget.conversation.type != 'DIRECT') return;
+    try {
+      final other = widget.conversation.participants
+          .where((p) => p.userId != _currentUserId)
+          .toList();
+      if (other.isEmpty) return;
+      _otherUserId = other.first.userId;
+      final presence = await ApiService.getPresence([_otherUserId!]);
+      final info = presence[_otherUserId!] as Map<String, dynamic>?;
+      if (info != null && mounted) {
+        setState(() {
+          _otherOnline = info['isOnline'] == true;
+          final last = info['lastActiveAt'];
+          _otherLastSeen = (last is String) ? DateTime.tryParse(last) : (last is DateTime ? last : null);
+        });
+      }
+    } catch (_) {
+      // Silencieux : la présence ne doit jamais bloquer l'écran
+    }
+  }
 
   @override
   void initState() {
@@ -102,6 +145,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // ⭐ V3-4: Load current user ID for reaction "is mine" detection
     _loadCurrentUserId();
     _loadMessages();
+    // ⭐ V6 — présence réelle du correspondant (API + socket)
+    _loadCurrentUserIdThenPresence();
     // ⭐ Socket.io: connect for realtime (replaces 10s polling)
     _initSocket();
     // ⭐ V3-5: Initialize WebRTC call service + bind socket callbacks
@@ -114,7 +159,10 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _socket.onCallReject = (data) => _callService.onCallReject();
     _socket.onCallHangup = (data) => _callService.onCallHangup();
     // Polling fallback (reduced to 30s — Socket.io should deliver instantly)
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadMessages());
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _loadMessages();
+      _loadOtherPresence(); // ⭐ V6 — rafraîchit la présence aussi
+    });
     // ⭐ V3-1: Flush any pending messages from previous session (silent retry on app start)
     _flushPendingQueue();
     // ⭐ V3-11: Track scroll position so we know whether to auto-scroll when
@@ -122,6 +170,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     //    user is already at the bottom — never yanks the user back to the
     //    bottom when they're reading history.
     _scrollController.addListener(_onScrollChanged);
+  }
+
+  // ⭐ V6 — charge l'userId PUIS la présence (besoin de _currentUserId pour
+  //    identifier « l'autre » participant)
+  Future<void> _loadCurrentUserIdThenPresence() async {
+    await _loadCurrentUserId();
+    await _loadOtherPresence();
   }
 
   // ⭐ V3-12: Scroll listener — tracks whether the user is at the bottom of the
@@ -232,6 +287,20 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       _socket.onTypingStop = (String conversationId, String typingUserId) {
         if (conversationId == widget.conversation.id && typingUserId != _currentUserId && mounted) {
           setState(() => _isOtherTyping = false);
+        }
+      };
+      // ⭐ V6 (parité web) — présence temps réel du correspondant
+      _socket.onUserOnline = (String userId) {
+        if (userId == _otherUserId && mounted) {
+          setState(() => _otherOnline = true);
+        }
+      };
+      _socket.onUserOffline = (String userId) {
+        if (userId == _otherUserId && mounted) {
+          setState(() {
+            _otherOnline = false;
+            _otherLastSeen = DateTime.now();
+          });
         }
       };
       // ⭐ V3-1: on every (re)connect, flush the offline pending queue
@@ -1038,11 +1107,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(displayName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  // ⭐ V6 — présence RÉELLE (avant : « en ligne » en dur)
                   Text(
-                    widget.conversation.type == 'GROUP'
-                        ? '${widget.conversation.participants.length} membres'
-                        : 'en ligne',
-                    style: const TextStyle(fontSize: 11, color: HelmColors.goldLight),
+                    _isOtherTyping ? 'tape…' : _presenceLabel,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _isOtherTyping || _otherOnline ? HelmColors.goldLight : HelmColors.goldLight.withOpacity(0.65),
+                    ),
                   ),
                 ],
               ),
@@ -1750,9 +1821,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-11: Image attachment — preview thumbnail (Royal Blue border) + tap-to-open
+  // ⭐ V6 (parité web) : résolution d'URL via ApiConfig.resolveFileUrl — les
+  //    chemins relatifs (chat/image/x.jpg) donnaient des images cassées.
   Widget _buildImageAttachmentBubble(Message msg, bool isOwn) {
-    final url = msg.attachmentUrl ?? '';
-    if (url.isEmpty) {
+    final rawUrl = msg.attachmentUrl ?? '';
+    if (rawUrl.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -1768,20 +1841,27 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ),
       );
     }
-    return GestureDetector(
-      onTap: () => _openAttachment(url),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Hero(
-          tag: 'image_${msg.id}',
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
-            decoration: BoxDecoration(
-              border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1.5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Image.network(
-              url,
+    return FutureBuilder<String>(
+      future: ApiConfig.resolveFileUrl(rawUrl),
+      builder: (context, snap) {
+        final url = snap.data ?? '';
+        if (url.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return GestureDetector(
+          onTap: () => _openAttachment(url),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Hero(
+              tag: 'image_${msg.id}',
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 220, maxHeight: 180),
+                decoration: BoxDecoration(
+                  border: Border.all(color: HelmColors.goldLight.withOpacity(0.4), width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Image.network(
+                  url,
               fit: BoxFit.cover,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) return child;
@@ -1813,7 +1893,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ),
         ),
-      ),
+      );
+      },
     );
   }
 
@@ -1821,17 +1902,14 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   //   - Images → gallery / image viewer
   //   - Audio  → music player
   //   - PDF / Office docs → PDF viewer / Quickoffice
-  // ⭐ V3-12: Open attachment — fix relative URLs by prefixing with API base.
-  //   The backend returns relative paths like "chat/document/xxx" — we need
-  //   to prepend "https://academiahelm.com/api/" to make it a full URL.
+  // ⭐ V6 (parité web) : les URLs RELATIVES passent maintenant par
+  //    ApiConfig.resolveFileUrl ({base}/api/chat/files{path}) — l'ancien
+  //    préfixe {base}/ provoquait des 404 sur les fichiers locaux.
   Future<void> _openAttachment(String url) async {
     if (url.isEmpty) return;
-    // ⭐ V3-12: If the URL is relative (starts with "chat/"), prefix with API base
     String fullUrl = url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      // Relative path → prefix with API base URL
-      const apiBase = 'https://academiahelm.com/api/';
-      fullUrl = url.startsWith('/') ? '$apiBase${url.substring(1)}' : '$apiBase$url';
+      fullUrl = await ApiConfig.resolveFileUrl(url);
     }
     try {
       final uri = Uri.parse(fullUrl);
@@ -1902,11 +1980,54 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   // ⭐ V3-12: Poll bubble — parses JSON content + renders as a poll card
   //   (prevents raw JSON characters from showing in the chat)
+  // ⭐ V6 (parité web) — voter sur une option de sondage : tap → POST
+  //    /chat/v2/polls/{msg.id}/vote {userId, optionIds:[opt.id]} puis
+  //    optimiste local + recharge silencieuse.
+  Future<void> _votePollOption(Message msg, String optionId) async {
+    try {
+      // Optimiste : voteCount+1 localement avant la réponse réseau
+      setState(() {
+        _messages = _messages.map((m) {
+          if (m.id != msg.id) return m;
+          try {
+            final p = jsonDecode(m.content!) as Map<String, dynamic>;
+            final opts = (p['options'] as List<dynamic>? ?? []).map((o) {
+              final opt = o as Map<String, dynamic>;
+              return opt['id'] == optionId
+                  ? {...opt, 'voteCount': ((opt['voteCount'] as num?)?.toInt() ?? 0) + 1}
+                  : opt;
+            }).toList();
+            return Message(
+              id: m.id,
+              conversationId: m.conversationId,
+              senderId: m.senderId,
+              type: m.type,
+              content: jsonEncode({...p, 'options': opts}),
+              createdAt: m.createdAt,
+            );
+          } catch (_) {
+            return m;
+          }
+        }).toList();
+      });
+      await ApiService.votePoll(msg.id, optionId);
+      await _loadMessages(); // réconciliation (comptes réels serveur)
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Vote impossible : $e')),
+        );
+      }
+      await _loadMessages();
+    }
+  }
+
   Widget _buildPollBubble(Message msg, bool isOwn) {
     try {
       final poll = jsonDecode(msg.content!) as Map<String, dynamic>;
       final question = poll['question'] as String? ?? 'Sondage';
       final options = (poll['options'] as List<dynamic>?) ?? [];
+      final closed = poll['closed'] as bool? ?? false;
       final totalVotes = options.fold<int>(0, (sum, o) {
         final opt = o as Map<String, dynamic>;
         return sum + ((opt['voteCount'] as num?)?.toInt() ?? 0);
@@ -1941,11 +2062,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ...options.map((optObj) {
               final opt = optObj as Map<String, dynamic>;
               final label = opt['label'] as String? ?? '';
+              final optId = opt['id'] as String?;
               final voteCount = (opt['voteCount'] as num?)?.toInt() ?? 0;
               final percentage = totalVotes > 0 ? (voteCount / totalVotes * 100).round() : 0;
+              // ⭐ V6 — option CLIQUABLE pour voter (parité web)
+              final canVote = optId != null && closed != true;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                child: Column(
+                child: InkWell(
+                  onTap: canVote ? () => _votePollOption(msg, optId) : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
@@ -1971,6 +2098,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       ),
                     ),
                   ],
+                  ),
                 ),
               );
             }).toList(),

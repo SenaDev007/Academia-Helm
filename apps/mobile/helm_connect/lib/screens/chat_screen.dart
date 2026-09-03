@@ -23,6 +23,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme/helm_theme.dart';
@@ -30,6 +31,7 @@ import 'conversation_detail_screen.dart';
 import 'announcements_screen.dart';
 import 'notification_prefs_screen.dart';
 import 'global_search_screen.dart';
+import 'notification_center_screen.dart';
 import 'helm_connect_sections.dart';
 
 // ⭐ V3-11: 12 sections Helm Connect (conformes à la spec)
@@ -120,6 +122,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _logout() async {
+    // ⭐ V6 — DÉSENREGISTRER le token FCM AVANT d'effacer la session : le
+    //    token restait actif côté serveur → notifications fantômes après
+    //    déconnexion (unregisterFcmToken existait mais n'était jamais appelée).
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) {
+        await ApiService.unregisterFcmToken(fcmToken);
+      }
+    } catch (_) {
+      // Silencieux : la déconnexion ne doit jamais être bloquée
+    }
     await ApiService.logout();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -314,7 +327,10 @@ class _ChatScreenState extends State<ChatScreen> {
       case HelmConnectSection.recherche:
         return const GlobalSearchScreen();
       case HelmConnectSection.notifications:
-        return const NotificationPrefsScreen();
+        // ⭐ V6 — CENTRE DE NOTIFICATIONS réel (avant : uniquement les prefs
+        //    DND — les méthodes API existaient sans UI). Un bouton « Préférences »
+        //    donne accès aux anciens réglages.
+        return NotificationCenterScreen();
       case HelmConnectSection.moderation:
         return const ModerationScreen();
       case HelmConnectSection.analytics:

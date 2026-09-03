@@ -74,6 +74,31 @@ class ApiConfig {
     await prefs.remove('tenant_slug');
     await prefs.remove('tenant_name');
   }
+
+  // ⭐ V6 (parité web) — Résolution des URL de pièces jointes.
+  //    Le backend sert les fichiers locaux sous /api/chat/files/* (PUBLIC,
+  //    sans JWT — cf. FileServingController). Le web résout :
+  //      - URL absolue (R2/S3) → telle quelle
+  //      - chemin relatif → {base}/api/chat/files{path}
+  //    Le mobile faisait {base}/ (404) — cette méthode aligne exactement.
+  static String resolveFileUrlSync(String? url, String apiBase) {
+    if (url == null || url.isEmpty) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    var path = url.startsWith('/') ? url : '/$url';
+    // Éviter le double préfixe si le chemin contient déjà /chat/files/
+    if (path.contains('/chat/files/')) {
+      return '$apiBase$path'.replaceAll('/api/chat/files/', '/chat/files/');
+    }
+    // apiBase se termine par /api → /api/chat/files + /chat/document/x.pdf
+    return '$apiBase/chat/files$path';
+  }
+
+  static Future<String> resolveFileUrl(String? url) async {
+    if (url == null || url.isEmpty) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    final base = await baseUrl;
+    return resolveFileUrlSync(url, base);
+  }
 }
 
 class AuthService {
@@ -569,7 +594,9 @@ class ApiService {
   // ─── Presence (V3) ────────────────────────────────────────────────
 
   /// Get presence status for a list of users.
-  /// Backend: GET /chat/presence?userIds=u1,u2,u3
+  /// Backend: GET /chat/presence?userIds=u1,u2,u3 → [{userId, isOnline, lastActiveAt}]
+  /// ⭐ V6 — le backend renvoie un TABLEAU (cast Map = crash) ; retourne une
+  ///    carte {userId: {isOnline, lastActiveAt}} directement exploitable.
   static Future<Map<String, dynamic>> getPresence(List<String> userIds) async {
     if (userIds.isEmpty) return {};
     final base = await ApiConfig.baseUrl;
@@ -579,7 +606,16 @@ class ApiService {
       Uri.parse('$base/chat/presence?userIds=$ids'),
       headers: headers,
     );
-    return _handleResponse(response) as Map<String, dynamic>;
+    final dynamic data = _handleResponse(response);
+    final Map<String, dynamic> map = {};
+    if (data is List) {
+      for (final item in data) {
+        if (item is Map<String, dynamic>) {
+          map[item['userId'] as String] = item;
+        }
+      }
+    }
+    return map;
   }
 
   /// Update own presence status.
@@ -802,6 +838,17 @@ class ApiService {
     final headers = await _getHeaders();
     final response = await http.get(Uri.parse('$base$path'), headers: headers);
     return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  /// Vote on a poll. Backend: POST /chat/v2/polls/:id/vote {userId, optionIds}
+  /// ⭐ V6 (parité web) — le pollId EST l'id du message POLL (le web vote
+  ///    avec msg.id) ; l'option est identifiée par opt['id'] du JSON content.
+  static Future<Map<String, dynamic>> votePoll(String pollId, String optionId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/v2/polls/$pollId/vote', {
+      'userId': userId,
+      'optionIds': [optionId],
+    });
   }
 
   static Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) async {

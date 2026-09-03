@@ -12,6 +12,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../services/api_service.dart';
 import 'chat_screen.dart';
 
@@ -152,6 +153,25 @@ class _LoginScreenState extends State<LoginScreen> {
       // ⭐ Persist the portal type for session restoration
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_portal', widget.portal);
+
+      // ⭐ V6 — ENREGISTREMENT FCM dès la connexion (avant : uniquement au
+      //    chemin d'AUTO-CONNEXION dans le splash → les utilisateurs qui se
+      //    connectent pour la première fois n'avaient AUCUNE notification
+      //    push jusqu'au redémarrage de l'application).
+      try {
+        final messaging = FirebaseMessaging.instance;
+        await messaging.requestPermission(alert: true, badge: true, sound: true);
+        final fcmToken = await messaging.getToken();
+        if (fcmToken != null) {
+          await ApiService.registerFcmToken(
+            fcmToken: fcmToken,
+            platform: 'ANDROID',
+            deviceInfo: 'Helm Connect Flutter',
+          );
+        }
+      } catch (_) {
+        // Silencieux : les notifications ne doivent JAMAIS bloquer la connexion
+      }
 
       if (mounted) {
         Navigator.pushReplacement(

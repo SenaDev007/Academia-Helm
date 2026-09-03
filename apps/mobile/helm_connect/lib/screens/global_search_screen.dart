@@ -5,7 +5,9 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import '../models/models.dart';
 import '../services/api_service.dart';
+import 'conversation_detail_screen.dart';
 
 class GlobalSearchScreen extends StatefulWidget {
   const GlobalSearchScreen({super.key});
@@ -142,6 +144,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   }
 
   Widget _buildPersonItem(Map<String, dynamic> p) {
+    final userId = (p['userId'] ?? p['id']) as String?;
+    final canDirect = p['isSameTenant'] == true && userId != null;
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: const Color(0xFFE6F4FF),
@@ -149,8 +153,33 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
       ),
       title: Text('${p['firstName']} ${p['lastName']}'),
       subtitle: Text(p['email'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: p['isSameTenant'] == true ? const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 16) : null,
+      trailing: canDirect
+          ? const Icon(Icons.chat_bubble_outline, color: Color(0xFF1677FF), size: 18)
+          : (p['isSameTenant'] == true ? const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 16) : null),
+      // ⭐ V6 (parité web) — démarrer un DIRECT au tap : createDirectConversation
+      //    existait mais n'était JAMAIS appelée → impossible d'ouvrir une discussion
+      //    depuis la recherche (rangs sans action).
+      onTap: canDirect ? () => _startDirectConversation(userId!) : null,
     );
+  }
+
+  // ⭐ V6 — ouvrir (ou créer) la conversation directe avec cet utilisateur
+  Future<void> _startDirectConversation(String otherUserId) async {
+    try {
+      final data = await ApiService.createDirectConversation(otherUserId);
+      final convJson = (data['conversation'] ?? data) as Map<String, dynamic>;
+      final conv = Conversation.fromJson(convJson);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossible d’ouvrir la discussion : $e')),
+        );
+      }
+    }
   }
 
   Widget _buildGroupItem(Map<String, dynamic> g) {
@@ -181,10 +210,35 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     );
   }
 
-  void _openConversation(String conversationId) {
-    // V2: fetch conversation details then navigate
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Ouverture conversation $conversationId')),
-    );
+  // ⭐ V6 — navigation RÉELLE vers la conversation (avant : SnackBar stub)
+  Future<void> _openConversation(String conversationId) async {
+    try {
+      // Récupérer la conversation complète depuis la liste (participants,
+      // nom, non-lus) puis naviguer.
+      final convs = await ApiService.listConversations();
+      final match = convs.cast<Map<String, dynamic>?>().firstWhere(
+        (c) => c!['id'] == conversationId,
+        orElse: () => null,
+      );
+      if (match == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Conversation introuvable (accès ?)')),
+          );
+        }
+        return;
+      }
+      final conv = Conversation.fromJson(match);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ouverture impossible : $e')),
+        );
+      }
+    }
   }
 }

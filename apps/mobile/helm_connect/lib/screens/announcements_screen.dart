@@ -166,10 +166,24 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<void> _confirmRead(Announcement a) async {
-    // V2: call /api/chat/announcements/:id/confirm
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Annonce marquée comme lue')),
-    );
+    // ⭐ V6 — appel RÉEL du backend (avant : SnackBar sans aucune requête) :
+    //    POST /api/chat/announcements/:id/confirm — l'API existe déjà
+    //    (ApiService.confirmAnnouncementRead, jamais appelée).
+    try {
+      await ApiService.confirmAnnouncementRead(a.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lecture confirmée — merci')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Impossible de confirmer : $e')),
+        );
+      }
+      return; // ne pas recharger si échec
+    }
     _load();
   }
 

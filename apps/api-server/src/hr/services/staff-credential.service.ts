@@ -190,15 +190,26 @@ export class StaffCredentialService {
       });
 
       if (existingUser) {
-        this.logger.log(`User already exists for ${staff.email} — linking staff to existing user`);
-        // Lier le staff à l'utilisateur existant en mettant à jour son tenantId si nécessaire
-        if (!existingUser.tenantId && tenantId) {
-          await this.prisma.user.update({
-            where: { id: existingUser.id },
-            data: { tenantId },
-          });
-        }
-        return { created: false, error: 'Un compte existe déjà avec cette adresse email' };
+        // ⭐ FIX CROSS-TENANT (bug « Utilisateur associé non trouvé » du portail
+        //    enseignant) : un compte existe déjà avec cet email. Ancien
+        //    comportement : échec silencieux (« Un compte existe déjà ») → le
+        //    personnel ne pouvait JAMAIS se connecter si le compte existait dans
+        //    un autre tenant (loginTeacher cherche le User par email + tenantId).
+        //    Nouveau comportement : on délègue à generateOrRegenerateCredentials
+        //    qui réassigne le compte au tenant du staff, resynchronise son
+        //    identité (prénom/nom/rôle) et génère un nouveau mot de passe
+        //    envoyé par email.
+        this.logger.log(
+          `User already exists for ${staff.email} — delegating to credential regeneration (handles cross-tenant reassignment)`,
+        );
+        const regen = await this.generateOrRegenerateCredentials(staffId, tenantId);
+        return {
+          created: regen.success,
+          userId: regen.userId,
+          username: regen.username,
+          emailSent: regen.emailSent,
+          error: regen.success ? undefined : (regen.error || regen.message),
+        };
       }
 
       // 3. Déterminer le rôle plateforme
@@ -428,29 +439,50 @@ export class StaffCredentialService {
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
       // 6. Chercher si un user existe déjà avec cet email
+      //    ⭐ NOTE : l'email est globalement unique (contrainte @unique sur User.email),
+      //    donc findFirst par email seul retrouve le user quel que soit son tenant.
       const existingUser = await this.prisma.user.findFirst({
         where: { email: normalizedEmail },
       });
 
       let userId: string;
       let action: 'created' | 'updated';
+      let tenantTransferred = false;
 
       if (existingUser) {
+        // ⭐ FIX CROSS-TENANT (bug « Utilisateur associé non trouvé » du portail
+        //    enseignant) : si le user existant appartient à un AUTRE tenant (ex:
+        //    compte créé dans une autre école avec le même email), le login
+        //    enseignant échoue car il cherche le User par email + tenantId.
+        //    → On réassigne le user au tenant du staff : la génération
+        //      d'identifiants RH est une action administrative explicite du
+        //      directeur de CE tenant. On resynchronise aussi son identité
+        //      (prénom/nom/rôle) avec la fiche du personnel.
+        if (existingUser.tenantId && existingUser.tenantId !== tenantId) {
+          tenantTransferred = true;
+          this.logger.warn(
+            `[generateOrRegenerate] User ${existingUser.id} (${normalizedEmail}) réassigné du tenant ` +
+            `${existingUser.tenantId} vers le tenant ${tenantId} (génération d'identifiants RH par l'admin de ce tenant)`,
+          );
+        }
+
         // ── Mise à jour du passwordHash (et du rôle / tenant / statut si nécessaire) ──
         await this.prisma.user.update({
           where: { id: existingUser.id },
           data: {
             passwordHash: hashedPassword,
             role: userRole,
-            tenantId: existingUser.tenantId || tenantId,
+            // ⭐ Toujours rattacher au tenant du staff (et non garder l'ancien)
+            tenantId,
             status: 'active',
-            firstName: existingUser.firstName || staff.firstName || '',
-            lastName: existingUser.lastName || staff.lastName || '',
+            // ⭐ Resynchroniser l'identité avec la fiche du personnel
+            firstName: staff.firstName || existingUser.firstName || '',
+            lastName: staff.lastName || existingUser.lastName || '',
           },
         });
         userId = existingUser.id;
         action = 'updated';
-        this.logger.log(`🔐 User updated: ${userId} (${normalizedEmail}) — password reset by admin${triggeredByUserId ? ` (${triggeredByUserId})` : ''}`);
+        this.logger.log(`🔐 User updated: ${userId} (${normalizedEmail}) — password reset by admin${triggeredByUserId ? ` (${triggeredByUserId})` : ''}${tenantTransferred ? ' [tenant réassigné]' : ''}`);
       } else {
         // ── Création d'un nouvel user ──
         const newUser = await this.prisma.user.create({
@@ -536,6 +568,9 @@ export class StaffCredentialService {
       const messageParts = [`Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} et envoyés par email à ${normalizedEmail}`];
       if (hasTeacherProfile) {
         messageParts.push(`+ identifiants portail enseignant (matricule: ${teacherMatricule})`);
+      }
+      if (tenantTransferred) {
+        messageParts.push('— le compte existait dans un autre établissement : il a été rattaché à votre école');
       }
 
       return {

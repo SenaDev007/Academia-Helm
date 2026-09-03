@@ -33,7 +33,7 @@ import {
   ChevronUp, ChevronDown, Monitor, Smile,
   PhoneMissed, PhoneOff, Radio, FileAudio, FileVideo, MessageCircle, Ban, Lock,
   Menu, ShieldAlert, Gauge, ScrollText, XCircle, Shield, VolumeX, UserMinus,
-  Link2, ExternalLink,
+  Link2, ExternalLink, CalendarClock, ChevronRight, ShieldCheck, ShieldX, KeyRound, LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -960,6 +960,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showInvitations, setShowInvitations] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  // ⭐ V5 — quit du groupe courant (endpoint conversations/:id/leave)
+  const [leavingGroup, setLeavingGroup] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
   // ⭐ Helm Connect — Annonces officielles V1
   const [showAnnouncements, setShowAnnouncements] = useState(false);
@@ -6445,6 +6447,44 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 )}
                 {messages.map((msg, idx) => {
                 const isMine = msg.senderId === currentUserId;
+                // ⭐ V5 — les messages SYSTÈME (« X a rejoint ») et journaux
+                //    d'appels se rendent en pastille CENTRÉE sans bulle, sans
+                //    avatar, sans actions (parité Yeshua MEMBER_LOG/CALL_LOG).
+                const isSystemRow = msg.type === 'SYSTEM';
+                if (isSystemRow) {
+                  const smeta = (msg as any).callMeta || {};
+                  const isJoin = smeta.kind === 'member_join';
+                  const SysIcon = isJoin ? UserPlus : UserMinus;
+                  return (
+                    <React.Fragment key={msg.id}>
+                      {(idx === 0 || new Date(messages[idx - 1].createdAt).toDateString() !== new Date(msg.createdAt).toDateString()) && (
+                        <div className="flex items-center justify-center my-2">
+                          <span className="px-3 py-1 bg-slate-200/70 text-slate-600 text-[10px] font-semibold rounded-full">
+                            {formatDateSeparator(msg.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-center my-1" data-msg-id={msg.id}>
+                        <div
+                          title={msg.content || 'Événement'}
+                          className={cn(
+                            'flex items-center justify-center gap-1.5 py-1.5 px-3.5 rounded-full border text-[11px] font-medium max-w-[85%]',
+                            isJoin
+                              ? 'bg-blue-50 text-blue-700 border-blue-100'
+                              : 'bg-stone-100 text-stone-600 border-stone-200',
+                          )}
+                        >
+                          <SysIcon className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{msg.content || 'Événement de groupe'}</span>
+                          {smeta.byName && smeta.byName !== smeta.name ? (
+                            <span className="opacity-70">· invité par {smeta.byName}</span>
+                          ) : null}
+                          <span className="opacity-50">· {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                }
                 // ⭐ V5 (parité Yeshua) — infos d'expéditeur pour CHAQUE message
                 //    d'autrui : avatar (photo ou initiales SUR la couleur
                 //    signature) + nom au-dessus de la bulle dans la même couleur.
@@ -6727,7 +6767,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             pastille centrée avec couleur par statut (rouge =
                             manqué, ambre = refusé, gris = annulé, vert =
                             terminé), auteur de l'appel, durée lisible, heure,
-                            icône audio/vidéo et tooltip du texte complet. */}
+                            icône audio/vidéo et tooltip du texte complet.
+                            (Les messages SYSTEM sont rendus AVANT la bulle —
+                            voir le retour anticipé isSystemRow ci-dessus.) */}
                         {msg.type === 'CALL_LOG' ? (() => {
                           const meta = (msg as any).callMeta || {};
                           const status = String(meta.status || '').toLowerCase();
@@ -7874,6 +7916,43 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       {sorted.length === 0 && (
                         <div className="px-3 py-6 text-center text-[11px] text-slate-400">Aucun membre trouvé.</div>
                       )}
+                      {/* ⭐ V5 — QUITTER LE GROUPE (endpoint conversations/:id/leave
+                          + message système « X a quitté le groupe » côté serveur). */}
+                      <div className="mt-2 px-3 pb-3 border-t border-slate-100 pt-3">
+                        <button
+                          onClick={async () => {
+                            if (!activeConvId || leavingGroup) return;
+                            const ok = window.confirm(`Quitter « ${activeConv?.name || 'ce groupe'} » ? Vous ne recevrez plus ses messages.`);
+                            if (!ok) return;
+                            setLeavingGroup(true);
+                            try {
+                              const res = await fetch(`/api/chat/conversations/${activeConvId}/leave`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ userId: currentUserId }),
+                                credentials: 'include',
+                              });
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}));
+                                throw new Error(err?.backendError?.message || err?.message || `Erreur ${res.status}`);
+                              }
+                              toast.success('Vous avez quitté le groupe');
+                              setActiveConvId(null);
+                              await loadConversations();
+                              await loadMessages();
+                            } catch (e: any) {
+                              toast.error('Échec : ' + e.message);
+                            } finally {
+                              setLeavingGroup(false);
+                            }
+                          }}
+                          disabled={leavingGroup}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-bold text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          {leavingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                          Quitter le groupe
+                        </button>
+                      </div>
                     </>
                   );
                 })()}
@@ -9078,6 +9157,8 @@ function MemberProfileModal({
 }) {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // ⭐ V5 — créneaux de disponibilité publiés par le membre
+  const [slots, setSlots] = useState<any[]>([]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -9086,6 +9167,15 @@ function MemberProfileModal({
         if (res.ok && !cancelled) setProfile(await res.json());
       } catch { /* silencieux */ }
       finally { if (!cancelled) setLoading(false); }
+    })();
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/availability/user/${encodeURIComponent(member.userId)}`, { credentials: 'include' });
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setSlots(Array.isArray(data) ? data : (data?.slots || []));
+        }
+      } catch { /* silencieux */ }
     })();
     return () => { cancelled = true; };
   }, [member.userId]);
@@ -9129,6 +9219,24 @@ function MemberProfileModal({
             <div className="flex items-start gap-2 text-xs text-slate-600">
               <UserIcon className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
               <span className="line-clamp-3">{bio}</span>
+            </div>
+          )}
+          {/* ⭐ V5 — créneaux de disponibilité publiés par ce membre */}
+          {slots.length > 0 && (
+            <div className="mt-1 border-t border-slate-100 pt-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 mb-1.5">
+                <CalendarClock className="w-3.5 h-3.5 text-[#1677FF]" />
+                Créneaux de disponibilité
+              </div>
+              <div className="flex flex-col gap-1">
+                {slots.map((s: any) => (
+                  <div key={s.id} className="flex items-center gap-2 text-[11px] bg-blue-50/60 border border-blue-100 rounded-lg px-2 py-1">
+                    <span className="font-semibold text-slate-700 w-14 flex-shrink-0">{s.dayLabel || `J${s.dayOfWeek}`}</span>
+                    <span className="text-slate-600 tabular-nums">{s.startTime} – {s.endTime}</span>
+                    {s.label && <span className="text-slate-400 truncate">· {s.label}</span>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {isBlocked && (
@@ -9689,48 +9797,492 @@ function ProfileModal({
     ? (myAvatarUrl.startsWith('http') ? myAvatarUrl : `${getBackendBaseUrl()}${myAvatarUrl.startsWith('/') ? myAvatarUrl : `/${myAvatarUrl}`}`)
     : null;
 
+  // ⭐ V5 — sections repliables : disponibilités + sécurité 2FA
+  const [openSection, setOpenSection] = useState<'availability' | 'security' | null>(null);
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="text-base font-bold text-slate-900">Mon profil</h3>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg">
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
-        <div className="p-6 flex flex-col items-center gap-4">
-          {/* Avatar */}
-          <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-[#3B9EFF] to-blue-500 overflow-hidden">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={userName} className="w-full h-full rounded-full object-cover" />
-            ) : (
-              getInitials(userName || '?')
+        <div className="overflow-y-auto">
+          <div className="p-6 flex flex-col items-center gap-4">
+            {/* Avatar */}
+            <div className="w-24 h-24 rounded-full flex items-center justify-center text-white text-2xl font-bold bg-gradient-to-br from-[#3B9EFF] to-blue-500 overflow-hidden">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={userName} className="w-full h-full rounded-full object-cover" />
+              ) : (
+                getInitials(userName || '?')
+              )}
+            </div>
+            {/* ⭐ Show user name ONLY — no ID, no encryption info (security) */}
+            <div className="text-center">
+              <div className="text-sm font-bold text-slate-900">{userName || 'Utilisateur'}</div>
+            </div>
+            {/* Upload button */}
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) onAvatarUpload(file);
+                if (avatarInputRef.current) avatarInputRef.current.value = '';
+              }}
+            />
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              className="px-4 py-2 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9]"
+            >
+              Modifier ma photo
+            </button>
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════
+              ⭐ V5 — CRÉNEAUX DE DISPONIBILITÉ (parité web demandée)
+              ══════════════════════════════════════════════════════════ */}
+          <div className="border-t border-slate-100">
+            <button
+              onClick={() => setOpenSection(openSection === 'availability' ? null : 'availability')}
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <CalendarClock className="w-4 h-4 text-[#1677FF]" />
+                Créneaux de disponibilité
+              </span>
+              {openSection === 'availability'
+                ? <ChevronDown className="w-4 h-4 text-slate-400" />
+                : <ChevronRight className="w-4 h-4 text-slate-400" />}
+            </button>
+            {openSection === 'availability' && (
+              <AvailabilitySection currentUserId={currentUserId} />
             )}
           </div>
-          {/* ⭐ Show user name ONLY — no ID, no encryption info (security) */}
-          <div className="text-center">
-            <div className="text-sm font-bold text-slate-900">{userName || 'Utilisateur'}</div>
+
+          {/* ══════════════════════════════════════════════════════════
+              ⭐ V5 — SÉCURITÉ : double authentification (TOTP)
+              ══════════════════════════════════════════════════════════ */}
+          <div className="border-t border-slate-100">
+            <button
+              onClick={() => setOpenSection(openSection === 'security' ? null : 'security')}
+              className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                Sécurité — double authentification
+              </span>
+              {openSection === 'security'
+                ? <ChevronDown className="w-4 h-4 text-slate-400" />
+                : <ChevronRight className="w-4 h-4 text-slate-400" />}
+            </button>
+            {openSection === 'security' && (
+              <TwoFactorSection />
+            )}
           </div>
-          {/* Upload button */}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ⭐ V5 — SECTION CRÉNEAUX DE DISPONIBILITÉ (mon profil).
+ *    Créneaux hebdomadaires récurrents (jour + HH:MM→HH:MM + libellé),
+ *    visibles par les membres dans la fiche membre. API /api/chat/availability.
+ */
+function AvailabilitySection({ currentUserId }: { currentUserId: string }) {
+  const [slots, setSlots] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [day, setDay] = useState('1');
+  const [start, setStart] = useState('08:00');
+  const [end, setEnd] = useState('12:00');
+  const [label, setLabel] = useState('');
+  const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/chat/availability?userId=${encodeURIComponent(currentUserId)}`, { credentials: 'include' });
+      const data = await res.json().catch(() => []);
+      setSlots(Array.isArray(data) ? data : (data?.slots || []));
+    } catch { /* silencieux */ }
+    finally { setLoading(false); }
+  }, [currentUserId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addSlot = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/chat/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, dayOfWeek: Number(day), startTime: start, endTime: end, label: label.trim() || undefined }),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || data?.backendError?.message || `Erreur ${res.status}`);
+      setAdding(false);
+      setLabel('');
+      load();
+      toast.success('Créneau ajouté');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeSlot = async (slotId: string) => {
+    try {
+      const res = await fetch(`/api/chat/availability/${encodeURIComponent(slotId)}?userId=${encodeURIComponent(currentUserId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || data?.backendError?.message || `Erreur ${res.status}`);
+      }
+      setSlots(prev => prev.filter(s => s.id !== slotId));
+      toast.success('Créneau supprimé');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    }
+  };
+
+  return (
+    <div className="px-5 pb-5 pt-1">
+      <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+        Publiez vos créneaux récurrents (permanences, heures de réception) — ils apparaissent
+        dans votre fiche membre pour vos interlocuteurs.
+      </p>
+      {loading ? (
+        <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-[#1677FF]" /></div>
+      ) : slots.length === 0 && !adding ? (
+        <div className="text-center py-3 text-xs text-slate-400">Aucun créneau publié</div>
+      ) : (
+        <div className="flex flex-col gap-1.5 mb-3">
+          {slots.map((s) => (
+            <div key={s.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <CalendarClock className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
+              <span className="text-xs font-semibold text-slate-700 w-16 flex-shrink-0">{s.dayLabel || DAYS[(s.dayOfWeek || 1) - 1]}</span>
+              <span className="text-xs text-slate-600 tabular-nums">{s.startTime} – {s.endTime}</span>
+              {s.label && <span className="text-[11px] text-slate-400 truncate">· {s.label}</span>}
+              <button
+                onClick={() => removeSlot(s.id)}
+                className="ml-auto p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"
+                title="Supprimer ce créneau"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div className="flex flex-col gap-2 bg-blue-50/50 border border-blue-100 rounded-xl p-3">
+          <div className="grid grid-cols-3 gap-2">
+            <select value={day} onChange={e => setDay(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
+              {DAYS.map((d, i) => <option key={i} value={String(i + 1)}>{d}</option>)}
+            </select>
+            <input type="time" value={start} onChange={e => setStart(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+            <input type="time" value={end} onChange={e => setEnd(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white" />
+          </div>
           <input
-            ref={avatarInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onAvatarUpload(file);
-              if (avatarInputRef.current) avatarInputRef.current.value = '';
-            }}
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder="Libellé (optionnel) — ex. Permanence pédagogique"
+            maxLength={100}
+            className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white"
           />
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setAdding(false)} className="text-xs px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100">Annuler</button>
+            <button
+              onClick={addSlot}
+              disabled={saving}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#1677FF] text-white font-semibold hover:bg-[#0958D9] disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+              Ajouter
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-[#1677FF] border border-dashed border-[#1677FF]/40 rounded-lg py-2 hover:bg-blue-50/50 transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Ajouter un créneau
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ⭐ V5 — SECTION 2FA TOTP (mon profil).
+ *    Activation : setup (QR + secret) → saisie du code → codes de secours.
+ *    Désactivation : code TOTP ou mot de passe. API /api/auth/2fa/*.
+ */
+function TwoFactorSection() {
+  const [status, setStatus] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [setupData, setSetupData] = useState<any | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [disableMode, setDisableMode] = useState(false);
+  const [disableCode, setDisableCode] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+
+  const loadStatus = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/2fa/status', { credentials: 'include' });
+      if (res.ok) setStatus(await res.json());
+    } catch { /* silencieux */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const startSetup = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/2fa/setup', { method: 'POST', credentials: 'include' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Erreur ${res.status}`);
+      setSetupData(data);
+    } catch (e: any) {
+      toast.error('Échec du setup : ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enable = async () => {
+    if (busy) return;
+    const digits = code.replace(/\D/g, '');
+    if (digits.length !== 6) {
+      toast.error('Saisissez les 6 chiffres générés par votre application.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/2fa/enable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: digits }),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Erreur ${res.status}`);
+      setBackupCodes(data.backupCodes || []);
+      setSetupData(null);
+      setCode('');
+      loadStatus();
+      toast.success('Double authentification activée');
+    } catch (e: any) {
+      toast.error('Code invalide : ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    if (busy) return;
+    if (!disableCode.trim() && !disablePassword) {
+      toast.error('Saisissez votre code TOTP ou votre mot de passe pour désactiver.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/auth/2fa/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: disableCode.trim() || undefined, password: disablePassword || undefined }),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Erreur ${res.status}`);
+      setDisableMode(false);
+      setDisableCode('');
+      setDisablePassword('');
+      loadStatus();
+      toast.success('Double authentification désactivée');
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-emerald-600" /></div>;
+  }
+
+  // ── Codes de secours affichés UNE SEULE FOIS après activation ──
+  if (backupCodes) {
+    return (
+      <div className="px-5 pb-5 pt-1">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <KeyRound className="w-4 h-4 text-amber-600" />
+            <span className="text-sm font-bold text-amber-800">Codes de secours</span>
+          </div>
+          <p className="text-[11px] text-amber-700 leading-relaxed mb-3">
+            Conservez ces 10 codes en lieu sûr — chaque code est à usage unique et permet
+            de vous connecter si vous perdez votre appareil d'authentification.
+            Ils ne seront plus jamais affichés.
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {backupCodes.map((c) => (
+              <code key={c} className="text-[11px] font-mono bg-white/70 border border-amber-200 rounded px-2 py-1 text-amber-900 text-center">{c}</code>
+            ))}
+          </div>
           <button
-            onClick={() => avatarInputRef.current?.click()}
-            className="px-4 py-2 bg-[#1677FF] text-white text-sm font-bold rounded-lg hover:bg-[#0958D9]"
+            onClick={() => { navigator.clipboard?.writeText(backupCodes.join('\n')).then(() => toast.success('Codes copiés'), () => {}); }}
+            className="mt-3 text-xs px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700"
           >
-            Modifier ma photo
+            Copier les codes
+          </button>
+          <button
+            onClick={() => setBackupCodes(null)}
+            className="mt-3 ml-2 text-xs px-3 py-1.5 rounded-lg text-amber-700 hover:bg-amber-100 font-semibold"
+          >
+            J'ai sauvegardé
           </button>
         </div>
       </div>
+    );
+  }
+
+  // ── 2FA ACTIVE ──
+  if (status?.enabled) {
+    return (
+      <div className="px-5 pb-5 pt-1">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+            <ShieldCheck className="w-3.5 h-3.5" /> Activée
+          </span>
+          {status.enabledAt && (
+            <span className="text-[11px] text-slate-400">depuis le {new Date(status.enabledAt).toLocaleDateString('fr-FR')}</span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          Un code à 6 chiffres est exigé à chaque connexion.
+          {typeof status.remainingBackupCodes === 'number' && (
+            <> Codes de secours restants : <strong>{status.remainingBackupCodes}/10</strong>.</>
+          )}
+        </p>
+        {disableMode ? (
+          <div className="flex flex-col gap-2 bg-rose-50/60 border border-rose-100 rounded-xl p-3">
+            <input
+              value={disableCode}
+              onChange={(e) => setDisableCode(e.target.value)}
+              placeholder="Code TOTP actuel (optionnel)"
+              inputMode="numeric"
+              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white"
+            />
+            <input
+              type="password"
+              value={disablePassword}
+              onChange={(e) => setDisablePassword(e.target.value)}
+              placeholder="… ou mot de passe"
+              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDisableMode(false)} className="text-xs px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100">Annuler</button>
+              <button
+                onClick={disable}
+                disabled={busy}
+                className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+                Désactiver la 2FA
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setDisableMode(true)}
+            className="text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg px-3 py-2"
+          >
+            Désactiver la double authentification
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── 2FA inactive : setup en cours ? ──
+  if (setupData) {
+    return (
+      <div className="px-5 pb-5 pt-1 flex flex-col items-center">
+        <p className="text-xs text-slate-500 mb-3 text-center leading-relaxed">
+          1. Scannez ce QR avec votre application d'authentification
+          (Google Authenticator, Aegis, Authy…)<br />
+          2. Saisissez le code à 6 chiffres généré.
+        </p>
+        <img src={setupData.qrDataUrl} alt="QR code 2FA" className="w-48 h-48 border border-slate-200 rounded-xl mb-2" />
+        <details className="w-full mb-3">
+          <summary className="text-[11px] text-slate-400 cursor-pointer">Saisie manuelle du secret</summary>
+          <code className="block mt-1 text-[10px] font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1.5 break-all select-all">{setupData.secret}</code>
+        </details>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onKeyDown={(e) => { if (e.key === 'Enter') enable(); }}
+          placeholder="••••••"
+          inputMode="numeric"
+          className="w-32 text-center text-lg font-bold tracking-[0.3em] border-2 border-slate-200 rounded-xl py-2 outline-none focus:border-[#1677FF]"
+        />
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => setSetupData(null)} className="text-xs px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100">Annuler</button>
+          <button
+            onClick={enable}
+            disabled={busy || code.replace(/\D/g, '').length !== 6}
+            className="text-xs px-4 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {busy && <Loader2 className="w-3 h-3 animate-spin" />}
+            Activer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 2FA inactive : proposition d'activation ──
+  return (
+    <div className="px-5 pb-5 pt-1">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1">
+          <ShieldX className="w-3.5 h-3.5" /> Non activée
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+        Sécurisez votre compte avec un code à 6 chiffres généré par une application
+        d'authentification (TOTP). À chaque connexion, le code vous sera demandé en
+        plus du mot de passe — même si celui-ci fuite, votre compte reste protégé.
+      </p>
+      <button
+        onClick={startSetup}
+        disabled={busy}
+        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg py-2.5 hover:bg-emerald-700 disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+        Activer la double authentification
+      </button>
     </div>
   );
 }

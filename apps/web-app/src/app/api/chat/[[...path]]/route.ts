@@ -104,6 +104,21 @@ export async function PUT(
   return returnJsonResponse(response);
 }
 
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ path?: string[] }> }
+) {
+  const { path } = await params;
+  const pathStr = path ? path.join('/') : '';
+  const headers = await getProxyAuthHeaders(request);
+  const response = await fetch(
+    nestControllerUrl(`chat${pathStr ? '/' + pathStr : ''}`),
+    { method: 'DELETE', headers }
+  );
+
+  return returnJsonResponse(response);
+}
+
 /**
  * Always return JSON — even if backend returns non-JSON (HTML error page, etc.)
  */

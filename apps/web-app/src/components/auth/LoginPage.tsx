@@ -52,6 +52,7 @@ import {
   WifiOff,
   XCircle,
   CheckCircle2,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import TurnstileWidget from '@/components/auth/TurnstileWidget';
@@ -623,6 +624,70 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
+  // ═══════════════════════════════════════════════════════════
+  //  ⭐ V5 — 2FA TOTP : modale « code à 6 chiffres » après login
+  //    (le backend renvoie requires2fa + un jeton temporaire 5 min)
+  // ═══════════════════════════════════════════════════════════
+  const [twoFactorPrompt, setTwoFactorPrompt] = useState<{ tempToken: string; email?: string } | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+  const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+  const twoFactorResolveRef = useRef<((data: any | null) => void) | null>(null);
+
+  /** Ouvre la modale 2FA et attend la promesse du code (ou annulation). */
+  const promptFor2FA = (tempToken: string, email?: string): Promise<any | null> => {
+    setTwoFactorCode('');
+    setTwoFactorError(null);
+    setTwoFactorPrompt({ tempToken, email });
+    return new Promise((resolve) => {
+      twoFactorResolveRef.current = resolve;
+    });
+  };
+
+  /** Soumet le code TOTP → POST /api/auth/2fa/verify-login. */
+  const submitTwoFactorCode = async () => {
+    if (!twoFactorPrompt || twoFactorVerifying) return;
+    const code = twoFactorCode.replace(/\D/g, '');
+    if (code.length !== 6) {
+      setTwoFactorError('Saisissez les 6 chiffres de votre application d\'authentification.');
+      return;
+    }
+    setTwoFactorVerifying(true);
+    setTwoFactorError(null);
+    try {
+      const res = await fetch('/api/auth/2fa/verify-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          twoFactorTempToken: twoFactorPrompt.tempToken,
+          code,
+          tenantSubdomain: tenantSlug || undefined,
+          tenant_id: tenantIdFromUrl || tenantIdForApi || undefined,
+          portal_type: (portalType?.toUpperCase() || 'SCHOOL') as string,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.accessToken) {
+        setTwoFactorPrompt(null);
+        twoFactorResolveRef.current?.(data);
+        twoFactorResolveRef.current = null;
+      } else {
+        setTwoFactorError(data.message || 'Code de vérification invalide.');
+      }
+    } catch {
+      setTwoFactorError('Impossible de vérifier le code — vérifiez votre connexion.');
+    } finally {
+      setTwoFactorVerifying(false);
+    }
+  };
+
+  /** Annule la modale 2FA (résout la promesse avec null). */
+  const cancelTwoFactor = () => {
+    setTwoFactorPrompt(null);
+    twoFactorResolveRef.current?.(null);
+    twoFactorResolveRef.current = null;
+  };
+
   // ── Callbacks stables pour Turnstile (évitent les re-rendus du widget) ──
   const handleTurnstileError = useCallback(() => setTurnstileToken(null), []);
   const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
@@ -978,10 +1043,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       }),
     });
 
-    const data = await response.json();
+    let data = await response.json();
 
     if (!response.ok) {
       throw new Error(data.message || 'Erreur lors de la connexion');
+    }
+
+    // ⭐ V5 — 2FA TOTP : le backend exige un code → modale → payload complet.
+    if (data.requires2fa && data.twoFactorTempToken) {
+      const completed = await promptFor2FA(data.twoFactorTempToken, data.email);
+      if (!completed) return; // annulé par l'utilisateur
+      data = completed;
     }
 
     persistClientSession({
@@ -1118,6 +1190,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
     if (!response.ok) {
       throw new Error(data.message || 'Erreur lors de la connexion');
+    }
+
+    // ⭐ V5 — 2FA TOTP : le backend exige un code → modale → payload complet.
+    //    (placé APRÈS le retry PLATFORM_OWNER : les deux chemins déclenchant
+    //    la porte serveur, la modale s'ouvre ici une seule fois.)
+    if (data.requires2fa && data.twoFactorTempToken) {
+      const completed = await promptFor2FA(data.twoFactorTempToken, data.email);
+      if (!completed) return; // annulé par l'utilisateur
+      data = completed;
     }
 
     persistClientSession({
@@ -3415,6 +3496,93 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                     Soumettre une nouvelle demande
                   </button>
                 </motion.div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ══════════════════════════════════════════════════════════════
+          ⭐ V5 — MODALE 2FA TOTP : code à 6 chiffres après un login
+          exigeant la double authentification (requires2fa du backend).
+          ══════════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {twoFactorPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) cancelTwoFactor(); }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 12 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <div
+                  className="flex h-11 w-11 items-center justify-center rounded-xl"
+                  style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                >
+                  <ShieldCheck className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Double authentification</h3>
+                  <p className="text-xs text-slate-500">
+                    {twoFactorPrompt.email ? `${twoFactorPrompt.email} — ` : ''}code à 6 chiffres
+                  </p>
+                </div>
+              </div>
+
+              <p className="mb-4 text-xs leading-relaxed text-slate-600">
+                Ouvrez votre application d'authentification (Google Authenticator, Aegis, Authy…)
+                et saisissez le code en cours pour <strong>{twoFactorPrompt.email || 'votre compte'}</strong>.
+                En cas de perte d'appareil, un code de secours peut être utilisé.
+              </p>
+
+              <input
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitTwoFactorCode(); }}
+                placeholder="••••••"
+                className="w-full rounded-xl border-2 border-slate-200 py-3 text-center text-2xl font-bold tracking-[0.4em] text-slate-900 outline-none focus:ring-2"
+                style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                disabled={twoFactorVerifying}
+              />
+
+              {twoFactorError && (
+                <p className="mt-2 text-xs font-medium text-red-600">{twoFactorError}</p>
+              )}
+
+              <div className="mt-5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={cancelTwoFactor}
+                  disabled={twoFactorVerifying}
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={submitTwoFactorCode}
+                  disabled={twoFactorVerifying || twoFactorCode.replace(/\D/g, '').length !== 6}
+                  className="flex-[2] inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg disabled:opacity-50"
+                  style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                >
+                  {twoFactorVerifying ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                      Vérification…
+                    </>
+                  ) : 'Vérifier et continuer'}
+                </button>
               </div>
             </motion.div>
           </motion.div>

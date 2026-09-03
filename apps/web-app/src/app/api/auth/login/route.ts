@@ -21,6 +21,9 @@ interface LoginCredentials {
 }
 
 interface BackendLoginResponse {
+  requires2fa?: boolean;
+  twoFactorTempToken?: string;
+  email?: string;
   user: {
     id: string;
     email: string;
@@ -109,6 +112,18 @@ export async function POST(request: NextRequest) {
     }
 
     const backendData: BackendLoginResponse = await backendResponse.json();
+
+    // ⭐ 2FA TOTP — le backend exige un code : on relaie le jeton temporaire
+    //    SANS créer de session (le client affichera l'écran de code, puis
+    //    appellera /api/auth/2fa/verify-login qui refait ce traitement).
+    if ((backendData as any).requires2fa) {
+      return NextResponse.json({
+        success: true,
+        requires2fa: true,
+        twoFactorTempToken: (backendData as any).twoFactorTempToken,
+        email: (backendData as any).email,
+      });
+    }
     
     // Le backend peut maintenant retourner un tenant directement (y compris pour PLATFORM_OWNER avec tenant_id)
     const tenantId = backendData.tenant?.id || backendData.user.tenantId || body.tenant_id || '';

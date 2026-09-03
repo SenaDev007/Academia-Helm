@@ -321,6 +321,9 @@ export class CallProviderChainService {
       }
     }
     // 2) Création (room PRIVÉE — meeting-token obligatoire pour rejoindre).
+    //    ⭐ V5.2 — max_participants SUPPRIMÉ : propriété marquée x-paidPlan
+    //    dans la spec OpenAPI Daily → 400 invalid-request-error sur les
+    //    comptes gratuits (défaut plan : 200 participants — largement assez).
     const createRes = await fetch('https://api.daily.co/v1/rooms', {
       method: 'POST',
       headers,
@@ -333,7 +336,6 @@ export class CallProviderChainService {
           enable_screenshare: true,
           start_video_off: true,
           start_audio_off: false,
-          max_participants: 50,
         },
       }),
     });
@@ -341,12 +343,13 @@ export class CallProviderChainService {
     if (!createRes.ok && createRes.status !== 400 && createRes.status !== 409) {
       throw new Error(`Daily room: HTTP ${createRes.status}`);
     }
-    const created = (await createRes.json().catch(() => ({}))) as { url?: string; error?: string };
+    const created = (await createRes.json().catch(() => ({}))) as { url?: string; error?: string; info?: string };
     // ⭐ V5.2 — un 400 n'est PAS toujours « room existe » (ex: nom invalide,
-    //    quota dépassé) : on remonte la VRAIE raison de l'API au lieu de
-    //    l'avaler puis d'échouer avec un « introuvable » non-diagnostiquable.
+    //    propriété payante, quota dépassé) : on remonte la VRAIE raison de
+    //    l'API (error + info) au lieu de l'avaler puis d'échouer avec un
+    //    « introuvable » non-diagnostiquable.
     if (!createRes.ok && createRes.status === 400 && created?.error && created.error !== 'room-exists') {
-      throw new Error(`Daily room 400: ${created.error}`);
+      throw new Error(`Daily room 400: ${created.error}${created.info ? ` (${created.info})` : ''}`);
     }
     if (created.url) {
       this.dailyRoomCache.set(roomName, { url: created.url, createdAt: Date.now() });

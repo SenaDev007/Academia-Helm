@@ -9185,3 +9185,39 @@ Stage Summary:
 - Les dates de semaines, champs Head Teacher et observations directeur sont persistés
 - PDF : 4 pages de 3 semaines chacune, tous les sujets sur chaque page
 - Le catalogue permet de retrouver les Weekly Records d'année en année + réutilisation
+
+---
+Task ID: WR-V3-fix-login
+Agent: main (Super Z)
+Task: Corriger le blocage de connexion au portail enseignant (Saliou AKPAKI, CSPEBE-26-00008)
+
+Work Log:
+- Reproduction du diagnostic : loginTeacher (portal-auth.service.ts) trouve le Teacher par
+  matricule + tenantId, puis cherche le User par teacher.email + tenantId
+- Diagnostic base Neon (scripts/diagnose_*.mjs) :
+  * Staff Saliou (CSPEBE-26-00008, TEACHER, ACTIVE) : OK, email dawesakpovi@gmail.com
+  * Teacher pédagogie (matricule CSPEBE-26-00008, active) : OK
+  * User dawesakpovi@gmail.com : trouvé MAIS rattaché au tenant "academia-helm"
+    (a93c9cc9, tenant de test créé le 2026-09-03 07:12 avec le user "Helm Academia")
+  * Hash du mot de passe er7oNlc1b4o : VALIDE (mis à jour 07:21 par la génération RH)
+- Cause racine : generateCredentialsForStaff/generateOrRegenerateCredentials cherchent le
+  User par email SANS filtre tenant, puis gardent l'ancien tenantId
+  (existingUser.tenantId || tenantId) → le mot de passe est régénéré sur le compte du
+  mauvais tenant → loginTeacher ne trouve pas le User dans le tenant CSPEB
+  → « Utilisateur associé non trouvé »
+- Fix DATA appliqué (scripts/fix_teacher_login.mjs) :
+  * UPDATE users : tenantId → CSPEB (59b8c348), firstName/lastName → Saliou AKPAKI
+  * UPDATE user_tenants : relation multi-écoles transférée vers CSPEB
+  * Vérification complète : Teacher ✓, User ✓, mot de passe ✓ → login FONCTIONNEL
+- Fix CODE (staff-credential.service.ts) :
+  * generateOrRegenerateCredentials : détection cross-tenant + réassignation
+    systématique au tenant du staff + resynchronisation identité + message informatif
+  * createCredentialsForStaff : délégation à la régénération au lieu de l'échec
+    silencieux « Un compte existe déjà » (flux signature contrat)
+- Commit 28a2bcd2 poussé sur main
+
+Stage Summary:
+- Le login enseignant de Saliou (CSPEBE-26-00008 / er7oNlc1b4o) fonctionne désormais
+- Le bug structurel cross-tenant est corrigé pour tous les futurs staffs
+- Le tenant de test « academia-helm » (quasi vide) a perdu son seul user — recréer un
+  user de test si nécessaire

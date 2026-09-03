@@ -80,6 +80,15 @@ export class PortalAuthService {
   /**
    * Authentification Portail École
    * Email + Password pour Direction/Administration
+   *
+   * ⭐ Règle métier « double casquette » :
+   *    Le personnel administratif se connecte au Portail École avec son
+   *    ADRESSE EMAIL. Un enseignant qui cumule un poste administratif
+   *    (affectation active dans staff_admin_assignments) peut aussi se
+   *    connecter ici avec son email — le rôle de son compte User reflète
+   *    alors son poste administratif (ex : DIRECTEUR_MAT_PRI).
+   *    Un enseignant SANS poste administratif est refusé et orienté vers
+   *    le Portail Enseignant (connexion par matricule).
    */
   async loginSchool(
     dto: SchoolPortalLoginDto,
@@ -92,10 +101,10 @@ export class PortalAuthService {
     }
     const tenantId = tenant.id;
 
-    // Trouver l'utilisateur
+    // Trouver l'utilisateur (insensible à la casse)
     const user = await this.prisma.user.findFirst({
       where: {
-        email: dto.email,
+        email: { equals: (dto.email || '').trim().toLowerCase(), mode: 'insensitive' },
         tenantId,
         status: 'active',
       },
@@ -120,13 +129,52 @@ export class PortalAuthService {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    // Vérifier le rôle (Direction/Administration uniquement)
-    const allowedRoles = ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT'];
-    const userRole = user.role || '';
-    if (!allowedRoles.includes(userRole)) {
-      throw new UnauthorizedException(
-        'Accès refusé. Ce portail est réservé à la direction et à l\'administration.',
+    // ── Vérifier le rôle (Direction/Administration) ──
+    //    ⭐ FIX : l'ancienne liste ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN',
+    //    'ACCOUNTANT'] (rôles anglais) ne matchait AUCUN des rôles réellement
+    //    générés (français : DIRECTEUR, SECRETAIRE, COMPTABLE, CENSEUR... et
+    //    niveau-spécifiques : DIRECTEUR_MAT_PRI, SECRETAIRE_COMPTABLE_SEC...)
+    //    → aucun personnel administratif ne pouvait se connecter ici.
+    //    On accepte désormais : rôles FR, rôles EN legacy, et rôles
+    //    niveau-spécifiques. Les enseignants ne passent QUE s'ils ont un
+    //    poste administratif actif (double casquette).
+    const roleUpper = (user.role || '').toUpperCase();
+
+    // Rôles enseignant / parent / élève → jamais le portail école par défaut
+    const teacherLikeRoles = [
+      'TEACHER', 'ENSEIGNANT', 'TEACHER_RESP', 'INSTITUTEUR', 'PROFESSEUR',
+    ];
+    const familyLikeRoles = [
+      'PARENT', 'ELEVE', 'STUDENT', 'GUARDIAN', 'PARENT_PRIMARY', 'PARENT_SECONDARY',
+    ];
+
+    // Rôles administratifs : FR (UserRole enum), EN legacy, niveau-spécifiques
+    const adminRolePattern =
+      /^(PROMOTEUR|PROMOTER|DIRECTEUR|SECRETAIRE_COMPTABLE|SECRETAIRE|COMPTABLE|SURVEILLANT_GENERAL|SURVEILLANT|CENSEUR|DIRECTOR|SUPER_DIRECTOR|ADMIN|ACCOUNTANT|SCHOOL_OWNER|SCHOOL_ADMIN|DIRECTEUR_GENERAL|DIRECTEUR_ETABLISSEMENT)(_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE))?$/;
+    const isAdminRole = adminRolePattern.test(roleUpper);
+
+    if (!isAdminRole) {
+      if (familyLikeRoles.includes(roleUpper)) {
+        throw new UnauthorizedException(
+          'Accès refusé. Ce portail est réservé à la direction et à l\'administration.',
+        );
+      }
+      // Enseignant OU rôle inconnu : autorisé uniquement avec un poste
+      // administratif actif dans ce tenant (double casquette).
+      const hasAdminPosition = await this.hasActiveAdminAssignment(
+        user.email,
+        tenantId,
       );
+      if (!hasAdminPosition) {
+        if (teacherLikeRoles.includes(roleUpper)) {
+          throw new UnauthorizedException(
+            'Accès refusé. Ce portail est réservé à la direction et à l\'administration. Enseignant : connectez-vous via le Portail Enseignant avec votre matricule.',
+          );
+        }
+        throw new UnauthorizedException(
+          'Accès refusé. Ce portail est réservé à la direction et à l\'administration.',
+        );
+      }
     }
 
     // Vérifier le mot de passe
@@ -176,8 +224,60 @@ export class PortalAuthService {
   }
 
   /**
+   * Vérifie si l'utilisateur (par email) occupe un poste administratif ACTIF
+   * dans ce tenant — c'est-à-dire une affectation active dans
+   * staff_admin_assignments (rôle DIRECTEUR, SECRETAIRE, CENSEUR, ...).
+   *
+   * Utilisé par loginSchool pour la règle « double casquette » :
+   * un enseignant qui cumule un poste administratif peut se connecter au
+   * portail école avec son email.
+   */
+  private async hasActiveAdminAssignment(
+    userEmail: string,
+    tenantId: string,
+  ): Promise<boolean> {
+    try {
+      const staff = await this.prisma.staff.findFirst({
+        where: {
+          tenantId,
+          email: { equals: (userEmail || '').trim().toLowerCase(), mode: 'insensitive' },
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      if (!staff) return false;
+
+      const assignment = await this.prisma.staffAdminAssignment.findFirst({
+        where: {
+          staffId: staff.id,
+          tenantId,
+          isActive: true,
+        },
+        select: { id: true, adminRole: true },
+      });
+      return !!assignment;
+    } catch (err: any) {
+      this.logger.warn(
+        `hasActiveAdminAssignment failed for ${userEmail}: ${err?.message || err}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Authentification Portail Enseignant
-   * Identifiant enseignant + Password
+   * Matricule enseignant + Password
+   *
+   * ⭐ Règle métier « double casquette » :
+   *    Un personnel peut cumuler un poste ENSEIGNANT et un poste
+   *    ADMINISTRATIF (ex : un instituteur qui est aussi Directeur de niveau).
+   *    Dans ce cas :
+   *      - Portail Enseignant → connexion par MATRICULE (ex : CSPEBE-26-00008)
+   *      - Portail École      → connexion par EMAIL (rôle User = poste admin)
+   *    loginTeacher accepte donc tout compte User lié à un Teacher actif du
+   *    tenant, quel que soit son rôle (ENSEIGNANT, DIRECTEUR_*, SECRETAIRE_*,
+   *    COMPTABLE_*, CENSEUR_*, ...). Un enseignant SANS profil Teacher actif
+   *    est refusé.
    */
   async loginTeacher(
     dto: TeacherPortalLoginDto,
@@ -190,69 +290,120 @@ export class PortalAuthService {
     }
     const tenantId = tenant.id;
 
-    // Trouver l'enseignant par matricule
-    const teacher = await this.prisma.teacher.findFirst({
+    const identifier = (dto.teacherIdentifier || '').trim();
+    if (!identifier) {
+      throw new BadRequestException('Matricule enseignant requis');
+    }
+
+    // ── Étape 1 : Trouver l'enseignant par matricule (insensible à la casse) ──
+    let teacher = await this.prisma.teacher.findFirst({
       where: {
         tenantId,
-        matricule: dto.teacherIdentifier,
+        matricule: { equals: identifier, mode: 'insensitive' },
         status: 'active',
       },
     });
 
+    // ── Fallback : matricule RH du Staff (tenantMatricule / globalMatricule /
+    //    employeeNumber) si le matricule du Teacher pédagogique diverge ──
+    let staffEmail: string | null = null;
     if (!teacher) {
-      throw new UnauthorizedException('Identifiant enseignant invalide');
+      const staff = await this.prisma.staff.findFirst({
+        where: {
+          tenantId,
+          OR: [
+            { tenantMatricule: { equals: identifier, mode: 'insensitive' } },
+            { globalMatricule: { equals: identifier, mode: 'insensitive' } },
+            { employeeNumber: { equals: identifier, mode: 'insensitive' } },
+          ],
+        },
+        select: { email: true },
+      });
+      if (staff?.email) {
+        staffEmail = staff.email.trim().toLowerCase();
+        teacher = await this.prisma.teacher.findFirst({
+          where: {
+            tenantId,
+            email: { equals: staffEmail, mode: 'insensitive' },
+            status: 'active',
+          },
+        });
+      }
     }
 
-    // Trouver l'utilisateur associé par email
-    const user = await this.prisma.user.findFirst({
-      where: {
-        tenantId,
-        email: teacher.email || '',
-        status: 'active',
-      },
-      include: {
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: {
-                    permission: true,
+    if (!teacher) {
+      throw new UnauthorizedException(
+        'Matricule enseignant introuvable dans cet établissement. Vérifiez le matricule communiqué par votre école (ex : CSPEBE-26-00001).',
+      );
+    }
+
+    // ── Étape 2 : Trouver le compte User associé ──
+    //    Candidats email : email du Teacher, puis email du Staff (fallback).
+    //    Recherche insensible à la casse (évite « Utilisateur associé non
+    //    trouvé » si la casse diffère entre teachers.email et users.email).
+    const candidateEmails = [
+      ...new Set(
+        [teacher.email, staffEmail]
+          .filter((e): e is string => !!e && !!e.trim())
+          .map((e) => e.trim().toLowerCase()),
+      ),
+    ];
+
+    let user = null;
+    for (const email of candidateEmails) {
+      user = await this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          email: { equals: email, mode: 'insensitive' },
+          status: 'active',
+        },
+        include: {
+          userRoles: {
+            include: {
+              role: {
+                include: {
+                  rolePermissions: {
+                    include: {
+                      permission: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Utilisateur associé non trouvé');
+      });
+      if (user) break;
     }
 
-    // Vérifier que l'utilisateur a un profil enseignant (et non juste un rôle)
-    // On accepte plusieurs variantes de rôle : TEACHER, ENSEIGNANT, ou tout
-    // utilisateur lié à un enregistrement dans la table teachers.
-    // Cela permet aux membres de l'administration (COMPTABLE, DIRECTOR, etc.)
-    // qui sont aussi habilités à enseigner d'accéder au portail enseignant.
-    const allowedTeacherRoles = [
-      'TEACHER', 'ENSEIGNANT', 'TEACHER_RESP',
-      'COMPTABLE', 'DIRECTOR', 'ADMIN', 'PROMOTER',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR',
-    ];
-    const isTeacherRole = allowedTeacherRoles.some(
-      (r) => user.role?.toUpperCase() === r,
-    );
+    if (!user) {
+      throw new UnauthorizedException(
+        'Compte utilisateur non configuré pour cet enseignant. Contactez l\'administration de votre école pour générer vos identifiants.',
+      );
+    }
 
-    // Si le rôle n'est pas dans la liste, on vérifie quand même si l'utilisateur
-    // a un profil teacher actif (son email correspond à un teacher actif).
-    if (!isTeacherRole) {
+    // ── Étape 3 : Vérifier l'accès au portail enseignant ──
+    //    Accepté si :
+    //      a) rôle enseignant (TEACHER, ENSEIGNANT, ...), OU
+    //      b) rôle administratif/direction FR, EN ou niveau-spécifique —
+    //         cas « double casquette » : l'utilisateur cumule enseignement
+    //         et administration, OU
+    //      c) l'utilisateur possède un profil Teacher actif dans ce tenant
+    //         (liaison par email, insensible à la casse).
+    const roleUpper = (user.role || '').toUpperCase();
+    const teacherLikeRoles = [
+      'TEACHER', 'ENSEIGNANT', 'TEACHER_RESP', 'INSTITUTEUR', 'PROFESSEUR',
+    ];
+    const adminLikeRolePattern =
+      /^(PROMOTEUR|PROMOTER|DIRECTEUR|SECRETAIRE_COMPTABLE|SECRETAIRE|COMPTABLE|SURVEILLANT_GENERAL|SURVEILLANT|CENSEUR|DIRECTOR|SUPER_DIRECTOR|ADMIN|ACCOUNTANT|SCHOOL_OWNER|SCHOOL_ADMIN|DIRECTEUR_GENERAL|DIRECTEUR_ETABLISSEMENT)(_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE))?$/;
+    const isAllowedRole =
+      teacherLikeRoles.includes(roleUpper) || adminLikeRolePattern.test(roleUpper);
+
+    if (!isAllowedRole) {
       const hasTeacherProfile = await this.prisma.teacher.findFirst({
         where: {
           tenantId,
-          email: user.email,
+          email: { equals: user.email, mode: 'insensitive' },
           status: 'active',
         },
       });

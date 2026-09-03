@@ -2190,11 +2190,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                           }
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
-                          placeholder="EMP001"
+                          placeholder="CSPEBE-26-00001"
+                          autoCapitalize="characters"
+                          autoCorrect="off"
+                          spellCheck={false}
                         />
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        Votre matricule vous a été communiqué par l&apos;établissement.
+                        Votre matricule vous a été communiqué par l&apos;établissement (format : CODE-YY-XXXXX, ex : CSPEBE-26-00001).
                       </p>
                     </div>
 

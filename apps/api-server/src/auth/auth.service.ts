@@ -131,19 +131,17 @@ export class AuthService {
         }
 
         // 2. Chercher dans Teacher par matricule
+        //    ⭐ FIX : le modèle Teacher n'a PAS de champ userId (liaison par email).
+        //    L'ancien `select: { userId: true }` provoquait une erreur de validation
+        //    Prisma (champ inconnu) → crash 500 quand un identifiant matricule
+        //    matchait un Teacher sans ligne Staff. On résout désormais par email.
         if (!userEmail) {
           const teacher = await this.prisma.teacher.findFirst({
             where: { matricule: { equals: identifier, mode: 'insensitive' } },
-            select: { userId: true },
+            select: { email: true },
           });
-          if (teacher?.userId) {
-            const teacherUser = await this.prisma.user.findUnique({
-              where: { id: teacher.userId },
-              select: { email: true },
-            });
-            if (teacherUser?.email) {
-              userEmail = teacherUser.email.trim().toLowerCase();
-            }
+          if (teacher?.email) {
+            userEmail = teacher.email.trim().toLowerCase();
           }
         }
 
@@ -554,8 +552,20 @@ export class AuthService {
       // Frontend legacy roles
       'SCOLARITE', 'CAISSIER', 'COMPTABLE', 'ECONOME',
       'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'CENSEUR', 'SURVEILLANT_GENERAL',
+      // ⭐ Rôles FR du UserRole enum (générés par staff-credential.service via
+      //    refineUserRole / ADMIN_ROLE_TO_USER_ROLE) — sans eux, ces rôles
+      //    tombaient dans le DÉFAUT SCHOOL par accident au lieu d'être listés.
+      'DIRECTEUR', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'SURVEILLANT',
     ];
     if (schoolRoles.includes(role)) return [PortalType.SCHOOL];
+
+    // ⭐ Rôles niveau-spécifiques (générés par resolveUserRoleWithLevel) :
+    //    DIRECTEUR_MAT_PRI, SECRETAIRE_COMPTABLE_SEC, COMPTABLE_PRI, CENSEUR_SEC,
+    //    SURVEILLANT_GENERAL_SEC, SURVEILLANT_MAT, etc.
+    //    Suffixes acceptés : MAT, PRI, SEC, MAT_PRI (+ variantes longues).
+    if (/^(PROMOTEUR|DIRECTEUR|SECRETAIRE_COMPTABLE|SECRETAIRE|COMPTABLE|SURVEILLANT_GENERAL|SURVEILLANT|CENSEUR)_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE)$/.test(role)) {
+      return [PortalType.SCHOOL];
+    }
 
     // ── Rôles ENSEIGNANT (11 rôles) — Document §03 ──
     const teacherRoles = [
@@ -565,6 +575,11 @@ export class AuthService {
       // Legacy
       'TEACHER_RESPONSIBLE', 'CORRECTOR', 'SUPERVISOR', 'ANIMATOR', 'CONSULTANT',
       'INSTITUTEUR',
+      // ⭐ Rôle FR généré par staff-credential.service pour roleType=TEACHER.
+      //    ⚠️ AVANT ce fix, ENSEIGNANT n'était dans AUCUNE liste et tombait sur
+      //    le DÉFAUT SCHOOL → un enseignant PUR pouvait se connecter au
+      //    portail ÉCOLE avec son email, au lieu du portail enseignant (matricule).
+      'ENSEIGNANT', 'PROFESSEUR',
     ];
     if (teacherRoles.includes(role)) return [PortalType.TEACHER];
 

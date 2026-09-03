@@ -69,8 +69,9 @@ export default function FederisLoginPage() {
         // Stocker dans sessionStorage
         sessionStorage.setItem('federis_session', JSON.stringify(sessionData));
         
-        // Rediriger vers le dashboard
-        router.push(`${federisBase}/dashboard`);
+        // ⭐ V5 (Phase 4) : le dashboard SIMULÉ a été supprimé — atterrissage
+        //    sur la première page RÉELLE de l'espace (Bureau & Membres).
+        router.push(`${federisBase}/bureau`);
         return;
       }
 

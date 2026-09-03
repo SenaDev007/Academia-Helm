@@ -3258,15 +3258,40 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
   // ⭐ V5 — LE déclencheur unique : à chaque changement de messages (nouveau
   //    message, édition, réaction, polling de secours), si et seulement si
-  //    l'utilisateur est près du bas → scroll. Premier rendu de la conv ou
-  //    pendant le chargement = instantané ('auto' — masque le double rendu
-  //    cache→serveur, aucun mouvement visible) ; ensuite = 'smooth'.
+  //    l'utilisateur est près du bas → scroll.
+  //
+  //    ⭐ V5.1 — CORRECTIF DU « SAUT MOBILE » (bug rapporté : la barre de
+  //    défilement monte/descend en boucle à l'ouverture d'un chat) :
+  //    le déclencheur re-testait `loadingMsgs` dans ses deps → la transition
+  //    cache→serveur relançait le scroll en 'smooth' PENDANT que les hauteurs
+  //    se stabilisent (images/citations en chargement) → la cible bougeait
+  //    sous l'animation → oscillation visible.
+  //    Désormais le comportement 'smooth' est réservé à l'arrivée d'un
+  //    VRAI nouveau message (même page + longueur croissante) ; tout le
+  //    reste (premier rendu, swap cache→serveur, accusés de lecture,
+  //    rafraîchissements de polling) scrolle en 'auto' INVISIBLE.
+  const lastMsgCountRef = useRef(0);
+  const lastTopMsgIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (messages.length === 0) {
+      lastMsgCountRef.current = 0;
+      lastTopMsgIdRef.current = null;
+      return;
+    }
     if (!isNearBottomRef.current) return;
-    const instant = firstPaintRef.current || loadingMsgs;
+    const topId = (messages[0] as any)?.id ?? null;
+    // « Vrai nouveau message » = la liste s'allonge SANS que la page
+    // change (même message le plus ancien) → c'est un ajout en bas.
+    const isNewMessage =
+      lastTopMsgIdRef.current === topId &&
+      messages.length > lastMsgCountRef.current &&
+      lastMsgCountRef.current > 0;
+    const instant = firstPaintRef.current || loadingMsgs || !isNewMessage;
     requestAnimationFrame(() => scrollToBottom(instant ? 'auto' : 'smooth'));
     firstPaintRef.current = false;
+    lastMsgCountRef.current = messages.length;
+    lastTopMsgIdRef.current = topId;
   }, [messages, activeConvId, loadingMsgs, scrollToBottom]);
 
   // ⭐ FIX: Click-outside listener to auto-close the action menu and reaction bar

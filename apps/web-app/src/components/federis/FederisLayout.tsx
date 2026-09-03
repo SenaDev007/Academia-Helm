@@ -31,15 +31,16 @@ interface FederisLayoutProps {
 
 // Navigation items use relative sub-paths (e.g. '/dashboard' not '/federis/dashboard')
 // The useFederisPath hook prepends the correct base path depending on the domain.
+// ⭐ V5 (Phase 4 — purge des mocks) : les 16 sous-routes SIMULÉES/placeholder
+//    (dashboard, schools, connect, exam-classes, surveillance, compositions,
+//    correction, grading, results, notifications, stats, billing, archives,
+//    sara, platform-admin, communication) ont été SUPPRIMÉES avec leurs
+//    composants morts — seules les pages RÉELLES restent dans la nav.
 const federisNavItems = [
   {
     category: 'GOUVERNANCE',
     items: [
-      { name: 'Tableau de bord', subPath: '/dashboard', icon: 'dashboard' as const },
       { name: 'Bureau & Membres', subPath: '/bureau', icon: 'building' as const },
-      { name: 'Réseau d\'Écoles', subPath: '/schools', icon: 'building' as const },
-      { name: 'Classes d\'Examen', subPath: '/exam-classes', icon: 'classes' as const },
-      { name: 'Federis Connect', subPath: '/connect', icon: 'bell' as const },
     ]
   },
   {
@@ -49,37 +50,26 @@ const federisNavItems = [
       { name: 'Centres d\'Examen', subPath: '/centers', icon: 'classes' as const },
       { name: 'Candidats', subPath: '/candidates', icon: 'scolarite' as const },
       { name: 'Épreuves & Sujets', subPath: '/question-bank', icon: 'document' as const },
-      { name: 'Surveillance', subPath: '/surveillance', icon: 'warning' as const },
     ]
   },
   {
     category: 'DÉROULEMENT',
     items: [
-      { name: 'Composition', subPath: '/compositions', icon: 'exams' as const },
-      { name: 'Correction', subPath: '/correction', icon: 'document' as const },
-      { name: 'Saisie des Notes', subPath: '/grading', icon: 'document' as const },
       { name: 'Délibérations', subPath: '/deliberations', icon: 'dashboard' as const },
-      { name: 'Résultats', subPath: '/results', icon: 'bell' as const },
     ]
   },
   {
-    category: 'PILOTAGE & FINANCE',
+    category: 'PILOTAGE',
     items: [
-      { name: 'Notifications', subPath: '/notifications', icon: 'bell' as const },
-      { name: 'Statistiques', subPath: '/stats', icon: 'finance' as const },
       { name: 'Rapports', subPath: '/reports', icon: 'document' as const },
-      { name: 'Finances', subPath: '/billing', icon: 'finance' as const },
-      { name: 'Archives & Diplômes', subPath: '/archives', icon: 'document' as const },
     ]
   },
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'Sarah AI', subPath: '/sara', icon: 'sparkles' as const },
       { name: 'ORION', subPath: '/orion', icon: 'sparkles' as const },
       { name: 'Gestion des Conflits', subPath: '/conflicts', icon: 'warning' as const },
       { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },
-      { name: 'Admin Plateforme', subPath: '/platform-admin', icon: 'settings' as const },
     ]
   }
 ];

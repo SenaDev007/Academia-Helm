@@ -2767,9 +2767,13 @@ export class ChatService {
     meta: Record<string, any>,
   ): Promise<void> {
     const msgId = randomUUID();
+    // ⭐ V5.2 — CORRECTIF : même bug que les CALL_LOG — chat_messages n'a
+    //    PAS de colonne « updatedAt » → l'INSERT échouait silencieusement :
+    //    AUCUN message système (member_join / member_leave / …) n'a jamais
+    //    été inséré depuis la V5.
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "callMeta", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, 'SYSTEM', $4, $5::jsonb, now(), now())`,
+      `INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "callMeta", "createdAt")
+       VALUES ($1, $2, $3, 'SYSTEM', $4, $5::jsonb, now())`,
       msgId, conversationId, actorId, text, JSON.stringify(meta),
     );
     // ⭐ Diffuser en temps réel aux participants connectés

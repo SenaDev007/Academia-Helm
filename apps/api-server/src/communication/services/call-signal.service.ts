@@ -111,9 +111,14 @@ export class CallSignalService {
       default: text = `${typeLabel} terminé · ${formatDurationFr(meta.durationSec ?? 0)}`;
     }
     const msgId = randomUUID();
+    // ⭐ V5.2 — CORRECTIF : la table chat_messages n'a PAS de colonne
+    //    « updatedAt » (vérifié en production) → l'INSERT échouait
+    //    silencieusement (catch + log) : AUCUN journal d'appel (manqué /
+    //    refusé / annulé / terminé) n'a jamais été écrit, et le preview de
+    //    conversation ne se mettait pas à jour à la fin d'un appel.
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "callMeta", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, 'CALL_LOG', $4, $5::jsonb, now(), now())`,
+      `INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "callMeta", "createdAt")
+       VALUES ($1, $2, $3, 'CALL_LOG', $4, $5::jsonb, now())`,
       msgId, conversationId, initiatorId, text, JSON.stringify(meta),
     );
     // ⭐ Diffuser le journal en temps réel aux participants connectés

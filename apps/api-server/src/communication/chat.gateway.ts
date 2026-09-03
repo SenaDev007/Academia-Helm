@@ -29,19 +29,55 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 
 // ⭐ Configuration CORS pour autoriser le web-app
-//    Le gateway écoute sur le même port que l'API REST (3001 ou selon config)
+//    Le gateway écoute sur le même port que l'API REST (3000 ou selon config)
 //    ⭐ V5 — CORRECTIF DEV : le web-app Next.js tourne sur 3001 en dev —
 //    il manquait à la whitelist (seul 3000, le port API, y figurait) →
 //    handshake Socket.io rejeté par CORS en développement.
+//
+//    ⭐ V5.2 — CORRECTIF PORTAILS ÉCOLES (bug de production) :
+//    La whitelist statique précédente ne contenait QUE 4 origines littérales
+//    + 'https://preview-*.space-z.ai' — or le package `cors` ne fait PAS
+//    d'expansion de wildcard dans un tableau de chaînes (comparaison exacte)
+//    → cette entrée ne matchait JAMAIS, et surtout TOUS les sous-domaines
+//    des portails écoles (*.academiahelm.com — ex: lepalmaresplus.academiahelm.com)
+//    étaient REJETÉS au handshake : plus de temps réel sur les portails
+//    (message:new, typing, présence) et surtout plus de signalisation
+//    d'appels (call:incoming / call:offer / answer / ice-candidate) —
+//    les appels mesh ne sonnaient plus, le polling 3 s faisait tout le
+//    travail, et le mesh WebRTC ne passait pas du tout.
+//    On aligne maintenant le gateway sur la MÊME politique regex que le
+//    CORS REST de main.ts (fonction dynamique, jamais d'erreur → false).
+const SOCKET_ALLOWED_ORIGINS: RegExp[] = [
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,        // Dev local (3000/3001/…)
+  /^https:\/\/(.+\.)?academiahelm\.com$/,                // Prod + portails écoles (*.academiahelm.com)
+  /^https:\/\/(.+\.)?academia-hub\.pro$/,                // Domaine alternatif
+  /^https?:\/\/(\d{1,3}\.){3}\d{1,3}(:\d+)?$/,           // IPs directes (VPS, tests)
+  /^https:\/\/[a-z0-9-]+\.vercel\.app$/,                 // Vercel preview deployments
+  /^https:\/\/preview-[a-z0-9-]+\.space-z\.ai$/,         // Sandbox de dév (regex — le littéral 'preview-*.space-z.ai' ne matchait rien)
+];
+
+/** Même sémantique que main.ts : autorisé OU dev → true ; sinon false (jamais d'erreur). */
+function socketOriginAllowed(origin: string): boolean {
+  if (SOCKET_ALLOWED_ORIGINS.some((re) => re.test(origin))) return true;
+  if (process.env.NODE_ENV !== 'production') return true;
+  return false;
+}
+
 @WebSocketGateway({
   cors: {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://academiahelm.com',
-      'https://app.academiahelm.com',
-      'https://preview-*.space-z.ai',
-    ],
+    origin: (req: { headers?: { origin?: string } }, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Sans origin (apps natives Flutter, appels serveur-serveur) → autorisé
+      const origin = req?.headers?.origin;
+      if (!origin) return callback(null, true);
+      const allowed = socketOriginAllowed(origin);
+      if (!allowed) {
+        // ⚠️ Ne JAMAIS passer d'erreur (403) — false = handshake bloqué proprement
+        new Logger(ChatGateway.name).warn(
+          `CORS socket: origin ${origin} not allowed (returning false, not error)`,
+        );
+      }
+      return callback(null, allowed);
+    },
     credentials: true,
   },
   namespace: '/chat',

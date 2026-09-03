@@ -47,7 +47,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { createHmac, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
 import { randomUUID } from 'crypto';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import { PrismaService } from '../../database/prisma.service';
@@ -189,11 +189,26 @@ export class CallProviderChainService {
 
   // ═════════════════════════════════════════════════════════════════
   //  Noms de rooms/channels — MÊME espacement de noms pour les 3
-  //  fournisseurs (helm-call-<convId> / helm-voice-<channelId>)
+  //  fournisseurs (helm-call-<hash10> / helm-voice-<hash10>)
   // ═════════════════════════════════════════════════════════════════
 
+  /**
+   * ⭐ V5.2 — CORRECTIF CRITIQUE (bug de production) : les noms de rooms
+   * Daily sont CONTRAINTS (minuscules/chiffres/tirets, longueur max ~38
+   * caractères). L'ancien format `helm-call-<uuid36>` = 46 caractères →
+   * l'API Daily répondait 400 à la création, avalé comme « room existe »
+   * (statut 400/409 toléré) puis le GET de contrôle renvoyait 404 →
+   * « Daily room introuvable après création » → cooldown Daily → chaîne
+   * ÉPUISÉE → tous les appels retombaient en mesh.
+   *
+   * On raccourcit via un hash SHA-256 STABLE (`kind:conversationId`) :
+   * la même conversation → la même room pour l'APPELANT et le DESTINATAIRE
+   * (condition indispensable au rendez-vous des deux parties), 20-21
+   * caractères — compatible Daily, LiveKit (libre) et Agora (≤64 octets).
+   */
   roomNameFor(kind: 'call' | 'voice', conversationId: string): string {
-    return `helm-${kind}-${conversationId}`;
+    const short = createHash('sha256').update(`${kind}:${conversationId}`).digest('hex').slice(0, 10);
+    return `helm-${kind}-${short}`;
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -322,11 +337,17 @@ export class CallProviderChainService {
         },
       }),
     });
-    // 409/400 « exists » → la room existe déjà, on relit.
+    // 409/400 « room-exists » → la room existe déjà, on relit.
     if (!createRes.ok && createRes.status !== 400 && createRes.status !== 409) {
       throw new Error(`Daily room: HTTP ${createRes.status}`);
     }
-    const created = (await createRes.json().catch(() => ({}))) as { url?: string };
+    const created = (await createRes.json().catch(() => ({}))) as { url?: string; error?: string };
+    // ⭐ V5.2 — un 400 n'est PAS toujours « room existe » (ex: nom invalide,
+    //    quota dépassé) : on remonte la VRAIE raison de l'API au lieu de
+    //    l'avaler puis d'échouer avec un « introuvable » non-diagnostiquable.
+    if (!createRes.ok && createRes.status === 400 && created?.error && created.error !== 'room-exists') {
+      throw new Error(`Daily room 400: ${created.error}`);
+    }
     if (created.url) {
       this.dailyRoomCache.set(roomName, { url: created.url, createdAt: Date.now() });
       return created.url;

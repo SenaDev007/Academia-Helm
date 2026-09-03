@@ -72,9 +72,18 @@ class SocketService {
   Future<void> connect({required String token, required String userId}) async {
     if (_socket != null) return;
 
-    // ⭐ V3-9: Use the BFF URL (academiahelm.com) instead of direct API
-    // The BFF proxies Socket.io connections to the NestJS backend.
-    const backendUrl = 'https://academiahelm.com';
+    // ⭐ V5.2 — CORRECTIF CRITIQUE (bug de production) :
+    //    V3-9 connectait le socket à https://academiahelm.com/chat en
+    //    supposant que « le BFF proxifie Socket.io » — mais le BFF Next.js
+    //    (route handlers HTTP) ne proxifie PAS les WebSockets, et aucun
+    //    rewrite /chat n'existe en production (next.config rewrites = []
+    //    hors dev). Résultat : handshake 404 → le temps réel mobile était
+    //    MORT (messages en polling, appels entrants jamais poussés).
+    //    On connecte donc DIRECTEMENT le NestJS qui héberge la gateway :
+    //    https://api.academiahelm.com (namespace /chat, JWT au handshake,
+    //    les apps natives n'envoient pas d'Origin → pas de contrainte CORS).
+    //    La gateway est partagée entre tenants (l'identité vient du JWT).
+    const backendUrl = 'https://api.academiahelm.com';
 
     _socket = IO.io('$backendUrl/chat', IO.OptionBuilder()
       .setAuth({'token': token})

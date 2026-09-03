@@ -58,15 +58,22 @@ export function useChatSocket(options: UseChatSocketOptions) {
     if (!token || !userId) return;
 
     // ⭐ Determine the backend URL (same as the API server)
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.academiahelm.com';
+    // ⭐ V5.2 — CORRECTIF ROBUSTESSE `/api` : les gateways Socket.io vivent
+    //    HORS du préfixe global `/api` (le namespace est /chat à la racine).
+    //    NEXT_PUBLIC_API_URL accepte les DEUX formes — avec ou sans suffixe
+    //    /api (cf. normalizeToNestApiRoot et la doc .env.example/README qui
+    //    documentent `http://localhost:3000/api`). Sans strip, le handshake
+    //    pointait vers `…/api/chat` → 404 → temps réel silencieusement mort.
+    const stripApiSuffix = (u: string) => u.replace(/\/api\/?$/, '');
+    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
     // ⭐ V5 — CORRECTIF DEV : le web-app tourne sur 3001 mais la gateway
     //    Socket.io vit dans l'api-server NestJS (port 3000, namespace /chat).
     //    Avant, le client visait 3001 → connexion silencieusement impossible
     //    en dev → le polling 5 s faisait tout le travail temps réel.
     //    Override possible via NEXT_PUBLIC_API_URL (ex: Railway en test).
     const socketUrl = process.env.NODE_ENV === 'development'
-      ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000')
-      : backendUrl;
+      ? stripApiSuffix(rawApiUrl || 'http://localhost:3000')
+      : stripApiSuffix(rawApiUrl || 'https://api.academiahelm.com');
 
     const socket = io(`${socketUrl}/chat`, {
       auth: { token },

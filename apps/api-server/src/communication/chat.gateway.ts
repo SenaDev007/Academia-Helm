@@ -65,9 +65,14 @@ function socketOriginAllowed(origin: string): boolean {
 
 @WebSocketGateway({
   cors: {
-    origin: (req: { headers?: { origin?: string } }, callback: (err: Error | null, allow?: boolean) => void) => {
+    // ⚠️ Signature du package `cors` (utilisé par engine.io) : la fonction
+    // origin est appelée avec (origin: string, callback) — PAS (req, cb).
+    // Vérifié dans node_modules/cors/lib/index.js (l.219) : originCallback
+    // est appelé sur req.headers.origin DIRECTEMENT. (V5.2 : une première
+    // version du correctif lisait req.headers.origin → toujours undefined
+    // → branche « pas un navigateur » → tout était autorisé.)
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Sans origin (apps natives Flutter, appels serveur-serveur) → autorisé
-      const origin = req?.headers?.origin;
       if (!origin) return callback(null, true);
       const allowed = socketOriginAllowed(origin);
       if (!allowed) {

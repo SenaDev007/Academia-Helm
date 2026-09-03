@@ -59,9 +59,13 @@ export function useChatSocket(options: UseChatSocketOptions) {
 
     // ⭐ Determine the backend URL (same as the API server)
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.academiahelm.com';
-    // For local dev, use localhost:3001
+    // ⭐ V5 — CORRECTIF DEV : le web-app tourne sur 3001 mais la gateway
+    //    Socket.io vit dans l'api-server NestJS (port 3000, namespace /chat).
+    //    Avant, le client visait 3001 → connexion silencieusement impossible
+    //    en dev → le polling 5 s faisait tout le travail temps réel.
+    //    Override possible via NEXT_PUBLIC_API_URL (ex: Railway en test).
     const socketUrl = process.env.NODE_ENV === 'development'
-      ? 'http://localhost:3001'
+      ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000')
       : backendUrl;
 
     const socket = io(`${socketUrl}/chat`, {

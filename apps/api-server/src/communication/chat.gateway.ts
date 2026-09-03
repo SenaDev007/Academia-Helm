@@ -30,10 +30,14 @@ import { JwtService } from '@nestjs/jwt';
 
 // ⭐ Configuration CORS pour autoriser le web-app
 //    Le gateway écoute sur le même port que l'API REST (3001 ou selon config)
+//    ⭐ V5 — CORRECTIF DEV : le web-app Next.js tourne sur 3001 en dev —
+//    il manquait à la whitelist (seul 3000, le port API, y figurait) →
+//    handshake Socket.io rejeté par CORS en développement.
 @WebSocketGateway({
   cors: {
     origin: [
       'http://localhost:3000',
+      'http://localhost:3001',
       'https://academiahelm.com',
       'https://app.academiahelm.com',
       'https://preview-*.space-z.ai',

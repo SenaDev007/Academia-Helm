@@ -179,6 +179,23 @@ export class AuthService {
 
     // Si PLATFORM_OWNER → accès universel à TOUS les portails
     if (isOwner) {
+      // ⭐ 2FA TOTP — porte pour le chemin propriétaire (accès universel,
+      //    pas de validation de portail) : jeton temporaire 5 min.
+      const ownerTwoFactor = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { twoFactorEnabled: true },
+      });
+      if (ownerTwoFactor?.twoFactorEnabled) {
+        return {
+          requires2fa: true as const,
+          twoFactorTempToken: this.jwtService.sign(
+            { sub: user.id, purpose: '2fa_login', tenant_id: loginDto.tenant_id || undefined, portal_type: loginDto.portal_type || undefined },
+            { expiresIn: '5m' },
+          ),
+          email: user.email,
+        };
+      }
+
       // Update last login
       await this.usersService.updateLastLogin(user.id);
       
@@ -302,6 +319,25 @@ export class AuthService {
     // Update last login
     await this.usersService.updateLastLogin(user.id);
 
+    // ⭐ 2FA TOTP — porte du chemin standard : APRÈS toutes les validations
+    //    de portail/tenant (pas de contournement RBAC), AVANT les tokens.
+    //    Jeton temporaire 5 min échangé contre un code TOTP via
+    //    POST /auth/2fa/verify-login.
+    const twoFactorState = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { twoFactorEnabled: true },
+    });
+    if (twoFactorState?.twoFactorEnabled) {
+      return {
+        requires2fa: true as const,
+        twoFactorTempToken: this.jwtService.sign(
+          { sub: user.id, purpose: '2fa_login', tenant_id: loginDto.tenant_id || undefined, portal_type: loginDto.portal_type || undefined },
+          { expiresIn: '5m' },
+        ),
+        email: user.email,
+      };
+    }
+
     // Generate tokens (SANS tenantId pour l'instant, sera sélectionné via /auth/select-tenant)
     // Si tenant_id est fourni, on peut l'inclure directement
     const tokens = loginDto.tenant_id 
@@ -339,6 +375,52 @@ export class AuthService {
       this.logger.error('Login error:', error);
       throw error;
     }
+  }
+
+  /**
+   * ⭐ 2FA TOTP — Compléter la connexion APRÈS vérification du code.
+   *    Appelé par TwoFactorService.verifyLogin : régénère les tokens,
+   *    persiste la session et renvoie le même payload que /auth/login.
+   *    (Les validations de portail/tenant ont déjà été passées AVANT la
+   *    porte 2FA — le jeton temporaire signé le prouve.)
+   */
+  async completeLoginAfter2fa(
+    userId: string,
+    tenantId?: string,
+    meta?: { ipAddress?: string; userAgent?: string },
+  ): Promise<any> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, email: true, firstName: true, lastName: true, role: true,
+        tenantId: true, status: true,
+      },
+    });
+    if (!user) throw new UnauthorizedException('Utilisateur introuvable');
+    if (user.status !== 'active') throw new ForbiddenException('Compte inactif');
+
+    await this.usersService.updateLastLogin(user.id);
+
+    const tokens = tenantId
+      ? this.generateEnrichedToken(user as any, tenantId)
+      : this.generateTokens(user as any);
+    const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
+
+    const isOwner = this.isPlatformOwner(user as any);
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: this.jwtRole(user as any),
+        tenantId: tenantId || user.tenantId || null,
+        isPlatformOwner: isOwner,
+      },
+      ...(isOwner && tenantId ? { tenant: await this.loadTenantInfo(tenantId) } : {}),
+      ...tokens,
+      ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
+    };
   }
 
   async refreshToken(refreshToken: string) {

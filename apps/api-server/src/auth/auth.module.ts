@@ -20,6 +20,9 @@ import { OtpService } from './services/otp.service';
 import { DeviceTrackingService } from './services/device-tracking.service';
 import { DeviceSessionService } from './services/device-session.service';
 import { SmsService } from './services/sms.service';
+// ⭐ 2FA TOTP (RFC 6238)
+import { TotpService } from './services/totp.service';
+import { TwoFactorService } from './services/twofactor.service';
 import { OtpController } from './controllers/otp.controller';
 import { AdminDevicesController } from './controllers/admin-devices.controller';
 import { TenantDevicesController } from './controllers/tenant-devices.controller';
@@ -57,6 +60,9 @@ import { RolesGuard } from './guards/roles.guard';
     ContextualAuthGuard,
     JwtAuthGuard,
     RolesGuard,
+    // ⭐ 2FA TOTP (RFC 6238) — setup/enable/disable/status + verify-login
+    TotpService,
+    TwoFactorService,
   ],
   controllers: [AuthController, OtpController, AdminDevicesController, TenantDevicesController],
   exports: [

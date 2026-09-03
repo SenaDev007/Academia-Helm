@@ -1158,6 +1158,90 @@ export class ChatController {
     return this.chatService.rejectMember(tenantId, adminId, conversationId, targetUserId);
   }
 
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 — QUITTER UN GROUPE (+ message système « X a quitté »)
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /chat/conversations/:id/leave { userId }
+   * Marque leftAt + insère le message système + broadcast members:removed.
+   */
+  @Post('conversations/:id/leave')
+  async leaveConversation(
+    @TenantId() tenantId: string,
+    @Param('id') conversationId: string,
+    @Body() body: { userId?: string },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const userId = body?.userId || jwtUser?.id;
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.chatService.leaveConversation(tenantId, userId, conversationId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 — CRÉNEAUX DE DISPONIBILITÉ (Helm Connect web)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** GET /chat/availability — mes créneaux hebdomadaires. */
+  @Get('availability')
+  async getMyAvailability(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const uid = userId || jwtUser?.id;
+    if (!uid) throw new BadRequestException('userId is required');
+    return this.chatService.listAvailabilitySlots(tenantId, uid);
+  }
+
+  /** GET /chat/availability/user/:userId — créneaux publics d'un membre
+   *  (affichés dans sa fiche membre — membership non requis : ce sont des
+   *  informations de disponibilité volontairement publiées). */
+  @Get('availability/user/:userId')
+  async getUserAvailability(
+    @TenantId() tenantId: string,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.chatService.listAvailabilitySlots(tenantId, targetUserId);
+  }
+
+  /** POST /chat/availability { dayOfWeek, startTime, endTime, label? }
+   *  Ajoute un créneau hebdomadaire récurrent à mon profil. */
+  @Post('availability')
+  async createAvailabilitySlot(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      userId?: string;
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      label?: string;
+    },
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const uid = body?.userId || jwtUser?.id;
+    if (!uid) throw new BadRequestException('userId is required');
+    return this.chatService.createAvailabilitySlot(tenantId, uid, {
+      dayOfWeek: body?.dayOfWeek,
+      startTime: body?.startTime,
+      endTime: body?.endTime,
+      label: body?.label,
+    });
+  }
+
+  /** DELETE /chat/availability/:slotId — supprime UN de mes créneaux. */
+  @Delete('availability/:slotId')
+  async deleteAvailabilitySlot(
+    @TenantId() tenantId: string,
+    @Param('slotId') slotId: string,
+    @Query('userId') userId: string,
+    @CurrentUser() jwtUser: { id?: string },
+  ) {
+    const uid = userId || jwtUser?.id;
+    if (!uid) throw new BadRequestException('userId is required');
+    return this.chatService.deleteAvailabilitySlot(tenantId, uid, slotId);
+  }
+
   /**
    * POST /chat/conversations/:id/messages/:msgId/pin — épingle un message
    * (droit canPin : ADMIN et MODERATOR par défaut).

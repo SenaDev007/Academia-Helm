@@ -1761,6 +1761,12 @@ model User {
   isSuperAdmin                              Boolean                           @default(false)
   status                                    String                            @default("active")
   lastLogin                                 DateTime?
+  // ⭐ 2FA TOTP (RFC 6238) — activation depuis Paramètres Helm Connect
+  twoFactorSecret                           String?
+  twoFactorPendingSecret                    String?
+  twoFactorEnabled                          Boolean                           @default(false)
+  twoFactorBackupCodes                      String?                           // JSON array de hachés bcrypt
+  twoFactorEnabledAt                        DateTime?
   createdAt                                 DateTime                          @default(now())
   updatedAt                                 DateTime                          @updatedAt
   // ⭐ Relations multi-tenant : un user peut gérer plusieurs écoles

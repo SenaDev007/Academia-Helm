@@ -11,6 +11,7 @@ import { CheckSchoolUserDto, GoogleLoginDto } from './dto/google-login.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
+import { TwoFactorService } from './services/twofactor.service';
 
 @Controller('auth')
 export class AuthController {
@@ -19,6 +20,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   @Public()
@@ -70,6 +72,72 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(@Body('refreshToken') refreshToken: string) {
     return this.authService.refreshToken(refreshToken);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ⭐ 2FA TOTP — double authentification (RFC 6238)
+  // ═══════════════════════════════════════════════════════════
+
+  /** Génère un secret PENDING + QR code (JWT requis). */
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  @HttpCode(HttpStatus.OK)
+  async twoFactorSetup(@Req() req: Request) {
+    const user = (req as any).user;
+    const userId = user?.id || user?.sub || user?.userId;
+    if (!userId) throw new ForbiddenException('Utilisateur non authentifié');
+    return this.twoFactorService.setup(userId);
+  }
+
+  /** Active la 2FA après vérification du code contre le secret PENDING.
+   *  Renvoie les 10 codes de secours UNE SEULE FOIS (en clair). */
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/enable')
+  @HttpCode(HttpStatus.OK)
+  async twoFactorEnable(@Req() req: Request, @Body() body: { code?: string }) {
+    const user = (req as any).user;
+    const userId = user?.id || user?.sub || user?.userId;
+    if (!userId) throw new ForbiddenException('Utilisateur non authentifié');
+    return this.twoFactorService.enable(userId, body?.code || '');
+  }
+
+  /** Désactive la 2FA (exige un code TOTP OU le mot de passe). */
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  @HttpCode(HttpStatus.OK)
+  async twoFactorDisable(@Req() req: Request, @Body() body: { code?: string; password?: string }) {
+    const user = (req as any).user;
+    const userId = user?.id || user?.sub || user?.userId;
+    if (!userId) throw new ForbiddenException('Utilisateur non authentifié');
+    return this.twoFactorService.disable(userId, body?.code, body?.password);
+  }
+
+  /** Statut 2FA de l'utilisateur courant. */
+  @UseGuards(JwtAuthGuard)
+  @Get('2fa/status')
+  async twoFactorStatus(@Req() req: Request) {
+    const user = (req as any).user;
+    const userId = user?.id || user?.sub || user?.userId;
+    if (!userId) throw new ForbiddenException('Utilisateur non authentifié');
+    return this.twoFactorService.status(userId);
+  }
+
+  /** PUBLIC — échange le jeton temporaire + code TOTP contre les tokens
+   *  complets de connexion (appelé par l'écran de login après requires2fa). */
+  @Public()
+  @Post('2fa/verify-login')
+  @HttpCode(HttpStatus.OK)
+  async twoFactorVerifyLogin(
+    @Req() req: Request,
+    @Body() body: { twoFactorTempToken?: string; code?: string },
+  ) {
+    if (!body?.twoFactorTempToken) {
+      throw new ForbiddenException('twoFactorTempToken requis');
+    }
+    return this.twoFactorService.verifyLogin(body.twoFactorTempToken, body?.code || '', {
+      ipAddress: req.ip || req.socket?.remoteAddress,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
   }
 
   @Public()

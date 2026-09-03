@@ -2625,7 +2625,228 @@ export class ChatService {
       });
     }
 
+    // ⭐ V5 — MESSAGES SYSTÈME « X a rejoint le groupe » (parité Yeshua
+    //    MEMBER_LOG) : pour chaque membre réellement ajouté, on insère un
+    //    message SYSTEM diffusé en temps réel — l'historique devient
+    //    auto-documenté comme WhatsApp/Telegram.
+    if (added > 0) {
+      const addedUsers: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, "firstName", "lastName", email FROM "users" WHERE id = ANY($1::text[])`,
+        validIds,
+      );
+      const actorName = await this.displayNameOf(actorUserId);
+      for (const u of addedUsers) {
+        const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Nouveau membre';
+        await this.insertSystemMessage(conversationId, actorUserId, `${name} a rejoint le groupe`, {
+          kind: 'member_join',
+          userId: u.id,
+          name,
+          byName: actorName,
+        }).catch((e) => this.logger?.warn?.(`system message join: ${e.message}`));
+      }
+    }
+
     return { added, skipped, conversationId };
+  }
+
+  /** Nom d'affichage d'un utilisateur (prénom + nom, repli email). */
+  private async displayNameOf(userId: string): Promise<string> {
+    try {
+      const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT "firstName", "lastName", email FROM "users" WHERE "id" = $1`,
+        userId,
+      );
+      if (!rows.length) return 'Membre';
+      const full = `${rows[0].firstName || ''} ${rows[0].lastName || ''}`.trim();
+      return full || rows[0].email || 'Membre';
+    } catch {
+      return 'Membre';
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V5 — CRÉNEAUX DE DISPONIBILITÉ (table chat_availability_slots)
+  //    Créneaux hebdomadaires récurrents publiés par chaque utilisateur,
+  //    visibles dans la fiche membre (parité « heures de permanence »).
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Jour de la semaine 1=Lundi…7=Dimanche → libellé français. */
+  private static readonly DAY_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+  /** Liste les créneaux d'un utilisateur, groupés par jour (ordre du lecteur). */
+  async listAvailabilitySlots(tenantId: string, userId: string): Promise<any[]> {
+    const slots = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT "id", "userId", "dayOfWeek", "startTime", "endTime", "label", "createdAt"
+       FROM "chat_availability_slots"
+       WHERE "userId" = $1
+       ORDER BY "dayOfWeek" ASC, "startTime" ASC`,
+      userId,
+    );
+    return slots.map((s) => ({
+      id: s.id,
+      userId: s.userId,
+      dayOfWeek: s.dayOfWeek,
+      dayLabel: ChatService.DAY_LABELS[s.dayOfWeek - 1] || `Jour ${s.dayOfWeek}`,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      label: s.label,
+      createdAt: s.createdAt,
+    }));
+  }
+
+  /** Ajoute un créneau (validation : jour 1-7, HH:MM, fin > début, ≤ 20 créneaux). */
+  async createAvailabilitySlot(
+    tenantId: string,
+    userId: string,
+    slot: { dayOfWeek?: number; startTime?: string; endTime?: string; label?: string },
+  ): Promise<any> {
+    const day = Number(slot?.dayOfWeek);
+    if (!Number.isInteger(day) || day < 1 || day > 7) {
+      throw new BadRequestException('dayOfWeek requis (1=Lundi … 7=Dimanche)');
+    }
+    const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const start = String(slot?.startTime || '').trim();
+    const end = String(slot?.endTime || '').trim();
+    if (!timeRe.test(start) || !timeRe.test(end)) {
+      throw new BadRequestException('startTime et endTime requis au format HH:MM');
+    }
+    if (start >= end) {
+      throw new BadRequestException('endTime doit être postérieur à startTime');
+    }
+    const countRows = await this.prisma.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT COUNT(*)::int AS n FROM "chat_availability_slots" WHERE "userId" = $1`,
+      userId,
+    );
+    if ((countRows[0]?.n ?? 0) >= 20) {
+      throw new BadRequestException('Maximum 20 créneaux de disponibilité');
+    }
+    const id = randomUUID();
+    const label = slot?.label?.toString().trim().slice(0, 100) || null;
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "chat_availability_slots" ("id", "tenantId", "userId", "dayOfWeek", "startTime", "endTime", "label")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      id, tenantId, userId, day, start, end, label,
+    );
+    return {
+      id,
+      userId,
+      dayOfWeek: day,
+      dayLabel: ChatService.DAY_LABELS[day - 1],
+      startTime: start,
+      endTime: end,
+      label,
+    };
+  }
+
+  /** Supprime UN créneau — uniquement s'il appartient à l'utilisateur. */
+  async deleteAvailabilitySlot(
+    tenantId: string,
+    userId: string,
+    slotId: string,
+  ): Promise<{ ok: true }> {
+    const deleted = await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "chat_availability_slots" WHERE "id" = $1 AND "userId" = $2`,
+      slotId, userId,
+    );
+    if (deleted === 0) {
+      throw new NotFoundException('Créneau introuvable (ou non autorisé)');
+    }
+    return { ok: true };
+  }
+
+  /**
+   * ⭐ V5 — MESSAGE SYSTÈME (type 'SYSTEM') : pastille centrée dans le fil,
+   *    métadonnées structurées dans callMeta (JSONB, même pattern que
+   *    CALL_LOG) : { kind: 'member_join' | 'member_leave' | ..., userId,
+   *    name, byName }. Diffusion temps réel + preview de conversation.
+   */
+  private async insertSystemMessage(
+    conversationId: string,
+    actorId: string,
+    text: string,
+    meta: Record<string, any>,
+  ): Promise<void> {
+    const msgId = randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "callMeta", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, 'SYSTEM', $4, $5::jsonb, now(), now())`,
+      msgId, conversationId, actorId, text, JSON.stringify(meta),
+    );
+    // ⭐ Diffuser en temps réel aux participants connectés
+    if (this.chatGateway?.server) {
+      const participantIds = await this.getConversationParticipantIds(conversationId);
+      this.chatGateway.broadcastNewMessage(conversationId, {
+        id: msgId,
+        conversationId,
+        senderId: actorId,
+        type: 'SYSTEM',
+        content: text,
+        callMeta: meta,
+        createdAt: new Date().toISOString(),
+      }, participantIds);
+    }
+    // Rafraîchir le preview de la conversation (dernier message)
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "chat_conversations"
+         SET "lastMessageAt" = now(), "lastMessagePreview" = $2, "lastMessageSenderId" = $3
+         WHERE "id" = $1`,
+        conversationId, text, actorId,
+      );
+    } catch {
+      // best effort — le preview se corrigera au prochain message
+    }
+  }
+
+  /** ⭐ V5 — ids des participants actifs d'une conversation. */
+  private async getConversationParticipantIds(conversationId: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ userId: string }>>(
+      `SELECT "userId" FROM "chat_participants" WHERE "conversationId" = $1 AND "leftAt" IS NULL`,
+      conversationId,
+    );
+    return rows.map((r) => r.userId);
+  }
+
+  /**
+   * ⭐ V5 — QUITTER UN GROUPE : met leftAt (le participant ne reçoit plus les
+   *    messages), message système « X a quitté le groupe », broadcast temps
+   *    réel + audit. Les conversations DIRECT ne sont pas « quittables »
+   *    (l'équivalent est le blocage).
+   */
+  async leaveConversation(
+    tenantId: string,
+    userId: string,
+    conversationId: string,
+  ): Promise<{ ok: true; conversationId: string }> {
+    const conv = await this.getConversation(tenantId, userId, conversationId);
+    if (conv.type === 'DIRECT') {
+      throw new BadRequestException('Impossible de quitter une conversation privée — bloquez le contact plutôt');
+    }
+
+    // Marquer le départ (idempotent)
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "chat_participants" SET "leftAt" = now() WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL`,
+      conversationId, userId,
+    );
+
+    const name = await this.displayNameOf(userId);
+    await this.insertSystemMessage(conversationId, userId, `${name} a quitté le groupe`, {
+      kind: 'member_leave',
+      userId,
+      name,
+      byName: name,
+    }).catch((e) => this.logger?.warn?.(`system message leave: ${e.message}`));
+
+    await this.auditLog(conversationId, userId, null, null, 'MEMBER_LEAVE', { name });
+
+    if (this.chatGateway?.server) {
+      this.chatGateway.server.to(`conv:${conversationId}`).emit('members:removed', {
+        conversationId,
+        removedUserId: userId,
+      });
+    }
+
+    return { ok: true, conversationId };
   }
 
   /**

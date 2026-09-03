@@ -23,14 +23,14 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Mic, MicOff, Video, Phone, Volume2, Users, Radio, VolumeX } from 'lucide-react';
+import { Mic, MicOff, Video, Phone, Volume2, Users, Radio, VolumeX, Zap, ZapOff, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { providerLabel, type MediaProviderName, type HcRemoteParticipant } from '@/lib/chat/media-chain';
 
 export interface VoiceChannelPanelProps {
   channelName: string;
   channelType?: string;          // VOICE | STAGE | GO_LIVE
-  provider: MediaProviderName | 'mesh' | null;
+  provider: MediaProviderName | 'mesh' | 'jitsi' | null;
   /** Utilisateurs connectés (état REST chat_voice_states, enrichi media). */
   users: Array<{ userId: string; name: string; muted?: boolean; speaking?: boolean; avatarUrl?: string | null }>;
   /** ⭐ V5 — participants média normalisés (grille vidéo en mode vidéo). */
@@ -43,6 +43,21 @@ export interface VoiceChannelPanelProps {
   isAdmin?: boolean;
   /** ⭐ V5 — autoplay audio bloqué par le navigateur (bandeau de déblocage). */
   autoplayBlocked?: boolean;
+  /** ⭐ V6 (parité Yeshua — Direct du canal / Go Live) : direct EN COURS sur
+   *    CE canal (venant de GET /chat/live-streams), null sinon. */
+  liveInfo?: { by: string; startedAt?: string } | null;
+  /** ⭐ V6 — l'utilisateur courant EST le diffuseur du direct ? */
+  iAmLiveHost?: boolean;
+  /** ⭐ V6 — l'utilisateur a-t-il rejoint le canal vocal (pour « Rejoindre »). */
+  joined?: boolean;
+  /** ⭐ V6 — lancer le direct (admin — POST /chat/live-streams). */
+  onStartLive?: () => void;
+  /** ⭐ V6 — arrêter le direct (diffuseur — DELETE /chat/live-streams/:id). */
+  onStopLive?: () => void;
+  /** ⭐ V6 — rejoindre le canal pour écouter/regarder le direct. */
+  onJoinLive?: () => void;
+  /** ⭐ V6 — chaîne en cours de bascule (lancement direct). */
+  liveSwitching?: boolean;
   onToggleMute: () => void;
   onToggleVideo: () => void;
   /** ⭐ V5 — bascule COLLECTIVE audio↔vidéo du canal (admin). */
@@ -89,6 +104,7 @@ export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
   const {
     channelName, channelType, provider, users, participants, activeSpeakers,
     meMuted, videoMode, isStage, isAdmin, autoplayBlocked,
+    liveInfo, iAmLiveHost, joined, onStartLive, onStopLive, onJoinLive, liveSwitching,
     onToggleMute, onToggleVideo, onToggleVideoMode, onUnlockAudio, resolveName, localVideoAttacher, onLeave,
   } = props;
 
@@ -143,6 +159,50 @@ export function VoiceChannelPanel(props: VoiceChannelPanelProps) {
         >
           <VolumeX className="w-3.5 h-3.5" />
           Le son est coupé par votre navigateur — cliquez ici
+        </button>
+      )}
+
+      {/* ⭐ V6 (parité Yeshua — bandeau DIRECT) : pastille verte pulsante +
+          diffuseur + « Rejoindre » pour les non-connectés / « Arrêter » pour
+          le diffuseur. Backend : GET/POST/DELETE /chat/live-streams. */}
+      {liveInfo && (
+        <div className="px-3 py-2 bg-emerald-500/20 border-b border-emerald-400/30 flex items-center gap-2">
+          <span className="relative flex w-2 h-2 flex-shrink-0">
+            <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+            <span className="relative inline-flex rounded-full w-2 h-2 bg-emerald-500" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold text-emerald-300 uppercase tracking-wide">En direct</div>
+            <div className="text-[10px] text-white/80 truncate">{liveInfo.by} diffuse</div>
+          </div>
+          {iAmLiveHost ? (
+            <button
+              onClick={onStopLive}
+              disabled={liveSwitching}
+              className="px-2 py-1 rounded-lg text-[9px] font-bold bg-red-500 text-white hover:bg-red-600 flex-shrink-0 flex items-center gap-1 disabled:opacity-50"
+            >
+              <ZapOff className="w-3 h-3" /> Arrêter
+            </button>
+          ) : !joined ? (
+            <button
+              onClick={onJoinLive}
+              className="px-2 py-1 rounded-lg text-[9px] font-bold bg-emerald-500 text-white hover:bg-emerald-600 flex-shrink-0 flex items-center gap-1"
+            >
+              <Play className="w-3 h-3" /> Rejoindre
+            </button>
+          ) : null}
+        </div>
+      )}
+      {/* ⭐ V6 — bouton « Lancer un direct » (admin, canal non en direct) */}
+      {!liveInfo && isAdmin && onStartLive && (
+        <button
+          onClick={onStartLive}
+          disabled={liveSwitching}
+          className="w-full px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[9px] font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 border-b border-white/10 disabled:opacity-50"
+          title="Diffuser en direct dans ce canal (tous les abonnés sont alertés)"
+        >
+          <Zap className="w-3 h-3 text-[#FFE08A]" />
+          {liveSwitching ? 'Lancement…' : 'Lancer un direct'}
         </button>
       )}
 

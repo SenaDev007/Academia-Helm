@@ -98,3 +98,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+    # ⭐ V6 — Sonnerie d'appel SORTANT identique à Yeshua Connect (web) :
+    #   le même fichier ringback.wav (copie octet-octet).
+    - assets/sounds/

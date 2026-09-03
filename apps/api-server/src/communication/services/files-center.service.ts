@@ -98,4 +98,92 @@ export class FilesCenterService {
     );
     return rows[0] || { media: 0, documents: 0, audio: 0, total: 0 };
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V6 (spec §22 — centre documentaire) — LIENS & ÉPINGLÉS transverses
+  //  ==================================================================
+  //  Les endpoints par conversation existaient (document-center.service)
+  //  mais la section Fichiers n'avait AUCUNE vue Liens/Épinglés. Ces deux
+  //  méthodes agrègent sur TOUTES les conversations du membre (même modèle
+  //  que getUserFiles).
+  // ═════════════════════════════════════════════════════════════════
+
+  /** Tous les LIENS partagés dans les conversations du membre (URLs extraites des messages texte). */
+  async getUserLinks(tenantId: string, userId: string, limit = 100): Promise<any[]> {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT m."id", m."conversationId", m."content", m."createdAt", m."senderId",
+              c."type" AS "convType", c."name" AS "convName",
+              (u."firstName" || ' ' || u."lastName") AS "senderName"
+       FROM "chat_messages" m
+       JOIN "chat_conversations" c ON c."id" = m."conversationId"
+       LEFT JOIN "users" u ON u."id" = m."senderId"
+       WHERE m."deletedAt" IS NULL
+         AND m."type" = 'TEXT'
+         AND m."content" ~* 'https?://'
+         AND c."tenantId" = $1
+         AND EXISTS (
+           SELECT 1 FROM "chat_participants" p
+           WHERE p."conversationId" = m."conversationId" AND p."userId" = $2 AND p."leftAt" IS NULL
+         )
+       ORDER BY m."createdAt" DESC
+       LIMIT $3`,
+      tenantId, userId, Math.min(limit, 200),
+    );
+    // Extraire la première URL + le contexte (extrait JS, comme le V2.5)
+    const urlRe = /https?:\/\/[^\s<>"')\]]+/g;
+    return rows
+      .map((r) => {
+        const content = String(r.content || '');
+        const match = content.match(urlRe);
+        if (!match) return null;
+        return {
+          id: r.id,
+          conversationId: r.conversationId,
+          convName: r.convName,
+          convType: r.convType,
+          url: match[0],
+          context: content.replace(/<[^>]*>/g, '').substring(0, 140),
+          createdAt: r.createdAt,
+          senderId: r.senderId,
+          senderName: (r.senderName || '').trim() || 'Utilisateur',
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /** Tous les messages ÉPINGLÉS des conversations du membre. */
+  async getUserPinned(tenantId: string, userId: string, limit = 100): Promise<any[]> {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT m."id", m."conversationId", m."type", m."content", m."attachmentName", m."attachmentUrl",
+              m."pinnedAt", m."createdAt", m."senderId",
+              c."type" AS "convType", c."name" AS "convName",
+              (u."firstName" || ' ' || u."lastName") AS "senderName"
+       FROM "chat_messages" m
+       JOIN "chat_conversations" c ON c."id" = m."conversationId"
+       LEFT JOIN "users" u ON u."id" = m."senderId"
+       WHERE m."deletedAt" IS NULL
+         AND m."isPinned" = TRUE
+         AND c."tenantId" = $1
+         AND EXISTS (
+           SELECT 1 FROM "chat_participants" p
+           WHERE p."conversationId" = m."conversationId" AND p."userId" = $2 AND p."leftAt" IS NULL
+         )
+       ORDER BY m."pinnedAt" DESC NULLS LAST
+       LIMIT $3`,
+      tenantId, userId, Math.min(limit, 200),
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      conversationId: r.conversationId,
+      convName: r.convName,
+      convType: r.convType,
+      type: r.type,
+      content: r.content ? String(r.content).replace(/<[^>]*>/g, '').substring(0, 160) : null,
+      attachmentName: r.attachmentName,
+      attachmentUrl: r.attachmentUrl,
+      pinnedAt: r.pinnedAt || r.createdAt,
+      senderId: r.senderId,
+      senderName: (r.senderName || '').trim() || 'Utilisateur',
+    }));
+  }
 }

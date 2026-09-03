@@ -57,14 +57,62 @@ const DEFAULT_PREFS: NotificationPreferences = {
 
 export default function NotificationPreferencesModal({
   currentUserId,
+  conversations = [],
+  onUnmuted,
   onClose,
 }: {
   currentUserId: string;
+  conversations?: Array<{ id: string; name?: string; type?: string; participants?: any[] }>;
+  onUnmuted?: () => void;
   onClose: () => void;
 }) {
   const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_PREFS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // ⭐ V6 (spec §10, parité Yeshua) — liste des conversations en muet
+  const [muted, setMuted] = useState<Array<{ conversationId: string; mutedUntil: string | null }>>([]);
+
+  const loadMuted = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/chat/v2/notifications/muted-conversations?userId=${currentUserId}`,
+        { credentials: 'include' }
+      );
+      if (res.ok) {
+        const list = await res.json();
+        setMuted(Array.isArray(list) ? list : []);
+      }
+    } catch { /* ignore */ }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadMuted();
+  }, [loadMuted]);
+
+  const convName = (convId: string): string => {
+    const c = conversations.find(x => x.id === convId);
+    if (!c) return 'Conversation';
+    if (c.name) return c.name;
+    const other = (c.participants || []).find((p: any) => p.userId !== currentUserId);
+    return other ? `${other.firstName || ''} ${other.lastName || ''}`.trim() || 'Conversation' : 'Conversation';
+  };
+
+  const unmute = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/chat/v2/notifications/conversations/${convId}/unmute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Échec');
+      setMuted(prev => prev.filter(m => m.conversationId !== convId));
+      toast.success(`Notifications réactivées — ${convName(convId)}`);
+      onUnmuted?.();
+    } catch (e: any) {
+      toast.error('Échec : ' + e.message);
+    }
+  };
 
   const loadPrefs = useCallback(async () => {
     setLoading(true);
@@ -309,6 +357,40 @@ export default function NotificationPreferencesModal({
                   >
                     ∞
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* ⭐ V6 (spec §10, parité Yeshua) — Conversations en muet */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <BellOff className="w-4 h-4 text-slate-600" />
+                Conversations en muet ({muted.length})
+              </h4>
+              {muted.length === 0 ? (
+                <p className="text-[11px] text-slate-500">
+                  Aucune conversation en muet. Utilisez la cloche dans l’en-tête d’une conversation pour couper ses notifications (1h/8h/24h/∞).
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {muted.map((m: any) => (
+                    <div key={m.conversationId} className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-800 truncate">{convName(m.conversationId)}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {m.mutedUntil
+                            ? `Jusqu’à ${new Date(m.mutedUntil).toLocaleString('fr-FR')}`
+                            : 'Jusqu’à réactivation'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => unmute(m.conversationId)}
+                        className="text-[10px] px-2 py-1 bg-[#E6F4FF] text-[#0958D9] rounded font-semibold hover:bg-[#BAE0FF] flex-shrink-0 flex items-center gap-1"
+                      >
+                        <Bell className="w-3 h-3" /> Réactiver
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

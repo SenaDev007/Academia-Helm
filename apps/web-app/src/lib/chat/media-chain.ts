@@ -678,11 +678,13 @@ async function createDailySession(
 // ═══════════════════════════════════════════════════════════════════════
 
 /** Libellé francophone d'un fournisseur (badges UI « Réseau : … »). */
-export function providerLabel(provider: MediaProviderName | null | undefined): string {
+export function providerLabel(provider: MediaProviderName | 'mesh' | 'jitsi' | null | undefined): string {
   switch (provider) {
     case "livekit": return "LiveKit";
     case "agora": return "Agora";
     case "daily": return "Daily";
+    case "jitsi": return "Jitsi (secours)";
+    case "mesh": return "Mesh WebRTC";
     default: return "Mesh WebRTC";
   }
 }

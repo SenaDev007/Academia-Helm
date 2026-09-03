@@ -32,7 +32,8 @@ import {
   Sparkles, ListChecks, ClipboardList, AudioLines, Rss,
   ChevronUp, ChevronDown, Monitor, Smile,
   PhoneMissed, PhoneOff, Radio, FileAudio, FileVideo, MessageCircle, Ban, Lock,
-  Menu, ShieldAlert,
+  Menu, ShieldAlert, Gauge, ScrollText, XCircle, Shield, VolumeX, UserMinus,
+  Link2, ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -119,7 +120,9 @@ interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
-  type: 'TEXT' | 'AUDIO' | 'DOCUMENT' | 'IMAGE';
+  // ⭐ V6 — types étendus : CALL_LOG (journaux d'appels V4), POLL,
+  // STICKER, GIF, VIDEO — le backend et le rendu les produisent déjà.
+  type: 'TEXT' | 'AUDIO' | 'DOCUMENT' | 'IMAGE' | 'VIDEO' | 'CALL_LOG' | 'POLL' | 'STICKER' | 'GIF' | string;
   content?: string;
   attachmentUrl?: string;
   attachmentName?: string;
@@ -130,6 +133,14 @@ interface ChatMessage {
   createdAt: string;
   editedAt?: string;
   deletedAt?: string;
+  // ⭐ V4/V5 — champs réels renvoyés par le backend (bulles riches)
+  senderFirstName?: string;
+  senderLastName?: string;
+  deliveredAt?: string | null;
+  pinned?: boolean;
+  important?: boolean;
+  reactions?: { emoji: string; userId: string }[];
+  meta?: any;
   sender?: {
     firstName?: string;
     lastName?: string;
@@ -153,6 +164,7 @@ interface ChatUser {
   childrenNames?: string[];    // for parents: their children's names
   source?: 'users' | 'guardians';      // ⭐ Whether entry comes from users table or guardians table
   phone?: string;                       // ⭐ For guardians without account — to send SMS invitation
+  guardianId?: string;                 // ⭐ V6 — parents sans compte (table guardians)
 }
 
 interface WhatsAppChatProps {
@@ -961,7 +973,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    onglet Inviter du panneau des membres
   const [memberProfile, setMemberProfile] = useState<any | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
-  const [memberPanelTab, setMemberPanelTab] = useState<'members' | 'invite'>('members');
+  const [memberPanelTab, setMemberPanelTab] = useState<'members' | 'invite' | 'gestion'>('members');
   const [invitableUsers, setInvitableUsers] = useState<any[]>([]);
   const [inviteQuery, setInviteQuery] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -970,9 +982,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ DISCORD PARITY: Audit log modal
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   // ⭐ DISCORD PARITY: Slow mode modal
   const [showSlowModeModal, setShowSlowModeModal] = useState(false);
   const [slowModeSeconds, setSlowModeSeconds] = useState(0);
+  // ⭐ V6 (spec §3/§17) — GESTION DES MEMBRES par les admins de conversation :
+  //    menu d'actions par membre (rôle, exclure, bannir, muet) + onglet Gestion
+  //    (mode lent + journal d'audit). Le backend existait, l'UI était absente.
+  const [memberActionUserId, setMemberActionUserId] = useState<string | null>(null);
   // ⭐ DISCORD PARITY: Emoji picker popover
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   // ⭐ DISCORD PARITY: GIF picker (Tenor API)
@@ -1210,7 +1227,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const ringtoneRef = useRef<{ ctx: AudioContext; interval: any } | null>(null);
+  // ⭐ V6 — repli JITSI (Plan C des grands appels de groupe) : déclaré TÔT
+  //    (avant l'effet sonnerie qui l'utilise pour couper la sonnerie en
+  //    mode secours — parité Yeshua !jitsiRoom).
+  const [jitsiFallback, setJitsiFallback] = useState<{ room: string; title: string } | null>(null);
+  const ringtoneRef = useRef<{
+    ctx: AudioContext | null;
+    interval: ReturnType<typeof setInterval> | null;
+    audioEl: HTMLAudioElement | null;
+  } | null>(null);
   // ⭐ V5 (parité Yeshua) — vibration mobile en boucle pendant la sonnerie
   const vibrateIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -1252,60 +1277,56 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const conversationsRef = useRef<any[]>([]);
   conversationsRef.current = conversations;
 
-  // ⭐ FIX: Ringtone — softer volume + different patterns for outgoing vs incoming
-  //    Outgoing (caller): single soft "calling" tone every 2s (gentle beep)
-  //    Incoming (callee): classic double-ring pattern every 3s (ring ring... ring ring)
+  // ⭐ V6 — RINGTONES IDENTIQUES À YESHUA CONNECT (demande explicite) :
+  //    Sonnerie ENTRANTE (audio ET vidéo) = bi-bip WebAudio synthétisé de
+  //      Yeshua (IncomingCallOverlay) : deux bursts sinusoïdaux 880 Hz puis
+  //      660 Hz (offset 0 / 0,45 s), enveloppe exponentielle 0,001 → 0,25 →
+  //      0,001 sur 0,4 s, répétés toutes les 2 s. Vibration 400 ms / 2 s.
+  //    Sonnerie SORTANTE (audio ET vidéo) = le FICHIER ringback.wav de Yeshua
+  //      (public/sounds/ringback.wav, copie octet-octet) joué en boucle à
+  //      volume 0,5 — exactement <audio src="/sounds/ringback.wav" loop>.
+  //    Comme dans Yeshua : même son pour l'audio et la vidéo ; pas de sonnerie
+  //    en repli Jitsi (Plan C — la visio prend le relais).
   const playRingtone = useCallback((mode: 'outgoing' | 'incoming' = 'outgoing') => {
     if (ringtoneRef.current) return; // Already playing
     try {
-      const ctx = new AudioContext();
-      const playTone = (freq: number, startTime: number, duration: number, volume: number) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        // Soft sine wave with gentle attack/release for a warm, professional tone
-        osc.frequency.value = freq;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0, ctx.currentTime + startTime);
-        gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + startTime + 0.04);
-        gain.gain.linearRampToValueAtTime(volume * 0.7, ctx.currentTime + startTime + duration * 0.6);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startTime + duration);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + startTime);
-        osc.stop(ctx.currentTime + startTime + duration);
-      };
-
-      let intervalMs: number;
       if (mode === 'incoming') {
-        // Incoming: classic phone ring — two short rings, then pause (3s loop)
-        // Uses a pleasant middle-C + G chord (softer than the old 440/550Hz)
-        intervalMs = 3000;
-        const interval = setInterval(() => {
-          // First ring (0.4s)
-          playTone(523.25, 0, 0.4, 0.06);    // C5
-          playTone(659.25, 0, 0.4, 0.04);    // E5 (chord)
-          // Second ring (0.4s, starting at 0.6s)
-          playTone(523.25, 0.6, 0.4, 0.06);
-          playTone(659.25, 0.6, 0.4, 0.04);
-        }, intervalMs);
-        ringtoneRef.current = { ctx, interval };
+        // ── Yeshua : bi-bip façon téléphone (880/660 Hz), boucle 2 s ──
+        const AC: typeof AudioContext | undefined =
+          typeof window !== 'undefined'
+            ? (window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
+            : undefined;
+        if (!AC) return; // WebAudio indisponible → sonnerie visuelle
+        const ctx = new AC();
+        const playBurst = () => {
+          try {
+            const t0 = ctx.currentTime;
+            [0, 0.45].forEach((offset) => {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.value = offset === 0 ? 880 : 660;
+              gain.gain.setValueAtTime(0.001, t0 + offset);
+              gain.gain.exponentialRampToValueAtTime(0.25, t0 + offset + 0.03);
+              gain.gain.exponentialRampToValueAtTime(0.001, t0 + offset + 0.38);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(t0 + offset);
+              osc.stop(t0 + offset + 0.4);
+            });
+          } catch { /* contexte fermé */ }
+        };
+        ctx.resume().then(() => playBurst()).catch(() => { /* autoplay bloqué → tap pour activer */ });
+        const interval = setInterval(playBurst, 2000);
+        ringtoneRef.current = { ctx, interval, audioEl: null };
       } else {
-        // Outgoing: gentle single beep every 2s ("calling... calling...")
-        // Lower pitch, very soft — doesn't assault the ears like the old 440Hz
-        intervalMs = 2000;
-        const interval = setInterval(() => {
-          playTone(392.00, 0, 0.5, 0.05);    // G4 — soft, warm tone
-        }, intervalMs);
-        ringtoneRef.current = { ctx, interval };
-      }
-      // Play the first tone immediately (don't wait for the first interval)
-      if (mode === 'incoming') {
-        playTone(523.25, 0, 0.4, 0.06);
-        playTone(659.25, 0, 0.4, 0.04);
-        playTone(523.25, 0.6, 0.4, 0.06);
-        playTone(659.25, 0.6, 0.4, 0.04);
-      } else {
-        playTone(392.00, 0, 0.5, 0.05);
+        // ── Yeshua : ringback.wav (ringback télécom réel), boucle, volume 0,5 ──
+        const audioEl = new Audio('/sounds/ringback.wav');
+        audioEl.preload = 'auto';
+        audioEl.loop = true;
+        audioEl.volume = 0.5;
+        audioEl.play().catch(() => { /* ignore autoplay-blocked */ });
+        ringtoneRef.current = { ctx: null, interval: null, audioEl };
       }
     } catch (e) {
       console.warn('Ringtone playback failed:', e);
@@ -1314,8 +1335,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
   const stopRingtone = useCallback(() => {
     if (ringtoneRef.current) {
-      clearInterval(ringtoneRef.current.interval);
-      try { ringtoneRef.current.ctx.close(); } catch {}
+      if (ringtoneRef.current.interval) clearInterval(ringtoneRef.current.interval);
+      if (ringtoneRef.current.audioEl) {
+        try { ringtoneRef.current.audioEl.pause(); } catch {}
+        try { ringtoneRef.current.audioEl.currentTime = 0; } catch {}
+      }
+      try { ringtoneRef.current.ctx?.close(); } catch {}
       ringtoneRef.current = null;
     }
   }, []);
@@ -1328,8 +1353,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    + vibration en boucle (400 ms / 2 s) + notification navigateur si la
   //    page est en arrière-plan + reprise audio au premier tap (autoplay).
   useEffect(() => {
-    const resumeAudio = () => { try { ringtoneRef.current?.ctx.resume(); } catch {} };
-    if (callState === 'outgoing') {
+    const resumeAudio = () => {
+      try { ringtoneRef.current?.ctx?.resume(); } catch {}
+      try { ringtoneRef.current?.audioEl?.play().catch(() => {}); } catch {}
+    };
+    // ⭐ V6 (parité Yeshua) : PAS de sonnerie sortante en repli Jitsi (Plan C —
+    //    la visio prend le relais, la musique se changerait en cacophonie).
+    if (callState === 'outgoing' && !jitsiFallback) {
       playRingtone('outgoing');
     } else if (callState === 'incoming' || incomingSignal) {
       playRingtone('incoming');
@@ -1363,7 +1393,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       }
       try { navigator.vibrate?.(0); } catch {}
     };
-  }, [callState, incomingSignal, playRingtone, stopRingtone]);
+  }, [callState, incomingSignal, jitsiFallback, playRingtone, stopRingtone]);
 
   // ⭐ V5 (parité Yeshua) — demander la permission de notification au 1er
   //    chargement (pour les notifications d'appels et de messages en arrière-plan)
@@ -1446,19 +1476,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   //    des appels : on peut être en canal vocal ET recevoir un appel)
   const voiceSessionRef = useRef<MediaSessionHandle | null>(null);
   const [voiceActiveSpeakers, setVoiceActiveSpeakers] = useState<Set<string>>(new Set());
-  const [voiceProvider, setVoiceProvider] = useState<MediaProviderName | 'mesh' | null>(null);
+  const [voiceProvider, setVoiceProvider] = useState<MediaProviderName | 'mesh' | 'jitsi' | null>(null);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [voiceVideoMode, setVoiceVideoMode] = useState(false);
   // ⭐ V5 — participants MÉDIA du canal vocal (grille vidéo en mode vidéo)
   const [voiceMediaParticipants, setVoiceMediaParticipants] = useState<HcRemoteParticipant[]>([]);
-  // ⭐ V5 — repli JITSI (Plan C des grands appels de groupe, chaîne épuisée
-  //    + mesh ≤ 5 dépassé) : room déterministe + iframe plein écran
-  const [jitsiFallback, setJitsiFallback] = useState<{ room: string; title: string } | null>(null);
 
   // ⭐ CANAUX (Telegram-style broadcast channels)
   const [channels, setChannels] = useState<any[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [channelMessages, setChannelMessages] = useState<any[]>([]);
+  // ⭐ V6 — vue CANAL fonctionnelle (parité Yeshua/spec §6) : les canaux
+  //    s'ouvrent comme des conversations — messages + diffusion + abonnement.
+  //    (fonctions openChannel/broadcastToChannel/toggleChannelSubscription
+  //    définies après loadChannels ci-dessous)
+  const [channelInput, setChannelInput] = useState('');
+  const [channelSending, setChannelSending] = useState(false);
+  const channelMessagesEndRef = useRef<HTMLDivElement>(null);
+  const activeChannel = channels.find((ch: any) => ch.id === activeChannelId) || null;
+
+  // ⭐ V6 — MUET PAR CONVERSATION (spec §10, parité Yeshua) : 1h/8h/24h/∞.
+  //    Backend : POST /chat/v2/notifications/conversations/:id/mute,
+  //    /unmute, GET /muted-conversations (déjà implémentés — il manquait l'UI).
+  const [mutedConvs, setMutedConvs] = useState<Record<string, { mutedUntil: string | null }>>({});
+  const mutedConvsRef = useRef<Record<string, { mutedUntil: string | null }>>({});
+  mutedConvsRef.current = mutedConvs;
+  const [showMuteMenu, setShowMuteMenu] = useState(false);
 
   // ⭐ V3-11: Annonces (official announcements list — fetched lazily when the
   //   user switches to the Annonces section, kept in state to avoid refetching)
@@ -1494,6 +1537,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           return [...prev, data.message];
         });
       }
+      // ⭐ V6 (spec §1) — ACCUSÉ DE RÉCEPTION « DISTRIBUÉ » (✓✓ gris) :
+      //    tout message reçu d'un AUTRE utilisateur est marqué distribué
+      //    côté serveur (POST /chat/messages/:id/deliver) — l'état intermédiaire
+      //    entre ✓ envoyé et ✓✓ bleu lu. Si la conversation est ouverte, le
+      //    mark-read habituel passe directement à « lu ».
+      if (data?.message?.id && data.message.senderId !== currentUserId) {
+        fetch(`/api/chat/messages/${data.message.id}/deliver`, { method: 'POST', credentials: 'include' }).catch(() => {});
+      }
       // Also refresh conversation list (for lastMessage preview + unread count)
       loadConversations();
       // ⭐ DISCORD PARITY: Notification sound on new message.
@@ -1503,17 +1554,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       //    (to avoid beeping for messages the user is already reading).
       try {
         if (data?.message?.senderId && data.message.senderId !== currentUserId) {
+          // ⭐ V6 (spec §10) — conversations en MUET : ni son ni notification
+          //    native tant que le muet est actif (1h/8h/24h/∞).
+          const mutedInfo = mutedConvsRef.current[data?.conversationId || ''];
+          const isMuted = !!mutedInfo && (!mutedInfo.mutedUntil || new Date(mutedInfo.mutedUntil) > new Date());
           // Only beep for messages in OTHER conversations (not the one currently open)
-          if (data?.conversationId !== activeConvId) {
+          if (data?.conversationId !== activeConvId && !isMuted) {
             playNotificationSound();
           }
           // ⭐ V5 (parité Yeshua) — NOTIFICATION NATIVE quand la page est en
           //    arrière-plan : titre = nom de la conversation, body =
           //    « auteur : aperçu », tag = id du message (déduplication).
-          //    Aucune notification pour la conversation ouverte.
+          //    Aucune notification pour la conversation ouverte ou en muet.
           if (
             typeof document !== 'undefined' && document.hidden &&
-            data?.conversationId !== activeConvId &&
+            data?.conversationId !== activeConvId && !isMuted &&
             typeof Notification !== 'undefined' && Notification.permission === 'granted'
           ) {
             try {
@@ -1716,7 +1771,176 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     } catch {}
   }, [currentUserId]);
 
+  // ⭐ V6 (parité Yeshua — Direct du canal / Go Live) : directs en cours,
+  //    indexés par canal (GET /chat/live-streams, polling 15 s).
+  //    (startChannelDirect/stopChannelDirect sont définis après joinVoiceChannel)
+  const [channelDirects, setChannelDirects] = useState<Record<string, { by: string; streamId: string; hostId: string; startedAt?: string }>>({});
+  const [liveSwitching, setLiveSwitching] = useState(false);
+
+  // Polling des directs du tenant (15 s) — comme Yeshua (polling /direct).
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/chat/live-streams', { credentials: 'include' });
+        if (res.ok) {
+          const list = await res.json();
+          if (!cancelled && Array.isArray(list)) {
+            const map: Record<string, { by: string; streamId: string; hostId: string; startedAt?: string }> = {};
+            for (const s of list) {
+              if (s.channelId) {
+                map[s.channelId] = {
+                  by: s.hostName || s.startedByName || 'Un diffuseur',
+                  streamId: s.id,
+                  hostId: s.hostId || s.userId || '',
+                  startedAt: s.startedAt || s.createdAt,
+                };
+              }
+            }
+            setChannelDirects(map);
+          }
+        }
+      } catch { /* silencieux */ }
+    };
+    load();
+    const t = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
   useEffect(() => { loadChannels(); }, [loadChannels]);
+
+  // ⭐ V6 — charger la liste des conversations mises en muet (+ après chaque
+  //    (dé)mutation). mutedUntil NULL = muet pour toujours.
+  const loadMutedConversations = useCallback(async () => {
+    if (!currentUserId) return;
+    try {
+      const res = await fetch(`/api/chat/v2/notifications/muted-conversations?userId=${currentUserId}`, { credentials: 'include' });
+      if (res.ok) {
+        const list = await res.json();
+        const map: Record<string, { mutedUntil: string | null }> = {};
+        for (const m of (Array.isArray(list) ? list : [])) {
+          map[m.conversationId] = { mutedUntil: m.mutedUntil || null };
+        }
+        setMutedConvs(map);
+      }
+    } catch { /* ignore */ }
+  }, [currentUserId]);
+
+  useEffect(() => { loadMutedConversations(); }, [loadMutedConversations]);
+
+  // ⭐ V6 — mettre en muet une conversation (durée 1H/8H/24H/FOREVER)
+  const muteConversationFor = useCallback(async (convId: string, duration: '1H' | '8H' | '24H' | 'FOREVER') => {
+    try {
+      const res = await fetch(`/api/chat/v2/notifications/conversations/${convId}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, duration }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Échec');
+      const data = await res.json();
+      setMutedConvs(prev => ({ ...prev, [convId]: { mutedUntil: data.mutedUntil || null } }));
+      const labels: Record<string, string> = { '1H': '1 heure', '8H': '8 heures', '24H': '24 heures', 'FOREVER': 'toujours' };
+      toast.success(`Notifications coupées pendant ${labels[duration]}`);
+    } catch (e: any) {
+      toast.error('Impossible de mettre en muet : ' + e.message);
+    }
+  }, [currentUserId]);
+
+  // ⭐ V6 — réactiver les notifications d'une conversation
+  const unmuteConversationFor = useCallback(async (convId: string) => {
+    try {
+      const res = await fetch(`/api/chat/v2/notifications/conversations/${convId}/unmute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Échec');
+      setMutedConvs(prev => {
+        const next = { ...prev };
+        delete next[convId];
+        return next;
+      });
+      toast.success('Notifications réactivées');
+    } catch (e: any) {
+      toast.error('Impossible de réactiver : ' + e.message);
+    }
+  }, [currentUserId]);
+
+  // ⭐ V6 — ouvrir un canal : charge les messages et affiche le panneau
+  //    (parité Yeshua : les canaux sont des conversations de diffusion).
+  const openChannel = useCallback((ch: any) => {
+    setActiveConvId(null);
+    setActiveChannelId(ch.id);
+    setChannelMessages([]);
+    setChannelInput('');
+    setMobileSidebarOpen(false);
+    // Charger les messages du canal (GET /chat/channels/:id/messages)
+    fetch(`/api/chat/channels/${ch.id}/messages?limit=100`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : []))
+      .then((msgs: any[]) => {
+        setChannelMessages(Array.isArray(msgs) ? msgs : []);
+        setTimeout(() => channelMessagesEndRef.current?.scrollIntoView({ behavior: 'auto' }), 50);
+      })
+      .catch(() => setChannelMessages([]));
+    // Auto-abonnement silencieux à la première ouverture (comme Yeshua où
+    // l'utilisateur rejoint le canal pour le voir)
+    if (!ch.isSubscribed) {
+      fetch(`/api/chat/channels/${ch.id}/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      }).then(() => loadChannels()).catch(() => {});
+    }
+  }, [currentUserId, loadChannels]);
+
+  // ⭐ V6 — publier une diffusion dans le canal (POST broadcast)
+  const handleBroadcast = useCallback(async () => {
+    const content = channelInput.trim();
+    if (!content || !activeChannelId || channelSending) return;
+    setChannelSending(true);
+    try {
+      const res = await fetch(`/api/chat/channels/${activeChannelId}/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderId: currentUserId, content }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Diffusion échouée');
+      const msg = await res.json();
+      setChannelMessages(prev => [...prev, {
+        ...msg,
+        senderFirstName: user?.firstName,
+        senderLastName: user?.lastName,
+      }]);
+      setChannelInput('');
+      setTimeout(() => channelMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+      loadChannels(); // rafraîchir l'aperçu de la sidebar
+    } catch (e: any) {
+      toast.error('Diffusion impossible : ' + e.message);
+    } finally {
+      setChannelSending(false);
+    }
+  }, [channelInput, activeChannelId, channelSending, currentUserId, user, loadChannels]);
+
+  // ⭐ V6 — (dé)abonnement manuel au canal
+  const toggleChannelSubscription = useCallback(async (ch: any) => {
+    try {
+      const res = await fetch(`/api/chat/channels/${ch.id}/${ch.isSubscribed ? 'unsubscribe' : 'subscribe'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Opération échouée');
+      toast.success(ch.isSubscribed ? 'Désabonné du canal' : 'Abonné au canal');
+      loadChannels();
+    } catch (e: any) {
+      toast.error('Impossible : ' + e.message);
+    }
+  }, [currentUserId, loadChannels]);
 
   // ⭐ Load my avatar
   useEffect(() => {
@@ -1893,6 +2117,80 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     }
     setShowMemberList(prev => !prev);
   }, [showMemberList, activeConvId, loadConversationMembers]);
+
+  // ═══ V6 (spec §3/§17) — ACTIONS D'ADMINISTRATION DE CONVERSATION ═══
+  //    Le backend était COMPLET (rôle/permissions/approve/reject/ban/kick/
+  //    mute/slow-mode/audit-logs) mais aucune UI ne l'appelait.
+  //    Toutes les actions vérifient côté serveur que l'appelant est ADMIN.
+  const memberAdminAction = useCallback(async (path: string, method: 'PUT' | 'POST' | 'DELETE', body: any, okMsg: string) => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId: currentUserId, ...body }),
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.message || `Erreur ${res.status}`);
+      }
+      toast.success(okMsg);
+      loadConversationMembers(activeConvId); // rafraîchir la liste
+    } catch (e: any) {
+      toast.error('Action impossible : ' + e.message);
+    }
+  }, [activeConvId, currentUserId, loadConversationMembers]);
+
+  const setMemberRoleAction = useCallback((targetUserId: string, role: 'ADMIN' | 'MODERATOR' | 'MEMBER') =>
+    memberAdminAction(`/members/${targetUserId}/role`, 'PUT', { role },
+      role === 'ADMIN' ? 'Membre promu administrateur' : role === 'MODERATOR' ? 'Membre promu modérateur' : 'Rôle réinitialisé en membre'),
+    [memberAdminAction]);
+
+  const kickMemberAction = useCallback((targetUserId: string) =>
+    memberAdminAction(`/kick/${targetUserId}`, 'POST', { reason: 'Exclusion depuis Helm Connect' }, 'Membre exclu du groupe'),
+    [memberAdminAction]);
+
+  const banMemberAction = useCallback((targetUserId: string, ban: boolean) =>
+    memberAdminAction(`/ban/${targetUserId}`, ban ? 'POST' : 'DELETE', { reason: 'Bannissement depuis Helm Connect' },
+      ban ? 'Membre banni du groupe' : 'Membre débanni'),
+    [memberAdminAction]);
+
+  const chatMuteMemberAction = useCallback((targetUserId: string, mute: boolean) =>
+    memberAdminAction(`/mute/${targetUserId}`, mute ? 'POST' : 'DELETE', { reason: 'Mise en sourdine (modération)' },
+      mute ? 'Membre mis en sourdine' : 'Membre autorisé à parler'),
+    [memberAdminAction]);
+
+  const approveMemberAction = useCallback((targetUserId: string, approve: boolean) =>
+    memberAdminAction(`/members/${targetUserId}/${approve ? 'approve' : 'reject'}`, 'POST', {},
+      approve ? 'Membre approuvé' : 'Demande refusée'),
+    [memberAdminAction]);
+
+  const applySlowModeAction = useCallback(async (seconds: number) => {
+    if (!activeConvId) return;
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/slow-mode`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, seconds }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      toast.success(seconds > 0 ? `Mode lent actif : ${seconds}s entre messages` : 'Mode lent désactivé');
+      setShowSlowModeModal(false);
+    } catch (e: any) {
+      toast.error('Mode lent impossible : ' + e.message);
+    }
+  }, [activeConvId, currentUserId]);
+
+  const loadAuditLogsAction = useCallback(async () => {
+    if (!activeConvId) return;
+    setAuditLogsLoading(true);
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/audit-logs?userId=${currentUserId}&limit=60`, { credentials: 'include' });
+      if (res.ok) setAuditLogs(await res.json());
+    } catch { /* ignore */ } finally { setAuditLogsLoading(false); }
+  }, [activeConvId, currentUserId]);
 
   // ⭐ DISCORD PARITY: Search GIFs via the Tenor API proxy endpoint.
   const searchGifs = useCallback(async (query: string) => {
@@ -2103,7 +2401,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const joinRes = await fetch(`/api/chat/voice-channels/${channelId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId, socketId: socket?.emit ? 'connected' : undefined }),
+        body: JSON.stringify({ userId: currentUserId, socketId: socket ? 'connected' : undefined }),
         credentials: 'include',
       });
       if (!joinRes.ok) throw new Error('Join failed');
@@ -2117,8 +2415,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       try {
         const bundle = await withTimeout(fetchMediaJoin('voice', channelId), 12000, 'voice-join');
         if (bundle.exhausted) {
-          setVoiceProvider('mesh');
-          toast.success(`Rejoint : ${channel.name || 'Voix'} (mesh WebRTC)`);
+          // ⭐ V7 (parité Yeshua — Plan C VOIX) : la chaîne est épuisée ET il
+          //    n'existe AUCUNE session mesh pour les canaux vocaux (le mesh
+          //    n'est câblé que pour les appels) → l'utilisateur se retrouvait
+          //    « dans » le canal SANS AUDIO. On ouvre le MODE SECOURS JITSI
+          //    déterministe (même mécanique que Yeshua startVoiceJitsi).
+          setVoiceProvider('jitsi');
+          setJitsiFallback({
+            room: jitsiRoomFor('voice', channelId),
+            title: `Canal vocal — ${channel.name || 'Voix'}`,
+          });
           return;
         }
         const session = await withTimeout(
@@ -2163,14 +2469,77 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         // ⭐ V5 — auto-rejoin après refresh (clé localStorage)
         try { localStorage.setItem(`helm-voice-${currentUserId}`, channelId); } catch {}
       } catch (e: any) {
-        setVoiceProvider('mesh');
-        toast.success(`Rejoint : ${channel.name || 'Voix'} (mesh WebRTC)`);
+        // ⭐ V7 — chaîne média indisponible → MODE SECOURS JITSI (pas de
+        //    mesh pour la voix — voir plus haut).
+        setVoiceProvider('jitsi');
+        setJitsiFallback({
+          room: jitsiRoomFor('voice', channelId),
+          title: `Canal vocal — ${channel.name || 'Voix'}`,
+        });
         console.warn('Voice media chain failed:', e.message);
       }
     } catch (e: any) {
       toast.error("Échec de l'audio : " + e.message);
     }
   }, [currentUserId, socket, user, disconnectVoiceSession]);
+
+  // ═══ V6 (parité Yeshua — Direct du canal / Go Live) ═══
+  // Lancer un direct dans un canal vocal (admin) — POST /chat/live-streams
+  const startChannelDirect = useCallback(async (channelId: string) => {
+    if (liveSwitching) return;
+    setLiveSwitching(true);
+    try {
+      const res = await fetch('/api/chat/live-streams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId, channelId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const stream = await res.json();
+      const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Vous';
+      setChannelDirects(prev => ({
+        ...prev,
+        [channelId]: { by: myName, streamId: stream.id, hostId: currentUserId, startedAt: new Date().toISOString() },
+      }));
+      toast.success('Direct lancé — vous diffusez');
+      // Comme Yeshua : on n'était pas connecté ? On rejoint pour diffuser.
+      if (!activeVoiceChannel) {
+        await joinVoiceChannel(channelId);
+      }
+    } catch (e: any) {
+      toast.error('Impossible de lancer le direct : ' + e.message);
+    } finally {
+      setLiveSwitching(false);
+    }
+  }, [liveSwitching, currentUserId, user, activeVoiceChannel, joinVoiceChannel]);
+
+  // Arrêter un direct (diffuseur) — DELETE /chat/live-streams/:id
+  const stopChannelDirect = useCallback(async () => {
+    const channelId = activeVoiceChannel;
+    const info = channelId ? channelDirects[channelId] : null;
+    if (!info || liveSwitching) return;
+    setLiveSwitching(true);
+    try {
+      const res = await fetch(`/api/chat/live-streams/${info.streamId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setChannelDirects(prev => {
+        const next = { ...prev };
+        if (channelId) delete next[channelId];
+        return next;
+      });
+      toast.success('Direct arrêté');
+    } catch (e: any) {
+      toast.error('Impossible d’arrêter le direct : ' + e.message);
+    } finally {
+      setLiveSwitching(false);
+    }
+  }, [activeVoiceChannel, channelDirects, liveSwitching, currentUserId]);
 
   // ⭐ V4: Leave the active voice channel — déconnecte la session média
   //    (chaîne LiveKit → Agora → Daily) et l'état REST.
@@ -2312,6 +2681,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         body: JSON.stringify({ userId: currentUserId }),
         credentials: 'include',
       });
+      // ⭐ V6 (spec §1) — historique : marquer « distribué » (✓✓ gris) les
+      //    messages d'autrui encore non livrés (reprise offline/reconnexion).
+      unique
+        .filter((m: any) => m.senderId !== currentUserId && !m.deliveredAt)
+        .slice(-30)
+        .forEach((m: any) => {
+          fetch(`/api/chat/messages/${m.id}/deliver`, { method: 'POST', credentials: 'include' }).catch(() => {});
+        });
     } catch (e: any) {
       console.error('loadMessages:', e);
       // ⭐ V3-1: En cas d'échec réseau, on garde le cache offline affiché
@@ -2529,6 +2906,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const t = setTimeout(() => flushPendingRef.current?.(), 1000);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [socket.isConnected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⭐ V3-11: Lazy-fetch annonces when the user switches to the Annonces section.
@@ -2770,7 +3148,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         setRecordingDuration(d => d + 1);
       }, 1000);
       // ⭐ Broadcast "recording audio" via Socket.io
-      socket.startTyping(activeConvId); // Reuse typing channel — shows "typing" to others
+      socket.startTyping(activeConvId || ''); // Reuse typing channel — shows "typing" to others
     } catch (e: any) {
       toast.error("Impossible d'accéder au microphone : " + (e?.message || 'Permission refusée'));
       cleanupRecording();
@@ -4218,7 +4596,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setIncomingSignal(null);
     cleanupCall();
     // Rafraîchir la conversation pour afficher le journal CALL_LOG
-    if (activeConvId) { loadMessages(activeConvId); loadConversations(); }
+    if (activeConvId) { loadMessages(); loadConversations(); }
   };
 
   // ⭐ V2.5: Accept incoming call
@@ -4329,7 +4707,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     try {
       // Request screen share (display media)
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: 'always' },
+        video: { cursor: 'always' } as any,
         audio: false, // no system audio for now — would need additional track
       });
       screenStreamRef.current = displayStream;
@@ -4943,6 +5321,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           } else {
             // Normal click → open conversation
             setActiveConvId(conv.id);
+            // ⭐ V6 — fermer un éventuel canal ouvert (exclusivité du panneau droit)
+            setActiveChannelId(null);
             // ⭐ V5 — repli automatique de la sidebar overlay mobile
             setMobileSidebarOpen(false);
           }
@@ -5010,6 +5390,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {/* ⭐ V6 (spec §10) — icône « muet » sur les conversations en muet */}
+            {mutedConvs[conv.id] && (
+              <BellOff className="w-3 h-3 text-slate-400 flex-shrink-0" aria-label="Notifications en muet" />
+            )}
             <span className={cn(
               'text-xs truncate flex-1',
               (conv as any).unreadCount && (conv as any).unreadCount > 0
@@ -5138,7 +5522,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       {/* Vertical, 56px, visible <md quand une conversation est ouverte :
           bouton déployer (ouvre la sidebar en overlay) + avatars des 8
           dernières conversations (badge non-lus, point présence, sélection). */}
-      {activeConvId && !mobileSidebarOpen && !showNewChat && !showNewGroup && (
+      {activeConvId || activeChannelId ? (
         <div className="md:hidden w-14 flex flex-col items-center gap-1 py-2 bg-white border-r border-slate-100 overflow-y-auto no-scrollbar">
           <button
             onClick={() => setMobileSidebarOpen(true)}
@@ -5174,7 +5558,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* ═════ LEFT SIDEBAR — Conversation List ═════ */}
       {mobileSidebarOpen && (
@@ -5182,7 +5566,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       )}
       <div className={cn(
         'border-r border-slate-100 flex-col bg-white',
-        activeConvId && !mobileSidebarOpen ? 'hidden md:flex' : 'flex',
+        (activeConvId || activeChannelId) && !mobileSidebarOpen ? 'hidden md:flex' : 'flex',
         mobileSidebarOpen && 'fixed inset-y-0 left-0 z-50 w-[85vw] max-w-sm shadow-2xl md:static md:w-80 md:shadow-none',
         !mobileSidebarOpen && 'w-full md:w-80'
       )}>
@@ -5431,6 +5815,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               activeVoiceChannel={activeVoiceChannel}
               onJoinVoice={joinVoiceChannel}
               onLeaveVoice={() => { leaveVoiceChannel(); }}
+              channelDirects={channelDirects}
+              onStartLive={(channelId) => startChannelDirect(channelId)}
+              canStartLive={currentUserId}
             />
           ) : activeHelmSection === 'appels' ? (
             <AppelsSection
@@ -5600,7 +5987,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       {listChannels.map((ch: any) => (
                         <button
                           key={ch.id}
-                          onClick={() => setActiveChannelId(ch.id)}
+                          onClick={() => openChannel(ch)}
                           className={cn(
                             'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
                             activeChannelId === ch.id && 'bg-[#E6F4FF]'
@@ -5676,7 +6063,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         {channels.map((ch: any) => (
                           <button
                             key={ch.id}
-                            onClick={() => setActiveChannelId(ch.id)}
+                            onClick={() => openChannel(ch)}
                             className={cn(
                               'w-full flex items-start gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition',
                               activeChannelId === ch.id && 'bg-[#E6F4FF]'
@@ -5852,6 +6239,57 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             >
               <Video className="w-4 h-4" />
             </button>
+            {/* ⭐ V6 (spec §10, parité Yeshua) — MUET par conversation :
+                cloche barrée si muet, cloche sinon ; menu 1h/8h/24h/∞. */}
+            <div className="relative">
+              <button
+                onClick={() => setShowMuteMenu(!showMuteMenu)}
+                className="p-1.5 rounded hover:bg-[#0958D9]"
+                title={mutedConvs[activeConv.id] ? 'Notifications en muet — cliquez pour réactiver' : 'Mettre en muet (notifications)'}
+              >
+                {mutedConvs[activeConv.id]
+                  ? <BellOff className="w-4 h-4 text-[#FFE08A]" />
+                  : <Bell className="w-4 h-4" />}
+              </button>
+              {showMuteMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMuteMenu(false)} />
+                  <div className="absolute right-0 top-9 z-50 bg-white rounded-xl shadow-2xl border border-slate-100 py-1.5 w-44 text-slate-700">
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Couper les notifications
+                    </p>
+                    {([
+                      { d: '1H', label: 'Pendant 1 heure' },
+                      { d: '8H', label: 'Pendant 8 heures' },
+                      { d: '24H', label: 'Pendant 24 heures' },
+                      { d: 'FOREVER', label: 'Jusqu’à réactivation' },
+                    ] as const).map(({ d, label }) => (
+                      <button
+                        key={d}
+                        onClick={() => { muteConversationFor(activeConv.id, d); setShowMuteMenu(false); }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {mutedConvs[activeConv.id] && (
+                      <>
+                        <div className="h-px bg-slate-100 my-1" />
+                        <button
+                          onClick={() => { unmuteConversationFor(activeConv.id); setShowMuteMenu(false); }}
+                          className="w-full text-left px-3 py-1.5 text-xs font-semibold text-[#1677FF] hover:bg-slate-50 flex items-center gap-1.5"
+                        >
+                          <Bell className="w-3.5 h-3.5" /> Réactiver les notifications
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            {mutedConvs[activeConv.id] && (
+              <span className="text-[9px] font-semibold text-[#FFE08A] hidden sm:inline">Muet</span>
+            )}
             {activeConv.type === 'GROUP' && (
               <button
                 onClick={handleGenerateInviteLink}
@@ -6022,6 +6460,17 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   : null;
                 const senderIsAdmin = !isMine && /ADMIN|DIRECTEUR|DIRECTOR|SUPER/i
                   .test(String(senderParticipant?.roleLabel || (senderParticipant as any)?.role_label || (msg as any).sender?.role || ''));
+                // ⭐ V6 (parité Yeshua — AUDIT_PRIVILEGED_ROLES + spec §3/§17) :
+                //    l'ADMIN/MODÉRATEUR de la conversation (ou un membre staff
+                //    de l'établissement) peut supprimer N'IMPORTE QUEL message
+                //    « pour tous » — le backend l'autorise déjà, l'UI cachait
+                //    l'action (isMine uniquement).
+                const myConvMember: any = conversationMembers.find((m: any) => m.userId === currentUserId) ||
+                  activeConv?.participants?.find((p: any) => p.userId === currentUserId);
+                const myConvRole = String(myConvMember?.role || '').toUpperCase();
+                const amConvPrivileged = myConvRole === 'ADMIN' || myConvRole === 'MODERATOR' ||
+                  /SCHOOL_ADMIN|SCHOOL_OWNER|DIRECTOR|DIRECTEUR|SUPER_ADMIN|PLATFORM_OWNER|PROMOTER|ADMIN/i
+                    .test(String(user?.roleLabel || ''));
                 const showDateSeparator = idx === 0 ||
                   new Date(messages[idx - 1].createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
                 return (
@@ -6259,12 +6708,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                 {transcribingMsgId === msg.id ? 'Transcription en cours...' : 'Transcrire (Whisper)'}
                               </button>
                             )}
-                            {isMine && (
+                            {(isMine || amConvPrivileged) && (
                               <button
                                 onClick={() => { handleMessageDeleteForEveryone(msg.id); setActiveMenuMsgId(null); }}
                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
                               >
                                 <Trash2 className="w-3.5 h-3.5" /> Supprimer pour tous
+                                {!isMine && <span className="text-[9px] text-rose-400">(modération)</span>}
                               </button>
                             )}
                           </div>
@@ -6340,7 +6790,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         ) : msg.type === 'TEXT' && (
                           <div
                             className="whitespace-pre-wrap break-words"
-                            dangerouslySetInnerHTML={{ __html: highlightMentions(msg.content) }}
+                            dangerouslySetInnerHTML={{ __html: highlightMentions(msg.content || '') }}
                           />
                         )}
                         {msg.type === 'IMAGE' && msg.attachmentUrl && (
@@ -6461,7 +6911,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                             setMessages(prev => prev.map(m => {
                                               if (m.id !== msg.id) return m;
                                               try {
-                                                const p = JSON.parse(m.content);
+                                                const p = JSON.parse(m.content || '{}');
                                                 const opts = (p.options || []).map((o: any) =>
                                                   o.id === opt.id ? { ...o, voteCount: (o.voteCount || 0) + 1 } : o);
                                                 return { ...m, content: JSON.stringify({ ...p, options: opts }) } as any;
@@ -6562,6 +7012,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                 return acc;
                               }, {})
                             ).map(([emoji, count]) => {
+                              const reactionCount = Number(count) || 0;
                               const myReaction = (msg as any).reactions.some((r: any) => r.userId === currentUserId && r.emoji === emoji);
                               return (
                                 <button
@@ -6576,7 +7027,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                                   title={myReaction ? 'Cliquez pour retirer' : 'Cliquez pour réagir'}
                                 >
                                   {renderReactionIcon(emoji, 12)}
-                                  {count > 1 && <span>{count}</span>}
+                                  {reactionCount > 1 && <span>{reactionCount}</span>}
                                 </button>
                               );
                             })}
@@ -7140,7 +7591,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
-            {/* ⭐ V5 (parité Yeshua) — onglets Membres / Inviter */}
+            {/* ⭐ V5 (parité Yeshua) — onglets Membres / Inviter / Gestion */}
             <div className="flex border-b border-slate-100">
               <button
                 onClick={() => setMemberPanelTab('members')}
@@ -7149,6 +7600,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               >
                 Membres
               </button>
+              {/* ⭐ V6 — onglet GESTION (admins de conversation uniquement) :
+                  mode lent + journal d'audit (spec §3/§17). */}
+              {(() => {
+                const me = conversationMembers.find((m: any) => m.userId === currentUserId);
+                const iAmConvAdmin = me?.role === 'ADMIN' ||
+                  /SCHOOL_ADMIN|SCHOOL_OWNER|DIRECTOR|DIRECTEUR|SUPER_ADMIN|PLATFORM_OWNER|PROMOTER|ADMIN/i.test(String(user?.roleLabel || ''));
+                if (!iAmConvAdmin || readOnly) return null;
+                return (
+                  <button
+                    onClick={() => setMemberPanelTab('gestion')}
+                    className={cn('flex-1 px-3 py-2 text-[11px] font-bold transition',
+                      memberPanelTab === 'gestion' ? 'text-[#0958D9] border-b-2 border-[#0958D9]' : 'text-slate-500 hover:text-slate-700')}
+                  >
+                    Gestion
+                  </button>
+                );
+              })()}
               {!readOnly && (
                 <button
                   onClick={() => setMemberPanelTab('invite')}
@@ -7204,6 +7672,52 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   })
                 )}
               </div>
+            ) : memberPanelTab === 'gestion' ? (
+              /* ⭐ V6 (spec §3/§17) — ONGLET GESTION (admins) : mode lent +
+                  journal d'audit de la conversation. Backend complet, l'UI
+                  n'existait pas (showAuditLog/showSlowModeModal étaient morts). */
+              <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                {/* Mode lent */}
+                <div className="space-y-2">
+                  <h4 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5 text-[#0958D9]" /> Mode lent
+                  </h4>
+                  <p className="text-[10px] text-slate-500">
+                    Intervalle minimum entre deux messages de chaque membre (anti-spam de groupe).
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[0, 5, 10, 15, 30, 60, 300].map(sec => (
+                      <button
+                        key={sec}
+                        onClick={() => { setSlowModeSeconds(sec); applySlowModeAction(sec); }}
+                        className={cn('px-2.5 py-1 rounded-lg text-[10px] font-bold border transition',
+                          slowModeSeconds === sec
+                            ? 'bg-[#E6F4FF] border-[#1677FF] text-[#0958D9]'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50')}
+                      >
+                        {sec === 0 ? 'Désactivé' : sec < 60 ? `${sec}s` : `${sec / 60} min`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Journal d'audit */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <ScrollText className="w-3.5 h-3.5 text-amber-600" /> Journal d'audit
+                    </h4>
+                    <button
+                      onClick={() => { setShowAuditLog(true); loadAuditLogsAction(); }}
+                      className="text-[10px] px-2 py-1 bg-[#E6F4FF] text-[#0958D9] rounded font-semibold hover:bg-[#D0E8FF]"
+                    >
+                      Voir tout
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Actions d'administration tracées : rôles, exclusions, bannissements, sourdine, approbations.
+                  </p>
+                </div>
+              </div>
             ) : (
               /* ⭐ V5 — ONGLET MEMBRES : recherche + admins d'abord (Yeshua),
                   clic = FICHE DU MEMBRE (avant : ça ouvrait SON PROPRE profil). */
@@ -7233,7 +7747,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     `${a.firstName || ''}${a.lastName || ''}`.localeCompare(`${b.firstName || ''}${b.lastName || ''}`));
                   const admins = sorted.filter(m => m.role === 'ADMIN' || m.role === 'MODERATOR');
                   const others = sorted.filter(m => m.role !== 'ADMIN' && m.role !== 'MODERATOR');
-                  const renderMemberRow = (m: any) => (
+                  const renderMemberRow = (m: any) => {
+                    // ⭐ V6 (spec §3/§17) — actions d'admin visibles pour les
+                    //    admins/modérateurs de conversation et le staff.
+                    const meMember: any = conversationMembers.find((x: any) => x.userId === currentUserId);
+                    const iAmConvAdmin = meMember?.role === 'ADMIN' ||
+                      /SCHOOL_ADMIN|SCHOOL_OWNER|DIRECTOR|DIRECTEUR|SUPER_ADMIN|PLATFORM_OWNER|PROMOTER|ADMIN/i.test(String(user?.roleLabel || ''));
+                    const canManageMember = iAmConvAdmin && m.userId !== currentUserId && !readOnly;
+                    return (
                     <div
                       key={m.userId}
                       className={cn('flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer', !m.isOnline && 'opacity-60')}
@@ -7251,13 +7772,86 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           <span className="truncate">{m.userId === currentUserId ? 'Vous' : `${m.firstName} ${m.lastName}`}</span>
                           {m.role === 'ADMIN' && <span className="text-[9px] text-amber-600 flex-shrink-0">★</span>}
                           {m.role === 'MODERATOR' && <span className="text-[9px] text-slate-500 flex-shrink-0" title="Modérateur">M</span>}
+                          {(m as any).isMuted && <span className="text-[9px] text-red-500 flex-shrink-0" title="En sourdine">🔇</span>}
+                          {(m as any).isBanned && <span className="text-[9px] text-red-600 flex-shrink-0" title="Banni">⛔</span>}
+                          {(m as any).pendingApproval && <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold uppercase flex-shrink-0">à approuver</span>}
                           {blockedUserIds.has(m.userId) && <Ban className="w-2.5 h-2.5 text-red-500 flex-shrink-0" />}
                         </div>
                         {m.customStatus && <div className="text-[10px] text-slate-500 truncate">{m.customStatus}</div>}
                         {!m.customStatus && m.activityStatus && <div className="text-[10px] text-slate-400 truncate">{m.activityStatus}</div>}
                       </div>
+                      {/* ⭐ V6 — menu d'actions d'administration (rôle/kick/ban/muet) */}
+                      {canManageMember && (
+                        <div className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setMemberActionUserId(memberActionUserId === m.userId ? null : m.userId)}
+                            className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600"
+                            title="Actions d'administration"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                          {memberActionUserId === m.userId && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setMemberActionUserId(null)} />
+                              <div className="absolute right-0 top-7 z-50 bg-white rounded-xl shadow-2xl border border-slate-100 py-1.5 w-52 text-slate-700">
+                                <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                  {`${m.firstName || ''} ${m.lastName || ''}`.trim() || 'Membre'}
+                                </p>
+                                {(m as any).pendingApproval && (
+                                  <>
+                                    <button onClick={() => { approveMemberAction(m.userId, true); setMemberActionUserId(null); }} className="w-full text-left px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 flex items-center gap-1.5">
+                                      <CheckCircle2 className="w-3.5 h-3.5" /> Approuver l'entrée
+                                    </button>
+                                    <button onClick={() => { approveMemberAction(m.userId, false); setMemberActionUserId(null); }} className="w-full text-left px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-1.5">
+                                      <XCircle className="w-3.5 h-3.5" /> Refuser
+                                    </button>
+                                    <div className="h-px bg-slate-100 my-1" />
+                                  </>
+                                )}
+                                {m.role !== 'ADMIN' && (
+                                  <button onClick={() => { setMemberRoleAction(m.userId, 'ADMIN'); setMemberActionUserId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-1.5">
+                                    <Shield className="w-3.5 h-3.5 text-amber-500" /> Promouvoir administrateur
+                                  </button>
+                                )}
+                                {m.role !== 'MODERATOR' && (
+                                  <button onClick={() => { setMemberRoleAction(m.userId, 'MODERATOR'); setMemberActionUserId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-1.5">
+                                    <Shield className="w-3.5 h-3.5 text-slate-500" /> Promouvoir modérateur
+                                  </button>
+                                )}
+                                {m.role !== 'MEMBER' && (
+                                  <button onClick={() => { setMemberRoleAction(m.userId, 'MEMBER'); setMemberActionUserId(null); }} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-1.5">
+                                    <UserIcon className="w-3.5 h-3.5" /> Rétrograder en membre
+                                  </button>
+                                )}
+                                <div className="h-px bg-slate-100 my-1" />
+                                <button
+                                  onClick={() => { chatMuteMemberAction(m.userId, !(m as any).isMuted); setMemberActionUserId(null); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-1.5"
+                                >
+                                  <VolumeX className="w-3.5 h-3.5 text-slate-500" />
+                                  {(m as any).isMuted ? 'Autoriser à parler' : 'Mettre en sourdine'}
+                                </button>
+                                <button
+                                  onClick={() => { banMemberAction(m.userId, !(m as any).isBanned); setMemberActionUserId(null); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center gap-1.5"
+                                >
+                                  <Ban className="w-3.5 h-3.5 text-orange-500" />
+                                  {(m as any).isBanned ? 'Débannir' : 'Bannir du groupe'}
+                                </button>
+                                <button
+                                  onClick={() => { kickMemberAction(m.userId); setMemberActionUserId(null); }}
+                                  className="w-full text-left px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-1.5"
+                                >
+                                  <UserMinus className="w-3.5 h-3.5" /> Exclure du groupe
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  );
+                    );
+                  };
                   return (
                     <>
                       {admins.length > 0 && (
@@ -7371,6 +7965,115 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           </div>
         )}
         </>
+      ) : activeChannel ? (
+        // ═══ V6 — VUE CANAL (parité Yeshua / spec §6) : messages de diffusion
+        //     + composer + abonnement. Les canaux s'ouvrent comme des
+        //     conversations depuis la section Canaux OU la liste Discussions.
+        <div className="flex-1 flex flex-col bg-slate-50 relative">
+          {/* Header canal */}
+          <div className="p-3 bg-[#0958D9] text-white flex items-center gap-3 shadow-sm">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="md:hidden p-1 rounded hover:bg-[#0958D9]"
+              title="Afficher les conversations"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0">
+              <Megaphone className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold truncate">{activeChannel.name}</h3>
+              <p className="text-[10px] text-[#BAE0FF] flex items-center gap-1 truncate">
+                <Rss className="w-2.5 h-2.5 flex-shrink-0" />
+                Canal · {activeChannel.subscriberCount || 0} abonné(s)
+                {activeChannel.description ? ` · ${activeChannel.description}` : ''}
+              </p>
+            </div>
+            {/* (Dés)abonnement */}
+            <button
+              onClick={() => toggleChannelSubscription(activeChannel)}
+              className={cn(
+                'px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 flex-shrink-0',
+                activeChannel.isSubscribed
+                  ? 'bg-white/15 hover:bg-white/25 text-white'
+                  : 'bg-white text-[#0958D9] hover:bg-slate-100'
+              )}
+              title={activeChannel.isSubscribed ? 'Se désabonner' : "S'abonner"}
+            >
+              {activeChannel.isSubscribed ? <BellOff className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{activeChannel.isSubscribed ? 'Abonné' : 'S’abonner'}</span>
+            </button>
+          </div>
+
+          {/* Messages du canal — style diffusion Telegram */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+            {channelMessages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Megaphone className="w-10 h-10 text-slate-300 mb-2" />
+                <p className="text-sm font-medium text-slate-600">Aucune diffusion pour le moment</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Les publications de ce canal apparaîtront ici.
+                </p>
+              </div>
+            ) : (
+              channelMessages.map((m: any) => {
+                const mine = m.senderId === currentUserId;
+                const senderName = `${m.senderFirstName || ''} ${m.senderLastName || ''}`.trim() || 'Diffusion';
+                const senderColorIdx = !mine ? hashUserId(m.senderId || 'x') : 0;
+                return (
+                  <div key={m.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
+                    <div className={cn(
+                      'max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-sm',
+                      mine
+                        ? 'bg-[#1677FF] text-white rounded-br-md'
+                        : 'bg-white text-slate-800 border border-slate-100 rounded-bl-md'
+                    )}>
+                      {!mine && (
+                        <p className="text-[11px] font-bold mb-0.5 truncate" style={{ color: USER_TEXT_COLORS[senderColorIdx] }}>
+                          {senderName}
+                          {activeChannel.createdBy === m.senderId && (
+                            <span className="ml-1 font-normal opacity-70">· admin</span>
+                          )}
+                        </p>
+                      )}
+                      <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{m.content}</p>
+                      <p className={cn(
+                        'text-[10px] mt-1 text-right',
+                        mine ? 'text-[#BAE0FF]' : 'text-slate-400'
+                      )}>
+                        {new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={channelMessagesEndRef} />
+          </div>
+
+          {/* Composer de diffusion */}
+          <div className="p-3 bg-white border-t border-slate-100 flex items-end gap-2">
+            <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+              <input
+                value={channelInput}
+                onChange={(e) => setChannelInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleBroadcast(); } }}
+                placeholder="Diffuser un message dans le canal…"
+                className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none"
+                maxLength={2000}
+              />
+            </div>
+            <button
+              onClick={handleBroadcast}
+              disabled={channelSending || !channelInput.trim()}
+              className="p-2.5 bg-[#1677FF] text-white rounded-full hover:bg-[#0958D9] disabled:opacity-30 flex-shrink-0"
+              title="Diffuser"
+            >
+              {channelSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
       ) : (
         // Empty state when no conversation selected — uses Helm watermark background + Helm Connect icon
         // ⭐ Per user feedback: KEEP the watermark theme (asked for) but DO NOT replace
@@ -7483,9 +8186,62 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       {showNotifPrefs && (
         <NotificationPreferencesModal
           currentUserId={currentUserId}
+          conversations={conversations}
+          onUnmuted={loadMutedConversations}
           onClose={() => setShowNotifPrefs(false)}
         />
       )}
+      {/* ⭐ V6 (spec §3/§17) — JOURNAL D'AUDIT de la conversation (modération) :
+          l'état showAuditLog existait mais n'était JAMAIS rendu (code mort).
+          GET /chat/conversations/:id/audit-logs — actions tracées serveur. */}
+      {showAuditLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowAuditLog(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+                  <ScrollText className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Journal d'audit</h3>
+                  <p className="text-[10px] text-slate-500">{activeConv ? getConversationDisplay(activeConv, currentUserId).name : 'Conversation'}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAuditLog(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {auditLogsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+                </div>
+              ) : auditLogs.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">
+                  Aucune action d'administration enregistrée pour cette conversation.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {auditLogs.map((log: any, i: number) => (
+                    <div key={log.id || i} className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-700">{log.action || 'action'}</span>
+                        <span className="text-[10px] text-slate-400">{log.createdAt ? new Date(log.createdAt).toLocaleString('fr-FR') : ''}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {log.adminName || log.adminId || '—'}
+                        {log.targetName || log.targetId ? ` → ${log.targetName || log.targetId}` : ''}
+                        {log.reason ? ` · ${log.reason}` : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ⭐ V3-6 — Group call participant picker modal */}
       {showGroupCallModal && activeConv?.type === 'GROUP' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowGroupCallModal(false)}>
@@ -7930,6 +8686,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           isStage={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.type === 'STAGE'}
           isAdmin={voiceChannels.find((c: any) => c.id === activeVoiceChannel)?.createdBy === currentUserId}
           autoplayBlocked={voiceAutoplayBlocked}
+          liveInfo={activeVoiceChannel ? channelDirects[activeVoiceChannel] || null : null}
+          iAmLiveHost={!!(activeVoiceChannel && channelDirects[activeVoiceChannel]?.hostId === currentUserId)}
+          joined={!!activeVoiceChannel}
+          onStartLive={activeVoiceChannel ? () => startChannelDirect(activeVoiceChannel) : undefined}
+          onStopLive={stopChannelDirect}
+          onJoinLive={() => { if (activeVoiceChannel) joinVoiceChannel(activeVoiceChannel); }}
+          liveSwitching={liveSwitching}
           onToggleMute={toggleVoiceMute}
           onToggleVideo={toggleVoiceVideo}
           onToggleVideoMode={toggleVoiceVideoMode}
@@ -7945,7 +8708,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
       {/* ⭐ V5 (parité Yeshua — Plan C) — MODE SECOURS JITSI : iframe plein
           écran avec room déterministe quand la chaîne média est épuisée sur un
-          appel de groupe trop grand pour le mesh (≤ 5). */}
+          appel de groupe trop grand pour le mesh (≤ 5). ⭐ V7 : couvre AUSSI
+          les CANAUX VOCAUX (aucun mesh n'existe pour la voix). */}
       {jitsiFallback && (
         <div className="fixed inset-0 z-[70] bg-[#0A2A5E] flex flex-col">
           <div className="bg-[#CFA63A] text-[#0A2A5E] text-center py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold">
@@ -8247,7 +9011,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           {convSearchResults.length > 0 && (
             <div className="mt-2 max-h-60 overflow-y-auto space-y-1">
               {convSearchResults.map((r: any) => (
-                <div key={r.id} className="p-2 text-xs hover:bg-slate-50 rounded cursor-pointer" onClick={() => setShowConvSearch(false)}>
+                <div key={r.id} className="p-2 text-xs hover:bg-slate-50 rounded cursor-pointer" onClick={() => {
+                  // ⭐ V6 — sauter au message trouvé (comme les épinglés) au
+                  //    lieu de fermer la barre sans rien faire.
+                  setShowConvSearch(false);
+                  jumpToMessage(r.id);
+                }}>
                   <p className="text-slate-700 line-clamp-2">{r.content || r.attachmentName || '—'}</p>
                   <p className="text-[10px] text-slate-400">{new Date(r.createdAt).toLocaleString('fr-FR')}</p>
                 </div>
@@ -8913,7 +9682,7 @@ function ProfileModal({
   userName: string;
   onClose: () => void;
   onAvatarUpload: (file: File) => void;
-  avatarInputRef: React.RefObject<HTMLInputElement>;
+  avatarInputRef: React.RefObject<HTMLInputElement | null>;
 }) {
   // ⭐ Get absolute URL for avatar (same logic as attachments)
   const avatarUrl = myAvatarUrl
@@ -9078,9 +9847,16 @@ function _getConvDisplay(conv: ChatConversation, currentUserId: string) {
 function FichiersSection({ currentUserId, onOpenConversation }: SectionSharedProps) {
   // ⭐ V4 Phase 2 — données RÉELLES : centre documentaire global (toutes
   //    conversations) via GET /chat/v2/files?type=document (FilesCenterService).
+  // ⭐ V6 (spec §22) — onglets Documents | Liens | Épinglés : les endpoints
+  //    transverses GET /chat/v2/links et GET /chat/v2/pinned viennent d'être
+  //    ajoutés (backend complet, l'UI n'existait pas).
   const [files, setFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
+  const [docTab, setDocTab] = useState<'documents' | 'liens' | 'epingles'>('documents');
+  const [links, setLinks] = useState<any[]>([]);
+  const [pinned, setPinned] = useState<any[]>([]);
+  const [secondaryLoading, setSecondaryLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -9099,6 +9875,31 @@ function FichiersSection({ currentUserId, onOpenConversation }: SectionSharedPro
     return () => { cancelled = true; };
   }, []);
 
+  // ⭐ V6 — charger Liens/Épinglés au premier passage sur l'onglet
+  useEffect(() => {
+    if (docTab === 'documents') return;
+    if (docTab === 'liens' && links.length > 0) return;
+    if (docTab === 'epingles' && pinned.length > 0) return;
+    let cancelled = false;
+    setSecondaryLoading(true);
+    (async () => {
+      try {
+        const endpoint = docTab === 'liens'
+          ? '/api/chat/v2/links?limit=100'
+          : '/api/chat/v2/pinned?limit=100';
+        const res = await fetch(endpoint, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            const list = Array.isArray(data) ? data : [];
+            if (docTab === 'liens') setLinks(list); else setPinned(list);
+          }
+        }
+      } catch { /* silencieux */ } finally { if (!cancelled) setSecondaryLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [docTab, links.length, pinned.length]);
+
   const fileMeta = (mime: string | null, name: string | null): { label: string; color: string } => {
     const m = (mime || name || '').toLowerCase();
     if (m.includes('pdf')) return { label: 'PDF', color: 'bg-red-500' };
@@ -9116,7 +9917,101 @@ function FichiersSection({ currentUserId, onOpenConversation }: SectionSharedPro
       <div className="flex items-center gap-1.5 px-1 py-1 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
         <FileText className="w-3 h-3" /> Centre documentaire {stats ? `(${stats.documents || 0})` : ''}
       </div>
-      {loading ? (
+      {/* ⭐ V6 (spec §22) — onglets Documents / Liens / Épinglés */}
+      <div className="flex gap-1 mb-2 px-1">
+        {([
+          { id: 'documents', label: 'Documents', icon: <FileText className="w-3 h-3" /> },
+          { id: 'liens', label: 'Liens', icon: <Link2 className="w-3 h-3" /> },
+          { id: 'epingles', label: 'Épinglés', icon: <Pin className="w-3 h-3" /> },
+        ] as const).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setDocTab(tab.id)}
+            className={cn('px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition',
+              docTab === tab.id ? 'bg-[#E6F4FF] text-[#0958D9]' : 'text-slate-500 hover:bg-slate-100')}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+      {docTab === 'liens' ? (
+        // ⭐ V6 — LIENS partagés (URLs extraites des messages, toutes conversations)
+        secondaryLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+          </div>
+        ) : links.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+            <Link2 className="w-12 h-12 text-slate-300 mb-2" />
+            <p className="text-sm font-medium text-slate-700">Aucun lien partagé</p>
+            <p className="text-xs text-slate-500 mt-1">Les liens envoyés dans les conversations apparaîtront ici.</p>
+          </div>
+        ) : (
+          links.map(l => (
+            <button
+              key={l.id}
+              onClick={() => onOpenConversation(l.conversationId)}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className="w-9 h-9 rounded-lg bg-[#E6F4FF] text-[#0958D9] flex items-center justify-center flex-shrink-0">
+                <Link2 className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">{l.url}</div>
+                <div className="text-xs text-slate-500 truncate">
+                  {l.convName || 'Conversation'} · {l.senderName} · {l.createdAt ? formatTime(l.createdAt) : ''}
+                </div>
+                {l.context && l.context !== l.url && (
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">{l.context}</div>
+                )}
+              </div>
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0 hover:bg-slate-200"
+                title="Ouvrir le lien"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </button>
+          ))
+        )
+      ) : docTab === 'epingles' ? (
+        // ⭐ V6 — MESSAGES ÉPINGLÉS (toutes conversations)
+        secondaryLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+          </div>
+        ) : pinned.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+            <Pin className="w-12 h-12 text-slate-300 mb-2" />
+            <p className="text-sm font-medium text-slate-700">Aucun message épinglé</p>
+            <p className="text-xs text-slate-500 mt-1">Épinglez un message pour le retrouver ici.</p>
+          </div>
+        ) : (
+          pinned.map(p => (
+            <button
+              key={p.id}
+              onClick={() => onOpenConversation(p.conversationId)}
+              className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-50 transition"
+            >
+              <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+                <Pin className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800 line-clamp-2">
+                  {p.content || p.attachmentName || 'Message épinglé'}
+                </div>
+                <div className="text-xs text-slate-500 truncate">
+                  {p.convName || 'Conversation'} · {p.senderName} · {p.pinnedAt ? formatTime(p.pinnedAt) : ''}
+                </div>
+              </div>
+            </button>
+          ))
+        )
+      ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
         </div>
@@ -9238,11 +10133,16 @@ function AnnoncesSection({ currentUserId, annonces, loading, onNew }: {
 function VocauxSection({
   currentUserId, onOpenConversation,
   voiceChannels, activeVoiceChannel, onJoinVoice, onLeaveVoice,
+  channelDirects = {}, onStartLive, canStartLive,
 }: SectionSharedProps & {
   voiceChannels: any[];
   activeVoiceChannel: string | null;
   onJoinVoice: (channelId: string) => void;
   onLeaveVoice: () => void;
+  /** ⭐ V6 — directs en cours par canal (Go Live, parité Yeshua). */
+  channelDirects?: Record<string, { by: string; streamId: string; hostId: string; startedAt?: string }>;
+  onStartLive?: (channelId: string) => void;
+  canStartLive?: string;
 }) {
   // ⭐ V4 — CANAUX VOCAUX Discord-style (porté de Yeshua) : rejoignables en un
   //    clic, micro + locuteurs actifs + participants via la chaîne média.
@@ -9251,6 +10151,28 @@ function VocauxSection({
   //    (GET /chat/v2/files?type=audio).
   const [audioFiles, setAudioFiles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // ⭐ V6 — lecteur audio FONCTIONNEL des messages vocaux (le bouton Lecture
+  //    ne faisait rien — e.stopPropagation() seul). Un élément <audio> unique
+  //    réutilisé : lecture/pause, retour à l'icône Lecture à la fin.
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+
+  const togglePlayAudio = (id: string, url: string) => {
+    if (playingId === id) {
+      audioElRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    try {
+      if (!audioElRef.current) audioElRef.current = new Audio();
+      const el = audioElRef.current;
+      el.src = url;
+      el.onended = () => setPlayingId(null);
+      el.onerror = () => { setPlayingId(null); toast.error('Lecture du vocal impossible'); };
+      el.play().catch(() => setPlayingId(null));
+      setPlayingId(id);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -9282,13 +10204,14 @@ function VocauxSection({
         voiceChannels.map(vc => {
           const joined = activeVoiceChannel === vc.id;
           const isStage = vc.type === 'STAGE';
+          const direct = channelDirects[vc.id];
           return (
             <div key={vc.id} className={cn(
               'flex items-center gap-2.5 p-2.5 rounded-xl mb-1 transition-colors border',
-              joined ? 'bg-[#E6F4FF] border-[#3B9EFF]/30' : 'border-transparent hover:bg-slate-50',
+              joined ? 'bg-[#E6F4FF] border-[#3B9EFF]/30' : direct ? 'bg-emerald-50/60 border-emerald-200' : 'border-transparent hover:bg-slate-50',
             )}>
               <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                joined ? 'bg-[#FFE08A]' : isStage ? 'bg-purple-100' : 'bg-gradient-to-br from-[#CFA63A] to-[#FFE08A]',
+                joined ? 'bg-[#FFE08A]' : direct ? 'bg-emerald-500' : isStage ? 'bg-purple-100' : 'bg-gradient-to-br from-[#CFA63A] to-[#FFE08A]',
               )}>
                 <Radio className={cn('w-4 h-4', joined ? 'text-[#0A2A5E]' : 'text-white')} />
               </div>
@@ -9296,13 +10219,40 @@ function VocauxSection({
                 <div className="text-sm font-semibold text-slate-900 truncate flex items-center gap-1.5">
                   {vc.name || 'Canal'}
                   {isStage && <span className="text-[8px] px-1 rounded bg-purple-100 text-purple-700 font-bold uppercase">Scène</span>}
+                  {/* ⭐ V6 — badge DIRECT EN COURS (parité Yeshua : pastille verte) */}
+                  {direct && (
+                    <span className="relative flex items-center gap-1 text-[8px] px-1.5 py-px rounded bg-emerald-500 text-white font-bold uppercase flex-shrink-0">
+                      <span className="w-1 h-1 rounded-full bg-white animate-pulse" />
+                      Live
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-slate-500">
-                  {vc.activeUsers || 0} connecté{(vc.activeUsers || 0) > 1 ? 's' : ''}
+                  {direct
+                    ? `${direct.by} diffuse en direct`
+                    : `${vc.activeUsers || 0} connecté${(vc.activeUsers || 0) > 1 ? 's' : ''}`}
                   {vc.videoMode ? ' · vidéo' : ''}
                 </div>
               </div>
-              {joined ? (
+              {/* ⭐ V6 — Rejoindre le direct / Lancer un direct */}
+              {direct ? (
+                joined ? (
+                  <button
+                    onClick={onLeaveVoice}
+                    className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-red-50 text-red-600 hover:bg-red-100 flex-shrink-0"
+                  >
+                    Quitter
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onJoinVoice(vc.id)}
+                    className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-emerald-500 text-white hover:bg-emerald-600 flex-shrink-0"
+                    title={`Rejoindre le direct de ${direct.by}`}
+                  >
+                    Rejoindre
+                  </button>
+                )
+              ) : joined ? (
                 <button
                   onClick={onLeaveVoice}
                   className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-red-50 text-red-600 hover:bg-red-100 flex-shrink-0"
@@ -9310,12 +10260,23 @@ function VocauxSection({
                   Quitter
                 </button>
               ) : (
-                <button
-                  onClick={() => onJoinVoice(vc.id)}
-                  className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-[#E6F4FF] text-[#1677FF] hover:bg-[#D0E8FF] flex-shrink-0"
-                >
-                  Rejoindre
-                </button>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {onStartLive && vc.createdBy === canStartLive && (
+                    <button
+                      onClick={() => onStartLive(vc.id)}
+                      className="px-2 py-1 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100"
+                      title="Lancer un direct dans ce canal"
+                    >
+                      Direct
+                    </button>
+                  )}
+                  <button
+                    onClick={() => onJoinVoice(vc.id)}
+                    className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-[#E6F4FF] text-[#1677FF] hover:bg-[#D0E8FF] flex-shrink-0"
+                  >
+                    Rejoindre
+                  </button>
+                </div>
               )}
             </div>
           );
@@ -9353,10 +10314,12 @@ function VocauxSection({
                 <div className="text-xs text-slate-500 truncate">{f.senderName} · {f.createdAt ? formatTime(f.createdAt) : ''}</div>
               </div>
               <span
-                onClick={(e) => { e.stopPropagation(); }}
-                className="w-8 h-8 rounded-full bg-[#1677FF] text-white flex items-center justify-center flex-shrink-0"
+                onClick={(e) => { e.stopPropagation(); togglePlayAudio(f.id, abs); }}
+                className={cn('w-8 h-8 rounded-full text-white flex items-center justify-center flex-shrink-0',
+                  playingId === f.id ? 'bg-[#0958D9] animate-pulse' : 'bg-[#1677FF]')}
+                title={playingId === f.id ? 'Pause' : 'Écouter'}
               >
-                <Play className="w-3.5 h-3.5" />
+                {playingId === f.id ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
               </span>
             </button>
           );

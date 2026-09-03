@@ -115,6 +115,11 @@ export interface User {
   schoolGroupId?: string;
   staffId?: string;
   createdAt: string;
+  // ⭐ V6 — libellé de rôle lisible renvoyé par l'API (ex: « Directeur »,
+  //    « Enseignant », « Parent ») — utilisé par Helm Connect (profils,
+  //    vérifications de privilèges de modération).
+  roleLabel?: string;
+  avatarUrl?: string;
 }
 
 export interface AuthSession {

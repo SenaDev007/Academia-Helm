@@ -1,18 +1,29 @@
 // ============================================================================
-// RINGTONE SERVICE — Soft phone ringtones for Helm Connect mobile (V3-11)
+// RINGTONE SERVICE — Sonneries IDENTIQUES à Yeshua Connect (V6)
 // ============================================================================
-// Mirrors the web WhatsAppChat.tsx ringtone logic (Web Audio API) but for
-// Flutter using the audioplayers package. Two distinct soft tones:
-//   - Outgoing (caller): single gentle G4 beep every 2s ("calling... calling...")
-//   - Incoming (callee): classic double-ring C5+E5 chord every 3s (ring ring)
+// ⭐ V6 (demande explicite : « la même sonnerie » partout) :
 //
-// ⭐ V3-11 FIX: Previous implementation used BytesSource + lowLatency mode
-//   which fails silently on many Android devices because the AudioTrack
-//   can't be reconfigured for repeated short clips. We now WRITE the WAV
-//   to a temp file and play it with the default (media player) mode, which
-//   is more reliable across Android 9-14.
+//   • ENTRANT (audio ET vidéo) = le bi-bip WebAudio de Yeshua Connect (web,
+//     IncomingCallOverlay) : deux bursts sinusoïdaux — 880 Hz à t=0 puis
+//     660 Hz à t=0,45 s — chacun 0,4 s avec l'enveloppe exponentielle EXACTE
+//     0,001 → 0,25 (en 0,03 s) → 0,001 (à 0,38 s), répétés toutes les 2 s.
 //
-// Pattern:
+//   • SORTANT (audio ET vidéo) = le FICHIER ringback.wav de Yeshua Connect
+//     (public/sounds/ringback.wav — 6 s, 8 kHz, mono, 16 bits — copie
+//     octet-octet dans assets/sounds/), joué EN BOUCLE à volume 0,5.
+//
+//   Comme dans Yeshua : même son pour l'audio et la vidéo, pas de sonnerie
+//   distincte par type d'appel — la distinction visuelle reste à l'écran.
+//
+// Implémentation Flutter : audioplayers.
+//   - Sortant : AssetSource + ReleaseMode.loop (boucle NATIVE du fichier,
+//     exactement comme <audio loop> sur le web).
+//   - Entrant : WAV généré en mémoire avec les paramètres exacts de Yeshua
+//     (fréquences, offsets, enveloppe exponentielle), rejoué toutes les 2 s
+//     via un Timer.periodic — l'équivalent fidèle du setInterval(playBurst,
+//     2000) de Yeshua.
+//
+// Pattern :
 //   - Singleton instance per CallService
 //   - Fire-and-forget (errors logged, never thrown)
 //   - Auto-stops when the call state transitions to active/idle
@@ -35,16 +46,31 @@ class RingtoneService {
   bool _isPlaying = false;
   String? _currentMode;
 
-  /// Pre-generated WAV file paths for the two ringtone modes.
-  String? _outgoingWavPath;
+  /// WAV du bi-bip ENTRANT Yeshua (généré en mémoire, paramètres exacts).
   String? _incomingWavPath;
 
-  /// Generate a short WAV file in memory with the given frequencies.
-  Uint8List _generateWav({
-    required List<({double freq, double start, double duration, double volume})> tones,
-    required double totalDuration,
-    required int sampleRate,
-  }) {
+  /// ─── Enveloppe exponentielle EXACTE de Yeshua (WebAudio) ───────────────
+  ///   gain(t) = 0,001 … 0,03 s → rampes EXPONENTIELLES → 0,25, puis → 0,001
+  ///   à 0,38 s, constant jusqu'à 0,4 s.
+  double _yeshuaEnvelope(double localT) {
+    if (localT < 0) return 0.0001;
+    if (localT < 0.03) {
+      // exponentialRamp 0.001 → 0.25 sur 0,03 s
+      return 0.001 * math.pow(0.25 / 0.001, localT / 0.03);
+    }
+    if (localT < 0.38) {
+      // exponentialRamp 0.25 → 0.001 de 0,03 s à 0,38 s
+      final t = (localT - 0.03) / 0.35;
+      return 0.25 * math.pow(0.001 / 0.25, t);
+    }
+    if (localT < 0.40) return 0.001;
+    return 0.0001; // silence après 0,4 s (osc.stop)
+  }
+
+  /// Génère le WAV du bi-bip Yeshua : 880 Hz @ 0 s + 660 Hz @ 0,45 s,
+  /// chacun 0,4 s, 44 100 Hz / 16 bits / mono (burst de 0,85 s).
+  Uint8List _generateYeshuaIncomingWav({int sampleRate = 44100}) {
+    const double totalDuration = 0.85;
     final numSamples = (totalDuration * sampleRate).round();
     final dataSize = numSamples * 2; // 16-bit mono
     final bytes = <int>[];
@@ -54,12 +80,14 @@ class RingtoneService {
         bytes.add(s.codeUnitAt(i));
       }
     }
+
     void writeUint32(int v) {
       bytes.add(v & 0xFF);
       bytes.add((v >> 8) & 0xFF);
       bytes.add((v >> 16) & 0xFF);
       bytes.add((v >> 24) & 0xFF);
     }
+
     void writeUint16(int v) {
       bytes.add(v & 0xFF);
       bytes.add((v >> 8) & 0xFF);
@@ -70,24 +98,29 @@ class RingtoneService {
     writeString('WAVE');
     writeString('fmt ');
     writeUint32(16); // fmt chunk size
-    writeUint16(1);  // PCM
-    writeUint16(1);  // mono
+    writeUint16(1); // PCM
+    writeUint16(1); // mono
     writeUint32(sampleRate);
     writeUint32(sampleRate * 2); // byte rate
-    writeUint16(2);  // block align
+    writeUint16(2); // block align
     writeUint16(16); // bits per sample
     writeString('data');
     writeUint32(dataSize);
 
+    // Les DEUX bursts de Yeshua : [880 Hz @ 0] et [660 Hz @ 0,45 s]
+    const bursts = [
+      (freq: 880.0, offset: 0.0),
+      (freq: 660.0, offset: 0.45),
+    ];
+
     for (int i = 0; i < numSamples; i++) {
       final t = i / sampleRate;
       double sample = 0;
-      for (final tone in tones) {
-        if (t >= tone.start && t < tone.start + tone.duration) {
-          final localT = t - tone.start;
-          final progress = localT / tone.duration;
-          final envelope = math.sin(math.pi * progress);
-          sample += math.sin(2 * math.pi * tone.freq * localT) * tone.volume * envelope;
+      for (final b in bursts) {
+        final localT = t - b.offset;
+        if (localT >= 0 && localT < 0.4) {
+          final env = _yeshuaEnvelope(localT);
+          sample += math.sin(2 * math.pi * b.freq * localT) * env;
         }
       }
       final clamped = (sample * 32767).clamp(-32768, 32767).toInt();
@@ -98,45 +131,20 @@ class RingtoneService {
     return Uint8List.fromList(bytes);
   }
 
-  /// ⭐ V3-11: Generate the WAV files ONCE and write them to temp dir.
-  ///   Subsequent plays reuse the same file path (no regeneration).
-  Future<void> _ensureWavsGenerated() async {
-    if (_outgoingWavPath != null && _incomingWavPath != null &&
-        await File(_outgoingWavPath!).exists() && await File(_incomingWavPath!).exists()) {
+  /// Génère (une seule fois) le WAV entrant dans le répertoire temporaire.
+  Future<void> _ensureIncomingWav() async {
+    if (_incomingWavPath != null && await File(_incomingWavPath!).exists()) {
       return;
     }
     try {
       final tempDir = await getTemporaryDirectory();
-      // Outgoing: single gentle G4 (392 Hz) beep, 0.5s, low volume
-      final outgoingWav = _generateWav(
-        tones: [
-          (freq: 392.0, start: 0.0, duration: 0.5, volume: 0.08),
-        ],
-        totalDuration: 0.5,
-        sampleRate: 22050,
-      );
-      final outgoingPath = '${tempDir.path}/helm_ringtone_outgoing.wav';
-      await File(outgoingPath).writeAsBytes(outgoingWav);
-      _outgoingWavPath = outgoingPath;
-
-      // Incoming: two short rings (C5 + E5 chord) every 3s
-      final incomingWav = _generateWav(
-        tones: [
-          (freq: 523.25, start: 0.0, duration: 0.4, volume: 0.10),
-          (freq: 659.25, start: 0.0, duration: 0.4, volume: 0.08),
-          (freq: 523.25, start: 0.6, duration: 0.4, volume: 0.10),
-          (freq: 659.25, start: 0.6, duration: 0.4, volume: 0.08),
-        ],
-        totalDuration: 1.0,
-        sampleRate: 22050,
-      );
-      final incomingPath = '${tempDir.path}/helm_ringtone_incoming.wav';
-      await File(incomingPath).writeAsBytes(incomingWav);
-      _incomingWavPath = incomingPath;
-
-      debugPrint('SUCCESS: Ringtone WAVs generated at $outgoingPath and $incomingPath');
+      final wav = _generateYeshuaIncomingWav();
+      final path = '${tempDir.path}/helm_ringtone_yeshua_incoming.wav';
+      await File(path).writeAsBytes(wav);
+      _incomingWavPath = path;
+      debugPrint('RingtoneService: bi-bip Yeshua (880/660 Hz) généré → $path');
     } catch (e) {
-      debugPrint('WARN: Ringtone WAV generation failed: $e');
+      debugPrint('WARN: Yeshua incoming WAV generation failed: $e');
     }
   }
 
@@ -146,35 +154,38 @@ class RingtoneService {
     await stop();
 
     try {
-      await _ensureWavsGenerated();
-      final wavPath = mode == 'incoming' ? _incomingWavPath : _outgoingWavPath;
-      if (wavPath == null) {
-        debugPrint('WARN: Ringtone WAV path is null — cannot play');
-        return;
-      }
-
-      final loopInterval = mode == 'incoming'
-          ? const Duration(seconds: 3)
-          : const Duration(seconds: 2);
-
-      // ⭐ V3-11: Use default media player mode (not lowLatency) for reliability
-      await _player.setReleaseMode(ReleaseMode.stop);
-      await _player.setVolume(0.5);
-      // Use DeviceFileSource — reliable on Android 9-14
-      await _player.play(DeviceFileSource(wavPath));
-
-      _timer = Timer.periodic(loopInterval, (_) async {
-        try {
-          await _player.stop();
-          await _player.play(DeviceFileSource(wavPath));
-        } catch (e) {
-          debugPrint('WARN: Ringtone loop play failed: $e');
+      if (mode == 'incoming') {
+        // ── Yeshua : bi-bip 880/660 Hz, burst de 0,85 s TOUTES LES 2 s ──
+        await _ensureIncomingWav();
+        final wavPath = _incomingWavPath;
+        if (wavPath == null) {
+          debugPrint('WARN: incoming WAV path is null — cannot play');
+          return;
         }
-      });
+        await _player.setReleaseMode(ReleaseMode.stop);
+        await _player.setVolume(1.0); // le gain est DÉJÀ dans l'enveloppe (0,25 max, comme Yeshua)
+        await _player.play(DeviceFileSource(wavPath));
+        // setInterval(playBurst, 2000) — le burst dure 0,85 s, pause 1,15 s.
+        _timer = Timer.periodic(const Duration(seconds: 2), (_) async {
+          try {
+            await _player.stop();
+            await _player.play(DeviceFileSource(wavPath));
+          } catch (e) {
+            debugPrint('WARN: ringtone loop play failed: $e');
+          }
+        });
+      } else {
+        // ── Yeshua : ringback.wav (fichier réel), boucle, volume 0,5 ──
+        // ReleaseMode.loop = boucle NATIVE du fichier 6 s — l'équivalent
+        // exact du <audio src="/sounds/ringback.wav" loop> du web Yeshua.
+        await _player.setReleaseMode(ReleaseMode.loop);
+        await _player.setVolume(0.5);
+        await _player.play(AssetSource('sounds/ringback.wav'));
+      }
 
       _isPlaying = true;
       _currentMode = mode;
-      debugPrint('SUCCESS: Ringtone started (mode=$mode)');
+      debugPrint('SUCCESS: Yeshua ringtone started (mode=$mode)');
     } catch (e) {
       debugPrint('WARN: Ringtone start failed: $e');
     }
@@ -186,6 +197,7 @@ class RingtoneService {
     _timer = null;
     try {
       await _player.stop();
+      await _player.setReleaseMode(ReleaseMode.stop);
     } catch (e) {
       debugPrint('WARN: Ringtone stop failed: $e');
     }

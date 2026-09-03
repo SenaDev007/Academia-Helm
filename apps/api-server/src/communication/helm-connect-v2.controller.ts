@@ -48,6 +48,9 @@ import { CallSignalService } from './services/call-signal.service';
 import { CommunicationPermissionsService } from './services/communication-permissions.service';
 // ⭐ V5 (chantier 8) — ATLAS dans le chat
 import { ChatAtlasService } from './services/chat-atlas.service';
+// ⭐ V6 (spec §8) — SARA (rédaction assistée) : le service était enregistré
+//    dans le module mais AUCUN contrôleur ne l'exposait → inaccessible.
+import { CommunicationSaraService } from './services/communication-sara.service';
 
 /** Rôles autorisés à modifier la politique de contact du tenant. */
 const POLICY_ADMIN_ROLES = new Set([
@@ -72,6 +75,8 @@ export class HelmConnectV2Controller {
     private readonly permissionsService: CommunicationPermissionsService,
     // ⭐ V5 (chantier 8) — ATLAS dans le chat
     private readonly chatAtlasService: ChatAtlasService,
+    // ⭐ V6 (spec §8) — SARA (rédaction assistée)
+    private readonly saraService: CommunicationSaraService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -296,6 +301,73 @@ export class HelmConnectV2Controller {
     );
     const stats = await this.filesCenterService.getUserFilesStats(tenantId, userId);
     return { files, stats, type: fileType };
+  }
+
+  /** ⭐ V6 (spec §22) — GET /chat/v2/links — tous les liens partagés (transverse). */
+  @Get('links')
+  async getUserLinks(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.filesCenterService.getUserLinks(
+      tenantId, userId, limit ? Math.min(parseInt(limit, 10) || 100, 200) : 100,
+    );
+  }
+
+  /** ⭐ V6 (spec §22) — GET /chat/v2/pinned — tous les messages épinglés (transverse). */
+  @Get('pinned')
+  async getUserPinned(
+    @TenantId() tenantId: string,
+    @Query('userId') userId: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!userId) throw new BadRequestException('userId is required');
+    return this.filesCenterService.getUserPinned(
+      tenantId, userId, limit ? Math.min(parseInt(limit, 10) || 100, 200) : 100,
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V6 (spec §8) — SARA : assistante de rédaction (avant inaccessible)
+  // ═════════════════════════════════════════════════════════════════
+
+  /** POST /chat/v2/sara/draft — rédiger un message à partir d'un contexte. */
+  @Post('sara/draft')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async saraDraft(
+    @Body() body: { intent: string; targetAudience: string; tone?: string; keyPoints?: string[]; language?: string },
+  ) {
+    if (!body.intent || !body.targetAudience) throw new BadRequestException('intent et targetAudience requis');
+    const tones = ['professional', 'friendly', 'urgent', 'empathetic'] as const;
+    const tone = tones.includes(body.tone as any) ? body.tone as typeof tones[number] : 'professional';
+    return this.saraService.draftMessage({
+      intent: body.intent,
+      targetAudience: body.targetAudience,
+      tone,
+      keyPoints: Array.isArray(body.keyPoints) ? body.keyPoints : [],
+      language: body.language === 'en' ? 'en' : 'fr',
+    });
+  }
+
+  /** POST /chat/v2/sara/refine — améliorer un texte existant. */
+  @Post('sara/refine')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async saraRefine(
+    @Body() body: { content: string; instruction: string },
+  ) {
+    if (!body.content || !body.instruction) throw new BadRequestException('content et instruction requis');
+    return this.saraService.refineContent(body.content, body.instruction);
+  }
+
+  /** POST /chat/v2/sara/recommend-channel — canal recommandé pour un message. */
+  @Post('sara/recommend-channel')
+  async saraRecommendChannel(
+    @Body() body: { messageType: string; priority: string },
+  ) {
+    if (!body.messageType || !body.priority) throw new BadRequestException('messageType et priority requis');
+    return this.saraService.recommendChannel(body.messageType, body.priority);
   }
 
   /** GET /chat/v2/call-history — historique d'appels (toutes conversations). */

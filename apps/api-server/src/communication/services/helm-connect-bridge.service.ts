@@ -985,4 +985,182 @@ export class HelmConnectNotificationBridgeService {
       return 'Academia Helm';
     }
   }
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  ⭐ V6 (spec §23) — INTÉGRATION SCOLARITÉ / PLANNING / FINANCE
+  //  Complète les 4 événements existants (absences/examens/bulletins/
+  //  discipline) : ces 3 nouveaux ponts couvrent Scolarité, Planning et
+  //  Finance → notifications Helm Connect (cloche + push web + FCM mobile).
+  // ═════════════════════════════════════════════════════════════════════
+
+  /**
+   * SCOLARITÉ — Nouvelle inscription d'un élève dans une classe :
+   * notifie la direction + les enseignants de la classe.
+   */
+  async notifyEnrollmentCreated(payload: {
+    tenantId: string;
+    studentId: string;
+    studentName: string;
+    classId?: string;
+    className?: string;
+    triggeredByUserId?: string;
+  }): Promise<BridgeNotificationResult> {
+    const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
+    try {
+      const staff = await this.resolveClassStaff(payload.tenantId, payload.classId);
+      if (staff.length === 0) {
+        result.channels.inApp = { status: 'skipped', error: 'No staff to notify' };
+        return result;
+      }
+      const classLabel = payload.className || 'la classe';
+      await Promise.all(
+        staff.map((userId) =>
+          this.notificationService
+            .create({
+              tenantId: payload.tenantId,
+              recipientId: userId,
+              type: 'ENROLLMENT_CREATED',
+              title: `Nouvelle inscription — ${payload.studentName}`,
+              body: `${payload.studentName} a été inscrit(e) en ${classLabel}.`,
+              priority: 'MEDIUM',
+              data: { url: '/app/scolarite', studentId: payload.studentId, classId: payload.classId },
+              relatedEntityType: 'Student',
+              relatedEntityId: payload.studentId,
+            })
+            .catch((e) => this.logger.warn(`notifyEnrollmentCreated: in-app failed: ${e.message}`)),
+        ),
+      );
+      result.channels.inApp = { status: 'sent', recipientsCount: staff.length };
+      this.logger.log(`notifyEnrollmentCreated: ${payload.studentName} → ${staff.length} staff`);
+    } catch (err: any) {
+      this.logger.error(`notifyEnrollmentCreated erreur: ${err.message}`);
+    }
+    return result;
+  }
+
+  /**
+   * PLANNING — Emploi du temps publié/mis à jour pour une classe :
+   * notifie les parents (changement d'horaires) et les enseignants de la classe.
+   */
+  async notifyTimetablePublished(payload: {
+    tenantId: string;
+    classId: string;
+    className?: string;
+    effectiveFrom?: Date;
+    triggeredByUserId?: string;
+  }): Promise<BridgeNotificationResult> {
+    const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
+    try {
+      const [parents, staff] = await Promise.all([
+        this.resolveClassParents(payload.tenantId, payload.classId),
+        this.resolveClassStaff(payload.tenantId, payload.classId),
+      ]);
+      const classLabel = payload.className || 'la classe';
+      const dateStr = payload.effectiveFrom
+        ? payload.effectiveFrom.toLocaleDateString('fr-FR')
+        : 'prochainement';
+      const recipients = parents.map(p => p.userId).concat(staff);
+      if (recipients.length === 0) {
+        result.channels.inApp = { status: 'skipped', error: 'No recipients' };
+        return result;
+      }
+      await Promise.all(
+        recipients.map((userId: string) =>
+          this.notificationService
+            .create({
+              tenantId: payload.tenantId,
+              recipientId: userId,
+              type: 'TIMETABLE_PUBLISHED',
+              title: `Nouvel emploi du temps — ${classLabel}`,
+              body: `L'emploi du temps de ${classLabel} a été publié. Il prend effet le ${dateStr}.`,
+              priority: 'MEDIUM',
+              data: { url: '/app/planning', classId: payload.classId },
+              relatedEntityType: 'Timetable',
+              relatedEntityId: payload.classId,
+            })
+            .catch((e) => this.logger.warn(`notifyTimetablePublished: in-app failed: ${e.message}`)),
+        ),
+      );
+      result.channels.inApp = { status: 'sent', recipientsCount: recipients.length };
+      this.logger.log(`notifyTimetablePublished: ${classLabel} → ${recipients.length} destinataires`);
+    } catch (err: any) {
+      this.logger.error(`notifyTimetablePublished erreur: ${err.message}`);
+    }
+    return result;
+  }
+
+  /**
+   * FINANCE — Paiement encaissé : confirme au parent (tuteur) du paiement.
+   * (Rappel d'échéance disponible via le même pont : amount=0 + isReminder.)
+   */
+  async notifyPaymentReceived(payload: {
+    tenantId: string;
+    studentId: string;
+    studentName?: string;
+    guardianUserId?: string;
+    amount: number;
+    currency?: string;
+    paymentRef?: string;
+    isReminder?: boolean;
+    triggeredByUserId?: string;
+  }): Promise<BridgeNotificationResult> {
+    const result: BridgeNotificationResult = { channels: {}, parentContact: { found: false } };
+    try {
+      // Destinataire : tuteur fourni, sinon on résout le tuteur principal de l'élève
+      let recipients: Array<{ userId: string; phone?: string; name?: string }> = [];
+      if (payload.guardianUserId) {
+        recipients = [{ userId: payload.guardianUserId }];
+      } else {
+        // Tuteur principal de l'élève (studentGuardian → guardian.user)
+        const sg = await this.prisma.studentGuardian.findFirst({
+          where: { studentId: payload.studentId, tenantId: payload.tenantId },
+          orderBy: [{ isPrimary: 'desc' }],
+          include: { guardian: { select: { userId: true, user: { select: { phone: true, firstName: true, lastName: true } } } } },
+        }).catch(() => null);
+        const guardianUser: any = (sg as any)?.guardian?.user;
+        if (sg?.guardian?.userId) {
+          recipients = [{
+            userId: sg.guardian.userId,
+            phone: guardianUser?.phone || undefined,
+            name: `${guardianUser?.firstName || ''} ${guardianUser?.lastName || ''}`.trim() || undefined,
+          }];
+        }
+      }
+      if (recipients.length === 0) {
+        result.channels.inApp = { status: 'skipped', error: 'No guardian found' };
+        return result;
+      }
+      const amountStr = `${payload.amount.toLocaleString('fr-FR')} ${payload.currency || 'FCFA'}`;
+      const isReminder = !!payload.isReminder;
+      await Promise.all(
+        recipients.map((r) =>
+          this.notificationService
+            .create({
+              tenantId: payload.tenantId,
+              recipientId: r.userId,
+              type: isReminder ? 'FEE_REMINDER' : 'PAYMENT_RECEIVED',
+              title: isReminder ? `Rappel d'échéance — ${amountStr}` : `Paiement reçu — ${amountStr}`,
+              body: isReminder
+                ? `Une échéance de ${amountStr} est attendue${payload.studentName ? ` pour ${payload.studentName}` : ''}.`
+                : `Nous confirmons la réception de votre paiement de ${amountStr}${payload.studentName ? ` pour ${payload.studentName}` : ''}. Merci !`,
+              priority: isReminder ? 'HIGH' : 'MEDIUM',
+              data: {
+                url: '/app/finance',
+                studentId: payload.studentId,
+                paymentRef: payload.paymentRef,
+                amount: payload.amount,
+              },
+              relatedEntityType: 'Payment',
+              relatedEntityId: payload.paymentRef || payload.studentId,
+            })
+            .catch((e) => this.logger.warn(`notifyPaymentReceived: in-app failed: ${e.message}`)),
+        ),
+      );
+      result.channels.inApp = { status: 'sent', recipientsCount: recipients.length };
+      this.logger.log(`notifyPaymentReceived: ${amountStr} → ${recipients.length} tuteur(s)`);
+    } catch (err: any) {
+      this.logger.error(`notifyPaymentReceived erreur: ${err.message}`);
+    }
+    return result;
+  }
 }

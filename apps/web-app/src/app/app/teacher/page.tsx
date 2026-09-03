@@ -27,7 +27,10 @@ export default function TeacherDashboardPage() {
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const teacherId = user?.id || "";
+  // ⭐ Profil Teacher pédagogique en priorité (double-casquette : rôle DB
+  //    administratif mais profil Teacher actif) ; fallback user.id — le
+  //    backend résout User→Teacher par email si teacherId absent.
+  const teacherId = user?.teacherId || user?.id || "";
 
   const loadClasses = useCallback(async () => {
     if (!academicYear?.id || !teacherId) return;

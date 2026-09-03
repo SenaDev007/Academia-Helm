@@ -140,26 +140,28 @@ export default function TeacherExamsPage() {
   // ─── Charger les évaluations de l'enseignant ──────────────────────────────
   const [resolvedTeacherId, setResolvedTeacherId] = useState<string | null>(null);
 
-  // ⭐ Résoudre user.id → Teacher.id via l'API pedagogy-space
-  // (même mécanisme que l'Espace Pédagogique qui fonctionne)
+  // ⭐ Résoudre user.id → Teacher.id : priorité à user.teacherId (renvoyé par
+  // le proxy de connexion portail enseignant — exact pour les doubles
+  // casquettes), sinon resolution backend via my-classes (User→Teacher par email)
   useEffect(() => {
     if (!user?.id || !academicYear?.id) return;
+    if (user?.teacherId) {
+      setResolvedTeacherId(user.teacherId);
+      return;
+    }
     apiClient
       .get('/pedagogy-space/my-classes', {
         params: { teacherId: user.id, academicYearId: academicYear.id },
       })
       .then(() => {
         // L'API pedagogy-space résout user.id → Teacher.id côté backend.
-        // On ne peut pas récupérer le Teacher.id directement depuis cette API,
-        // mais on sait que l'API evaluations doit aussi le faire.
-        // Donc on passe simplement user.id et le backend résoudra.
         setResolvedTeacherId(user.id);
       })
       .catch(() => {
         // Fallback: utiliser user.id directement
         setResolvedTeacherId(user.id);
       });
-  }, [user?.id, academicYear?.id]);
+  }, [user?.id, user?.teacherId, academicYear?.id]);
 
   const loadEvaluations = useCallback(async () => {
     if (!academicYear?.id) {

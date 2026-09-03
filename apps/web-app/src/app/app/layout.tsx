@@ -60,26 +60,22 @@ export default async function AppLayout({
 
   const user = session.user as User;
 
-  // ⭐ Rediriger les enseignants et parents vers leurs portails dédiés
-  // AVANT de rendre le PilotageLayout (qui contient la sidebar école).
+  // ⭐ Rediriger les utilisateurs des portails TEACHER/PARENT vers leurs portails
+  // dédiés AVANT de rendre le PilotageLayout (qui contient la sidebar école).
   //
-  // ⚠️ IMPORTANT : on utilise `getEffectivePortal()` qui fait gagner le portail
-  // CHOISI à la connexion (session.portalType / user.portal) sur le rôle DB.
-  // Cela permet à un enseignant qui est aussi parent d'élève de se connecter
-  // via le portail PARENT et d'atterrir sur /app/parent, même si son user.role
-  // en DB est 'TEACHER'.
-  const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
-  const parentRoles = ['PARENT', 'STUDENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE'];
-  const isTeacherOrParent = teacherRoles.includes(user.role) || parentRoles.includes(user.role);
-
-  // Pour les routes /app/teacher et /app/parent, on rend directement
-  // les children SANS le PilotageLayout (ils ont leur propre layout).
-  // ⭐ FIX : le middleware set x-path de manière fiable sur TOUTES les réponses
+  // ⚠️ FIX DOUBLE-CASQUETTE : on évalue `getEffectivePortal()` pour TOUS les
+  // utilisateurs, pas seulement ceux dont le rôle DB est enseignant/parent.
+  // Le portail CHOISI à la connexion (session.portalType / user.portal) prévaut
+  // sur le rôle DB : un personnel cumulant un poste administratif (rôle DB
+  // DIRECTOR/DIRECTEUR/...) et un poste d'enseignement qui se connecte via le
+  // PORTAIL ENSEIGNANT (matricule) doit atterrir sur /app/teacher, même si son
+  // user.role en DB est administratif. Inversement, connecté via le portail
+  // ÉCOLE (email), il atterrit sur l'UI école.
   const allHeaders = await headers();
   const reqPath = allHeaders.get('x-path') || '';
   const isOnDedicatedPortal = reqPath.includes('/app/teacher') || reqPath.includes('/app/parent');
 
-  if (isTeacherOrParent && !isOnDedicatedPortal) {
+  if (!isOnDedicatedPortal) {
     // ⭐ Résoudre le portail effectif : portalType de session > user.portal > role-based fallback
     const effectivePortal = getEffectivePortal(
       user.role,
@@ -92,7 +88,7 @@ export default async function AppLayout({
       redirect('/app/teacher');
     }
     // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le PilotageLayout
-    // (cas normal pour un admin/directeur qui se connecte via portail école).
+    // (cas normal : connexion via portail école ou login standard).
   }
 
   // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement

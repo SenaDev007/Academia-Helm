@@ -32,31 +32,28 @@ export default async function AppPage() {
 
   const user = session.user as User;
 
-  // ⭐ Rediriger les enseignants et parents vers leurs portails dédiés.
+  // ⭐ Rediriger les utilisateurs des portails TEACHER/PARENT vers leurs portails dédiés.
   //
-  // ⚠️ IMPORTANT : on utilise `getEffectivePortal()` qui fait gagner le portail
-  // CHOISI à la connexion (session.portalType / user.portal) sur le rôle DB.
-  // Un enseignant qui est aussi parent d'élève et qui se connecte via le portail
-  // PARENT doit atterrir sur /app/parent, même si son user.role est 'TEACHER'.
-  const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
-  const parentRoles = ['PARENT', 'STUDENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE'];
-  const isTeacherOrParent = teacherRoles.includes(user.role) || parentRoles.includes(user.role);
+  // ⚠️ FIX DOUBLE-CASQUETTE : on utilise `getEffectivePortal()` pour TOUS les
+  // utilisateurs, pas seulement ceux dont le rôle DB est enseignant/parent.
+  // Le portail CHOISI à la connexion (session.portalType / user.portal) fait
+  // foi : un personnel cumulant un poste administratif (rôle DB DIRECTOR/
+  // DIRECTEUR/...) et un poste d'enseignement qui se connecte via le portail
+  // ENSEIGNANT (matricule) doit atterrir sur /app/teacher, même si son
+  // user.role en DB est administratif. Connecté via le portail ÉCOLE (email),
+  // il atterrit sur l'UI école (dashboard pilotage).
+  const effectivePortal = getEffectivePortal(
+    user.role,
+    (session as any)?.portalType || (user as any)?.portal,
+  );
 
-  if (isTeacherOrParent) {
-    const effectivePortal = getEffectivePortal(
-      user.role,
-      (session as any)?.portalType || (user as any)?.portal,
-    );
-
-    if (effectivePortal === 'PARENT') {
-      redirect('/app/parent');
-    } else if (effectivePortal === 'TEACHER') {
-      redirect('/app/teacher');
-    }
-    // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le dashboard
-    // (cas normal pour un admin/directeur qui a un rôle teacher en DB mais
-    // s'est connecté via le portail école).
+  if (effectivePortal === 'PARENT') {
+    redirect('/app/parent');
+  } else if (effectivePortal === 'TEACHER') {
+    redirect('/app/teacher');
   }
+  // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le dashboard
+  // (cas normal : admin/directeur connecté via portail école ou login standard).
 
   // Pour tous les autres rôles (direction, admin, finance, RH, etc.) on
   // affiche le tableau de bord de pilotage unifié.

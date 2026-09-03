@@ -114,6 +114,12 @@ export interface User {
   accessibleTenants?: Tenant[];
   schoolGroupId?: string;
   staffId?: string;
+  // ⭐ Profil Teacher pédagogique lié au compte (connexion portail enseignant
+  //    par matricule). Essentiel pour le personnel double-casquette : le rôle
+  //    DB reste administratif (DIRECTEUR, ...) mais l'UI enseignant charge les
+  //    classes/évaluations de CE profil Teacher (voir api/portal/auth/teacher).
+  teacherId?: string;
+  teacherMatricule?: string;
   createdAt: string;
   // ⭐ V6 — libellé de rôle lisible renvoyé par l'API (ex: « Directeur »,
   //    « Enseignant », « Parent ») — utilisé par Helm Connect (profils,

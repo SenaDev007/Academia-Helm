@@ -22,6 +22,10 @@ interface BackendResponse {
     role?: string;
     tenantId?: string;
   };
+  teacher?: {
+    id: string;
+    matricule: string;
+  };
   token: string;
   sessionId: string;
   portalType: string;
@@ -80,6 +84,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Construire l'objet user complet avec les champs requis
+    // ⭐ teacherId : le backend renvoie le profil Teacher pédagogique lié au
+    //    matricule utilisé — indispensable pour le personnel double-casquette
+    //    (rôle DB administratif + poste d'enseignement) : les pages de l'UI
+    //    enseignant (classes, pédagogie, saisie...) utilisent user.teacherId
+    //    en priorité et ainsi chargent les classes du profil Teacher, sans
+    //    dépendre d'une résolution User→Teacher par email côté backend.
     const user = {
       id: data.user.id,
       email: data.user.email,
@@ -88,6 +98,8 @@ export async function POST(request: NextRequest) {
       role: (data.user.role || 'USER') as any,
       portal: 'TEACHER' as any,
       tenantId: data.user.tenantId || tenantId,
+      teacherId: data.teacher?.id || undefined,
+      teacherMatricule: data.teacher?.matricule || undefined,
       permissions: [], // Sera chargé via /context/bootstrap
       createdAt: new Date().toISOString(),
     };

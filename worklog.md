@@ -9285,3 +9285,48 @@ Stage Summary:
 - Les identifiants de Saliou (CSPEBE-26-00008 / er7oNlc1b4o) fonctionnent sur
   les deux portails ; dawesakpovi84@gmail.com (CSPEBE-26-00009, enseignant pur)
   ne passe que le portail enseignant, conformément au design
+
+---
+Task ID: V6-Parity-Ringtones-Verification-Mobile
+Agent: main (Super Z, GLM)
+Task: Helm Connect V6 — sonneries 100% identiques à Yeshua Connect (web+mobile), pass de vérification complet (audit par 2 agents), correction de tous les gaps web découverts, et alignement mobile P0 (demande explicite utilisateur : « la même sonnerie... RASSURE TOI QUE TOUT EST IMPLEMENTÉ ET 100% FONCTIONNEL »)
+
+Work Log:
+- Environnement sandbox réinitialisé → re-clonage des 4 dépôts (Academia-Helm, Mouvement-Christ-Libere, yeshua-connect-mobile, Academia-Helm-mobile)
+- Découverte : V4 (c1a69d4) et V5 (af5043e) déjà poussés (sessions précédentes)
+- SONNERIES — analyse du code Yeshua :
+  * ENTRANTE (audio+vidéo) : bi-bip WebAudio (IncomingCallOverlay) — 880 Hz @ t=0 puis 660 Hz @ t=0,45 s, enveloppe exponentielle 0,001→0,25 (0,03 s)→0,001 (0,38 s), boucle 2 s + vibration 400 ms
+  * SORTANTE (audio+vidéo) : FICHIER public/sounds/ringback.wav (6 s, 8 kHz mono), <audio loop> volume 0,5 ; PAS de sonnerie en repli Jitsi
+- Sonneries WEB (WhatsAppChat.tsx) : playRingtone réécrit — incoming = copie exacte du code WebAudio Yeshua ; outgoing = new Audio('/sounds/ringback.wav') loop 0,5 ; stopRingtone gère audioEl+ctx+interval ; effet sonnerie : condition !jitsiFallback ajoutée (parité Yeshua !jitsiRoom) ; ringback.wav copié octet-octet (md5 identique)
+- Sonneries MOBILE (ringtone_service.dart) : réécriture complète — burst WAV généré avec enveloppe exponentielle EXACTE de Yeshua (880/660 Hz) + ringback.wav en ASSET avec ReleaseMode.loop ; pubspec assets/sounds déclaré
+- AUDIT de parité par 2 agents généraux en parallèle (web + mobile) — rapports complets
+- GAPS WEB corrigés (tous ceux trouvés sauf W10/W14 mineurs) :
+  * W1 Canaux (spec §6) : vue canal complète (messages+broadcast+abonnement, panneau droit, rail mobile)
+  * W2 Muet par conversation (spec §10) : cloche header + 1h/8h/24h/∞ + filtrage son/notif + liste dans prefs
+  * W3 Gestion membres (spec §3/§17) : menu ⋮ (rôle/sourdine/ban/kick/approbation) + onglet Gestion (mode lent + journal d'audit — états morts rendus)
+  * W4 Accusé distribué : /deliver appelé (socket + historique) → ✓✓ gris réel
+  * W5 Suppression pour tous : admins conversation + staff (AUDIT_PRIVILEGED_ROLES Yeshua)
+  * W6 Go Live : /chat/live-streams câblé — bandeau vert, Rejoindre/Arrêter, badge Live section Vocaux (polling 15 s)
+  * W7 Secours Jitsi VOIX : chaîne épuisée → jitsiFallback (avant : mesh inexistant → SANS AUDIO)
+  * W8 Annonces (spec §5) : pièces jointes réelles + expiresAt + rendu
+  * W9 Centre documentaire (spec §22) : onglets Documents/Liens/Épinglés + NOUVEAUX endpoints transverses GET /chat/v2/links + /chat/v2/pinned (files-center.service)
+  * W12 Ponts (spec §23) : notifyEnrollmentCreated + notifyTimetablePublished + notifyPaymentReceived/FEE_REMINDER
+  * W13 SARA (spec §8) : service était INACCESSIBLE → routes /chat/v2/sara/draft|refine|recommend-channel + bouton « Rédiger avec SARA » dans les annonces
+  * W16 : recherche interne saute au message ; lecteur Vocaux fonctionnel (play/pause)
+- FIX TECHNIQUE MAJEUR : useAutoSave.ts (JSX dans .ts) ARRÊTAIT tsc silencieusement depuis plusieurs versions (parse error = fin de vérification) → supprimé (doublon .tsx identique) ; 10 erreurs masquées corrigées dans WhatsAppChat (types User/ChatMessage/ChatUser étendus, TDZ jitsiFallback, refs null)
+- GAPS MOBILE P0 corrigés :
+  * M1 URLs pièces jointes (404) : ApiConfig.resolveFileUrl parité web + getPresence corrigé (backend renvoie un TABLEAU, cast Map = crash)
+  * M2 Annonces confirm-read → appel API réel
+  * M3 Recherche → personnes cliquables (createDirectConversation + navigation), conversations ouvertes réellement
+  * M4 FCM : enregistrement dès la 1re connexion + désenregistrement à la déconnexion
+  * M7 Sondages : options cliquables → vote API (optimiste + réconciliation)
+  * M8 Centre de notifications : nouvel écran complet (API existantes sans UI) + prefs accessibles
+  * M10 Présence réelle : API 30 s + socket user:online/offline + « vu il y a X » (avant « en ligne » en dur)
+- Vérifications : tsc web-app 0 erreur sur fichiers communication (764 erreurs préexistantes ailleurs inchangées) ; tsc api-server controller 0 erreur ; dart analyze 0 erreur syntaxique (8 fichiers, erreurs package:* attendues sans pub get)
+- Commits : V6 web (d873199) + V6 mobile (b69c484) poussés sur main
+
+Stage Summary:
+- Sonneries : EXACTEMENT identiques à Yeshua sur web ET mobile (fichier identique + synthèse identique)
+- Audit complet effectué : ~15 gaps web corrigés (canaux, muet, gestion, Go Live, Jitsi voix, SARA, ponts §23...) + 7 gaps mobiles P0
+- RESTE CONNU (non fait, budget contexte) : mobile M5 (câbler GroupCallService existant), M6 (signalisation REST appels mobile), M9 (écran membres/gestion groupe) ; web W10 (créneaux disponibilité UI), W14 (messages système MEMBER_LOG), W11 (2FA TOTP)
+- Le tsc de l'app web-vérifiaient RIEN depuis plusieurs versions (useAutoSave) — corrigé et nettoyé

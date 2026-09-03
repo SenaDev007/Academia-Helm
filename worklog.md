@@ -9221,3 +9221,67 @@ Stage Summary:
 - Le bug structurel cross-tenant est corrigé pour tous les futurs staffs
 - Le tenant de test « academia-helm » (quasi vide) a perdu son seul user — recréer un
   user de test si nécessaire
+
+---
+Task ID: WR-V4-dual-portal
+Agent: main (Super Z)
+Task: Garantir la double logique de connexion — portail école par EMAIL (poste administratif) / portail enseignant par MATRICULE — pour un personnel double-casquette
+
+Work Log:
+- Cloné le repo (état : commit 9775c0d7, WR-V2 + WR-V3 déjà poussés)
+- Diagnostic complet (scripts/diagnose_dual_portal_login.mjs sur base Neon prod) :
+  * Saliou AKPAKI (CSPEBE-26-00008) = cas réel double-casquette : Staff roleType=TEACHER
+    (Instituteur du Primaire) + StaffAdminAssignment DIRECTEUR @ MAT_PRI active
+    → User.role = DIRECTEUR_MAT_PRI
+  * Portail enseignant (matricule) : OK mais uniquement via le fallback « profil
+    teacher » (rôle DIRECTEUR_MAT_PRI absent de allowedTeacherRoles)
+  * Portail école (email) : OK mais uniquement via le DÉFAUT SCHOOL de
+    getAllowedPortalsForRole (DIRECTEUR_MAT_PRI dans AUCUNE liste)
+  * Flux réel portail école = POST /api/auth/login (auth.service.ts), PAS
+    /api/portal/auth/school (dead code côté frontend)
+- 3 bugs découverts et corrigés :
+  1. auth.service.ts login : select userId sur Teacher (champ INEXISTANT dans le
+     schéma) → erreur validation Prisma → crash 500 sur login par matricule sans
+     Staff. Corrigé : résolution par teacher.email
+  2. getAllowedPortalsForRole : ENSEIGNANT/PROFESSEUR absents des listes →
+     tombaient sur le défaut SCHOOL → un enseignant PUR pouvait se connecter au
+     portail école. Corrigé : ENSEIGNANT → TEACHER + rôles FR admin explicites
+     (DIRECTEUR, SECRETAIRE, SECRETAIRE_COMPTABLE, SURVEILLANT) + regex rôles
+     niveau-spécifiques → SCHOOL
+  3. loginSchool (portal-auth.service) : allowedRoles anglais obsolètes
+     ['DIRECTOR','SUPER_DIRECTOR','ADMIN','ACCOUNTANT'] → aucun rôle réel ne
+     matchait → remplacé par pattern FR/EN/niveau-spécifique + exception
+     enseignant avec affectation admin active (hasActiveAdminAssignment via
+     staff_admin_assignments) + message orientant vers le portail enseignant
+- loginTeacher durci : matricule trim + insensible casse, fallback Staff
+  (tenantMatricule/globalMatricule/employeeNumber → email → Teacher), User par
+  emails candidats insensibles casse (fix « Utilisateur associé non trouvé »),
+  rôles admin FR/EN/niveau-spécifiques acceptés (double casquette), messages
+  d'erreur clairs
+- UX : placeholder matricule réaliste (CSPEBE-26-00001 + format CODE-YY-XXXXX),
+  autoCapitalize characters ; proxy BFF school : portalType en session (cohérence
+  avec proxy teacher)
+- Vérifications : tsc api-server → 0 nouvelle erreur (TS2554 ligne 191
+  préexistant, confirmé par git stash) ; tsc web-app → 0 erreur sur fichiers
+  modifiés
+- Test E2E (scripts/test_dual_portal_login_logic.mjs, reproduit la logique des
+  services corrigés) : 17/17 OK sur base prod
+  * Saliou : portail enseignant par matricule ✅ (même en minuscules),
+    portail école par email ✅ (même avec casse différente), mauvais mdp refusé ✅
+  * Enseignant pur réel (CSPEBE-26-00009, role ENSEIGNANT, sans affectation
+    admin) : loginSchool REFUSÉ → orienté portail enseignant ✅
+  * Admin purs (SECRETAIRE, COMPTABLE, CENSEUR, SURVEILLANT,
+    SECRETAIRE_COMPTABLE_SEC, CENSEUR_MAT) → SCHOOL ✅
+  * PARENT → PARENT ✅, matricule inexistant / tenant inexistant → erreurs claires ✅
+- Commit a8e14b07 poussé sur main
+
+Stage Summary:
+- La règle demandée est désormais garantie ET explicite (plus de fallbacks
+  accidentels) : enseignant → portail enseignant par MATRICULE ; personnel
+  administratif → portail école par EMAIL ; double-casquette → les DEUX
+  portails avec les identifiants de chaque poste (même compte User, même mdp)
+- Un enseignant pur ne peut plus accéder au portail école (faille fermée)
+- Le crash Prisma latent (teacher.userId) est corrigé
+- Les identifiants de Saliou (CSPEBE-26-00008 / er7oNlc1b4o) fonctionnent sur
+  les deux portails ; dawesakpovi84@gmail.com (CSPEBE-26-00009, enseignant pur)
+  ne passe que le portail enseignant, conformément au design

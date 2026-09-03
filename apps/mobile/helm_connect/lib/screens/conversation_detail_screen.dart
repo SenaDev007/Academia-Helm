@@ -35,6 +35,11 @@ import '../services/call_service.dart';
 import 'call_screen.dart';
 
 // Stub for CryptoService (all methods are no-ops, encryption falls back to plaintext)
+// ⭐ V5 — appels de groupe + écran membres (import du service câblé)
+import '../services/group_call_service.dart';
+import 'group_call_screen.dart';
+import 'group_members_screen.dart';
+
 class CryptoService {
   static bool isEncrypted(String content) => false;
   static Future<String> decryptMessage(String content) async => content;
@@ -150,14 +155,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // ⭐ Socket.io: connect for realtime (replaces 10s polling)
     _initSocket();
     // ⭐ V3-5: Initialize WebRTC call service + bind socket callbacks
-    _callService = CallService(_socket);
+    _callService = CallService(_socket); // ⭐ V5 — singleton (factory)
+    // ⭐ V5 — le routeur d'événements du GroupCallService (singleton)
+    //    dispatche call:* vers le 1-1 OU le groupe selon le callId : les
+    //    appels (1-1 et groupe) sonnent depuis N'IMPORTE QUEL écran de l'app.
+    //    Le 1-1 par défaut du routeur est déjà CallService.instance.
     _callService.addListener(_onCallStateChanged);
-    // ⭐ Wrap async callbacks in sync closures (socket callbacks expect void Function)
-    _socket.onCallOffer = (data) => _callService.onIncomingCallOffer(data);
-    _socket.onCallAnswer = (data) { _callService.onCallAnswer(data); };
-    _socket.onCallIceCandidate = (data) { _callService.onIceCandidate(data); };
-    _socket.onCallReject = (data) => _callService.onCallReject();
-    _socket.onCallHangup = (data) => _callService.onCallHangup();
+    GroupCallService.instance.addListener(_onGroupCallStateChanged);
     // Polling fallback (reduced to 30s — Socket.io should deliver instantly)
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _loadMessages();
@@ -226,8 +230,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-5: Start an outgoing call (audio or video)
+  // ⭐ V5 : DIRECT → 1-1 avec signalisation REST (conversationId) ;
+  //    GROUP → appel de groupe via GroupCallService (mesh + REST).
   void _startCall(String callType) async {
-    if (widget.conversation.type == 'GROUP') return; // Group calls not supported yet
+    if (widget.conversation.type == 'GROUP') {
+      await _startGroupCall(callType);
+      return;
+    }
     final other = widget.conversation.participants.firstWhere(
       (p) => p.userId != _currentUserId,
       orElse: () => widget.conversation.participants.first,
@@ -235,15 +244,76 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     if (other.userId.isEmpty) return;
     final otherName = other.fullName.isNotEmpty ? other.fullName : 'Utilisateur';
     // Get my own name (for callerName payload parity with web)
-    final prefs = await SharedPreferences.getInstance();
-    final myName = prefs.getString('auth_user_email')?.split('@').first ?? 'Utilisateur';
+    final myName = await AuthService.getDisplayName();
     await _callService.startCall(
       otherUserId: other.userId,
       otherUserName: otherName,
       callType: callType,
       myName: myName,
+      conversationId: widget.conversation.id, // ⭐ V5 — signalisation REST
     );
     // The _onCallStateChanged listener will push CallScreen when state changes
+  }
+
+  // ⭐ V5 — Appel de GROUPE : sélection des participants si le groupe est
+  //    grand (mesh WebRTC ≤ 4-5 pairs), sinon invitation de tous les membres.
+  Future<void> _startGroupCall(String callType) async {
+    final others = widget.conversation.participants
+        .where((p) => p.userId != _currentUserId)
+        .toList();
+    if (others.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Aucun autre membre dans ce groupe'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+    final myName = await AuthService.getDisplayName();
+    final convName = widget.conversation.displayName;
+
+    if (others.length <= 4) {
+      await GroupCallService.instance.startGroupCall(
+        conversationId: widget.conversation.id,
+        myUserId: _currentUserId,
+        myName: myName,
+        callType: callType,
+        convName: convName,
+        invitees: others
+            .map((p) => (
+                  userId: p.userId,
+                  name: p.fullName.isNotEmpty ? p.fullName : 'Utilisateur',
+                  avatarUrl: null,
+                ))
+            .toList(),
+      );
+      return;
+    }
+
+    // Groupe grand → sélection (max 4 invités pour le mesh)
+    final selected = await showModalBottomSheet<Set<Participant>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _ParticipantPickerSheet(
+        participants: others,
+        maxSelection: 4,
+        callType: callType,
+      ),
+    );
+    if (selected == null || selected.isEmpty) return;
+    await GroupCallService.instance.startGroupCall(
+      conversationId: widget.conversation.id,
+      myUserId: _currentUserId,
+      myName: myName,
+      callType: callType,
+      convName: convName,
+      invitees: selected
+          .map((p) => (
+                userId: p.userId,
+                name: p.fullName.isNotEmpty ? p.fullName : 'Utilisateur',
+                avatarUrl: null,
+              ))
+          .toList(),
+    );
   }
 
   // ⭐ V3-5: Listen to CallService state changes — push the CallScreen overlay
@@ -262,6 +332,26 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       ).then((_) {
         // Reset the flag when CallScreen pops
         _isCallScreenPushed = false;
+      });
+    }
+  }
+
+  // ⭐ V5 — GroupCallScreen push (miroir du 1-1)
+  bool _isGroupCallScreenPushed = false;
+  void _onGroupCallStateChanged() {
+    if (!mounted) return;
+    final state = GroupCallService.instance.state;
+    final inGroupCall = state != GroupCallState.idle;
+    if (inGroupCall && !_isGroupCallScreenPushed) {
+      _isGroupCallScreenPushed = true;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: '/group-call'),
+          builder: (_) => const GroupCallScreen(),
+          fullscreenDialog: true,
+        ),
+      ).then((_) {
+        _isGroupCallScreenPushed = false;
       });
     }
   }
@@ -624,17 +714,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    // ⭐ V5 — le SocketService est désormais un SINGLETON partagé : on quitte
+    //    la room de conversation mais on NE DÉCONNECTE PAS le socket
+    //    (les appels entrants + les messages des autres écrans en dépendent).
     _socket.leaveConversation(widget.conversation.id);
-    _socket.disconnect();
     _messageController.dispose();
     // ⭐ V3-11: Remove the scroll listener before disposing the controller
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     _editController.dispose();
     _typingDebounce?.cancel();
-    // ⭐ V3-5: Cleanup the call service
+    // ⭐ V3-5: Cleanup the call service listeners
     _callService.removeListener(_onCallStateChanged);
-    _callService.dispose();
+    // ⭐ V5 — NE PAS détacher/disposer les singletons (CallService et
+    //    GroupCallService vivent pour toute l'app : les appels entrants
+    //    continuent d'être routés depuis n'importe quel écran).
+    GroupCallService.instance.removeListener(_onGroupCallStateChanged);
     // ⭐ V3-11: Cleanup voice recording + audio player
     _voiceService.dispose();
     _audioPlayer.dispose();
@@ -1121,20 +1216,37 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           ],
         ),
         // ⭐ V3-3: Sparkles button to trigger ORION conversation summary
-        // ⭐ V3-5: Phone + Video call buttons (DIRECT conversations only)
+        // ⭐ V5: Phone + Video call buttons (DIRECT 1-1 + GROUP mesh)
         // ⭐ V3-11: Action icons use gold accent (Helm Connect palette)
         actions: [
-          if (widget.conversation.type != 'GROUP')
+          IconButton(
+            icon: const Icon(Icons.phone, color: HelmColors.goldLight),
+            tooltip: widget.conversation.type == 'GROUP'
+                ? 'Appel audio de groupe'
+                : 'Appel audio',
+            onPressed: () => _startCall('AUDIO'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
+            tooltip: widget.conversation.type == 'GROUP'
+                ? 'Appel vidéo de groupe'
+                : 'Appel vidéo',
+            onPressed: () => _startCall('VIDEO'),
+          ),
+          // ⭐ V5 — écran membres / gestion des groupes
+          if (widget.conversation.type == 'GROUP')
             IconButton(
-              icon: const Icon(Icons.phone, color: HelmColors.goldLight),
-              tooltip: 'Appel audio',
-              onPressed: () => _startCall('AUDIO'),
-            ),
-          if (widget.conversation.type != 'GROUP')
-            IconButton(
-              icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
-              tooltip: 'Appel vidéo',
-              onPressed: () => _startCall('VIDEO'),
+              icon: const Icon(Icons.groups, color: HelmColors.goldLight),
+              tooltip: 'Membres du groupe',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: '/group-members'),
+                  builder: (_) => GroupMembersScreen(
+                    conversation: widget.conversation,
+                    onChanged: () => _loadMessages(),
+                  ),
+                ),
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.auto_awesome, color: HelmColors.goldLight),
@@ -2893,4 +3005,200 @@ class _WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _WaveformPainter old) =>
       old.progress != progress || old.isOwn != isOwn || old.barsCount != barsCount;
+}
+
+// ============================================================================
+// ⭐ V5 — _ParticipantPickerSheet : sélection des invités d'un appel de
+//    groupe quand le groupe dépasse la limite mesh (4 pairs). Bottom sheet
+//    avec recherche + cases à cocher + bouton « Lancer l'appel ».
+// ============================================================================
+class _ParticipantPickerSheet extends StatefulWidget {
+  final List<Participant> participants;
+  final int maxSelection;
+  final String callType; // 'AUDIO' | 'VIDEO'
+
+  const _ParticipantPickerSheet({
+    required this.participants,
+    required this.maxSelection,
+    required this.callType,
+  });
+
+  @override
+  State<_ParticipantPickerSheet> createState() => _ParticipantPickerSheetState();
+}
+
+class _ParticipantPickerSheetState extends State<_ParticipantPickerSheet> {
+  final Set<String> _selected = {};
+  String _query = '';
+
+  List<Participant> get _filtered {
+    if (_query.isEmpty) return widget.participants;
+    final q = _query.toLowerCase();
+    return widget.participants
+        .where((p) =>
+            p.fullName.toLowerCase().contains(q) ||
+            (p.email ?? '').toLowerCase().contains(q))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isVideo = widget.callType == 'VIDEO';
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (context, scrollController) => Column(
+        children: [
+          // ─── En-tête ───
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isVideo ? Icons.videocam : Icons.phone,
+                      color: HelmColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Appel ${isVideo ? 'vidéo' : 'audio'} de groupe',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: HelmColors.text,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Sélectionnez jusqu\'à ${widget.maxSelection} participants '
+                  '(réseau direct mobile, au-delà le web utilise Jitsi).',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: HelmColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  onChanged: (v) => setState(() => _query = v),
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher…',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // ─── Liste ───
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              itemCount: _filtered.length,
+              itemBuilder: (context, i) {
+                final p = _filtered[i];
+                final selected = _selected.contains(p.userId);
+                final disabled = !selected && _selected.length >= widget.maxSelection;
+                return CheckboxListTile(
+                  value: selected,
+                  onChanged: disabled
+                      ? null
+                      : (v) => setState(() {
+                            if (v == true) {
+                              _selected.add(p.userId);
+                            } else {
+                              _selected.remove(p.userId);
+                            }
+                          }),
+                  secondary: CircleAvatar(
+                    backgroundColor: HelmColors.primaryVivid,
+                    child: Text(
+                      p.initialsForPicker,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    p.fullName.isNotEmpty ? p.fullName : 'Utilisateur',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: HelmColors.text,
+                    ),
+                  ),
+                  subtitle: p.role == 'ADMIN'
+                      ? const Text('Administrateur',
+                          style: TextStyle(fontSize: 11, color: HelmColors.gold))
+                      : null,
+                  activeColor: HelmColors.primary,
+                  dense: true,
+                );
+              },
+            ),
+          ),
+          // ─── Bouton lancer ───
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: Icon(isVideo ? Icons.videocam : Icons.phone, size: 20),
+                  label: Text(
+                    _selected.isEmpty
+                        ? 'Sélectionnez des participants'
+                        : 'Appeler (${_selected.length})',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: HelmColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () {
+                          final selected = widget.participants
+                              .where((p) => _selected.contains(p.userId))
+                              .toSet();
+                          Navigator.of(context).pop(selected);
+                        },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Extension utilitaire locale pour les initiales du sélecteur.
+extension ParticipantPickerX on Participant {
+  String get initialsForPicker {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
+  }
 }

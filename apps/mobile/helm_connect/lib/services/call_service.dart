@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/api_service.dart';
 import '../services/socket_service.dart';
 // ⭐ V3-6: Soft phone ringtone (audioplayers, two distinct tones for caller/callee)
 import 'ringtone_service.dart';
@@ -45,7 +46,14 @@ class CallData {
 }
 
 class CallService extends ChangeNotifier {
-  CallService(this._socket);
+  // ⭐ V5 — SINGLETON partagé (comme SocketService/GroupCallService) : les
+  //    appels 1-1 entrants fonctionnent depuis N'IMPORTE QUEL écran, pas
+  //    seulement depuis ConversationDetailScreen de la conversation.
+  static final CallService instance = CallService._internal(SocketService());
+  CallService._internal(this._socket);
+
+  /// Ancien constructeur public (compat) — retourne le singleton.
+  factory CallService(SocketService socket) => instance;
 
   final SocketService _socket;
   // ⭐ V3-6: Soft phone ringtone (singleton)
@@ -59,6 +67,14 @@ class CallService extends ChangeNotifier {
   bool _videoOff = false;
   bool _speakerOn = true;
   Timer? _timer;
+
+  // ⭐ V5 — signalisation REST (parité web V4) : le callId vient du serveur
+  //    (POST /chat/calls/signal) → accept/decline/end passent aussi par REST
+  //    + polling de statut 2 s pour détecter refus/manqué/annulé côté distant.
+  bool _restSignaled = false;
+  String? _conversationId;
+  Timer? _statusPollTimer;
+  final Set<String> _declinedCallIds = {};
 
   // ─── WebRTC ──────────────────────────────────────────────────────────────
   RTCPeerConnection? _peerConnection;
@@ -110,12 +126,16 @@ class CallService extends ChangeNotifier {
   /// Start an outgoing call (caller side).
   /// [otherUserId] is the callee's user id.
   /// [otherUserName] is the display name shown in the UI.
+  /// ⭐ V5 : [conversationId] active la signalisation REST (création du
+  ///    signal côté serveur → sonnerie instantanée du destinataire via
+  ///    call:incoming + polling + push FCM, comme le web V4).
   Future<void> startCall({
     required String otherUserId,
     required String otherUserName,
     required String callType, // 'AUDIO' | 'VIDEO'
     required String myName,
     String? myAvatarUrl,
+    String? conversationId,
   }) async {
     if (_state != CallState.idle) {
       debugPrint('WARN: Already in a call — ignoring startCall');
@@ -191,8 +211,29 @@ class CallService extends ChangeNotifier {
       final offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // 8. Generate a callId (UUID-ish)
-      final callId = DateTime.now().millisecondsSinceEpoch.toString();
+      // 8. Générer un callId :
+      //    ⭐ V5 — signalisation REST : POST /chat/calls/signal {start}
+      //    crée le signal côté serveur (sonnerie instantanée + polling + push
+      //    du destinataire) et renvoie le VRAI callId. En cas d'échec REST,
+      //    repli sur l'ancien id local (mesh pur, compatibilité V3).
+      var callId = DateTime.now().millisecondsSinceEpoch.toString();
+      _restSignaled = false;
+      _conversationId = conversationId;
+      if (conversationId != null) {
+        try {
+          final sig = await ApiService.startCallSignal(
+            conversationId: conversationId,
+            type: callType == 'VIDEO' ? 'video' : 'audio',
+          );
+          final serverCallId = sig['callId'];
+          if (serverCallId is String && serverCallId.isNotEmpty) {
+            callId = serverCallId;
+            _restSignaled = true;
+          }
+        } catch (e) {
+          debugPrint('WARN: REST signal start failed (mesh pur) : $e');
+        }
+      }
 
       // 9. Update state before emitting (so the UI shows "outgoing" immediately)
       _callData = CallData(
@@ -205,6 +246,8 @@ class CallService extends ChangeNotifier {
       notifyListeners();
       // ⭐ V3-6: Start the outgoing ringtone (single gentle beep every 2s)
       _ringtone.start(mode: 'outgoing');
+      // ⭐ V5 — polling de statut (2 s) : détecte refus/manqué/annulé distant
+      _startStatusPolling();
 
       // 10. Emit call:offer with callerName + avatar (parity with web)
       _socket.emit('call:offer', {
@@ -234,8 +277,19 @@ class CallService extends ChangeNotifier {
       });
       return;
     }
+    // ⭐ V5 — appels déjà refusés localement : ne jamais re-sonner
+    final callId = data['callId'] as String?;
+    if (callId != null && _declinedCallIds.contains(callId)) {
+      _socket.emit('call:reject', {
+        'toUserId': data['fromUserId'],
+        'callId': callId,
+      });
+      return;
+    }
 
     _pendingOffer = data;
+    _restSignaled = callId != null && callId.contains('-') && callId.length >= 30;
+    _conversationId = data['conversationId'] as String?;
     _callData = CallData(
       callId: data['callId'] as String,
       callType: data['callType'] as String,
@@ -337,6 +391,16 @@ class CallService extends ChangeNotifier {
         'answer': answer.toMap(),
       });
 
+      // ⭐ V5 — signalisation REST : marquer l'appel accepté côté serveur
+      //    (best effort — silencieux si l'appel vient du flux mesh pur)
+      final cid = _callData?.callId;
+      if (cid != null && _restSignaled) {
+        ApiService.acceptCallSignal(cid).catchError((e) {
+          debugPrint('WARN: REST accept failed (non bloquant) : $e');
+          return <String, dynamic>{};
+        });
+      }
+
       _state = CallState.active;
       _startTimer();
       _pendingOffer = null;
@@ -350,6 +414,37 @@ class CallService extends ChangeNotifier {
     }
   }
 
+  /// ⭐ V5 — polling de statut REST (2 s) : détecte un appel terminé/refusé/
+  ///    manqué/annulé par l'autre partie (le web V4 ne diffuse PAS d'événement
+  ///    socket call:reject quand il refuse depuis l'overlay — seul le statut
+  ///    serveur change). Arrêté dès que l'appel devient actif.
+  void _startStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final cid = _callData?.callId;
+      if (_state == CallState.idle || cid == null || !_restSignaled) {
+        _statusPollTimer?.cancel();
+        return;
+      }
+      // Dès que la connexion est active, les événements mesh prennent le relais
+      if (_state == CallState.active) {
+        _statusPollTimer?.cancel();
+        return;
+      }
+      try {
+        final status = await ApiService.getCallSignalStatus(cid);
+        final s = status['status'] as String?;
+        if (s == 'declined' || s == 'missed' || s == 'cancelled' || s == 'ended') {
+          debugPrint('CallService: statut REST=$s → raccrochage');
+          await _cleanup();
+          notifyListeners();
+        }
+      } catch (_) {
+        // silencieux
+      }
+    });
+  }
+
   /// Reject an incoming call (callee side).
   void rejectIncomingCall() {
     if (_callData != null) {
@@ -357,6 +452,16 @@ class CallService extends ChangeNotifier {
         'toUserId': _callData!.otherUserId,
         'callId': _callData!.callId,
       });
+      // ⭐ V5 — mémoriser le refus (ne jamais re-sonner) + signal REST
+      if (_callData!.callId != null) {
+        _declinedCallIds.add(_callData!.callId!);
+        if (_restSignaled) {
+          ApiService.declineCallSignal(_callData!.callId!).catchError((e) {
+            debugPrint('WARN: REST decline failed : $e');
+            return <String, dynamic>{};
+          });
+        }
+      }
     }
     _cleanup();
     notifyListeners();
@@ -418,6 +523,14 @@ class CallService extends ChangeNotifier {
         'toUserId': _callData!.otherUserId,
         'callId': _callData!.callId,
       });
+      // ⭐ V5 — signalisation REST : terminer l'appel côté serveur
+      //    (journal CALL_LOG dans la conversation + historique Appels)
+      if (_restSignaled && _callData!.callId != null) {
+        ApiService.endCallSignal(_callData!.callId!).catchError((e) {
+          debugPrint('WARN: REST end failed : $e');
+          return <String, dynamic>{};
+        });
+      }
     }
     _cleanup();
     notifyListeners();
@@ -462,6 +575,8 @@ class CallService extends ChangeNotifier {
   Future<void> _cleanup() async {
     _timer?.cancel();
     _timer = null;
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
     _duration = 0;
     _muted = false;
     _videoOff = false;
@@ -469,6 +584,8 @@ class CallService extends ChangeNotifier {
     _state = CallState.idle;
     _callData = null;
     _pendingOffer = null;
+    _restSignaled = false;
+    _conversationId = null;
     // ⭐ V3-6: Stop the ringtone on cleanup (call ended or rejected)
     _ringtone.stop();
 

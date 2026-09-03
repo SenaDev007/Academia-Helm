@@ -26,8 +26,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
+import '../services/call_service.dart';
+import '../services/group_call_service.dart';
 import '../theme/helm_theme.dart';
 import 'conversation_detail_screen.dart';
+import 'call_screen.dart';
+import 'group_call_screen.dart';
 import 'announcements_screen.dart';
 import 'notification_prefs_screen.dart';
 import 'global_search_screen.dart';
@@ -65,18 +70,94 @@ class _ChatScreenState extends State<ChatScreen> {
   User? _currentUser;
   HelmConnectSection _activeSection = HelmConnectSection.discussions;
 
+  // ⭐ V5 — SOCKET GLOBAL + APPELS ENTRANTS DEPUIS TOUT ÉCRAN :
+  //    la connexion /chat (singleton) est établie ICI, à l'échelle de l'app —
+  //    plus besoin d'ouvrir une conversation pour recevoir un appel.
+  final SocketService _socket = SocketService(); // singleton
+  Timer? _incomingPollTimer; // filet de sécurité REST (3 s, comme le web)
+  bool _isCallScreenPushed = false;
+  bool _isGroupCallScreenPushed = false;
+
   @override
   void initState() {
     super.initState();
     _loadCurrentUser();
     _loadConversations();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadConversations());
+    // ⭐ V5 — socket global + écoute des appels + polling REST de secours
+    _initGlobalCallHandling();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _incomingPollTimer?.cancel();
+    CallService.instance.removeListener(_onCallStateChanged);
+    GroupCallService.instance.removeListener(_onGroupCallStateChanged);
     super.dispose();
+  }
+
+  // ⭐ V5 — Connexion du socket singleton + écouteurs d'appels (1-1 ET groupe)
+  //    + polling REST des appels entrants (filet de sécurité 3 s si le socket
+  //    est coupé — même architecture que le web V4).
+  Future<void> _initGlobalCallHandling() async {
+    try {
+      final token = await ApiService.getAuthToken();
+      final userId = await AuthService.getUserId();
+      if (token != null && userId != null) {
+        await _socket.connect(token: token, userId: userId);
+      }
+    } catch (_) {
+      // silencieux — le polling prend le relais
+    }
+    CallService.instance.addListener(_onCallStateChanged);
+    GroupCallService.instance.addListener(_onGroupCallStateChanged);
+    _incomingPollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      // Le socket est connecté → pas besoin du filet de sécurité
+      if (_socket.isConnected) return;
+      try {
+        final incoming = await ApiService.getIncomingCalls();
+        for (final call in incoming) {
+          if (call['isGroupCall'] == true) {
+            GroupCallService.instance.onCallIncomingSignal(call);
+          }
+        }
+      } catch (_) {
+        // silencieux
+      }
+    });
+  }
+
+  // ⭐ V5 — Push des écrans d'appel depuis N'IMPORTE QUEL écran de l'app
+  void _onCallStateChanged() {
+    if (!mounted) return;
+    final state = CallService.instance.state;
+    if ((state == CallState.incoming || state == CallState.outgoing || state == CallState.active) &&
+        !_isCallScreenPushed) {
+      _isCallScreenPushed = true;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: '/call'),
+          builder: (_) => CallScreen(callService: CallService.instance),
+          fullscreenDialog: true,
+        ),
+      ).then((_) => _isCallScreenPushed = false);
+    }
+  }
+
+  void _onGroupCallStateChanged() {
+    if (!mounted) return;
+    final state = GroupCallService.instance.state;
+    if (state != GroupCallState.idle && !_isGroupCallScreenPushed) {
+      _isGroupCallScreenPushed = true;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          settings: const RouteSettings(name: '/group-call'),
+          builder: (_) => const GroupCallScreen(),
+          fullscreenDialog: true,
+        ),
+      ).then((_) => _isGroupCallScreenPushed = false);
+    }
   }
 
   Future<void> _loadCurrentUser() async {

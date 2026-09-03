@@ -6,6 +6,12 @@
  * Connects to the NestJS ChatGateway at /chat namespace.
  * Replaces HTTP polling (10s/15s) with instant push events.
  *
+ * ⭐ V5 — SINGLETON : une seule connexion partagée par toute l'app.
+ *    (avant, chaque ConversationDetailScreen créait SA propre connexion ;
+ *    les callbacks étaient écrasés en sortie d'écran → les appels entrants
+ *    n'étaient reçus que depuis l'écran de la conversation concernée).
+ *    Toutes les API publiques restent identiques (factory → instance).
+ *
  * Events handled:
  *   - message:new        → new message received
  *   - typing:start       → someone started typing
@@ -17,9 +23,12 @@
  *   - call:ice-candidate → ICE candidate exchange
  *   - call:reject        → call rejected
  *   - call:hangup        → call ended
+ *   - call:incoming      → ⭐ V4 REST signaling: a call is ringing for me
+ *   - group-call:invite  → ⭐ group call mesh invite
+ *   - group-call:leave   → ⭐ a participant left the group call
  *
  * Usage:
- *   final socket = SocketService();
+ *   final socket = SocketService();   // → shared singleton
  *   await socket.connect(token: 'jwt...', userId: '...');
  *   socket.onNewMessage = (msg) { ... };
  *   socket.emit('typing:start', {'conversationId': convId});
@@ -30,6 +39,11 @@ import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 class SocketService {
+  // ⭐ V5 — singleton partagé (une seule connexion /chat pour toute l'app)
+  static final SocketService _instance = SocketService._internal();
+  factory SocketService() => _instance;
+  SocketService._internal();
+
   IO.Socket? _socket;
   bool _isConnected = false;
   bool _wasConnectedBefore = false;
@@ -45,6 +59,11 @@ class SocketService {
   void Function(Map<String, dynamic> data)? onCallIceCandidate;
   void Function(Map<String, dynamic> data)? onCallReject;
   void Function(Map<String, dynamic> data)? onCallHangup;
+  // ⭐ V5 — signalisation REST des appels (porté du web V4)
+  void Function(Map<String, dynamic> data)? onCallIncoming;
+  // ⭐ V5 — appels de groupe (mesh)
+  void Function(Map<String, dynamic> data)? onGroupCallInvite;
+  void Function(Map<String, dynamic> data)? onGroupCallLeave;
   // ⭐ V3-1: fired on every (re)connect — used to flush pending offline messages
   void Function()? onConnectCallback;
 
@@ -144,6 +163,28 @@ class SocketService {
     _socket!.on('call:hangup', (data) {
       if (data is Map<String, dynamic>) {
         onCallHangup?.call(data);
+      }
+    });
+
+    // ⭐ V5 — signalisation REST : un appel SONNE pour moi (diffusé par la
+    //    gateway CallSignalService.start via broadcastCallIncoming — plus
+    //    rapide que le polling 3 s, qui reste le filet de sécurité).
+    _socket!.on('call:incoming', (data) {
+      if (data is Map<String, dynamic>) {
+        onCallIncoming?.call(data);
+      }
+    });
+
+    // ⭐ V5 — appels de groupe (mesh) : invitation + départ
+    _socket!.on('group-call:invite', (data) {
+      if (data is Map<String, dynamic>) {
+        onGroupCallInvite?.call(data);
+      }
+    });
+
+    _socket!.on('group-call:leave', (data) {
+      if (data is Map<String, dynamic>) {
+        onGroupCallLeave?.call(data);
       }
     });
   }

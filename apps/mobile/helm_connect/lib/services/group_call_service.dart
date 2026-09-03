@@ -1,30 +1,45 @@
 // ============================================================================
-// GROUP CALL SERVICE — WebRTC multi-peer mesh (V3-6)
+// GROUP CALL SERVICE — WebRTC multi-peer mesh + signalisation REST (V5)
 // ============================================================================
-// Implements group calls using a mesh topology: each participant establishes
-// a 1-à-1 RTCPeerConnection with every other participant. Works well for up
-// to 4-5 participants. Beyond that, a SFU (mediasoup/Janus) is needed.
+// ⭐ V5 — CÂBLAGE COMPLET (le service existait mais n'était importé nulle part) :
 //
-// Flow:
-//   1. Initiator calls startGroupCall(otherParticipants) — emits
-//      group-call:invite to each one.
-//   2. Each recipient receives group-call:invite and shows the incoming UI.
-//   3. When a recipient accepts, they emit call:offer to the initiator (and
-//      to all other already-connected participants, for a true mesh).
-//   4. The initiator + all connected participants establish pairwise
-//      RTCPeerConnections via call:offer/answer/ice-candidate (existing events).
-//   5. Hangup / leave → group-call:leave to all participants + cleanup.
+//   1. SINGLETON partagé (comme SocketService) — les invitations de groupe
+//      sont reçues QUEL QUE SOIT l'écran actif, pas seulement depuis l'écran
+//      de la conversation concernée.
 //
-// Each remote peer is identified by its userId. The service maintains a
-// Map<userId, RTCPeerConnection> + Map<userId, RTCVideoRenderer> for video.
+//   2. SIGNALISATION REST (parité web /api/chat/calls/signal) :
+//        start   → POST { action:'start', conversationId, type } → callId
+//                  réel du serveur + sonnerie de TOUS les membres (socket
+//                  call:incoming + polling 3 s + FCM pour les directs).
+//        accept  → POST { action:'accept', callId }
+//        decline → POST { action:'decline', callId } (groupe : refus LOCAL,
+//                  l'appel continue de sonner pour les autres)
+//        end     → POST { action:'end', callId }
+//      + POLLING de statut (2 s) pendant l'appel → raccroche proprement
+//      quand le serveur passe l'appel en ended/missed/cancelled/declined.
+//
+//   3. MESH WebRTC (média) : chaque participant établit une connexion 1-à-1
+//      avec les autres. Offres gérées avec la règle de négociation
+//      « polite/impolite peer » (celui dont l'userId est le plus petit
+//      cède son offre en cas de glare) — robuste web ↔ mobile.
+//
+//   4. ROUTEUR d'événements : les événements call:* du socket sont routés
+//      vers CE service si un appel de groupe est actif (callId correspondant),
+//      sinon ils sont transmis au CallService 1-1 enregistré par l'écran
+//      de conversation (setOneToOneService) — plus d'écrasement de callbacks.
+//
+// Topologie : jusqu'à 4-5 participants. Au-delà, un SFU est nécessaire
+// (le web bascule alors sur Jitsi — room déterministe).
 // ============================================================================
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'api_service.dart';
 import 'ringtone_service.dart';
 import 'socket_service.dart';
+import 'call_service.dart' show CallService, CallState;
 
 class GroupCallParticipant {
   final String userId;
@@ -44,52 +59,139 @@ class GroupCallParticipant {
   });
 }
 
-class GroupCallService extends ChangeNotifier {
-  GroupCallService(this._socket);
+/// Cycle de vie d'un appel de groupe (miroir du CallState 1-1).
+enum GroupCallState { idle, outgoing, incoming, active }
 
-  final SocketService _socket;
+class GroupCallService extends ChangeNotifier {
+  // ⭐ V5 — singleton : une seule instance pour toute l'app
+  static final GroupCallService instance = GroupCallService._internal();
+  GroupCallService._internal() {
+    // ⭐ V5 — le service 1-1 par défaut du routeur est le CallService
+    //    singleton (les appels 1-1 entrants marchent depuis tout écran).
+    _oneToOneService = CallService.instance;
+    _bindSocket();
+  }
+
+  /// Ancien constructeur public (compat) — retourne le singleton.
+  factory GroupCallService(SocketService socket) => instance;
+
+  final SocketService _socket = SocketService();
   final RingtoneService _ringtone = RingtoneService();
 
-  // ─── State ───────────────────────────────────────────────────────────────
+  // ─── État ───────────────────────────────────────────────────────────────
+  GroupCallState _state = GroupCallState.idle;
   bool _inCall = false;
   bool _isInitiator = false;
-  String? _callId;
+  String? _callId; // ⭐ V5 : id du signal REST (source de vérité serveur)
+  bool _restSignaled = false; // ⭐ V5 : true si le callId vient du serveur REST
   String? _conversationId;
   String _callType = 'AUDIO';
   String? _myUserId;
   String? _myName;
+  String? _initiatorId; // ⭐ V5 : initiateur réel (fin d'appel s'il part)
+  String? _initiatorName;
+  String? _convName;
   final Map<String, GroupCallParticipant> _participants = {};
   final Map<String, RTCPeerConnection> _peerConnections = {};
   final Map<String, RTCVideoRenderer> _remoteRenderers = {};
   final Map<String, Map<String, dynamic>> _pendingOffers = {}; // userId → offer
+  final Set<String> _declinedCallIds = {}; // ⭐ V5 : appels refusés localement
   MediaStream? _localStream;
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   bool _renderersInitialized = false;
   bool _muted = false;
   bool _videoOff = false;
   bool _speakerOn = true;
-  bool _isIncoming = false; // true when we received an invite
-  String? _initiatorName; // for incoming calls — display name of the caller
   int _duration = 0;
   Timer? _timer;
+  Timer? _statusPollTimer; // ⭐ V5 : polling du statut REST (2 s)
+  bool _ending = false;
+
+  /// CallService 1-1 enregistré par l'écran de conversation (routage).
+  CallService? _oneToOneService;
 
   // ─── Getters ─────────────────────────────────────────────────────────────
+  GroupCallState get state => _state;
   bool get inCall => _inCall;
   bool get isInitiator => _isInitiator;
-  bool get isIncoming => _isIncoming;
+  bool get isIncoming => _state == GroupCallState.incoming;
+  bool get isOutgoing => _state == GroupCallState.outgoing;
+  bool get isActive => _state == GroupCallState.active;
   String? get callId => _callId;
   String? get conversationId => _conversationId;
+  String? get convName => _convName;
   String get callType => _callType;
   String? get initiatorName => _initiatorName;
   List<GroupCallParticipant> get participants => _participants.values.toList();
+  int get connectedCount =>
+      _participants.values.where((p) => p.connected).length;
   int get duration => _duration;
   bool get muted => _muted;
   bool get videoOff => _videoOff;
   bool get speakerOn => _speakerOn;
+  String? get myUserId => _myUserId;
+  bool get isVideoCall => _callType == 'VIDEO';
   RTCVideoRenderer get localRenderer => _localRenderer;
   RTCVideoRenderer? getRemoteRenderer(String userId) => _remoteRenderers[userId];
 
-  // ─── Initialization ──────────────────────────────────────────────────────
+  /// Enregistre le CallService 1-1 courant (routage des événements non-groupe).
+  void setOneToOneService(CallService? service) {
+    _oneToOneService = service;
+  }
+
+  // ─── Routage des événements socket ─────────────────────────────────────
+  void _bindSocket() {
+    _socket.onCallOffer = (data) {
+      if (_inCall && data['callId'] == _callId) {
+        onCallOffer(data);
+      } else if (_inCall) {
+        // Un appel de groupe est déjà actif → refus discret de l'offre 1-1
+        // (jamais deux sonneries concurrentes).
+        _socket.emit('call:reject', {
+          'toUserId': data['fromUserId'],
+          'callId': data['callId'],
+        });
+      } else {
+        _oneToOneService?.onIncomingCallOffer(data);
+      }
+    };
+    _socket.onCallAnswer = (data) {
+      if (_inCall && data['callId'] == _callId) {
+        onCallAnswer(data);
+      } else {
+        _oneToOneService?.onCallAnswer(data);
+      }
+    };
+    _socket.onCallIceCandidate = (data) {
+      if (_inCall && data['callId'] == _callId) {
+        onIceCandidate(data);
+      } else {
+        _oneToOneService?.onIceCandidate(data);
+      }
+    };
+    _socket.onCallReject = (data) {
+      if (_inCall && data['callId'] == _callId) {
+        // Un membre a refusé (mesh) → le retirer de la liste des attendus
+        _removeParticipant(data['fromUserId'] as String? ?? '');
+      } else {
+        _oneToOneService?.onCallReject();
+      }
+    };
+    _socket.onCallHangup = (data) {
+      if (_inCall && data['callId'] == _callId) {
+        onGroupCallLeave(data);
+      } else {
+        _oneToOneService?.onCallHangup();
+      }
+    };
+    _socket.onGroupCallInvite = (data) => onGroupCallInvite(data);
+    _socket.onGroupCallLeave = (data) => onGroupCallLeave(data);
+    // ⭐ V5 — signalisation REST : appel de groupe sonnant pour moi
+    //    (initiateur web OU initiateur mobile via POST /calls/signal).
+    _socket.onCallIncoming = (data) => onCallIncomingSignal(data);
+  }
+
+  // ─── Initialisation ──────────────────────────────────────────────────────
   Future<void> _ensureRenderersInitialized() async {
     if (_renderersInitialized) return;
     await _localRenderer.initialize();
@@ -129,32 +231,31 @@ class GroupCallService extends ChangeNotifier {
       ],
     });
 
-    // Add local tracks
     if (_localStream != null) {
       _localStream!.getTracks().forEach((track) {
         pc.addTrack(track, _localStream!);
       });
     }
 
-    // Listen for remote tracks
     pc.onTrack = (event) {
       if (event.streams.isNotEmpty) {
         final stream = event.streams[0];
-        // Get or create a renderer for this peer
-        if (!_remoteRenderers.containsKey(peerUserId)) {
+        final existing = _remoteRenderers[peerUserId];
+        if (existing != null) {
+          existing.srcObject = stream;
+        } else {
           final renderer = RTCVideoRenderer();
           renderer.initialize().then((_) {
             renderer.srcObject = stream;
             _remoteRenderers[peerUserId] = renderer;
+            _participants[peerUserId]?.connected = true;
+            _maybeActivate();
             notifyListeners();
           });
-        } else {
-          _remoteRenderers[peerUserId]!.srcObject = stream;
         }
       }
     };
 
-    // ICE candidate → send to peer
     pc.onIceCandidate = (candidate) {
       _socket.emit('call:ice-candidate', {
         'toUserId': peerUserId,
@@ -174,12 +275,25 @@ class GroupCallService extends ChangeNotifier {
     return pc;
   }
 
-  // ─── Outgoing group call (initiator) ───────────────────────────────────
+  /// Passe l'appel en actif dès qu'au moins un flux distant arrive.
+  void _maybeActivate() {
+    if (_state == GroupCallState.outgoing ||
+        (_state == GroupCallState.incoming)) {
+      _state = GroupCallState.active;
+      _ringtone.stop();
+      _startTimer();
+    }
+  }
+
+  // ─── Appel sortant (initiateur) ──────────────────────────────────────────
+  /// [invitees] : participants à inviter via le mesh (max recommandé 4).
+  /// [myUserId]/[myName] : identité de l'appelant.
   Future<void> startGroupCall({
     required String conversationId,
     required String myUserId,
     required String myName,
-    required String callType,
+    required String callType, // 'AUDIO' | 'VIDEO'
+    required String convName,
     required List<({String userId, String name, String? avatarUrl})> invitees,
   }) async {
     if (_inCall) return;
@@ -193,11 +307,36 @@ class GroupCallService extends ChangeNotifier {
     _myName = myName;
     _callType = callType;
     _conversationId = conversationId;
+    _convName = convName;
     _isInitiator = true;
+    _initiatorId = myUserId;
+    _initiatorName = myName;
     _inCall = true;
-    _callId = 'group-${DateTime.now().millisecondsSinceEpoch}';
+    _state = GroupCallState.outgoing;
 
-    // Register participants
+    // ⭐ V5 — 1. SIGNALISATION REST : créer le signal côté serveur (callId
+    //    réel + sonnerie de tous les membres via call:incoming + polling).
+    //    En cas d'échec REST, on retombe sur un callId local (mesh seul,
+    //    exactement comme l'ancien comportement V3-6).
+    var restCallId = 'group-${DateTime.now().millisecondsSinceEpoch}';
+    var restSignaled = false;
+    try {
+      final res = await ApiService.startCallSignal(
+        conversationId: conversationId,
+        type: callType == 'VIDEO' ? 'video' : 'audio',
+      );
+      final serverCallId = res['callId'];
+      if (serverCallId is String && serverCallId.isNotEmpty) {
+        restCallId = serverCallId;
+        restSignaled = true;
+      }
+    } catch (e) {
+      debugPrint('WARN: REST signal start (group) failed — mesh seul : $e');
+    }
+    _callId = restCallId;
+    _restSignaled = restSignaled;
+
+    // Participants
     final participantNames = <String, String>{myUserId: myName};
     for (final invitee in invitees) {
       _participants[invitee.userId] = GroupCallParticipant(
@@ -208,18 +347,18 @@ class GroupCallService extends ChangeNotifier {
       );
       participantNames[invitee.userId] = invitee.name;
     }
-    // Add myself as a participant
     _participants[myUserId] = GroupCallParticipant(
       userId: myUserId,
       name: myName,
       connected: true,
     );
 
-    // Get local media
+    // Média local
     _localStream = await _getUserMedia(video: video);
     _localRenderer.srcObject = _localStream;
 
-    // Emit group-call:invite to all invitees
+    // ⭐ V5 — 2. INVITATION MESH vers chaque invité (le média passe en
+    //    pair-à-pair ; l'offre part de l'initiateur vers chaque invité).
     _socket.emit('group-call:invite', {
       'toUserIds': invitees.map((i) => i.userId).toList(),
       'callId': _callId,
@@ -230,46 +369,55 @@ class GroupCallService extends ChangeNotifier {
       'participantNames': participantNames,
     });
 
-    // Start ringtone for the initiator (single beep while waiting)
+    // Sonnerie d'attente (ringback Yeshua) + polling de statut
     _ringtone.start(mode: 'outgoing');
-    _startTimer();
+    _startStatusPolling();
     notifyListeners();
   }
 
-  // ─── Incoming group call invite (recipient) ─────────────────────────────
+  // ─── Invitation entrante (mesh) ─────────────────────────────────────────
   void onGroupCallInvite(Map<String, dynamic> data) async {
-    if (_inCall) {
-      // Auto-reject — already in a call
+    // ⭐ V5 — déjà en appel (groupe OU 1-1) → refus discret, jamais deux
+    //    sonneries concurrentes sur le même RingtoneService singleton.
+    if (_inCall || CallService.instance.state != CallState.idle) {
       _socket.emit('group-call:leave', {
         'toUserIds': [data['fromUserId']],
         'callId': data['callId'],
       });
       return;
     }
+    final callId = data['callId']?.toString();
+    if (callId == null || _declinedCallIds.contains(callId)) return;
 
-    _callId = data['callId'] as String;
-    _callType = data['callType'] as String;
-    _conversationId = data['conversationId'] as String;
+    _callId = callId;
+    // Un callId qui n'est PAS au format local (« group-… ») vient du serveur
+    // (randomUUID du POST /calls/signal) → le cycle de vie REST s'applique.
+    _restSignaled = !callId.startsWith('group-');
+    _callType = (data['callType'] as String?) ?? 'AUDIO';
+    _conversationId = data['conversationId'] as String?;
     _myUserId = await _getMyUserId();
     _isInitiator = false;
-    _isIncoming = true;
-    _inCall = true;
+    _initiatorId = data['fromUserId'] as String?;
     _initiatorName = data['callerName'] as String?;
+    _inCall = true;
+    _state = GroupCallState.incoming;
 
-    // Register the initiator as a participant
-    final initiatorId = data['fromUserId'] as String;
-    _participants[initiatorId] = GroupCallParticipant(
-      userId: initiatorId,
-      name: (data['callerName'] as String?) ?? 'Utilisateur',
-      connected: false,
-    );
+    // L'initiateur comme participant
+    final initiatorId = data['fromUserId'] as String? ?? '';
+    if (initiatorId.isNotEmpty) {
+      _participants[initiatorId] = GroupCallParticipant(
+        userId: initiatorId,
+        name: (data['callerName'] as String?) ?? 'Utilisateur',
+        connected: false,
+      );
+    }
 
-    // Register other participants from participantNames
+    // Autres participants connus de l'appel
     final participantNames = data['participantNames'] as Map<dynamic, dynamic>?;
     if (participantNames != null) {
       participantNames.forEach((key, value) {
         final uid = key.toString();
-        if (uid != _myUserId && !_participants.containsKey(uid)) {
+        if (uid != _myUserId && uid != initiatorId && !_participants.containsKey(uid)) {
           _participants[uid] = GroupCallParticipant(
             userId: uid,
             name: value.toString(),
@@ -279,90 +427,130 @@ class GroupCallService extends ChangeNotifier {
       });
     }
 
-    // Start ringtone for the recipient (double ring)
     _ringtone.start(mode: 'incoming');
     notifyListeners();
   }
 
-  // ─── Accept incoming group call (recipient) ────────────────────────────
-  Future<void> acceptIncomingCall() async {
-    if (!_isIncoming) return;
+  // ─── Signal REST entrant (call:incoming, appel de groupe) ───────────────
+  /// Émis par la gateway quand un membre lance un appel via POST /calls/signal.
+  /// Pour un appel de GROUPE initié côté web avec la chaîne SFU connectée,
+  /// le mobile ne peut pas rejoindre la room SFU (pas de SDK LiveKit/Agora/Daily) :
+  /// on sonne quand même — l'acceptation attendra une offre mesh (repli web)
+  /// puis raccrochera proprement si rien n'arrive.
+  void onCallIncomingSignal(Map<String, dynamic> data) {
+    // ⭐ V5 — déjà en appel (groupe OU 1-1) → ignorer
+    if (_inCall || CallService.instance.state != CallState.idle) return;
+    final isGroupCall = data['isGroupCall'] == true;
+    if (!isGroupCall) return; // 1-1 : la vraie sonnerie est l'offre mesh
+    final callId = data['callId']?.toString();
+    if (callId == null || _declinedCallIds.contains(callId)) return;
+    if (_initiatorId == data['initiatorId'] && _callId == callId) return;
+
+    // Si une invitation mesh est déjà en attente pour ce même appel, ne pas
+    // doubler la sonnerie.
+    if (_state == GroupCallState.incoming && _callId == callId) return;
+
+    _callId = callId;
+    _conversationId = data['conversationId'] as String?;
+    _callType = data['callType'] == 'video' ? 'VIDEO' : 'AUDIO';
+    _convName = data['convName'] as String?;
+    _initiatorId = data['initiatorId'] as String?;
+    _initiatorName = data['initiatorName'] as String?;
+    _isInitiator = false;
+    _restSignaled = true; // callId serveur (diffusé par broadcastCallIncoming)
+    _inCall = true;
+    _state = GroupCallState.incoming;
+
+    if (_initiatorId != null && _initiatorId!.isNotEmpty) {
+      _participants[_initiatorId!] = GroupCallParticipant(
+        userId: _initiatorId!,
+        name: _initiatorName ?? 'Utilisateur',
+        connected: false,
+      );
+    }
+
+    _ringtone.start(mode: 'incoming');
+    notifyListeners();
+  }
+
+  // ─── Accepter un appel entrant ───────────────────────────────────────────
+  Future<bool> acceptIncomingCall() async {
+    if (_state != GroupCallState.incoming) return false;
     final video = _callType == 'VIDEO';
     final hasPerms = await _requestPermissions(video: video);
     if (!hasPerms) {
       rejectIncomingCall();
-      return;
+      return false;
     }
 
     await _ensureRenderersInitialized();
     _myName = await _getMyName();
     _myUserId = await _getMyUserId();
 
+    // ⭐ V5 — signalisation REST : marquer l'appel accepté côté serveur
+    final cid = _callId;
+    if (cid != null && _restSignaled) {
+      try {
+        await ApiService.acceptCallSignal(cid);
+      } catch (e) {
+        debugPrint('WARN: REST accept failed (non bloquant) : $e');
+      }
+    }
+
     _localStream = await _getUserMedia(video: video);
     _localRenderer.srcObject = _localStream;
-
-    _isIncoming = false;
+    _state = GroupCallState.active;
     _ringtone.stop();
     _startTimer();
+    _startStatusPolling();
 
-    // For each connected participant (initially just the initiator),
-    // establish a peer connection as the caller (we send the offer)
+    // ⭐ V5 — RÉPONDRE aux offres en attente (l'initiateur a déjà proposé).
+    //    Puis, pour les participants restés sans offre, en émettre une
+    //    (négociation parfaite : le glare est résolu dans onCallOffer).
+    final pendingIds = _pendingOffers.keys.toList();
+    for (final peerId in pendingIds) {
+      final offer = _pendingOffers.remove(peerId);
+      if (offer != null) await _answerPeerOffer(peerId, offer);
+    }
     for (final participant in _participants.values) {
-      if (participant.userId != _myUserId && !participant.connected) {
+      if (participant.userId != _myUserId &&
+          !_peerConnections.containsKey(participant.userId) &&
+          !_pendingOffers.containsKey(participant.userId)) {
         await _initiatePeerConnection(participant.userId);
       }
     }
 
     notifyListeners();
+    return true;
   }
 
   Future<void> _initiatePeerConnection(String peerUserId) async {
-    final pc = await _createPeerConnection(peerUserId);
-    _peerConnections[peerUserId] = pc;
-    final offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    _socket.emit('call:offer', {
-      'toUserId': peerUserId,
-      'callId': _callId,
-      'callType': _callType,
-      'offer': offer.toMap(),
-      'callerName': _myName,
-      'callerAvatarUrl': null,
-    });
-  }
-
-  // ─── Reject incoming group call (recipient) ────────────────────────────
-  void rejectIncomingCall() {
-    if (_participants.isNotEmpty) {
-      _socket.emit('group-call:leave', {
-        'toUserIds': _participants.keys.where((id) => id != _myUserId).toList(),
+    try {
+      final pc = await _createPeerConnection(peerUserId);
+      _peerConnections[peerUserId] = pc;
+      final offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      _socket.emit('call:offer', {
+        'toUserId': peerUserId,
         'callId': _callId,
+        'callType': _callType,
+        'offer': offer.toMap(),
+        'callerName': _myName,
+        'callerAvatarUrl': null,
       });
+    } catch (e) {
+      debugPrint('WARN: _initiatePeerConnection($peerUserId) failed : $e');
     }
-    _cleanup();
-    notifyListeners();
   }
 
-  // ─── Handle incoming call:offer (when another participant connects to us) ─
-  Future<void> onCallOffer(Map<String, dynamic> data) async {
-    if (!_inCall || data['callId'] != _callId) return;
-    final peerUserId = data['fromUserId'] as String;
-
-    // If we don't know this participant yet, register them
-    if (!_participants.containsKey(peerUserId)) {
-      _participants[peerUserId] = GroupCallParticipant(
-        userId: peerUserId,
-        name: (data['callerName'] as String?) ?? 'Utilisateur',
-        connected: false,
-      );
-    }
-
-    // If we already have a peer connection with this user, just handle the offer
-    if (_peerConnections.containsKey(peerUserId)) {
-      final pc = _peerConnections[peerUserId]!;
+  /// Répond à une offre distante : crée le pc, setRemoteDescription, answer.
+  Future<void> _answerPeerOffer(String peerUserId, Map<String, dynamic> offerData) async {
+    try {
+      final pc = _peerConnections[peerUserId] ?? await _createPeerConnection(peerUserId);
+      _peerConnections[peerUserId] = pc;
       final offer = RTCSessionDescription(
-        data['offer']['sdp'] as String?,
-        data['offer']['type'] as String?,
+        offerData['offer']['sdp'] as String?,
+        offerData['offer']['type'] as String?,
       );
       await pc.setRemoteDescription(offer);
       final answer = await pc.createAnswer();
@@ -372,32 +560,114 @@ class GroupCallService extends ChangeNotifier {
         'callId': _callId,
         'answer': answer.toMap(),
       });
-    } else {
-      // Store the offer pending — we'll process it when we accept
-      _pendingOffers[peerUserId] = data;
+    } catch (e) {
+      debugPrint('WARN: _answerPeerOffer($peerUserId) failed : $e');
     }
   }
 
-  // ─── Handle call:answer (when our offer is answered) ───────────────────
-  Future<void> onCallAnswer(Map<String, dynamic> data) async {
-    if (!_inCall || data['callId'] != _callId) return;
-    final peerUserId = data['fromUserId'] as String;
-    final pc = _peerConnections[peerUserId];
-    if (pc == null) return;
-    final answer = RTCSessionDescription(
-      data['answer']['sdp'] as String?,
-      data['answer']['type'] as String?,
-    );
-    await pc.setRemoteDescription(answer);
-    _participants[peerUserId]?.connected = true;
+  // ─── Refuser un appel entrant ────────────────────────────────────────────
+  void rejectIncomingCall() {
+    final cid = _callId;
+    if (cid != null) {
+      _declinedCallIds.add(cid); // ne plus jamais re-sonner pour cet appel
+      // ⭐ V5 — signalisation REST : en groupe le refus est LOCAL (l'appel
+      //    continue de sonner pour les autres) — le serveur gère cette
+      //    sémantique dans decline().
+      if (_restSignaled) {
+        ApiService.declineCallSignal(cid).catchError((e) {
+          debugPrint('WARN: REST decline failed : $e');
+          return <String, dynamic>{};
+        });
+      }
+    }
+    // Si l'invitation vient du mesh, prévenir les autres participants
+    if (_participants.isNotEmpty && _initiatorId != null && _initiatorId != _myUserId) {
+      _socket.emit('group-call:leave', {
+        'toUserIds': [_initiatorId],
+        'callId': _callId,
+      });
+    }
+    _cleanup();
     notifyListeners();
   }
 
-  // ─── Handle ICE candidate ──────────────────────────────────────────────
+  // ─── Offre mesh entrante (un participant se connecte à nous) ─────────────
+  Future<void> onCallOffer(Map<String, dynamic> data) async {
+    if (!_inCall || data['callId'] != _callId) return;
+    final peerUserId = data['fromUserId'] as String?;
+    if (peerUserId == null || peerUserId.isEmpty || peerUserId == _myUserId) return;
+
+    if (!_participants.containsKey(peerUserId)) {
+      _participants[peerUserId] = GroupCallParticipant(
+        userId: peerUserId,
+        name: (data['callerName'] as String?) ?? 'Utilisateur',
+        connected: false,
+      );
+    }
+
+    // Pas encore en appel actif (on sonne) → mettre l'offre en attente ;
+    // elle sera traitée dans acceptIncomingCall().
+    if (_state == GroupCallState.incoming) {
+      _pendingOffers[peerUserId] = data;
+      return;
+    }
+
+    final existingPc = _peerConnections[peerUserId];
+    if (existingPc == null) {
+      // Aucune connexion → on répond simplement (rôle answerer)
+      await _answerPeerOffer(peerUserId, data);
+      return;
+    }
+
+    // Glare (nous avons une offre locale, l'autre aussi) — négociation
+    // parfaite : le pair à l'userId le plus PETIT est « polite » → il
+    // abandonne son offre et répond à la nôtre.
+    final myOfferPending =
+        existingPc.localDescription?.type == 'offer' && existingPc.remoteDescription == null;
+    if (myOfferPending) {
+      final iAmImpolite = (_myUserId ?? '').compareTo(peerUserId) > 0;
+      if (iAmImpolite) {
+        debugPrint('GroupCall: glare avec $peerUserId — je garde mon offre (impolite)');
+        return; // l'autre répondra à notre offre
+      }
+      // Polite : détruire notre pc + répondre à son offre
+      try {
+        await existingPc.close();
+      } catch (_) {}
+      _peerConnections.remove(peerUserId);
+      _remoteRenderers.remove(peerUserId)?.dispose();
+      await _answerPeerOffer(peerUserId, data);
+    } else {
+      // pc existant avec remote description → re-offre (re-négociation)
+      await _answerPeerOffer(peerUserId, data);
+    }
+  }
+
+  // ─── Réponse à notre offre ───────────────────────────────────────────────
+  Future<void> onCallAnswer(Map<String, dynamic> data) async {
+    if (!_inCall || data['callId'] != _callId) return;
+    final peerUserId = data['fromUserId'] as String?;
+    final pc = peerUserId != null ? _peerConnections[peerUserId] : null;
+    if (pc == null) return;
+    try {
+      final answer = RTCSessionDescription(
+        data['answer']['sdp'] as String?,
+        data['answer']['type'] as String?,
+      );
+      await pc.setRemoteDescription(answer);
+      _participants[peerUserId]?.connected = true;
+      _maybeActivate();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('WARN: onCallAnswer failed : $e');
+    }
+  }
+
+  // ─── ICE candidate ──────────────────────────────────────────────────────
   Future<void> onIceCandidate(Map<String, dynamic> data) async {
     if (!_inCall || data['callId'] != _callId) return;
-    final peerUserId = data['fromUserId'] as String;
-    final pc = _peerConnections[peerUserId];
+    final peerUserId = data['fromUserId'] as String?;
+    final pc = peerUserId != null ? _peerConnections[peerUserId] : null;
     if (pc == null) return;
     final candidateMap = data['candidate'] as Map<dynamic, dynamic>;
     final candidate = RTCIceCandidate(
@@ -412,22 +682,46 @@ class GroupCallService extends ChangeNotifier {
     }
   }
 
-  // ─── Handle group-call:leave (another participant left) ─────────────────
+  // ─── Départ d'un participant (group-call:leave / call:hangup) ────────────
   void onGroupCallLeave(Map<String, dynamic> data) {
     if (!_inCall || data['callId'] != _callId) return;
-    final leavingUserId = data['fromUserId'] as String;
+    final leavingUserId = data['fromUserId'] as String? ?? '';
     _removeParticipant(leavingUserId);
 
-    // If the initiator left and we're a recipient, end the call
-    if (!_isInitiator && leavingUserId == (_participants.keys.isNotEmpty ? _participants.keys.first : null)) {
+    // L'initiateur part → l'appel est terminé pour les invités (mesh)
+    if (!_isInitiator && leavingUserId == _initiatorId) {
       _cleanup();
     }
     notifyListeners();
   }
 
-  // ─── Local controls ──────────────────────────────────────────────────────
+  // ─── Polling du statut REST (2 s) ────────────────────────────────────────
+  /// Filet de sécurité (parité web) : si le serveur passe l'appel en
+  /// ended / missed / cancelled / declined, on raccroche proprement.
+  void _startStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final cid = _callId;
+      if (!_inCall || cid == null || _ending || !_restSignaled) return;
+      try {
+        final status = await ApiService.getCallSignalStatus(cid);
+        final s = status['status'] as String?;
+        if (s == 'ended' || s == 'missed' || s == 'cancelled' || s == 'declined') {
+          debugPrint('GroupCall: statut REST=$s → raccrochage');
+          _cleanup();
+          notifyListeners();
+        }
+      } catch (_) {
+        // silencieux — le polling ne doit jamais interrompre l'appel
+      }
+    });
+  }
+
+  // ─── Contrôles locaux ────────────────────────────────────────────────────
   void toggleMute() {
-    final audioTrack = _localStream?.getAudioTracks().isNotEmpty == true ? _localStream!.getAudioTracks().first : null;
+    final audioTrack = _localStream?.getAudioTracks().isNotEmpty == true
+        ? _localStream!.getAudioTracks().first
+        : null;
     if (audioTrack != null) {
       audioTrack.enabled = !audioTrack.enabled;
       _muted = !audioTrack.enabled;
@@ -436,7 +730,9 @@ class GroupCallService extends ChangeNotifier {
   }
 
   void toggleVideo() {
-    final videoTrack = _localStream?.getVideoTracks().isNotEmpty == true ? _localStream!.getVideoTracks().first : null;
+    final videoTrack = _localStream?.getVideoTracks().isNotEmpty == true
+        ? _localStream!.getVideoTracks().first
+        : null;
     if (videoTrack != null) {
       videoTrack.enabled = !videoTrack.enabled;
       _videoOff = !videoTrack.enabled;
@@ -449,19 +745,40 @@ class GroupCallService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Hang up — notify all other participants and cleanup
+  /// Raccrocher — notifier tous les participants + signalisation REST end.
   void hangup() {
+    _ending = true;
     if (_participants.isNotEmpty) {
-      _socket.emit('group-call:leave', {
-        'toUserIds': _participants.keys.where((id) => id != _myUserId).toList(),
-        'callId': _callId,
+      final targets = _participants.keys
+          .where((id) => id != _myUserId && id != _initiatorId)
+          .toList();
+      if (targets.isNotEmpty) {
+        _socket.emit('group-call:leave', {
+          'toUserIds': targets,
+          'callId': _callId,
+        });
+      }
+      // L'initiateur reçoit aussi un call:hangup (mesh 1-1 semantics)
+      if (_initiatorId != null && _initiatorId != _myUserId) {
+        _socket.emit('call:hangup', {
+          'toUserId': _initiatorId,
+          'callId': _callId,
+        });
+      }
+    }
+    // ⭐ V5 — signalisation REST : terminer l'appel côté serveur
+    final cid = _callId;
+    if (cid != null && _restSignaled) {
+      ApiService.endCallSignal(cid).catchError((e) {
+        debugPrint('WARN: REST end failed : $e');
+        return <String, dynamic>{};
       });
     }
     _cleanup();
     notifyListeners();
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────
+  // ─── Nettoyage ───────────────────────────────────────────────────────────
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -471,38 +788,56 @@ class GroupCallService extends ChangeNotifier {
   }
 
   void _removeParticipant(String userId) {
+    if (userId.isEmpty) return;
     _peerConnections[userId]?.close();
     _peerConnections.remove(userId);
-    _remoteRenderers[userId]?.dispose();
-    _remoteRenderers.remove(userId);
+    _remoteRenderers.remove(userId)?.dispose();
     _participants.remove(userId);
-    if (_participants.isEmpty && _isInitiator) {
+    _pendingOffers.remove(userId);
+    if (_participants.length <= 1 && _isInitiator) {
+      // Plus personne dans l'appel
       _cleanup();
     }
+    notifyListeners();
   }
 
   Future<String?> _getMyUserId() async {
-    // Placeholder — the screen should set _myUserId before calling startGroupCall
-    return _myUserId;
+    if (_myUserId != null) return _myUserId;
+    try {
+      return await AuthService.getUserId();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> _getMyName() async {
-    return _myName;
+    if (_myName != null) return _myName;
+    try {
+      return await AuthService.getDisplayName();
+    } catch (_) {
+      return 'Utilisateur';
+    }
   }
 
   void _cleanup() {
     _timer?.cancel();
     _timer = null;
+    _statusPollTimer?.cancel();
+    _statusPollTimer = null;
     _ringtone.stop();
     _duration = 0;
     _muted = false;
     _videoOff = false;
     _speakerOn = true;
     _inCall = false;
+    _ending = false;
     _isInitiator = false;
-    _isIncoming = false;
+    _restSignaled = false;
+    _state = GroupCallState.idle;
     _callId = null;
     _conversationId = null;
+    _convName = null;
+    _initiatorId = null;
     _initiatorName = null;
 
     _peerConnections.forEach((_, pc) => pc.close());
@@ -518,13 +853,10 @@ class GroupCallService extends ChangeNotifier {
     _localRenderer.srcObject = null;
   }
 
+  /// Ne PAS disposer le singleton ; nettoyage uniquement.
   @override
   void dispose() {
     _cleanup();
-    if (_renderersInitialized) {
-      _localRenderer.dispose();
-      _renderersInitialized = false;
-    }
     super.dispose();
   }
 }

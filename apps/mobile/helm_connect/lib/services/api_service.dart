@@ -147,6 +147,25 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_userRoleKey);
   }
+
+  /// Nom d'affichage de l'utilisateur courant : prénom + nom du profil
+  /// (GET /chat/profile/:userId), repli sur le préfixe de l'email.
+  static Future<String> getDisplayName() async {
+    final userId = await getUserId();
+    if (userId != null) {
+      try {
+        final profile = await ApiService.getProfile(userId);
+        final first = profile['firstName'] as String? ?? '';
+        final last = profile['lastName'] as String? ?? '';
+        final full = '$first $last'.trim();
+        if (full.isNotEmpty) return full;
+      } catch (_) {/* repli email */ }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString(_userEmailKey);
+    if (email != null && email.contains('@')) return email.split('@').first;
+    return 'Utilisateur';
+  }
 }
 
 class ApiService {
@@ -626,6 +645,229 @@ class ApiService {
     return post('/chat/presence', {
       'userId': userId,
       'status': status,
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ⭐ V4 — SIGNALISATION REST DES APPELS (parité web /api/chat/calls/*)
+  //    start / accept / decline / end + polling incoming (3 s) + statut (2 s)
+  // ═════════════════════════════════════════════════════════════════
+
+  /// Lancer un appel (1-1 ou groupe) — crée le signal côté serveur,
+  /// sonne pour tous les membres, renvoie { callId, conversation }.
+  /// Backend: POST /chat/calls/signal { action: 'start', conversationId, type }
+  static Future<Map<String, dynamic>> startCallSignal({
+    required String conversationId,
+    required String type, // 'audio' | 'video'
+  }) async {
+    return post('/chat/calls/signal', {
+      'action': 'start',
+      'conversationId': conversationId,
+      'type': type,
+    });
+  }
+
+  /// Décrocher un appel signalisé. Backend: POST /chat/calls/signal { action: 'accept', callId }
+  static Future<Map<String, dynamic>> acceptCallSignal(String callId) async {
+    return post('/chat/calls/signal', {'action': 'accept', 'callId': callId});
+  }
+
+  /// Refuser un appel (groupe : refus LOCAL, l'appel continue pour les autres).
+  /// Backend: POST /chat/calls/signal { action: 'decline', callId }
+  static Future<Map<String, dynamic>> declineCallSignal(String callId) async {
+    return post('/chat/calls/signal', {'action': 'decline', 'callId': callId});
+  }
+
+  /// Terminer/annuler un appel (initiateur ou participant accepté).
+  /// Backend: POST /chat/calls/signal { action: 'end', callId }
+  static Future<Map<String, dynamic>> endCallSignal(String callId) async {
+    return post('/chat/calls/signal', {'action': 'end', 'callId': callId});
+  }
+
+  /// Appels qui sonnent pour moi (polling 3 s — filet de sécurité socket).
+  /// Backend: GET /chat/calls/signal?incoming=1 → { incoming: [...] }
+  static Future<List<Map<String, dynamic>>> getIncomingCalls() async {
+    final dynamic data = await get('/chat/calls/signal?incoming=1');
+    if (data is Map<String, dynamic>) {
+      final items = data['incoming'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    return [];
+  }
+
+  /// Statut d'un appel (polling 2 s) : { status, durationSec, type, mediaProvider, isGroupCall, convType }.
+  /// Backend: GET /chat/calls/signal?callId=x
+  static Future<Map<String, dynamic>> getCallSignalStatus(String callId) async {
+    return get('/chat/calls/signal?callId=$callId');
+  }
+
+  /// Historique d'appels (section Appels) — CALL_LOG de toutes mes conversations.
+  /// Backend: GET /chat/calls/history?limit=
+  static Future<List<Map<String, dynamic>>> getCallHistory({int limit = 60}) async {
+    final dynamic data = await get('/chat/calls/history?limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['items'] as List<dynamic>? ?? data['calls'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ⭐ V5 — ÉCRAN MEMBRES / GESTION DES GROUPES (parité web)
+  // ═════════════════════════════════════════════════════════════════
+
+  /// Liste des membres d'une conversation (rôle, présence, statut).
+  /// Backend: GET /chat/conversations/:id/members?userId=
+  static Future<List<Map<String, dynamic>>> getConversationMembers(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/conversations/$conversationId/members?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['members'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Membres du tenant absents de la conversation (recherche d'invitables).
+  /// Backend: GET /chat/conversations/:id/invitable?q=
+  static Future<List<Map<String, dynamic>>> getInvitableMembers(String conversationId, {String? query}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final q = query ?? '';
+    final dynamic data =
+        await get('/chat/conversations/$conversationId/invitable?userId=$userId&q=${Uri.encodeComponent(q)}');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['users'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Ajouter des membres (1 à 50, idempotent, audit INVITE_MEMBERS).
+  /// Backend: POST /chat/conversations/:id/add-members { userIds }
+  static Future<Map<String, dynamic>> addMembersToConversation(
+    String conversationId,
+    List<String> userIds,
+  ) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/add-members', {
+      'userId': userId,
+      'userIds': userIds,
+    });
+  }
+
+  /// Promouvoir/rétrograder un membre (ADMIN | MODERATOR | MEMBER).
+  /// Backend: PUT /chat/conversations/:id/members/:userId/role { role }
+  static Future<Map<String, dynamic>> setMemberRole(
+    String conversationId,
+    String targetUserId,
+    String role,
+  ) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return put('/chat/conversations/$conversationId/members/$targetUserId/role', {
+      'adminId': userId,
+      'role': role,
+    });
+  }
+
+  /// DELETE avec corps JSON (les endpoints ban/mute/unban/unmute du NestJS
+  /// lisent @Body() même sur DELETE — http.delete n'envoie pas de corps).
+  static Future<Map<String, dynamic>> _deleteWithBody(String path, Map<String, dynamic> body) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final request = http.Request('DELETE', Uri.parse('$base$path'));
+    request.headers.addAll(headers);
+    request.body = jsonEncode(body);
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    return _handleResponse(response) as Map<String, dynamic>;
+  }
+
+  /// Exclure un membre de la conversation.
+  /// Backend: POST /chat/conversations/:id/kick/:userId { adminId, reason? }
+  static Future<Map<String, dynamic>> kickMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/kick/$targetUserId', {'adminId': userId});
+  }
+
+  /// Bannir un membre (ne peut pas revenir sans ré-invitation).
+  /// Backend: POST /chat/conversations/:id/ban/:userId { adminId, reason? }
+  static Future<Map<String, dynamic>> banMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/ban/$targetUserId', {'adminId': userId});
+  }
+
+  /// Lever un bannissement.
+  /// Backend: DELETE /chat/conversations/:id/ban/:userId { adminId }
+  static Future<Map<String, dynamic>> unbanMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return _deleteWithBody(
+      '/chat/conversations/$conversationId/ban/$targetUserId',
+      {'adminId': userId},
+    );
+  }
+
+  /// Rendre un membre muet (silencieux) dans la conversation.
+  /// Backend: POST /chat/conversations/:id/mute/:userId { adminId, reason? }
+  static Future<Map<String, dynamic>> muteMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/mute/$targetUserId', {'adminId': userId});
+  }
+
+  /// Lever le mode muet.
+  /// Backend: DELETE /chat/conversations/:id/mute/:userId { adminId }
+  static Future<Map<String, dynamic>> unmuteMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return _deleteWithBody(
+      '/chat/conversations/$conversationId/mute/$targetUserId',
+      {'adminId': userId},
+    );
+  }
+
+  /// Approuver une adhésion PENDING (ADMIN).
+  /// Backend: POST /chat/conversations/:id/members/:userId/approve
+  static Future<Map<String, dynamic>> approveMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/members/$targetUserId/approve', {'adminId': userId});
+  }
+
+  /// Refuser une adhésion PENDING (ADMIN).
+  /// Backend: POST /chat/conversations/:id/members/:userId/reject
+  static Future<Map<String, dynamic>> rejectPendingMember(String conversationId, String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/members/$targetUserId/reject', {'adminId': userId});
+  }
+
+  /// Mes droits effectifs dans la conversation (rôle + permissions fusionnées).
+  /// Backend: GET /chat/conversations/:id/my-permissions?userId=
+  static Future<Map<String, dynamic>> getMyPermissions(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return get('/chat/conversations/$conversationId/my-permissions?userId=$userId');
+  }
+
+  /// Quitter un groupe (met leftAt + message système « X a quitté »).
+  /// Backend: POST /chat/conversations/:id/leave
+  static Future<Map<String, dynamic>> leaveConversation(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/leave', {'userId': userId});
+  }
+
+  /// Créer un groupe de discussion.
+  /// Backend: POST /chat/conversations/group { creatorId, name, description?, participantIds }
+  static Future<Map<String, dynamic>> createGroupConversation({
+    required String name,
+    String? description,
+    required List<String> participantIds,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/group', {
+      'creatorId': userId,
+      'name': name,
+      if (description != null) 'description': description,
+      'participantIds': participantIds,
     });
   }
 

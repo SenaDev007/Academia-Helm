@@ -54,9 +54,38 @@ export class ExamsDashboardService {
   }
 
   /**
+   * ⭐ V10b — Isolation par niveau + piste linguistique.
+   * Les sections EN (Nursery/Primary) partagent le schoolLevelId de leur
+   * miroir FR : les requêtes doivent donc filtrer AUSSI par langue.
+   *   FR : classes FR marquées + classes SANS marqueur (structure FR historique)
+   *   EN : classes EN marquées uniquement
+   * (règle identique à level-isolation.ts côté frontend)
+   */
+  private classLanguageOr(language?: string): any[] | undefined {
+    if (!language) return undefined;
+    const lang = String(language).toUpperCase();
+    const conditions: any[] = [
+      { academicTrack: { code: lang } },
+      { language: lang },
+    ];
+    if (lang === 'FR') {
+      conditions.push({ language: null, academicTrackId: null });
+    }
+    return conditions;
+  }
+
+  /** Filtre `class` combiné : schoolLevelId ET langue (si fournie). */
+  private classWhere(schoolLevelId: string, language?: string): any {
+    const langOr = this.classLanguageOr(language);
+    return langOr ? { schoolLevelId, OR: langOr } : { schoolLevelId };
+  }
+
+  /**
    * Récupère les KPI globaux du dashboard Examens
    */
-  async getDashboardKpi(tenantId: string, academicYearId: string, schoolLevelId: string) {
+  async getDashboardKpi(tenantId: string, academicYearId: string, schoolLevelId: string, language?: string) {
+    // ⭐ V10b — le filtre class intègre la piste linguistique du niveau
+    const classFilter = this.classWhere(schoolLevelId, language);
     const [
       totalEvaluations,
       pendingValidation,
@@ -65,32 +94,34 @@ export class ExamsDashboardService {
     ] = await Promise.all([
       // 1. Total des évaluations prévues sur la période active
       this.prisma.evaluation.count({
-        where: { tenantId, academicYearId, class: { schoolLevelId } },
+        where: { tenantId, academicYearId, class: classFilter },
       }),
 
       // 2. Évaluations en attente de validation (workflow admin)
       this.prisma.evaluation.count({
-        where: { 
-          tenantId, 
-          academicYearId, 
-          class: { schoolLevelId },
+        where: {
+          tenantId,
+          academicYearId,
+          class: classFilter,
           status: 'SUBMITTED',
         },
       }),
 
       // 3. Nombre d'élèves n'ayant pas encore toutes leurs notes (calcul approximatif)
-      // Pour une version plus précise, il faudrait croiser Student x Evaluation
+      // ⭐ V10b — AVANT : aucune jointure de niveau → mélangeait TOUS les niveaux.
+      //    On filtre désormais par classe du niveau + piste sélectionnés.
       this.prisma.grade.count({
         where: {
           tenantId,
           academicYearId,
           score: null,
           isAbsent: false,
+          class: classFilter,
         },
       }),
 
       // 4. Taux de complétion global (évaluations validées / total)
-      this.calculateGlobalCompletionRate(tenantId, academicYearId, schoolLevelId),
+      this.calculateGlobalCompletionRate(tenantId, academicYearId, schoolLevelId, language),
     ]);
 
     return {
@@ -105,9 +136,10 @@ export class ExamsDashboardService {
   /**
    * Taux de complétion des notes par classe
    */
-  async getCompletionByClass(tenantId: string, academicYearId: string, schoolLevelId: string) {
+  async getCompletionByClass(tenantId: string, academicYearId: string, schoolLevelId: string, language?: string) {
+    // ⭐ V10b — isole les classes par piste linguistique
     const classes = await this.prisma.class.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
+      where: { tenantId, academicYearId, ...this.classWhere(schoolLevelId, language) },
       select: {
         id: true,
         name: true,
@@ -146,13 +178,14 @@ export class ExamsDashboardService {
   /**
    * Alertes de retard (évaluations passées mais non saisies/validées)
    */
-  async getPendingAlerts(tenantId: string, academicYearId: string, schoolLevelId: string) {
+  async getPendingAlerts(tenantId: string, academicYearId: string, schoolLevelId: string, language?: string) {
     const today = new Date();
     const delayedEvaluations = await this.prisma.evaluation.findMany({
       where: {
         tenantId,
         academicYearId,
-        class: { schoolLevelId },
+        // ⭐ V10b — isole les alertes par niveau + piste linguistique
+        class: this.classWhere(schoolLevelId, language),
         evaluationDate: { lt: today },
         status: { in: ['PLANNED', 'OPEN_FOR_GRADING', 'SUBMITTED'] },
       },
@@ -175,14 +208,16 @@ export class ExamsDashboardService {
     }));
   }
 
-  private async calculateGlobalCompletionRate(tenantId: string, academicYearId: string, schoolLevelId: string) {
+  private async calculateGlobalCompletionRate(tenantId: string, academicYearId: string, schoolLevelId: string, language?: string) {
+    // ⭐ V10b — piste linguistique appliquée au taux de complétion
+    const classFilter = this.classWhere(schoolLevelId, language);
     const total = await this.prisma.evaluation.count({
-      where: { tenantId, academicYearId, class: { schoolLevelId } },
+      where: { tenantId, academicYearId, class: classFilter },
     });
     if (total === 0) return 100;
 
     const validated = await this.prisma.evaluation.count({
-      where: { tenantId, academicYearId, class: { schoolLevelId }, status: 'VALIDATED' },
+      where: { tenantId, academicYearId, class: classFilter, status: 'VALIDATED' },
     });
 
     return (validated / total) * 100;
@@ -191,17 +226,19 @@ export class ExamsDashboardService {
   /**
    * Intégration ORION : Détection d'anomalies pédagogiques
    */
-  async getOrionInsights(tenantId: string, academicYearId: string, schoolLevelId: string) {
+  async getOrionInsights(tenantId: string, academicYearId: string, schoolLevelId: string, language?: string) {
     const insights = [];
 
     // ⭐ Seuil d'alerte configurable (défaut 8)
     const alertThreshold = await this.getAlertThreshold(tenantId, academicYearId);
 
     // 1. Détection des chutes de performance (Mock logic for now, should compare with previous period)
+    // ⭐ V10b — isole par classe du niveau + piste linguistique
     const lowAveragesCount = await this.prisma.studentPeriodAverage.count({
       where: {
         tenantId,
         academicYearId,
+        class: this.classWhere(schoolLevelId, language),
         generalAverage: { lt: alertThreshold },
       },
     });
@@ -216,10 +253,12 @@ export class ExamsDashboardService {
     }
 
     // 2. Détection des retards critiques
+    // ⭐ V10b — isole par classe du niveau + piste linguistique
     const criticalDelays = await this.prisma.evaluation.count({
       where: {
         tenantId,
         academicYearId,
+        class: this.classWhere(schoolLevelId, language),
         status: { in: ['PLANNED', 'OPEN_FOR_GRADING'] },
         evaluationDate: { lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // > 7 jours
       },

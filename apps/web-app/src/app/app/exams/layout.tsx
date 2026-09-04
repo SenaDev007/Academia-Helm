@@ -132,11 +132,14 @@ const LEVEL_ICONS: Record<string, any> = {
 
 // Libellés + descriptions dans la langue DU NIVEAU :
 // les niveaux FR se décrivent en français, les miroirs EN en anglais.
+// ⭐ V10b — Nursery est QUANTITATIF exactement comme Primary
+//    (First CA /40 + Second CA /40 + Exam /60 = /100) ;
+//    seule la Maternelle FR reste qualitative (TS / S / PS).
 const LEVEL_DESCRIPTIONS: Record<string, string> = {
   MATERNELLE: 'Évaluation qualitative (TS / S / PS)',
   PRIMAIRE: 'Évaluation quantitative /20 — coefficient 1',
   SECONDAIRE: 'Évaluation quantitative /20 — coefficient variable',
-  NURSERY: 'Qualitative assessment (TS / S / PS)',
+  NURSERY: 'Quantitative assessment /100 — First CA, Second CA, Examination',
   PRIMARY: 'Quantitative assessment /100 — First CA, Second CA, Examination',
 };
 

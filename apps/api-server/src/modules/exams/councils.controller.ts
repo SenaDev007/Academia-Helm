@@ -26,10 +26,11 @@ export class CouncilsController {
     @Query('periodId') periodId: string, // alias legacy (map vers quarterId)
     @Query('classId') classId: string,
     @Query('schoolLevelId') schoolLevelId: string,
+    @Query('language') language?: string,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
     const qid = quarterId || periodId; // ⭐ rétro-compat : periodId → quarterId
-    return this.councilsService.getCouncils(resolvedTenantId, academicYearId, qid, classId, schoolLevelId);
+    return this.councilsService.getCouncils(resolvedTenantId, academicYearId, qid, classId, schoolLevelId, language);
   }
 
   @Post()

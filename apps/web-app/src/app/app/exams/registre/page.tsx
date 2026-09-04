@@ -37,6 +37,7 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
+import { filterClassesForLevel } from '../level-isolation';
 import { HierarchicalEvaluationList } from '@/components/exams/HierarchicalEvaluationList';
 import type { GroupedEvaluation, GradeRow } from '@/components/exams/GradingSheet';
 import { formatRang, computeAppreciationGlobale, getSubjectOrderIndex } from '@/components/exams/GradingSheet';
@@ -116,19 +117,8 @@ function RegistreContent() {
       const res = await fetch('/api/all-classes', { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
-      const levelClasses = allClasses.filter((c: any) =>
-        c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
-      );
-      const langClasses = language
-        ? levelClasses.filter((c: any) => {
-            const classLang = c.language;
-            const trackCode = c.academicTrack?.code || c.academicTrackCode;
-            if (!classLang && !trackCode) return true;
-            if (classLang === language) return true;
-            if (trackCode === language) return true;
-            return false;
-          })
-        : levelClasses;
+      // ⭐ V10b — Isolation stricte niveau + piste linguistique (non marqué = FR)
+      const langClasses = filterClassesForLevel(allClasses, schoolLevelUuid, language);
       langClasses.sort((a: any, b: any) => {
         const idxA = pedagogicalSortIndex(a.name);
         const idxB = pedagogicalSortIndex(b.name);

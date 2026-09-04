@@ -29,6 +29,7 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from './sub-modules';
 import { useExamSubModules, useExamScope } from './layout';
+import { filterClassesForLevel } from './level-isolation';
 import { getLabels } from '@/lib/exam-anglophone-config';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -109,9 +110,9 @@ function DashboardContent() {
         const res = await fetch('/api/all-classes', { credentials: 'include' });
         const data = await res.json();
         const allClasses = Array.isArray(data) ? data : (data?.items || []);
-        const levelClasses = allClasses.filter((c: any) =>
-          c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
-        );
+        // ⭐ V10b — Isolation stricte niveau + piste linguistique
+        //    (les sections EN partagent le schoolLevelId FR → filtre language)
+        const levelClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
         levelClasses.sort((a: any, b: any) => {
           const idxA = pedagogicalSortIndex(a.name);
           const idxB = pedagogicalSortIndex(b.name);
@@ -122,7 +123,7 @@ function DashboardContent() {
       } catch { setClasses([]); }
     }
     loadClasses();
-  }, [schoolLevelUuid]);
+  }, [schoolLevelUuid, scopeLang]);
 
   // ── Load evaluations ──────────────────────────────────────────────────────
   useEffect(() => {

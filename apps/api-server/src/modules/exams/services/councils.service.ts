@@ -48,11 +48,29 @@ export class CouncilsService {
     quarterId?: string,
     classId?: string,
     schoolLevelId?: string,
+    language?: string,
   ) {
     const where: any = { tenantId, academicYearId };
     if (quarterId) where.quarterId = quarterId;
     if (classId) where.classId = classId;
     if (schoolLevelId) where.schoolLevelId = schoolLevelId;
+    // ⭐ V10b — Isolation par piste linguistique : les sections EN partagent
+    // le schoolLevelId de leur miroir FR → on filtre par la langue de la
+    // classe liée au conseil. Non marqué = FR (structure historique).
+    if (language) {
+      const lang = String(language).toUpperCase();
+      const langConditions: any[] = [
+        { academicTrack: { code: lang } },
+        { language: lang },
+      ];
+      if (lang === 'FR') {
+        langConditions.push({ language: null, academicTrackId: null });
+      }
+      where.class = {
+        ...(where.class || {}),
+        OR: langConditions,
+      };
+    }
 
     return this.prisma.classCouncil.findMany({
       where,
@@ -117,23 +135,42 @@ export class CouncilsService {
     councilDate: string | Date;
     participants?: string[];
     notes?: string;
+    /** ⭐ V10b — piste linguistique du niveau sélectionné (FR/EN) :
+     *  isole la création GLOBALE aux classes de la piste courante. */
+    language?: string;
   }) {
     // 1. Récupérer toutes les classes du niveau scolaire pour ce tenant + année
-    const classes = await this.prisma.class.findMany({
-      where: {
-        tenantId,
-        schoolLevelId: data.schoolLevelId,
-        // On prend seulement les classes qui ont des enrollments actifs pour
-        // cette année académique — évite de créer des councils pour classes vides.
-        studentEnrollments: {
-          some: {
-            tenantId,
-            academicYearId: data.academicYearId,
-            status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED'] },
-          },
+    // ⭐ V10b — Isolation stricte : si language est fourni, on ne prend que
+    // les classes de la piste sélectionnée (les sections EN partagent le
+    // schoolLevelId FR — sans ce filtre, des conseils étaient créés pour
+    // les classes de l'AUTRE piste !).
+    const classWhere: any = {
+      tenantId,
+      schoolLevelId: data.schoolLevelId,
+      // On prend seulement les classes qui ont des enrollments actifs pour
+      // cette année académique — évite de créer des councils pour classes vides.
+      studentEnrollments: {
+        some: {
+          tenantId,
+          academicYearId: data.academicYearId,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED'] },
         },
       },
-      select: { id: true, name: true },
+    };
+    if (data.language) {
+      const lang = String(data.language).toUpperCase();
+      const langConditions: any[] = [
+        { academicTrack: { code: lang } },
+        { language: lang },
+      ];
+      if (lang === 'FR') {
+        langConditions.push({ language: null, academicTrackId: null });
+      }
+      classWhere.OR = langConditions;
+    }
+    const classes = await this.prisma.class.findMany({
+      where: classWhere,
+      select: { id: true, name: true, language: true, academicTrackId: true },
       orderBy: { name: 'asc' },
     });
 
@@ -169,6 +206,7 @@ export class CouncilsService {
     }
 
     // 3. Transaction atomique : créer un council par classe
+    //    ⭐ V10b — academicTrackId hérité de la CLASSE (isolation cohérente)
     const created = await this.prisma.$transaction(
       classesToCreate.map((cls) =>
         this.prisma.classCouncil.create({
@@ -178,7 +216,7 @@ export class CouncilsService {
             schoolLevelId: data.schoolLevelId,
             classId: cls.id,
             quarterId: data.quarterId || null,
-            academicTrackId: data.academicTrackId || null,
+            academicTrackId: cls.academicTrackId || data.academicTrackId || null,
             councilDate: new Date(data.councilDate),
             status: 'SCHEDULED',
             participants: data.participants || [],

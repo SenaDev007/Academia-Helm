@@ -107,19 +107,30 @@ export class EvaluationsService {
     }
     if (filters.evaluationTypeId) where.evaluationTypeId = filters.evaluationTypeId;
     if (filters.language) {
-      // ⭐ Filtrage dynamique par piste linguistique (FR/EN).
-      // On cherche d'abord par academicTrack.code (solution propre, basée sur
-      // AcademicTrack lié à la classe). Fallback sur class.language pour
-      // compatibilité ascendante avec les anciennes classes.
+      // ⭐ V10b — Isolation linguistique stricte (cohérente avec le frontend
+      // level-isolation.ts) :
+      //   FR : classes FR marquées + classes SANS marqueur (structure FR
+      //        historique — les classes héritées sans language/track sont FR)
+      //   EN : classes EN marquées uniquement (les miroirs EN créés par le
+      //        service bilingue portent TOUJOURS language='EN' + track EN)
       //
-      // IMPORTANT : pour éviter de dupliquer la classe sur le where, on
-      // fusionne les deux critères dans le même objet where.class.
+      // ⚠️ Les sections EN partagent le schoolLevelId de leur miroir FR
+      // (bilingual-structure.service.ts) : sans ce filtre, les évaluations
+      // FR et EN du même niveau se mélangeaient dans chaque vue.
+      // L'ancien filtre excluait aussi les classes FR non marquées → perte
+      // de données en vue FR.
+      const lang = String(filters.language).toUpperCase();
+      const languageConditions: any[] = [
+        { academicTrack: { code: lang } },
+        { language: lang },
+      ];
+      if (lang === 'FR') {
+        // Classes héritées sans marqueur linguistique = FR
+        languageConditions.push({ language: null, academicTrackId: null });
+      }
       where.class = {
         ...where.class,
-        OR: [
-          { academicTrack: { code: filters.language } },
-          { language: filters.language },
-        ],
+        OR: languageConditions,
       };
     }
 

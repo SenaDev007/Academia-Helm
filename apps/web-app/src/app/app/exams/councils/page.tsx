@@ -39,6 +39,7 @@ import apiClient from '@/lib/api/client';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
+import { filterClassesForLevel } from '../level-isolation';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -118,9 +119,12 @@ function CouncilsContent() {
       const res = await fetch('/api/all-classes', { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
-      const levelClasses = allClasses.filter((c: any) =>
-        c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
-      );
+      // ⭐ V10b — Isolation stricte niveau + piste linguistique :
+      // AVANT, ce filtre ne regardait que schoolLevelId → les sections EN
+      // (Nursery/Primary partagent le schoolLevelId FR) apparaissaient dans
+      // la vue FR, et la création GLOBALE créait des conseils pour les
+      // classes de l'AUTRE piste. → Filtre par marqueur linguistique.
+      const levelClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
       levelClasses.sort((a: any, b: any) => {
         const idxA = pedagogicalSortIndex(a.name);
         const idxB = pedagogicalSortIndex(b.name);
@@ -128,7 +132,7 @@ function CouncilsContent() {
       });
       setClasses(levelClasses);
     } catch { setClasses([]); }
-  }, [schoolLevelUuid]);
+  }, [schoolLevelUuid, scopeLang]);
 
   // ── Load periods ──────────────────────────────────────────────────────────
   const loadPeriods = useCallback(async () => {
@@ -148,12 +152,19 @@ function CouncilsContent() {
     setLoading(true);
     try {
       const res = await apiClient.get('/institutional-exams/councils', {
-        params: { academicYearId: academicYear.id, schoolLevelId: schoolLevelUuid },
+        // ⭐ V10b — language : isole les conseils par piste (FR/EN) — les
+        // sections EN partagent le schoolLevelId FR, le serveur filtre
+        // par la langue de la classe liée.
+        params: {
+          academicYearId: academicYear.id,
+          schoolLevelId: schoolLevelUuid,
+          ...(scopeLang ? { language: scopeLang } : {}),
+        },
       });
       setCouncils(Array.isArray(res.data) ? res.data : []);
     } catch { setCouncils([]); }
     finally { setLoading(false); }
-  }, [academicYear?.id, schoolLevelUuid]);
+  }, [academicYear?.id, schoolLevelUuid, scopeLang]);
 
   useEffect(() => { loadClasses(); loadPeriods(); }, [loadClasses, loadPeriods]);
   useEffect(() => { loadCouncils(); }, [loadCouncils]);
@@ -167,6 +178,9 @@ function CouncilsContent() {
       const payload: any = {
         academicYearId: academicYear?.id,
         schoolLevelId: schoolLevelUuid,
+        // ⭐ V10b — Isolation : la création GLOBALE ne doit toucher que les
+        // classes de la piste du niveau sélectionné (FR ou EN).
+        ...(scopeLang ? { language: scopeLang } : {}),
         councilDate: data.councilDate,
         quarterId: data.quarterId || data.periodId, // ⭐ periodId alias legacy
         notes: data.notes || data.title || null,

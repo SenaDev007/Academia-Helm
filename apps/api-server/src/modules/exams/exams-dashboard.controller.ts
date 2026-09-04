@@ -9,7 +9,7 @@
  * ============================================================================
  */
 
-import { Controller, Get, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ExamsDashboardService } from './services/exams-dashboard.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ContextValidationGuard } from '../../common/guards/context-validation.guard';
@@ -38,8 +38,9 @@ export class ExamsDashboardController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @Query('language') language?: string,
   ) {
-    return this.dashboardService.getDashboardKpi(tenantId, academicYearId, schoolLevelId);
+    return this.dashboardService.getDashboardKpi(tenantId, academicYearId, schoolLevelId, language);
   }
 
   @Get('completion-by-class')
@@ -48,8 +49,9 @@ export class ExamsDashboardController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @Query('language') language?: string,
   ) {
-    return this.dashboardService.getCompletionByClass(tenantId, academicYearId, schoolLevelId);
+    return this.dashboardService.getCompletionByClass(tenantId, academicYearId, schoolLevelId, language);
   }
 
   @Get('alerts')
@@ -58,8 +60,9 @@ export class ExamsDashboardController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @Query('language') language?: string,
   ) {
-    return this.dashboardService.getPendingAlerts(tenantId, academicYearId, schoolLevelId);
+    return this.dashboardService.getPendingAlerts(tenantId, academicYearId, schoolLevelId, language);
   }
 
   @Get('orion-insights')
@@ -68,7 +71,8 @@ export class ExamsDashboardController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @Query('language') language?: string,
   ) {
-    return this.dashboardService.getOrionInsights(tenantId, academicYearId, schoolLevelId);
+    return this.dashboardService.getOrionInsights(tenantId, academicYearId, schoolLevelId, language);
   }
 }

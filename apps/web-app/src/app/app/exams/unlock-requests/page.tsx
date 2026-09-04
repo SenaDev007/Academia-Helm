@@ -61,7 +61,7 @@ const STATUS_CONFIG = {
 export default function UnlockRequestsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { availableLevels } = useSchoolLevel();
-  const { levelCode: scopeLevel } = useExamScope();
+  const { levelCode: scopeLevel, language: scopeLang } = useExamScope();
   const [requests, setRequests] = useState<UnlockRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'PENDING' | 'ALL' | 'APPROVED' | 'REJECTED'>('PENDING');
@@ -79,6 +79,10 @@ export default function UnlockRequestsPage() {
 
       const params = new URLSearchParams({ status: filter });
       if (schoolLevelUuid) params.set('schoolLevelId', schoolLevelUuid);
+      // ⭐ V10b — Isolation par piste linguistique : les demandes de
+      // déverrouillage des évaluations de l'AUTRE piste (ex. Nursery EN
+      // en vue Maternelle FR) ne doivent pas apparaître ici.
+      if (scopeLang) params.set('language', scopeLang);
 
       const res = await apiClient.get(
         `/institutional-exams/unlock-requests?${params.toString()}`,
@@ -91,7 +95,7 @@ export default function UnlockRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, scopeLevel, availableLevels]);
+  }, [filter, scopeLevel, scopeLang, availableLevels]);
 
   useEffect(() => {
     loadRequests();

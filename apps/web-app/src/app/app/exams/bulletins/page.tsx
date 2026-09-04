@@ -37,6 +37,7 @@ import apiClient from '@/lib/api/client';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
+import { filterClassesForLevel, matchesLevelLanguage } from '../level-isolation';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
@@ -203,19 +204,8 @@ function BulletinsContent() {
       const res = await fetch('/api/all-classes', { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
-      const levelClasses = allClasses.filter((c: any) =>
-        c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
-      );
-      const langClasses = scopeLang
-        ? levelClasses.filter((c: any) => {
-            const classLang = c.language;
-            const trackCode = c.academicTrack?.code || c.academicTrackCode;
-            if (!classLang && !trackCode) return true;
-            if (classLang === scopeLang) return true;
-            if (trackCode === scopeLang) return true;
-            return false;
-          })
-        : levelClasses;
+      // ⭐ V10b — Isolation stricte niveau + piste linguistique (non marqué = FR)
+      const langClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
       langClasses.sort((a: any, b: any) => {
         const idxA = pedagogicalSortIndex(a.name);
         const idxB = pedagogicalSortIndex(b.name);
@@ -2176,9 +2166,9 @@ function MoyennesTab({
         // For each eval type, compute student averages (same pattern as bulletin)
         const evalTypeAverages: Record<string, Record<string, number | null>> = {}; // studentId → { evalTypeId: avg }
         for (const [typeId, evals] of evalTypeMap) {
-          // Filter by language
+          // Filter by language — ⭐ V10b règle d'isolation stricte (non marqué = FR)
           const langEvals = scopeLang
-            ? evals.filter((ev: any) => !ev.subject?.language || ev.subject.language === scopeLang || ev.subject.language === 'FR')
+            ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
             : evals;
 
           // Get grades for each eval

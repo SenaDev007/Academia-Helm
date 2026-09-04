@@ -49,6 +49,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
+import { filterClassesForLevel, matchesLevelLanguage } from '../level-isolation';
 import {
   getLabels, getEvaluationTypes, getMaxScoreForType,
   translatePeriodName, EN_EVALUATION_TYPES,
@@ -588,39 +589,14 @@ export default function EvaluationsPage() {
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
 
-      // ⭐ Filtrer les classes par niveau scolaire ACTUEL (module examen)
-      // /api/all-classes retourne TOUTES les classes du tenant (header x-school-level-id=ALL).
-      // On filtre côté client par schoolLevelId === schoolLevelUuid (niveau du module examen).
+      // ⭐ V10b — Isolation stricte par niveau + piste linguistique :
+      // les sections EN partagent le schoolLevelId de leur miroir FR → on
+      // filtre par le marqueur linguistique (non marqué = FR historique).
+      // Plus AUCUN repli « tout afficher » : chaque vue ne voit que SES classes.
       const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
-      const levelClasses = allClasses.filter((c: any) =>
-        c.schoolLevelId === schoolLevelUuid ||
-        c.schoolLevel?.id === schoolLevelUuid
-      );
-      // ⭐ Filtrage dynamique par piste linguistique (FR/EN).
-      // Une classe peut avoir 'language' ou 'academicTrack.code' (ou les deux).
-      // On accepte si l'un OU l'autre correspond à scopeLang, OU si aucun n'est défini
-      // (compatibilité ascendante : les classes sans track sont affichées partout).
-      //
-      // ⭐ CORRECTION : si aucune classe ne match le filtre linguistique,
-      //    on affiche TOUTES les classes du niveau (mieux vaut trop que rien).
-      let langClasses = levelClasses;
-      if (scopeLang) {
-        const filtered = levelClasses.filter((c: any) => {
-          const classLang = c.language;
-          const trackCode = c.academicTrack?.code || c.academicTrackCode;
-          if (!classLang && !trackCode) return true; // pas d'info → on garde
-          if (classLang === scopeLang) return true;
-          if (trackCode === scopeLang) return true;
-          return false;
-        });
-        // Si le filtre renvoie 0 classes, utiliser toutes les classes du niveau
-        // (évite le bug "Aucune classe pour ce niveau scolaire")
-        if (filtered.length > 0) {
-          langClasses = filtered;
-        }
-      }
+      const levelClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
       // Trier par ordre pédagogique (Maternelle → Primaire → Secondaire)
-      const sortedClasses = [...langClasses].sort((a, b) => {
+      const sortedClasses = [...levelClasses].sort((a, b) => {
         const idxA = getClassOrderIndex(a.name || a.code || '');
         const idxB = getClassOrderIndex(b.name || b.code || '');
         if (idxA !== idxB) return idxA - idxB;
@@ -630,22 +606,14 @@ export default function EvaluationsPage() {
 
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
 
-      // ⭐ Filtrer les matières par niveau scolaire ACTUEL + piste linguistique
+      // ⭐ V10b — Isolation stricte des matières (même règle que les classes) :
+      // niveau schoolLevelId + marqueur linguistique (non marqué = FR).
       const allSubjects = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []);
       const levelSubjects = allSubjects.filter((s: any) =>
         s.schoolLevelId === schoolLevelUuid
       );
       const filteredSubjects = scopeLang
-        ? levelSubjects.filter((s: any) => {
-            // Accepter si la matière n'a pas de langue, OU si sa langue correspond,
-            // OU si son academicTrack.code correspond (piste académique liée).
-            const subjectLang = s.language;
-            const trackCode = s.academicTrack?.code || s.academicTrackCode;
-            if (!subjectLang && !trackCode) return true;
-            if (subjectLang === scopeLang) return true;
-            if (trackCode === scopeLang) return true;
-            return false;
-          })
+        ? levelSubjects.filter((s: any) => matchesLevelLanguage(s, scopeLang))
         : levelSubjects;
       // Trier par niveau scolaire (Maternelle → Primaire → Secondaire)
       const sortedSubjects = [...filteredSubjects].sort((a, b) => {
@@ -1450,16 +1418,18 @@ export default function EvaluationsPage() {
         </div>
 
         {/* Barème + Coefficient — masqués pour la maternelle (qualitatif TS/S/PS) */}
-        {/* ⭐ En piste anglophone (EN), le coefficient est masqué (système sans coefficient) */}
+        {/* ⭐ V10b — Ce bloc ne s'affiche QUE pour la Maternelle FR (qualitative).
+            Nursery (EN) est quantitatif comme Primary : il passe par la branche
+            isEN ci-dessous (barème /40 CA ou /60 Exam, sans coefficient).
+            Un ancien libellé « Qualitative Assessment (Nursery) » (code mort —
+            isEN ne peut jamais être vrai ici) a été supprimé. */}
         {isMaternelle ? (
           <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
             <p className="text-sm font-semibold text-pink-900 mb-1">
-              🎨 {isEN ? 'Qualitative Assessment (Nursery)' : 'Évaluation qualitative (Maternelle)'}
+              🎨 Évaluation qualitative (Maternelle)
             </p>
             <p className="text-xs text-pink-800">
-              {isEN
-                ? 'Nursery assessments use a qualitative system: TS (Very Satisfactory) / S (Satisfactory) / PS (Less Satisfactory). No maximum score or coefficient — grading is done via TS/S/PS buttons in the Grading tab.'
-                : 'Les évaluations de maternelle utilisent un système qualitatif TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant). Pas de note maximale ni de coefficient — la saisie se fait au niveau de l\'onglet "Saisie des notes" via des boutons TS/S/PS.'}
+              Les évaluations de maternelle utilisent un système qualitatif TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant). Pas de note maximale ni de coefficient — la saisie se fait au niveau de l&apos;onglet « Saisie des notes » via des boutons TS/S/PS.
             </p>
           </div>
         ) : isEN ? (

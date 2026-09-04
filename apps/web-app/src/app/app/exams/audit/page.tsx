@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { 
   ShieldAlert, 
   History, 
@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -34,16 +35,35 @@ import { useExamScope } from '../layout';
 export default function AuditPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear } = useModuleContext();
-  const { language: scopeLang } = useExamScope();
+  const { availableLevels } = useSchoolLevel();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ⭐ V10b — Résolution du niveau sélectionné (isolation des logs d'audit)
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+  }, [availableLevels, scopeLevel]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   useEffect(() => {
     async function loadLogs() {
       if (!academicYear?.id) return;
       try {
         setLoading(true);
-        const res = await institutionalExamsService.getAuditLogs({ academicYearId: academicYear.id });
+        // ⭐ V10b — Isolation stricte : l'onglet Audit n'affiche QUE les
+        // événements du niveau sélectionné (maternel / primaire FR /
+        // nursery EN / primary EN). Les logs référencent des verrous de
+        // notes (grade_locks) → le serveur rejoint classes pour filtrer
+        // par niveau + piste linguistique.
+        const res = await institutionalExamsService.getAuditLogs({
+          academicYearId: academicYear.id,
+          ...(schoolLevelUuid ? { schoolLevelId: schoolLevelUuid } : {}),
+          ...(scopeLang ? { language: scopeLang } : {}),
+        });
         setLogs(res);
       } catch (error) {
         console.error('Error loading logs', error);
@@ -52,7 +72,7 @@ export default function AuditPage() {
       }
     }
     loadLogs();
-  }, [academicYear]);
+  }, [academicYear, schoolLevelUuid, scopeLang]);
 
   const getActionIcon = (action: string) => {
     if (action.includes('LOCKED')) return <Lock className="w-4 h-4 text-amber-600" />;
@@ -115,7 +135,7 @@ export default function AuditPage() {
                       <TableCell>
                          <div className="flex items-center text-sm">
                             <User className="w-3 h-3 mr-1 text-gray-400" />
-                            {log.performedById}
+                            {log.performedByName || log.performedById}
                          </div>
                       </TableCell>
                       <TableCell>

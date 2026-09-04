@@ -34,7 +34,7 @@ export class UnlockRequestsController {
 
   /**
    * Liste des demandes de déverrouillage.
-   * Filtres supportés : status, classId, schoolLevelId, academicYearId.
+   * Filtres supportés : status, classId, schoolLevelId, academicYearId, language.
    */
   @Get()
   @Permissions('exams.read')
@@ -43,14 +43,31 @@ export class UnlockRequestsController {
     @AcademicYearId() academicYearId: string,
     @Query() filters: any,
   ) {
-    const where: any = { tenantId };
-    if (academicYearId) {
-      // On filtre par année via l'évaluation liée
-      where.evaluation = { academicYearId };
+    // ⭐ V10b — Construction paramétrée propre (plus de positions calculées) :
+    // isole par niveau (schoolLevelId) ET piste linguistique (language) —
+    // les sections EN partagent le schoolLevelId de leur miroir FR.
+    // Règle linguistique : FR = classes FR + classes non marquées (historique),
+    // EN = classes EN marquées uniquement.
+    const params: any[] = [tenantId];
+    let whereSql = `WHERE ur."tenantId" = $1`;
+    const push = (value: any, fragment: (idx: number) => string) => {
+      params.push(value);
+      whereSql += ` AND ${fragment(params.length)}`;
+    };
+
+    if (filters.status) push(filters.status, (i) => `ur.status = $${i}`);
+    if (filters.classId) push(filters.classId, (i) => `ur."classId" = $${i}`);
+    if (filters.schoolLevelId) push(filters.schoolLevelId, (i) => `ur."schoolLevelId" = $${i}`);
+    if (academicYearId) push(academicYearId, (i) => `e."academicYearId" = $${i}`);
+    if (filters.language) {
+      const lang = String(filters.language).toUpperCase();
+      const frUnmarked = lang === 'FR' ? `OR (c."language" IS NULL AND atr.code IS NULL)` : '';
+      push(lang, (i) => `(
+        c."language" = $${i}::text
+        OR atr.code = $${i}::text
+        ${frUnmarked}
+      )`);
     }
-    if (filters.status) where.status = filters.status;
-    if (filters.classId) where.classId = filters.classId;
-    if (filters.schoolLevelId) where.schoolLevelId = filters.schoolLevelId;
 
     const requests = await this.prisma.$queryRawUnsafe(`
       SELECT
@@ -76,23 +93,17 @@ export class UnlockRequestsController {
       FROM evaluation_unlock_requests ur
       LEFT JOIN evaluations e ON e.id = ur."evaluationId"
       LEFT JOIN classes c ON c.id = ur."classId"
+      LEFT JOIN academic_tracks atr ON atr.id = c."academicTrackId"
       LEFT JOIN subjects s ON s.id = ur."subjectId"
       LEFT JOIN evaluation_types et ON et.id = e."evaluationTypeId"
       LEFT JOIN school_levels sl ON sl.id = ur."schoolLevelId"
       LEFT JOIN academic_periods ap ON ap.id = ur."periodId"
       LEFT JOIN users u_req ON u_req.id = ur."requestedById"
       LEFT JOIN users u_rev ON u_rev.id = ur."reviewedById"
-      WHERE ur."tenantId" = $1
-        ${filters.status ? 'AND ur.status = $2' : ''}
-        ${filters.classId ? `AND ur."classId" = ${filters.status ? '$3' : '$2'}` : ''}
-        ${filters.schoolLevelId ? `AND ur."schoolLevelId" = ${filters.status && filters.classId ? '$4' : (filters.status || filters.classId) ? '$3' : '$2'}` : ''}
-        ${academicYearId ? `AND e."academicYearId" = ${[filters.status, filters.classId, filters.schoolLevelId].filter(Boolean).length + 2}` : ''}
+      ${whereSql}
       ORDER BY ur."createdAt" DESC
       LIMIT 200
-    `, tenantId, ...(filters.status ? [filters.status] : []),
-       ...(filters.classId ? [filters.classId] : []),
-       ...(filters.schoolLevelId ? [filters.schoolLevelId] : []),
-       ...(academicYearId ? [academicYearId] : []));
+    `, ...params);
 
     return requests;
   }

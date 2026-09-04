@@ -114,7 +114,7 @@ export default function FinanceReportsContent() {
   const [cashComparative, setCashComparative] = useState<any[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
   const [exportingCompta, setExportingCompta] = useState<'fec' | 'ohada' | 'csv' | null>(null);
   const [showComptaMenu, setShowComptaMenu] = useState(false);

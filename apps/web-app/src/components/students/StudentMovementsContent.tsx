@@ -208,7 +208,7 @@ export default function StudentMovementsContent() {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYearInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   // ⭐ Nouveaux filtres : niveau, classe, année (modifiables, pas figés au contexte)

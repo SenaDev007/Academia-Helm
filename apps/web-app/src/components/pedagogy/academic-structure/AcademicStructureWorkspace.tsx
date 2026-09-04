@@ -223,7 +223,7 @@ export function AcademicStructureWorkspace() {
     status: '',
   });
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [dupOpen, setDupOpen] = useState(false);
   const [dupFrom, setDupFrom] = useState<string>('');
   const [dupTo, setDupTo] = useState<string>('');

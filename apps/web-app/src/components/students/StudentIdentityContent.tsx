@@ -179,7 +179,7 @@ export default function StudentIdentityContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [students, setStudents] = useState<StudentIdentity[]>([]);
   const [allClasses, setAllClasses] = useState<ClassInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');

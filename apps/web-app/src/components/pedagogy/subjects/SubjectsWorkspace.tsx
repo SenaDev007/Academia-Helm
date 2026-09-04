@@ -201,7 +201,7 @@ export default function SubjectsWorkspace() {
   // ⭐ Modal de confirmation professionnel (remplace window.confirm() natif)
   const confirmDialog = useConfirmDialog();
   const [tab, setTab] = useState<SubTab>('catalogue');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Data
   const [subjects, setSubjects] = useState<Subject[]>([]);

@@ -40,7 +40,7 @@ function FinanceDashboardArrears({
   schoolLevelId?: string;
 }) {
   const [arrears, setArrears] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!academicYearId) return;

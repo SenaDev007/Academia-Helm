@@ -202,7 +202,7 @@ export default function EnrollmentsContent() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editEnrollment, setEditEnrollment] = useState<Enrollment | null>(null);

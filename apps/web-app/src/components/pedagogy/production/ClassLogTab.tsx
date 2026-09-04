@@ -12,7 +12,7 @@ interface ClassLogTabProps {
 
 export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTabProps) {
   const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ classId: "", subjectId: "", lessonDate: new Date().toISOString().split("T")[0], topic: "", durationHours: 1, homework: "", detailedContent: "", observations: "" });
   const [classes, setClasses] = useState<any[]>([]);

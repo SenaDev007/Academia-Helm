@@ -104,7 +104,7 @@ export default function AssignmentsWorkspace() {
   const { toast } = useToast();
 
   // Data
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [academicClasses, setAcademicClasses] = useState<AcademicClass[]>([]);
   const [physicalClasses, setPhysicalClasses] = useState<PhysicalClass[]>([]);
   const [teachers, setTeachers] = useState<TeacherProfile[]>([]);

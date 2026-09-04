@@ -92,7 +92,7 @@ export default function ManualTimetablesEditor() {
   const { academicYear, schoolLevel } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   // State
   const [timetables, setTimetables] = useState<Timetable[]>([]);

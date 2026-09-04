@@ -21,7 +21,7 @@ import { globalLibraryClient } from '@/lib/pedagogy/global-library-client';
 
 export function GlobalLibraryAdmin({ onResourceCreated }: { onResourceCreated: () => void }) {
   const [isAdding, setIsAdding] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({
     title: '',
     description: '',

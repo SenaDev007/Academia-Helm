@@ -92,7 +92,7 @@ export default function StudentAssignmentsContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isTransferring, setIsTransferring] = useState(false);
 
   // ⭐ Nouveau state : classe de départ + classe d'arrivée

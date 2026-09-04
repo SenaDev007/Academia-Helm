@@ -93,7 +93,7 @@ export default function ProductionWorkspace() {
   const lessonSyncStatuses = useEntitySyncStatusBatch('LESSON_PLAN', tenantId ?? undefined);
   const { user } = useAuth();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback' | 'students'>('dashboard');
 

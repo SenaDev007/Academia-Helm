@@ -12,7 +12,7 @@ interface WeeklyLogTabProps {
 
 export function WeeklyLogTab({ tenantId, academicYearId, teacherId }: WeeklyLogTabProps) {
   const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);

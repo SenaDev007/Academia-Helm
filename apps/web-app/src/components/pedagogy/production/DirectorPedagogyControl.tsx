@@ -412,7 +412,7 @@ function ValidationModal({ open, onClose, onValidate, title }: {
 }) {
   const [action, setAction] = useState<"VALIDATED" | "REJECTED">("VALIDATED");
   const [reason, setReason] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   if (!open) return null;
 

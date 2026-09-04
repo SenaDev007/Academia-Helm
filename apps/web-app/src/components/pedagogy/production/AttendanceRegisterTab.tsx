@@ -196,7 +196,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
   const [directorSignature, setDirectorSignature] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null); // null | 'pdf'
   const [showAppelModal, setShowAppelModal] = useState(false);

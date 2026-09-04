@@ -83,7 +83,7 @@ export default function StudentHistoryContent() {
   const { availableLevels } = useSchoolLevel();
   const [data, setData] = useState<HistoryRecord[]>([]);
   const [allClasses, setAllClasses] = useState<ClassInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Filtres (pattern TransferWizard)
   const [filterLevelId, setFilterLevelId] = useState<string>('');

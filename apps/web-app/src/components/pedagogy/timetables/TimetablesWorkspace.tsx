@@ -268,7 +268,7 @@ function ConfigTab({ schoolLevelId: headerLevelId, academicYearId }: any) {
   }, [headerLevelId, localLevelId]);
 
   const [config, setConfig] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [schoolDays, setSchoolDays] = useState<number[]>([1,2,3,4,5]);
   const [timeBlocks, setTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
   const [saving, setSaving] = useState(false);

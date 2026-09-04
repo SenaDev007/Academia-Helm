@@ -248,7 +248,7 @@ export default function TeachersAcademicWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
   const { isEnabled: bilingualEnabled, currentTrack } = useBilingual();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [profiles, setProfiles] = useState<TeacherAcademicProfile[]>([]);
   const [search, setSearch] = useState('');

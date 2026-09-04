@@ -62,7 +62,7 @@ const RELATIONSHIPS = ['PÈRE', 'MÈRE', 'TUTEUR', 'ONCLE', 'TANTE', 'GRAND_PARE
 export default function StudentFamiliesContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [students, setStudents] = useState<StudentWithGuardians[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingStudent, setEditingStudent] = useState<StudentWithGuardians | null>(null);
   const [guardianForm, setGuardianForm] = useState<GuardianForm | null>(null);

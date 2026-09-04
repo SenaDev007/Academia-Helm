@@ -91,7 +91,7 @@ export default function FinanceAuditContent() {
   const [topAccountants, setTopAccountants] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
 
   // Filtres

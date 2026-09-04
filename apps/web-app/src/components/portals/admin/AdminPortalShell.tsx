@@ -35,7 +35,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Brain, School, Users, GraduationCap, Shield,
-  Wallet, UserCog, MessageSquare, CalendarDays, ClipboardCheck,
+  Wallet, UserCog, MessageSquare, CalendarDays, ClipboardCheck, Receipt,
   Building2, LogOut, Menu, X, Loader2, Lock,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -58,8 +58,9 @@ import {
 } from '@/lib/auth/admin-portal-map';
 
 // ─── Registre d'icônes (clés string sérialisables → composants lucide) ──────
+// (exporté : réutilisé par AdminPortalHome pour les cartes d'accès rapide)
 
-const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
+export const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
   LayoutDashboard,
   Brain,
   School,
@@ -71,6 +72,7 @@ const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
   MessageSquare,
   CalendarDays,
   ClipboardCheck,
+  Receipt,
 };
 
 // ─── Thèmes par accent (un métier = une couleur) ────────────────────────────
@@ -213,6 +215,9 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   }
 
   const userName = user ? `${user.firstName} ${user.lastName}`.trim() : config.roleLabel;
+  // Photo de profil si le payload de session la transporte (sinon initiales).
+  // ⚠️ Cast étroit : le type User de session ne déclare pas photoUrl.
+  const userPhoto = (user as { photoUrl?: string } | null | undefined)?.photoUrl;
   const currentModuleLabel =
     modules.find(
       (m) => pathname === m.path || (m.path !== config.path && pathname.startsWith(m.path))
@@ -265,9 +270,9 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
         {/* Profil du métier — photo ou initiales + badge du portail */}
         <div className="px-4 py-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            {user?.photoUrl ? (
+            {userPhoto ? (
               <img
-                src={user.photoUrl}
+                src={userPhoto}
                 alt={userName}
                 className="h-8 w-8 rounded-full object-cover flex-shrink-0 border border-slate-200"
               />

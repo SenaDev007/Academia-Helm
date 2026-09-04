@@ -16,8 +16,10 @@
  *   Le shell est appliqué PAR RÔLE : un directeur voit TOUTES ses routes
  *   /app/* dans SON shell (AdminPortalShell, navigation propre au métier),
  *   y compris les pages métier partagées (pédagogie, examens, finances…).
- *   Les rôles non migrés (censeur, surveillant, …) et le promoteur
- *   (filet de sécurité : UI complète) conservent le PilotageLayout.
+ *   Les 6 métiers sont migrés (directeur, secrétaire, secrétaire-comptable,
+ *   comptable, surveillant, censeur). L'UI complète partagée (PilotageLayout)
+ *   reste réservée au promoteur (filet de sécurité : accès complet) et aux
+ *   rôles auxiliaires non spécialisés.
  * ============================================================================
  */
 
@@ -153,9 +155,11 @@ export default async function AppLayout({
     );
   }
 
-  // ⭐ Défaut : UI complète partagée (PilotageLayout) — rôles non encore migrés
-  // (censeur, surveillant, secrétaire…) et promoteur/admins (filet de sécurité,
-  // accès complet à tous les modules).
+  // ⭐ Défaut : UI complète partagée (PilotageLayout) — promoteur et rôles
+  // full-access (filet de sécurité validé : accès complet à tous les modules,
+  // visite de tous les portails dédiés) + rôles auxiliaires non spécialisés
+  // (RESP_*, PEDAGOGIC_*, BOARD_PRESIDENT…). Les 6 métiers de l'administration
+  // ont chacun leur shell dédié (voir getAdminShellForRole).
   return (
     <ModalProvider>
       <AppLayoutClient user={user} tenant={tenant}>

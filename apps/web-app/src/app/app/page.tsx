@@ -54,12 +54,11 @@ export default async function AppPage() {
     redirect('/app/teacher');
   }
 
-  // ⭐ PORTAILS ADMIN DÉDIÉS : rediriger le métier migré vers la home de SON
-  // portail (ex: un directeur connecté via le portail École atterrit sur
-  // /app/director — dashboard direction dans le shell directeur).
+  // ⭐ PORTAILS ADMIN DÉDIÉS : rediriger chaque métier de l'administration vers
+  // la home de SON portail (les 6 métiers sont migrés : directeur, secrétaire,
+  // secrétaire-comptable, comptable, surveillant, censeur).
   // Le promoteur et les rôles full-access ne sont pas migrés (null) :
   // ils conservent le tableau de pilotage unifié de l'UI complète partagée.
-  // Les rôles non migrés (censeur, surveillant…) voient aussi ce dashboard.
   if (effectivePortal === 'SCHOOL') {
     const adminHome = getAdminPortalHomeForRole(user.role);
     if (adminHome) {

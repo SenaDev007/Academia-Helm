@@ -25,16 +25,17 @@
  *   → Les modules profonds (exams, finance, hr) conservent leurs propres
  *     sous-navigations et contextes, intacts.
  *
- * MIGRATION PROGRESSIVE (strangler pattern — ordre validé par l'utilisateur) :
+ * MIGRATION (strangler pattern — ordre validé par l'utilisateur) :
  *   directeur → secrétaire → secrétaire-comptable → comptable →
- *   surveillant → censeur. Un portail déclaré mais `active: false` est
- *   prêt à être activé (rôles + modules déjà configurés) : le rôle
- *   correspondant reste alors sur l'UI partagée (PilotageLayout).
+ *   surveillant → censeur. ✅ Les 6 portails sont désormais ACTIFS —
+ *   chaque métier de l'administration atterrit sur SON UI à la connexion.
  *
- * FILET DE SÉCURITÉ PROMOTEUR (validation utilisateur) :
- *   Le promoteur (et les rôles full-access) ne sont PAS migrés : ils
- *   conservent l'UI complète partagée (PilotageLayout) et peuvent visiter
- *   n'importe quel portail dédié (voir canRoleAccessAdminPortal).
+ * UI PRINCIPALE PARTAGÉE (PilotageLayout) — réservée à :
+ *   - le PROMOTEUR et les rôles full-access (filet de sécurité validé :
+ *     accès complet à tous les modules + visite de tous les portails),
+ *   - les rôles auxiliaires non spécialisés (RESP_*, PEDAGOGIC_*,
+ *     BOARD_PRESIDENT… — pas de métier dédié, à traiter au cas par cas),
+ *   - les rôles plateforme (back-office /platform dédié).
  *
  * DOUBLE CASQUETTE :
  *   Le portail CHOISI à la connexion (session.portalType) prime toujours :
@@ -71,7 +72,8 @@ export type AdminPortalIcon =
   | 'UserCog'
   | 'MessageSquare'
   | 'CalendarDays'
-  | 'ClipboardCheck';
+  | 'ClipboardCheck'
+  | 'Receipt';
 
 export interface AdminPortalModule {
   /** Route cible (routes métier partagées ou home du portail) */
@@ -183,8 +185,6 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     ],
   },
 
-  // ── Portails déclarés (prêts à activer — ordre de migration validé) ──
-
   secretaire: {
     key: 'secretaire',
     path: '/app/secretaire',
@@ -210,13 +210,19 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roleLabel: 'Secrétaire-Comptable',
     accent: 'emerald',
     loginPortal: 'school',
-    active: false,
+    active: true,
     roles: SECRETARY_COMPTABLE_ROLES,
     modules: [
-      { path: '/app/secretaire-comptable', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: 'Vue secrétariat & finances' },
+      // ⭐ Le quotidien du secrétaire-comptable est l'ENCAISSEMENT des frais :
+      //    la home du portail est l'outil Encaissements (composant partagé
+      //    TransactionsContent — le même que /app/finance/payments).
+      { path: '/app/secretaire-comptable', label: 'Encaissements', icon: 'Receipt', desc: 'Saisie des encaissements de frais' },
       { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', featureCode: 'STUDENTS' },
+      { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, recouvrement, trésorerie', featureCode: 'FINANCE' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
-      { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, encaissements, relances', featureCode: 'FINANCE' },
+      // ⭐ Parité d'accès : les secrétaires-comptables voient RH (paie) dans
+      //    l'UI partagée actuelle (HR_ROLES inclut SECRETAIRE_COMPTABLE).
+      { path: '/app/hr', label: 'Personnel, RH & Paie', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', featureCode: 'HR_PAYROLL' },
       { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
@@ -228,11 +234,13 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roleLabel: 'Comptable',
     accent: 'teal',
     loginPortal: 'school',
-    active: false,
+    active: true,
     roles: COMPTABLE_ROLES,
     modules: [
-      { path: '/app/comptable', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: 'Vue financière' },
+      { path: '/app/comptable', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement" },
       { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie, audit', featureCode: 'FINANCE' },
+      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
       { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
@@ -244,12 +252,15 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roleLabel: 'Surveillant',
     accent: 'amber',
     loginPortal: 'school',
-    active: false,
+    active: true,
     roles: SURVEILLANT_ROLES,
     modules: [
       { path: '/app/surveillant', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: 'Vue vie scolaire' },
       { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
-      { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Sanctions, conduite (Secondaire)', requiresSecondary: true },
+      { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', requiresSecondary: true },
+      // ⭐ Parité d'accès : le surveillant général accède à l'Espace Censeur
+      //    (visites de classes, conseils de classe) dans l'UI partagée.
+      { path: '/app/censeur', label: 'Espace Censeur', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe (Secondaire)', requiresSecondary: true },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Surveillance des examens', featureCode: 'EXAMS' },
       { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
@@ -262,13 +273,16 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     roleLabel: 'Censeur',
     accent: 'violet',
     loginPortal: 'school',
-    active: false,
+    active: true,
     roles: CENSEUR_ROLES,
     modules: [
-      { path: '/app/censeur', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: 'Espace Censeur' },
+      // ⭐ La home du portail est l'Espace Censeur (workspace dédié existant :
+      //    visites de classes, conseils de classe, fraudes aux examens).
+      { path: '/app/censeur', label: 'Espace Censeur', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe, fraudes' },
       { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: 'School', desc: 'Planification, cahiers, contrôle', featureCode: 'PEDAGOGY' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Évaluations, fraudes, validation', featureCode: 'EXAMS' },
       { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Conduite, sanctions (Secondaire)', requiresSecondary: true },
+      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
       { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
@@ -343,10 +357,12 @@ export function getAdminPortalHomeForRole(role: string | undefined | null): stri
  */
 export function canRoleAccessAdminPortal(role: string | undefined | null, key: AdminPortalKey): boolean {
   if (!role) return false;
-  if (ADMIN_FULL_ACCESS_ROLES.includes(role)) return true;
 
   const portal = ADMIN_PORTALS[key];
   if (!portal) return false;
+
+  // Filet de sécurité promoteur / admins : accès à TOUS les portails dédiés
+  if (ADMIN_FULL_ACCESS_ROLES.includes(role)) return true;
 
   if (portal.roles.includes(role)) return true;
 

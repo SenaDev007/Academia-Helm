@@ -15,6 +15,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme/helm_theme.dart';
 import 'conversation_detail_screen.dart';
+// ⭐ V9 — palette avatars conforme web
+import '../widgets/helm_chat_kit.dart';
 
 class NewChatScreen extends StatefulWidget {
   const NewChatScreen({super.key});
@@ -316,9 +318,14 @@ class _NewChatScreenState extends State<NewChatScreen> {
                       final hasAccount = (person['userId'] as String?)?.isNotEmpty == true;
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: isSameTenant ? kUserTextColors[hashUserId((person['userId'] ?? person['guardianId'] ?? '?').toString()) % kUserTextColors.length] : const Color(0xFF94A3B8),
+                          // ⭐ V9 (conformité web) : hash du NOM + initiales
+                          backgroundColor: isSameTenant
+                              ? webAvatarColorByName(name)
+                              : const Color(0xFF94A3B8),
                           child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            name.split(' ').where((w) => w.isNotEmpty).length > 1
+                                ? '${name.split(' ').first[0]}${name.split(' ').last[0]}'.toUpperCase()
+                                : (name.isNotEmpty ? name[0].toUpperCase() : '?'),
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                           ),
                         ),

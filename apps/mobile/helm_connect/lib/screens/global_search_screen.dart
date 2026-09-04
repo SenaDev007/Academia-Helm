@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import 'conversation_detail_screen.dart';
+// ⭐ V9 — palette avatars conforme web
+import '../widgets/helm_chat_kit.dart';
 
 class GlobalSearchScreen extends StatefulWidget {
   const GlobalSearchScreen({super.key});
@@ -148,8 +150,9 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     final canDirect = p['isSameTenant'] == true && userId != null;
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: const Color(0xFFE6F4FF),
-        child: Text('${p['firstName']?[0] ?? ''}${p['lastName']?[0] ?? ''}'.toUpperCase(), style: const TextStyle(color: Color(0xFF0958D9), fontWeight: FontWeight.bold)),
+        // ⭐ V9 (conformité web) : palette hash NOM + initiales
+        backgroundColor: webAvatarColorByName('${p['firstName'] ?? ''} ${p['lastName'] ?? ''}'.trim()),
+        child: Text('${p['firstName']?[0] ?? ''}${p['lastName']?[0] ?? ''}'.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       title: Text('${p['firstName']} ${p['lastName']}'),
       subtitle: Text(p['email'] as String? ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -184,7 +187,16 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
 
   Widget _buildGroupItem(Map<String, dynamic> g) {
     return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.group, color: Colors.white), backgroundColor: Color(0xFF13C2C2)),
+      leading: CircleAvatar(
+        // ⭐ V9 (conformité web) : initiales sur hash du nom du groupe
+        backgroundColor: webAvatarColorByName(g['name'] as String? ?? 'Groupe'),
+        child: Text(
+          ((g['name'] as String?) ?? 'G').split(' ').where((w) => w.isNotEmpty).length > 1
+              ? '${(g['name'] as String).split(' ').first[0]}${(g['name'] as String).split(' ').last[0]}'.toUpperCase()
+              : (((g['name'] as String?) ?? 'G')[0].toUpperCase()),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
       title: Text(g['name'] as String? ?? ''),
       subtitle: Text('${g['participantCount']} participants'),
       onTap: () => _openConversation(g['id'] as String),

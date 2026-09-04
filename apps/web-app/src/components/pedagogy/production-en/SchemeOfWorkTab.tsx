@@ -313,17 +313,10 @@ export function SchemeOfWorkTab({
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
-  // ⭐ Auto-refresh every 60s for status updates (director validation)
-  //    Only if the user is NOT currently editing (cells not dirty) to avoid
-  //    overwriting unsaved edits. Also disabled during loading/saving.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!isEditingRef.current && !saving && !loading) {
-        loadPlan();
-      }
-    }, 60000); // 60 seconds (was 30s — too frequent caused flicker)
-    return () => clearInterval(interval);
-  }, [loadPlan, saving, loading]);
+  // ⭐ FIX ANOMALIE 2 : the 60-second auto-refresh polling is REMOVED.
+  //    Previously: setInterval(() => loadPlan(), 60000) — the page reloaded
+  //    entirely every 60s even when idle, disrupting the teacher's work.
+  //    Refreshing remains available via the manual button and after submit.
 
   // ⭐ Load director name from settings/identity
   useEffect(() => {

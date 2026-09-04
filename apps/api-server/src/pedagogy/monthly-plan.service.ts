@@ -376,13 +376,17 @@ export class MonthlyPlanService {
     if (options.documentType) { scopeFilters.push(`"documentType" = $${sp++}`); scopeParams.push(options.documentType); }
 
     // Récupérer les cellules existantes (isCustom=true) pour ne pas les écraser
+    // ⭐ FIX ANOMALIE 3 (backend) : map key → row id. Une cellule personnalisée
+    //    qui existe déjà doit être MISE À JOUR (UPDATE), pas réinsérée (INSERT) —
+    //    sinon chaque sauvegarde duplique les lignes (aucun index unique sur la
+    //    clé semaine/domaine/sous-domaine) et le GET renvoie des doublons.
     const existingCustoms = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT "weekNumber", "domain", "subDomain" FROM "monthly_plans"
+      SELECT "id", "weekNumber", "domain", "subDomain" FROM "monthly_plans"
       WHERE ${scopeFilters.join(' AND ')}
         AND "isCustom" = true
     `, ...scopeParams);
-    const customKeys: Set<string> = new Set(
-      existingCustoms.map(c => `${c.weekNumber}|${c.domain}|${c.subDomain || ''}`)
+    const customRowByKey = new Map<string, string>(
+      existingCustoms.map(c => [`${c.weekNumber}|${c.domain}|${c.subDomain || ''}`, c.id])
     );
 
     // Supprimer les anciennes cellules non-custom pour réinsérer
@@ -424,9 +428,33 @@ export class MonthlyPlanService {
     let skipped = 0;
     for (const cell of cells) {
       const key = `${cell.weekNumber}|${cell.domain}|${cell.subDomain || ''}`;
-      if (customKeys.has(key) && !cell.isCustom) {
+      if (customRowByKey.has(key) && !cell.isCustom) {
         // Ne pas écraser une cellule personnalisée
         skipped++;
+        continue;
+      }
+
+      // ⭐ FIX ANOMALIE 3 (backend) : cellule personnalisée existante → UPDATE
+      //    de la ligne en base (contenu + type d'activité) au lieu d'un INSERT
+      //    qui créerait un doublon de la même clé.
+      const existingCustomId = customRowByKey.get(key);
+      if (existingCustomId && cell.isCustom) {
+        try {
+          await this.prisma.$executeRawUnsafe(`
+            UPDATE "monthly_plans"
+            SET "content" = $1, "activityType" = $2, "activityNumber" = $3,
+                "sequenceNumber" = $4, "isAutoProposed" = false, "annualPlanId" = $5,
+                "updatedAt" = NOW()
+            WHERE "id" = $6 AND "tenantId" = $7
+          `,
+            cell.content, cell.activityType || null, cell.activityNumber || null,
+            cell.sequenceNumber || null, cell.annualPlanId || null,
+            existingCustomId, tenantId,
+          );
+          updated++;
+        } catch (e: any) {
+          this.logger.error(`Failed to update monthly plan cell: ${e.message}`);
+        }
         continue;
       }
 

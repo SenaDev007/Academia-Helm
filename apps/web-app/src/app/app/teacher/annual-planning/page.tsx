@@ -5,12 +5,8 @@ import {
   Loader2, RefreshCw, Calendar, BookOpen, FileDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
-import { ModuleContainer } from '@/components/modules/blueprint';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
 
 const CLASS_LEVELS = [
   { value: 'MATERNELLE_GRANDS', label: 'Maternelle' },
@@ -97,34 +93,20 @@ interface AnnualPlan {
 }
 
 export default function TeacherAnnualPlanningPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  // ⭐ FIX ANOMALIE 1 : cette page est dans l'UI ENSEIGNANT — elle ne doit PAS
+  //    afficher la navigation du module Pédagogie (direction/promoteur).
+  //    Seule la planification annuelle (lecture seule) est affichée ici.
+  //    (Anciennement : getVisiblePedagogyTabs(userRole) qui greffait tout le
+  //    module pédagogie — Dashboard, Structure académique, Matières, etc.)
   const { academicYear } = useModuleContext();
 
   return (
-    <ModuleContainer
-      header={{
-        title: 'Planification annuelle',
-        description: academicYear
-          ? `Planification pédagogique annuelle officielle — année ${academicYear.label} (lecture seule)`
-          : 'Planification pédagogique annuelle officielle (lecture seule)',
-        icon: 'book',
-      }}
-      subModules={{
-        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
-          const Icon = tab.icon;
-          return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
-        }),
-        activeModuleId: 'annual-planning',
-      }}
-      content={{ layout: 'custom', children: <TeacherAnnualPlanningContent /> }}
-    />
+    <TeacherAnnualPlanningContent />
   );
 }
 
 function TeacherAnnualPlanningContent() {
   const { academicYear } = useModuleContext();
-  const { currentLevel } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<AnnualPlan[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('MATERNELLE_GRANDS');

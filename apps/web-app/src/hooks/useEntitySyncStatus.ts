@@ -46,7 +46,7 @@ interface UseEntitySyncStatusOptions {
   refreshInterval?: number;
 }
 
-const DEFAULT_REFRESH_INTERVAL = 10000; // 10 secondes
+const DEFAULT_REFRESH_INTERVAL = 60000; // ⭐ 60 secondes (était 10s — voir note anti-rechargement ci-dessous)
 
 /**
  * Hook pour obtenir le statut de synchronisation d'une entité spécifique.
@@ -81,6 +81,26 @@ export function useEntitySyncStatus({
     isDirty: false,
   });
 
+  // ⭐ FIX ANOMALIE 2 (propagation) : setInfo ne déclenche un re-render QUE si
+  //    le statut a réellement changé. L'ancien code créait un NOUVEL objet à
+  //    chaque interval (toutes les 10s) → les pages consommatrices (Élèves,
+  //    Pédagogie, Finance, Admissions, Évaluations…) se re-rendaient en boucle
+  //    même sans aucun changement → « rechargements intempestifs ».
+  const setInfoIfChanged = (next: EntitySyncInfo) => {
+    setInfo(prev => {
+      if (
+        prev.status === next.status &&
+        prev.lastSync === next.lastSync &&
+        prev.pendingOperation === next.pendingOperation &&
+        prev.errorMessage === next.errorMessage &&
+        prev.isDirty === next.isDirty
+      ) {
+        return prev; // même référence → React ne re-render pas
+      }
+      return next;
+    });
+  };
+
   const checkStatus = async () => {
     try {
       // 1. Vérifier l'outbox pour les événements liés à cette entité
@@ -105,7 +125,7 @@ export function useEntitySyncStatus({
       // Vérifier s'il y a un événement en conflit
       const conflictEvent = tenantEvents.find((e) => e.status === 'CONFLICT');
       if (conflictEvent) {
-        setInfo({
+        setInfoIfChanged({
           status: 'CONFLICT',
           lastSync: null,
           pendingOperation: conflictEvent.operation,
@@ -118,7 +138,7 @@ export function useEntitySyncStatus({
       // Vérifier s'il y a un événement en erreur
       const errorEvent = tenantEvents.find((e) => e.status === 'FAILED');
       if (errorEvent) {
-        setInfo({
+        setInfoIfChanged({
           status: 'ERROR',
           lastSync: null,
           pendingOperation: errorEvent.operation,
@@ -133,7 +153,7 @@ export function useEntitySyncStatus({
         ['PENDING', 'SENT'].includes(e.status)
       );
       if (pendingEvent) {
-        setInfo({
+        setInfoIfChanged({
           status: 'PENDING',
           lastSync: null,
           pendingOperation: pendingEvent.operation,
@@ -159,12 +179,12 @@ export function useEntitySyncStatus({
         if (entity) {
           // Filtrer par tenant si fourni
           if (tenantId && entity.tenantId && entity.tenantId !== tenantId) {
-            setInfo({ status: 'UNKNOWN', lastSync: null, pendingOperation: null, errorMessage: null, isDirty: false });
+            setInfoIfChanged({ status: 'UNKNOWN', lastSync: null, pendingOperation: null, errorMessage: null, isDirty: false });
             return;
           }
 
           if (entity._isDirty) {
-            setInfo({
+            setInfoIfChanged({
               status: 'PENDING',
               lastSync: entity._lastSync || null,
               pendingOperation: null,
@@ -174,7 +194,7 @@ export function useEntitySyncStatus({
             return;
           }
 
-          setInfo({
+          setInfoIfChanged({
             status: 'SYNCED',
             lastSync: entity._lastSync || null,
             pendingOperation: null,
@@ -190,7 +210,7 @@ export function useEntitySyncStatus({
 
       // 3. Si l'entité n'est pas dans IndexedDB et pas dans l'outbox,
       // elle provient probablement d'un fetch API récent → SYNCED
-      setInfo({
+      setInfoIfChanged({
         status: 'SYNCED',
         lastSync: null,
         pendingOperation: null,
@@ -198,8 +218,8 @@ export function useEntitySyncStatus({
         isDirty: false,
       });
     } catch (error) {
+      // ⭐ On garde le dernier état connu — pas de setState inutile (anti-re-render)
       console.warn('[useEntitySyncStatus] Error checking status:', error);
-      setInfo((prev) => prev); // Garder le dernier état connu
     }
   };
 
@@ -311,7 +331,13 @@ export function useEntitySyncStatusBatch(
           }
         }
 
-        setStatuses(result);
+        // ⭐ FIX ANOMALIE 2 (propagation) : ne re-render QUE si les statuts ont
+        //    réellement changé — comparaison JSON évite les re-rendus en boucle
+        //    toutes les 15 secondes sur les pages de listes.
+        setStatuses(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(result)) return prev;
+          return result;
+        });
       } catch (error) {
         console.warn('[useEntitySyncStatusBatch] Error:', error);
       }
@@ -327,8 +353,9 @@ export function useEntitySyncStatusBatch(
       window.addEventListener('online', handleNetworkChange);
     }
 
-    // Rafraîchir toutes les 15 secondes
-    const interval = setInterval(loadStatuses, 15000);
+    // Rafraîchir toutes les 60 secondes (⭐ était 15s — réduite : le statut est
+    // de toute façon rafraîchi immédiatement via les événements sync-end)
+    const interval = setInterval(loadStatuses, 60000);
 
     return () => {
       clearInterval(interval);

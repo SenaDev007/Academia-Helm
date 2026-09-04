@@ -389,10 +389,15 @@ export function MonthlyPlanningTab({
   const StatusIcon = StatusBadge.icon;
 
   const autoProposeRef = useRef<() => Promise<void>>(async () => {});
-  const saveRef = useRef<() => Promise<void>>(async () => {});
-  // ⭐ Track which (class, month) combos have been auto-proposed in this session
-  //    Prevents spamming "Proposition automatique importée" on every click
-  const triedAutoProposeRef = useRef<Set<string>>(new Set());
+  // ⭐ FIX ANOMALIE 3 : saveRef accepts an explicit cell list (overrideCells).
+  //    Same fix as the FR MonthlyPlanningTab — after updateCellLocal() the
+  //    old saveRef closure still captured the PREVIOUS state, so the POST
+  //    /save went out WITHOUT the just-entered cell ("saved" shown, data lost).
+  const saveRef = useRef<(overrideCells?: MonthlyPlanCell[]) => Promise<unknown>>(async () => {});
+  // ⭐ FIX ANOMALIE 2 : anti-overwrite guard — while a cell is being edited,
+  //    a load (even a silent one) must NEVER overwrite the local state.
+  const editingCellKeyRef = useRef<string | null>(null);
+  useEffect(() => { editingCellKeyRef.current = editingCellKey; }, [editingCellKey]);
 
   // ───────────────────────────────────────────────────────────────────
   // Auto-proposition
@@ -425,13 +430,17 @@ export function MonthlyPlanningTab({
   // ───────────────────────────────────────────────────────────────────
   // Load plan
   // ───────────────────────────────────────────────────────────────────
-  const loadPlan = useCallback(async () => {
+  // ⭐ silent=true : refresh WITHOUT flashing the loading spinner.
+  //    ⭐ FIX ANOMALIE 3 : if a cell is being edited, local state is NOT replaced.
+  const loadPlan = useCallback(async (silent = false) => {
     if (!academicYearId) { setLoading(false); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await pedagogyFetch<MonthlyPlanResponse>(
         `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
       );
+      // ⭐ Anti-overwrite guard: never replace state during an active edit
+      if (editingCellKeyRef.current) return;
       if (data.cells.length === 0) {
         // ⭐ FIX: NEVER auto-propose in loadPlan. Auto-propose overwrites user edits
         //    every time the plan reloads (save → loadPlan → 0 cells → auto-propose → edits lost).
@@ -454,53 +463,52 @@ export function MonthlyPlanningTab({
         setCells([]);
       } else {
         console.error("Failed to load monthly plan:", e);
-        toast.error("Erreur lors du chargement: " + msg);
+        if (!silent) toast.error("Erreur lors du chargement: " + msg);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [academicYearId, selectedClass, selectedMonth, teacherId]);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
-  // ⭐ V3-12: Auto-refresh every 30s so the teacher sees status updates
-  //    (VALIDATED/REJECTED) from the director in real-time — same pattern
-  //    as the Cahier Journal which refetches via React Query staleTime.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadPlan();
-    }, 30000); // 30 seconds
-    return () => clearInterval(interval);
-  }, [loadPlan]);
+  // ⭐ FIX ANOMALIE 2 : the 30-second auto-refresh polling is REMOVED.
+  //    Previously the whole grid re-rendered (spinner + table redraw) every
+  //    30 seconds, preventing any stable work — especially on mobile.
+  //    Refresh remains available via the manual button and after submit.
 
   // ───────────────────────────────────────────────────────────────────
   // Save
   // ───────────────────────────────────────────────────────────────────
-  const handleSave = useCallback(async () => {
+  // ⭐ FIX ANOMALIE 3 : handleSave accepts an explicit list (overrideCells) —
+  //    same fix as the FR tab: a just-created cell is saved with the UPDATED
+  //    list, never with the stale previous state.
+  const handleSave = useCallback(async (overrideCells?: MonthlyPlanCell[]) => {
     if (!academicYearId) return;
+    const cellsToSave = overrideCells ?? cells;
     setSaving(true);
     try {
-      const result = await pedagogyFetch<{ saved: number; updated: number; skipped: number }>(
+      await pedagogyFetch<{ saved: number; updated: number; skipped: number }>(
         "/api/pedagogy/monthly-plans/save",
         {
           method: "POST",
           body: {
             academicYearId, classLevel: selectedClass, month: selectedMonth, teacherId,
             schoolLevelId: currentLevel?.schoolLevelId || currentLevel?.id,
-            cells,
+            cells: cellsToSave,
           },
         }
       );
-      // ⭐ NO toast on save — prevents multiple toasts spam
-      // ⭐ NO loadPlan() — DON'T reload after saving (preserves user edits)
-      //    The local state (cells) already has the correct data.
       setHasExistingCustom(true);
+      // ⭐ SILENT reload after a successful save — resynchronizes persisted ids
+      //    without flashing a spinner and without overwriting an active edit.
+      await loadPlan(true);
     } catch (e: any) {
       toast.error("Échec de la sauvegarde: " + e.message);
     } finally {
       setSaving(false);
     }
-  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells]);
+  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells, loadPlan]);
 
   saveRef.current = handleSave;
 
@@ -592,7 +600,17 @@ export function MonthlyPlanningTab({
 
   const saveCellInline = async (cell: MonthlyPlanCell) => {
     if (!cell.id) {
-      await saveRef.current();
+      // ⭐ FIX ANOMALIE 3 (mobile path): apply the edited content to the list
+      //    BEFORE saving, and pass the updated list to the bulk save.
+      const idx = cells.findIndex(c =>
+        c.weekNumber === cell.weekNumber && c.domain === cell.domain &&
+        (c.subDomain || "") === (cell.subDomain || "")
+      );
+      const nextCells = idx === -1 ? cells : cells.map((c, i) =>
+        i === idx ? { ...c, content: editContent, isCustom: true, isAutoProposed: false } : c
+      );
+      setCells(nextCells);
+      await saveRef.current(nextCells);
       setEditingCellKey(null);
       return;
     }
@@ -649,16 +667,27 @@ export function MonthlyPlanningTab({
         } catch (e: any) {
           toast.error("Échec: " + e.message);
         }
-      } else {
-        // New cell — update local state + trigger bulk save
-        updateCellLocal(weekNum, champCode, subRow || undefined, editContent);
-        toast.success("Cellule créée");
+        return;
       }
+      // ⭐ FIX ANOMALIE 3 (new cell): build the updated list LOCALLY and pass
+      //    it explicitly to the bulk save — the old code called updateCellLocal()
+      //    then saveRef.current() which captured the PREVIOUS state, so the
+      //    entry was never persisted despite the success toast.
+      const idx = cells.findIndex(c =>
+        c.weekNumber === weekNum && c.domain === champCode &&
+        (c.subDomain || "") === (subRow || "")
+      );
+      const nextCells = idx === -1
+        ? [...cells, {
+            weekNumber: weekNum, domain: champCode, subDomain: subRow || undefined,
+            content: editContent, activityType: null, activityNumber: null,
+            sequenceNumber: null, isAutoProposed: false, isCustom: true,
+          }]
+        : cells.map((c, i) => i === idx ? { ...c, content: editContent, isCustom: true, isAutoProposed: false } : c);
+      setCells(nextCells);
       setEditingCellKey(null);
-      if (!cell || !cell.id) {
-        // For new cells, trigger the bulk save
-        await saveRef.current();
-      }
+      toast.success("Cellule enregistrée");
+      await saveRef.current(nextCells);
     };
 
     return (
@@ -833,7 +862,7 @@ export function MonthlyPlanningTab({
                 </button>
               )}
               <button
-                onClick={loadPlan}
+                onClick={() => loadPlan()}
                 className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
                 title="Rafraîchir"
               >

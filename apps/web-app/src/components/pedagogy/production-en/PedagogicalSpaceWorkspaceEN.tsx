@@ -47,7 +47,6 @@ import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { SchemeOfWorkTab } from "./SchemeOfWorkTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { TeacherMaterialsWorkspace } from "./TeacherMaterialsWorkspace";
-import TeacherTasksWorkspace from "./TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ⭐ Ordre des onglets — Fiches Pédagogiques fusionnées avec Cahier Journal :
@@ -80,10 +79,12 @@ const ALL_TABS = [
   { id: 'monthly-planning', label: 'Scheme of Work', icon: CalendarClock, description: 'Term-based scheme', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Weekly Record of Work', icon: FileSpreadsheet, description: 'Weekly records + catalogue', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'weekly', label: 'Weekly Log', icon: CalendarDays, description: 'Institutional monitoring', secondaryOnly: false, maternellePrimaireOnly: false },
-  // ⭐ Travaux & Suivi — accessible depuis l'Espace Pédagogique (directeurs/promoteurs)
-  //    ET depuis la sidebar enseignant (/app/teacher/tasks)
-  { id: 'tasks', label: 'Assignments & Tracking', icon: ClipboardList, description: 'Homework & student tracking', secondaryOnly: false, maternellePrimaireOnly: false },
-  { id: 'cahier-texte', label: 'Text Log', icon: ClipboardCheck, description: 'Evaluations', secondaryOnly: false, maternellePrimaireOnly: false },
+  // ⭐ FIX ANOMALIE 4 : 'tasks' tab REMOVED — Assignments & Tracking is already
+  //    a standalone module (teacher sidebar /app/teacher/tasks + pedagogy module
+  //    /app/pedagogy/tasks). It must NOT be duplicated as a sub-tab here.
+  // ⭐ FIX ANOMALIE 5 : Text Log (Cahier de Texte) secondaryOnly — SECONDARY level only.
+  //    A Maternelle/Primaire teacher does NOT see this tab.
+  { id: 'cahier-texte', label: 'Text Log', icon: ClipboardCheck, description: 'Evaluations', secondaryOnly: true, maternellePrimaireOnly: false },
   { id: 'materiel', label: 'Materials', icon: Package, description: 'Inventory & resources', secondaryOnly: false, maternellePrimaireOnly: false },
 ] as const;
 
@@ -370,10 +371,6 @@ export function PedagogicalSpaceWorkspaceEN({
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
-          )}
-          {/* ⭐ Travaux & Suivi — accessible aux directeurs/promoteurs ET enseignants */}
-          {tab === 'tasks' && (
-            <TeacherTasksWorkspace />
           )}
           {tab === 'materiel' && (
             <TeacherMaterialsWorkspace teacherId={teacherId} academicYearId={resolvedAcademicYearId} />

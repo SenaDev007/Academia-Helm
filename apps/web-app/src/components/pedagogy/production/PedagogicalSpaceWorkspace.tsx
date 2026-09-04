@@ -47,7 +47,6 @@ import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { MonthlyPlanningTab } from "./MonthlyPlanningTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { TeacherMaterialsWorkspace } from "@/components/pedagogy/materials/TeacherMaterialsWorkspace";
-import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ⭐ Ordre des onglets — Fiches Pédagogiques fusionnées avec Cahier Journal :
@@ -79,10 +78,13 @@ const ALL_TABS = [
   { id: 'monthly-planning', label: 'Planification mensuelle', icon: CalendarClock, description: 'Planif auto + édition', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false, maternellePrimaireOnly: false },
-  // ⭐ Travaux & Suivi — accessible depuis l'Espace Pédagogique (directeurs/promoteurs)
-  //    ET depuis la sidebar enseignant (/app/teacher/tasks)
-  { id: 'tasks', label: 'Travaux & Suivi', icon: ClipboardList, description: 'Devoirs & suivi des élèves', secondaryOnly: false, maternellePrimaireOnly: false },
-  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations', secondaryOnly: false, maternellePrimaireOnly: false },
+  // ⭐ FIX ANOMALIE 4 : onglet 'tasks' (Travaux & Suivi) RETIRÉ de l'Espace Pédagogique —
+  //    « Travaux dirigés » est déjà un module à part entière (sidebar enseignant
+  //    /app/teacher/tasks ET module pédagogie /app/pedagogy/tasks). Il ne doit
+  //    PAS apparaître en doublon comme sous-onglet de l'Espace Pédagogique.
+  // ⭐ FIX ANOMALIE 5 : Cahier de Texte en secondaryOnly — réservé au niveau SECONDAIRE.
+  //    Un enseignant Maternelle/Primaire ne voit PAS cet onglet dans son UI.
+  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations', secondaryOnly: true, maternellePrimaireOnly: false },
   { id: 'materiel', label: 'Matériel', icon: Package, description: 'Inventaire & ressources', secondaryOnly: false, maternellePrimaireOnly: false },
 ] as const;
 
@@ -347,10 +349,6 @@ export function PedagogicalSpaceWorkspace({
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
-          )}
-          {/* ⭐ Travaux & Suivi — accessible aux directeurs/promoteurs ET enseignants */}
-          {tab === 'tasks' && (
-            <TeacherTasksWorkspace />
           )}
           {tab === 'materiel' && (
             <TeacherMaterialsWorkspace teacherId={teacherId} academicYearId={resolvedAcademicYearId} />

@@ -389,10 +389,21 @@ export function MonthlyPlanningTab({
   const StatusIcon = StatusBadge.icon;
 
   const autoProposeRef = useRef<() => Promise<void>>(async () => {});
-  const saveRef = useRef<() => Promise<void>>(async () => {});
-  // ⭐ Track which (class, month) combos have been auto-proposed in this session
-  //    Prevents spamming "Proposition automatique importée" on every click
-  const triedAutoProposeRef = useRef<Set<string>>(new Set());
+  // ⭐ FIX ANOMALIE 3 : le ref de save accepte une liste de cellules explicite.
+  //    Anciennement `() => Promise<void>` — après updateCellLocal() (setState),
+  //    saveRef.current pointait encore sur l'ANCIEN state (stale closure) et le
+  //    POST /save partait SANS la cellule venant d'être saisie → "enregistré"
+  //    affiché mais rien de persisté → données perdues au rechargement.
+  const saveRef = useRef<(overrideCells?: MonthlyPlanCell[]) => Promise<unknown>>(async () => {});
+  // ⭐ FIX ANOMALIE 2 : garde anti-écrasement — pendant qu'une cellule est en
+  //    cours d'édition, un chargement (même silencieux) ne doit JAMAIS écraser
+  //    l'état local, sinon la saisie de l'enseignant disparaît sous ses yeux.
+  const editingCellKeyRef = useRef<string | null>(null);
+  // ⭐ FIX ANOMALIE 2 : synchroniser le ref d'édition avec l'état — le garde
+  //    anti-écrasement de loadPlan s'appuie sur ce ref (pas sur l'état, pour
+  //    éviter de recréer le callback loadPlan à chaque début/fin d'édition,
+  //    ce qui re-déclencherait le useEffect de chargement → rechargement).
+  useEffect(() => { editingCellKeyRef.current = editingCellKey; }, [editingCellKey]);
 
   // ───────────────────────────────────────────────────────────────────
   // Auto-proposition
@@ -425,13 +436,19 @@ export function MonthlyPlanningTab({
   // ───────────────────────────────────────────────────────────────────
   // Load plan
   // ───────────────────────────────────────────────────────────────────
-  const loadPlan = useCallback(async () => {
+  // ⭐ silent=true : rafraîchit SANS faire clignoter le spinner de chargement
+  //    (utilisé après une sauvegarde réussie pour resynchroniser les ids).
+  //    ⭐ FIX ANOMALIE 3 : si une cellule est en cours d'édition, on ne remplace
+  //    PAS l'état local — la saisie en cours de l'enseignant est préservée.
+  const loadPlan = useCallback(async (silent = false) => {
     if (!academicYearId) { setLoading(false); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await pedagogyFetch<MonthlyPlanResponse>(
         `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${selectedClass}&month=${selectedMonth}&teacherId=${teacherId}`
       );
+      // ⭐ Garde anti-écrasement : ne JAMAIS écraser l'état pendant une édition
+      if (editingCellKeyRef.current) return;
       if (data.cells.length === 0) {
         // ⭐ FIX: NEVER auto-propose in loadPlan. Auto-propose overwrites user edits
         //    every time the plan reloads (save → loadPlan → 0 cells → auto-propose → edits lost).
@@ -454,53 +471,60 @@ export function MonthlyPlanningTab({
         setCells([]);
       } else {
         console.error("Failed to load monthly plan:", e);
-        toast.error("Erreur lors du chargement: " + msg);
+        if (!silent) toast.error("Erreur lors du chargement: " + msg);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [academicYearId, selectedClass, selectedMonth, teacherId]);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
 
-  // ⭐ V3-12: Auto-refresh every 30s so the teacher sees status updates
-  //    (VALIDATED/REJECTED) from the director in real-time — same pattern
-  //    as the Cahier Journal which refetches via React Query staleTime.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      loadPlan();
-    }, 30000); // 30 seconds
-    return () => clearInterval(interval);
-  }, [loadPlan]);
+  // ⭐ FIX ANOMALIE 2 : le polling automatique de 30 secondes est SUPPRIMÉ.
+  //    Anciennement : setInterval(() => loadPlan(), 30000) — la page se
+  //    rechargait entièrement toutes les 30s (spinner + tableau redessiné),
+  //    empêchant tout travail stable de l'enseignant, notamment sur mobile.
+  //    Le rafraîchissement reste disponible via le bouton manuel (RefreshCw)
+  //    et après la soumission au directeur (statut VALIDATED/REJECTED).
 
   // ───────────────────────────────────────────────────────────────────
   // Save
   // ───────────────────────────────────────────────────────────────────
-  const handleSave = useCallback(async () => {
+  // ⭐ FIX ANOMALIE 3 : handleSave accepte une liste explicite (overrideCells).
+  //    Quand une cellule vient d'être créée, updateCellLocal() (setState) ne
+  //    re-rend PAS encore le composant au moment où le save part — l'ancien
+  //    code envoyait donc l'ANCIEN state `cells` : la nouvelle saisie n'était
+  //    JAMAIS persistée (« bien enregistré » affiché, données perdues au
+  //    rechargement). On passe désormais toujours la liste à jour explicitement.
+  const handleSave = useCallback(async (overrideCells?: MonthlyPlanCell[]) => {
     if (!academicYearId) return;
+    const cellsToSave = overrideCells ?? cells;
     setSaving(true);
     try {
-      const result = await pedagogyFetch<{ saved: number; updated: number; skipped: number }>(
+      await pedagogyFetch<{ saved: number; updated: number; skipped: number }>(
         "/api/pedagogy/monthly-plans/save",
         {
           method: "POST",
           body: {
             academicYearId, classLevel: selectedClass, month: selectedMonth, teacherId,
             schoolLevelId: currentLevel?.schoolLevelId || currentLevel?.id,
-            cells,
+            cells: cellsToSave,
           },
         }
       );
       // ⭐ NO toast on save — prevents multiple toasts spam
-      // ⭐ NO loadPlan() — DON'T reload after saving (preserves user edits)
-      //    The local state (cells) already has the correct data.
       setHasExistingCustom(true);
+      // ⭐ FIX ANOMALIE 3 : rechargement SILENCIEUX après sauvegarde réussie —
+      //    resynchronise les ids persistés (sans spinner, sans écraser une
+      //    édition en cours grâce au garde editingCellKeyRef). C'est ce qui
+      //    garantit que les données restent visibles après rechargement.
+      await loadPlan(true);
     } catch (e: any) {
       toast.error("Échec de la sauvegarde: " + e.message);
     } finally {
       setSaving(false);
     }
-  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells]);
+  }, [academicYearId, selectedClass, selectedMonth, teacherId, currentLevel, cells, loadPlan]);
 
   saveRef.current = handleSave;
 
@@ -592,7 +616,20 @@ export function MonthlyPlanningTab({
 
   const saveCellInline = async (cell: MonthlyPlanCell) => {
     if (!cell.id) {
-      await saveRef.current();
+      // ⭐ FIX ANOMALIE 3 (chemin mobile) : cellule sans id (créée localement) —
+      //    on applique le contenu édité à la liste AVANT de sauvegarder et on
+      //    passe la liste à jour au save (l'ancien code sauvegardait l'état
+      //    obsolète : le contenu édité était perdu). L'ancien code n'appelait
+      //    même pas updateCellLocal → l'édition n'était ni affichée ni persistée.
+      const idx = cells.findIndex(c =>
+        c.weekNumber === cell.weekNumber && c.domain === cell.domain &&
+        (c.subDomain || "") === (cell.subDomain || "")
+      );
+      const nextCells = idx === -1 ? cells : cells.map((c, i) =>
+        i === idx ? { ...c, content: editContent, isCustom: true, isAutoProposed: false } : c
+      );
+      setCells(nextCells);
+      await saveRef.current(nextCells);
       setEditingCellKey(null);
       return;
     }
@@ -649,16 +686,28 @@ export function MonthlyPlanningTab({
         } catch (e: any) {
           toast.error("Échec: " + e.message);
         }
-      } else {
-        // New cell — update local state + trigger bulk save
-        updateCellLocal(weekNum, champCode, subRow || undefined, editContent);
-        toast.success("Cellule créée");
+        return;
       }
+      // ⭐ FIX ANOMALIE 3 (nouvelle cellule) : on construit la liste à jour
+      //    LOCALEMENT et on la passe explicitement au save. L'ancien code
+      //    appelait updateCellLocal() (setState) puis saveRef.current() qui
+      //    capturait l'ANCIEN state → la saisie n'était jamais persistée,
+      //    pourtant le toast disait « Cellule créée ».
+      const idx = cells.findIndex(c =>
+        c.weekNumber === weekNum && c.domain === champCode &&
+        (c.subDomain || "") === (subRow || "")
+      );
+      const nextCells = idx === -1
+        ? [...cells, {
+            weekNumber: weekNum, domain: champCode, subDomain: subRow || undefined,
+            content: editContent, activityType: null, activityNumber: null,
+            sequenceNumber: null, isAutoProposed: false, isCustom: true,
+          }]
+        : cells.map((c, i) => i === idx ? { ...c, content: editContent, isCustom: true, isAutoProposed: false } : c);
+      setCells(nextCells);
       setEditingCellKey(null);
-      if (!cell || !cell.id) {
-        // For new cells, trigger the bulk save
-        await saveRef.current();
-      }
+      toast.success("Cellule enregistrée");
+      await saveRef.current(nextCells);
     };
 
     return (
@@ -833,7 +882,7 @@ export function MonthlyPlanningTab({
                 </button>
               )}
               <button
-                onClick={loadPlan}
+                onClick={() => loadPlan()}
                 className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
                 title="Rafraîchir"
               >

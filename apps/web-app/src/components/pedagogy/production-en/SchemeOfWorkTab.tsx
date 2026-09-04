@@ -251,7 +251,12 @@ export function SchemeOfWorkTab({
           setLoadedClasses(list);
         }
 
-        if (list.length > 0) setSelectedClassValue(list[0].value);
+        if (list.length > 0) {
+          setSelectedClassValue(list[0].value);
+        } else {
+          // ⭐ Pas de classes → arrêter le loading pour afficher "No class assigned"
+          setLoading(false);
+        }
       } catch (e: any) {
         console.error("Failed to load classes:", e);
         // ⭐ Fallback: if API fails, use availableClasses if provided
@@ -260,6 +265,7 @@ export function SchemeOfWorkTab({
           if (availableClasses[0]) setSelectedClassValue(availableClasses[0].value);
         } else {
           setLoadedClasses([]);
+          setLoading(false);
         }
       }
     })();
@@ -283,7 +289,8 @@ export function SchemeOfWorkTab({
   // ───────────────────────────────────────────────────────────────────
   const loadPlan = useCallback(async () => {
     if (!academicYearId || !selectedClassValue || !selectedClass) {
-      setLoading(false);
+      // ⭐ Ne PAS mettre loading=false ici — les classes sont peut-être
+      // encore en cours de chargement. On garde le spinner.
       return;
     }
     setLoading(true);

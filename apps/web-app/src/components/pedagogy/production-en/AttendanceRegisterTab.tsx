@@ -197,7 +197,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
   const [directorSignature, setDirectorSignature] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null); // null | 'pdf'
   const [showAppelModal, setShowAppelModal] = useState(false);
@@ -220,6 +220,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     setClasss(list);
     if (list.length > 0 && !selectedClassId) {
       setSelectedClassId(list[0].classId);
+    } else if (list.length === 0) {
+      // ⭐ Pas de classes → arrêter le loading pour afficher "No class assigned"
+      setLoading(false);
     }
   }, [classesData, selectedClassId]);
 

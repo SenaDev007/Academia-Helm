@@ -199,10 +199,15 @@ export function WeeklyRecordOfWorkTab({
           totalStudents: c.totalStudents,
         }));
         setLoadedClasses(list);
-        if (list.length > 0) setSelectedClassValue(list[0].value);
+        if (list.length > 0) {
+          setSelectedClassValue(list[0].value);
+        } else {
+          setLoading(false);
+        }
       } catch (e: any) {
         console.error("Failed to load classes:", e);
         setLoadedClasses([]);
+        setLoading(false);
       }
     })();
   }, [teacherId, academicYearId]);
@@ -215,7 +220,7 @@ export function WeeklyRecordOfWorkTab({
 
   // ─── Load plan (documentType=WEEKLY_RECORD) ───
   const loadPlan = useCallback(async () => {
-    if (!academicYearId || !selectedClassValue) { setLoading(false); return; }
+    if (!academicYearId || !selectedClassValue) { return; }
     setLoading(true);
     try {
       const data = await pedagogyFetch<WeeklyPlanResponse>(

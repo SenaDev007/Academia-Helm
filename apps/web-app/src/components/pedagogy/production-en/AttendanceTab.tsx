@@ -42,7 +42,7 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [students, setStudents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -68,8 +68,16 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
         setClasses(list);
-        if (list.length > 0) setSelectedClassId(list[0].classId);
-      } catch { setClasses([]); }
+        if (list.length > 0) {
+          setSelectedClassId(list[0].classId);
+        } else {
+          // Pas de classes → on peut arrêter le loading
+          setLoading(false);
+        }
+      } catch {
+        setClasses([]);
+        setLoading(false);
+      }
     })();
   }, [teacherId, academicYearId]);
 

@@ -2061,7 +2061,7 @@ export class ChatService {
       try {
         await this.ensureChannelConversation(channelId);
         const user = await this.prisma.$queryRawUnsafe<any[]>(`SELECT u."firstName", u."lastName", u."role", t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName" FROM "users" u LEFT JOIN "teachers" t ON LOWER(t.email) = LOWER(u.email) WHERE u.id = $1 LIMIT 1`, userId);
-        const name = this.displayNameOf(user[0] || {});
+        const name = this.displayNameFromRow(user[0] || {});
         await this.insertSystemMessageForChannel(channelId, `${name} a rejoint le canal`);
       } catch (e: any) {
         this.logger?.warn?.(`Channel join notification failed: ${e.message}`);
@@ -2091,8 +2091,8 @@ export class ChatService {
     `, channelId);
   }
 
-  /** ⭐ V6.1 — nom d'affichage « user, sinon fiche enseignant ». */
-  private displayNameOf(row: { firstName?: string | null; lastName?: string | null; teacherFirstName?: string | null; teacherLastName?: string | null }): string {
+  /** ⭐ V6.1 — nom d'affichage « user, sinon fiche enseignant » (sur une ligne déjà chargée). */
+  private displayNameFromRow(row: { firstName?: string | null; lastName?: string | null; teacherFirstName?: string | null; teacherLastName?: string | null }): string {
     const uFirst = (row.firstName || '').trim();
     const uLast = (row.lastName || '').trim();
     if (uFirst || uLast) return `${uFirst} ${uLast}`.trim();

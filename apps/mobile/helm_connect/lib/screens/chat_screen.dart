@@ -42,6 +42,8 @@ import 'global_search_screen.dart';
 import 'new_chat_screen.dart';
 import 'notification_center_screen.dart';
 import 'helm_connect_sections.dart';
+// ⭐ V9 (conformité web FORME) — kit : HelmAvatar (photos + palette hash nom)
+import '../widgets/helm_chat_kit.dart';
 
 // ⭐ V3-11: 12 sections Helm Connect (conformes à la spec)
 enum HelmConnectSection {
@@ -73,6 +75,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _refreshTimer;
   User? _currentUser;
   HelmConnectSection _activeSection = HelmConnectSection.discussions;
+  // ⭐ V9 (parité web) — présence live : point vert des conversations DIRECT
+  final Set<String> _onlineUserIds = {};
 
   // ⭐ V5 — SOCKET GLOBAL + APPELS ENTRANTS DEPUIS TOUT ÉCRAN :
   //    la connexion /chat (singleton) est établie ICI, à l'échelle de l'app —
@@ -103,6 +107,17 @@ class _ChatScreenState extends State<ChatScreen> {
       // Quelqu'un a lu mes messages → les badges non-lus peuvent changer
       if (mounted) _loadConversations();
     };
+    // ⭐ V9 (parité web) — présence live : point vert sur les DIRECT
+    _socket.onUserOnline = (userId) {
+      if (mounted && userId != null && userId.isNotEmpty) {
+        setState(() => _onlineUserIds.add(userId));
+      }
+    };
+    _socket.onUserOffline = (userId) {
+      if (mounted && userId != null && userId.isNotEmpty) {
+        setState(() => _onlineUserIds.remove(userId));
+      }
+    };
   }
 
   @override
@@ -115,6 +130,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _socket.onInboxNew = null;
     _socket.onChannelMessage = null;
     _socket.onMessageRead = null;
+    _socket.onUserOnline = null;
+    _socket.onUserOffline = null;
     super.dispose();
   }
 
@@ -523,79 +540,146 @@ class _ChatScreenState extends State<ChatScreen> {
           // ⭐ V7 — badge d'appel si le dernier message est un CALL_LOG
           final isCallLog = conv.lastMessageType == 'CALL_LOG';
           final (badgeIcon, badgeColor, badgeLabel) = isCallLog ? _callBadge(conv) : (null, Colors.transparent, '');
-          return ListTile(
-            leading: CircleAvatar(
-              backgroundColor: isChannel
-                  ? const Color(0xFF8B5CF6)
-                  : isGroup
-                      ? const Color(0xFF10B981)
-                      : const Color(0xFF1677FF),
-              child: isChannel
-                  ? const Icon(Icons.feed, color: Colors.white, size: 20)
-                  : isGroup
-                      ? const Icon(Icons.group, color: Colors.white, size: 20)
-                      : Text(displayName.isNotEmpty ? displayName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.w600)),
-                ),
-                if (conv.isMuted) ...[
-                  const SizedBox(width: 4),
-                  Icon(Icons.notifications_off_outlined, size: 14, color: Colors.grey[400]),
-                ],
-              ],
-            ),
-            subtitle: Row(
-              children: [
-                // ⭐ V7 — pastille d'appel (icône colorée) + aperçu
-                if (isCallLog) ...[
-                  Icon(badgeIcon, size: 14, color: badgeColor),
-                  const SizedBox(width: 4),
-                ],
-                Expanded(
-                  child: Text(
-                    // ⭐ V7 — aperçu typé (Appel X terminé / vocal / photo…)
-                    isCallLog
-                        ? badgeLabel
-                        : conv.lastMessagePreviewLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isCallLog ? badgeColor : Colors.grey[600],
-                      fontWeight: isCallLog && (conv.lastMessageCallStatus == 'missed' || conv.lastMessageCallStatus == 'declined') ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(_formatTimestamp(conv.lastMessageAt), style: TextStyle(fontSize: 11, color: conv.unreadCount > 0 ? const Color(0xFF1677FF) : Colors.grey[500])),
-                if (conv.unreadCount > 0) ...[
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [HelmColors.primaryVivid, HelmColors.gold]),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      conv.unreadCount > 99 ? '99+' : '${conv.unreadCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          // ⭐ V9 (conformité web renderConversationItem) — Telegram-style :
+          //    avatar (photo | initiales palette hash NOM | mégaphone canal),
+          //    nom gras si non-lus, badge bleu #1677FF 99+, icône muet,
+          //    pastille d'appel V6.1, libellé rôle (DIRECT) / nb membres
+          //    (GROUP), point présence vert sur les DIRECT en ligne.
+          final other = !isGroup && !isChannel && conv.participants.isNotEmpty
+              ? conv.participants.firstWhere((p) => p.userId != _currentUser?.id, orElse: () => conv.participants.first)
+              : null;
+          final isOnline = other != null && _onlineUserIds.contains(other.userId);
+          final unread = conv.unreadCount;
+          return InkWell(
             onTap: () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)))
-                  .then((_) => _loadConversations()); // ⭐ V7 — refresh au retour (badges à jour)
+                  .then((_) => _loadConversations()); // ⭐ V7 — refresh au retour
             },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: Color(0xFFF8FAFC), width: 1)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  HelmAvatar(
+                    name: displayName,
+                    avatarUrl: other?.avatarUrl,
+                    userId: other?.userId,
+                    size: 44,
+                    isGroup: isGroup,
+                    isChannel: isChannel,
+                    isOfficialChannel: isChannel && (conv.isOfficial == true),
+                    showPresence: other != null,
+                    online: isOnline,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ligne 1 : nom + badge non-lus + horodatage
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: const Color(0xFF0F172A),
+                                  fontWeight: unread > 0 ? FontWeight.bold : FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (unread > 0) ...[
+                              Container(
+                                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                padding: const EdgeInsets.symmetric(horizontal: 5),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: WebChatColors.badgeUnread, // #1677FF (web)
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  unread > 99 ? '99+' : '$unread',
+                                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            Text(
+                              _formatTimestamp(conv.lastMessageAt),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400,
+                                color: unread > 0 ? const Color(0xFF1677FF) : const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        // Ligne 2 : muet + aperçu (pastille d'appel / texte)
+                        Row(
+                          children: [
+                            if (conv.isMuted) ...[
+                              const Icon(Icons.notifications_off_outlined, size: 13, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 4),
+                            ],
+                            if (isCallLog) ...[
+                              Icon(badgeIcon, size: 14, color: badgeColor),
+                              const SizedBox(width: 4),
+                            ],
+                            Expanded(
+                              child: Text(
+                                isCallLog ? badgeLabel : conv.lastMessagePreviewLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isCallLog
+                                      ? badgeColor
+                                      : unread > 0
+                                          ? const Color(0xFF334155)
+                                          : const Color(0xFF64748B),
+                                  fontWeight: isCallLog && (conv.lastMessageCallStatus == 'missed' || conv.lastMessageCallStatus == 'declined')
+                                      ? FontWeight.w600
+                                      : unread > 0
+                                          ? FontWeight.w500
+                                          : FontWeight.w400,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Ligne 3 (web) : libellé rôle (DIRECT) / membres (GROUP)
+                        if (!isGroup && !isChannel && (other?.roleLabel ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            other!.roleLabel!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF0958D9)),
+                          ),
+                        ],
+                        if (isGroup && (conv.participantCount ?? 0) > 0) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            '${conv.participantCount} membres',
+                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ),

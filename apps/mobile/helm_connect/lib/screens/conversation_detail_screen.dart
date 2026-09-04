@@ -37,6 +37,13 @@ import 'thread_screen.dart';
 // ⭐ V3-5: WebRTC calls + branded call screen
 import '../services/call_service.dart';
 import 'call_screen.dart';
+// ⭐ V9 (parité web) — galerie de médias (grille 3 col + lightbox, miroir
+//    MediaGalleryModal V4 Phase 2 / Yeshua Connect)
+import 'media_gallery_screen.dart';
+// ⭐ V9 (conformité web) — kit de conformité : palette messaging, avatars
+//    photos, rendu riche Discord, LinkEmbed /api/og, watermark, emojis,
+//    bulle « tape… », slash commands.
+import '../widgets/helm_chat_kit.dart';
 
 // ⭐ V5 — appels de groupe + écran membres (import du service câblé)
 import '../services/group_call_service.dart';
@@ -150,6 +157,21 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   // ⭐ V8 — type corrigé : DateTime (avant String — 3 erreurs d'analyse
   //    V7 : .day/.month sur String + affectations DateTime → String?)
   DateTime? _otherLastSeen;
+  // ⭐ V9 (conformité web) — recherche dans la conversation (jump + halo)
+  bool _searchOpen = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  List<Map<String, dynamic>> _searchResults = const [];
+  bool _searchingInConv = false;
+  String? _haloMessageId;
+  Timer? _haloTimer;
+  // ⭐ V9 — messages programmés (bannière ⏰ ambre + annulation, comme le web)
+  List<Map<String, dynamic>> _scheduled = const [];
+  // ⭐ V9 (parité web) — autocomplete @mentions
+  String? _mentionQuery;
+  // ⭐ V9 — vitesse de lecture vocale 0,5×/1×/1,5×/2× (web : cycle au tap)
+  final List<double> _speeds = [0.5, 1.0, 1.5, 2.0];
+  int _speedIndex = 1;
 
   String get _presenceLabel {
     if (widget.conversation.type == 'GROUP') {
@@ -195,6 +217,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // ⭐ V3-4: Load current user ID for reaction "is mine" detection
     _loadCurrentUserId();
     _loadMessages();
+    // ⭐ V9 — messages programmés en attente (bannière ambre)
+    _loadScheduledMessages();
     // ⭐ V6 — présence réelle du correspondant (API + socket)
     _loadCurrentUserIdThenPresence();
     // ⭐ V8 — E2EE : génère/publie les clés (une fois par appareil) puis
@@ -462,6 +486,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 senderFirstName: m.senderFirstName,
                 senderLastName: m.senderLastName,
                 senderRole: m.senderRole,
+                senderAvatarUrl: m.senderAvatarUrl,
                 isOwn: m.isOwn,
                 callMeta: m.callMeta,
                 status: m.status,
@@ -502,6 +527,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 senderFirstName: m.senderFirstName,
                 senderLastName: m.senderLastName,
                 senderRole: m.senderRole,
+                senderAvatarUrl: m.senderAvatarUrl,
                 isOwn: m.isOwn,
                 callMeta: m.callMeta,
                 status: m.status,
@@ -556,6 +582,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 senderFirstName: m.senderFirstName,
                 senderLastName: m.senderLastName,
                 senderRole: m.senderRole,
+                senderAvatarUrl: m.senderAvatarUrl,
                 isOwn: m.isOwn,
                 callMeta: m.callMeta,
                 status: m.status,
@@ -723,6 +750,206 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
       }
     }
+  }
+
+  // ⭐ V9 (parité web CategorizedAttachmentMenu) — envoi VIDÉO via
+  //    sélecteur de fichiers (le web propose Vidéos dans son menu 9 options).
+  Future<void> _sendVideoFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.video);
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.first.path!);
+      await ApiService.sendAttachment(
+        conversationId: widget.conversation.id,
+        file: file,
+        type: 'VIDEO',
+        fileName: result.files.first.name,
+      );
+      _loadMessages();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vidéo envoyée'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
+  }
+
+  // ⭐ V9 — envoi d'un fichier AUDIO existant (pas un vocal enregistré).
+  Future<void> _sendAudioFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.audio);
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.first.path!);
+      await ApiService.sendAttachment(
+        conversationId: widget.conversation.id,
+        file: file,
+        type: 'AUDIO',
+        fileName: result.files.first.name,
+      );
+      _loadMessages();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio envoyé'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
+  }
+
+  // ⭐ V9 (parité web PollModal) — création de SONDAGE : question (≥ 5 car.),
+  //    2-10 options, choix multiple, anonyme, expiration (1H/8H/24H/7D/Jamais).
+  void _showPollDialog() {
+    final questionCtrl = TextEditingController();
+    final optionCtrls = [TextEditingController(), TextEditingController()];
+    var multiple = false;
+    var anonymous = false;
+    var expiry = '24H';
+    final expiries = ['1H', '8H', '24H', '7D', 'NEVER'];
+    final expiryLabels = {
+      '1H': '1 heure', '8H': '8 heures', '24H': '24 heures', '7D': '7 jours', 'NEVER': 'Jamais',
+    };
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialog) => AlertDialog(
+          title: Row(
+            children: const [
+              Icon(Icons.bar_chart, color: Color(0xFF1677FF), size: 20),
+              SizedBox(width: 8),
+              Text('Créer un sondage', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: questionCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Question (min. 5 caractères)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...List.generate(optionCtrls.length, (i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: optionCtrls[i],
+                            decoration: InputDecoration(
+                              labelText: 'Option ${i + 1}',
+                              border: const OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        if (optionCtrls.length > 2)
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, size: 18, color: Color(0xFFEF4444)),
+                            onPressed: () => setDialog(() => optionCtrls.removeAt(i)),
+                          ),
+                      ],
+                    ),
+                  )),
+                  if (optionCtrls.length < 10)
+                    TextButton.icon(
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Ajouter une option', style: TextStyle(fontSize: 12)),
+                      onPressed: () => setDialog(() => optionCtrls.add(TextEditingController())),
+                    ),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Choix multiple', style: TextStyle(fontSize: 13)),
+                    value: multiple,
+                    onChanged: (v) => setDialog(() => multiple = v ?? false),
+                  ),
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Sondage anonyme', style: TextStyle(fontSize: 13)),
+                    value: anonymous,
+                    onChanged: (v) => setDialog(() => anonymous = v ?? false),
+                  ),
+                  const Text('Expire dans', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Wrap(
+                    spacing: 6,
+                    children: expiries.map((e) {
+                      final sel = expiry == e;
+                      return ChoiceChip(
+                        label: Text(expiryLabels[e]!, style: const TextStyle(fontSize: 11)),
+                        selected: sel,
+                        onSelected: (_) => setDialog(() => expiry = e),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1677FF)),
+              onPressed: () async {
+                final q = questionCtrl.text.trim();
+                final opts = optionCtrls.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
+                if (q.length < 5) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('La question doit contenir au moins 5 caractères')),
+                  );
+                  return;
+                }
+                if (opts.length < 2) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Minimum 2 options')),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext);
+                try {
+                  await ApiService.createPoll(
+                    conversationId: widget.conversation.id,
+                    question: q,
+                    options: opts,
+                    multipleChoice: multiple,
+                    anonymous: anonymous,
+                    expiry: expiry == 'NEVER' ? null : expiry,
+                  );
+                  _loadMessages();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Sondage créé'), duration: Duration(seconds: 1)),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                  }
+                }
+              },
+              child: const Text('Créer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ⭐ V3-11: Voice message recording — start
@@ -950,10 +1177,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
-    // ⭐ V5 — le SocketService est désormais un SINGLETON partagé : on quitte
-    //    la room de conversation mais on NE DÉCONNECTE PAS le socket
-    //    (les appels entrants + les messages des autres écrans en dépendent).
-    _socket.leaveConversation(widget.conversation.id);
+    _haloTimer?.cancel();
+    _searchController.dispose();
     _messageController.dispose();
     // ⭐ V3-11: Remove the scroll listener before disposing the controller
     _scrollController.removeListener(_onScrollChanged);
@@ -966,6 +1191,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     //    GroupCallService vivent pour toute l'app : les appels entrants
     //    continuent d'être routés depuis n'importe quel écran).
     GroupCallService.instance.removeListener(_onGroupCallStateChanged);
+    // ⭐ V5 — quitte la room de conversation (le socket singleton reste
+    //    connecté : appels entrants + messages des autres écrans en dépendent).
+    _socket.leaveConversation(widget.conversation.id);
     // ⭐ V3-11: Cleanup voice recording + audio player
     _voiceService.dispose();
     _audioPlayer.dispose();
@@ -1630,6 +1858,283 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     );
   }
 
+  // ⭐ V9 (parité web) — messages programmés : bannière ⏰ ambre au-dessus du
+  //    composer (liste des PENDING + annulation) — miroir exact du web.
+  Future<void> _loadScheduledMessages() async {
+    try {
+      final items = await ApiService.listScheduledMessages(widget.conversation.id);
+      if (mounted) {
+        setState(() => _scheduled = items);
+      }
+    } catch (_) {/* silencieux */}
+  }
+
+  // ⭐ V9 — programme un message (textarea + date + heure, comme le web)
+  void _showScheduleDialog() {
+    final contentController = TextEditingController();
+    DateTime scheduled = DateTime.now().add(const Duration(hours: 1));
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Programmer un message'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: contentController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Message à programmer',
+                  hintText: 'Contenu du message…',
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.calendar_today, size: 16),
+                      label: Text(
+                        '${scheduled.day}/${scheduled.month}/${scheduled.year}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: dialogContext,
+                          initialDate: scheduled,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (d != null) {
+                          setDialogState(() {
+                            scheduled = DateTime(d.year, d.month, d.day, scheduled.hour, scheduled.minute);
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.access_time, size: 16),
+                      label: Text(
+                        '${scheduled.hour.toString().padLeft(2, '0')}:${scheduled.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      onPressed: () async {
+                        final t = await showTimePicker(
+                          context: dialogContext,
+                          initialTime: TimeOfDay.fromDateTime(scheduled),
+                        );
+                        if (t != null) {
+                          setDialogState(() {
+                            scheduled = DateTime(
+                              scheduled.year, scheduled.month, scheduled.day, t.hour, t.minute,
+                            );
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Annuler'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFCFA63A)),
+              onPressed: () async {
+                final content = contentController.text.trim();
+                if (content.isEmpty) return;
+                if (!scheduled.isAfter(DateTime.now())) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('Choisissez une date future')),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext);
+                try {
+                  await ApiService.scheduleMessage(
+                    conversationId: widget.conversation.id,
+                    content: content,
+                    scheduledFor: scheduled,
+                  );
+                  await _loadScheduledMessages();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Message programmé pour le ${scheduled.day}/${scheduled.month} à ${scheduled.hour}:${scheduled.minute.toString().padLeft(2, '0')}')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                  }
+                }
+              },
+              child: const Text('Programmer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ⭐ V9 — annule un message programmé (DELETE /chat/scheduled/:id)
+  Future<void> _cancelScheduled(String schedId) async {
+    try {
+      await ApiService.cancelScheduledMessage(schedId);
+      await _loadScheduledMessages();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
+  }
+
+  // ⭐ V9 (parité web) — MUTE de la conversation : cloche du header → menu
+  //    1h / 8h / 24h / jusqu'à réactivation.
+  void _showMuteMenu() {
+    final isMuted = widget.conversation.isMuted;
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                isMuted ? 'Notifications coupées' : 'Couper les notifications',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            if (isMuted)
+              ListTile(
+                leading: const Icon(Icons.notifications_active, color: Color(0xFF1677FF)),
+                title: const Text('Réactiver les notifications'),
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  try {
+                    await ApiService.unmuteConversation(widget.conversation.id);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Notifications réactivées')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                    }
+                  }
+                },
+              )
+            else ...[
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: const Text('Pendant 1 heure'),
+                onTap: () { Navigator.pop(sheetContext); ApiService.muteConversation(widget.conversation.id, duration: '1h').then((_) => _muteOk('1 heure')); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: const Text('Pendant 8 heures'),
+                onTap: () { Navigator.pop(sheetContext); ApiService.muteConversation(widget.conversation.id, duration: '8h').then((_) => _muteOk('8 heures')); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.schedule),
+                title: const Text('Pendant 24 heures'),
+                onTap: () { Navigator.pop(sheetContext); ApiService.muteConversation(widget.conversation.id, duration: '24h').then((_) => _muteOk('24 heures')); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.notifications_off, color: Color(0xFFF59E0B)),
+                title: const Text("Jusqu'à réactivation"),
+                onTap: () { Navigator.pop(sheetContext); ApiService.muteConversation(widget.conversation.id, duration: 'forever').then((_) => _muteOk('réactivation')); },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _muteOk(String duree) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Notifications coupées ($duree)')),
+      );
+    }
+  }
+
+  // ⭐ V9 (parité web) — lien d'invitation du groupe → presse-papiers
+  Future<void> _shareInviteLink() async {
+    try {
+      final res = await ApiService.createInviteLink(widget.conversation.id);
+      final link = (res['link'] ?? res['inviteLink'] ?? res['url']) as String?;
+      if (link == null || link.isEmpty) throw Exception('Lien indisponible');
+      await Clipboard.setData(ClipboardData(text: link));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lien d’invitation copié dans le presse-papiers')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
+    }
+  }
+
+  // ⭐ V9 (parité web) — recherche DANS la conversation : GET /:id/search?q=
+  //    puis saut vers le message (scroll + halo bleu 1,5 s, comme le web).
+  Future<void> _runInConversationSearch(String q) async {
+    if (q.trim().length < 2) {
+      setState(() { _searchResults = const []; _searchQuery = q; });
+      return;
+    }
+    setState(() { _searchingInConv = true; _searchQuery = q; });
+    try {
+      final results = await ApiService.searchInConversation(
+        conversationId: widget.conversation.id,
+        query: q.trim(),
+      );
+      if (mounted) setState(() => _searchResults = results);
+    } catch (_) {
+      if (mounted) setState(() => _searchResults = const []);
+    } finally {
+      if (mounted) setState(() => _searchingInConv = false);
+    }
+  }
+
+  // ⭐ V9 — saut vers un message : si hors fenêtre → charge les pages plus
+  //    anciennes jusqu'à le trouver (miroir jumpToMessage du web).
+  Future<void> _jumpToMessage(String messageId) async {
+    var guard = 0;
+    while (!_messages.any((m) => m.id == messageId) && _hasMoreMessages && guard < 10) {
+      await _loadOlderMessages();
+      guard++;
+    }
+    final index = _messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+    // Approximation : chaque message ≈ 70 px + séparateurs → scroll index*70
+    await _scrollController.animateTo(
+      (index * 70.0).clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+    if (mounted) {
+      setState(() => _haloMessageId = messageId);
+      _haloTimer?.cancel();
+      _haloTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted) setState(() => _haloMessageId = null);
+      });
+    }
+  }
+
   // ⭐ V7 — bandeau épinglés (parité web) : « N messages épinglés » + aperçu du
   //    dernier + tap → liste (aperçu + désépingler).
   Widget _buildPinnedBanner() {
@@ -1743,22 +2248,24 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // ⭐ V3-11: Royal Blue 3-stop gradient (matching splash + chat screen)
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(gradient: HelmGradients.royalBlue),
-        ),
+        // ⭐ V9 (conformité web FORME) — header de conversation bleu Helm
+        //    SOLIDE #0958D9 + texte blanc + sous-titre #BAE0FF (miroir exact
+        //    du web ; avant : gradient Royal Blue).
+        backgroundColor: WebChatColors.header,
+        foregroundColor: Colors.white,
+        elevation: 0,
         title: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: isChannel
-                  ? const Icon(Icons.feed, color: Colors.white, size: 20)
-                  : widget.conversation.type == 'GROUP'
-                      ? const Icon(Icons.group, color: Colors.white, size: 20)
-                      : Text(
-                          _getInitials(displayName),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
+            // ⭐ V9 — avatar PHOTO ou initiales (palette 8, comme le web)
+            HelmAvatar(
+              name: displayName,
+              avatarUrl: widget.conversation.type == 'DIRECT'
+                  ? _otherAvatarUrl
+                  : widget.conversation.avatarUrl,
+              userId: widget.conversation.type == 'DIRECT' ? _otherUserId : null,
+              size: 36,
+              isGroup: widget.conversation.type == 'GROUP',
+              isChannel: isChannel,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1766,13 +2273,16 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(displayName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  // ⭐ V6 — présence RÉELLE (avant : « en ligne » en dur)
-                  // ⭐ V8 — cadenas E2E (parité Yeshua/web) quand le chiffrement
-                  //    de bout en bout est actif sur ce direct.
+                  // ⭐ V6 — présence RÉELLE + cadenas E2E V8
+                  // ⭐ V9 — sous-titre #BAE0FF (couleur exacte du web)
                   Row(
                     children: [
+                      if (widget.conversation.isMuted) ...[
+                        const Icon(Icons.notifications_off, size: 11, color: Color(0xFFFFE08A)),
+                        const SizedBox(width: 3),
+                      ],
                       if (_e2eAvailable) ...[
-                        const Icon(Icons.lock, size: 10, color: HelmColors.goldLight),
+                        const Icon(Icons.lock, size: 10, color: Color(0xFFBAE0FF)),
                         const SizedBox(width: 3),
                       ],
                       Expanded(
@@ -1785,7 +2295,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11,
-                            color: _isOtherTyping || _otherOnline ? HelmColors.goldLight : HelmColors.goldLight.withOpacity(0.65),
+                            color: _isOtherTyping || _otherOnline
+                                ? const Color(0xFFBAE0FF)
+                                : const Color(0xFFBAE0FF).withOpacity(0.75),
                           ),
                         ),
                       ),
@@ -1796,31 +2308,54 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ],
         ),
-        // ⭐ V3-3: Sparkles button to trigger ORION conversation summary
-        // ⭐ V5: Phone + Video call buttons (DIRECT 1-1 + GROUP mesh)
-        // ⭐ V3-11: Action icons use gold accent (Helm Connect palette)
+        // ⭐ V9 (parité web) — actions du header : cloche (mute), recherche
+        //    dans la conv, galerie média, lien d'invitation (groupes),
+        //    appels, membres, résumé ORION.
         actions: [
+          // Cloche — mute par conversation (menu 1h/8h/24h/∞)
+          IconButton(
+            icon: Icon(
+              widget.conversation.isMuted ? Icons.notifications_off : Icons.notifications_none,
+              color: widget.conversation.isMuted ? const Color(0xFFFFE08A) : Colors.white,
+              size: 20,
+            ),
+            tooltip: 'Notifications',
+            onPressed: _showMuteMenu,
+          ),
+          // Recherche dans la conversation
+          IconButton(
+            icon: const Icon(Icons.search, color: Colors.white, size: 20),
+            tooltip: 'Rechercher dans la conversation',
+            onPressed: () => setState(() => _searchOpen = !_searchOpen),
+          ),
           // ⭐ V7 — pas d'appel sur les CANAUX (diffusion unidirectionnelle)
           if (!isChannel) ...[
             IconButton(
-              icon: const Icon(Icons.phone, color: HelmColors.goldLight),
+              icon: const Icon(Icons.phone, color: Colors.white),
               tooltip: widget.conversation.type == 'GROUP'
                   ? 'Appel audio de groupe'
                   : 'Appel audio',
               onPressed: () => _startCall('AUDIO'),
             ),
             IconButton(
-              icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
+              icon: const Icon(Icons.videocam, color: Colors.white),
               tooltip: widget.conversation.type == 'GROUP'
                   ? 'Appel vidéo de groupe'
                   : 'Appel vidéo',
               onPressed: () => _startCall('VIDEO'),
             ),
           ],
+          // ⭐ V9 — lien d'invitation (groupes, comme le web : UserPlus)
+          if (widget.conversation.type == 'GROUP')
+            IconButton(
+              icon: const Icon(Icons.person_add_alt, color: Colors.white, size: 20),
+              tooltip: 'Lien d’invitation',
+              onPressed: _shareInviteLink,
+            ),
           // ⭐ V5 — écran membres / gestion des groupes
           if (widget.conversation.type == 'GROUP')
             IconButton(
-              icon: const Icon(Icons.groups, color: HelmColors.goldLight),
+              icon: const Icon(Icons.groups, color: Colors.white),
               tooltip: 'Membres du groupe',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
@@ -1832,8 +2367,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ),
               ),
             ),
+          // ⭐ V9 — galerie média de la conversation (web : icône image)
           IconButton(
-            icon: const Icon(Icons.auto_awesome, color: HelmColors.goldLight),
+            icon: const Icon(Icons.image_outlined, color: Colors.white, size: 20),
+            tooltip: 'Galerie média',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                settings: const RouteSettings(name: '/media-gallery'),
+                builder: (_) => MediaGalleryScreen(conversation: widget.conversation),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.auto_awesome, color: Color(0xFFFFE08A)),
             tooltip: 'Résumer la conversation (ORION IA)',
             onPressed: _summarizeConversation,
           ),
@@ -1843,12 +2389,18 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         children: [
           // ⭐ V7 (parité web) — bandeau des messages épinglés
           _buildPinnedBanner(),
+          // ⭐ V9 (parité web) — barre de recherche DANS la conversation
+          if (_searchOpen) _buildInConversationSearchBar(),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
                 : _messages.isEmpty
                     ? _buildEmptyConversationState()
-                    : Container(
+                    // ⭐ V9 (parité web FORME) — watermark Helm en fond des
+                    //    messages (opacité 0.05, miroir getHelmWatermarkStyle)
+                    : HelmWatermark(
+                        opacity: 0.05,
+                        child: Container(
                         color: const Color(0xFFF5F7FA),
                         child: ListView.builder(
                           controller: _scrollController,
@@ -1892,28 +2444,27 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                               children: [
                                 if (showDateSeparator) _buildDateSeparator(msg.createdAt),
                                 _buildMessageBubble(msg),
+                                // ⭐ V9 (parité web) — halo bleu 1,5 s sur le message
+                                //    ciblé par un saut de recherche
+                                if (_haloMessageId == msg.id)
+                                  Container(height: 2, color: WebChatColors.primary),
                               ],
                             );
                           },
                         ),
                       ),
+                      ),
           ),
-          // ⭐ V3-4: Typing indicator (whatsapp-style)
+          // ⭐ V9 (parité web) — bulle « tape… » en bas de la liste : avatar
+          //    + 3 points rebondissants (miroir exact du web, AVANT : simple
+          //    texte italique sous la liste).
           if (_isOtherTyping)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            Align(
               alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('en train d\'écrire... ', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic)),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 600),
-                    builder: (context, value, child) => Opacity(opacity: 0.5 + 0.5 * (value.abs()), child: child),
-                    child: const Text('•', style: TextStyle(fontSize: 18, color: Color(0xFF64748B))),
-                  ),
-                ],
+              child: TypingBubble(
+                name: _otherParticipantName,
+                avatarUrl: _otherAvatarUrl,
+                userId: _otherUserId,
               ),
             ),
           // ⭐ V3-4: Reply-to bar (whatsapp-style) — shown when _replyToMessage is set
@@ -1954,6 +2505,12 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ],
               ),
             ),
+          // ⭐ V9 (parité web) — bannière des messages programmés ⏰ ambre
+          //    (aperçu + date/heure + bouton annuler, au-dessus du composer)
+          if (_scheduled.isNotEmpty) _buildScheduledBanner(),
+          // ⭐ V9 (parité web) — popover @mentions au-dessus du composer
+          //    (déclenché par la saisie de « @ » + lettres, miroir du web)
+          _buildMentionOverlay(),
           // Input bar — switches between normal composer and recording UI
           Container(
             padding: const EdgeInsets.all(8),
@@ -2161,9 +2718,27 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         ),
       );
     }
-    // Default: attach + text field + mic (if empty) + send
+    // Default: emoji + attach + text field + schedule + mic (if empty) + send
+    // ⭐ V9 — CORRECTIF CRITIQUE du composer « carré restreint » :
+    //    AVANT : TextField SANS maxLines/minLines (mono-ligne à hauteur
+    //    figée) + Entrée = envoi (onSubmitted) → champ « carré » et envois
+    //    involontaires. MAINTENANT (miroir du composer du fil + du web) :
+    //    minLines 1 / maxLines 6, clavier multiline, Entrée = saut de ligne,
+    //    envoi UNIQUEMENT par le bouton, padding vertical équilibré.
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
+        // Emoji picker (web : popover 3 catégories)
+        SizedBox(
+          width: 44,
+          height: 44,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.emoji_emotions_outlined, color: Color(0xFF64748B)),
+            tooltip: 'Emojis',
+            onPressed: _showEmojiSheet,
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.add_circle_outline, color: HelmColors.primary),
           onPressed: () => _showAttachmentMenu(),
@@ -2171,11 +2746,16 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         Expanded(
           child: TextField(
             controller: _messageController,
+            // ⭐ V9 — le champ GRANDIT avec le contenu (1 → 6 lignes)
+            minLines: 1,
+            maxLines: 6,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
             decoration: InputDecoration(
               hintText: 'Tapez un message...',
               filled: true,
               fillColor: const Color(0xFFF5F7FA),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
                 borderSide: BorderSide.none,
@@ -2186,10 +2766,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               ),
             ),
             onChanged: _onTextChanged,
-            onSubmitted: (_) => _sendMessage(),
+            // ⭐ V9 — PLUS de onSubmitted : Entrée insère un saut de ligne
+            //    (l'envoi se fait uniquement via le bouton, comme le fil).
           ),
         ),
-        const SizedBox(width: 8),
+        // Programmer un message (web : bouton horloge + modal)
+        SizedBox(
+          width: 40,
+          height: 44,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            icon: const Icon(Icons.schedule, color: Color(0xFFCFA63A), size: 22),
+            tooltip: 'Programmer l’envoi',
+            onPressed: _showScheduleDialog,
+          ),
+        ),
+        const SizedBox(width: 4),
         // Mic button — visible only when text field is empty (otherwise send button shows)
         if (_messageController.text.trim().isEmpty)
           GestureDetector(
@@ -2220,6 +2812,177 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           ),
       ],
     );
+  }
+
+  // ⭐ V9 (parité web) — picker d'emojis (3 catégories identiques au web)
+  void _showEmojiSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => ChatEmojiPicker(
+        onEmojiSelected: (emoji) {
+          final text = _messageController.text;
+          final selection = _messageController.selection;
+          final newText = selection.isValid
+              ? text.replaceRange(selection.start, selection.end, emoji)
+              : '$text$emoji';
+          _messageController.value = TextEditingValue(
+            text: newText,
+            selection: TextSelection.collapsed(offset: (selection.isValid ? selection.start : text.length) + emoji.length),
+          );
+          _onTextChanged(_messageController.text);
+        },
+      ),
+    );
+  }
+
+  // ⭐ V9 (parité web) — recherche dans la conversation : barre + résultats
+  Widget _buildInConversationSearchBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher dans la conversation…',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF5F7FA),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (v) => _runInConversationSearch(v),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() {
+                    _searchOpen = false;
+                    _searchResults = const [];
+                    _searchQuery = '';
+                  });
+                },
+              ),
+            ],
+          ),
+          if (_searchingInConv)
+            const Padding(
+              padding: EdgeInsets.all(6),
+              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          if (_searchResults.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 180),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _searchResults.length,
+                itemBuilder: (context, i) {
+                  final r = _searchResults[i];
+                  final snippet = stripHtml((r['content'] ?? r['snippet'] ?? '') as String?);
+                  final sender = '${r['senderFirstName'] ?? r['sender']?['firstName'] ?? ''} ${r['senderLastName'] ?? r['sender']?['lastName'] ?? ''}'.trim();
+                  return ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    title: Text(
+                      snippet.isEmpty ? '(pièce jointe)' : snippet,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      sender.isNotEmpty ? sender : '—',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                    trailing: const Icon(Icons.subdirectory_arrow_right, size: 18, color: Color(0xFF0958D9)),
+                    onTap: () {
+                      final id = (r['id'] ?? r['messageId']) as String?;
+                      if (id != null) _jumpToMessage(id);
+                    },
+                  );
+                },
+              ),
+            ),
+          if (!_searchingInConv && _searchQuery.trim().length >= 2 && _searchResults.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(6),
+              child: Text('Aucun résultat', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V9 (parité web) — bannière des messages programmés (ambre ⏰ + annuler)
+  Widget _buildScheduledBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFFBEB),
+        border: Border(bottom: BorderSide(color: Color(0xFFFDE68A))),
+      ),
+      child: Column(
+        children: _scheduled.take(3).map((s) {
+          final content = stripHtml((s['content'] ?? '') as String?);
+          final when = DateTime.tryParse((s['scheduledFor'] ?? s['scheduledAt'] ?? '') as String? ?? '');
+          final whenLabel = when != null
+              ? '${when.day}/${when.month} à ${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}'
+              : 'programmé';
+          return Row(
+            children: [
+              const Icon(Icons.schedule, size: 14, color: Color(0xFFD97706)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '⏰ $whenLabel • ${content.isEmpty ? 'Message programmé' : content}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 14, color: Color(0xFFB45309)),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Annuler',
+                onPressed: () => _cancelScheduled((s['id'] ?? s['scheduledId'] ?? '') as String),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ⭐ V9 — infos de l'autre participant (nom + avatar pour typing/header)
+  String get _otherParticipantName {
+    if (widget.conversation.type != 'DIRECT') return '';
+    final other = widget.conversation.participants
+        .where((p) => p.userId != _currentUserId)
+        .toList();
+    return other.isEmpty ? '' : (other.first.fullName.isNotEmpty ? other.first.fullName : 'Utilisateur');
+  }
+
+  String? get _otherAvatarUrl {
+    if (widget.conversation.type != 'DIRECT') return null;
+    final other = widget.conversation.participants
+        .where((p) => p.userId != _currentUserId)
+        .toList();
+    return other.isEmpty ? null : other.first.avatarUrl;
   }
 
   // ⭐ V3-11: Branded empty conversation state — Helm Connect logo + tagline
@@ -2313,17 +3076,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       );
     }
     final isOwn = msg.isOwn;
-    // ⭐ V7 (parité web/Yeshua) — couleur de bulle STABLE par expéditeur :
-    //    hash djb2 du senderId → palette 8 teintes (groupes uniquement ;
-    //    mes bulles restent bleu Azure, les DIRECT des autres restent blancs).
+    // ⭐ V9 (conformité web FORME) — couleurs de bulles EXACTES du web :
+    //    MOI → #3B9EFF + texte blanc (bg-[#3B9EFF] text-white) ;
+    //    AUTRE en DIRECT → blanc + bord slate-200 (bg-white border-slate-200) ;
+    //    AUTRE en GROUPE → palette 8 teintes par expéditeur (hash djb2).
+    //    (AVANT : mes bulles étaient bleu clair #E6F4FF — non conforme.)
     final (bubbleBg, bubbleBorder) = !isOwn && widget.conversation.type == 'GROUP'
         ? kUserBubbleColors[hashUserId(msg.senderId)]
         : isOwn
-            ? (const Color(0xFFE6F4FF), const Color(0xFFBAE0FF))
-            : (Colors.white, const Color(0xFFE2E8F0));
+            ? (WebChatColors.bubbleOwn, WebChatColors.bubbleOwn)
+            : (Colors.white, WebChatColors.bubbleOtherBorder);
     final senderTextColor = !isOwn && widget.conversation.type == 'GROUP'
         ? kUserTextColors[hashUserId(msg.senderId)]
         : const Color(0xFF0958D9);
+    // ⭐ V9 — couleur du texte principal de la bulle (blanc sur #3B9EFF)
+    final bodyTextColor = isOwn ? Colors.white : const Color(0xFF1E293B);
+    final metaTextColor = isOwn ? Colors.white70 : const Color(0xFF94A3B8);
 
     // ⭐ V3-4: Group reactions by emoji with count — whatsapp style
     final Map<String, int> reactionCounts = {};
@@ -2335,27 +3103,67 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // ⭐ V8 — nombre de réponses dans le fil de ce message (badge)
     final threadReplyCount = _replyCountByParent[msg.id] ?? 0;
 
+    // ⭐ V9 (parité web) — halo de recherche : bordure bleue 2px pendant 1,5 s
+    final hasHalo = _haloMessageId == msg.id;
+
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPress: () => _showMessageActions(msg),
         child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
-        padding: const EdgeInsets.all(12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        // ⭐ V9 — padding web px-3 py-2 (12×8) + largeur min(82%, 640)
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
+        ),
         decoration: BoxDecoration(
           color: bubbleBg,
+          // ⭐ V9 (parité web) — queue WhatsApp : rounded-2xl + coin
+          //    resserré côté émetteur (rounded-br-sm pour moi / bl-sm autres)
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: isOwn ? const Radius.circular(16) : const Radius.circular(4),
             bottomRight: isOwn ? const Radius.circular(4) : const Radius.circular(16),
           ),
-          border: Border.all(color: bubbleBorder, width: isOwn ? 0.5 : 1),
+          border: hasHalo
+              ? Border.all(color: WebChatColors.primary, width: 2)
+              : isOwn
+                  ? null
+                  : Border.all(color: bubbleBorder, width: 1),
+          boxShadow: isOwn
+              ? [BoxShadow(color: WebChatColors.bubbleOwn.withOpacity(0.25), blurRadius: 4, offset: const Offset(0, 1))]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ⭐ V9 (parité web) — avatar 32px + nom pour les messages
+            //    d'autrui en groupe (photo réelle ou initiales palette).
+            if (!isOwn && widget.conversation.type == 'GROUP')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    HelmAvatar(
+                      name: msg.senderName.isNotEmpty ? msg.senderName : '?',
+                      avatarUrl: msg.senderAvatarUrl,
+                      userId: msg.senderId,
+                      size: 32,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        msg.senderName,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: senderTextColor),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // ⭐ V7 — icône épinglé en tête de bulle (parité web)
             if (msg.isPinned)
               Padding(
@@ -2420,15 +3228,30 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: senderTextColor),
                 ),
               ),
-            // Content (V3-4: strip HTML before display)
-            // ⭐ V3-12: Poll messages (type=POLL) have JSON content — parse + render
-            //   as a poll card instead of raw JSON text.
+            // ⭐ V9 (parité web) — rendu RICHE Discord : @mentions, @here,
+            //    ||spoilers||, `code`, blocs ``` avec Copier, ~~barré~~,
+            //    citations >, gras/italique HTML + LINK EMBED de la 1re URL.
             if (msg.type == 'POLL' && msg.content != null && msg.content!.isNotEmpty) ...[
               const SizedBox(height: 4),
               _buildPollBubble(msg, isOwn),
             ]
-            else if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO')
-              Text(_displayContent(msg), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
+            else if (msg.type == 'STICKER' && (msg.attachmentUrl ?? '').isNotEmpty) ...[
+              const SizedBox(height: 4),
+              _buildImageAttachmentBubble(msg, isOwn),
+            ]
+            else if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO') ...[
+              // Contenu clair (E2EE déchiffré ou texte) → rendu riche
+              RichMessageContent(
+                content: _displayContent(msg),
+                isOwn: isOwn,
+                baseStyle: TextStyle(fontSize: 14, height: 1.35, color: bodyTextColor),
+              ),
+              // ⭐ V9 — LinkEmbed : première URL du message (sauf chiffré)
+              if (!E2eeService.isEncrypted(msg.content ?? '') &&
+                  msg.type == 'TEXT' &&
+                  extractFirstUrl(_displayContent(msg)) != null)
+                LinkEmbedCard(url: extractFirstUrl(_displayContent(msg))!),
+            ],
             // ⭐ V3-11: Audio message bubble — play button + waveform + duration
             if (msg.isAttachment && msg.type == 'AUDIO') ...[
               const SizedBox(height: 4),
@@ -2438,6 +3261,12 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             else if (msg.isAttachment && msg.type == 'IMAGE') ...[
               const SizedBox(height: 4),
               _buildImageAttachmentBubble(msg, isOwn),
+            ]
+            // ⭐ V9 (parité web) — vidéos : lecteur/lanceur intégré (avant : aucune
+            //    bulle vidéo — le type VIDEO n'était jamais rendu)
+            else if (msg.isAttachment && msg.type == 'VIDEO') ...[
+              const SizedBox(height: 4),
+              _buildVideoAttachmentBubble(msg, isOwn),
             ]
             // ⭐ V3-11: Other attachments — document card
             else if (msg.isAttachment) ...[
@@ -2714,6 +3543,117 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       ),
         ); // ⭐ V8 — BUGFIX : `),` au lieu de `);` — le return GestureDetector(…)
            //    n'était JAMAIS terminé (erreur de syntaxe, l'app ne compilait pas)
+      },
+    );
+  }
+
+  // ⭐ V9 (parité web FORME) — bulle VIDÉO : le web rend un <video controls>
+  //    inline (max 280×300, rounded-lg, preload=metadata) ; en mobile natif
+  //    le miroir est une carte poster avec bouton ▶ qui lance la lecture
+  //    dans le lecteur système (convention WhatsApp mobile). Rendu AVANT :
+  //    aucune bulle vidéo — le type VIDEO tombait sur la carte document.
+  Widget _buildVideoAttachmentBubble(Message msg, bool isOwn) {
+    final rawUrl = msg.attachmentUrl ?? '';
+    if (rawUrl.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.videocam_off_outlined, color: Color(0xFF94A3B8)),
+            SizedBox(width: 8),
+            Text('Vidéo indisponible', style: TextStyle(fontSize: 11, color: Color(0xFF667085))),
+          ],
+        ),
+      );
+    }
+    return FutureBuilder<String>(
+      future: ApiConfig.resolveFileUrl(rawUrl),
+      builder: (context, snap) {
+        final url = snap.data ?? '';
+        if (url.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return GestureDetector(
+          onTap: () => _openAttachment(url),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 240, maxHeight: 200),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Poster : try to extract a frame via metadata is impossible
+                  // sans video_player → fond dégradé + nom du fichier.
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: const BoxDecoration(
+                          color: Colors.white24,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow, color: Colors.white, size: 30),
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          msg.attachmentName?.isNotEmpty == true
+                              ? msg.attachmentName!
+                              : 'Vidéo',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Coin : badge durée/format (miroir overlay web)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.play_circle_outline, size: 10, color: Colors.white),
+                          SizedBox(width: 2),
+                          Text('MP4', style: TextStyle(fontSize: 8, color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
       },
     );
   }
@@ -3022,16 +3962,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   // ⭐ V3-4: 3-state read receipt (✓ sent, ✓✓ gray delivered, ✓✓ blue read)
-  // (Reaction emojis are rendered directly as Text — emojis are essential for chat UX.)
-
+  //    ⭐ V9 (parité web) — couleurs EXACTES du web sur bulle #3B9EFF :
+  //    ✓✓ lu = text-blue-300 #93C5FD (AVANT : cyan #13C2C2), ✓✓ distribué
+  //    = text-slate-400 #94A3B8, ✓ envoyé = blanc70 sur bulle bleue.
   Widget _buildReadReceiptIcon(Message msg) {
     if (msg.readBy.isNotEmpty) {
-      return const Icon(Icons.done_all, size: 12, color: Color(0xFF13C2C2)); // blue = read
+      return const Icon(Icons.done_all, size: 12, color: WebChatColors.tickRead); // blue-300 = read
     }
     if (msg.deliveredAt != null) {
-      return const Icon(Icons.done_all, size: 12, color: Color(0xFF94A3B8)); // gray = delivered
+      return const Icon(Icons.done_all, size: 12, color: WebChatColors.tickDelivered); // gray = delivered
     }
-    return const Icon(Icons.check, size: 12, color: Color(0xFF94A3B8)); // single check = sent
+    return const Icon(Icons.check, size: 12, color: WebChatColors.tickOnBlue); // single check = sent
   }
 
   // ⭐ V1.5: Long-press message actions (reply, copy, delete, pin, react)
@@ -3428,16 +4369,44 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     const SizedBox(width: 10),
                     _buildAttachmentOption(
                       icon: Icons.camera_alt,
-                      label: 'Photo',
+                      label: 'Caméra',
                       color: const Color(0xFF06B6D4),
                       onTap: () { Navigator.pop(context); _sendImage(ImageSource.camera); },
                     ),
                     const SizedBox(width: 10),
                     _buildAttachmentOption(
+                      icon: Icons.videocam,
+                      label: 'Vidéos',
+                      color: const Color(0xFF8B5CF6),
+                      onTap: () { Navigator.pop(context); _sendVideoFile(); },
+                    ),
+                  ],
+                ),
+              ),
+              // ⭐ V9 — 2e rangée web : Documents / Audio / Sondage
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    _buildAttachmentOption(
                       icon: Icons.insert_drive_file,
                       label: 'Document',
                       color: HelmColors.primary,
                       onTap: () { Navigator.pop(context); _sendDocument(); },
+                    ),
+                    const SizedBox(width: 10),
+                    _buildAttachmentOption(
+                      icon: Icons.library_music,
+                      label: 'Audio',
+                      color: const Color(0xFFEC4899),
+                      onTap: () { Navigator.pop(context); _sendAudioFile(); },
+                    ),
+                    const SizedBox(width: 10),
+                    _buildAttachmentOption(
+                      icon: Icons.bar_chart,
+                      label: 'Sondage',
+                      color: const Color(0xFF10B981),
+                      onTap: () { Navigator.pop(context); _showPollDialog(); },
                     ),
                   ],
                 ),
@@ -3710,6 +4679,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   // ⭐ V3-4: Typing indicator — called when the user types in the composer
   void _onTextChanged(String value) {
     // ⭐ V3-11: Rebuild input bar to toggle mic/send button based on text content
+    // ⭐ V9 (parité web) — détection @mentions : « @ » + lettres → popover
+    _detectMention(value);
     setState(() {});
     if (value.isEmpty) {
       _stopTyping();
@@ -3719,6 +4690,148 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     // Auto-stop typing after 3s of no input
     _typingDebounce?.cancel();
     _typingDebounce = Timer(const Duration(seconds: 3), () => _stopTyping());
+  }
+
+  // ⭐ V9 (parité web) — MENTIONS : miroir de la détection onChange du web.
+  //    Dernier « @ » du texte : suivi de 0 lettre (popover complet) ou de
+  //    lettres/chiffres uniquement (filtrage) ; espace/ponctuation → fermé.
+  void _detectMention(String value) {
+    final idx = value.lastIndexOf('@');
+    if (idx == -1) {
+      if (_mentionQuery != null) setState(() => _mentionQuery = null);
+      return;
+    }
+    final afterAt = value.substring(idx + 1);
+    if (afterAt.isEmpty) {
+      setState(() => _mentionQuery = '');
+    } else if (RegExp(r"^[A-Za-zÀ-ÿ0-9_\-']+$").hasMatch(afterAt)) {
+      setState(() => _mentionQuery = afterAt);
+    } else {
+      if (_mentionQuery != null) setState(() => _mentionQuery = null);
+    }
+  }
+
+  /// Correspondances de mentions (miroir mentionMatches web : max 5).
+  List<Participant> get _mentionMatches {
+    if (_mentionQuery == null) return [];
+    final q = _mentionQuery!.toLowerCase();
+    return widget.conversation.participants
+        .where((p) => p.userId != _currentUserId)
+        .where((p) => p.fullName.toLowerCase().contains(q))
+        .take(5)
+        .toList();
+  }
+
+  /// Insère la mention à la place du jeton « @requête » (miroir selectMention).
+  void _selectMention(Participant p) {
+    final firstName = p.fullName.split(' ').isNotEmpty
+        ? p.fullName.split(' ').first
+        : p.fullName;
+    final mentionText = '@$firstName ';
+    final value = _messageController.text;
+    final q = _mentionQuery ?? '';
+    final token = q.isEmpty ? '@' : '@$q';
+    final idx = value.lastIndexOf(token);
+    setState(() => _mentionQuery = null);
+    if (idx != -1) {
+      _messageController.text =
+          value.replaceRange(idx, idx + token.length, mentionText);
+      _messageController.selection = TextSelection.fromPosition(
+        TextPosition(offset: idx + mentionText.length),
+      );
+    } else {
+      _messageController.text = '$value$mentionText';
+    }
+  }
+
+  /// Popover mentions au-dessus du composer (miroir web : bulle blanche,
+  /// avatar palette hash nom + initiales, « Mentionner un participant »).
+  Widget _buildMentionOverlay() {
+    final matches = _mentionMatches;
+    if (_mentionQuery == null || matches.isEmpty) return const SizedBox.shrink();
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8, right: 8, bottom: 4),
+        constraints: const BoxConstraints(maxHeight: 240),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Text(
+                'MENTIONNER UN PARTICIPANT',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: matches.length,
+                itemBuilder: (context, i) {
+                  final p = matches[i];
+                  return InkWell(
+                    onTap: () => _selectMention(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 13,
+                            backgroundColor: webAvatarColorByName(p.fullName),
+                            child: Text(
+                              p.fullName.isNotEmpty
+                                  ? (p.fullName.trim().split(RegExp(r'\s+')).length > 1
+                                      ? '${p.fullName.trim().split(RegExp(r'\s+')).first[0]}${p.fullName.trim().split(RegExp(r'\s+')).last[0]}'
+                                      : p.fullName[0])
+                                      .toUpperCase()
+                                  : '?',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              p.fullName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                            ),
+                          ),
+                          if ((p.roleLabel ?? '').isNotEmpty)
+                            Text(
+                              p.roleLabel!,
+                              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _startTyping() {

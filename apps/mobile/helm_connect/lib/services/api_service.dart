@@ -1329,6 +1329,336 @@ class ApiService {
     }
   }
 
+  // ─── V9 (conformité web 100 %) — API transverses + modération + analytics ──
+
+  /// Aperçu OpenGraph d'une URL partagée (BFF /api/og — miroir LinkEmbed web).
+  static Future<Map<String, dynamic>> fetchOgPreview(String url) async {
+    try {
+      final base = await ApiConfig.baseUrl;
+      // base = https://academiahelm.com/api → /api/og (route BFF dédiée)
+      final response = await http
+          .get(Uri.parse('$base/og?url=${Uri.encodeComponent(url)}'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return {};
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) return data;
+      return {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Communautés auto-créées (Classes/Matières/Enseignants/Parents/Admin…).
+  /// Backend: GET /chat/auto-groups → { groups: [...], meta }
+  static Future<List<Map<String, dynamic>>> getAutoGroups() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/auto-groups?userId=$userId');
+    if (data is Map<String, dynamic>) {
+      final items = data['groups'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    return [];
+  }
+
+  /// Synchronisation des communautés scolaires (web : bandeau « Synchroniser »).
+  static Future<Map<String, dynamic>> syncAutoGroups() async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/auto-groups/sync', {'userId': userId});
+  }
+
+  /// Canaux officiels auto-créés (Direction, Vie scolaire, Transport…).
+  static Future<List<Map<String, dynamic>>> getAutoChannels() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/auto-channels?userId=$userId');
+    if (data is Map<String, dynamic>) {
+      final items = data['channels'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    return [];
+  }
+
+  /// Synchronisation des canaux officiels (6 canaux — parité web).
+  static Future<Map<String, dynamic>> syncAutoChannels() async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/auto-channels/sync', {'userId': userId});
+  }
+
+  /// Centre documentaire — fichiers (type: document|media|audio).
+  /// Backend: GET /chat/v2/files?type=&userId=&limit=
+  static Future<List<Map<String, dynamic>>> getV2Files({String type = 'document', int limit = 100}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/files?type=$type&userId=$userId&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['files'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Centre documentaire — liens partagés.
+  static Future<List<Map<String, dynamic>>> getV2Links({int limit = 100}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/links?userId=$userId&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['links'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Centre documentaire — messages épinglés transverses.
+  static Future<List<Map<String, dynamic>>> getV2Pinned({int limit = 100}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/pinned?userId=$userId&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['pinned'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Historique des appels — V2 (web utilise /chat/v2/call-history).
+  static Future<List<Map<String, dynamic>>> getV2CallHistory({int limit = 60}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/call-history?userId=$userId&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = (data['calls'] ?? data['items'] ?? data['history']) as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Analytics de communication (web : 8 cartes KPI).
+  static Future<Map<String, dynamic>> getV2Analytics() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/analytics?userId=$userId');
+    if (data is Map<String, dynamic>) return data;
+    return {};
+  }
+
+  /// Signalements (modération) — web : GET /chat/reports.
+  static Future<List<Map<String, dynamic>>> getReports() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/reports?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['reports'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Résoudre un signalement (web : bouton « Résoudre »).
+  static Future<Map<String, dynamic>> resolveReport(String reportId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/reports/$reportId/resolve', {'userId': userId});
+  }
+
+  /// Canaux vocaux permanents (web VoiceChannelPanel).
+  static Future<List<Map<String, dynamic>>> listVoiceChannels() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/voice-channels?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['channels'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Rejoindre un canal vocal.
+  static Future<Map<String, dynamic>> joinVoiceChannel(String channelId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/voice-channels/$channelId/join', {'userId': userId});
+  }
+
+  /// Quitter un canal vocal.
+  static Future<Map<String, dynamic>> leaveVoiceChannel(String channelId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/voice-channels/$channelId/leave', {'userId': userId});
+  }
+
+  /// Lien d'invitation de groupe (web : UserPlus header → presse-papiers).
+  static Future<Map<String, dynamic>> createInviteLink(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/invite-link', {'userId': userId});
+  }
+
+  /// Muter une conversation (web : menu cloche 1h/8h/24h/∞).
+  static Future<Map<String, dynamic>> muteConversation(String conversationId, {String duration = 'forever'}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/v2/notifications/conversations/$conversationId/mute', {
+      'userId': userId,
+      'duration': duration,
+    });
+  }
+
+  /// Réactiver les notifications d'une conversation.
+  static Future<Map<String, dynamic>> unmuteConversation(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/v2/notifications/conversations/$conversationId/unmute', {
+      'userId': userId,
+    });
+  }
+
+  /// Conversations en muet (web : liste dans NotificationPreferencesModal).
+  static Future<List<Map<String, dynamic>>> getMutedConversations() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/v2/notifications/muted-conversations?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['conversations'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Indicateur « tape… » — fallback HTTP (web : double canal socket+HTTP).
+  static Future<void> sendTypingFallback(String conversationId, bool isTyping) async {
+    final userId = await AuthService.getUserId() ?? '';
+    try {
+      await post('/chat/typing', {
+        'userId': userId,
+        'conversationId': conversationId,
+        'isTyping': isTyping,
+      });
+    } catch (_) {/* best effort */}
+  }
+
+  /// Marquer une annonce comme LUE (web : POST /chat/announcements/:id/read).
+  static Future<void> markAnnouncementRead(String announcementId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    try {
+      await post('/chat/announcements/$announcementId/read', {'userId': userId});
+    } catch (_) {/* best effort */}
+  }
+
+  /// Créer une annonce (parité AnnouncementsModal web).
+  static Future<Map<String, dynamic>> createAnnouncement({
+    required String title,
+    required String body,
+    String priority = 'NORMAL',
+    String targetType = 'ALL_SCHOOL',
+    bool requiresConfirmation = false,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/announcements', {
+      'authorId': userId,
+      'title': title,
+      'body': body,
+      'priority': priority,
+      'targetType': targetType,
+      'requiresConfirmation': requiresConfirmation,
+      'publishNow': true,
+    });
+  }
+
+  /// Créer un sondage (parité PollModal web : 2-10 options, multiple, anonyme).
+  static Future<Map<String, dynamic>> createPoll({
+    required String conversationId,
+    required String question,
+    required List<String> options,
+    bool multipleChoice = false,
+    bool anonymous = false,
+    String? expiry,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/v2/polls', {
+      'conversationId': conversationId,
+      'authorId': userId,
+      'question': question,
+      'options': options,
+      'multipleChoice': multipleChoice,
+      'anonymous': anonymous,
+      if (expiry != null) 'expiry': expiry,
+    });
+  }
+
+  /// Recherche GIF (proxy Tenor du backend).
+  static Future<List<Map<String, dynamic>>> searchGifs(String query, {int limit = 20}) async {
+    final dynamic data =
+        await get('/chat/gifs/search?q=${Uri.encodeComponent(query)}&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['results'] as List<dynamic>? ?? data['gifs'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Packs d'autocollants (web Sticker picker).
+  static Future<List<Map<String, dynamic>>> getStickerPacks() async {
+    final dynamic data = await get('/chat/stickers/packs');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['packs'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Autocollants d'un pack.
+  static Future<List<Map<String, dynamic>>> getStickers(String packId) async {
+    final dynamic data = await get('/chat/stickers/$packId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['stickers'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Envoyer un autocollant (type STICKER).
+  static Future<Map<String, dynamic>> sendSticker(String conversationId, String stickerUrl) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/sticker', {
+      'senderId': userId,
+      'stickerUrl': stickerUrl,
+    });
+  }
+
+  /// Liste des utilisateurs bloqués (web : MemberProfileModal → Bloquer).
+  static Future<List<Map<String, dynamic>>> listBlocks() async {
+    final dynamic data = await get('/chat/blocks');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['blocked'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Statut de disponibilité (🟢 en ligne / 🟡 absent / 🔴 DND / ⚫ hors ligne).
+  static Future<Map<String, dynamic>> setAvailabilityStatus(String status) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return put('/chat/profile', {'userId': userId, 'availabilityStatus': status});
+  }
+
+  /// Créneaux de disponibilité d'un utilisateur (fiche membre web).
+  static Future<List<Map<String, dynamic>>> getUserAvailability(String userId) async {
+    final dynamic data = await get('/chat/availability/user/$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['slots'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Supprimer une conversation (web : multi-sélection → « Supprimer pour tous »).
+  static Future<void> deleteConversation(String conversationId) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final response = await http.delete(Uri.parse('$base/chat/conversations/$conversationId'), headers: headers);
+    _handleResponse(response);
+  }
+
   // ─── Generic helpers ───────────────────────────────────────────
 
   static Future<Map<String, dynamic>> get(String path) async {

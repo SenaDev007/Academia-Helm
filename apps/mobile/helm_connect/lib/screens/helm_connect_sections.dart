@@ -15,6 +15,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme/helm_theme.dart';
@@ -542,113 +543,73 @@ class FilesScreen extends StatefulWidget {
 }
 
 class _FilesScreenState extends State<FilesScreen> {
-  List<_FileEntry> _files = [];
+  // ⭐ V9 (parité web V6 spec §22) — vrai Centre documentaire :
+  //    GET /chat/v2/files?type=document (+ stats), /chat/v2/links, /chat/v2/pinned.
+  //    AVANT : scan N+1 des messages des 20 premières conversations (heuristique
+  //    lente et incomplète). Onglets web : Documents | Liens | Épinglés.
+  List<Map<String, dynamic>> _documents = [];
+  List<Map<String, dynamic>> _links = [];
+  List<Map<String, dynamic>> _pinned = [];
+  Map<String, dynamic>? _stats;
   bool _loading = true;
+  bool _secondaryLoading = false;
   String? _error;
-  String _filter = 'ALL'; // ALL | IMAGE | DOCUMENT | AUDIO | VIDEO
+  String _tab = 'documents'; // documents | liens | epingles
 
   @override
   void initState() {
     super.initState();
-    _loadFiles();
+    _loadDocuments();
   }
 
-  Future<void> _loadFiles() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadDocuments() async {
+    setState(() { _loading = true; _error = null; });
     try {
-      final conversations = await ApiService.listConversations();
-      final List<_FileEntry> files = [];
-      // Load messages for each conversation (limited to recent 50 to limit payload)
-      for (final conv in conversations.take(20)) {
-        try {
-          final messages = await ApiService.listMessages(conv['id'] as String, limit: 50);
-          for (final m in messages) {
-            if (m['attachmentUrl'] != null && m['attachmentUrl'].toString().isNotEmpty) {
-              files.add(_FileEntry(
-                id: m['id'] as String,
-                name: (m['attachmentName'] as String?) ?? 'Fichier',
-                url: m['attachmentUrl'] as String,
-                mime: m['attachmentMime'] as String?,
-                size: (m['attachmentSize'] as num?)?.toInt(),
-                type: (m['type'] as String?) ?? 'DOCUMENT',
-                senderName: '${m['senderFirstName'] ?? ''} ${m['senderLastName'] ?? ''}'.trim(),
-                conversationId: conv['id'] as String,
-                conversationName: (conv['name'] as String?) ?? 'Conversation',
-                createdAt: m['createdAt'] as String? ?? DateTime.now().toIso8601String(),
-              ));
-            }
-          }
-        } catch (_) {
-          // Skip failed conversations
-        }
-      }
-      // Sort by date desc
-      files.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (mounted) {
-        setState(() {
-          _files = files;
-          _loading = false;
-        });
-      }
+      final data = await ApiService.getV2Files(type: 'document', limit: 100);
+      if (mounted) setState(() => _documents = data);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ⭐ Miroir web : charger Liens/Épinglés au premier passage sur l'onglet
+  Future<void> _loadSecondary() async {
+    if (_tab == 'documents') return;
+    if (_tab == 'liens' && _links.isNotEmpty) return;
+    if (_tab == 'epingles' && _pinned.isNotEmpty) return;
+    setState(() => _secondaryLoading = true);
+    try {
+      if (_tab == 'liens') {
+        final l = await ApiService.getV2Links(limit: 100);
+        if (mounted) setState(() => _links = l);
+      } else {
+        final p = await ApiService.getV2Pinned(limit: 100);
+        if (mounted) setState(() => _pinned = p);
       }
+    } catch (_) {/* silencieux */} finally {
+      if (mounted) setState(() => _secondaryLoading = false);
     }
   }
 
-  List<_FileEntry> get _filteredFiles {
-    if (_filter == 'ALL') return _files;
-    return _files.where((f) => f.type == _filter).toList();
+  // Badge type de fichier — miroir fileMeta web (PDF rouge, DOC bleu…)
+  (String, Color) _fileMeta(String? mime, String? name) {
+    final m = '${mime ?? ''}${name ?? ''}'.toLowerCase();
+    if (m.contains('pdf')) return ('PDF', const Color(0xFFDC2626));
+    if (m.contains('doc')) return ('DOC', const Color(0xFF2563EB));
+    if (m.contains('xls') || m.contains('csv')) return ('XLS', const Color(0xFF059669));
+    if (m.contains('ppt')) return ('PPT', const Color(0xFFEA580C));
+    if (m.contains('zip') || m.contains('rar') || m.contains('7z')) return ('ZIP', const Color(0xFFD97706));
+    return ('FICHIER', const Color(0xFF64748B));
   }
 
-  IconData _fileIcon(String type, String? mime) {
-    switch (type) {
-      case 'IMAGE':
-        return Icons.image;
-      case 'AUDIO':
-        return Icons.audio_file;
-      case 'VIDEO':
-        return Icons.video_file;
-      case 'DOCUMENT':
-      default:
-        // Sub-categorize by mime
-        if (mime != null) {
-          if (mime.contains('pdf')) return Icons.picture_as_pdf;
-          if (mime.contains('word') || mime.contains('msword')) return Icons.description;
-          if (mime.contains('sheet') || mime.contains('excel')) return Icons.table_chart;
-          if (mime.contains('presentation') || mime.contains('powerpoint')) return Icons.slideshow;
-          if (mime.contains('zip') || mime.contains('compressed')) return Icons.folder_zip;
-        }
-        return Icons.insert_drive_file;
-    }
-  }
-
-  Color _fileColor(String type) {
-    switch (type) {
-      case 'IMAGE':
-        return const Color(0xFF10B981);
-      case 'AUDIO':
-        return const Color(0xFFEC4899);
-      case 'VIDEO':
-        return const Color(0xFF06B6D4);
-      case 'DOCUMENT':
-      default:
-        return HelmColors.primary;
-    }
-  }
-
-  String _fileSize(int? size) {
-    if (size == null) return '';
-    if (size < 1024) return '${size}o';
-    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} Ko';
-    return '${(size / (1024 * 1024)).toStringAsFixed(1)} Mo';
+  String _fileSize(dynamic size) {
+    final b = size is num ? size.toInt() : null;
+    if (b == null || b <= 0) return '';
+    if (b < 1024) return '$b o';
+    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} Ko';
+    return '${(b / (1024 * 1024)).toStringAsFixed(1)} Mo';
   }
 
   String _formatDate(String isoDate) {
@@ -660,8 +621,45 @@ class _FilesScreenState extends State<FilesScreen> {
     }
   }
 
+  Future<void> _open(String? rawUrl, String? name) async {
+    final raw = rawUrl ?? '';
+    if (raw.isEmpty) return;
+    final url = raw.startsWith('http') ? raw : await ApiConfig.resolveFileUrl(raw);
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Impossible d\'ouvrir ce fichier')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openConversation(String? conversationId) async {
+    final id = conversationId;
+    if (id == null || id.isEmpty) return;
+    try {
+      final convs = await ApiService.listConversations();
+      final match = convs.firstWhere(
+        (c) => c['id'] == id,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isEmpty || !mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ConversationDetailScreen(
+            conversation: Conversation.fromJson(match),
+          ),
+        ),
+      );
+    } catch (_) {/* silencieux */}
+  }
+
   @override
   Widget build(BuildContext context) {
+    final docsCount = _stats != null ? ((_stats!['documents'] as num?)?.toInt() ?? _documents.length) : _documents.length;
     return Container(
       color: HelmColors.background,
       child: Column(
@@ -670,152 +668,251 @@ class _FilesScreenState extends State<FilesScreen> {
             title: 'Fichiers',
             subtitle: 'CENTRE DOCUMENTAIRE PARTAGÉ',
           ),
-          // Filter chips
+          // ⭐ Onglets web : Documents | Liens | Épinglés
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
             color: Colors.white,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: ['ALL', 'IMAGE', 'DOCUMENT', 'AUDIO', 'VIDEO'].map((cat) {
-                  final isSelected = _filter == cat;
-                  final label = cat == 'ALL' ? 'Tous' : cat[0] + cat.substring(1).toLowerCase();
-                  final icon = cat == 'ALL'
-                      ? Icons.apps
-                      : cat == 'IMAGE'
-                          ? Icons.image
-                          : cat == 'DOCUMENT'
-                              ? Icons.insert_drive_file
-                              : cat == 'AUDIO' ? Icons.audio_file : Icons.video_file;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _filter = cat),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isSelected ? HelmColors.primary : Colors.grey[100],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(icon, size: 14, color: isSelected ? Colors.white : Colors.grey[700]),
-                            const SizedBox(width: 4),
-                            Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : Colors.grey[700])),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
+            child: Row(
+              children: [
+                _docTab('documents', 'Documents', Icons.insert_drive_file, docsCount),
+                const SizedBox(width: 6),
+                _docTab('liens', 'Liens', Icons.link, _links.length),
+                const SizedBox(width: 6),
+                _docTab('epingles', 'Épinglés', Icons.push_pin, _pinned.length),
+              ],
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
-                : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
-                              const SizedBox(height: 16),
-                              Text(_error!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              ElevatedButton(onPressed: _loadFiles, child: const Text('Réessayer')),
-                            ],
-                          ),
-                        ),
-                      )
-                    : _filteredFiles.isEmpty
-                        ? const HelmEmptyState(
-                            icon: Icons.folder_open,
-                            title: 'Aucun fichier partagé',
-                            subtitle: 'Les fichiers partagés dans vos conversations apparaîtront ici, classés par type.',
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _filteredFiles.length,
-                            itemBuilder: (context, index) {
-                              final file = _filteredFiles[index];
-                              final color = _fileColor(file.type);
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  leading: Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(_fileIcon(file.type, file.mime), color: color, size: 22),
-                                  ),
-                                  title: Text(
-                                    file.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('de ${file.senderName}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                      Text(
-                                        '${file.conversationName} • ${_fileSize(file.size)} • ${_formatDate(file.createdAt)}',
-                                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: Icon(Icons.download, color: color, size: 20),
-                                  onTap: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Téléchargement de ${file.name} — bientôt disponible')),
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                          ),
+            child: _tab == 'documents'
+                ? _buildDocuments()
+                : _tab == 'liens'
+                    ? _buildLinks()
+                    : _buildPinned(),
           ),
         ],
       ),
     );
   }
-}
 
-class _FileEntry {
-  final String id;
-  final String name;
-  final String url;
-  final String? mime;
-  final int? size;
-  final String type; // IMAGE | AUDIO | VIDEO | DOCUMENT
-  final String senderName;
-  final String conversationId;
-  final String conversationName;
-  final String createdAt;
+  Widget _docTab(String id, String label, IconData icon, int count) {
+    final selected = _tab == id;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _tab = id);
+          _loadSecondary();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFE6F4FF) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 13, color: selected ? const Color(0xFF0958D9) : const Color(0xFF64748B)),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  '$label${count > 0 ? ' ($count)' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? const Color(0xFF0958D9) : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-  _FileEntry({
-    required this.id,
-    required this.name,
-    required this.url,
-    this.mime,
-    this.size,
-    required this.type,
-    required this.senderName,
-    required this.conversationId,
-    required this.conversationName,
-    required this.createdAt,
-  });
+  Widget _buildDocuments() {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: HelmColors.primary));
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
+            const SizedBox(height: 16),
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: _loadDocuments, child: const Text('Réessayer')),
+          ],
+        ),
+      );
+    }
+    if (_documents.isEmpty) {
+      return const HelmEmptyState(
+        icon: Icons.folder_open,
+        title: 'Aucun document partagé',
+        subtitle: 'Les documents partagés dans vos conversations apparaîtront ici.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: _documents.length,
+      itemBuilder: (context, index) {
+        final f = _documents[index];
+        final name = (f['name'] ?? 'Fichier') as String;
+        final (label, color) = _fileMeta(f['mime'] as String?, name);
+        final sender = (f['senderName'] ?? '') as String;
+        final convName = (f['convName'] ?? 'Conversation') as String;
+        final size = _fileSize(f['size']);
+        final date = _formatDate((f['createdAt'] ?? '') as String);
+        return Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: color),
+                ),
+              ),
+            ),
+            title: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (sender.isNotEmpty) Text('de $sender', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(
+                  [convName, size, date].where((x) => x.isNotEmpty).join(' • '),
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            trailing: Icon(Icons.open_in_new, color: color, size: 20),
+            onTap: () => _open(f['url'] as String?, name),
+          ),
+        );
+      },
+    );
+  }
+
+  // ⭐ V6 web — LIENS partagés (URLs extraites des messages)
+  Widget _buildLinks() {
+    if (_secondaryLoading) return const Center(child: CircularProgressIndicator(color: HelmColors.primary));
+    if (_links.isEmpty) {
+      return const HelmEmptyState(
+        icon: Icons.link,
+        title: 'Aucun lien partagé',
+        subtitle: 'Les liens envoyés dans les conversations apparaîtront ici.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: _links.length,
+      itemBuilder: (context, index) {
+        final l = _links[index];
+        final url = (l['url'] ?? l['link'] ?? '') as String;
+        final host = Uri.tryParse(url)?.host ?? url;
+        final title = (l['title'] ?? l['content'] ?? host) as String;
+        final convName = (l['convName'] ?? l['conversationName'] ?? '') as String;
+        return Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6F4FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.link, color: Color(0xFF0958D9), size: 20),
+            ),
+            title: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            subtitle: Text(
+              [host, convName].where((x) => x.isNotEmpty).join(' • '),
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+            onTap: () {
+              if (url.isNotEmpty) {
+                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication).catchError((_) => false);
+              }
+            },
+            onLongPress: () => _openConversation(l['conversationId'] as String?),
+          ),
+        );
+      },
+    );
+  }
+
+  // ⭐ V6 web — ÉPINGLÉS transverses (toutes conversations)
+  Widget _buildPinned() {
+    if (_secondaryLoading) return const Center(child: CircularProgressIndicator(color: HelmColors.primary));
+    if (_pinned.isEmpty) {
+      return const HelmEmptyState(
+        icon: Icons.push_pin_outlined,
+        title: 'Aucun message épinglé',
+        subtitle: 'Les messages épinglés de vos conversations apparaîtront ici.',
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: _pinned.length,
+      itemBuilder: (context, index) {
+        final m = _pinned[index];
+        final content = ((m['content'] ?? '') as String).replaceAll(RegExp(r'<[^>]*>'), '');
+        final sender = (m['senderName'] ?? '') as String;
+        final convName = (m['convName'] ?? m['conversationName'] ?? 'Conversation') as String;
+        final date = _formatDate((m['createdAt'] ?? '') as String);
+        return Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            leading: const Icon(Icons.push_pin, color: Color(0xFFF59E0B), size: 22),
+            title: Text(
+              content.isEmpty ? '(pièce jointe)' : content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+            ),
+            subtitle: Text(
+              [if (sender.isNotEmpty) sender, convName, date].where((x) => x.isNotEmpty).join(' • '),
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => _openConversation(m['conversationId'] as String?),
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ============================================================================
@@ -829,7 +926,11 @@ class VoiceMessagesScreen extends StatefulWidget {
 }
 
 class _VoiceMessagesScreenState extends State<VoiceMessagesScreen> {
-  List<_VoiceEntry> _voices = [];
+  // ⭐ V9 (parité web VocauxSection) — vrais messages vocaux via
+  //    GET /chat/v2/files?type=audio (FilesCenterService) + CANAUX VOCAUX
+  //    (listVoiceChannels). AVANT : scan N+1 des conversations (20×50 msgs).
+  List<Map<String, dynamic>> _voices = [];
+  List<Map<String, dynamic>> _voiceChannels = [];
   bool _loading = true;
   String? _error;
 
@@ -840,64 +941,70 @@ class _VoiceMessagesScreenState extends State<VoiceMessagesScreen> {
   }
 
   Future<void> _loadVoices() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
-      final conversations = await ApiService.listConversations();
-      final List<_VoiceEntry> voices = [];
-      for (final conv in conversations.take(20)) {
-        try {
-          final messages = await ApiService.listMessages(conv['id'] as String, limit: 50);
-          for (final m in messages) {
-            if ((m['type'] as String?) == 'AUDIO' || (m['attachmentMime'] as String?)?.startsWith('audio/') == true) {
-              voices.add(_VoiceEntry(
-                id: m['id'] as String,
-                senderName: '${m['senderFirstName'] ?? ''} ${m['senderLastName'] ?? ''}'.trim(),
-                conversationName: (conv['name'] as String?) ?? 'Conversation',
-                durationSeconds: (m['duration'] as num?)?.toInt(),
-                url: (m['attachmentUrl'] as String?) ?? '',
-                createdAt: m['createdAt'] as String? ?? DateTime.now().toIso8601String(),
-                transcription: m['transcription'] as String?,
-              ));
-            }
-          }
-        } catch (_) {}
-      }
-      voices.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final files = await ApiService.getV2Files(type: 'audio', limit: 50);
+      var channels = <Map<String, dynamic>>[];
+      try {
+        channels = await ApiService.listVoiceChannels();
+      } catch (_) {/* canaux vocaux optionnels */}
       if (mounted) {
         setState(() {
-          _voices = voices;
-          _loading = false;
+          _voices = files;
+          _voiceChannels = channels;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _formatDuration(int? seconds) {
-    if (seconds == null) return '0:00';
-    return '${(seconds ~/ 60)}:${(seconds % 60).toString().padLeft(2, '0')}';
+  String _formatDuration(dynamic seconds) {
+    final d = seconds is num ? seconds.toInt() : null;
+    if (d == null || d <= 0) return '0:00';
+    final m = d ~/ 60;
+    final sec = d % 60;
+    return '$m:${sec.toString().padLeft(2, '0')}';
   }
 
   String _formatDate(String isoDate) {
     try {
       final dt = DateTime.parse(isoDate);
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-      if (diff.inDays == 0) return "Aujourd'hui à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}";
-      if (diff.inDays == 1) return 'Hier à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
       return '${dt.day}/${dt.month}/${dt.year}';
     } catch (_) {
       return '';
     }
+  }
+
+  Future<void> _openConversation(String? conversationId) async {
+    if (conversationId == null || conversationId.isEmpty) return;
+    try {
+      final convs = await ApiService.listConversations();
+      final match = convs.firstWhere(
+        (c) => c['id'] == conversationId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (match.isEmpty || !mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ConversationDetailScreen(
+            conversation: Conversation.fromJson(match),
+          ),
+        ),
+      );
+    } catch (_) {/* silencieux */}
+  }
+
+  Future<void> _play(String? rawUrl) async {
+    final raw = rawUrl ?? '';
+    if (raw.isEmpty) return;
+    final url = raw.startsWith('http') ? raw : await ApiConfig.resolveFileUrl(raw);
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   @override
@@ -908,154 +1015,192 @@ class _VoiceMessagesScreenState extends State<VoiceMessagesScreen> {
         children: [
           const HelmSectionHeader(
             title: 'Vocaux',
-            subtitle: 'MESSAGES VOCAUX — TRANSCRIPTIONS WHISPER',
+            subtitle: 'MESSAGES VOCAUX + CANAUX EN DIRECT',
           ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
                 : _error != null
                     ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
-                              const SizedBox(height: 16),
-                              Text(_error!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              ElevatedButton(onPressed: _loadVoices, child: const Text('Réessayer')),
-                            ],
-                          ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
+                            const SizedBox(height: 16),
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            ElevatedButton(onPressed: _loadVoices, child: const Text('Réessayer')),
+                          ],
                         ),
                       )
-                    : _voices.isEmpty
-                        ? const HelmEmptyState(
-                            icon: Icons.mic_none,
-                            title: 'Aucun message vocal',
-                            subtitle: 'Les messages vocaux échangés dans vos conversations apparaîtront ici, avec transcription Whisper automatique.',
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _voices.length,
-                            itemBuilder: (context, index) {
-                              final voice = _voices[index];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: 40,
-                                            height: 40,
-                                            decoration: BoxDecoration(
-                                              gradient: HelmGradients.gold,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(Icons.mic, color: HelmColors.primary, size: 20),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(voice.senderName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                                Text('${voice.conversationName} • ${_formatDate(voice.createdAt)}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                              ],
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: HelmColors.primary.withOpacity(0.1),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Text(_formatDuration(voice.durationSeconds), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: HelmColors.primary)),
-                                          ),
-                                        ],
+                    : RefreshIndicator(
+                        onRefresh: _loadVoices,
+                        child: ListView(
+                          padding: const EdgeInsets.all(8),
+                          children: [
+                            // ⭐ Canaux vocaux (miroir web VocauxSection)
+                            if (_voiceChannels.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                                child: Row(
+                                  children: const [
+                                    Icon(Icons.volume_up, size: 13, color: Color(0xFF64748B)),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'CANAUX VOCAUX',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B), letterSpacing: 0.5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ..._voiceChannels.map((vc) {
+                                final joined = (vc['isJoined'] ?? vc['joined']) == true;
+                                final active = ((vc['activeUsers'] ?? 0) as num).toInt();
+                                final isStage = vc['type'] == 'STAGE';
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  color: joined ? const Color(0xFFE6F4FF) : null,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                    leading: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: joined
+                                            ? const Color(0xFFFFE08A)
+                                            : isStage
+                                                ? const Color(0xFFEDE9FE)
+                                                : const Color(0xFFCFA63A),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      if (voice.transcription != null && voice.transcription!.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFD1FAE5),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Icon(Icons.translate, size: 14, color: Color(0xFF065F46)),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(voice.transcription!, style: const TextStyle(fontSize: 11, color: Color(0xFF065F46))),
-                                              ),
-                                            ],
+                                      child: Icon(
+                                        isStage ? Icons.theater_comedy : Icons.radio,
+                                        color: joined ? const Color(0xFF0A2A5E) : Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    title: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            (vc['name'] ?? 'Canal') as String,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                           ),
                                         ),
-                                      ],
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.play_circle_filled, color: HelmColors.primary, size: 32),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Container(
-                                              height: 4,
-                                              decoration: BoxDecoration(
-                                                color: Colors.grey[300],
-                                                borderRadius: BorderRadius.circular(2),
-                                              ),
-                                              child: FractionallySizedBox(
-                                                alignment: Alignment.centerLeft,
-                                                widthFactor: 0.0,
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    gradient: HelmGradients.gold,
-                                                    borderRadius: BorderRadius.circular(2),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
+                                        if (isStage)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                                            decoration: BoxDecoration(color: const Color(0xFFEDE9FE), borderRadius: BorderRadius.circular(4)),
+                                            child: const Text('SCÈNE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w700, color: Color(0xFF6B21A8))),
                                           ),
-                                        ],
+                                      ],
+                                    ),
+                                    subtitle: Text(
+                                      '$active connecté${active > 1 ? 's' : ''}${vc['videoMode'] == true ? ' · vidéo' : ''}',
+                                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                    ),
+                                    trailing: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: joined ? Colors.white : HelmColors.primary,
+                                        foregroundColor: joined ? HelmColors.primary : Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        minimumSize: Size.zero,
                                       ),
-                                    ],
+                                      icon: Icon(joined ? Icons.logout : Icons.login, size: 13),
+                                      label: Text(joined ? 'Quitter' : 'Rejoindre', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                                      onPressed: () async {
+                                        final id = vc['id'] as String;
+                                        try {
+                                          if (joined) {
+                                            await ApiService.leaveVoiceChannel(id);
+                                          } else {
+                                            await ApiService.joinVoiceChannel(id);
+                                          }
+                                          _loadVoices();
+                                        } catch (e) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                                          }
+                                        }
+                                      },
+                                    ),
                                   ),
+                                );
+                              }),
+                              const SizedBox(height: 8),
+                            ],
+                            // ⭐ Messages vocaux (V2 API)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.mic, size: 13, color: Color(0xFF64748B)),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'MESSAGES VOCAUX',
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B), letterSpacing: 0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_voices.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(24),
+                                child: HelmEmptyState(
+                                  icon: Icons.mic_none,
+                                  title: 'Aucun message vocal',
+                                  subtitle: 'Les messages vocaux de vos conversations apparaîtront ici.',
                                 ),
-                              );
-                            },
-                          ),
+                              )
+                            else
+                              ..._voices.map((v) {
+                                final sender = (v['senderName'] ?? '') as String;
+                                final convName = (v['convName'] ?? 'Conversation') as String;
+                                final dur = _formatDuration(v['duration']);
+                                final date = _formatDate((v['createdAt'] ?? '') as String);
+                                final name = (v['name'] ?? 'Vocal') as String;
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    leading: Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEC4899).withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Icon(Icons.play_arrow, color: Color(0xFFEC4899), size: 24),
+                                    ),
+                                    title: Text(
+                                      sender.isNotEmpty ? sender : name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    ),
+                                    subtitle: Text(
+                                      [convName, dur, date].where((x) => x.isNotEmpty).join(' • '),
+                                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    onTap: () => _play(v['url'] as String?),
+                                    onLongPress: () => _openConversation(v['conversationId'] as String?),
+                                  ),
+                                );
+                              }),
+                          ],
+                        ),
+                      ),
           ),
         ],
       ),
     );
   }
-}
-
-class _VoiceEntry {
-  final String id;
-  final String senderName;
-  final String conversationName;
-  final int? durationSeconds;
-  final String url;
-  final String createdAt;
-  final String? transcription;
-
-  _VoiceEntry({
-    required this.id,
-    required this.senderName,
-    required this.conversationName,
-    this.durationSeconds,
-    required this.url,
-    required this.createdAt,
-    this.transcription,
-  });
 }
 
 // ============================================================================
@@ -1284,66 +1429,45 @@ class ModerationScreen extends StatefulWidget {
 }
 
 class _ModerationScreenState extends State<ModerationScreen> {
-  List<_ModerationEntry> _flagged = [];
+  // ⭐ V9 (parité web ModerationSection V4 Phase 2) — vrais SIGNALEMENTS via
+  //    GET /chat/reports (motif + statut) + bouton « Résoudre ».
+  //    AVANT : affichait les messages épinglés/importants (ce n'est PAS de la
+  //    modération) via scan N+1 des conversations.
+  List<Map<String, dynamic>> _reports = [];
   bool _loading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadFlagged();
+    _loadReports();
   }
 
-  Future<void> _loadFlagged() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _loadReports() async {
+    setState(() { _loading = true; _error = null; });
     try {
-      final conversations = await ApiService.listConversations();
-      final List<_ModerationEntry> flagged = [];
-      for (final conv in conversations.take(30)) {
-        try {
-          final messages = await ApiService.listMessages(conv['id'] as String, limit: 50);
-          for (final m in messages) {
-            if ((m['isPinned'] as bool?) == true || (m['isImportant'] as bool?) == true) {
-              flagged.add(_ModerationEntry(
-                messageId: m['id'] as String,
-                conversationId: conv['id'] as String,
-                conversationName: (conv['name'] as String?) ?? 'Conversation',
-                senderName: '${m['senderFirstName'] ?? ''} ${m['senderLastName'] ?? ''}'.trim(),
-                content: (m['content'] as String?) ?? '',
-                isPinned: (m['isPinned'] as bool?) == true,
-                isImportant: (m['isImportant'] as bool?) == true,
-                createdAt: (m['createdAt'] as String?) ?? DateTime.now().toIso8601String(),
-              ));
-            }
-          }
-        } catch (_) {}
-      }
-      flagged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (mounted) {
-        setState(() {
-          _flagged = flagged;
-          _loading = false;
-        });
-      }
+      final reports = await ApiService.getReports();
+      if (mounted) setState(() => _reports = reports);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _formatDate(String isoDate) {
+  Future<void> _resolve(Map<String, dynamic> r) async {
     try {
-      final dt = DateTime.parse(isoDate);
-      return '${dt.day}/${dt.month} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
+      await ApiService.resolveReport(r['id'] as String);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Signalement résolu'), duration: Duration(seconds: 1)),
+        );
+      }
+      _loadReports();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+      }
     }
   }
 
@@ -1355,152 +1479,114 @@ class _ModerationScreenState extends State<ModerationScreen> {
         children: [
           const HelmSectionHeader(
             title: 'Modération',
-            subtitle: 'MESSAGES ÉPINGLÉS, IMPORTANTS & SIGNALÉS',
+            subtitle: 'CONTENUS SIGNALÉS',
           ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
                 : _error != null
                     ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
-                              const SizedBox(height: 16),
-                              Text(_error!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              ElevatedButton(onPressed: _loadFlagged, child: const Text('Réessayer')),
-                            ],
-                          ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
+                            const SizedBox(height: 16),
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            ElevatedButton(onPressed: _loadReports, child: const Text('Réessayer')),
+                          ],
                         ),
                       )
-                    : _flagged.isEmpty
-                        ? const HelmEmptyState(
-                            icon: Icons.shield,
-                            title: 'Aucun contenu à modérer',
-                            subtitle: 'Les messages épinglés et marqués comme importants par les administrateurs apparaîtront ici pour modération.',
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _flagged.length,
-                            itemBuilder: (context, index) {
-                              final entry = _flagged[index];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Header: sender + conversation
-                                      Row(
-                                        children: [
-                                          if (entry.isPinned)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF06B6D4).withOpacity(0.15),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(Icons.push_pin, size: 12, color: Color(0xFF06B6D4)),
-                                                  SizedBox(width: 2),
-                                                  Text('Épinglé', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF06B6D4))),
-                                                ],
-                                              ),
-                                            ),
-                                          if (entry.isPinned && entry.isImportant) const SizedBox(width: 4),
-                                          if (entry.isImportant)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF59E0B).withOpacity(0.15),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(Icons.star, size: 12, color: Color(0xFFF59E0B)),
-                                                  SizedBox(width: 2),
-                                                  Text('Important', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFFF59E0B))),
-                                                ],
-                                              ),
-                                            ),
-                                          const Spacer(),
-                                          Text(_formatDate(entry.createdAt), style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '${entry.senderName} — ${entry.conversationName}',
-                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: HelmColors.primary),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(stripHtml(entry.content), style: const TextStyle(fontSize: 13), maxLines: 3, overflow: TextOverflow.ellipsis),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          TextButton.icon(
-                                            onPressed: () {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Signalement envoyé pour le message de ${entry.senderName}')),
-                                              );
-                                            },
-                                            icon: const Icon(Icons.flag, size: 14),
-                                            label: const Text('Signaler', style: TextStyle(fontSize: 11)),
-                                            style: TextButton.styleFrom(foregroundColor: HelmColors.danger),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          TextButton.icon(
-                                            onPressed: () {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Message approuvé — aucune action requise')),
-                                              );
-                                            },
-                                            icon: const Icon(Icons.check_circle, size: 14),
-                                            label: const Text('Approuver', style: TextStyle(fontSize: 11)),
-                                            style: TextButton.styleFrom(foregroundColor: HelmColors.success),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                    : RefreshIndicator(
+                        onRefresh: _loadReports,
+                        child: _reports.isEmpty
+                            ? ListView(
+                                children: const [
+                                  SizedBox(height: 80),
+                                  HelmEmptyState(
+                                    icon: Icons.flag_outlined,
+                                    title: 'Aucun contenu signalé',
+                                    subtitle: 'Les messages signalés par les utilisateurs apparaîtront ici.',
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                ],
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(8),
+                                itemCount: _reports.length,
+                                itemBuilder: (context, index) {
+                                  final r = _reports[index];
+                                  final reporter = '${r['reporterFirstName'] ?? ''} ${r['reporterLastName'] ?? ''}'.trim();
+                                  final reason = (r['reason'] ?? '') as String;
+                                  final preview = (r['messagePreview'] ?? '') as String;
+                                  final resolved = r['resolvedAt'] != null;
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    child: ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      leading: Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF3C7),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: const Icon(Icons.flag, color: Color(0xFFD97706), size: 20),
+                                      ),
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Signalé par ${reporter.isEmpty ? 'un membre' : reporter}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                          ),
+                                          if (resolved)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(color: const Color(0xFFD1FAE5), borderRadius: BorderRadius.circular(10)),
+                                              child: const Text('RÉSOLU', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: Color(0xFF047857))),
+                                            ),
+                                        ],
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          if (reason.isNotEmpty)
+                                            Text('« $reason »', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF475569))),
+                                          if (preview.isNotEmpty)
+                                            Text(
+                                              preview,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                            ),
+                                        ],
+                                      ),
+                                      trailing: !resolved
+                                          ? ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFECFDF5),
+                                                foregroundColor: const Color(0xFF047857),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                minimumSize: Size.zero,
+                                              ),
+                                              onPressed: () => _resolve(r),
+                                              child: const Text('Résoudre', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
+                                            )
+                                          : null,
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
           ),
         ],
       ),
     );
   }
-}
-
-class _ModerationEntry {
-  final String messageId;
-  final String conversationId;
-  final String conversationName;
-  final String senderName;
-  final String content;
-  final bool isPinned;
-  final bool isImportant;
-  final String createdAt;
-
-  _ModerationEntry({
-    required this.messageId,
-    required this.conversationId,
-    required this.conversationName,
-    required this.senderName,
-    required this.content,
-    required this.isPinned,
-    required this.isImportant,
-    required this.createdAt,
-  });
 }
 
 // ============================================================================
@@ -1514,15 +1600,12 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  // ⭐ V9 (parité web AnalyticsSection V4 Phase 2) — KPIs RÉELS via
+  //    GET /chat/v2/analytics (8 cartes, tons helm/light/warn).
+  //    AVANT : compteurs calculés côté client sur 20 conversations (faux).
+  Map<String, dynamic>? _stats;
   bool _loading = true;
   String? _error;
-  // Stats
-  int _totalConversations = 0;
-  int _directConversations = 0;
-  int _groupConversations = 0;
-  int _totalUnread = 0;
-  int _totalParticipants = 0;
-  Map<String, int> _messagesByDay = {}; // last 7 days
 
   @override
   void initState() {
@@ -1531,92 +1614,57 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Future<void> _loadAnalytics() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
-      final conversations = await ApiService.listConversations();
-      _totalConversations = conversations.length;
-      _directConversations = conversations.where((c) => c['type'] == 'DIRECT').length;
-      _groupConversations = conversations.where((c) => c['type'] == 'GROUP').length;
-      _totalUnread = conversations.fold<int>(
-        0,
-        (sum, c) => sum + ((c['unreadCount'] as int?) ?? 0),
-      );
-      _totalParticipants = conversations.fold<int>(
-        0,
-        (sum, c) => sum + ((c['participants'] as List<dynamic>?)?.length ?? 0),
-      );
-
-      // Last 7 days message count (sample from first 20 conversations)
-      _messagesByDay = {};
-      final now = DateTime.now();
-      for (var i = 6; i >= 0; i--) {
-        final day = now.subtract(Duration(days: i));
-        final dayKey = '${day.day}/${day.month}';
-        _messagesByDay[dayKey] = 0;
-      }
-      for (final conv in conversations.take(20)) {
-        try {
-          final messages = await ApiService.listMessages(conv['id'] as String, limit: 100);
-          for (final m in messages) {
-            try {
-              final dt = DateTime.parse((m['createdAt'] as String?) ?? '');
-              final day = DateTime(dt.year, dt.month, dt.day);
-              final nowDay = DateTime(now.year, now.month, now.day);
-              final diff = nowDay.difference(day).inDays;
-              if (diff >= 0 && diff <= 6) {
-                final dayKey = '${dt.day}/${dt.month}';
-                _messagesByDay[dayKey] = (_messagesByDay[dayKey] ?? 0) + 1;
-              }
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      final stats = await ApiService.getV2Analytics();
+      if (mounted) setState(() => _stats = stats);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String _v(String key) {
+    final v = _stats?[key];
+    if (v == null) return '—';
+    return '$v';
   }
 
   @override
   Widget build(BuildContext context) {
-    final maxMessages = _messagesByDay.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final kpis = <(IconData, String, String, bool)>[
+      (Icons.chat, 'Conversations', _v('totalConversations'), true),
+      (Icons.forum, 'Messages échangés', _v('totalMessages'), false),
+      (Icons.groups, 'Groupes actifs', _v('totalGroups').replaceAll('—', _v('groupConversations')), false),
+      (Icons.notifications, 'Messages non lus', _v('totalUnread'), true),
+      (Icons.campaign, 'Annonces publiées', _v('totalAnnouncements'), true),
+      (Icons.folder, 'Fichiers partagés', _v('totalFiles').replaceAll('—', _v('totalAttachments')), false),
+      (Icons.person, 'Utilisateurs actifs', _v('activeUsers'), false),
+      (Icons.phone, 'Appels', _v('totalCalls'), true),
+    ];
     return Container(
       color: HelmColors.background,
       child: Column(
         children: [
           const HelmSectionHeader(
             title: 'Analytics',
-            subtitle: 'TABLEAU DE BORD COMMUNICATION',
+            subtitle: 'TABLEAU DE BORD DE LA COMMUNICATION',
           ),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
                 : _error != null
                     ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
-                              const SizedBox(height: 16),
-                              Text(_error!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              ElevatedButton(onPressed: _loadAnalytics, child: const Text('Réessayer')),
-                            ],
-                          ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 48, color: HelmColors.danger),
+                            const SizedBox(height: 16),
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 16),
+                            ElevatedButton(onPressed: _loadAnalytics, child: const Text('Réessayer')),
+                          ],
                         ),
                       )
                     : RefreshIndicator(
@@ -1624,147 +1672,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         child: ListView(
                           padding: const EdgeInsets.all(12),
                           children: [
-                            // KPI cards row
-                            Row(
-                              children: [
-                                _buildKpiCard(
-                                  icon: Icons.chat_bubble,
-                                  label: 'Conversations',
-                                  value: _totalConversations.toString(),
-                                  color: HelmColors.primary,
-                                ),
-                                const SizedBox(width: 8),
-                                _buildKpiCard(
-                                  icon: Icons.mark_chat_unread,
-                                  label: 'Non lus',
-                                  value: _totalUnread.toString(),
-                                  color: const Color(0xFFEF4444),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                _buildKpiCard(
-                                  icon: Icons.person,
-                                  label: 'Directs',
-                                  value: _directConversations.toString(),
-                                  color: const Color(0xFF1677FF),
-                                ),
-                                const SizedBox(width: 8),
-                                _buildKpiCard(
-                                  icon: Icons.group,
-                                  label: 'Groupes',
-                                  value: _groupConversations.toString(),
-                                  color: const Color(0xFF10B981),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _buildKpiCard(
-                              icon: Icons.people,
-                              label: 'Participants totaux',
-                              value: _totalParticipants.toString(),
-                              color: HelmColors.gold,
-                            ),
-                            const SizedBox(height: 16),
-                            // Bar chart — messages last 7 days
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.grey[200]!),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.bar_chart, color: HelmColors.primary, size: 18),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'Messages — 7 derniers jours',
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                      ),
-                                      const Spacer(),
-                                      IconButton(
-                                        icon: const Icon(Icons.refresh, size: 18),
-                                        onPressed: _loadAnalytics,
-                                      ),
+                            // ⭐ 8 KPIs — miroir web grid-cols-2 (ton helm =
+                            // dégradé marine, sinon carte blanche)
+                            ...List.generate((kpis.length / 2).ceil(), (row) {
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    for (var i = row * 2; i < (row + 1) * 2 && i < kpis.length; i++) ...[
+                                      Expanded(child: _buildKpiCard(kpis[i])),
+                                      if (i == row * 2) const SizedBox(width: 8),
                                     ],
-                                  ),
-                                  const SizedBox(height: 16),
-                                  if (maxMessages == 0)
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 24),
-                                      child: Center(
-                                        child: Text('Pas encore d\'activité', style: TextStyle(color: Colors.grey)),
-                                      ),
-                                    )
-                                  else
-                                    SizedBox(
-                                      height: 180,
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                        children: _messagesByDay.entries.map((e) {
-                                          final height = maxMessages == 0 ? 0.0 : (e.value / maxMessages) * 140;
-                                          return Column(
-                                            mainAxisAlignment: MainAxisAlignment.end,
-                                            children: [
-                                              Text(e.value.toString(), style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w600)),
-                                              const SizedBox(height: 4),
-                                              Container(
-                                                width: 24,
-                                                height: height < 4 ? 4 : height,
-                                                decoration: BoxDecoration(
-                                                  gradient: const LinearGradient(
-                                                    begin: Alignment.bottomCenter,
-                                                    end: Alignment.topCenter,
-                                                    colors: [HelmColors.primary, HelmColors.primaryVivid],
-                                                  ),
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(e.key, style: const TextStyle(fontSize: 9, color: Colors.grey)),
-                                            ],
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            // Helm Connect brand card
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: HelmGradients.royalBlue,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.auto_awesome, color: HelmColors.goldLight, size: 28),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Helm Connect Analytics', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                                        SizedBox(height: 4),
-                                        Text(
-                                          'Statistiques de communication de votre établissement, calculées en temps réel.',
-                                          style: TextStyle(color: HelmColors.goldLight, fontSize: 11),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                  ],
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       ),
@@ -1774,45 +1696,56 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildKpiCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[200]!),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+  // Carte KPI — miroir web : ton « helm » = dégradé #0A2A5E→#1C6FE8, texte
+  // blanc, icône or ; sinon carte blanche bordure slate-200.
+  Widget _buildKpiCard((IconData, String, String, bool) kpi) {
+    final (icon, label, value, helm) = kpi;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: helm
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0A2A5E), Color(0xFF1C6FE8)],
+              )
+            : null,
+        color: helm ? null : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: helm ? null : Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: helm ? const Color(0xFFFFE08A) : const Color(0xFF94A3B8)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: helm ? const Color(0xFFFFE08A) : const Color(0xFF64748B),
                   ),
-                  child: Icon(icon, color: color, size: 18),
                 ),
-                const Spacer(),
-                Text(
-                  value,
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
-                ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: helm ? Colors.white : const Color(0xFF0F172A),
             ),
-            const SizedBox(height: 6),
-            Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[700], fontWeight: FontWeight.w500)),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

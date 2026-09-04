@@ -84,6 +84,9 @@ class Conversation {
   final DateTime updatedAt;
   final DateTime? lastMessageAt;
   final String? lastMessagePreview;
+  // ⭐ V9 (parité web) : canal officiel (badge/dégradé or) + nb de membres.
+  final bool isOfficial;
+  final int? participantCount;
   final String? lastMessageSenderId;
   final int unreadCount;
   final List<Participant> participants;
@@ -107,6 +110,8 @@ class Conversation {
     required this.updatedAt,
     this.lastMessageAt,
     this.lastMessagePreview,
+    this.isOfficial = false,
+    this.participantCount,
     this.lastMessageSenderId,
     this.unreadCount = 0,
     this.participants = const [],
@@ -129,6 +134,11 @@ class Conversation {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       lastMessageAt: json['lastMessageAt'] != null ? DateTime.parse(json['lastMessageAt'] as String) : null,
       lastMessagePreview: json['lastMessagePreview'] as String?,
+      isOfficial: json['isOfficial'] as bool? ?? false,
+      participantCount: (json['participantCount'] as int?) ??
+          (json['participants'] is List
+              ? (json['participants'] as List).length
+              : null),
       lastMessageSenderId: json['lastMessageSenderId'] as String?,
       unreadCount: json['unreadCount'] as int? ?? 0,
       participants: (json['participants'] as List<dynamic>?)
@@ -196,6 +206,9 @@ class Participant {
   final String? email;
   final String? roleLabel;
   final List<String>? childrenNames;
+  // ⭐ V9 (parité web) : photo d'avatar du participant (affichée dans la
+  //    liste des conversations, l'en-tête, les bulles et les appels).
+  final String? avatarUrl;
 
   Participant({
     required this.userId,
@@ -208,6 +221,7 @@ class Participant {
     this.email,
     this.roleLabel,
     this.childrenNames,
+    this.avatarUrl,
   });
 
   factory Participant.fromJson(Map<String, dynamic> json) {
@@ -222,6 +236,7 @@ class Participant {
       email: json['email'] as String?,
       roleLabel: json['roleLabel'] as String?,
       childrenNames: (json['childrenNames'] as List<dynamic>?)?.cast<String>(),
+      avatarUrl: json['avatarUrl'] as String? ?? (json['user'] as Map<String, dynamic>?)?['avatarUrl'] as String?,
     );
   }
 
@@ -278,6 +293,8 @@ class Message {
   final String? senderFirstName;
   final String? senderLastName;
   final String? senderRole;
+  // ⭐ V9 (parité web) : photo de l'expéditeur (avatar 32px dans les groupes).
+  final String? senderAvatarUrl;
   final bool isOwn;
   // ⭐ V7 (parité web) : métadonnées d'appel pour les messages CALL_LOG
   //    { callType, status, durationSec, byName, kind? } — rendues en pill.
@@ -311,6 +328,7 @@ class Message {
     this.senderFirstName,
     this.senderLastName,
     this.senderRole,
+    this.senderAvatarUrl,
     this.isOwn = false,
     this.callMeta,
     this.status,
@@ -360,6 +378,8 @@ class Message {
       senderFirstName: senderFirstName,
       senderLastName: senderLastName,
       senderRole: senderRole,
+      senderAvatarUrl:
+          json['senderAvatarUrl'] as String? ?? sender?['avatarUrl'] as String?,
       isOwn: (json['senderId'] as String?) == currentUserId,
       callMeta: json['callMeta'] as Map<String, dynamic>?,
       status: json['status'] as String?,

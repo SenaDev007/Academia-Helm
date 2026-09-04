@@ -162,9 +162,25 @@ export class ChatService {
               WHERE m."conversationId" = c.id
                 AND m."createdAt" > COALESCE(p."lastReadAt", '1970-01-01'::timestamp)
                 AND m."senderId" != $2
-                AND m."deletedAt" IS NULL) AS "unreadCount"
+                AND m."deletedAt" IS NULL) AS "unreadCount",
+             -- ⭐ V6.1 (parité Yeshua — badge d'appels) : type + statut du
+             -- DERNIER message (CALL_LOG manqué/refusé/terminé, vocal…) pour
+             -- la pastille d'appel dans la liste des conversations.
+             lm."type" AS "lastMessageType",
+             lm."callType" AS "lastMessageCallType",
+             lm."callStatus" AS "lastMessageCallStatus",
+             lm."senderId" AS "lastMessageSenderActualId"
       FROM chat_conversations c
       JOIN chat_participants p ON p."conversationId" = c.id AND p."leftAt" IS NULL
+      LEFT JOIN LATERAL (
+        SELECT m."type", m."senderId",
+               m."callMeta"->>'callType' AS "callType",
+               m."callMeta"->>'status' AS "callStatus"
+        FROM chat_messages m
+        WHERE m."conversationId" = c.id AND m."deletedAt" IS NULL
+        ORDER BY m."createdAt" DESC
+        LIMIT 1
+      ) lm ON true
       WHERE c."tenantId" = $1 AND p."userId" = $2
       ORDER BY COALESCE(c."lastMessageAt", c."createdAt") DESC
     `, tenantId, userId);
@@ -248,6 +264,13 @@ export class ChatService {
       lastMessageAt: c.lastMessageAt,
       lastMessagePreview: c.lastMessagePreview,
       lastMessageSenderId: c.lastMessageSenderId,
+      // ⭐ V6.1 (parité Yeshua — badge d'appels) : métadonnées du dernier
+      // message pour la pastille d'appel (manqué = rouge, sortant = gris,
+      // terminé = vert) dans la liste des conversations.
+      lastMessageType: c.lastMessageType || null,
+      lastMessageCallType: c.lastMessageCallType || null,
+      lastMessageCallStatus: c.lastMessageCallStatus || null,
+      lastMessageSentByMe: c.lastMessageSenderActualId ? c.lastMessageSenderActualId === userId : null,
       participants: (participantsByConv.get(c.id) || []).map((p: any) => {
         const children = childrenByParent.get(p.userId);
         return {

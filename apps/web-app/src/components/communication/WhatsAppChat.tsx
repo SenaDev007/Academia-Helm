@@ -5617,14 +5617,46 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             {mutedConvs[conv.id] && (
               <BellOff className="w-3 h-3 text-slate-400 flex-shrink-0" aria-label="Notifications en muet" />
             )}
-            <span className={cn(
-              'text-xs truncate flex-1',
-              (conv as any).unreadCount && (conv as any).unreadCount > 0
-                ? 'text-slate-700 font-medium'
-                : 'text-slate-500'
-            )}>
-              {isEncrypted(conv.lastMessagePreview || '') ? '🔒 Message chiffré' : (conv.lastMessagePreview || '—')}
-            </span>
+            {/* ⭐ V6.1 (parité Yeshua) — BADGE D'APPEL dans la liste : quand le
+                dernier message est un journal d'appel (CALL_LOG), on affiche
+                l'icône téléphone colorée par statut au lieu du texte brut :
+                rouge = manqué (entrant), ambre = refusé, gris = sortant sans
+                réponse/annulé, vert = terminé. */}
+            {(conv as any).lastMessageType === 'CALL_LOG' ? (() => {
+              const cs = String((conv as any).lastMessageCallStatus || '').toLowerCase();
+              const ct = (conv as any).lastMessageCallType === 'video';
+              const mine = (conv as any).lastMessageSentByMe;
+              const CallIcon = cs === 'missed' ? PhoneMissed : ct ? Video : Phone;
+              const color =
+                cs === 'missed' ? 'text-red-500' :
+                cs === 'declined' || cs === 'rejected' ? 'text-amber-500' :
+                cs === 'cancelled' ? 'text-slate-400' :
+                'text-emerald-500';
+              return (
+                <>
+                  <CallIcon className={cn('w-3.5 h-3.5 flex-shrink-0', color)} />
+                  <span className={cn('text-xs truncate flex-1', color,
+                    cs === 'missed' && 'font-semibold')}>
+                    {cs === 'missed'
+                      ? (mine ? 'Appel manqué (sortant)' : 'Appel manqué')
+                      : cs === 'declined' || cs === 'rejected'
+                        ? 'Appel refusé'
+                        : cs === 'cancelled'
+                          ? (mine ? 'Appel annulé' : 'Appel sans réponse')
+                          : (conv.lastMessagePreview || 'Appel terminé')}
+                  </span>
+                </>
+              );
+            })() : (
+              <span className={cn(
+                'text-xs truncate flex-1',
+                (conv as any).unreadCount && (conv as any).unreadCount > 0
+                  ? 'text-slate-700 font-medium'
+                  : 'text-slate-500'
+              )}>
+                {isEncrypted(conv.lastMessagePreview || '') ? '🔒 Message chiffré' : (conv.lastMessagePreview || '—')}
+              </span>
+            )}
           </div>
           {/* Role label (DIRECT only) or member count (GROUP only) */}
           {display.roleLabel && conv.type === 'DIRECT' && (

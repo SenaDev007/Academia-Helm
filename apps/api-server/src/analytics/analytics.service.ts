@@ -24,6 +24,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { isSchoolTenantType, schoolTenantTypeFilter } from '../common/constants/school-tenant-types';
 
 /** Rôles autorisés à consulter la vue stratégique consolidée. */
 const STRATEGIC_ROLES = [
@@ -214,7 +215,7 @@ export class AnalyticsService {
     // Rôles plateforme → vue de support sur TOUS les tenants école actifs
     if (user?.isSuperAdmin || ['PLATFORM_OWNER', 'SUPER_ADMIN'].includes(user?.role || '')) {
       return this.prisma.tenant.findMany({
-        where: { status: 'active', type: 'SCHOOL' },
+        where: { status: 'active', type: schoolTenantTypeFilter() },
         include,
         orderBy: { name: 'asc' },
       });
@@ -244,7 +245,7 @@ export class AnalyticsService {
     }
 
     return this.prisma.tenant.findMany({
-      where: { id: { in: Array.from(tenantIds) }, status: 'active', type: 'SCHOOL' },
+      where: { id: { in: Array.from(tenantIds) }, status: 'active', type: schoolTenantTypeFilter() },
       include,
       orderBy: { name: 'asc' },
     });

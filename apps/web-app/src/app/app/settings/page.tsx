@@ -29,7 +29,7 @@ import {
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
   Pencil, CopyPlus, Layers, Wallet, Plus, X, Trash2,
-  GitMerge, Split, Info, Clock
+  GitMerge, Split, Info, Clock, Building2
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import StampDesigner from '@/components/settings/StampDesigner';
@@ -47,6 +47,7 @@ import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import { PlatformImage } from '@/components/media/PlatformImage';
 import { SchoolGeolocationSettings } from '@/components/settings/SchoolGeolocationSettings';
+import { MultiSchoolSettingsSection } from '@/components/settings/MultiSchoolSettingsSection';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
 function toInputDate(date: Date | string | null | undefined): string {
@@ -134,7 +135,7 @@ function generateSamplePassword(form: any): string {
   return pwd;
 }
 
-type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
+type TabId = 'identity' | 'group' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
              'roles' | 'billing' | 'security' | 'seals' | 'appareils' | 'history'
              // Removed tabs (kept in type for URL compat): communication, payments, orion, atlas, offline
              | 'communication' | 'payments' | 'orion' | 'atlas' | 'offline';
@@ -197,7 +198,7 @@ function ActionBadge({ action }: { action: string }) {
 }
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
+  'identity', 'group', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
   'roles', 'billing', 'security', 'appareils', 'history',
   // school-calendar, admin-structure et seals conservés dans le type pour compat URL
   // mais retirés de l'affichage (fusionnés dans academic-year, departments)
@@ -205,6 +206,9 @@ const SETTINGS_TAB_IDS: TabId[] = [
   // Retirés de l'affichage mais conservés pour compat URL ancienne
   'communication', 'payments', 'orion', 'atlas', 'offline',
 ];
+
+/** ⭐ Rôles autorisés à voir l'onglet « Écoles & Groupe » (multi-écoles). */
+const PROMOTER_GROUP_SETTINGS_ROLES = ['PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'];
 
 /* ⭐ Onglet « Modules » (Paramètres) — périmètre d'affichage.
  * Seuls les modules ci-dessous figurent dans l'onglet. Les modules non
@@ -2536,6 +2540,12 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
+    // ⭐ MULTI-ÉCOLES — onglet promoteur : écoles du groupe + activation
+    //    d'une école annexe (payante, contrat conforme au Word). Visible
+    //    uniquement pour les rôles promoteur.
+    ...(PROMOTER_GROUP_SETTINGS_ROLES.includes(user?.role || '')
+      ? [{ id: 'group' as TabId, label: 'Écoles & Groupe', icon: Building2 }]
+      : []),
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     // ⭐ Onglet Bilingue AVANT Structure : l'utilisateur doit activer le mode bilingue
     //    AVANT de configurer la structure pédagogique, car l'activation bilingue
@@ -6263,6 +6273,28 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
+          </div>
+        );
+
+      // ⭐ MULTI-ÉCOLES — activation d'une école annexe depuis les paramètres
+      //    (promoteurs uniquement — payant par école, contrat conforme au Word)
+      case 'group':
+        return (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <MultiSchoolSettingsSection
+              user={{
+                role: user?.role,
+                firstName: user?.firstName,
+                lastName: user?.lastName,
+                email: user?.email,
+                tenantId: user?.tenantId,
+              }}
+              onSchoolCreated={() => {
+                // L'école créée rejoint le groupe au prochain rechargement de
+                // session (available-tenants / vue groupe) — rappel discret.
+                showToast('success', 'École annexe ajoutée à votre groupe.');
+              }}
+            />
           </div>
         );
 

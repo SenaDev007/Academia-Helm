@@ -58,6 +58,9 @@ import {
   Crown,
   Lock,
   FileText,
+  Building2 as Building2Icon,
+  Plus as PlusIcon,
+  Trash2 as TrashIcon,
 } from 'lucide-react';
 import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE, fetchPricingPlans, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
@@ -90,6 +93,10 @@ interface OnboardingData {
   email: string;
   bilingual: boolean;
   estimatedStudentCount: number;
+  // ⭐ MULTI-ÉCOLES dès le signup : écoles annexes du même promoteur —
+  //    chacune a son PROPRE nom et sa PROPRE ville (quartier/ville différente)
+  //    et sera créée comme un tenant isolé (miroir mono-école).
+  annexes: { name: string; city?: string }[];
   logoUrl?: string;
   /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academiahelm.com) */
   preferredSubdomain?: string;
@@ -236,6 +243,7 @@ export default function OnboardingWizard() {
     email: '',
     bilingual: false,
     estimatedStudentCount: 0,
+    annexes: [],
     firstName: '',
     lastName: '',
     promoterPhone: '',
@@ -247,6 +255,15 @@ export default function OnboardingWizard() {
     billingPeriod: 'yearly', // Contrat Article 4 : facturation annuelle uniquement
     preferredSubdomain: '',
   });
+
+  // ⭐ MULTI-ÉCOLES : nombre d'établissements déclarés (1 école principale +
+  //    N annexes valides). Source unique du facteur de facturation — chaque
+  //    école paie sa propre souscription (activation + annuel + bilingue).
+  const annexSchoolsCount = Math.max(1, 1 + (data.annexes || []).filter((a) => String(a?.name || '').trim().length >= 2).length);
+  // Annexes nettoyées (transmises au draft + au contrat)
+  const annexCleanList = (data.annexes || [])
+    .map((a) => ({ name: String(a?.name || '').trim(), city: a?.city ? String(a.city).trim() : undefined }))
+    .filter((a) => a.name.length >= 2);
 
   // ⭐ Lire les query params au montage (?plan=seed&bilingual=true)
   //    Permet à la page /tarification de pré-remplir l'onboarding quand
@@ -718,10 +735,10 @@ export default function OnboardingWizard() {
       //    doit confirmer ce qui a été payé avant de continuer.
       if (creationMode === 'yehi-or-tech' && data.planCode) {
         if (paymentMarked.paymentPlan === 'installments') {
-          // ⭐ Paiement échelonné : valider l'échéancier
+          // ⭐ Paiement échelonné : valider l'échéancier (total × nombre d'écoles)
           const list = paymentMarked.installments;
           const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-          const cashTotal = HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+          const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0)) * annexSchoolsCount;
           const allocated = list.reduce((s, t) => s + (Number(t.amount) || 0), 0);
           if (list.length < 2) {
             newErrors.paymentMarked = 'Un paiement par tranches comporte au moins deux (2) tranches.';
@@ -871,6 +888,9 @@ export default function OnboardingWizard() {
       try {
         // Normaliser le numéro de téléphone avant l'envoi
         const normalizedPhone = normalizePhoneNumber(data.phone, data.country);
+        // ⭐ MULTI-ÉCOLES : annexes nettoyées (annexCleanList — même source que
+        //    le facteur de facturation annexSchoolsCount)
+        const annexCount = annexCleanList.length;
         
         const response = await fetch('/api/onboarding/draft', {
           method: 'POST',
@@ -883,6 +903,14 @@ export default function OnboardingWizard() {
             phone: normalizedPhone,
             email: data.email,
             bilingual: data.bilingual,
+            // ⭐ MULTI-ÉCOLES : 1 école principale + N annexes déclarées
+            //    (cohérence vérifiée côté backend — schoolsCount = 1 + N).
+            ...(annexCount > 0
+              ? {
+                  schoolsCount: 1 + annexCount,
+                  annexes: annexCleanList,
+                }
+              : {}),
             preferredSubdomain: (data.preferredSubdomain || '').trim() || undefined,
             logoUrl: data.logoUrl || undefined,
           }),
@@ -1957,6 +1985,99 @@ export default function OnboardingWizard() {
                     </div>
                   )}
                 </div>
+
+                {/* ⭐ MULTI-ÉCOLES dès le signup : écoles annexes du même promoteur.
+                    Chaque annexe a son PROPRE nom et sa PROPRE ville (quartier/ville
+                    différente) et sera créée comme un tenant ISOLÉ (miroir
+                    mono-école). Facturation : chaque école paie sa souscription
+                    (activation + frais annuels + option bilingue le cas échéant). */}
+                <div className="border-t pt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="flex items-center text-sm font-medium text-gray-900">
+                      <Building2Icon className="w-5 h-5 mr-2" />
+                      Gérez-vous plusieurs établissements ?
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if ((data.annexes || []).length >= 9) return;
+                        setData({ ...data, annexes: [...(data.annexes || []), { name: '', city: '' }] });
+                      }}
+                      disabled={(data.annexes || []).length >= 9}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-md border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <PlusIcon className="w-3.5 h-3.5" />
+                      Ajouter une école annexe
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Laissez vide si vous gérez une seule école. Chaque annexe dispose de son espace propre
+                    (élèves, personnels, frais de scolarité séparés) avec une vue d&apos;ensemble de votre groupe.
+                    Chaque établissement est facturé séparément (frais d&apos;activation + frais annuels du plan,
+                    le cas échéant option bilingue).
+                  </p>
+                  {(data.annexes || []).length > 0 && (
+                    <div className="space-y-3">
+                      {data.annexes.map((annex, idx) => (
+                        <div key={idx} className="p-3 rounded-lg border border-blue-200 bg-blue-50/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-blue-900 flex items-center">
+                              <Building2Icon className="w-3.5 h-3.5 mr-1" />
+                              École annexe {idx + 2}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setData({ ...data, annexes: data.annexes.filter((_, i) => i !== idx) })}
+                              className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1"
+                              aria-label={`Retirer l'annexe ${idx + 2}`}
+                            >
+                              <TrashIcon className="w-3.5 h-3.5" /> Retirer
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Nom de l&apos;établissement <span className="text-red-600">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={annex.name}
+                                onChange={(e) => {
+                                  const next = [...data.annexes];
+                                  next[idx] = { ...next[idx], name: e.target.value };
+                                  setData({ ...data, annexes: next });
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                placeholder="Ex : École Les Étoiles — Annexe N'Dali"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Ville / quartier
+                              </label>
+                              <input
+                                type="text"
+                                value={annex.city || ''}
+                                onChange={(e) => {
+                                  const next = [...data.annexes];
+                                  next[idx] = { ...next[idx], city: e.target.value };
+                                  setData({ ...data, annexes: next });
+                                }}
+                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                placeholder="Peut différer de l'école principale"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        <strong>Facturation multi-écoles :</strong> {data.annexes.length + 1} établissements seront
+                        créés — chacun avec ses frais d&apos;activation (500 000 FCFA) et ses frais annuels.
+                        Le contrat détaillera la souscription par établissement.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {errors.info && (
@@ -2896,7 +3017,8 @@ export default function OnboardingWizard() {
                   </div>
                 )}
 
-                {/* Section 3: Total Année 1 (activation + annuel + bilingue) */}
+                {/* Section 3: Total Année 1 (activation + annuel + bilingue) —
+                    ⭐ MULTI-ÉCOLES : par école × nombre d'établissements déclarés */}
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-300 shadow-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
@@ -2905,7 +3027,7 @@ export default function OnboardingWizard() {
                       </div>
                     <div>
                         <div className="font-bold text-lg text-blue-900 mb-1">
-                          Total Année 1
+                          Total Année 1{annexSchoolsCount > 1 ? ` — ${annexSchoolsCount} établissements` : ''}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
                           <School className="w-4 h-4" />
@@ -2915,16 +3037,22 @@ export default function OnboardingWizard() {
                             {' • Facturation annuelle'}
                           </span>
                       </div>
+                        {annexSchoolsCount > 1 && (
+                          <p className="text-xs text-emerald-800 mt-1.5 max-w-sm">
+                            {formatCurrency((priceCalculation.yearly?.total || 0) + HELM_ACTIVATION_FEE)} FCFA par
+                            établissement × {annexSchoolsCount} — données isolées par école, contrat global.
+                          </p>
+                        )}
                     </div>
                     </div>
                     <div className="text-right">
                       {priceCalculation.yearly ? (
                         <>
                           <div className="text-3xl font-bold text-green-700">
-                            {formatCurrency((priceCalculation.yearly.total || 0) + HELM_ACTIVATION_FEE)}
+                            {formatCurrency(((priceCalculation.yearly.total || 0) + HELM_ACTIVATION_FEE) * annexSchoolsCount)}
                           </div>
                           <div className="text-xs text-graphite-600 mt-1">
-                            / an (activation 500 000 + frais annuels)
+                            / an (activation 500 000 + frais annuels{annexSchoolsCount > 1 ? `, × ${annexSchoolsCount} écoles` : ''})
                           </div>
                         </>
                       ) : (
@@ -2941,8 +3069,9 @@ export default function OnboardingWizard() {
                     signé à l'étape suivante. */}
                 {creationMode === 'yehi-or-tech' && (() => {
                   // Totaux de référence pour l'échéancier (mêmes valeurs que l'affichage du plan)
+                  // ⭐ MULTI-ÉCOLES : PAR ÉCOLE × nombre d'établissements déclarés
                   const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-                  const cashTotal = HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0);
+                  const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0)) * annexSchoolsCount;
                   const allocated = paymentMarked.installments.reduce((s, t) => s + (Number(t.amount) || 0), 0);
                   const remaining = cashTotal - allocated;
 
@@ -3231,6 +3360,10 @@ export default function OnboardingWizard() {
               planCode={data.planCode}
               planName={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || data.planCode}
               bilingual={data.bilingual}
+              // ⭐ MULTI-ÉCOLES : le contrat s'adapte (fiche, Article 3 par
+              //    établissement, Article 4 — montants × nombre d'écoles)
+              schoolsCount={annexSchoolsCount}
+              annexes={annexCleanList}
               subdomain={
                 data.preferredSubdomain?.trim()
                 || data.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
@@ -3439,9 +3572,21 @@ export default function OnboardingWizard() {
                 <div className="mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-4">
                   <CheckCircle className="w-10 h-10 text-green-600" />
                 </div>
-                <h2 className="text-3xl font-bold text-blue-900">École créée avec succès</h2>
+                <h2 className="text-3xl font-bold text-blue-900">
+                  {annexSchoolsCount > 1 ? `${annexSchoolsCount} écoles créées avec succès` : 'École créée avec succès'}
+                </h2>
                 <p className="text-sm text-slate-500 mt-2">
-                  <strong>{creationResult?.schoolName}</strong> est active sur la plateforme Academia Helm.
+                  {annexSchoolsCount > 1 ? (
+                    <>
+                      <strong>{creationResult?.schoolName}</strong> et {annexSchoolsCount - 1} annexe(s) sont actives
+                      sur la plateforme — chaque établissement dispose de son espace isolé, avec une vue d&apos;ensemble
+                      du groupe (promoteur multi-écoles).
+                    </>
+                  ) : (
+                    <>
+                      <strong>{creationResult?.schoolName}</strong> est active sur la plateforme Academia Helm.
+                    </>
+                  )}
                 </p>
               </div>
 

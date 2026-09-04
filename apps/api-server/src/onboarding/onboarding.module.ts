@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { OnboardingController } from './onboarding.controller';
+import { AnnexOnboardingController } from './annex-onboarding.controller';
 import { OnboardingService } from './services/onboarding.service';
 import { OtpService } from './services/otp.service';
 import { DraftCleanupService } from './services/draft-cleanup.service';
@@ -17,7 +18,7 @@ import { CommunicationModule } from '../communication/communication.module';
     CommonModule, // Pour SubdomainService
     CommunicationModule, // Pour WhatsAppService et SmsService
   ],
-  controllers: [OnboardingController, ContractController],
+  controllers: [OnboardingController, ContractController, AnnexOnboardingController],
   providers: [OnboardingService, OtpService, DraftCleanupService, ContractGenerationService],
   exports: [OnboardingService, OtpService, ContractGenerationService],
 })

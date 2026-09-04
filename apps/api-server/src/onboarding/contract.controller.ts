@@ -25,8 +25,10 @@ import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Public } from '../auth/decorators/public.decorator';
-import { ContractGenerationService, ContractData, ContractInstallment } from './contract-generation.service';
-import { OnboardingService, CashPaymentMarking } from './services/onboarding.service';
+import { ContractGenerationService } from './contract-generation.service';
+import type { ContractData, ContractInstallment } from './contract-generation.service';
+import { OnboardingService } from './services/onboarding.service';
+import type { CashPaymentMarking } from './services/onboarding.service';
 import { EmailService } from '../communication/services/email.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 
@@ -330,6 +332,15 @@ export class ContractController {
     const bilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
     const activationFee = Number(priceSnap.initialFee || priceSnap.initialPayment || 500000) || 500000;
     const annualFee = Number(priceSnap.yearlyPrice || 50000) || 50000;
+    // ⭐ MULTI-ÉCOLES : nombre d'établissements du draft + annexes déclarées
+    //    (noms/villes propres — la fiche et le détail tarifaire s'adaptent).
+    const schoolsCount = Math.max(1, draft.schoolsCount || 1);
+    const annexes = Array.isArray(draft.annexes)
+      ? (draft.annexes as { name?: string; city?: string }[])
+          .map((a) => ({ name: String(a?.name || '').trim(), city: a?.city ? String(a.city).trim() : undefined }))
+          .filter((a) => a.name.length >= 2)
+      : [];
+    const perSchoolTotal = activationFee + annualFee + bilingualFee;
 
     return {
       schoolName: draft.schoolName || '',
@@ -345,10 +356,14 @@ export class ContractController {
       bilingual: draft.bilingual || false,
       subdomain,
       effectiveDate: today,
+      // ⭐ Multi-écoles
+      schoolsCount,
+      ...(annexes.length > 0 ? { annexes } : {}),
       activationFee,
       annualFee,
       bilingualFee,
-      totalYearOne: activationFee + annualFee + (draft.bilingual ? bilingualFee : 0),
+      // ⭐ Total = PAR ÉCOLE × nombre d'écoles (le contrat s'adapte)
+      totalYearOne: schoolsCount > 1 ? perSchoolTotal * schoolsCount : perSchoolTotal,
       // ⭐ Paiement en espèces (mode YEHI OR Tech)
       paymentMethod: 'cash',
       subscriptionPaid: marked.subscriptionPaid ?? true,

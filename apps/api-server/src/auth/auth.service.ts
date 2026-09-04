@@ -10,6 +10,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AccessRequestsService } from '../access-requests/access-requests.service';
+import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 
 export type SessionPersistMeta = {
   ipAddress?: string;
@@ -909,7 +910,10 @@ export class AuthService {
 
       for (const ut of userTenants) {
         const tenant = ut.tenant;
-        if (!tenant || tenant.status !== 'active' || tenant.type !== 'SCHOOL') {
+        // ⭐ Type école au sens large : l'onboarding crée les tenants avec le type
+        //    d'établissement (MATERNELLE/PRIMAIRE/SECONDAIRE/MIXTE) — une
+        //    comparaison stricte à 'SCHOOL' masquerait les écoles réelles.
+        if (!tenant || tenant.status !== 'active' || !isSchoolTenantType(tenant.type)) {
           continue;
         }
         if (seenTenantIds.has(tenant.id)) {

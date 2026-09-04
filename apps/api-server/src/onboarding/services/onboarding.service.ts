@@ -32,6 +32,7 @@ import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
 // ⭐ V6 (spec §4/§6) — Helm Connect : canaux officiels + communautés auto
 //    dès l'activation d'un établissement
 import { HelmConnectBootstrapService } from '../../communication/services/helm-connect-bootstrap.service';
+import { isSchoolTenantType, schoolTenantTypeFilter } from '../../common/constants/school-tenant-types';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -93,9 +94,29 @@ export class OnboardingService {
     email: string;
     bilingual?: boolean;
     schoolsCount?: number;
+    /** ⭐ Écoles annexes déclarées dès l'onboarding (multi-écoles). */
+    annexes?: { name: string; city?: string }[];
     preferredSubdomain?: string;
     logoUrl?: string;
   }) {
+    // ⭐ Multi-écoles : normaliser annexes + schoolsCount (cohérence garantie :
+    //    schoolsCount = 1 + nombre d'annexes ; les doublons de noms vides sont rejetés).
+    const annexList = (data.annexes || [])
+      .map((a) => ({
+        name: String(a?.name || '').trim(),
+        city: a?.city ? String(a.city).trim() : undefined,
+      }))
+      .filter((a) => a.name.length >= 2);
+    if (annexList.length > 9) {
+      throw new BadRequestException('Au maximum 9 écoles annexes par onboarding.');
+    }
+    const effectiveSchoolsCount = Math.max(1, data.schoolsCount ?? annexList.length + 1);
+    // ⚠️ schoolsCount doit refléter la réalité déclarée (1 principale + N annexes)
+    if (annexList.length > 0 && effectiveSchoolsCount !== annexList.length + 1) {
+      throw new BadRequestException(
+        `Incohérence multi-écoles : ${annexList.length} annexe(s) déclarée(s) mais schoolsCount=${effectiveSchoolsCount} (attendu : ${annexList.length + 1}).`,
+      );
+    }
     // Vérifier si un draft existe déjà pour cet email
     const existingDraft = await this.prisma.onboardingDraft.findFirst({
       where: {
@@ -138,14 +159,15 @@ export class OnboardingService {
           phone: data.phone,
           email: data.email,
           bilingual: data.bilingual || false,
-          schoolsCount: data.schoolsCount ?? 1,
+          schoolsCount: annexList.length > 0 ? annexList.length + 1 : effectiveSchoolsCount,
+          ...(annexList.length > 0 ? { annexes: annexList as unknown as Prisma.InputJsonValue } : {}),
           preferredSubdomain,
           logoUrl: data.logoUrl || null,
           status: 'DRAFT',
         },
       });
 
-      this.logger.log(`📝 Onboarding draft created: ${draft.id}` + (preferredSubdomain ? ` (sous-domaine: ${preferredSubdomain})` : ''));
+      this.logger.log(`📝 Onboarding draft created: ${draft.id}` + (preferredSubdomain ? ` (sous-domaine: ${preferredSubdomain})` : '') + (annexList.length > 0 ? ` — MULTI-ÉCOLES : ${annexList.length + 1} établissements` : ''));
 
       return draft;
     } catch (err) {
@@ -840,10 +862,28 @@ export class OnboardingService {
         firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
       }
 
+      // ⭐ MULTI-ÉCOLES — annexes déclarées à l'étape 1 : chaque école a son
+      //    PROPRE nom et sa PROPRE ville (quartier/ville différente — miroir
+      //    mono-école par tenant). Fallback historique si non déclarées :
+      //    « {École principale} - Annexe N » + ville du draft principal.
+      const declaredAnnexes = Array.isArray((draft as any).annexes)
+        ? ((draft as any).annexes as { name?: string; city?: string }[])
+        : [];
+      const annexName = (i: number) => {
+        const declared = declaredAnnexes[i - 1];
+        const name = declared?.name?.trim();
+        return name && name.length >= 2 ? name : `${draft.schoolName} - Annexe ${i}`;
+      };
+      const annexCity = (i: number) => {
+        const declared = declaredAnnexes[i - 1];
+        const city = declared?.city?.trim();
+        return city && city.length >= 2 ? city : (draft.city || null);
+      };
+
       for (let i = 0; i < schoolsCount; i++) {
         let schoolNameForSubdomain = draft.schoolName;
-        if (schoolsCount > 1) {
-          schoolNameForSubdomain = `${draft.schoolName} - Annexe ${i + 1}`;
+        if (i > 0) {
+          schoolNameForSubdomain = annexName(i);
         }
 
         const subdomain = schoolsCount > 1
@@ -851,10 +891,10 @@ export class OnboardingService {
           : firstTenantSubdomain;
         const slug = subdomain;
 
-        // Créer le tenant
+        // Créer le tenant — nom réel de l'école (annexe déclarée ou fallback)
         const tenant = await tx.tenant.create({
           data: {
-            name: schoolsCount > 1 ? `${draft.schoolName} - Annexe ${i + 1}` : draft.schoolName,
+            name: i === 0 ? draft.schoolName : annexName(i),
             slug,
             subdomain,
             countryId: country.id,
@@ -1134,11 +1174,13 @@ export class OnboardingService {
         // les informations collectées pendant l'onboarding (ville, téléphone,
         // email, logo) qui ne sont pas sur le modèle Tenant lui-même.
         // Une seule School par tenant (tenantId @unique dans le schéma).
+        // ⭐ Multi-écoles : la ville est celle DÉCLARÉE pour cette annexe
+        //    (quartier/ville différente) — fallback ville du draft principal.
         await tx.school.create({
           data: {
             tenantId: tenant.id,
             name: tenant.name,
-            city: draft.city || null,
+            city: i === 0 ? (draft.city || null) : annexCity(i),
             primaryPhone: draft.phone || null,
             primaryEmail: draft.email || null,
             logo: draft.logoUrl || null,
@@ -1828,9 +1870,15 @@ export class OnboardingService {
     const annualFee = Number(pricing.yearlyPrice ?? 50000) || 0;
     const bilingualFee = draft.bilingual ? Number(pricing.bilingualFee ?? 50000) || 0 : 0;
     const totalFromSnapshot = Number(pricing.subscriptionPrice ?? 0) || 0;
-    const totalAmount = totalFromSnapshot > 0
+    // ⭐ MULTI-ÉCOLES : chaque école fondée paie sa propre souscription
+    //    (activation + frais annuels + option bilingue) — « c'est payant en
+    //    fonction du nombre d'écoles ». Le paiement unique du contrat couvre
+    //    l'ensemble du groupe déclaré à l'onboarding.
+    const schoolsCount = Math.max(1, draft.schoolsCount || 1);
+    const perSchoolTotal = totalFromSnapshot > 0
       ? Math.round(activationFee + totalFromSnapshot)
       : Math.round(activationFee + annualFee + bilingualFee);
+    const totalAmount = schoolsCount > 1 ? perSchoolTotal * schoolsCount : perSchoolTotal;
 
     // Réutiliser un paiement cash existant (idempotence), sinon le créer
     let payment = draft.payments.find((p) => p.provider === 'cash');
@@ -1858,7 +1906,7 @@ export class OnboardingService {
               receivedBy: receivedBy || null,
               markedAt: new Date().toISOString(),
             },
-            breakdown: { activationFee, annualFee, bilingualFee, total: totalAmount },
+            breakdown: { activationFee, annualFee, bilingualFee, schoolsCount, perSchoolTotal, total: totalAmount },
             ...(hasInstallments
               ? {
                   paymentPlan: 'installments' as const,
@@ -1907,6 +1955,197 @@ export class OnboardingService {
       subdomain: meta.firstTenantSubdomain || draft.preferredSubdomain || '',
       hostname: meta.firstTenantHostname,
       portalUrl: meta.firstTenantPortalUrl,
+    };
+  }
+
+  /**
+   * ============================================================================
+   * MULTI-ÉCOLES — Éligibilité et création d'annexe (paramètres promoteur)
+   * ============================================================================
+   */
+
+  /**
+   * Éligibilité multi-écoles du promoteur courant :
+   * écoles déjà gérées (UserTenant ∪ direct) + prix de la prochaine annexe.
+   */
+  async getAnnexEligibility(user: { sub: string; role?: string; tenantId?: string }) {
+    // ⭐ Même périmètre que auth.service.getAvailableTenants / selectTenant /
+    //    analytics.resolveScope : UserTenant actives ∪ tenant direct.
+    const tenantIds = new Set<string>();
+    if (user.tenantId) tenantIds.add(user.tenantId);
+    try {
+      const userTenants = await this.prisma.userTenant.findMany({
+        where: { userId: user.sub, isActive: true },
+        select: { tenantId: true },
+      });
+      for (const ut of userTenants) tenantIds.add(ut.tenantId);
+    } catch (err: any) {
+      this.logger.warn(`⚠️ UserTenant indisponible (éligibilité réduite au tenant direct) : ${err?.message || err}`);
+    }
+
+    const schools = tenantIds.size > 0
+      ? await this.prisma.tenant.findMany({
+          where: { id: { in: Array.from(tenantIds) }, status: 'active', type: schoolTenantTypeFilter() },
+          select: {
+            id: true, name: true, subdomain: true,
+            schools: { select: { city: true } },
+            _count: { select: { students: true } },
+          },
+          orderBy: { name: 'asc' },
+        }).catch(() => [])
+      : [];
+
+    const bySchool = (schools as any[]).map((t) => ({
+      tenantId: t.id,
+      name: t.name,
+      subdomain: t.subdomain,
+      city: t.schools?.city || null,
+    }));
+
+    // Prix d'une nouvelle annexe : PAR ÉCOLE (contrat Article 3/4) —
+    // activation 500 000 FCFA + frais annuels du plan + option bilingue.
+    const plans = await this.prisma.pricingPlan
+      .findMany({
+        where: { code: { in: ['SEED', 'GROW', 'LEAD', 'NETWORK'] }, isActive: true },
+        select: { code: true, name: true, initialFee: true, yearlyAmount: true, studentMin: true, studentMax: true },
+      })
+      .catch(() => [] as any[]);
+
+    let bilingualYearly = 50000;
+    try {
+      const bilingualPlan = await this.prisma.pricingPlan.findUnique({ where: { code: 'BILINGUAL' } });
+      if (bilingualPlan?.yearlyAmount != null) bilingualYearly = Number(bilingualPlan.yearlyAmount);
+    } catch {
+      // fallback constant
+    }
+
+    return {
+      eligible: bySchool.length >= 1,
+      currentSchools: bySchool,
+      nextAnnexIndex: bySchool.length + 1,
+      pricing: {
+        currency: 'XOF',
+        bilingualYearly,
+        plans: (plans as any[]).map((p) => ({
+          code: p.code,
+          name: p.name,
+          activationFee: Number(p.initialFee ?? 500000),
+          annualFee: Number(p.yearlyAmount ?? 0),
+          yearOnePerSchool: Number(p.initialFee ?? 500000) + Number(p.yearlyAmount ?? 0),
+          studentMin: p.studentMin ?? 0,
+          studentMax: p.studentMax ?? null,
+        })),
+      },
+    };
+  }
+
+  /**
+   * Crée le draft d'onboarding de l'ÉCOLE ANNEXE pour un promoteur
+   * AUTHENTIFIÉ (activation multi-écoles depuis les paramètres).
+   *
+   * Le promoteur est une source de confiance : ses infos (email, noms) sont
+   * pré-remplies depuis son compte — aucune validation d'agent YEHI OR Tech
+   * n'est requise (contrairement au signup public). Le draft est mono-école
+   * (l'annexe) ; l'activation le reliera au groupe du promoteur via
+   * UserTenant (branche « promoteur existant réutilisé » + boucle annexes).
+   */
+  async createAnnexDraft(
+    identity: { userId: string; email?: string; firstName?: string; lastName?: string },
+    data: {
+      annexName: string;
+      annexCity: string;
+      schoolType: string;
+      phone: string;
+      email: string;
+      planCode: string;
+      estimatedStudentCount: number;
+      bilingual?: boolean;
+      preferredSubdomain?: string;
+    },
+  ) {
+    // 1. Profil complet du promoteur (le JWT ne porte pas les noms)
+    const promoter = await this.prisma.user.findUnique({
+      where: { id: identity.userId },
+      select: { id: true, email: true, firstName: true, lastName: true, tenantId: true, status: true },
+    });
+    if (!promoter || promoter.status !== 'active') {
+      throw new BadRequestException('Compte promoteur introuvable ou inactif.');
+    }
+
+    // 2. Le promoteur doit gérer au moins une école (multi-écoles = extension)
+    const managedTenantIds = new Set<string>();
+    if (promoter.tenantId) managedTenantIds.add(promoter.tenantId);
+    try {
+      const userTenants = await this.prisma.userTenant.findMany({
+        where: { userId: promoter.id, isActive: true },
+        select: { tenantId: true },
+      });
+      for (const ut of userTenants) managedTenantIds.add(ut.tenantId);
+    } catch {
+      // table absente → tenant direct seulement
+    }
+    if (managedTenantIds.size === 0) {
+      throw new BadRequestException(
+        'Aucune école rattachée à ce compte — le multi-écoles étend un groupe existant.',
+      );
+    }
+
+    // 3. Pays : celui du tenant courant du promoteur (annexe même pays)
+    const currentTenant = await this.prisma.tenant.findFirst({
+      where: { id: { in: Array.from(managedTenantIds) } },
+      select: { countryId: true, country: { select: { name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const countryName = currentTenant?.country?.name || 'Bénin';
+
+    // 4. Créer le draft (mono-école — l'annexe) via le flux standard
+    const draft = await this.createDraft({
+      schoolName: data.annexName,
+      schoolType: data.schoolType === 'mixte' || data.schoolType === 'SCHOOL' ? 'MIXTE' : data.schoolType,
+      city: data.annexCity,
+      country: countryName,
+      phone: data.phone,
+      email: data.email,
+      bilingual: data.bilingual || false,
+      schoolsCount: 1,
+      preferredSubdomain: data.preferredSubdomain,
+    });
+
+    // 5. Pré-remplir les infos promoteur DEPUIS LA SESSION (source de
+    //    confiance — pas d'OTP, pas de validation agent) et verrouiller
+    //    l'étape : otpVerified=true, promoteur = compte existant.
+    const updated = await this.prisma.onboardingDraft.update({
+      where: { id: draft.id },
+      data: {
+        promoterFirstName: promoter.firstName || identity.firstName || '',
+        promoterLastName: promoter.lastName || identity.lastName || '',
+        promoterEmail: promoter.email, // ⭐ le compte EXISTANT est réutilisé à l'activation
+        promoterPhone: data.phone,
+        otpVerified: true,
+        // ⭐ Annexe depuis les paramètres : pas de mot de passe à définir —
+        //    l'activation met à jour le user existant sans y toucher si absent.
+      },
+    });
+
+    // 6. Sélectionner le plan (snapshot de prix complet — même machinerie)
+    const planSelection = await this.selectPlan(updated.id, {
+      planId: data.planCode,
+      periodType: 'YEARLY',
+    });
+
+    this.logger.log(
+      `🏫 Annexe draft created for promoter ${promoter.email}: ${draft.id} « ${data.annexName} » (plan ${data.planCode}${data.bilingual ? ' + bilingue' : ''})`,
+    );
+
+    return {
+      draftId: draft.id,
+      draft: updated,
+      pricing: planSelection.pricing,
+      promoter: {
+        email: promoter.email,
+        firstName: promoter.firstName,
+        lastName: promoter.lastName,
+      },
     };
   }
 }

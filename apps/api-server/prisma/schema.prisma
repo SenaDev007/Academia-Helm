@@ -12990,6 +12990,9 @@ model OnboardingDraft {
   email                String
   bilingual            Boolean             @default(false)
   schoolsCount         Int                 @default(1) @map("schools_count")
+  /// ⭐ Multi-écoles dès l'onboarding : écoles annexes déclarées par le promoteur
+  /// [{ name, city? }] — le tenant i (i > 0) prend le nom/ville de l'annexe i-1.
+  annexes              Json?               @map("annexes")
   preferredSubdomain   String?             @map("preferred_subdomain")
   logoUrl              String?             @map("logo_url")
   promoterFirstName    String?             @map("promoter_first_name")

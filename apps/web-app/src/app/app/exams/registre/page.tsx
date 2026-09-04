@@ -185,12 +185,15 @@ function RegistreContent() {
           evaluationIds: [],
           statuses: [],
           firstEvaluation: ev as any,
+          subjectByEvalId: {},
         });
       }
       const g = map.get(key)!;
       if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
         g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
       }
+      // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+      if (ev.subject) (g as any).subjectByEvalId![ev.id] = ev.subject.id;
       g.evaluationIds.push(ev.id);
       g.statuses.push(ev.status);
     }

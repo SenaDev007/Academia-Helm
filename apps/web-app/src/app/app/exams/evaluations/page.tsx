@@ -242,6 +242,8 @@ interface GroupedEvaluation {
   statuses: string[];
   // Référence vers la première évaluation (pour les actions)
   firstEvaluation: Evaluation;
+  // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+  subjectByEvalId?: Record<string, string>;
 }
 
 function EvaluationCardsByClass({
@@ -281,12 +283,15 @@ function EvaluationCardsByClass({
           evaluationIds: [],
           statuses: [],
           firstEvaluation: ev,
+          subjectByEvalId: {},
         });
       }
       const g = map.get(key)!;
       if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
         g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
       }
+      // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+      if (ev.subject) g.subjectByEvalId![ev.id] = ev.subject.id;
       g.evaluationIds.push(ev.id);
       g.statuses.push(ev.status);
     }
@@ -667,6 +672,11 @@ export default function EvaluationsPage() {
       // Maternelle : pas de barème numérique (qualitatif TS/S/PS)
       maxScore: isMaternelle ? '0' : '20',
       coefficient: isMaternelle ? '0' : '1',
+      // ⭐ V10d — TOUTES les matières sélectionnées PAR DÉFAUT :
+      // « lorsqu'on programme une évaluation pour une classe, c'est toutes
+      // les matières qui sont évaluées — sauf exclusion explicite ».
+      // L'utilisateur décoche simplement les matières à exclure.
+      subjectIds: subjects.map((s) => s.id),
     });
     setEditingId(null);
     setIsModalOpen(true);
@@ -1300,6 +1310,13 @@ export default function EvaluationsPage() {
                 ({form.subjectIds.length} {isEN ? (form.subjectIds.length > 1 ? 'selected' : 'selected') : (form.subjectIds.length > 1 ? 'sélectionnées' : 'sélectionnée')})
               </span>
             </Label>
+            {/* ⭐ V10d — toutes les matières sont sélectionnées par défaut :
+                l'utilisateur décoche uniquement les matières à exclure. */}
+            <p className="text-[10px] text-gray-500 mb-1">
+              {isEN
+                ? 'All subjects are selected by default — uncheck to exclude.'
+                : 'Toutes les matières sont sélectionnées par défaut — décochez celles à exclure.'}
+            </p>
             <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
               {subjects.length === 0 ? (
                 <p className="text-sm text-gray-500 italic text-center py-4">

@@ -115,6 +115,8 @@ interface GroupedEvaluation {
   firstEvaluation: Evaluation;
   // Grades fetched per evaluation (evaluationId → students with grades)
   gradesByEvaluation: Record<string, any[]>;
+  // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+  subjectByEvalId?: Record<string, string>;
 }
 
 function cn(...classes: (string | false | undefined)[]) {
@@ -242,6 +244,8 @@ export function MonthlyEvaluationTab({
         if (ev.subject?.id && !g.subjects.find(s => s.id === ev.subject!.id)) {
           g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
         }
+        // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+        if (ev.subject?.id) g.subjectByEvalId![ev.id] = ev.subject.id;
         if (!g.evaluationIds.includes(ev.id)) g.evaluationIds.push(ev.id);
         if (!g.statuses.includes(ev.status)) g.statuses.push(ev.status);
       }
@@ -291,8 +295,9 @@ export function MonthlyEvaluationTab({
   const buildRows = useCallback((group: GroupedEvaluation): GradeRow[] => {
     const rowMap = new Map<string, GradeRow>();
     for (const evId of group.evaluationIds) {
-      const evIndex = group.evaluationIds.indexOf(evId);
-      const subjectId = group.subjects[evIndex]?.id;
+      // ⭐ V10d — mapping robuste : subjectByEvalId prioritaire sur la position
+      const subjectId = group.subjectByEvalId?.[evId]
+        || group.subjects[group.evaluationIds.indexOf(evId)]?.id;
       if (!subjectId) continue;
       const grades = group.gradesByEvaluation[evId] || [];
       for (const grade of grades) {
@@ -310,7 +315,7 @@ export function MonthlyEvaluationTab({
         }
         const row = rowMap.get(studentId)!;
         // ⭐ cm/cp sont déjà parsés par le backend (GradesService.getGradingSheet)
-        row.scores[subjectId] = {
+        const incoming = {
           score: grade.score ?? null,
           cm: grade.cm ?? null,
           cp: grade.cp ?? null,
@@ -318,6 +323,18 @@ export function MonthlyEvaluationTab({
           isAbsent: grade.isAbsent || false,
           comment: grade.comment,
         };
+        const existing = row.scores[subjectId];
+        // ⭐ V10d — Doublons de session : une valeur vide n'écrase jamais
+        // une valeur déjà saisie (première valeur non vide gagne).
+        const hasValue = (s: typeof incoming) =>
+          s.qualitativeCode !== null || s.score !== null || s.cm !== null || s.cp !== null || s.isAbsent;
+        if (!existing) {
+          row.scores[subjectId] = incoming;
+        } else if (!hasValue(existing) && hasValue(incoming)) {
+          row.scores[subjectId] = incoming;
+        } else if (!existing.comment && incoming.comment) {
+          row.scores[subjectId] = { ...existing, comment: incoming.comment };
+        }
       }
     }
     // Trier par nom (comme dans GradingSheet)

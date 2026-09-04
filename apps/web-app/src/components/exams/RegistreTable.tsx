@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import type { GroupedEvaluation, GradeRow } from '@/components/exams/GradingSheet';
-import { formatRang, computeAppreciationGlobale, getSubjectOrderIndex } from '@/components/exams/GradingSheet';
+import { formatRang, computeAppreciationGlobale, getSubjectOrderIndex, getSubjectIdForEvaluation } from '@/components/exams/GradingSheet';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -79,8 +79,9 @@ export function RegistreTable({
         );
 
         const evalToSubject = new Map<string, string>();
-        group.evaluationIds.forEach((evId, idx) => {
-          const subjectId = group.subjects[idx]?.id;
+        // ⭐ V10d — mapping robuste (subjectByEvalId prioritaire sur la position)
+        group.evaluationIds.forEach((evId) => {
+          const subjectId = getSubjectIdForEvaluation(group, evId);
           if (subjectId) evalToSubject.set(evId, subjectId);
         });
 
@@ -100,7 +101,7 @@ export function RegistreTable({
               });
             }
             const row = studentMap.get(student.studentId)!;
-            row.scores[subjectId] = {
+            const incoming = {
               score: student.score ?? null,
               cm: student.cm ?? null,
               cp: student.cp ?? null,
@@ -108,6 +109,18 @@ export function RegistreTable({
               isAbsent: student.isAbsent ?? false,
               comment: student.comment ?? '',
             };
+            const existing = row.scores[subjectId];
+            // ⭐ V10d — Doublons de session : une valeur vide n'écrase jamais
+            // une valeur déjà saisie (première valeur non vide gagne).
+            const hasValue = (s: typeof incoming) =>
+              s.qualitativeCode !== null || s.score !== null || s.cm !== null || s.cp !== null || s.isAbsent;
+            if (!existing) {
+              row.scores[subjectId] = incoming;
+            } else if (!hasValue(existing) && hasValue(incoming)) {
+              row.scores[subjectId] = incoming;
+            } else if (!existing.comment && incoming.comment) {
+              row.scores[subjectId] = { ...existing, comment: incoming.comment };
+            }
           });
         });
 

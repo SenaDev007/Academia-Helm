@@ -66,6 +66,30 @@ export interface GroupedEvaluation {
   evaluationIds: string[];
   statuses: string[];
   firstEvaluation: Evaluation;
+  /**
+   * ⭐ V10d — Mapping ROBUSTE evaluationId → subjectId.
+   * L'ancien mapping positionnel (evaluationIds[idx] → subjects[idx]) se
+   * désynchronise dès qu'un doublon de session existe (même classe × type ×
+   * période × dates créé deux fois) : subjects est dédupliqué mais pas
+   * evaluationIds → les notes partaient dans les mauvaises évaluations.
+   * Ce map est rempli au moment du regroupement (1 entrée par évaluation).
+   */
+  subjectByEvalId?: Record<string, string>;
+}
+
+/**
+ * ⭐ Résout la matière d'une évaluation dans un groupe :
+ * 1. via subjectByEvalId (mapping explicite, fiable)
+ * 2. sinon par position (fallback historique — sujet à doublons près)
+ */
+export function getSubjectIdForEvaluation(
+  group: GroupedEvaluation,
+  evaluationId: string,
+): string | undefined {
+  const mapped = group.subjectByEvalId?.[evaluationId];
+  if (mapped) return mapped;
+  const idx = group.evaluationIds.indexOf(evaluationId);
+  return idx >= 0 ? group.subjects[idx]?.id : undefined;
 }
 
 export interface GradeRow {
@@ -248,8 +272,10 @@ export function GradingSheet({
         );
 
         const evalToSubject = new Map<string, string>();
-        group.evaluationIds.forEach((evId, idx) => {
-          const subjectId = group.subjects[idx]?.id;
+        // ⭐ V10d — Priorité au mapping explicite subjectByEvalId (robuste aux
+        // doublons de sessions) ; le fallback positionnel reste pour compat.
+        group.evaluationIds.forEach((evId) => {
+          const subjectId = getSubjectIdForEvaluation(group, evId);
           if (subjectId) {
             evalToSubject.set(evId, subjectId);
           }
@@ -271,7 +297,7 @@ export function GradingSheet({
               });
             }
             const row = studentMap.get(student.studentId)!;
-            row.scores[subjectId] = {
+            const incoming = {
               score: student.score ?? null,
               cm: student.cm ?? null,
               cp: student.cp ?? null,
@@ -279,6 +305,19 @@ export function GradingSheet({
               isAbsent: student.isAbsent ?? false,
               comment: student.comment ?? '',
             };
+            const existing = row.scores[subjectId];
+            // ⭐ V10d — Doublons de session (2 évaluations pour la même matière
+            // dans le même groupe) : une valeur vide ne doit JAMAIS écraser une
+            // valeur déjà saisie. La première valeur non vide gagne.
+            const hasValue = (s: typeof incoming) =>
+              s.qualitativeCode !== null || s.score !== null || s.cm !== null || s.cp !== null || s.isAbsent;
+            if (!existing) {
+              row.scores[subjectId] = incoming;
+            } else if (!hasValue(existing) && hasValue(incoming)) {
+              row.scores[subjectId] = incoming;
+            } else if (!existing.comment && incoming.comment) {
+              row.scores[subjectId] = { ...existing, comment: incoming.comment };
+            }
           });
         });
 
@@ -365,8 +404,7 @@ export function GradingSheet({
       // 1. Sauvegarder les notes
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
-          const evIndex = group.evaluationIds.indexOf(evId);
-          const subjectId = group.subjects[evIndex]?.id;
+          const subjectId = getSubjectIdForEvaluation(group, evId);
           if (!subjectId) {
             console.warn(`No subjectId found for evaluation ${evId}, skipping`);
             return;

@@ -449,6 +449,47 @@ class ApiService {
     return _handleResponse(response) as Map<String, dynamic>;
   }
 
+  // ─── E2EE (V8 — parité web, POST/GET /chat/keys) ────────────────
+
+  /// Publie la clé publique SPKI base64 de l'utilisateur courant
+  /// (POST /chat/keys {userId, publicKey}) — la clé privée ne part jamais.
+  static Future<void> publishPublicKey(String userId, String publicKeySpkiB64) async {
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    await http.post(
+      Uri.parse('$base/chat/keys'),
+      headers: headers,
+      body: jsonEncode({'userId': userId, 'publicKey': publicKeySpkiB64}),
+    );
+  }
+
+  /// Récupère les clés publiques d'utilisateurs (GET /chat/keys?userIds=a,b).
+  /// Renvoie { userId: publicKeySpkiB64 } — absentes si l'utilisateur
+  /// n'a jamais publié de clé.
+  static Future<Map<String, String>> getPublicKeys(List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final base = await ApiConfig.baseUrl;
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('$base/chat/keys?userIds=${userIds.join(',')}'),
+      headers: headers,
+    );
+    final data = await _handleResponse(response);
+    final result = <String, String>{};
+    if (data is List) {
+      for (final entry in data) {
+        if (entry is Map<String, dynamic>) {
+          final uid = entry['userId'] as String?;
+          final key = entry['publicKey'] as String?;
+          if (uid != null && key != null && key.isNotEmpty) {
+            result[uid] = key;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   static Future<void> markConversationRead(String conversationId) async {
     final base = await ApiConfig.baseUrl;
     final userId = await AuthService.getUserId();

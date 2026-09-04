@@ -29,26 +29,19 @@ import '../services/chat_local_storage.dart';
 import '../services/voice_message_service.dart';
 // ⭐ V3-11: Helm Connect theme helpers (Royal Blue + gold)
 import '../theme/helm_theme.dart';
-// ⭐ E2E encryption — DISABLED for now (pointycastle 3.x API incompatibility)
-// Will be re-enabled in V4 with proper Signal Protocol.
-// import '../services/crypto_service.dart';
+// ⭐ V8 — E2EE réel (RSA-OAEP 2048/SHA-256, interopérable web)
+//    Remplace le stub CryptoService (désactivé depuis la V3-8).
+import '../services/e2ee_service.dart';
+// ⭐ V8 — fils de discussion (panneau dédié, parité web V5 Threads)
+import 'thread_screen.dart';
 // ⭐ V3-5: WebRTC calls + branded call screen
 import '../services/call_service.dart';
 import 'call_screen.dart';
 
-// Stub for CryptoService (all methods are no-ops, encryption falls back to plaintext)
 // ⭐ V5 — appels de groupe + écran membres (import du service câblé)
 import '../services/group_call_service.dart';
 import 'group_call_screen.dart';
 import 'group_members_screen.dart';
-
-class CryptoService {
-  static bool isEncrypted(String content) => false;
-  static Future<String> decryptMessage(String content) async => content;
-  static Future<String> encryptMessage(String content, String recipientKey) async => content;
-  static Future<bool> hasPrivateKey() async => false;
-  static Future<String> generateKeyPair() async => '';
-}
 
 // ═════════════════════════════════════════════════════════════════
 // ⭐ V7 (parité web/Yeshua) — COULEURS DE BULLE PAR UTILISATEUR
@@ -127,8 +120,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   final Map<String, _ReplyQuote> _replyQuoteCache = {};
   // ⭐ V3-5: WebRTC call service (audio + video)
   late final CallService _callService;
-  // ⭐ E2E: cache of userId → base64 SPKI public key (fetched once per conversation)
-  final Map<String, String> _recipientPublicKeys = {};
+  // ⭐ V8 — E2EE : contenus déchiffrés (id → texte clair, pass async après
+  //    chargement — miroir de decryptedContents du web) + copies en clair
+  //    de MES messages chiffrés (repli d'affichage côté expéditeur).
+  final Map<String, String> _decryptedContents = {};
+  final Map<String, String> _ownPlaintextCopies = {};
   // ⭐ V3-11: Voice message recording state
   final VoiceMessageService _voiceService = VoiceMessageService();
   bool _isRecording = false;
@@ -151,7 +147,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   //    codé en dur pour TOUS les directs). getPresence + socket user:online/offline.
   String? _otherUserId;
   bool _otherOnline = false;
-  String? _otherLastSeen;
+  // ⭐ V8 — type corrigé : DateTime (avant String — 3 erreurs d'analyse
+  //    V7 : .day/.month sur String + affectations DateTime → String?)
+  DateTime? _otherLastSeen;
 
   String get _presenceLabel {
     if (widget.conversation.type == 'GROUP') {
@@ -199,6 +197,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     _loadMessages();
     // ⭐ V6 — présence réelle du correspondant (API + socket)
     _loadCurrentUserIdThenPresence();
+    // ⭐ V8 — E2EE : génère/publie les clés (une fois par appareil) puis
+    //    évalue la disponibilité E2E de cette conversation (async, silencieux)
+    _ensureE2EKeys();
     // ⭐ Socket.io: connect for realtime (replaces 10s polling)
     _initSocket();
     // ⭐ V3-5: Initialize WebRTC call service + bind socket callbacks
@@ -247,26 +248,31 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
   }
 
-  // ⭐ E2E: ensure this user has a key pair + fetch recipient public keys.
-  //    Called on first message send. Best-effort — falls back to plaintext
-  //    if the recipient has no key, mirroring the web client.
+  // ⭐ V8 — E2EE : clés locales générées une fois par appareil (isolate
+  //    séparé, zéro jank) + publication de la clé publique. Best-effort :
+  //    en cas d'échec réseau, E2E reste simplement désactivé (messages en
+  //    clair) — exactement le repli du client web.
   Future<void> _ensureE2EKeys() async {
-    // ⭐ E2E: DISABLED — will be re-enabled in V4 with Signal Protocol
-    return;
+    final userId = await AuthService.getUserId();
+    if (userId == null || userId.isEmpty) return;
+    await E2eeService.ensureKeyPair(userId: userId);
+    await _refreshE2eAvailability();
   }
-  //    or the first available key (GROUP conv — V2 limitation, V3 will use
-  //    a per-conversation symmetric key wrapped for each member).
-  String? _primaryRecipientPublicKey() {
-    if (_recipientPublicKeys.isEmpty) return null;
-    if (widget.conversation.type == 'DIRECT') {
-      final other = widget.conversation.participants.firstWhere(
-        (p) => p.userId != _currentUserId,
-        orElse: () => widget.conversation.participants.first,
-      );
-      return _recipientPublicKeys[other.userId];
+
+  // ⭐ V8 — disponibilité E2EE de la conversation COURANTE :
+  //    DIRECT + clé privée locale + clé publique du correspondant.
+  bool _e2eAvailable = false;
+  Future<void> _refreshE2eAvailability() async {
+    if (widget.conversation.type != 'DIRECT') {
+      if (_e2eAvailable) setState(() => _e2eAvailable = false);
+      return;
     }
-    // GROUP: use the first available key
-    return _recipientPublicKeys.values.first;
+    final other = widget.conversation.participants
+        .where((p) => p.userId != _currentUserId)
+        .toList();
+    if (other.isEmpty) return;
+    final ok = await E2eeService.isDirectE2eeAvailable(other.first.userId);
+    if (mounted && ok != _e2eAvailable) setState(() => _e2eAvailable = ok);
   }
 
   Future<void> _loadCurrentUserId() async {
@@ -606,14 +612,46 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       final pending = await ChatLocalStorage.getPendingMessages();
       if (pending.isEmpty) return;
 
+      // ⭐ V8 — clé publique du destinataire de la conversation courante
+      //    (re-chiffrement au re-flush, miroir du web).
+      String? flushOtherKey;
+      if (widget.conversation.type == 'DIRECT') {
+        final other = widget.conversation.participants
+            .where((p) => p.userId != _currentUserId)
+            .toList();
+        if (other.isNotEmpty) {
+          flushOtherKey = await E2eeService.getPublicKey(other.first.userId);
+        }
+      }
+
       // Send in chunks of 5 to avoid flooding the server
       for (var i = 0; i < pending.length; i += 5) {
         final chunk = pending.skip(i).take(5).toList();
         await Future.wait(chunk.map((p) async {
           try {
+            // ⭐ V8 — E2EE au re-flush : chiffrer comme l'envoi principal quand
+            //    le message concerne la conversation courante (clé connue,
+            //    contenu court, pas déjà chiffré).
+            var contentOut = p.content;
+            if (flushOtherKey != null &&
+                p.conversationId == widget.conversation.id &&
+                p.content.length < 400 &&
+                !E2eeService.isEncrypted(p.content)) {
+              final encrypted = await E2eeService.encryptFor(
+                widget.conversation.participants
+                    .firstWhere((pp) => pp.userId != _currentUserId,
+                        orElse: () => widget.conversation.participants.first)
+                    .userId,
+                p.content,
+              );
+              if (encrypted != null) contentOut = encrypted;
+            }
             await ApiService.sendTextMessage(
               conversationId: p.conversationId,
-              content: p.content,
+              content: contentOut,
+              // ⭐ V8 — BUGFIX : replyToId était omis au re-flush → les réponses
+              //    de fil mises en file hors ligne perdaient leur rattachement.
+              replyToId: p.replyToId,
             );
             // Success — remove from queue + mark as sent in local cache
             await ChatLocalStorage.removePendingMessage(p.localId);
@@ -1066,10 +1104,19 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     try {
       final json = await ApiService.listMessages(widget.conversation.id);
       final userId = await AuthService.getUserId();
-      // ⭐ E2E: DISABLED — messages sent as plaintext for now
-      for (final m in json) {
-        // No decryption needed — all messages are plaintext
-      }
+      // ⭐ V8 — avant d'écraser le cache : récolte les copies EN CLAIR de mes
+      //    messages (phase optimiste) pour le repli d'affichage E2E.
+      try {
+        final cachedNow = await ChatLocalStorage.getMessages(widget.conversation.id);
+        for (final c in cachedNow) {
+          if (userId != null &&
+              c.senderId == userId &&
+              c.content.isNotEmpty &&
+              !E2eeService.isEncrypted(c.content)) {
+            _ownPlaintextCopies[c.id] = c.content;
+          }
+        }
+      } catch (_) {/* cache optionnel */}
       if (mounted) {
         setState(() {
           _messages = json.map((m) => Message.fromJson(m, userId ?? '')).toList();
@@ -1103,6 +1150,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         // Mark as read
         ApiService.markConversationRead(widget.conversation.id);
         _scrollToBottom();
+        // ⭐ V8 — pass de déchiffrement asynchrone des contenus « E2E: »
+        //    (miroir de l'effet decryptedContents du web)
+        _decryptPendingMessages();
       }
       // ⭐ V3-1: Save the fresh messages to local cache
       try {
@@ -1130,6 +1180,46 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         );
       }
     }
+  }
+
+  // ⭐ V8 — E2EE : déchiffre en tâche de fond les messages « E2E: » reçus
+  //    (les MIENS restent indéchiffrables par moi — repli sur la copie
+  //    locale en clair). Met à jour l'affichage uniquement si nécessaire.
+  Future<void> _decryptPendingMessages() async {
+    final encrypted = _messages.where((m) => E2eeService.isEncrypted(m.content)).toList();
+    if (encrypted.isEmpty) return;
+    var changed = false;
+    for (final m in encrypted) {
+      if (_decryptedContents.containsKey(m.id)) continue;
+      if (m.isOwn) {
+        final own = _ownPlaintextCopies[m.id];
+        if (own != null && !E2eeService.isEncrypted(own)) {
+          _decryptedContents[m.id] = own;
+          changed = true;
+        }
+        continue;
+      }
+      final plain = await E2eeService.decryptContent(m.content);
+      if (plain != null) {
+        _decryptedContents[m.id] = plain;
+        changed = true;
+      }
+    }
+    if (changed && mounted) setState(() {});
+  }
+
+  /// ⭐ V8 — contenu à AFFICHER : clair → stripHtml ; chiffré → déchiffré /
+  ///    repli expéditeur / placeholder 🔒 (jamais de base64 brut à l'écran).
+  String _displayContent(Message msg) {
+    final content = msg.content ?? '';
+    if (!E2eeService.isEncrypted(content)) return stripHtml(content);
+    final decrypted = _decryptedContents[msg.id];
+    if (decrypted != null) return decrypted;
+    if (msg.isOwn) {
+      final own = _ownPlaintextCopies[msg.id];
+      if (own != null && !E2eeService.isEncrypted(own)) return own;
+    }
+    return '🔒 Message chiffré';
   }
 
   // ⭐ V3-12: Smart scroll-to-bottom — uses the same logic as the web ResizeObserver
@@ -1176,10 +1266,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     if (rawContent.isEmpty) return;
     setState(() => _sending = true);
 
-    // ⭐ E2E: DISABLED — sending as plaintext for now
+    // ⭐ V8 — E2EE : chiffre POUR le destinataire si les conditions web sont
+    //    réunies (DIRECT + clés publiées des deux côtés + < 400 caractères).
+    //    La copie locale (optimiste + file offline) reste en CLAIR : je ne
+    //    peux pas déchiffrer mon propre message — repli d'affichage dédié.
     await _ensureE2EKeys();
-    final recipientKey = _primaryRecipientPublicKey();
-    final content = rawContent; // E2E disabled — always plaintext
+    String contentToSend = rawContent;
+    if (_e2eAvailable && widget.conversation.type == 'DIRECT' && rawContent.length < 400) {
+      final other = widget.conversation.participants
+          .where((p) => p.userId != _currentUserId)
+          .toList();
+      if (other.isNotEmpty) {
+        final encrypted = await E2eeService.encryptFor(other.first.userId, rawContent);
+        if (encrypted != null) contentToSend = encrypted;
+      }
+    }
+    final content = rawContent; // copie locale/affichage — toujours en clair
 
     // ⭐ V3-4: Capture the replyToId if user is replying to a message
     final replyToId = _replyToMessage?.id;
@@ -1200,6 +1302,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       status: 'pending',
       localId: localId,
     );
+    // ⭐ V8 — copie en clair pour le repli d'affichage de mes messages chiffrés
+    _ownPlaintextCopies[localId] = content;
 
     // Append to local cache + pending queue (with replyToId if replying)
     await ChatLocalStorage.appendMessage(localMsg);
@@ -1215,7 +1319,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
     // Display immediately in UI (with reply quote if applicable)
     final replySenderName = _replyToMessage?.senderName;
-    final replyContent = stripHtml(_replyToMessage?.content);
+    // ⭐ V8 — l'aperçu de citation passe par _displayContent (parent chiffré →
+    //    repli copie clair / déchiffré, jamais de base64 brut)
+    final replyContent = _replyToMessage == null ? '' : _displayContent(_replyToMessage!);
     if (mounted) {
       setState(() {
         _messages = [..._messages, Message.fromJson({
@@ -1247,11 +1353,18 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       if (widget.conversation.type == 'CHANNEL') {
         await ApiService.broadcastChannelMessage(widget.conversation.id, content);
       } else {
-        await ApiService.sendTextMessage(
+        final sent = await ApiService.sendTextMessage(
           conversationId: widget.conversation.id,
-          content: content,
+          content: contentToSend,
           replyToId: replyToId,
         );
+        // ⭐ V8 — associe la copie en clair à l'ID SERVEUR : après rechargement,
+        //    mon message arrive chiffré (« E2E: ») et ce repli permet de
+        //    l'afficher en clair chez l'expéditeur (miroir du web).
+        final serverId = sent['id'];
+        if (serverId is String && contentToSend != rawContent) {
+          _ownPlaintextCopies[serverId] = rawContent;
+        }
       }
       // Success — remove from pending queue + reload from server (replaces localId with server id)
       await ChatLocalStorage.removePendingMessage(localId);
@@ -1337,7 +1450,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               if (data['summary'] != null) ...[
                 const Text('Synthèse', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF6366F1))),
                 const SizedBox(height: 4),
-                Text(data['summary'], style: const TextStyle(fontSize: 13)),
+                Text(data['summary'].toString(), style: const TextStyle(fontSize: 13)),
                 const SizedBox(height: 12),
               ],
               if ((data['keyPoints'] as List?)?.isNotEmpty == true) ...[
@@ -1379,7 +1492,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     children: [
                       const Text('Titre suggéré', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Color(0xFF64748B))),
                       const SizedBox(height: 2),
-                      Text(data['suggestedTitle'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      Text(data['suggestedTitle'].toString(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
@@ -1490,6 +1603,33 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   // ⭐ V7 — messages épinglés de la conversation (bandeau sous l'app bar)
   List<Message> get _pinnedMessages => _messages.where((m) => m.isPinned && !m.isDeleted).toList();
 
+  // ⭐ V8 — fils de discussion : compteur de réponses par message parent
+  //    (réponses = messages avec replyToId = parent, mêmes règles que le web).
+  Map<String, int> get _replyCountByParent {
+    final counts = <String, int>{};
+    for (final m in _messages) {
+      final parentId = m.replyToId;
+      if (parentId != null && !m.isDeleted && m.type != 'SYSTEM') {
+        counts[parentId] = (counts[parentId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /// ⭐ V8 — ouvre le fil de discussion d'un message (écran dédié).
+  void _openThread(Message msg) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: '/thread'),
+        builder: (_) => ThreadScreen(
+          conversation: widget.conversation,
+          parentMessage: msg,
+          currentUserId: _currentUserId,
+        ),
+      ),
+    );
+  }
+
   // ⭐ V7 — bandeau épinglés (parité web) : « N messages épinglés » + aperçu du
   //    dernier + tap → liste (aperçu + désépingler).
   Widget _buildPinnedBanner() {
@@ -1510,7 +1650,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '${pinned.length} message${pinned.length > 1 ? 's' : ''} épinglé${pinned.length > 1 ? 's' : ''} • ${stripHtml(last.content).isEmpty ? (last.isAttachment ? 'Pièce jointe' : 'Message') : stripHtml(last.content)}',
+                '${pinned.length} message${pinned.length > 1 ? 's' : ''} épinglé${pinned.length > 1 ? 's' : ''} • ${_displayContent(last).isEmpty ? (last.isAttachment ? 'Pièce jointe' : 'Message') : _displayContent(last)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12, color: Color(0xFF0958D9)),
@@ -1557,7 +1697,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                         child: Text(m.senderName.isNotEmpty ? m.senderName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                       ),
                       title: Text(
-                        stripHtml(m.content).isEmpty ? (m.isAttachment ? (m.attachmentName ?? 'Pièce jointe') : 'Message') : stripHtml(m.content),
+                        _displayContent(m).isEmpty ? (m.isAttachment ? (m.attachmentName ?? 'Pièce jointe') : 'Message') : _displayContent(m),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13),
@@ -1627,16 +1767,29 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 children: [
                   Text(displayName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   // ⭐ V6 — présence RÉELLE (avant : « en ligne » en dur)
-                  Text(
-                    isChannel
-                        ? 'Canal de diffusion'
-                        : _isOtherTyping
-                            ? 'tape…'
-                            : _presenceLabel,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: _isOtherTyping || _otherOnline ? HelmColors.goldLight : HelmColors.goldLight.withOpacity(0.65),
-                    ),
+                  // ⭐ V8 — cadenas E2E (parité Yeshua/web) quand le chiffrement
+                  //    de bout en bout est actif sur ce direct.
+                  Row(
+                    children: [
+                      if (_e2eAvailable) ...[
+                        const Icon(Icons.lock, size: 10, color: HelmColors.goldLight),
+                        const SizedBox(width: 3),
+                      ],
+                      Expanded(
+                        child: Text(
+                          isChannel
+                              ? 'Canal de diffusion'
+                              : _isOtherTyping
+                                  ? 'tape…'
+                                  : _presenceLabel,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _isOtherTyping || _otherOnline ? HelmColors.goldLight : HelmColors.goldLight.withOpacity(0.65),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1784,7 +1937,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0958D9)),
                         ),
                         Text(
-                          stripHtml(_replyToMessage!.content),
+                          stripHtml(_displayContent(_replyToMessage!)),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
@@ -2179,6 +2332,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       reactionCounts[r.emoji] = (reactionCounts[r.emoji] ?? 0) + 1;
       if (r.userId == _currentUserId) myReactions[r.emoji] = true;
     }
+    // ⭐ V8 — nombre de réponses dans le fil de ce message (badge)
+    final threadReplyCount = _replyCountByParent[msg.id] ?? 0;
 
     return Align(
       alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
@@ -2219,12 +2374,15 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               Builder(builder: (context) {
                 // Prefer backend-provided replyToSenderName/Content, otherwise use cache
                 final quote = _replyQuoteCache[msg.replyToId];
+                // ⭐ V8 — parent chiffré ? priorité au contenu déchiffré
+                final decryptedParent = msg.replyToId != null ? _decryptedContents[msg.replyToId] : null;
                 final quoteSender = msg.replyToSenderName?.isNotEmpty == true
                     ? msg.replyToSenderName!
                     : quote?.senderName ?? '';
-                final quoteContent = msg.replyToContent?.isNotEmpty == true
-                    ? msg.replyToContent!
-                    : quote?.content ?? '';
+                final quoteContent = decryptedParent ??
+                    (msg.replyToContent?.isNotEmpty == true
+                        ? msg.replyToContent!
+                        : quote?.content ?? '');
                 if (quoteSender.isEmpty && quoteContent.isEmpty) {
                   return const SizedBox.shrink();
                 }
@@ -2270,7 +2428,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               _buildPollBubble(msg, isOwn),
             ]
             else if (msg.content != null && msg.content!.isNotEmpty && msg.type != 'AUDIO')
-              Text(stripHtml(msg.content), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
+              Text(_displayContent(msg), style: const TextStyle(fontSize: 14, color: Color(0xFF172033))),
             // ⭐ V3-11: Audio message bubble — play button + waveform + duration
             if (msg.isAttachment && msg.type == 'AUDIO') ...[
               const SizedBox(height: 4),
@@ -2343,6 +2501,33 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 ],
               ],
             ),
+            // ⭐ V8 (parité web V5 Threads) — badge « N réponse(s) » sous la
+            //    bulle : ouvre le fil de discussion dédié.
+            if (threadReplyCount > 0) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => _openThread(msg),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE6F4FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFBAE0FF)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.forum, size: 12, color: Color(0xFF0958D9)),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$threadReplyCount réponse${threadReplyCount > 1 ? 's' : ''}',
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF0958D9)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         ),
@@ -2527,7 +2712,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           ),
         ),
       ),
-    ),
+        ); // ⭐ V8 — BUGFIX : `),` au lieu de `);` — le return GestureDetector(…)
+           //    n'était JAMAIS terminé (erreur de syntaxe, l'app ne compilait pas)
       },
     );
   }
@@ -2865,6 +3051,22 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 _handleReply(msg);
               },
             ),
+            // ⭐ V8 (parité web V5 Threads) — Fil de discussion : ouvre le panneau
+            //    dédié (message parent + réponses + composer du fil)
+            Builder(builder: (sheetContext) {
+              final replies = _replyCountByParent[msg.id] ?? 0;
+              return ListTile(
+                leading: const Icon(Icons.forum, color: Color(0xFF0958D9)),
+                title: const Text('Fil de discussion'),
+                subtitle: replies > 0
+                    ? Text('$replies réponse${replies > 1 ? 's' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)))
+                    : null,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openThread(msg);
+                },
+              );
+            }),
             ListTile(
               leading: const Text('😊', style: TextStyle(fontSize: 20)),
               title: const Text('Réagir'),
@@ -2892,7 +3094,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
               title: const Text('Copier'),
               onTap: () {
                 Navigator.pop(context);
-                final textContent = stripHtml(msg.content);
+                final textContent = _displayContent(msg);
                 if (textContent.isNotEmpty) {
                   Clipboard.setData(ClipboardData(text: textContent)).then((_) {
                     if (mounted) {
@@ -3350,7 +3552,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
 
   // ⭐ V3-4: Edit message — open an inline edit dialog
   void _startEditMessage(Message msg) {
-    _editController.text = stripHtml(msg.content);
+    _editController.text = _displayContent(msg);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -3429,7 +3631,7 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                       const Text('Message à transférer', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                       const SizedBox(height: 2),
                       Text(
-                        stripHtml(msg.content),
+                        _displayContent(msg),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 12),

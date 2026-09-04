@@ -137,8 +137,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildMessageItem(Map<String, dynamic> m) {
     return ListTile(
       leading: const Icon(Icons.message, color: Color(0xFF1677FF)),
-      title: Text(m['senderName'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-      subtitle: Text(m['content'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+      title: Text(m['senderName'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+      subtitle: Text(m['content'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
       onTap: () => _openConversation(m['conversationId'] as String),
     );
   }
@@ -152,7 +152,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
         child: Text('${p['firstName']?[0] ?? ''}${p['lastName']?[0] ?? ''}'.toUpperCase(), style: const TextStyle(color: Color(0xFF0958D9), fontWeight: FontWeight.bold)),
       ),
       title: Text('${p['firstName']} ${p['lastName']}'),
-      subtitle: Text(p['email'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(p['email'] as String? ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: canDirect
           ? const Icon(Icons.chat_bubble_outline, color: Color(0xFF1677FF), size: 18)
           : (p['isSameTenant'] == true ? const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 16) : null),
@@ -185,7 +185,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildGroupItem(Map<String, dynamic> g) {
     return ListTile(
       leading: const CircleAvatar(child: Icon(Icons.group, color: Colors.white), backgroundColor: Color(0xFF13C2C2)),
-      title: Text(g['name'] ?? ''),
+      title: Text(g['name'] as String? ?? ''),
       subtitle: Text('${g['participantCount']} participants'),
       onTap: () => _openConversation(g['id'] as String),
     );
@@ -194,7 +194,7 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
   Widget _buildFileItem(Map<String, dynamic> f) {
     return ListTile(
       leading: const Icon(Icons.attach_file, color: Color(0xFFF59E0B)),
-      title: Text(f['attachmentName'] ?? 'Fichier', maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(f['attachmentName'] as String? ?? 'Fichier', maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text('${f['conversationName']} · ${f['senderName']}'),
       onTap: () => _openConversation(f['conversationId'] as String),
     );
@@ -204,8 +204,8 @@ class _GlobalSearchScreenState extends State<GlobalSearchScreen> {
     final priority = a['priority'] as String? ?? 'NORMAL';
     return ListTile(
       leading: const Icon(Icons.campaign, color: Color(0xFFDC2626)),
-      title: Text(a['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text(a['body'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+      title: Text(a['title'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(a['body'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
       trailing: Text(priority, style: TextStyle(fontSize: 10, color: priority == 'URGENT' ? const Color(0xFFDC2626) : const Color(0xFF667085))),
     );
   }

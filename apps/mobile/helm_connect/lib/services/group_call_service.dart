@@ -622,8 +622,11 @@ class GroupCallService extends ChangeNotifier {
     // Glare (nous avons une offre locale, l'autre aussi) — négociation
     // parfaite : le pair à l'userId le plus PETIT est « polite » → il
     // abandonne son offre et répond à la nôtre.
-    final myOfferPending =
-        existingPc.localDescription?.type == 'offer' && existingPc.remoteDescription == null;
+    // ⭐ V8 — BUGFIX : localDescription/remoteDescription n'existent pas sur
+    //    l'interface webrtc_interface 1.5+ (getters retirés) → méthodes async.
+    final localDesc = await existingPc.getLocalDescription();
+    final remoteDesc = await existingPc.getRemoteDescription();
+    final myOfferPending = localDesc?.type == 'offer' && remoteDesc == null;
     if (myOfferPending) {
       final iAmImpolite = (_myUserId ?? '').compareTo(peerUserId) > 0;
       if (iAmImpolite) {

@@ -171,7 +171,11 @@ class Conversation {
     if (t == 'DOCUMENT') return '📎 Document';
     if (t == 'POLL') return '📊 Sondage';
     if (t == 'ANNOUNCEMENT') return '📢 Annonce';
-    final preview = stripHtml(lastMessagePreview);
+    // ⭐ V8 — E2EE : aperçu chiffré → placeholder cadenas (jamais de base64
+    //    brut dans la liste des conversations, parité web)
+    final raw = lastMessagePreview ?? '';
+    if (raw.startsWith('E2E:')) return '🔒 Message chiffré';
+    final preview = stripHtml(raw);
     return preview.isEmpty ? 'Aucun message' : preview;
   }
 

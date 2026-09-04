@@ -29,6 +29,9 @@ import '../services/api_service.dart';
 import '../services/socket_service.dart';
 import '../services/call_service.dart';
 import '../services/group_call_service.dart';
+// ⭐ V8 — purge des caches E2EE mémoire à la déconnexion (les clés de
+//    l'appareil sont conservées — miroir de l'IndexedDB du web)
+import '../services/e2ee_service.dart';
 import '../theme/helm_theme.dart';
 import 'conversation_detail_screen.dart';
 import 'call_screen.dart';
@@ -233,6 +236,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // Silencieux : la déconnexion ne doit jamais être bloquée
     }
     await ApiService.logout();
+    // ⭐ V8 — purge les caches E2EE en mémoire (clés locales conservées)
+    E2eeService.reset();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }

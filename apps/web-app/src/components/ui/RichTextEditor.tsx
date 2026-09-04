@@ -30,6 +30,15 @@ interface RichTextEditorProps {
    *  Si le handler parent appelle e.preventDefault(), l'événement est
    *  complètement intercepté (ex : Enter = envoyer dans le chat). */
   onKeyDown?: (e: React.KeyboardEvent) => void;
+  /** ⭐ V6.1 (fix « carré restreint » mobile) — masque la barre de mise en
+   *  forme (gras/italique/listes). Le chat n'en a pas besoin (syntaxe
+   *  markdown + raccourcis Ctrl+B/I subsistent) : la barre consommait de
+   *  la HAUTEUR inutile dans le composer mobile et écrasait visuellement
+   *  la zone de saisie en « carré restreint ». */
+  showToolbar?: boolean;
+  /** ⭐ V6.1 — classes Tailwind additionnelles pour la zone éditable
+   *  (ex : taille de police spécifique au chat mobile). */
+  editorClassName?: string;
 }
 
 export function RichTextEditor({
@@ -39,6 +48,8 @@ export function RichTextEditor({
   disabled = false,
   minHeight = "96px",
   onKeyDown,
+  showToolbar = true,
+  editorClassName = "",
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
@@ -97,8 +108,9 @@ export function RichTextEditor({
 
   return (
     <div className="w-full border-0">
-      {/* Barre d'outils (masquée si disabled) */}
-      {!disabled && (
+      {/* Barre d'outils (masquée si disabled — ou showToolbar=false pour le
+          chat : fix « carré restreint » mobile, V6.1) */}
+      {!disabled && showToolbar && (
         <div className="flex items-center gap-0.5 border-b border-slate-200 px-1 py-0.5 bg-slate-50/50">
           <button
             type="button"
@@ -153,6 +165,7 @@ export function RichTextEditor({
         data-placeholder={placeholder}
         className={cn(
           "w-full px-2 py-1 text-xs text-slate-700 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 overflow-y-auto",
+          editorClassName,
           disabled && "bg-slate-50"
         )}
         style={{ minHeight, maxHeight: "200px" }}

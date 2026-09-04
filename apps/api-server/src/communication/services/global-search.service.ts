@@ -220,23 +220,52 @@ export class GlobalSearchService {
     likeQuery: string,
     limit: number,
   ): Promise<GlobalSearchResult['people']> {
+    // ⭐ V6.1 (fix recherche téléphone) — normalisation des numéros :
+    //    la production mélange +229 97…, 019…, 97 12 34 56. On teste des
+    //    variantes de la requête (chiffres uniquement) contre le numéro
+    //    NORMALISÉ. Enseignants : numéro dans teachers.phone (users n'a
+    //    pas de colonne phone) + noms de secours via la fiche enseignant.
+    const rawQuery = likeQuery.replace(/%/g, '').trim();
+    const digits = rawQuery.replace(/\D/g, '');
+    const isPhoneish = digits.length >= 4;
+    const phoneVariants = isPhoneish
+      ? Array.from(new Set([
+          digits,
+          digits.replace(/^00/, ''),
+          digits.replace(/^229/, ''),
+          digits.replace(/^0+/, ''),
+          digits.length >= 10 ? digits.slice(-8) : null,
+        ].filter((v): v is string => !!v && v.length >= 4)))
+      : [];
+    const phonePatterns = phoneVariants.map(v => `%${v}%`);
+    const rawDigits = isPhoneish ? digits : null;
+
     // Search in users table
     const userRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT u.id, u."firstName", u."lastName", u.email, u.role,
              t."name" AS "tenantName",
-             (u."tenantId" = $1) AS "isSameTenant"
+             (u."tenantId" = $1) AS "isSameTenant",
+             NULLIF(TRIM(tch."firstName"), '') AS "teacherFirstName",
+             NULLIF(TRIM(tch."lastName"), '') AS "teacherLastName"
       FROM "users" u
       LEFT JOIN "tenants" t ON t.id = u."tenantId"
+      LEFT JOIN LATERAL (
+        SELECT "firstName", "lastName", "phone" FROM "teachers"
+        WHERE u."email" IS NOT NULL AND LOWER("email") = LOWER(u."email")
+        LIMIT 1
+      ) tch ON true
       WHERE u.id != $2
         AND (
           LOWER(COALESCE(u."firstName", '')) LIKE $3
           OR LOWER(COALESCE(u."lastName", '')) LIKE $3
           OR LOWER(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) LIKE $3
           OR LOWER(COALESCE(u."email", '')) LIKE $3
+          OR (tch."firstName" IS NOT NULL AND LOWER(tch."firstName" || ' ' || tch."lastName") LIKE $3)
+          OR (tch."phone" IS NOT NULL AND regexp_replace(tch."phone", '[^0-9]', '', 'g') LIKE ANY($4::text[]))
         )
       ORDER BY "isSameTenant" DESC, u."lastName" ASC, u."firstName" ASC
       LIMIT ${limit}
-    `, tenantId, userId, likeQuery);
+    `, tenantId, userId, likeQuery, phonePatterns);
 
     // Also search in guardians table (parents without account)
     let guardianRows: any[] = [];
@@ -253,11 +282,16 @@ export class GlobalSearchService {
           OR LOWER(COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."firstName", '') || ' ' || COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."email", '')) LIKE $2
-          OR LOWER(COALESCE(g."phone", '')) LIKE $2
+          OR (
+            g."phone" IS NOT NULL AND (
+              regexp_replace(g."phone", '[^0-9]', '', 'g') LIKE ANY($4::text[])
+              OR $5 LIKE '%' || RIGHT(regexp_replace(g."phone", '[^0-9]', '', 'g'), 8) || '%'
+            )
+          )
         )
         ORDER BY g."lastName" ASC, g."firstName" ASC
         LIMIT ${limit}
-      `, tenantId, likeQuery);
+      `, tenantId, likeQuery, limit, phonePatterns, rawDigits);
     } catch (e: any) {
       this.logger.warn(`Guardians search failed: ${e.message}`);
     }
@@ -271,8 +305,8 @@ export class GlobalSearchService {
       if (u.email) seenEmails.add(u.email.toLowerCase());
       people.push({
         userId: u.id,
-        firstName: u.firstName || '',
-        lastName: u.lastName || '',
+        firstName: u.firstName || u.teacherFirstName || '',
+        lastName: u.lastName || u.teacherLastName || '',
         email: u.email,
         role: u.role || 'USER',
         roleLabel: this.getRoleLabel(u.role),

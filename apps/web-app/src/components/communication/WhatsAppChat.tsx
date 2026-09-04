@@ -1497,6 +1497,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [channelSending, setChannelSending] = useState(false);
   const channelMessagesEndRef = useRef<HTMLDivElement>(null);
   const activeChannel = channels.find((ch: any) => ch.id === activeChannelId) || null;
+  // ⭐ V6.1 — refs pour les callbacks de canal (le hook socket est mémoïsé
+  //    AVANT les déclarations de loadChannels/openChannel ; les refs
+  //    évitent les closures périmées et les erreurs TDZ).
+  const activeChannelIdRef = useRef<string | null>(null);
+  activeChannelIdRef.current = activeChannelId;
+  const loadChannelsRef = useRef<(() => void) | null>(null);
 
   // ⭐ V6 — MUET PAR CONVERSATION (spec §10, parité Yeshua) : 1h/8h/24h/∞.
   //    Backend : POST /chat/v2/notifications/conversations/:id/mute,
@@ -1585,6 +1591,24 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           return [...prev, data.message];
         });
       }
+      // ⭐ V6.1 (fix broadcast canal) — message d'un CANAL ouvert : le
+      //    backend insère maintenant avec le VRAI conversationId (= id du
+      //    canal) et le broadcaste sur la room conv:<channelId> (rejointe
+      //    par openChannel) → arrivée instantanée dans le fil du canal.
+      //    (ref : le callback est mémoïsé avant la déclaration de
+      //    activeChannelId → ref pour éviter le closure périmé)
+      if (data?.conversationId && data.conversationId === activeChannelIdRef.current) {
+        setChannelMessages(prev => {
+          if (prev.some(m => m.id === data.message?.id)) return prev;
+          return [...prev, data.message];
+        });
+        setTimeout(() => channelMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+      }
+      // ⭐ V6.1 — badge/aperçu de la sidebar Canaux pour toute diffusion
+      //    de canal (même non ouverte). Ref : loadChannels déclaré plus bas.
+      if (data?.isChannel && loadChannelsRef.current) {
+        loadChannelsRef.current();
+      }
       // ⭐ V6 (spec §1) — ACCUSÉ DE RÉCEPTION « DISTRIBUÉ » (✓✓ gris) :
       //    tout message reçu d'un AUTRE utilisateur est marqué distribué
       //    côté serveur (POST /chat/messages/:id/deliver) — l'état intermédiaire
@@ -1594,7 +1618,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         fetch(`/api/chat/messages/${data.message.id}/deliver`, { method: 'POST', credentials: 'include' }).catch(() => {});
       }
       // Also refresh conversation list (for lastMessage preview + unread count)
-      loadConversations();
+      // ⭐ V6.1 — les conversations de type canal ne sont PAS dans la liste
+      //    des conversations (pas de participants) → pas de refresh inutile.
+      if (!data?.isChannel) {
+        loadConversations();
+      }
       // ⭐ DISCORD PARITY: Notification sound on new message.
       //    Plays a short beep using the Web Audio API (no external file needed).
       //    Only plays if the message is NOT from the current user (don't beep
@@ -1818,6 +1846,49 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       if (res.ok) setChannels(await res.json());
     } catch {}
   }, [currentUserId]);
+  // ⭐ V6.1 — exposé via ref aux callbacks mémoïsés plus haut (socket).
+  loadChannelsRef.current = loadChannels;
+
+  // ⭐ V6.1 (fix broadcast canal) — LISTENER TEMPS RÉEL DES CANAUX :
+  //    le backend émet 'channel:message' sur la room personnelle de
+  //    chaque abonné (gateway broadcastChannelMessage). Si le canal est
+  //    ouvert → append au fil (dédup par id) ; sinon → refresh de la
+  //    sidebar Canaux (preview + tri + badge). Notification native +
+  //    son si la page est en arrière-plan (parité Yeshua).
+  useEffect(() => {
+    const listener = (data: { channelId: string; message: any }) => {
+      if (!data?.channelId || !data?.message) return;
+      const m = data.message;
+      if (activeChannelIdRef.current === data.channelId) {
+        setChannelMessages(prev => {
+          if (prev.some(x => x.id === m.id)) return prev;
+          return [...prev, m];
+        });
+        setTimeout(() => channelMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+      }
+      if (loadChannelsRef.current) loadChannelsRef.current();
+      // Son + notification native (page en arrière-plan), sauf si le
+      // canal est ouvert (on est en train de le lire).
+      try {
+        if (m.senderId && m.senderId !== currentUserId && activeChannelIdRef.current !== data.channelId) {
+          playNotificationSound();
+          if (typeof document !== 'undefined' && document.hidden &&
+              typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const senderName = `${m.senderFirstName || m.sender?.firstName || ''} ${m.senderLastName || m.sender?.lastName || ''}`.trim() || 'Canal';
+            const ch = channels.find((c: any) => c.id === data.channelId);
+            let preview = String(m.content || '').replace(/<[^>]*>/g, '');
+            if (m.type === 'SYSTEM') preview = m.content || 'Événement du canal';
+            new Notification(ch?.name || 'Canal', {
+              body: `${senderName} : ${preview.substring(0, 80)}${preview.length > 80 ? '…' : ''}`,
+              tag: m.id,
+            });
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    socket.on('channel:message', listener);
+    return () => { socket.off('channel:message', listener); };
+  }, [socket, currentUserId, channels]);
 
   // ⭐ V6 (spec §6) — AUTO-SYNC DES CANAUX OFFICIELS : à la première ouverture
   //    de la section Canaux (une fois par session), on appelle
@@ -1961,6 +2032,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     setChannelMessages([]);
     setChannelInput('');
     setMobileSidebarOpen(false);
+    // ⭐ V6.1 (temps réel) — rejoindre la room socket du canal : le backend
+    //    broadcaste les diffusions sur conv:<channelId> (message:new), comme
+    //    pour une conversation classique → arrivée instantanée dans le fil.
+    socket.joinConversation(ch.id);
     // Charger les messages du canal (GET /chat/channels/:id/messages)
     fetch(`/api/chat/channels/${ch.id}/messages?limit=100`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : []))
@@ -1979,7 +2054,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         credentials: 'include',
       }).then(() => loadChannels()).catch(() => {});
     }
-  }, [currentUserId, loadChannels]);
+  }, [currentUserId, loadChannels, socket]);
 
   // ⭐ V6 — publier une diffusion dans le canal (POST broadcast)
   const handleBroadcast = useCallback(async () => {
@@ -2011,12 +2086,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, [channelInput, activeChannelId, channelSending, currentUserId, user, loadChannels]);
 
   // ⭐ V6 — (dé)abonnement manuel au canal
+  //    ⭐ V6.1 (parité Yeshua) — notify:true sur l'abonnement explicite →
+  //    message système « X a rejoint le canal » pour tous les abonnés.
   const toggleChannelSubscription = useCallback(async (ch: any) => {
     try {
       const res = await fetch(`/api/chat/channels/${ch.id}/${ch.isSubscribed ? 'unsubscribe' : 'subscribe'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId }),
+        body: JSON.stringify({ userId: currentUserId, notify: !ch.isSubscribed }),
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Opération échouée');
@@ -7890,6 +7967,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         stopTypingRef.current = setTimeout(() => handleStopTyping(), 5000);
                       }}
                       minHeight="36px"
+                      showToolbar={false}
+                      editorClassName="text-[15px] sm:text-sm leading-snug py-2"
                       placeholder="Tapez un message... @mention, /commande, ||spoiler||, ou `code`"
                     />
                   </div>
@@ -8418,8 +8497,21 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
               </div>
             ) : (
               channelMessages.map((m: any) => {
+                // ⭐ V6.1 — messages SYSTEM (« X a rejoint le canal ») :
+                // pastille centrée (comme le fil principal), pas une bulle.
+                if (m.type === 'SYSTEM' || m.senderId === 'system') {
+                  return (
+                    <div key={m.id} className="flex justify-center">
+                      <div className="flex items-center gap-1.5 py-1.5 px-3.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200 text-[11px] font-medium max-w-[85%]">
+                        <UserPlus className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{m.content || 'Événement du canal'}</span>
+                        <span className="opacity-50">· {new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    </div>
+                  );
+                }
                 const mine = m.senderId === currentUserId;
-                const senderName = `${m.senderFirstName || ''} ${m.senderLastName || ''}`.trim() || 'Diffusion';
+                const senderName = `${m.senderFirstName || m.sender?.firstName || ''} ${m.senderLastName || m.sender?.lastName || ''}`.trim() || 'Diffusion';
                 const senderColorIdx = !mine ? hashUserId(m.senderId || 'x') : 0;
                 return (
                   <div key={m.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>

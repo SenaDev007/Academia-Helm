@@ -686,9 +686,15 @@ export class ChatController {
   }
 
   @Post('channels/:id/subscribe')
-  async subscribeToChannel(@Param('id') channelId: string, @Body() body: { userId: string }) {
+  async subscribeToChannel(
+    @Param('id') channelId: string,
+    @Body() body: { userId: string; notify?: boolean },
+  ) {
     if (!body.userId) throw new BadRequestException('userId requis');
-    return this.chatService.subscribeToChannel(channelId, body.userId);
+    // ⭐ V6.1 (parité Yeshua) — notify=true → message système « X a rejoint
+    //    le canal » (abonnement explicite). L'auto-abonnement silencieux à
+    //    l'ouverture du canal ne passe PAS notify.
+    return this.chatService.subscribeToChannel(channelId, body.userId, { notify: !!body.notify });
   }
 
   @Post('channels/:id/unsubscribe')

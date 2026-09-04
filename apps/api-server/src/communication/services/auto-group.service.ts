@@ -299,20 +299,67 @@ export class AutoGroupService {
 
   /**
    * ⭐ V3-12: Get participants for a role-based group.
+   *
+   * ⭐ V6.1 FIX (groupes ROLE/STAFF vides) : la production utilise des rôles
+   *    FRANÇAIS (ENSEIGNANT, DIRECTEUR, DIRECTEUR_MAT_PRI, COMPTABLE…)
+   *    alors que les listes précédentes ne contenaient que les libellés
+   *    anglais (TEACHER, DIRECTOR…) avec un match Prisma `in` SENSIBLE À LA
+   *    CASSE → aucun utilisateur n'était jamais trouvé → groupes vides.
+   *    On passe en SQL brut avec UPPER("role") IN (...) — insensible à la
+   *    casse et couverture complète FR/EN (alignée sur announcement.service
+   *    et dynamic-group.service).
    */
   private async getRoleParticipants(tenantId: string, roleType: string): Promise<string[]> {
     try {
-      let roles: string[] = [];
-      if (roleType === 'TEACHERS') roles = ['TEACHER', 'PROFESSEUR', 'TEACHER_RESP'];
-      else if (roleType === 'ADMINISTRATION') roles = ['PROMOTER', 'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL'];
-      else if (roleType === 'PARENTS') roles = ['PARENT'];
-      else if (roleType === 'ALL_STAFF') roles = ['PROMOTER', 'SUPER_DIRECTOR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL'];
+      const ROLE_SETS: Record<string, string[]> = {
+        TEACHERS: [
+          'ENSEIGNANT', 'TEACHER', 'TEACHER_RESP', 'PROFESSEUR', 'PROF', 'INSTITUTEUR', 'INSTITUTRICE',
+        ],
+        ADMINISTRATION: [
+          'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'OWNER',
+          'SUPER_DIRECTOR', 'DIRECTOR', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'DIRECTOR_GENERAL',
+          'DIRECTEUR_ETABLISSEMENT', 'SCHOOL_DIRECTOR', 'DIRECTEUR', 'DIRECTEUR_MAT_PRI',
+          'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE',
+          'DEPUTY_DIRECTOR', 'DIRECTEUR_ADJOINT',
+          'ADMIN', 'SCHOOL_ADMIN', 'ADMINISTRATEUR', 'ADMINISTRATION',
+          'CENSEUR', 'SURVEILLANT_GENERAL', 'SURVEILLANT', 'SECRETARY_GENERAL', 'SECRETAIRE_GENERAL',
+          'COMPTABLE', 'ACCOUNTANT', 'ECONOME', 'CFO',
+          'PEDAGOGIC_COORDINATOR', 'DIRECTEUR_PEDAGOGIQUE', 'PEDAGOGIC_DIRECTOR',
+        ],
+        PARENTS: ['PARENT', 'GUARDIAN', 'TUTEUR'],
+        ALL_STAFF: [
+          'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'OWNER',
+          'SUPER_DIRECTOR', 'DIRECTOR', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'DIRECTOR_GENERAL',
+          'DIRECTEUR_ETABLISSEMENT', 'SCHOOL_DIRECTOR', 'DIRECTEUR_MAT_PRI',
+          'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE',
+          'DEPUTY_DIRECTOR', 'ADMIN', 'SCHOOL_ADMIN', 'ADMINISTRATEUR',
+          'CENSEUR', 'SURVEILLANT_GENERAL', 'SURVEILLANT', 'SECRETARY_GENERAL', 'SECRETAIRE_GENERAL',
+          'ENSEIGNANT', 'TEACHER', 'TEACHER_RESP', 'PROFESSEUR', 'PROF',
+          'COMPTABLE', 'ACCOUNTANT', 'ECONOME', 'CFO',
+          'PEDAGOGIC_COORDINATOR', 'DIRECTEUR_PEDAGOGIQUE', 'PEDAGOGIC_DIRECTOR',
+        ],
+      };
+      const roles = ROLE_SETS[roleType] || [];
       if (roles.length === 0) return [];
-      const users = await this.prisma.user.findMany({
-        where: { tenantId, role: { in: roles }, status: 'active' },
-        select: { id: true },
-      });
-      return users.map(u => u.id);
+      // ⭐ PARENTS : inclure AUSSI les guardians liés à un compte user
+      //    (certains comptes parents n'ont pas le rôle PARENT sur users).
+      if (roleType === 'PARENTS') {
+        const rows: Array<{ id: string }> = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT u.id FROM "users" u
+           WHERE u."tenantId" = $1 AND u."status" = 'active'
+             AND (UPPER(u."role") = ANY($2::text[])
+                  OR EXISTS (SELECT 1 FROM "guardians" g WHERE g."userId" = u.id AND g."tenantId" = $1))`,
+          tenantId, roles.map(r => r.toUpperCase()),
+        );
+        return rows.map(r => r.id);
+      }
+      const rows: Array<{ id: string }> = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "users"
+         WHERE "tenantId" = $1 AND "status" = 'active'
+           AND UPPER("role") = ANY($2::text[])`,
+        tenantId, roles.map(r => r.toUpperCase()),
+      );
+      return rows.map(r => r.id);
     } catch (e: any) {
       this.logger.warn(`getRoleParticipants failed: ${e.message}`);
       return [];

@@ -525,9 +525,19 @@ export class ChatService {
       SELECT m.*,
              u."firstName" AS "senderFirstName",
              u."lastName" AS "senderLastName",
-             u."role" AS "senderRole"
+             u."role" AS "senderRole",
+             u."avatarUrl" AS "senderAvatarUrl",
+             -- ⭐ V6.1 (fix « Inconnu ») : comptes enseignants créés via
+             -- matricule → users.firstName NULL, le nom vit dans teachers.
+             COALESCE(NULLIF(TRIM(u."firstName"), ''), NULLIF(TRIM(t."firstName"), ''), NULL) AS "resolvedFirstName",
+             COALESCE(NULLIF(TRIM(u."lastName"), ''), NULLIF(TRIM(t."lastName"), ''), NULL) AS "resolvedLastName"
       FROM chat_messages m
       LEFT JOIN "users" u ON u.id = m."senderId"
+      LEFT JOIN LATERAL (
+        SELECT "firstName", "lastName" FROM "teachers"
+        WHERE u."email" IS NOT NULL AND LOWER("email") = LOWER(u."email")
+        LIMIT 1
+      ) t ON true
       LEFT JOIN "chat_message_user_deletions" d ON d."messageId" = m.id AND d."userId" = $3
       WHERE m."conversationId" = $1
         AND m."deletedAt" IS NULL
@@ -598,11 +608,14 @@ export class ChatService {
       isImportant: m.isImportant || false,  // ⭐ V1.5: priority flag
       deletedAt: m.deletedAt,
       sender: {
-        firstName: m.senderFirstName,
-        lastName: m.senderLastName,
+        firstName: m.resolvedFirstName ?? m.senderFirstName,
+        lastName: m.resolvedLastName ?? m.senderLastName,
         avatarUrl: m.senderAvatarUrl,
         role: m.senderRole,
       },
+      // ⭐ V6.1 — champs plats (le frontend les lit avant sender.*)
+      senderFirstName: m.resolvedFirstName ?? m.senderFirstName,
+      senderLastName: m.resolvedLastName ?? m.senderLastName,
       readBy: m.readBy || [],
       reactions: m.reactions || [],  // ⭐ V1.5: emoji reactions
     }));
@@ -743,6 +756,25 @@ export class ChatService {
       `, conversationId);
       const participantIds = participants.map(p => p.userId);
 
+      // ⭐ V6.1 (fix « Inconnu ») — résoudre le nom de l'expéditeur AVANT le
+      //    broadcast : users.firstName, sinon la fiche enseignant (comptes
+      //    matricule). Le gateway affichait « Inconnu » pour ces comptes.
+      let senderInfo: any = null;
+      try {
+        const sRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+          SELECT u."firstName", u."lastName", u."avatarUrl",
+                 NULLIF(TRIM(t."firstName"), '') AS "teacherFirstName",
+                 NULLIF(TRIM(t."lastName"), '') AS "teacherLastName"
+          FROM "users" u
+          LEFT JOIN LATERAL (
+            SELECT "firstName", "lastName" FROM "teachers"
+            WHERE u."email" IS NOT NULL AND LOWER("email") = LOWER(u."email")
+            LIMIT 1
+          ) t ON true
+          WHERE u.id = $1 LIMIT 1`, senderId);
+        senderInfo = sRows[0] || null;
+      } catch { /* nom optionnel */ }
+
       this.chatGateway?.broadcastNewMessage(conversationId, {
         id: msgId,
         conversationId,
@@ -752,6 +784,17 @@ export class ChatService {
         replyToId: data.replyToId || null,
         mentions: data.mentionedUserIds || [],
         createdAt: new Date().toISOString(),
+        senderFirstName: senderInfo
+          ? (senderInfo.firstName || senderInfo.teacherFirstName || null)
+          : null,
+        senderLastName: senderInfo
+          ? (senderInfo.lastName || senderInfo.teacherLastName || null)
+          : null,
+        sender: senderInfo ? {
+          firstName: senderInfo.firstName || senderInfo.teacherFirstName || null,
+          lastName: senderInfo.lastName || senderInfo.teacherLastName || null,
+          avatarUrl: senderInfo.avatarUrl || null,
+        } : null,
       }, participantIds);
 
       // ⭐ MENTIONS: emit a dedicated 'mention:new' event to mentioned users
@@ -1499,6 +1542,29 @@ export class ChatService {
     const limit = Math.min(options.limit || 20, 50);
     const likeQuery = `%${query.trim().toLowerCase()}%`;
 
+    // ⭐ V6.1 (fix recherche téléphone) — normalisation des numéros :
+    //    la production contient des formats incohérents (+229 97…, 019…,
+    //    97 12 34 56). On extrait les chiffres de la requête et on teste
+    //    plusieurs variantes (avec/sans indicatif 229, sans 0 de tête,
+    //    8 derniers chiffres) contre le numéro NORMALISÉ du contact.
+    //    ⭐ Enseignants : users n'a PAS de colonne phone → leur numéro vit
+    //    dans teachers.phone (jointure par email).
+    const digits = (query || '').replace(/\D/g, '');
+    const isPhoneish = digits.length >= 4;
+    const phoneVariants = isPhoneish
+      ? Array.from(new Set([
+          digits,
+          digits.replace(/^00/, ''),
+          digits.replace(/^229/, ''),
+          digits.replace(/^0+/, ''),
+          digits.length >= 10 ? digits.slice(-8) : null,
+        ].filter((v): v is string => !!v && v.length >= 4)))
+      : [];
+    const phonePatterns = phoneVariants.map(v => `%${v}%`);
+    // Variante « inverse » : le numéro stocké normalisé (ex: 229194731717)
+    // se termine par 8 chiffres contenus dans la requête (ex: 0194731717).
+    const rawDigits = isPhoneish ? digits : null;
+
     // ⭐ FIX: users table has NO avatarUrl column AND user_roles JOIN fails.
     //    The role is stored DIRECTLY on users.role.
     //    ⭐ ALSO search guardians table — parents may not have a users entry
@@ -1509,12 +1575,21 @@ export class ChatService {
       : '';
 
     // Part 1: Search in users table (teachers, admin, etc.)
+    //    ⭐ V6.1 : + téléphone enseignant (teachers.phone via email) +
+    //    noms de secours via la fiche enseignant (fix « Inconnu »).
     const userRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT u.id, u."firstName", u."lastName", u."email", u."role",
              t."name" AS "tenantName", u."tenantId",
-             (u."tenantId" = $1) AS "isSameTenant"
+             (u."tenantId" = $1) AS "isSameTenant",
+             NULLIF(TRIM(tch."firstName"), '') AS "teacherFirstName",
+             NULLIF(TRIM(tch."lastName"), '') AS "teacherLastName"
       FROM "users" u
       LEFT JOIN "tenants" t ON t.id = u."tenantId"
+      LEFT JOIN LATERAL (
+        SELECT "firstName", "lastName", "phone" FROM "teachers"
+        WHERE u."email" IS NOT NULL AND LOWER("email") = LOWER(u."email")
+        LIMIT 1
+      ) tch ON true
       WHERE u.id != $2
         ${tenantFilter}
         AND (
@@ -1522,10 +1597,12 @@ export class ChatService {
           OR LOWER(COALESCE(u."lastName", '')) LIKE $3
           OR LOWER(COALESCE(u."firstName", '') || ' ' || COALESCE(u."lastName", '')) LIKE $3
           OR LOWER(COALESCE(u."email", '')) LIKE $3
+          OR (tch."phone" IS NOT NULL AND regexp_replace(tch."phone", '[^0-9]', '', 'g') LIKE ANY($5::text[]))
+          OR (tch."firstName" IS NOT NULL AND LOWER(tch."firstName" || ' ' || tch."lastName") LIKE $3)
         )
       ORDER BY "isSameTenant" DESC, u."lastName" ASC, u."firstName" ASC
       LIMIT $4
-    `, currentTenantId, currentUserId, likeQuery, limit);
+    `, currentTenantId, currentUserId, likeQuery, limit, phonePatterns);
 
     // Part 2: Search in guardians table (parents who may not have a users entry)
     //    Only return guardians from the same tenant (parents belong to a specific school)
@@ -1536,8 +1613,14 @@ export class ChatService {
     //    ⭐ Dedup against users results happens later by email match.
     let guardianRows: any[] = [];
     try {
+      // ⭐ V6.1 (fix recherche téléphone) — normalisation des numéros :
+      //    (a) le numéro normalisé du guardian contient une variante de la
+      //        requête (ex: requête « +229 97 » → 97…) ;
+      //    (b) la requête contient les 8 DERNIERS chiffres du numéro stocké
+      //        (ex: requête « 0194731717 » ⊃ « 194731717 » de « +229194731717 »).
+      //    Sans normalisation : préfixe +229 → 0 résultat.
       guardianRows = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT g.id AS "guardianId", g."firstName", g."lastName", g."email",
+        SELECT g.id AS "guardianId", g."userId", g."firstName", g."lastName", g."email",
                g."phone", g."tenantId", t."name" AS "tenantName",
                (g."tenantId" = $1) AS "isSameTenant"
         FROM "guardians" g
@@ -1548,11 +1631,16 @@ export class ChatService {
           OR LOWER(COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."firstName", '') || ' ' || COALESCE(g."lastName", '')) LIKE $2
           OR LOWER(COALESCE(g."email", '')) LIKE $2
-          OR LOWER(COALESCE(g."phone", '')) LIKE $2
+          OR (
+            g."phone" IS NOT NULL AND (
+              regexp_replace(g."phone", '[^0-9]', '', 'g') LIKE ANY($4::text[])
+              OR $5 LIKE '%' || RIGHT(regexp_replace(g."phone", '[^0-9]', '', 'g'), 8) || '%'
+            )
+          )
         )
         ORDER BY g."lastName" ASC, g."firstName" ASC
         LIMIT $3
-      `, currentTenantId, likeQuery, limit);
+      `, currentTenantId, likeQuery, limit, phonePatterns, rawDigits);
       this.logger.log(`Guardians search: tenant=${currentTenantId?.substring(0,8)}..., found=${guardianRows.length}, query=${query}`);
     } catch (e: any) {
       this.logger.error(`Guardians search FAILED: ${e.message}`);
@@ -1662,8 +1750,10 @@ export class ChatService {
       const isGuardianWithoutAccount = r.source === 'guardians' && !r.userId;
       return {
         userId: keyId,
-        firstName: r.firstName,
-        lastName: r.lastName,
+        // ⭐ V6.1 (fix « Inconnu ») : nom de la fiche enseignant en secours
+        //    (comptes matricule : users.firstName NULL).
+        firstName: r.firstName || r.teacherFirstName || '',
+        lastName: r.lastName || r.teacherLastName || '',
         email: r.email,
         // ⭐ FIX: users table has no avatarUrl — null for now (V2 will use staff_photos)
         avatarUrl: null,
@@ -1946,6 +2036,12 @@ export class ChatService {
     const id = randomUUID();
     await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channels" ("id", "tenantId", "name", "description", "createdBy", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`, id, tenantId, data.name, data.description || null, creatorId);
     await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW())`, randomUUID(), id, creatorId);
+    // ⭐ V6.1 (fix broadcast P2010) — chaque canal possède une conversation
+    //    miroir de type CHANNEL (id = id du canal) qui porte ses messages.
+    //    Avant : les messages étaient insérés avec conversationId='channel:<id>'
+    //    → FK chat_messages.conversationId VIOLÉE (P2010) → la diffusion
+    //    n'a JAMAIS fonctionné.
+    await this.ensureChannelConversation(id);
     return { id, name: data.name, description: data.description };
   }
 
@@ -1953,9 +2049,24 @@ export class ChatService {
     return await this.prisma.$queryRawUnsafe<any[]>(`SELECT c.*, (SELECT count(*) FROM chat_channel_subscribers WHERE "channelId" = c.id) AS "subscriberCount", EXISTS(SELECT 1 FROM chat_channel_subscribers WHERE "channelId" = c.id AND "userId" = $2) AS "isSubscribed" FROM "chat_channels" c WHERE c."tenantId" = $1 ORDER BY COALESCE(c."lastMessageAt", c."createdAt") DESC`, tenantId, userId);
   }
 
-  async subscribeToChannel(channelId: string, userId: string) {
+  async subscribeToChannel(channelId: string, userId: string, options: { notify?: boolean } = {}) {
     const { randomUUID } = require('crypto');
-    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW()) ON CONFLICT ("channelId", "userId") DO NOTHING`, randomUUID(), channelId, userId);
+    const inserted = await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_channel_subscribers" ("id", "channelId", "userId", "subscribedAt") VALUES ($1, $2, $3, NOW()) ON CONFLICT ("channelId", "userId") DO NOTHING`, randomUUID(), channelId, userId);
+    // ⭐ V6.1 (parité Yeshua) — notification « X a rejoint le canal » :
+    //    uniquement pour un abonnement EXPLICITE (notify=true — action
+    //    utilisateur), jamais pour l'auto-abonnement silencieux à l'ouverture
+    //    du canal ni pour la sync batch des canaux officiels (sinon des
+    //    centaines de messages système par rentrée scolaire).
+    if (options.notify && Number(inserted) > 0) {
+      try {
+        await this.ensureChannelConversation(channelId);
+        const user = await this.prisma.$queryRawUnsafe<any[]>(`SELECT u."firstName", u."lastName", u."role", t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName" FROM "users" u LEFT JOIN "teachers" t ON LOWER(t.email) = LOWER(u.email) WHERE u.id = $1 LIMIT 1`, userId);
+        const name = this.displayNameOf(user[0] || {});
+        await this.insertSystemMessageForChannel(channelId, `${name} a rejoint le canal`);
+      } catch (e: any) {
+        this.logger?.warn?.(`Channel join notification failed: ${e.message}`);
+      }
+    }
     return { success: true };
   }
 
@@ -1964,18 +2075,130 @@ export class ChatService {
     return { success: true };
   }
 
+  /**
+   * ⭐ V6.1 (fix P2010) — Garantit l'existence de la conversation miroir
+   * d'un canal (chat_conversations, type CHANNEL, id = id du canal).
+   * Idempotent — utilisé par broadcast/subscribe/messages/createChannel
+   * et par la sync des canaux officiels.
+   */
+  private async ensureChannelConversation(channelId: string): Promise<void> {
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "chat_conversations" ("id", "tenantId", "type", "name", "description", "createdBy", "createdAt", "updatedAt")
+      SELECT c."id", c."tenantId", 'CHANNEL', c."name", c."description", c."createdBy", NOW(), NOW()
+      FROM "chat_channels" c
+      WHERE c."id" = $1
+      ON CONFLICT ("id") DO NOTHING
+    `, channelId);
+  }
+
+  /** ⭐ V6.1 — nom d'affichage « user, sinon fiche enseignant ». */
+  private displayNameOf(row: { firstName?: string | null; lastName?: string | null; teacherFirstName?: string | null; teacherLastName?: string | null }): string {
+    const uFirst = (row.firstName || '').trim();
+    const uLast = (row.lastName || '').trim();
+    if (uFirst || uLast) return `${uFirst} ${uLast}`.trim();
+    const tFirst = (row.teacherFirstName || '').trim();
+    const tLast = (row.teacherLastName || '').trim();
+    if (tFirst || tLast) return `${tFirst} ${tLast}`.trim();
+    return 'Utilisateur';
+  }
+
+  /**
+   * ⭐ V6.1 (fix P2010) — Diffuser un message dans un canal.
+   * Le message est inséré avec le VRAI id de conversation (celui du canal,
+   * garanti existant par ensureChannelConversation) → FK satisfaite,
+   * message lisible par GET /channels/:id/messages, et broadcast temps
+   * réel à tous les abonnés (gateway: message:new + channel:message).
+   */
   async broadcastToChannel(channelId: string, senderId: string, content: string) {
     const { randomUUID } = require('crypto');
+    // 1. Canal existant ?
+    const chanRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`SELECT "id", "tenantId", "createdBy" FROM "chat_channels" WHERE "id" = $1 LIMIT 1`, channelId);
+    if (chanRows.length === 0) {
+      const { BadRequestException } = require('@nestjs/common');
+      throw new BadRequestException('Canal introuvable');
+    }
+    // 2. Conversation miroir (id = channelId)
+    await this.ensureChannelConversation(channelId);
+    // 3. Insérer le message avec le VRAI conversationId
     const msgId = randomUUID();
-    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "createdAt") VALUES ($1, $2, $3, 'TEXT', $4, NOW())`, msgId, `channel:${channelId}`, senderId, content);
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "createdAt") VALUES ($1, $2, $3, 'TEXT', $4, NOW())`, msgId, channelId, senderId, content);
+    // 4. Preview + horodatage (canal ET conversation miroir)
     const preview = content.length > 60 ? content.substring(0, 60) + '…' : content;
     await this.prisma.$executeRawUnsafe(`UPDATE "chat_channels" SET "lastMessageAt" = NOW(), "lastMessagePreview" = $2, "updatedAt" = NOW() WHERE "id" = $1`, channelId, preview);
-    return { id: msgId, content, senderId, createdAt: new Date() };
+    await this.prisma.$executeRawUnsafe(`UPDATE "chat_conversations" SET "lastMessageAt" = NOW(), "lastMessagePreview" = $2, "lastMessageSenderId" = $3, "updatedAt" = NOW() WHERE "id" = $1`, channelId, preview, senderId);
+    // 5. Broadcast temps réel aux abonnés (message:new sur la room du canal
+    //    + channel:message sur les rooms personnelles — badge/preview sidebar)
+    try {
+      const senderRow: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT u."firstName", u."lastName", u."avatarUrl", t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName"
+        FROM "users" u LEFT JOIN "teachers" t ON LOWER(t.email) = LOWER(u.email)
+        WHERE u.id = $1 LIMIT 1`, senderId);
+      const sender = senderRow[0] || {};
+      const message = {
+        id: msgId,
+        conversationId: channelId,
+        senderId,
+        type: 'TEXT',
+        content,
+        createdAt: new Date().toISOString(),
+        senderFirstName: (sender.firstName || sender.teacherFirstName || '').trim() || null,
+        senderLastName: (sender.lastName || sender.teacherLastName || '').trim() || null,
+        sender: { firstName: sender.firstName || sender.teacherFirstName || null, lastName: sender.lastName || sender.teacherLastName || null, avatarUrl: sender.avatarUrl || null },
+      };
+      const subscribers: any[] = await this.prisma.$queryRawUnsafe<any[]>(`SELECT "userId" FROM "chat_channel_subscribers" WHERE "channelId" = $1`, channelId);
+      this.chatGateway?.broadcastChannelMessage(channelId, message, subscribers.map(s => s.userId));
+    } catch (e: any) {
+      this.logger?.warn?.(`Channel broadcast socket failed: ${e.message}`);
+    }
+    return { id: msgId, conversationId: channelId, content, senderId, createdAt: new Date() };
+  }
+
+  /** ⭐ V6.1 — message système d'un canal (joint un membre, etc.). */
+  private async insertSystemMessageForChannel(channelId: string, content: string) {
+    const { randomUUID } = require('crypto');
+    const msgId = randomUUID();
+    await this.prisma.$executeRawUnsafe(`INSERT INTO "chat_messages" ("id", "conversationId", "senderId", "type", "content", "createdAt") VALUES ($1, $2, 'system', 'SYSTEM', $3, NOW())`, msgId, channelId, content);
+    // Broadcast aux abonnés connectés
+    try {
+      const subscribers: any[] = await this.prisma.$queryRawUnsafe<any[]>(`SELECT "userId" FROM "chat_channel_subscribers" WHERE "channelId" = $1`, channelId);
+      this.chatGateway?.broadcastChannelMessage(channelId, {
+        id: msgId, conversationId: channelId, senderId: 'system', type: 'SYSTEM',
+        content, createdAt: new Date().toISOString(),
+        senderFirstName: null, senderLastName: null, sender: null,
+      }, subscribers.map(s => s.userId));
+    } catch { /* silencieux */ }
+    return msgId;
   }
 
   async getChannelMessages(channelId: string, limit: number = 50) {
-    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`SELECT m.*, u."firstName" AS "senderFirstName", u."lastName" AS "senderLastName" FROM "chat_messages" m LEFT JOIN "users" u ON u.id = m."senderId" WHERE m."conversationId" = $1 ORDER BY m."createdAt" DESC LIMIT $2`, `channel:${channelId}`, limit);
-    return rows.reverse();
+    // ⭐ V6.1 — lecture depuis la conversation miroir (VRAI conversationId =
+    //    id du canal). Enrichissement des noms via la fiche enseignant.
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT m.id, m."conversationId", m."senderId", m.type, m.content, m."createdAt",
+             u."firstName" AS "senderFirstName", u."lastName" AS "senderLastName", u."avatarUrl" AS "senderAvatarUrl",
+             COALESCE(NULLIF(TRIM(u."firstName"), ''), TRIM(t."firstName"), NULL) AS "resolvedFirstName",
+             COALESCE(NULLIF(TRIM(u."lastName"), ''), TRIM(t."lastName"), NULL) AS "resolvedLastName"
+      FROM "chat_messages" m
+      LEFT JOIN "users" u ON u.id = m."senderId"
+      LEFT JOIN LATERAL (
+        SELECT "firstName", "lastName" FROM "teachers"
+        WHERE u."email" IS NOT NULL AND LOWER("email") = LOWER(u."email")
+        LIMIT 1
+      ) t ON true
+      WHERE m."conversationId" = $1
+      ORDER BY m."createdAt" DESC
+      LIMIT $2`, channelId, limit);
+    return rows.reverse().map(r => ({
+      id: r.id,
+      conversationId: r.conversationId,
+      senderId: r.senderId,
+      type: r.type,
+      content: r.content,
+      createdAt: r.createdAt,
+      senderFirstName: (r.resolvedFirstName || '').trim() || null,
+      senderLastName: (r.resolvedLastName || '').trim() || null,
+      senderAvatarUrl: r.senderAvatarUrl || null,
+    }));
   }
 
   // ═════════════════════════════════════════════════════════════════

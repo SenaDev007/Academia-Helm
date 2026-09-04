@@ -107,6 +107,22 @@ export class AutoChannelService {
       channels.push(row);
     }
 
+    // ⭐ V6.1 (fix broadcast P2010) — Garantir la conversation miroir de
+    //    TOUS les canaux du tenant (id du canal = id de la conversation,
+    //    type CHANNEL). Auto-réparation : les canaux créés avant le
+    //    correctif (officiels OU manuels) n'en avaient pas → la diffusion
+    //    échouait (FK P2010). broadcastToChannel() se répare aussi
+    //    lui-même à l'envoi (ensureChannelConversation).
+    //    Idempotent (ON CONFLICT DO NOTHING).
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "chat_conversations" ("id", "tenantId", "type", "name", "description", "createdBy", "createdAt", "updatedAt")
+       SELECT c."id", c."tenantId", 'CHANNEL', c."name", c."description", c."createdBy", NOW(), NOW()
+       FROM "chat_channels" c
+       WHERE c."tenantId" = $1
+       ON CONFLICT ("id") DO NOTHING`,
+      tenantId,
+    );
+
     // 4. Abonnement automatique de TOUS les utilisateurs actifs (idempotent)
     if (activeUserIds.length > 0 && channels.length > 0) {
       const channelIds = channels.map(c => c.id);

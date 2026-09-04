@@ -381,12 +381,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Émettre aussi une notif "inbox" à chaque user (badge non lus, etc.)
     // Sauf à l'expéditeur (il sait déjà qu'il a envoyé)
+    // ⭐ V6.1 (fix « Inconnu ») : priorité aux noms résolus par le service
+    //    (champs plats senderFirstName/senderLastName — comptes enseignants
+    //    matricule dont le nom vit dans la table teachers).
+    const senderFirst = message.senderFirstName ?? message.sender?.firstName ?? null;
+    const senderLast = message.senderLastName ?? message.sender?.lastName ?? null;
+    const senderName = (senderFirst || senderLast)
+      ? `${senderFirst || ''} ${senderLast || ''}`.trim()
+      : 'Utilisateur';
     for (const userId of participantIds) {
       if (userId !== message.senderId) {
         this.server.to(`user:${userId}`).emit('inbox:new', {
           conversationId,
           preview: message.content || `[${message.type}]`,
-          senderName: message.sender?.firstName ? `${message.sender.firstName} ${message.sender.lastName || ''}`.trim() : 'Inconnu',
+          senderName,
+        });
+      }
+    }
+  }
+
+  /**
+   * ⭐ V6.1 — Diffusion temps réel d'un message de CANAL aux abonnés :
+   *   - 'message:new' sur la room conv:<channelId> (clients ayant rejoint
+   *     la room du canal — même mécanisme que les conversations)
+   *   - 'channel:message' sur les rooms personnelles des abonnés (mise à
+   *     jour de la sidebar Canaux : preview + tri + badge, même si le
+   *     canal n'est pas ouvert)
+   */
+  broadcastChannelMessage(channelId: string, message: any, subscriberUserIds: string[]) {
+    this.server.to(`conv:${channelId}`).emit('message:new', {
+      conversationId: channelId,
+      message,
+      isChannel: true,
+    });
+    for (const userId of subscriberUserIds) {
+      if (userId !== message.senderId) {
+        this.server.to(`user:${userId}`).emit('channel:message', {
+          channelId,
+          message,
         });
       }
     }

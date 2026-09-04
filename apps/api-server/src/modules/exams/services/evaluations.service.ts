@@ -95,13 +95,17 @@ export class EvaluationsService {
     });
     if (globalType) return globalType;
 
-    // 4. Fallback historique (premier type du code, any niveau)
+    // 4. Fallback historique — MAIS jamais un type scopé à un AUTRE niveau :
+    //    si les classes ciblent le niveau N, un type du code scopé à N'≠N
+    //    casserait les écrans qui filtrent par schoolLevelId (bulletins,
+    //    types par niveau). On n'accepte ici que global (null) ou même niveau.
     const fallback = await this.prisma.evaluationType.findFirst({
       where: {
-        OR: [
-          { id: evaluationTypeIdOrCode },
-          { code: evaluationTypeIdOrCode, tenantId },
-        ],
+        code: evaluationTypeIdOrCode,
+        tenantId,
+        ...(levelId
+          ? { OR: [{ schoolLevelId: null }, { schoolLevelId: levelId }] }
+          : {}),
       },
     });
     if (fallback) return fallback;

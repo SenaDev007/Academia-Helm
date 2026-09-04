@@ -1040,17 +1040,48 @@ export class BulletinsService {
       return { success: true, reportCardId: updated.id };
     }
 
-    // Get schoolLevelId from enrollment
+    // Get schoolLevelId from enrollment — ⭐ V10e : fallbacks robustes.
+    // Ancienne logique : enrollment?.schoolLevelId || '' → chaîne vide sur
+    // FK SchoolLevel → P2003 → 500 silencieux (élèves rattachés via
+    // class_students sans StudentEnrollment, courant en piste EN).
     const enrollment = await this.prisma.studentEnrollment.findFirst({
       where: { tenantId, academicYearId, studentId },
       select: { schoolLevelId: true },
     });
+    let schoolLevelId = enrollment?.schoolLevelId || null;
+    if (!schoolLevelId) {
+      const student = await this.prisma.student.findUnique({
+        where: { id: studentId },
+        select: { schoolLevelId: true },
+      });
+      schoolLevelId = student?.schoolLevelId || null;
+    }
+    if (!schoolLevelId) {
+      const classStudent = await this.prisma.classStudent.findFirst({
+        where: { tenantId, studentId, academicYearId },
+        select: { schoolLevelId: true },
+      });
+      schoolLevelId = classStudent?.schoolLevelId || null;
+    }
+    if (!schoolLevelId) {
+      // Dernier recours : la classe de l'élève (sans filtre année)
+      const anyClass = await this.prisma.classStudent.findFirst({
+        where: { tenantId, studentId },
+        select: { schoolLevelId: true },
+      });
+      schoolLevelId = anyClass?.schoolLevelId || null;
+    }
+    if (!schoolLevelId) {
+      throw new BadRequestException(
+        'Impossible de déterminer le niveau scolaire de l\'élève pour créer le bulletin — vérifiez son inscription.',
+      );
+    }
 
     const created = await this.prisma.reportCard.create({
       data: {
         tenantId,
         academicYearId,
-        schoolLevelId: enrollment?.schoolLevelId || '',
+        schoolLevelId,
         studentId,
         quarterId: periodId,
         type: 'BULLETIN',

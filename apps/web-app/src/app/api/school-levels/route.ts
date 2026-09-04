@@ -22,6 +22,9 @@ const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
   PRIMAIRE: 'Primaire',
   SECONDAIRE: 'Secondaire',
+  // ⭐ V10 — miroirs anglophones (structure EN créée via Paramètres > Bilingue)
+  NURSERY: 'Nursery',
+  PRIMARY: 'Primary',
 };
 
 export async function GET(request: NextRequest) {

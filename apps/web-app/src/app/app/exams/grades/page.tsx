@@ -43,8 +43,6 @@ import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
-import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { GradingSheet, type GroupedEvaluation } from "@/components/exams/GradingSheet";
 import { HierarchicalEvaluationList } from "@/components/exams/HierarchicalEvaluationList";
@@ -156,15 +154,6 @@ function getSubjectOrderIndex(name: string, isMaternelle: boolean, isPrimaire: b
     if (upper === order[i] || upper.includes(order[i])) return i;
   }
   return order.length; // matières inconnues à la fin
-}
-
-function formatDate(d: string | null): string {
-  if (!d) return 'Date non définie';
-  try {
-    return format(new Date(d), 'd MMM yyyy', { locale: fr });
-  } catch {
-    return d;
-  }
 }
 
 // ─── Page Principale ──────────────────────────────────────────────────────────
@@ -327,16 +316,18 @@ export default function GradesPage() {
               </Button>
             </div>
 
-            {/* Indicateur de mode (Maternelle qualitative / Primaire quantitative) */}
+            {/* Indicateur de mode (Maternelle qualitative / Primaire quantitative / EN quantitative) */}
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
               <Settings className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <p className="text-xs text-blue-700">
                 <span className="font-bold">Mode de saisie :</span>{' '}
                 {isMaternelle
                   ? 'Qualitatif (TS / S / PS) — Évaluation maternelle'
-                  : isPrimaire
-                    ? 'Quantitatif (/20) avec CM + CP — Évaluation primaire'
-                    : 'Quantitatif (/20) — Évaluation secondaire'}
+                  : scopeLang === 'EN'
+                    ? 'Quantitative (/100) — First CA (/40), Second CA (/40), Examination (/60)'
+                    : isPrimaire
+                      ? 'Quantitatif (/20) avec CM + CP — Évaluation primaire'
+                      : 'Quantitatif (/20) — Évaluation secondaire'}
               </p>
             </div>
 
@@ -359,6 +350,7 @@ export default function GradesPage() {
                 groups={filteredGroups}
                 onGroupClick={handleOpenGroup}
                 isMaternelle={isMaternelle}
+                language={scopeLang as 'FR' | 'EN' | undefined}
                 renderStatusBadge={(g) => {
                   // ⭐ Flux : PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
                   //   - PLANNED : évaluation créée par l'admin, prête à être saisie
@@ -394,134 +386,3 @@ export default function GradesPage() {
     />
   );
 }
-
-// ─── Carte de groupe d'évaluation (vue liste) ────────────────────────────────
-
-function EvaluationGroupCard({
-  group,
-  isMaternelle,
-  onClick,
-}: {
-  group: GroupedEvaluation;
-  isMaternelle: boolean;
-  onClick: () => void;
-}) {
-  // Statut agrégé — cohérent avec le nouveau flux :
-  //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
-  //   ⭐ OPEN_FOR_GRADING ne signifie PAS "Saisie ouverte" — l'enseignant a déjà
-  //      validé sa saisie, donc l'évaluation est en lecture seule pour lui.
-  //      Seul PLANNED est vraiment "Saisie ouverte".
-  const isPlanned = group.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
-  const isValidatedByTeacher = group.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
-  const isSubmitted = group.statuses.some(s => s === 'SUBMITTED');
-  const isValidated = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
-  const isCancelled = group.statuses.some(s => s === 'CANCELLED');
-  const canGrade = isPlanned; // ⭐ Seul PLANNED est vraiment éditable par l'enseignant
-
-  const headerStatus = isValidated ? 'Validée'
-    : isSubmitted ? 'Soumise au directeur'
-    : isValidatedByTeacher ? 'Validée par enseignant'
-    : isCancelled ? 'Annulée'
-    : isPlanned ? 'Saisie ouverte'
-    : 'Planifiée';
-
-  const startDate = group.startDate ? new Date(group.startDate) : null;
-  const endDate = group.endDate ? new Date(group.endDate) : null;
-  const sameDay =
-    startDate && endDate &&
-    startDate.getFullYear() === endDate.getFullYear() &&
-    startDate.getMonth() === endDate.getMonth() &&
-    startDate.getDate() === endDate.getDate();
-  const fmtLong = (d: Date) => format(d, 'd MMM yyyy', { locale: fr });
-  const dateRange = startDate
-    ? sameDay || !endDate
-      ? `Le ${fmtLong(startDate)}`
-      : `Du ${fmtLong(startDate)} au ${fmtLong(endDate)}`
-    : 'Date non définie';
-
-  const subjectCount = group.subjects.length;
-
-  return (
-    <button
-      onClick={onClick}
-      className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all text-left flex flex-col overflow-visible"
-    >
-      {/* En-tête */}
-      <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
-              {(group.className || '?').slice(0, 2).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-navy-900 truncate">{group.className}</h3>
-              <p className="text-xs text-gray-500">
-                {subjectCount} matière{subjectCount > 1 ? 's' : ''} à évaluer
-              </p>
-            </div>
-          </div>
-          <span className={cn(
-            'text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap',
-            isLocked ? 'bg-emerald-100 text-emerald-700'
-            : isCancelled ? 'bg-red-100 text-red-700'
-            : canGrade ? 'bg-amber-100 text-amber-700'
-            : 'bg-blue-100 text-blue-700'
-          )}>
-            {headerStatus}
-          </span>
-        </div>
-      </div>
-
-      {/* Corps */}
-      <div className="p-5 flex-1 space-y-3">
-        <div>
-          <p className="text-sm font-semibold text-navy-900">
-            {group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}
-            {group.evaluationTypeName}
-          </p>
-          {group.periodName && (
-            <p className="text-xs text-gray-500 mt-0.5">{group.periodName}</p>
-          )}
-        </div>
-
-        <div className="flex items-center space-x-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
-          <Calendar className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-          <span className="font-medium">{dateRange}</span>
-        </div>
-
-        <div className="space-y-1.5 pt-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            Matières à évaluer
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {group.subjects.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
-              >
-                {s.name}
-              </span>
-            ))}
-            {group.subjects.length === 0 && (
-              <span className="text-xs text-gray-400 italic">Aucune matière</span>
-            )}
-          </div>
-        </div>
-
-        {/* Mode de saisie (qualitatif / quantitatif) */}
-        <div className="flex items-center space-x-2 pt-2 border-t border-gray-100">
-          <span className={cn(
-            'px-2 py-0.5 rounded text-xs font-semibold',
-            isMaternelle ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
-          )}>
-            {isMaternelle ? 'TS / S / PS' : '/ 20'}
-          </span>
-          <span className="text-xs text-gray-500">
-            {group.subjects.length} matière{group.subjects.length > 1 ? 's' : ''} · {group.evaluationIds.length} élève(s) max
-          </span>
-        </div>
-      </div>
-    </button>
-  );
-}
-

@@ -21,6 +21,8 @@ import { ChevronDown, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
+import { translatePeriodName } from '@/lib/exam-anglophone-config';
 import type { GroupedEvaluation } from '@/components/exams/GradingSheet';
 
 interface HierarchicalListProps {
@@ -32,6 +34,9 @@ interface HierarchicalListProps {
   renderStatusBadge?: (group: GroupedEvaluation) => React.ReactNode;
   /** Mode de saisie affiché (TS/S/PS ou /20) */
   isMaternelle?: boolean;
+  /** ⭐ V10 — piste linguistique DÉDUITE du niveau (Nursery/Primary → EN) :
+   *  libellés de la liste dans la langue du niveau sélectionné. */
+  language?: 'FR' | 'EN';
 }
 
 interface TrimestreGroup {
@@ -46,8 +51,11 @@ export function HierarchicalEvaluationList({
   filterFn,
   renderStatusBadge,
   isMaternelle,
+  language,
 }: HierarchicalListProps) {
   const [openTrimestres, setOpenTrimestres] = useState<Set<string>>(new Set());
+  const isEN = language === 'EN';
+  const locale = isEN ? enUS : fr;
 
   // Filtrer si nécessaire
   const displayGroups = filterFn ? groups.filter(filterFn) : groups;
@@ -59,15 +67,15 @@ export function HierarchicalEvaluationList({
       const key = g.periodId || '_no_period';
       if (!map.has(key)) {
         map.set(key, {
-          periodName: g.periodName || 'Sans période',
+          periodName: isEN ? translatePeriodName(g.periodName || 'Sans période', 'EN') : (g.periodName || 'Sans période'),
           periodId: key,
           evaluations: [],
         });
       }
       map.get(key)!.evaluations.push(g);
     }
-    // ⭐ Trier les évaluations par type: EM1 → EM2 → EC
-    const EVAL_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'ORAL', 'EP'];
+    // ⭐ Trier les évaluations par type: EM1 → EM2 → EC (FR) / FCA → SCA → EXAM (EN)
+    const EVAL_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'ORAL', 'EP', 'FCA', 'SCA', 'EXAM'];
     for (const trim of map.values()) {
       trim.evaluations.sort((a, b) => {
         const idxA = EVAL_ORDER.indexOf(a.evaluationTypeCode?.toUpperCase() || '');
@@ -75,11 +83,11 @@ export function HierarchicalEvaluationList({
         return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
       });
     }
-    // Trier par nom de période (Trimestre 1, 2, 3)
+    // Trier par nom de période (Trimestre 1, 2, 3 / Term 1, 2, 3)
     return Array.from(map.values()).sort((a, b) =>
       a.periodName.localeCompare(b.periodName, 'fr')
     );
-  }, [displayGroups]);
+  }, [displayGroups, isEN]);
 
   const toggleTrimestre = (periodId: string) => {
     setOpenTrimestres((prev) => {
@@ -116,7 +124,9 @@ export function HierarchicalEvaluationList({
                 <div className="text-left">
                   <h3 className="text-base font-bold text-navy-900">{trimestre.periodName}</h3>
                   <p className="text-xs text-gray-500">
-                    {evalCount} évaluation{evalCount > 1 ? 's' : ''} programmée{evalCount > 1 ? 's' : ''}
+                    {isEN
+                      ? `${evalCount} assessment${evalCount > 1 ? 's' : ''} scheduled`
+                      : `${evalCount} évaluation${evalCount > 1 ? 's' : ''} programmée${evalCount > 1 ? 's' : ''}`}
                   </p>
                 </div>
               </div>
@@ -140,9 +150,13 @@ export function HierarchicalEvaluationList({
                     startDate.getDate() === endDate.getDate();
                   const dateRange = startDate
                     ? sameDay || !endDate
-                      ? `Le ${format(startDate, 'd MMM yyyy', { locale: fr })}`
-                      : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
-                    : 'Date non définie';
+                      ? isEN
+                        ? `On ${format(startDate, 'd MMM yyyy', { locale })}`
+                        : `Le ${format(startDate, 'd MMM yyyy', { locale })}`
+                      : isEN
+                        ? `From ${format(startDate, 'd MMM yyyy', { locale })} to ${format(endDate, 'd MMM yyyy', { locale })}`
+                        : `Du ${format(startDate, 'd MMM yyyy', { locale })} au ${format(endDate, 'd MMM yyyy', { locale })}`
+                    : (isEN ? 'Date not set' : 'Date non définie');
 
                   const canClick = !filterFn || filterFn(group);
                   const subjectCount = group.subjects.length;
@@ -169,7 +183,9 @@ export function HierarchicalEvaluationList({
                             <div className="min-w-0">
                               <h4 className="text-base font-bold text-navy-900 truncate">{group.className}</h4>
                               <p className="text-xs text-gray-500">
-                                {subjectCount} matière{subjectCount > 1 ? 's' : ''} à {isMaternelle ? 'évaluer' : 'composer'}
+                                {isEN
+                                  ? `${subjectCount} subject${subjectCount > 1 ? 's' : ''} to ${isMaternelle ? 'assess' : 'sit'}`
+                                  : `${subjectCount} matière${subjectCount > 1 ? 's' : ''} à ${isMaternelle ? 'évaluer' : 'composer'}`}
                               </p>
                             </div>
                           </div>
@@ -191,7 +207,7 @@ export function HierarchicalEvaluationList({
                         </div>
                         <div className="space-y-1.5 pt-1">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                            Matières
+                            {isEN ? 'Subjects' : 'Matières'}
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {group.subjects.map((s) => (
@@ -210,7 +226,7 @@ export function HierarchicalEvaluationList({
                       {canClick && (
                         <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/30">
                           <div className="flex items-center justify-end text-xs font-semibold text-blue-600">
-                            {isMaternelle ? 'Saisir les notes' : 'Saisir les notes'}
+                            {isEN ? 'Enter grades' : 'Saisir les notes'}
                           </div>
                         </div>
                       )}

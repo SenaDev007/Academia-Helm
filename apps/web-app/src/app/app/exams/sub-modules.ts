@@ -3,7 +3,9 @@
  * EXAMS MODULE - SUB-MODULES CONFIGURATION
  * ============================================================================
  *
- * Les onglets sont affichés APRÈS sélection du niveau scolaire + piste linguistique.
+ * Les onglets sont affichés APRÈS sélection du niveau scolaire.
+ * Depuis la V10 (miroirs bilingues), la piste linguistique est DÉDUITE du
+ * niveau : Nursery/Primary → EN, Maternelle/Primaire/Secondaire → FR.
  * L'onglet "Agrégation & Stats Globales" a été supprimé.
  * L'onglet "Paramétrage" a été renommé en "Paramètres" et refondu.
  * ============================================================================

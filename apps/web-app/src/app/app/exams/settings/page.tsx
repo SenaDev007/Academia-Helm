@@ -11,8 +11,9 @@
  *   3. Règles de classement — Portée + ex aequo + exclusion absents + visibilité rang
  *   4. Options du Bulletin — Moyenne/classe/mention/rang/absences/signatures/cachet/logo/QR
  *
- * Scope strict : tenant × année × niveau scolaire × piste linguistique
- * Le niveau scolaire et la piste linguistique viennent de l'URL (?level=PRIMAIRE&lang=FR)
+ * Scope strict : tenant × année × niveau scolaire (piste linguistique déduite)
+ * Le niveau scolaire vient de l'URL (?level=PRIMAIRE&lang=FR) — depuis la V10,
+ * la piste linguistique est DÉDUITE du niveau (miroirs EN : Nursery/Primary).
  * ============================================================================
  */
 
@@ -31,10 +32,9 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { useBilingual } from '@/contexts/BilingualContext';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules } from '../layout';
+import { useExamSubModules, languageForLevel } from '../layout';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 
 // ─── Types d'évaluation par défaut selon le niveau ─────────────────────────
@@ -174,10 +174,17 @@ function SettingsContent() {
   const searchParams = useSearchParams();
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
-  const { isEnabled: isBilingual } = useBilingual();
 
   const levelCode = searchParams.get('level') || '';
-  const language = searchParams.get('lang') || (isBilingual ? '' : 'FR');
+  // ⭐ V10 — la piste linguistique est DÉDUITE du niveau scolaire (miroirs EN) :
+  //    NURSERY/PRIMARY → EN, MATERNELLE/PRIMAIRE/SECONDAIRE → FR.
+  //    Plus de sélection manuelle de piste dans le module examen.
+  const language = searchParams.get('lang') || languageForLevel(levelCode);
+
+  // ⭐ V10 — niveau de BASE pour les valeurs par défaut : les miroirs EN partagent
+  //    les défauts de leur niveau FR jumeau (NURSERY→MATERNELLE, PRIMARY→PRIMAIRE).
+  const baseLevelCode = levelCode === 'NURSERY' ? 'MATERNELLE'
+    : levelCode === 'PRIMARY' ? 'PRIMAIRE' : levelCode;
 
   const [activeSubTab, setActiveSubTab] = useState<'calculation' | 'mentions' | 'ranking' | 'bulletin'>('calculation');
   const [loading, setLoading] = useState(true);
@@ -284,8 +291,10 @@ function SettingsContent() {
         }
       } else {
         // Pas de config existante → utiliser les valeurs par défaut selon le niveau
-        const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
-        const formulas = DEFAULT_FORMULAS[levelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
+        // ⭐ V10 — baseLevelCode : les miroirs EN (NURSERY/PRIMARY) héritent des
+        //    défauts de leur niveau FR jumeau, avec la piste EN.
+        const defaults = DEFAULT_ASSESSMENT_TYPES[baseLevelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
+        const formulas = DEFAULT_FORMULAS[baseLevelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
         setAssessmentTypes(defaults);
         setSubjectFormula(formulas.subject);
         setGeneralFormula(formulas.general);
@@ -300,8 +309,9 @@ function SettingsContent() {
       }
     } catch {
       // Config inexistante → valeurs par défaut
-      const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
-      const formulas = DEFAULT_FORMULAS[levelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
+      // ⭐ V10 — baseLevelCode : les miroirs EN héritent des défauts FR jumeaux.
+      const defaults = DEFAULT_ASSESSMENT_TYPES[baseLevelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
+      const formulas = DEFAULT_FORMULAS[baseLevelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
       setAssessmentTypes(defaults);
       setSubjectFormula(formulas.subject);
       setGeneralFormula(formulas.general);
@@ -316,7 +326,7 @@ function SettingsContent() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, levelCode, language]);
+  }, [academicYear?.id, levelCode, baseLevelCode, language]);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
@@ -326,7 +336,10 @@ function SettingsContent() {
     setSaving(true);
     try {
       const levelLabel = levelCode === 'MATERNELLE' ? 'Maternelle'
-        : levelCode === 'PRIMAIRE' ? 'Primaire' : 'Secondaire';
+        : levelCode === 'PRIMAIRE' ? 'Primaire'
+        : levelCode === 'NURSERY' ? 'Nursery'
+        : levelCode === 'PRIMARY' ? 'Primary'
+        : 'Secondaire';
       const langLabel = language ? ` ${language}` : '';
       const name = `Paramétrage ${levelLabel}${langLabel} — ${academicYear?.label || ''}`;
 
@@ -551,7 +564,7 @@ function SettingsContent() {
               <div className="mt-3">
                 <button
                   onClick={() => {
-                    const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'];
+                    const defaults = DEFAULT_ASSESSMENT_TYPES[baseLevelCode]?.[language || 'FR'];
                     if (defaults) setAssessmentTypes([...defaults]);
                   }}
                   className="px-3 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold border border-blue-200"

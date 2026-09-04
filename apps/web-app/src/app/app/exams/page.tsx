@@ -29,9 +29,11 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from './sub-modules';
 import { useExamSubModules, useExamScope } from './layout';
+import { getLabels } from '@/lib/exam-anglophone-config';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 
 // ─── Pedagogical ordering ────────────────────────────────────────────────────
 const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
@@ -45,12 +47,19 @@ const pedagogicalSortIndex = (name: string): number => {
 
 export default function ExamsDashboardPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  // ⭐ V10 — en-tête bilingue : la langue suit le niveau sélectionné
+  //    (Nursery/Primary → EN, Maternelle/Primaire/Secondaire → FR)
+  const { language } = useExamScope();
+  const isEN = language === 'EN';
+  const labels = getLabels(isEN ? 'EN' : 'FR');
 
   return (
     <ModuleContainer
       header={{
-        title: 'Tableau de bord',
-        description: "Vue d'ensemble du module examen : évaluations, notes et bulletins.",
+        title: labels.dashboard,
+        description: isEN
+          ? 'Overview of the Exams module: assessments, grades and report cards.'
+          : "Vue d'ensemble du module examen : évaluations, notes et bulletins.",
         icon: 'fileText',
       }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'dashboard' }}
@@ -73,6 +82,10 @@ function DashboardContent() {
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  // ⭐ V10 — la langue est déduite du niveau : Nursery/Primary → interface EN,
+  // Maternelle/Primaire/Secondaire → interface FR.
+  const isEN = scopeLang === 'EN';
+  const labels = getLabels(isEN ? 'EN' : 'FR');
 
   const [loading, setLoading] = useState(true);
   const [evaluations, setEvaluations] = useState<any[]>([]);
@@ -189,7 +202,9 @@ function DashboardContent() {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-3 text-sm text-slate-500">Chargement du tableau de bord…</span>
+        <span className="ml-3 text-sm text-slate-500">
+          {isEN ? 'Loading dashboard…' : 'Chargement du tableau de bord…'}
+        </span>
       </div>
     );
   }
@@ -199,14 +214,14 @@ function DashboardContent() {
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Tableau de bord</h2>
+          <h2 className="text-xl font-bold text-slate-900">{labels.dashboard}</h2>
           <p className="text-sm text-slate-500">
             {scopeLevel || '—'} {scopeLang ? `· ${scopeLang}` : ''} · {academicYear?.label || ''}
           </p>
         </div>
         <Badge variant="outline" className="text-xs gap-1">
           <Calendar className="w-3 h-3" />
-          {format(new Date(), "d MMM yyyy", { locale: fr })}
+          {format(new Date(), "d MMM yyyy", { locale: isEN ? enUS : fr })}
         </Badge>
       </div>
 
@@ -214,36 +229,38 @@ function DashboardContent() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total evaluations */}
         <KpiCard
-          title="Évaluations totales"
+          title={isEN ? 'Total assessments' : 'Évaluations totales'}
           value={kpis.total}
           icon={FileText}
           color="royal-blue"
-          subtitle={`${classes.length} classes · ${kpis.byType.size} types`}
+          subtitle={`${classes.length} ${isEN ? 'classes' : 'classes'} · ${kpis.byType.size} ${isEN ? 'types' : 'types'}`}
         />
         {/* Validated */}
         <KpiCard
-          title="Évaluations validées"
+          title={isEN ? 'Validated assessments' : 'Évaluations validées'}
           value={kpis.validated}
           icon={CheckCircle2}
           color="emerald"
-          subtitle={`${kpis.completionRate}% du total`}
+          subtitle={isEN ? `${kpis.completionRate}% of total` : `${kpis.completionRate}% du total`}
           progress={kpis.completionRate}
         />
         {/* Pending */}
         <KpiCard
-          title="En attente"
+          title={isEN ? 'Pending' : 'En attente'}
           value={kpis.submitted + kpis.openForGrading}
           icon={Clock}
           color="amber"
-          subtitle={`${kpis.submitted} soumises · ${kpis.openForGrading} en saisie`}
+          subtitle={isEN
+            ? `${kpis.submitted} submitted · ${kpis.openForGrading} in grading`
+            : `${kpis.submitted} soumises · ${kpis.openForGrading} en saisie`}
         />
         {/* Planned */}
         <KpiCard
-          title="Planifiées"
+          title={labels.planned}
           value={kpis.planned}
           icon={Calendar}
           color="slate"
-          subtitle="Pas encore ouvertes"
+          subtitle={isEN ? 'Not yet opened' : 'Pas encore ouvertes'}
         />
       </div>
 
@@ -254,14 +271,14 @@ function DashboardContent() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-blue-600" />
-              Répartition par statut
+              {isEN ? 'Status distribution' : 'Répartition par statut'}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <StatusBar label="Validées" count={kpis.byStatus.VALIDATED} total={kpis.total} color="bg-emerald-500" />
-            <StatusBar label="Soumises" count={kpis.byStatus.SUBMITTED} total={kpis.total} color="bg-amber-500" />
-            <StatusBar label="En saisie" count={kpis.byStatus.OPEN_FOR_GRADING} total={kpis.total} color="bg-blue-500" />
-            <StatusBar label="Planifiées" count={kpis.byStatus.PLANNED} total={kpis.total} color="bg-slate-400" />
+            <StatusBar label={labels.validated} count={kpis.byStatus.VALIDATED} total={kpis.total} color="bg-emerald-500" />
+            <StatusBar label={labels.submitted} count={kpis.byStatus.SUBMITTED} total={kpis.total} color="bg-amber-500" />
+            <StatusBar label={labels.openForGrading} count={kpis.byStatus.OPEN_FOR_GRADING} total={kpis.total} color="bg-blue-500" />
+            <StatusBar label={labels.planned} count={kpis.byStatus.PLANNED} total={kpis.total} color="bg-slate-400" />
           </CardContent>
         </Card>
 
@@ -270,12 +287,12 @@ function DashboardContent() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Target className="w-4 h-4 text-blue-600" />
-              Répartition par type d'évaluation
+              {isEN ? 'Assessment type breakdown' : "Répartition par type d'évaluation"}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {evalTypeBreakdown.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-4">Aucune donnée</p>
+              <p className="text-sm text-slate-400 text-center py-4">{isEN ? 'No data' : 'Aucune donnée'}</p>
             ) : (
               <div className="space-y-3">
                 {evalTypeBreakdown.map(t => (
@@ -306,22 +323,24 @@ function DashboardContent() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
             <GraduationCap className="w-4 h-4 text-blue-600" />
-            Progression par classe
+            {isEN ? 'Progress by class' : 'Progression par classe'}
           </CardTitle>
-          <CardDescription className="text-xs">Évaluations validées / total par classe</CardDescription>
+          <CardDescription className="text-xs">
+            {isEN ? 'Validated / total assessments per class' : 'Évaluations validées / total par classe'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {classStats.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">Aucune donnée disponible</p>
+            <p className="text-sm text-slate-400 text-center py-4">{isEN ? 'No data available' : 'Aucune donnée disponible'}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="text-left py-2 px-3 text-xs font-bold text-slate-500 uppercase">Classe</th>
+                    <th className="text-left py-2 px-3 text-xs font-bold text-slate-500 uppercase">{isEN ? 'Class' : 'Classe'}</th>
                     <th className="text-center py-2 px-3 text-xs font-bold text-slate-500 uppercase">Total</th>
-                    <th className="text-center py-2 px-3 text-xs font-bold text-slate-500 uppercase">Validées</th>
-                    <th className="text-center py-2 px-3 text-xs font-bold text-slate-500 uppercase">Progression</th>
+                    <th className="text-center py-2 px-3 text-xs font-bold text-slate-500 uppercase">{isEN ? 'Validated' : 'Validées'}</th>
+                    <th className="text-center py-2 px-3 text-xs font-bold text-slate-500 uppercase">{isEN ? 'Progress' : 'Progression'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -366,22 +385,24 @@ function DashboardContent() {
         <QuickAction
           href={`/app/exams/evaluations${scopeLevel ? `?level=${scopeLevel}` : ''}${scopeLang ? `&lang=${scopeLang}` : ''}`}
           icon={FileText}
-          title="Créer une évaluation"
-          description="Planifier une nouvelle évaluation"
+          title={isEN ? 'Create an assessment' : 'Créer une évaluation'}
+          description={isEN ? 'Plan a new assessment' : 'Planifier une nouvelle évaluation'}
           color="royal-blue"
         />
         <QuickAction
           href={`/app/exams/validation${scopeLevel ? `?level=${scopeLevel}` : ''}${scopeLang ? `&lang=${scopeLang}` : ''}`}
           icon={ShieldCheck}
-          title="Valider les notes"
-          description={`${kpis.submitted} évaluation(s) en attente`}
+          title={isEN ? 'Validate grades' : 'Valider les notes'}
+          description={isEN
+            ? `${kpis.submitted} assessment(s) pending`
+            : `${kpis.submitted} évaluation(s) en attente`}
           color="amber"
         />
         <QuickAction
           href={`/app/exams/bulletins${scopeLevel ? `?level=${scopeLevel}` : ''}${scopeLang ? `&lang=${scopeLang}` : ''}`}
           icon={Award}
-          title="Générer les bulletins"
-          description="Bulletins par évaluation"
+          title={isEN ? 'Generate report cards' : 'Générer les bulletins'}
+          description={isEN ? 'Report cards per assessment' : 'Bulletins par évaluation'}
           color="emerald"
         />
       </div>

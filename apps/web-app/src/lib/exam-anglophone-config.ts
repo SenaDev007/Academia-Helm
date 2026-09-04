@@ -327,6 +327,8 @@ export const EN_LABELS = {
   evaluations: 'Assessments',
   grades: 'Grading',
   validation: 'Validation',
+  unlockRequests: 'Unlock Requests',
+  gradesRegister: 'Grades Register',
   bulletins: 'Report Cards',
   councils: 'Class Councils',
   analytics: 'Statistics',

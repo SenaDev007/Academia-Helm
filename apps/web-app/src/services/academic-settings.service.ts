@@ -32,7 +32,11 @@ async function cacheSettings(settings: any[]) {
   const db = await getLocalDb();
   if (!db) return;
   try {
-    await db.executeBulk('school_academic_settings', 'put', settings);
+    // ⭐ V10c — CORRECTIF : le store IndexedDB créé par local-db.service.ts
+    // s'appelle « schoolacademicsettings » (camelCase, miroir de la table
+    // Prisma SchoolAcademicSettings). L'ancien nom « school_academic_settings »
+    // n'existait PAS → NotFoundError à chaque écriture/lecture de cache.
+    await db.executeBulk('schoolacademicsettings', 'put', settings);
   } catch (e) {
     console.warn('[AcademicSettings] Failed to cache settings locally:', e);
   }
@@ -47,7 +51,8 @@ async function getCachedSettings(): Promise<any[]> {
   const db = await getLocalDb();
   if (!db) return [];
   try {
-    return await db.query('school_academic_settings', 'getAll');
+    // ⭐ V10c — même correctif que cacheSettings : nom réel du store
+    return await db.query('schoolacademicsettings', 'getAll');
   } catch {
     return [];
   }

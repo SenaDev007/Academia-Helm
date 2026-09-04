@@ -73,6 +73,18 @@ export default function ModuleContainer({
     prevActiveId.current = activeId;
   }, [activeId, content.children]);
 
+  // ⭐ V10c — CORRECTIF CRITIQUE « page figée » :
+  // L'onglet ACTIF doit toujours rendre les children COURANTS (props), pas la
+  // copie figée au premier montage. Avant, le cache était rendu tel quel →
+  // les pages qui passent du JSX INLINE (évaluations, etc.) restaient bloquées
+  // sur leur premier rendu (spinner « Chargement des évaluations… » éternel)
+  // car leurs mises à jour d'état produisaient un nouveau children ignoré.
+  // Les pages passant un COMPOSANT (<DashboardContent />) fonctionnaient car
+  // l'état vit DANS le composant monté. On corrige pour que TOUTES les formes
+  // fonctionnent : actif = children live ; inactifs = snapshot du cache
+  // (display:none → l'arbre reste monté, l'état est préservé).
+  const allTabIds = Array.from(new Set([...mountedTabs.keys(), activeId]));
+
   return (
     <div className={cn('flex flex-col space-y-6 animate-in fade-in duration-700', className)}>
       {/* 1. Header du module (seulement s'il est defini) */}
@@ -112,12 +124,15 @@ export default function ModuleContainer({
               mais reste monte en memoire. Le nouvel onglet est affiche.
               Retour sur un onglet precedent : l'onglet est deja monte avec ses
               donnees → affichage INSTANTANE (pas de re-fetch). */}
-          {Array.from(mountedTabs.entries()).map(([tabId, tabChildren]) => (
+          {allTabIds.map((tabId) => (
             <div
               key={tabId}
               style={{ display: tabId === activeId ? 'block' : 'none' }}
             >
-              {tabChildren}
+              {/* ⭐ Onglet ACTIF : children LIVE (props) — les mises à jour d'état
+                  de la page se propagent. Onglets INACTIFS : snapshot du cache
+                  (arbre conservé monté via display:none). */}
+              {tabId === activeId ? content.children : mountedTabs.get(tabId)}
             </div>
           ))}
         </ModuleContentArea>

@@ -585,7 +585,12 @@ export default function EvaluationsPage() {
         institutionalExamsService.getEvaluations(params),
         fetch('/api/all-classes', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        pedagogyService.getSubjects(academicYear.id).catch(() => []),
+        // ⭐ V10c — On ne récupère QUE les matières du niveau + de la piste
+        // linguistique (language=EN → uniquement anglophones côté backend).
+        pedagogyService.getSubjects(academicYear.id, {
+          schoolLevelId: schoolLevelUuid,
+          language: scopeLang,
+        }).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
 
@@ -1059,8 +1064,10 @@ export default function EvaluationsPage() {
     <>
     <ModuleContainer
       header={{
-        title: 'Évaluations',
-        description: 'Créer et gérer les évaluations : devoirs, interrogations, compositions, examens blancs, épreuves pratiques, oraux.',
+        title: isEN ? labels.evaluations : 'Évaluations',
+        description: isEN
+          ? 'Create and manage assessments: assignments, quizzes, compositions, mock exams, practical tests, orals.'
+          : 'Créer et gérer les évaluations : devoirs, interrogations, compositions, examens blancs, épreuves pratiques, oraux.',
         icon: 'fileText',
       }}
       subModules={{

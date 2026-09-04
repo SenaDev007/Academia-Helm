@@ -43,13 +43,21 @@ export async function GET(request: NextRequest) {
     // 2. Récupérer les school_levels UUIDs depuis 3 sources EN PARALLÈLE
     let schoolLevelMap: Record<string, string> = {};
 
+    // ⭐ V10c — CORRECTIF CRITIQUE « schoolLevelId: null » :
+    // /api/classes exige désormais un niveau scolaire (« School Level ID is
+    // required ») → les 3 sources renvoyaient 400 et l'enrichissement
+    // échouait silencieusement → les pages examen filtraient avec l'UUID
+    // education_levels (mauvaise table) → plus aucune donnée ne s'affichait.
+    // On envoie x-school-level-id=ALL, exactement comme /api/all-classes.
+    const allLevelsHeaders = { ...headers, 'x-school-level-id': 'ALL' };
+
     const [classesRes, acRes, studentsRes] = await Promise.allSettled([
       // Source A: physical classes
-      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/classes?limit=200`), { headers }, 15000),
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/classes?limit=200`), { headers: allLevelsHeaders }, 15000),
       // Source B: academic classes
-      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/academic-classes?isActive=true`), { headers }, 15000),
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/academic-classes?isActive=true`), { headers: allLevelsHeaders }, 15000),
       // Source C: students
-      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/students?limit=100`), { headers }, 15000),
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/students?limit=100`), { headers: allLevelsHeaders }, 15000),
     ]);
 
     // Source A
@@ -92,6 +100,30 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Construire le résultat avec schoolLevelId
+    // ⭐ V10c — Source D (dernier recours) : si une source a échoué pour un
+    //    niveau, on interroge school_levels directement (endpoint léger).
+    //    Ça garantit que schoolLevelId n'est JAMAIS null quand le niveau
+    //    existe côté backend (les miroirs EN partagent le UUID FR).
+    for (const level of enabledLevels) {
+      if (!schoolLevelMap[level.name]) {
+        try {
+          const slRes = await fetchWithTimeout(
+            normalizeApiUrl(`${API_BASE_URL}/school-levels?code=${encodeURIComponent(level.name)}`),
+            { headers: allLevelsHeaders },
+            10000,
+          );
+          if (slRes.ok) {
+            const slData = await slRes.json().catch(() => ({}));
+            const slList = Array.isArray(slData) ? slData : (slData?.data ?? []);
+            const match = slList.find((sl: any) =>
+              (sl.code || '').toUpperCase() === (level.name || '').toUpperCase()
+            );
+            if (match?.id) schoolLevelMap[level.name] = match.id;
+          }
+        } catch {}
+      }
+    }
+
     const result = enabledLevels.map((l) => ({
       id: l.id,
       code: l.name,

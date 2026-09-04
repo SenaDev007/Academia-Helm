@@ -119,12 +119,30 @@ class PedagogyService {
   }
 
   // --- Subjects (Matières) ---
-  async getSubjects(academicYearId: string): Promise<any> {
+  /**
+   * ⭐ V10c — Le backend /subjects supporte schoolLevelId + language :
+   *    - language=EN → UNIQUEMENT les matières anglophones (jamais les null)
+   *    - language=FR → matières FR + matières héritées sans marqueur (null)
+   *    Cela garantit que les sélecteurs/tables du module examen ne récupèrent
+   *    QUE les matières de la piste du niveau sélectionné (exigence isolation).
+   */
+  async getSubjects(
+    academicYearId: string,
+    scope?: { schoolLevelId?: string; language?: string },
+  ): Promise<any> {
+    const offlineFallback = () =>
+      LocalSearchService.search("subject", {
+        tenantId: getTenantId(),
+        filters: { academicYearId, ...(scope?.language ? { language: scope.language } : {}) },
+      });
     try {
-      return await apiFetch(`/subjects?academicYearId=${academicYearId}`);
+      let qs = `academicYearId=${academicYearId}`;
+      if (scope?.schoolLevelId) qs += `&schoolLevelId=${encodeURIComponent(scope.schoolLevelId)}`;
+      if (scope?.language) qs += `&language=${encodeURIComponent(scope.language)}`;
+      return await apiFetch(`/subjects?${qs}`);
     } catch (e) {
       console.error('[pedagogyService.getSubjects] API failed, falling back to local:', e);
-      return LocalSearchService.search("subject", { tenantId: getTenantId(), filters: { academicYearId } });
+      return offlineFallback();
     }
   }
 

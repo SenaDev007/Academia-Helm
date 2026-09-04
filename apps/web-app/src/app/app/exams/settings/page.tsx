@@ -34,8 +34,8 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules, languageForLevel } from '../layout';
-import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
+import { useExamSubModules, useExamScope, languageForLevel } from '../layout';
+import { toastSuccess, toastError, toastWarning } from '@/lib/toast/toast-helpers';
 
 // ─── Types d'évaluation par défaut selon le niveau ─────────────────────────
 
@@ -192,6 +192,31 @@ function SettingsContent() {
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('DRAFT');
 
+  // ⭐ FEATURE — Partage du paramétrage entre Nursery et Primary (EN) :
+  // les deux niveaux anglophones sont quantitatifs /100 avec les mêmes types
+  // (First CA / Second CA / Examination) → l'école peut vouloir un paramétrage
+  // unique. Par défaut : ACTIVÉ (exigence utilisateur). Persisté en localStorage.
+  const siblingLevelCode = levelCode === 'NURSERY' ? 'PRIMARY'
+    : levelCode === 'PRIMARY' ? 'NURSERY' : null;
+  const canShareEnLevels = (language === 'EN') && !!siblingLevelCode;
+  const [shareEnLevels, setShareEnLevels] = useState(true);
+  const [siblingSettingsId, setSiblingSettingsId] = useState<string | null>(null);
+
+  // Restaurer la préférence de partage depuis localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('exams_settings_share_nursery_primary');
+      if (stored !== null) setShareEnLevels(stored === 'true');
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleShareEnLevels = (checked: boolean) => {
+    setShareEnLevels(checked);
+    try {
+      localStorage.setItem('exams_settings_share_nursery_primary', String(checked));
+    } catch { /* ignore */ }
+  };
+
   // Form state — Règles de calcul
   const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>([]);
   const [subjectFormula, setSubjectFormula] = useState('');
@@ -241,6 +266,11 @@ function SettingsContent() {
   const isPrimaire = levelCode === 'PRIMAIRE';
   const isSecondaire = levelCode === 'SECONDAIRE';
 
+  // ⭐ FEATURE — Interface bilingue : la page Paramètres s'affiche dans la
+  //    langue du niveau sélectionné (Nursery/Primary → anglais, sinon français).
+  const isENUI = language === 'EN';
+  const L = (fr: string, en: string): string => (isENUI ? en : fr);
+
   // ── Charger la config existante ──────────────────────────────────────────
   const loadSettings = useCallback(async () => {
     if (!academicYear?.id || !levelCode) return;
@@ -255,10 +285,39 @@ function SettingsContent() {
       );
       const active = scoped.find((s: any) => s.status === 'ACTIVE') || scoped[0];
 
-      if (active) {
-        setSettingsId(active.id);
-        setStatus(active.status || 'DRAFT');
-        const cfg = active.config || {};
+      // ⭐ FEATURE — Mémoriser le paramétrage du niveau jumeau (Nursery↔Primary)
+      //    pour pouvoir y refléter la sauvegarde quand le partage est activé.
+      if (siblingLevelCode) {
+        const siblingScoped = list.filter((s: any) =>
+          (s.levelCode || null) === siblingLevelCode &&
+          (s.language || null) === (language || null)
+        );
+        const siblingActive = siblingScoped.find((s: any) => s.status === 'ACTIVE') || siblingScoped[0];
+        setSiblingSettingsId(siblingActive?.id || null);
+      } else {
+        setSiblingSettingsId(null);
+      }
+
+      // ⭐ FEATURE — Si aucun paramétrage pour CE niveau mais que le partage
+      //    est activé et qu'un paramétrage existe pour le jumeau → le charger
+      //    comme point de départ (le paramétrage est alors identique).
+      const effectiveActive = active
+        || (shareEnLevels && siblingLevelCode
+          ? (() => {
+              const siblingScoped = list.filter((s: any) =>
+                (s.levelCode || null) === siblingLevelCode &&
+                (s.language || null) === (language || null)
+              );
+              return siblingScoped.find((s: any) => s.status === 'ACTIVE') || siblingScoped[0] || null;
+            })()
+          : null);
+
+      if (effectiveActive) {
+        // ⭐ Si on a chargé le paramétrage du jumeau (partage), settingsId reste
+        //    null : la sauvegarde créera une fiche propre à CE niveau.
+        setSettingsId(active?.id || null);
+        setStatus(effectiveActive.status || 'DRAFT');
+        const cfg = effectiveActive.config || {};
         if (cfg.assessmentTypes?.length) setAssessmentTypes(cfg.assessmentTypes);
         if (cfg.calculationRules?.subjectAverage?.expression) setSubjectFormula(cfg.calculationRules.subjectAverage.expression);
         if (cfg.calculationRules?.generalAverage?.expression) setGeneralFormula(cfg.calculationRules.generalAverage.expression);
@@ -326,7 +385,7 @@ function SettingsContent() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, levelCode, baseLevelCode, language]);
+  }, [academicYear?.id, levelCode, baseLevelCode, language, siblingLevelCode, shareEnLevels]);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
@@ -383,7 +442,39 @@ function SettingsContent() {
         const result = await academicSettingsService.create(payload);
         if (result?.id) setSettingsId(result.id);
       }
-      toastSuccess('Paramètres enregistrés');
+
+      // ⭐ FEATURE — Partage Nursery ↔ Primary : refléter la sauvegarde sur le
+      //    niveau jumeau anglophone (même config, même année, même piste EN).
+      //    Si une fiche existe déjà pour le jumeau → update ; sinon → create.
+      //    Le toggle désactivé → pas de reflet (paramétrages indépendants).
+      if (canShareEnLevels && shareEnLevels && siblingLevelCode) {
+        try {
+          const siblingLabel = siblingLevelCode === 'NURSERY' ? 'Nursery' : 'Primary';
+          const siblingPayload = {
+            ...payload,
+            name: `Paramétrage ${siblingLabel}${langLabel} — ${academicYear?.label || ''}`,
+            levelCode: siblingLevelCode,
+          };
+          if (siblingSettingsId) {
+            await academicSettingsService.update(siblingSettingsId, siblingPayload);
+          } else {
+            const siblingResult = await academicSettingsService.create(siblingPayload);
+            if (siblingResult?.id) setSiblingSettingsId(siblingResult.id);
+          }
+        } catch (mirrorErr: any) {
+          // Le reflet ne doit PAS faire échouer la sauvegarde principale
+          console.warn('[Settings] Miroir Nursery/Primary échoué :', mirrorErr?.message);
+          toastWarning('Paramétrage partagé : le miroir vers le niveau jumeau a échoué', {
+            description: mirrorErr?.message,
+          });
+        }
+      }
+
+      toastSuccess(
+        canShareEnLevels && shareEnLevels && siblingLevelCode
+          ? 'Paramètres enregistrés et appliqués à Nursery et Primary'
+          : 'Paramètres enregistrés'
+      );
       await loadSettings();
     } catch (err: any) {
       toastError('Erreur lors de la sauvegarde', { description: err.message });
@@ -397,7 +488,18 @@ function SettingsContent() {
     setSaving(true);
     try {
       await academicSettingsService.activate(settingsId);
-      toastSuccess('Paramètres activés');
+      // ⭐ FEATURE — Partage Nursery ↔ Primary : activer AUSSI le jumeau
+      //    (le statut ACTIVE doit être synchronisé avec la config partagée).
+      let mirrored = false;
+      if (canShareEnLevels && shareEnLevels && siblingSettingsId) {
+        try {
+          await academicSettingsService.activate(siblingSettingsId);
+          mirrored = true;
+        } catch (mirrorErr: any) {
+          console.warn('[Settings] Miroir activation Nursery/Primary échoué :', mirrorErr?.message);
+        }
+      }
+      toastSuccess(mirrored ? 'Paramètres activés pour Nursery et Primary' : 'Paramètres activés');
       await loadSettings();
     } catch (err: any) {
       toastError('Erreur activation', { description: err.message });
@@ -446,7 +548,7 @@ function SettingsContent() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Chargement des paramètres...</span>
+        <span className="ml-2 text-gray-600">{L('Chargement des paramètres...', 'Loading settings...')}</span>
       </div>
     );
   }
@@ -456,10 +558,10 @@ function SettingsContent() {
   )?.label || levelCode;
 
   const SUB_TABS = [
-    { id: 'calculation' as const, label: 'Règles de calcul', icon: Calculator },
-    { id: 'mentions' as const, label: 'Barèmes & Mentions', icon: Award },
-    { id: 'ranking' as const, label: 'Règles de classement', icon: Trophy },
-    { id: 'bulletin' as const, label: 'Options du Bulletin', icon: FileText },
+    { id: 'calculation' as const, label: L('Règles de calcul', 'Calculation Rules'), icon: Calculator },
+    { id: 'mentions' as const, label: L('Barèmes & Mentions', 'Grading Scale & Grades'), icon: Award },
+    { id: 'ranking' as const, label: L('Règles de classement', 'Ranking Rules'), icon: Trophy },
+    { id: 'bulletin' as const, label: L('Options du Bulletin', 'Report Card Options'), icon: FileText },
   ];
 
   return (
@@ -476,22 +578,48 @@ function SettingsContent() {
             status === 'LOCKED' ? 'bg-amber-100 text-amber-700' :
             'bg-gray-100 text-gray-600'
           )}>
-            {status === 'ACTIVE' ? 'Active' : status === 'LOCKED' ? 'Verrouillée' : 'Brouillon'}
+            {status === 'ACTIVE' ? L('Active', 'Active') : status === 'LOCKED' ? L('Verrouillée', 'Locked') : L('Brouillon', 'Draft')}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={loadSettings} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} /> Actualiser
+            <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} /> {L('Actualiser', 'Refresh')}
           </Button>
           <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-            Sauvegarder
+            {L('Sauvegarder', 'Save')}
           </Button>
           <Button size="sm" onClick={handleActivate} disabled={saving || !settingsId || status === 'ACTIVE'}>
-            <Zap className="w-4 h-4 mr-1" /> Activer
+            <Zap className="w-4 h-4 mr-1" /> {L('Activer', 'Activate')}
           </Button>
         </div>
       </div>
+
+      {/* ⭐ FEATURE — Partage du paramétrage Nursery ↔ Primary (uniquement EN) */}
+      {canShareEnLevels && (
+        <div className="flex items-center justify-between gap-4 bg-indigo-50/70 border border-indigo-200 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 p-2 rounded-lg bg-indigo-100 text-indigo-600">
+              <Settings className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-indigo-900">
+                {language === 'EN' ? 'Share settings between Nursery and Primary' : 'Partager le paramétrage entre Nursery et Primary'}
+              </p>
+              <p className="text-xs text-indigo-700 mt-0.5">
+                {language === 'EN'
+                  ? 'When enabled, saving here also applies the same configuration to the other anglophone level.'
+                  : 'Activé, la sauvegarde applique automatiquement la même configuration au niveau anglophone jumeau.'}
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={shareEnLevels}
+            onCheckedChange={toggleShareEnLevels}
+            aria-label="Partage Nursery/Primary"
+          />
+        </div>
+      )}
 
       {/* Sous-onglets */}
       <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1 flex-wrap">
@@ -516,9 +644,11 @@ function SettingsContent() {
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <h3 className="text-sm font-bold text-blue-900">Système de calcul — {levelLabel}</h3>
+                  <h3 className="text-sm font-bold text-blue-900">{L('Système de calcul', 'Calculation System')} — {levelLabel}</h3>
                   <p className="text-xs text-blue-700 mt-1">
-                    {DEFAULT_FORMULAS[levelCode]?.[language || 'FR']?.description || 'Configurez les règles de calcul ci-dessous.'}
+                    {DEFAULT_FORMULAS[levelCode]?.[language || 'FR']?.description
+                      || DEFAULT_FORMULAS[baseLevelCode]?.[language || 'FR']?.description
+                      || L('Configurez les règles de calcul ci-dessous.', 'Configure the calculation rules below.')}
                   </p>
                 </div>
               </div>
@@ -529,26 +659,26 @@ function SettingsContent() {
           <Card>
             <CardHeader>
               <CardTitle className="text-md flex items-center justify-between">
-                <span>Types d'évaluation</span>
+                <span>{L("Types d'évaluation", 'Assessment Types')}</span>
                 <Button size="sm" variant="outline" onClick={addAssessmentType}>
-                  <Plus className="w-4 h-4 mr-1" /> Ajouter
+                  <Plus className="w-4 h-4 mr-1" /> {L('Ajouter', 'Add')}
                 </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
               {/* En-têtes de colonnes */}
               <div className="flex items-center gap-2 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
-                <span className="w-24 flex-shrink-0">Code</span>
-                <span className="flex-1">Nom de l'évaluation</span>
+                <span className="w-24 flex-shrink-0">{L('Code', 'Code')}</span>
+                <span className="flex-1">{L("Nom de l'évaluation", 'Assessment Name')}</span>
                 <span className="w-10"></span>
               </div>
               <div className="space-y-2">
                 {assessmentTypes.map((at, i) => (
                   <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <Input placeholder="Code" value={at.code} maxLength={10}
+                    <Input placeholder={L('Code', 'Code')} value={at.code} maxLength={10}
                       onChange={e => updateAssessmentType(i, 'code', e.target.value.toUpperCase())}
                       className="w-24 text-xs font-mono flex-shrink-0" />
-                    <Input placeholder="Nom de l'évaluation" value={at.label}
+                    <Input placeholder={L("Nom de l'évaluation", 'Assessment name')} value={at.label}
                       onChange={e => updateAssessmentType(i, 'label', e.target.value)}
                       className="flex-1 min-w-0 text-sm" />
                     <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)} className="flex-shrink-0">
@@ -557,7 +687,7 @@ function SettingsContent() {
                   </div>
                 ))}
                 {assessmentTypes.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-4">Aucun type d'évaluation. Cliquez sur "Ajouter".</p>
+                  <p className="text-sm text-gray-400 text-center py-4">{L('Aucun type d\'évaluation. Cliquez sur "Ajouter".', 'No assessment type. Click "Add".')}</p>
                 )}
               </div>
               {/* Bouton de réinitialisation — SPÉCIFIQUE au niveau + piste sélectionnés */}
@@ -569,7 +699,7 @@ function SettingsContent() {
                   }}
                   className="px-3 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold border border-blue-200"
                 >
-                  ↻ Réinitialiser aux valeurs par défaut ({levelCode} · {language || 'FR'})
+                  ↻ {L('Réinitialiser aux valeurs par défaut', 'Reset to defaults')} ({levelCode} · {language || 'FR'})
                 </button>
               </div>
             </CardContent>
@@ -577,16 +707,16 @@ function SettingsContent() {
 
           {/* Formules de calcul */}
           <Card>
-            <CardHeader><CardTitle className="text-md">Formules de calcul</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-md">{L('Formules de calcul', 'Calculation Formulas')}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Formule moyenne par matière</label>
+                <label className="text-xs font-bold text-gray-600 block mb-1">{L('Formule moyenne par matière', 'Subject Average Formula')}</label>
                 <Input value={subjectFormula} onChange={e => setSubjectFormula(e.target.value)}
                   placeholder="Ex: (CM + CP) / 2 ou ((INT1 + INT2) / 2 + DS1 + DS2) / 3"
                   className="font-mono text-sm" />
               </div>
               <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Formule moyenne générale</label>
+                <label className="text-xs font-bold text-gray-600 block mb-1">{L('Formule moyenne générale', 'General Average Formula')}</label>
                 <Input value={generalFormula} onChange={e => setGeneralFormula(e.target.value)}
                   placeholder="Ex: SUM(moyenne_matière) / COUNT(matières) ou SUM(moyenne × coef) / SUM(coef)"
                   className="font-mono text-sm" />
@@ -621,29 +751,29 @@ function SettingsContent() {
           {/* Politique d'absence + Arrondi — PAS pour la maternelle FR (pas de notes numériques) */}
           {!isMaternelleFR && (
           <Card>
-            <CardHeader><CardTitle className="text-md">Politique d'absence & Arrondi</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-md">{L("Politique d'absence & Arrondi", 'Absence Policy & Rounding')}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Politique d'absence</label>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">{L("Politique d'absence", 'Absence Policy')}</label>
                   <select value={absencePolicy} onChange={e => setAbsencePolicy(e.target.value as any)}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    <option value="EXCLUDE">Exclure de la moyenne</option>
-                    <option value="ZERO">Note zéro</option>
-                    <option value="NOT_CLASSIFIED">Non classé</option>
+                    <option value="EXCLUDE">{L('Exclure de la moyenne', 'Exclude from average')}</option>
+                    <option value="ZERO">{L('Note zéro', 'Zero mark')}</option>
+                    <option value="NOT_CLASSIFIED">{L('Non classé', 'Not classified')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Mode d'arrondi</label>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">{L("Mode d'arrondi", 'Rounding Mode')}</label>
                   <select value={roundingMode} onChange={e => setRoundingMode(e.target.value as any)}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    <option value="HALF_UP">Demi vers le haut</option>
-                    <option value="FLOOR">Toujours vers le bas</option>
-                    <option value="CEIL">Toujours vers le haut</option>
+                    <option value="HALF_UP">{L('Demi vers le haut', 'Half up')}</option>
+                    <option value="FLOOR">{L('Toujours vers le bas', 'Always down')}</option>
+                    <option value="CEIL">{L('Toujours vers le haut', 'Always up')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Nombre de décimales</label>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">{L('Nombre de décimales', 'Decimal Places')}</label>
                   <Input type="number" min={0} max={4} value={roundingDecimals}
                     onChange={e => setRoundingDecimals(Number(e.target.value))}
                     className="text-center" />
@@ -717,19 +847,19 @@ function SettingsContent() {
             // ⭐ Primaire/Secondaire/Maternelle EN : barème quantitatif + mentions
             <>
             <Card>
-              <CardHeader><CardTitle className="text-md">Barème de notation</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-md">{L('Barème de notation', 'Grading Scale')}</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="text-xs font-bold text-gray-600 block mb-1">Note minimale</label>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">{L('Note minimale', 'Minimum Score')}</label>
                     <Input type="number" value={scoreMin} onChange={e => setScoreMin(Number(e.target.value))} className="text-center" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600 block mb-1">Note maximale</label>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">{L('Note maximale', 'Maximum Score')}</label>
                     <Input type="number" value={scoreMax} onChange={e => setScoreMax(Number(e.target.value))} className="text-center" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600 block mb-1">Seuil de réussite</label>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">{L('Seuil de réussite', 'Passing Score')}</label>
                     <Input type="number" value={passScore} onChange={e => setPassScore(Number(e.target.value))} className="text-center" />
                   </div>
                 </div>
@@ -740,9 +870,9 @@ function SettingsContent() {
           <Card>
             <CardHeader>
               <CardTitle className="text-md flex items-center justify-between">
-                <span>Mentions & Appréciations</span>
+                <span>{L('Mentions & Appréciations', 'Grades & Comments')}</span>
                 <Button size="sm" variant="outline" onClick={addMention}>
-                  <Plus className="w-4 h-4 mr-1" /> Ajouter
+                  <Plus className="w-4 h-4 mr-1" /> {L('Ajouter', 'Add')}
                 </Button>
               </CardTitle>
             </CardHeader>
@@ -757,10 +887,10 @@ function SettingsContent() {
                     <Input type="number" placeholder="Max" value={m.maxScore}
                       onChange={e => updateMention(m.id, 'maxScore', Number(e.target.value))}
                       className="w-20 text-center text-sm" />
-                    <Input placeholder="Mention" value={m.label}
+                    <Input placeholder={L('Mention', 'Grade')} value={m.label}
                       onChange={e => updateMention(m.id, 'label', e.target.value)}
                       className="w-36 text-sm font-semibold flex-shrink-0" />
-                    <Input placeholder="Appréciation (optionnel)" value={m.appreciation}
+                    <Input placeholder={L('Appréciation (optionnel)', 'Comment (optional)')} value={m.appreciation}
                       onChange={e => updateMention(m.id, 'appreciation', e.target.value)}
                       className="flex-1 min-w-0 text-sm" />
                     <Button size="sm" variant="ghost" onClick={() => removeMention(m.id)} className="flex-shrink-0">
@@ -780,37 +910,37 @@ function SettingsContent() {
       {activeSubTab === 'ranking' && (
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-md">Configuration du classement</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-md">{L('Configuration du classement', 'Ranking Configuration')}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Portée du classement</label>
+                <label className="text-xs font-bold text-gray-600 block mb-1">{L('Portée du classement', 'Ranking Scope')}</label>
                 <select value={rankingScope} onChange={e => setRankingScope(e.target.value as any)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="CLASS">Par classe</option>
-                  <option value="LEVEL">Par niveau scolaire</option>
-                  <option value="SCHOOL">Toute l'école</option>
+                  <option value="CLASS">{L('Par classe', 'By class')}</option>
+                  <option value="LEVEL">{L('Par niveau scolaire', 'By school level')}</option>
+                  <option value="SCHOOL">{L("Toute l'école", 'Whole school')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-600 block mb-1">Gestion des ex aequo</label>
+                <label className="text-xs font-bold text-gray-600 block mb-1">{L('Gestion des ex aequo', 'Tie Handling')}</label>
                 <select value={tieMode} onChange={e => setTieMode(e.target.value as any)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="DENSE_RANK">Sans saut — 1er, 2e, 2e, 3e (ex aequo conservés)</option>
-                  <option value="COMPETITION_RANK">Avec saut — 1er, 2e, 2e ex, 4e (ex aequo avec saut)</option>
-                  <option value="UNIQUE">Départage — pas d'ex aequo (chaque élève a un rang unique)</option>
+                  <option value="DENSE_RANK">{L('Sans saut — 1er, 2e, 2e, 3e (ex aequo conservés)', 'No gap — 1st, 2nd, 2nd, 3rd (ties kept)')}</option>
+                  <option value="COMPETITION_RANK">{L('Avec saut — 1er, 2e, 2e ex, 4e (ex aequo avec saut)', 'With gap — 1st, 2nd, 2nd, 4th (ties with gap)')}</option>
+                  <option value="UNIQUE">{L("Départage — pas d'ex aequo (chaque élève a un rang unique)", 'Tie-break — no ties (each student gets a unique rank)')}</option>
                 </select>
               </div>
 
               <div className="space-y-2 pt-2">
-                <ToggleRow label="Exclure les absents du classement" checked={excludeAbsentees} onChange={setExcludeAbsentees} />
-                <ToggleRow label="Afficher le rang sur le bulletin" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
-                <ToggleRow label="Afficher la moyenne de classe sur le bulletin" checked={showClassAverage} onChange={setShowClassAverage} />
+                <ToggleRow label={L("Exclure les absents du classement", 'Exclude absentees from ranking')} checked={excludeAbsentees} onChange={setExcludeAbsentees} />
+                <ToggleRow label={L('Afficher le rang sur le bulletin', 'Show rank on report card')} checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
+                <ToggleRow label={L('Afficher la moyenne de classe sur le bulletin', 'Show class average on report card')} checked={showClassAverage} onChange={setShowClassAverage} />
                 {!isMaternelleFR && (
-                  <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+                  <ToggleRow label={L('Afficher la plus forte moyenne', 'Show highest average')} checked={showHighestAverage} onChange={setShowHighestAverage} />
                 )}
                 {!isMaternelleFR && (
-                  <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+                  <ToggleRow label={L('Afficher la plus faible moyenne', 'Show lowest average')} checked={showLowestAverage} onChange={setShowLowestAverage} />
                 )}
               </div>
             </CardContent>
@@ -822,33 +952,33 @@ function SettingsContent() {
       {activeSubTab === 'bulletin' && (
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-md">Options d'affichage du bulletin</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-md">{L("Options d'affichage du bulletin", 'Report Card Display Options')}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <ToggleRow label="Afficher la moyenne de l'élève" checked={showStudentAverage} onChange={setShowStudentAverage} />
-              <ToggleRow label="Afficher la moyenne de la classe" checked={showClassAverage} onChange={setShowClassAverage} />
-              <ToggleRow label="Afficher la mention de l'élève" checked={showMention} onChange={setShowMention} />
-              <ToggleRow label="Afficher le rang" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
-              <ToggleRow label="Afficher les absences" checked={showAbsences} onChange={setShowAbsences} />
-              <ToggleRow label="Afficher les appréciations des enseignants" checked={showTeacherAppreciations} onChange={setShowTeacherAppreciations} />
+              <ToggleRow label={L("Afficher la moyenne de l'élève", "Show student's average")} checked={showStudentAverage} onChange={setShowStudentAverage} />
+              <ToggleRow label={L('Afficher la moyenne de la classe', 'Show class average')} checked={showClassAverage} onChange={setShowClassAverage} />
+              <ToggleRow label={L("Afficher la mention de l'élève", "Show student's grade")} checked={showMention} onChange={setShowMention} />
+              <ToggleRow label={L('Afficher le rang', 'Show rank')} checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
+              <ToggleRow label={L('Afficher les absences', 'Show absences')} checked={showAbsences} onChange={setShowAbsences} />
+              <ToggleRow label={L("Afficher les appréciations des enseignants", 'Show teacher comments')} checked={showTeacherAppreciations} onChange={setShowTeacherAppreciations} />
               {!isMaternelleFR && (
-                <ToggleRow label="Afficher les coefficients" checked={showCoefficients} onChange={setShowCoefficients} />
+                <ToggleRow label={L('Afficher les coefficients', 'Show coefficients')} checked={showCoefficients} onChange={setShowCoefficients} />
               )}
               {!isMaternelleFR && (
-                <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+                <ToggleRow label={L('Afficher la plus forte moyenne', 'Show highest average')} checked={showHighestAverage} onChange={setShowHighestAverage} />
               )}
               {!isMaternelleFR && (
-                <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+                <ToggleRow label={L('Afficher la plus faible moyenne', 'Show lowest average')} checked={showLowestAverage} onChange={setShowLowestAverage} />
               )}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-md">Signatures & Éléments visuels</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-md">{L('Signatures & Éléments visuels', 'Signatures & Visual Elements')}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <ToggleRow label="Afficher la signature du directeur" checked={showDirectorSignature} onChange={setShowDirectorSignature} />
-              <ToggleRow label="Afficher le cachet de l'établissement" checked={showSchoolStamp} onChange={setShowSchoolStamp} />
-              <ToggleRow label="Inclure le logo/photo de l'école" checked={showSchoolLogo} onChange={setShowSchoolLogo} />
-              <ToggleRow label="Inclure le QR code de vérification" checked={showQRCode} onChange={setShowQRCode} />
+              <ToggleRow label={L("Afficher la signature du directeur", "Show principal's signature")} checked={showDirectorSignature} onChange={setShowDirectorSignature} />
+              <ToggleRow label={L("Afficher le cachet de l'établissement", 'Show school stamp')} checked={showSchoolStamp} onChange={setShowSchoolStamp} />
+              <ToggleRow label={L("Inclure le logo/photo de l'école", 'Include school logo/photo')} checked={showSchoolLogo} onChange={setShowSchoolLogo} />
+              <ToggleRow label={L('Inclure le QR code de vérification', 'Include verification QR code')} checked={showQRCode} onChange={setShowQRCode} />
             </CardContent>
           </Card>
         </div>
@@ -876,11 +1006,16 @@ function ToggleRow({ label, checked, onChange }: {
 
 export default function AcademicSettingsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  // ⭐ En-tête dans la langue du niveau (Nursery/Primary → anglais)
+  const { language } = useExamScope();
+  const isENHeader = language === 'EN';
   return (
     <ModuleContainer
       header={{
-        title: 'Paramètres',
-        description: 'Configuration du système d\'évaluation par niveau scolaire et piste linguistique.',
+        title: isENHeader ? 'Settings' : 'Paramètres',
+        description: isENHeader
+          ? 'Assessment system configuration per school level and language track.'
+          : 'Configuration du système d\'évaluation par niveau scolaire et piste linguistique.',
         icon: 'slidersHorizontal',
       }}
       subModules={{

@@ -29,6 +29,9 @@ import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
 import { PricingService } from '../../billing/services/pricing.service';
 import { OtpService } from './otp.service';
 import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
+// ⭐ V6 (spec §4/§6) — Helm Connect : canaux officiels + communautés auto
+//    dès l'activation d'un établissement
+import { HelmConnectBootstrapService } from '../../communication/services/helm-connect-bootstrap.service';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -74,6 +77,8 @@ export class OnboardingService {
     private readonly fedapayService: any, // Type 'any' temporaire pour éviter l'erreur de référence circulaire
     @Inject(forwardRef(() => OrionAlertsService))
     private readonly orionAlertsService?: OrionAlertsService,
+    // ⭐ V6 (spec §4/§6) — Helm Connect : canaux officiels + communautés auto
+    private readonly helmConnectBootstrap?: HelmConnectBootstrapService,
   ) {}
 
   /**
@@ -1364,6 +1369,13 @@ export class OnboardingService {
       // bloquer la transaction DB. On les exécute en arrière-plan.
       this.createSubdomainsAsync(tenants);
 
+      // ⭐ V6 (spec §4/§6) — HELM CONNECT : provisionnement automatique des
+      //    canaux officiels (Direction, Vie scolaire, Transport, Finance,
+      //    Infos pédagogiques, Calendrier scolaire) + abonnement du promoteur,
+      //    puis communautés automatiques dès qu'une année scolaire sera active.
+      //    Fire-and-forget : ne bloque JAMAIS l'activation.
+      this.provisionHelmConnectAsync(tenants);
+
       // ⭐ Invalider le cache de la liste publique des écoles pour que le nouveau
       // tenant apparaisse immédiatement dans le modal de sélection du portail.
       // Sans cette invalidation, le cache Redis (60s) + cache Next.js BFF
@@ -1381,6 +1393,33 @@ export class OnboardingService {
   }
 
   // Note: generateSlug supprimé - utilise SubdomainService.generateAndValidate()
+
+  /**
+   * ⭐ V6 (spec §4/§6) — Provisionne Helm Connect pour un nouveau tenant :
+   *    crée les 6 canaux officiels de diffusion + abonne tous les comptes
+   *    existants (dont le promoteur fraîchement créé), et tente la création
+   *    des communautés automatiques si une année scolaire est déjà active.
+   *    Fire-and-forget : aucune erreur ne remonte à l'activation.
+   */
+  private provisionHelmConnectAsync(tenants: { id: string; subdomain: string | null; name: string }[]): void {
+    if (!this.helmConnectBootstrap) {
+      this.logger.warn('⚠️  HelmConnectBootstrapService indisponible — provisionnement Helm Connect ignoré');
+      return;
+    }
+    const bootstrap = this.helmConnectBootstrap;
+    Promise.all(
+      tenants.map(async (tenant) => {
+        try {
+          const result = await bootstrap.syncTenant(tenant.id);
+          this.logger.log(
+            `✅ Helm Connect provisionné pour « ${tenant.name} » : ${result.channels.created} canal(aux) officiel(s) créé(s), ${result.channels.subscribed} abonnement(s)`,
+          );
+        } catch (e: any) {
+          this.logger.warn(`⚠️  Helm Connect provisionnement échoué pour « ${tenant.name} »: ${e.message} — la sync périodique rattrapera`);
+        }
+      }),
+    ).catch(() => { /* déjà géré par tenant */ });
+  }
 
   /**
    * Crée les sous-domaines Cloudflare + Vercel de façon asynchrone (fire-and-forget).

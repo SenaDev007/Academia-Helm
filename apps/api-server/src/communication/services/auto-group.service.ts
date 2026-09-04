@@ -31,12 +31,13 @@ import { PrismaService } from '../../database/prisma.service';
 import { ChatService } from './chat.service';
 
 export interface AutoGroupConfig {
-  groupType: 'CLASS' | 'SUBJECT' | 'ROLE' | 'STAFF';
+  groupType: 'CLASS' | 'SUBJECT' | 'ROLE' | 'STAFF' | 'LEVEL' | 'TEACHER_SUBJECT' | 'COUNCIL';
   name: string;
   description?: string;
   classId?: string;
   subjectId?: string;
-  roleType?: 'TEACHERS' | 'PARENTS' | 'ADMINISTRATION' | 'ALL_STAFF';
+  levelId?: string;
+  roleType?: 'TEACHERS' | 'PARENTS' | 'ADMINISTRATION' | 'ALL_STAFF' | 'PEDAGOGICAL_COUNCIL';
 }
 
 @Injectable()
@@ -125,6 +126,75 @@ export class AutoGroupService {
         if (result === 'created') created++;
         else if (result === 'updated') updated++;
         else skipped++;
+      }
+
+      // ⭐ V6 (spec §4) — GROUPES PAR NIVEAU : « Parents – 6ème » (parents des
+      //    élèves des classes de chaque niveau). Dynamique : si un élève change
+      //    de niveau, la sync le retire/ajoute automatiquement.
+      const levels = await this.prisma.schoolLevel.findMany({
+        where: { tenantId, isActive: true },
+        select: { id: true, name: true, label: true },
+      });
+      const classesWithLevel = await this.prisma.class.findMany({
+        where: { tenantId, academicYearId },
+        select: { id: true, schoolLevelId: true },
+      });
+      const classesByLevel = new Map<string, string[]>();
+      for (const cls of classesWithLevel) {
+        if (!cls.schoolLevelId) continue;
+        const arr = classesByLevel.get(cls.schoolLevelId) || [];
+        arr.push(cls.id);
+        classesByLevel.set(cls.schoolLevelId, arr);
+      }
+      for (const level of levels) {
+        const levelClassIds = classesByLevel.get(level.id) || [];
+        if (levelClassIds.length === 0) continue; // niveau sans classe cette année
+        const levelName = (level.label || level.name || 'Niveau').trim();
+        const parentIds = await this.getLevelParentParticipants(levelClassIds);
+        if (parentIds.length === 0) continue;
+        const result = await this.createOrUpdateAutoGroup(tenantId, academicYearId, {
+          groupType: 'LEVEL',
+          name: `Parents – ${levelName}`,
+          description: `Parents des élèves du niveau ${levelName}`,
+          levelId: level.id,
+        }, parentIds);
+        if (result === 'created') created++;
+        else if (result === 'updated') updated++;
+        else skipped++;
+      }
+
+      // ⭐ V6 (spec §4) — ENSEIGNANTS PAR MATIÈRE : « Enseignants de
+      //    mathématiques » (tous les enseignants assignés à la matière,
+      //    toutes classes confondues).
+      for (const subject of subjects) {
+        const subjectTeacherIds = await this.getSubjectTeacherParticipants(tenantId, subject.id);
+        if (subjectTeacherIds.length === 0) continue;
+        const result = await this.createOrUpdateAutoGroup(tenantId, academicYearId, {
+          groupType: 'TEACHER_SUBJECT',
+          name: `Enseignants de ${subject.name}`,
+          description: `Tous les enseignants de la matière ${subject.name}`,
+          subjectId: subject.id,
+        }, subjectTeacherIds);
+        if (result === 'created') created++;
+        else if (result === 'updated') updated++;
+        else skipped++;
+      }
+
+      // ⭐ V6 (spec §4) — CONSEIL PÉDAGOGIQUE : direction + professeurs
+      //    principaux de toutes les classes.
+      {
+        const councilParticipants = await this.getPedagogicalCouncilParticipants(tenantId, academicYearId);
+        if (councilParticipants.length > 0) {
+          const result = await this.createOrUpdateAutoGroup(tenantId, academicYearId, {
+            groupType: 'COUNCIL',
+            name: 'Conseil pédagogique',
+            description: 'Direction et professeurs principaux — coordination pédagogique',
+            roleType: 'PEDAGOGICAL_COUNCIL',
+          }, councilParticipants);
+          if (result === 'created') created++;
+          else if (result === 'updated') updated++;
+          else skipped++;
+        }
       }
 
       // 6. Sync members for all auto groups (update existing conversations)
@@ -250,6 +320,100 @@ export class AutoGroupService {
   }
 
   /**
+   * ⭐ V6 (spec §4) — Participants des groupes par niveau : parents des
+   *    élèves inscrits dans les classes du niveau (via guardian → user).
+   */
+  private async getLevelParentParticipants(classIds: string[]): Promise<string[]> {
+    const participantIds: string[] = [];
+    try {
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: { classId: { in: classIds }, status: 'ENROLLED' },
+        select: { student: { select: { guardianId: true } } },
+      });
+      const guardianIds = Array.from(new Set(
+        enrollments.map(e => e.student?.guardianId).filter((g): g is string => !!g),
+      ));
+      if (guardianIds.length > 0) {
+        const guardians = await this.prisma.guardian.findMany({
+          where: { id: { in: guardianIds }, userId: { not: null } },
+          select: { userId: true },
+        });
+        for (const g of guardians) {
+          if (g.userId) participantIds.push(g.userId);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`getLevelParentParticipants failed: ${e.message}`);
+    }
+    return Array.from(new Set(participantIds));
+  }
+
+  /**
+   * ⭐ V6 (spec §4) — Participants « Enseignants de {matière} » : tous les
+   *    enseignants assignés à la matière (toutes classes confondues).
+   */
+  private async getSubjectTeacherParticipants(tenantId: string, subjectId: string): Promise<string[]> {
+    const participantIds: string[] = [];
+    try {
+      const assignments = await this.prisma.teacherSubjectAssignment.findMany({
+        where: { subjectId, tenantId },
+        select: { teacherId: true, teacher: { select: { email: true } } },
+      }).catch(() => [] as any[]);
+      const teacherEmails = Array.from(new Set(
+        assignments.map(a => a.teacher?.email).filter((e): e is string => !!e),
+      ));
+      if (teacherEmails.length > 0) {
+        const users = await this.prisma.user.findMany({
+          where: { email: { in: teacherEmails }, tenantId, status: 'active' },
+          select: { id: true },
+        });
+        for (const u of users) participantIds.push(u.id);
+      }
+    } catch (e: any) {
+      this.logger.warn(`getSubjectTeacherParticipants failed: ${e.message}`);
+    }
+    return Array.from(new Set(participantIds));
+  }
+
+  /**
+   * ⭐ V6 (spec §4) — Participants du Conseil pédagogique : direction
+   *    (rôles administratifs) + professeurs principaux de toutes les classes.
+   */
+  private async getPedagogicalCouncilParticipants(tenantId: string, academicYearId: string): Promise<string[]> {
+    const participantIds: string[] = [];
+    try {
+      // 1. Direction / administration
+      const adminIds = await this.getRoleParticipants(tenantId, 'ADMINISTRATION');
+      participantIds.push(...adminIds);
+      // 2. Professeurs principaux (mainTeacher de chaque classe de l'année)
+      const classes = await this.prisma.class.findMany({
+        where: { tenantId, academicYearId, mainTeacherId: { not: null } },
+        select: { mainTeacherId: true },
+      });
+      const mainTeacherIds = Array.from(new Set(
+        classes.map(c => c.mainTeacherId).filter((t): t is string => !!t),
+      ));
+      if (mainTeacherIds.length > 0) {
+        const teachers = await this.prisma.teacher.findMany({
+          where: { id: { in: mainTeacherIds } },
+          select: { email: true },
+        });
+        const emails = Array.from(new Set(teachers.map(t => t.email).filter((e): e is string => !!e)));
+        if (emails.length > 0) {
+          const users = await this.prisma.user.findMany({
+            where: { email: { in: emails }, tenantId, status: 'active' },
+            select: { id: true },
+          });
+          for (const u of users) participantIds.push(u.id);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`getPedagogicalCouncilParticipants failed: ${e.message}`);
+    }
+    return Array.from(new Set(participantIds));
+  }
+
+  /**
    * Create or update an auto group. If it already exists, update the name/description.
    * Returns 'created' | 'updated' | 'skipped'.
    * ⭐ V3-12: Now accepts precomputed participantIds and uses them to create
@@ -268,9 +432,10 @@ export class AutoGroupService {
          WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "groupType" = $3
            AND COALESCE("classId", '00000000-0000-0000-0000-000000000000') = COALESCE($4, '00000000-0000-0000-0000-000000000000')
            AND COALESCE("subjectId", '00000000-0000-0000-0000-000000000000') = COALESCE($5, '00000000-0000-0000-0000-000000000000')
-           AND COALESCE("roleType", 'NONE') = COALESCE($6, 'NONE')`,
+           AND COALESCE("roleType", 'NONE') = COALESCE($6, 'NONE')
+           AND COALESCE("levelId", '00000000-0000-0000-0000-000000000000') = COALESCE($7, '00000000-0000-0000-0000-000000000000')`,
         tenantId, academicYearId, config.groupType,
-        config.classId || null, config.subjectId || null, config.roleType || null,
+        config.classId || null, config.subjectId || null, config.roleType || null, config.levelId || null,
       );
 
       if (existing.length > 0) {
@@ -286,10 +451,10 @@ export class AutoGroupService {
       // Create new auto group record
       const id = crypto.randomUUID();
       await this.prisma.$executeRawUnsafe(
-        `INSERT INTO "chat_auto_groups" ("id", "tenantId", "academicYearId", "groupType", "classId", "subjectId", "roleType", "name", "description", "isActive", "autoSync")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, true)`,
+        `INSERT INTO "chat_auto_groups" ("id", "tenantId", "academicYearId", "groupType", "classId", "subjectId", "levelId", "roleType", "name", "description", "isActive", "autoSync")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, true)`,
         id, tenantId, academicYearId, config.groupType,
-        config.classId || null, config.subjectId || null, config.roleType || null,
+        config.classId || null, config.subjectId || null, config.levelId || null, config.roleType || null,
         config.name, config.description || null,
       );
 
@@ -345,6 +510,19 @@ export class AutoGroupService {
           participantIds = await this.getClassParticipants(tenantId, group.classId);
         } else if (group.groupType === 'SUBJECT' && group.classId && group.subjectId) {
           participantIds = await this.getSubjectParticipants(tenantId, group.classId, group.subjectId);
+        } else if (group.groupType === 'LEVEL' && group.levelId) {
+          // ⭐ V6 — Parents du niveau : recalcul via les classes du niveau
+          const levelClasses = await this.prisma.class.findMany({
+            where: { tenantId, academicYearId, schoolLevelId: group.levelId },
+            select: { id: true },
+          });
+          participantIds = await this.getLevelParentParticipants(levelClasses.map(c => c.id));
+        } else if (group.groupType === 'TEACHER_SUBJECT' && group.subjectId) {
+          // ⭐ V6 — Enseignants de la matière
+          participantIds = await this.getSubjectTeacherParticipants(tenantId, group.subjectId);
+        } else if (group.groupType === 'COUNCIL') {
+          // ⭐ V6 — Conseil pédagogique
+          participantIds = await this.getPedagogicalCouncilParticipants(tenantId, academicYearId);
         } else if (group.groupType === 'ROLE' || group.groupType === 'STAFF') {
           participantIds = await this.getRoleParticipants(tenantId, group.roleType);
         }

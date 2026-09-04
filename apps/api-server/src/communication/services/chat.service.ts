@@ -1318,18 +1318,34 @@ export class ChatService {
 
   /**
    * Cron: dispatch due scheduled messages. Called every minute via @Interval.
+   *
+   * ⭐ FIX V6 (bug « message programmé ne fonctionne pas ») :
+   *    La table chat_scheduled_messages n'a PAS de colonne "tenantId"
+   *    (voir migration 20260901130000_add_v2_features). L'ancien code lisait
+   *    `sm.tenantId || ''` → chaîne vide → sendTextMessage('', …) →
+   *    ForbiddenException (conversation introuvable pour ce tenant) →
+   *    statut FAILED : le message programmé n'était JAMAIS envoyé.
+   *    On récupère maintenant le tenantId via un JOIN sur chat_conversations.
    */
   @Interval(60000) // every 60 seconds
   async dispatchScheduledMessages(): Promise<number> {
     const due: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-      SELECT * FROM chat_scheduled_messages
-      WHERE "status" = 'PENDING' AND "scheduledFor" <= NOW()
+      SELECT sm.*, c."tenantId" AS "tenantId"
+      FROM chat_scheduled_messages sm
+      JOIN chat_conversations c ON c.id = sm."conversationId"
+      WHERE sm."status" = 'PENDING' AND sm."scheduledFor" <= NOW()
       LIMIT 50
     `);
     let count = 0;
     for (const sm of due) {
       try {
-        const msg = await this.sendTextMessage(sm.tenantId || '', sm.senderId, sm.conversationId, { content: sm.content });
+        const tenantId = sm.tenantId || '';
+        if (!tenantId) {
+          // Conversation orpheline (tenant supprimé) → marquer FAILED plutôt que boucler
+          await this.prisma.$executeRawUnsafe(`UPDATE chat_scheduled_messages SET "status" = 'FAILED' WHERE id = $1`, sm.id);
+          continue;
+        }
+        const msg = await this.sendTextMessage(tenantId, sm.senderId, sm.conversationId, { content: sm.content });
         await this.prisma.$executeRawUnsafe(`
           UPDATE chat_scheduled_messages SET "status" = 'SENT', "sentMessageId" = $1, "sentAt" = NOW() WHERE id = $2
         `, msg.id, sm.id);

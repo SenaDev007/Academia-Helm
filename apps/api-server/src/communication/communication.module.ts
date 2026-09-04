@@ -30,6 +30,9 @@ import { CommunicationOrionService } from './services/communication-orion.servic
 import { CommunicationSaraService } from './services/communication-sara.service';
 import { ScheduledEmailService } from './services/scheduled-email.service';
 import { ScheduledEmailDispatcherService } from './services/scheduled-email-dispatcher.service';
+// ⭐ V6 (spec §4/§6) — Canaux officiels automatiques + bootstrap périodique
+import { AutoChannelService } from './services/auto-channel.service';
+import { HelmConnectBootstrapService } from './services/helm-connect-bootstrap.service';
 import { CommunicationV2Controller } from './communication-v2.controller';
 import { CommunicationPrismaController } from './communication-prisma.controller';
 import { CommunicationPrismaService } from './communication-prisma.service';
@@ -189,6 +192,9 @@ import { ChatAtlasService } from './services/chat-atlas.service';
     CommunicationPermissionsService,
     FileScannerService,
     ChatAtlasService,
+    // ⭐ V6 (spec §4/§6) — Canaux officiels automatiques + bootstrap périodique
+    AutoChannelService,
+    HelmConnectBootstrapService,
   ],
   exports: [
     EmailService,
@@ -222,6 +228,10 @@ import { ChatAtlasService } from './services/chat-atlas.service';
     ChatTranscriptionService,
     // ⭐ V3-11 — Auto-groups service (Communautés)
     AutoGroupService,
+    // ⭐ V6 — Bootstrap Helm Connect (canaux + groupes auto) — utilisé par
+    //    l'onboarding via injection directe du module
+    HelmConnectBootstrapService,
+    AutoChannelService,
   ],
 })
 export class CommunicationModule implements OnModuleInit {

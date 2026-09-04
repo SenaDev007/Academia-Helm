@@ -25,7 +25,7 @@
 
 import React, { useState, useRef } from 'react';
 import {
-  X, Image as ImageIcon, FileText, BarChart3, Mic,
+  X, Image as ImageIcon, FileText, BarChart3, Mic, Clock,
   MapPin, User, Camera, Film, Music,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -47,6 +47,8 @@ interface CategorizedAttachmentMenuProps {
   onClose: () => void;
   onSendFile: (file: File, type: 'IMAGE' | 'DOCUMENT' | 'AUDIO') => Promise<void>;
   onOpenPoll: () => void;
+  /** ⭐ V6 — ouvre le modal « Programmer le message » (mobile-friendly). */
+  onOpenSchedule?: () => void;
 }
 
 export default function CategorizedAttachmentMenu({
@@ -55,6 +57,7 @@ export default function CategorizedAttachmentMenu({
   onClose,
   onSendFile,
   onOpenPoll,
+  onOpenSchedule,
 }: CategorizedAttachmentMenuProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -221,6 +224,18 @@ export default function CategorizedAttachmentMenu({
       action: () => {
         onClose();
         onOpenPoll();
+      },
+    },
+    {
+      key: 'schedule',
+      label: 'Programmer',
+      description: 'Envoyer plus tard',
+      icon: <Clock className="w-6 h-6" />,
+      color: 'bg-[#CFA63A]',
+      iconColor: 'text-white',
+      action: () => {
+        onClose();
+        onOpenSchedule?.();
       },
     },
     {

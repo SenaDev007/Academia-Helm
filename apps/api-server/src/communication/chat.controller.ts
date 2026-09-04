@@ -44,6 +44,9 @@ import { ChatSummaryService } from './services/chat-summary.service';
 import { ChatTranscriptionService } from './services/chat-transcription.service';
 // ⭐ V3-11: Auto-groups (Communautés) — auto-create per academic year
 import { AutoGroupService } from './services/auto-group.service';
+// ⭐ V6 (spec §4/§6) — Canaux officiels auto + bootstrap (sync complète canaux+groupes)
+import { HelmConnectBootstrapService } from './services/helm-connect-bootstrap.service';
+import { AutoChannelService } from './services/auto-channel.service';
 // ⭐ V3-11: PrismaService — for direct academicYear lookup in auto-groups endpoints
 import { PrismaService } from '../database/prisma.service';
 // ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
@@ -109,6 +112,9 @@ export class ChatController {
     private readonly prisma: PrismaService,
     // ⭐ LiveKit SFU — mints access tokens for voice/stage/live channels
     private readonly livekitTokenService: LiveKitTokenService,
+    // ⭐ V6 (spec §4/§6) — canaux officiels auto + bootstrap
+    private readonly helmBootstrap: HelmConnectBootstrapService,
+    private readonly autoChannelService: AutoChannelService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════════
@@ -931,6 +937,36 @@ export class ChatController {
     });
     if (!academicYear) return [];
     return this.autoGroupService.listAutoGroups(tenantId, academicYear.id);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  ⭐ V6 (spec §6) — CANAUX OFFICIELS AUTOMATIQUES
+  //    POST /chat/auto-channels/sync  → crée/garantit les 6 canaux officiels
+  //                                    (Direction, Vie scolaire, Transport,
+  //                                    Finance, Infos pédagogiques,
+  //                                    Calendrier scolaire) + abonne tous les
+  //                                    utilisateurs actifs + re-sync les
+  //                                    communautés de l'année active.
+  //                                    Idempotent — sûr à appeler souvent.
+  //    GET  /chat/auto-channels       → liste les canaux officiels
+  // ═════════════════════════════════════════════════════════════════
+  @Post('auto-channels/sync')
+  @Throttle({ default: { limit: 6, ttl: 60000 } })
+  async syncAutoChannels(@TenantId() tenantId: string) {
+    const result = await this.helmBootstrap.syncTenant(tenantId);
+    const { channels, groups } = result;
+    const groupsMsg = (groups as any)?.total !== undefined
+      ? `${(groups as any).created} communauté(s) créée(s), ${(groups as any).updated} mise(s) à jour`
+      : (groups as any).message;
+    return {
+      message: `Canaux: ${channels.created} créé(s), ${channels.existing} déjà en place, ${channels.subscribed} nouvel(s) abonnement(s). ${groupsMsg}`,
+      ...result,
+    };
+  }
+
+  @Get('auto-channels')
+  async listAutoChannels(@TenantId() tenantId: string) {
+    return this.autoChannelService.listOfficialChannels(tenantId);
   }
 
   // ═════════════════════════════════════════════════════════════════

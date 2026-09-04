@@ -667,6 +667,12 @@ async function bootstrap() {
       `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "publishedAt" TIMESTAMP(3)`,
       // ─── hr_jobs slug (for public job URL sharing) ───
       `ALTER TABLE "hr_jobs" ADD COLUMN IF NOT EXISTS "slug" TEXT`,
+
+      // ─── ⭐ HELM CONNECT V6 (spec §4/§6) — canaux officiels auto + groupes enrichis ───
+      // chat_auto_groups.levelId : groupes « Parents – {niveau} » (dynamiques)
+      `ALTER TABLE "chat_auto_groups" ADD COLUMN IF NOT EXISTS "levelId" TEXT`,
+      // Index de filtrage des Communautés par catégorie (groupType) côté frontend
+      `CREATE INDEX IF NOT EXISTS "idx_chat_auto_groups_tenant_groupType" ON "chat_auto_groups"("tenantId", "groupType")`,
     ];
 
     for (const alterStmt of alterStatements) {

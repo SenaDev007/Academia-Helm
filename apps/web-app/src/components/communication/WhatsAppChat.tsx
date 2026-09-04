@@ -34,6 +34,7 @@ import {
   PhoneMissed, PhoneOff, Radio, FileAudio, FileVideo, MessageCircle, Ban, Lock,
   Menu, ShieldAlert, Gauge, ScrollText, XCircle, Shield, VolumeX, UserMinus,
   Link2, ExternalLink, CalendarClock, ChevronRight, ShieldCheck, ShieldX, KeyRound, LogOut,
+  GraduationCap, BookOpen, Heart, UserCheck, Building2, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1514,6 +1515,51 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   // ⭐ V3-11: Communautés auto-group sync state
   const [communautesSyncing, setCommunautesSyncing] = useState(false);
   const [communautesSyncMessage, setCommunautesSyncMessage] = useState<string | null>(null);
+  // ⭐ V6 (spec — Communautés) : métadonnées des auto-groups (groupType/roleType
+  //    par conversation) pour les sous-catégories Classes | Matières |
+  //    Enseignants | Parents | Administration | Autres
+  const [autoGroupMeta, setAutoGroupMeta] = useState<Record<string, { groupType: string; roleType?: string }>>({});
+  const [communauteFilter, setCommunauteFilter] = useState<string>('all');
+
+  // ⭐ V6 — charge les métadonnées auto-groups (avec les nouveaux types
+  //    LEVEL « Parents – niveau », TEACHER_SUBJECT « Enseignants de matière »,
+  //    COUNCIL « Conseil pédagogique »)
+  useEffect(() => {
+    if (activeHelmSection !== 'communautes') return;
+    let cancelled = false;
+    fetch('/api/chat/auto-groups', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then((rows: any[]) => {
+        if (cancelled) return;
+        const map: Record<string, { groupType: string; roleType?: string }> = {};
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          if (r.conversationId) map[r.conversationId] = { groupType: r.groupType, roleType: r.roleType };
+        }
+        setAutoGroupMeta(map);
+      })
+      .catch(() => { /* silencieux */ });
+    return () => { cancelled = true; };
+  }, [activeHelmSection, communautesSyncing]);
+
+  /** ⭐ V6 — catégorie d'affichage d'une conversation GROUP (spec Communautés). */
+  const getCommunauteCategory = (conv: any): string => {
+    const meta = autoGroupMeta[conv.id];
+    if (!meta) return 'autres';
+    switch (meta.groupType) {
+      case 'CLASS': return 'classes';
+      case 'SUBJECT': return 'matieres';
+      case 'TEACHER_SUBJECT': return 'enseignants';
+      case 'LEVEL': return 'parents';
+      case 'COUNCIL': return 'administration';
+      case 'ROLE':
+      case 'STAFF':
+        if (meta.roleType === 'TEACHERS') return 'enseignants';
+        if (meta.roleType === 'PARENTS') return 'parents';
+        if (meta.roleType === 'PEDAGOGICAL_COUNCIL') return 'administration';
+        return 'administration'; // ADMINISTRATION / ALL_STAFF
+      default: return 'autres';
+    }
+  };
 
   // ⭐ AVATAR
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
@@ -1772,6 +1818,43 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       if (res.ok) setChannels(await res.json());
     } catch {}
   }, [currentUserId]);
+
+  // ⭐ V6 (spec §6) — AUTO-SYNC DES CANAUX OFFICIELS : à la première ouverture
+  //    de la section Canaux (une fois par session), on appelle
+  //    POST /chat/auto-channels/sync qui garantit l'existence des 6 canaux
+  //    officiels (Direction, Vie scolaire, Transport, Finance, Infos
+  //    pédagogiques, Calendrier scolaire) + l'abonnement automatique de
+  //    l'utilisateur. Côté serveur, la même sync tourne au démarrage puis
+  //    toutes les 6 h pour tous les tenants.
+  const [canauxSyncing, setCanauxSyncing] = useState(false);
+  const [canauxSyncMessage, setCanauxSyncMessage] = useState<string | null>(null);
+  const syncAutoChannels = useCallback(async () => {
+    setCanauxSyncing(true);
+    try {
+      const res = await fetch('/api/chat/auto-channels/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCanauxSyncMessage(data?.message || 'Canaux officiels synchronisés.');
+        await loadChannels();
+      } else {
+        setCanauxSyncMessage('Synchronisation impossible — réessayez plus tard.');
+      }
+    } catch {
+      setCanauxSyncMessage('Erreur réseau — réessayez plus tard.');
+    } finally {
+      setCanauxSyncing(false);
+    }
+  }, [loadChannels]);
+
+  // Auto-sync à la première ouverture de la section Canaux (une fois par session)
+  useEffect(() => {
+    if (activeHelmSection !== 'canaux' || canauxSyncing || canauxSyncMessage) return;
+    syncAutoChannels();
+  }, [activeHelmSection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⭐ V6 (parité Yeshua — Direct du canal / Go Live) : directs en cours,
   //    indexés par canal (GET /chat/live-streams, polling 15 s).
@@ -2800,6 +2883,35 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     };
   }, [loadConversations, currentUserId]);
 
+  // ⭐ V6 — messages programmés PENDING de la conversation active :
+  //    chargés à l'ouverture (bandeau ⏰ au-dessus du composer) + après
+  //    chaque programmation, avec annulation possible.
+  //    (Défini AVANT l'effet qui l'utilise — ordre d'exécution du render.)
+  const [scheduledMessages, setScheduledMessages] = useState<any[]>([]);
+  const loadScheduledMessages = useCallback(async () => {
+    if (!activeConvId) { setScheduledMessages([]); return; }
+    try {
+      const res = await fetch(`/api/chat/conversations/${activeConvId}/scheduled?userId=${encodeURIComponent(currentUserId)}`, { credentials: 'include' });
+      if (res.ok) {
+        const rows = await res.json();
+        setScheduledMessages(Array.isArray(rows) ? rows.filter((r: any) => r.status === 'PENDING') : []);
+      }
+    } catch { /* silencieux */ }
+  }, [activeConvId, currentUserId]);
+
+  const cancelScheduledMessage = async (schedId: string) => {
+    try {
+      const res = await fetch(`/api/chat/scheduled/${schedId}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUserId }),
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      setScheduledMessages(prev => prev.filter(m => m.id !== schedId));
+      toast.success('Message programmé annulé');
+    } catch (e: any) { toast.error('Échec de l\'annulation : ' + e.message); }
+  };
+
   useEffect(() => {
     if (activeConvId) {
       setLoadingMsgs(true);
@@ -2808,8 +2920,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       freshLoadRef.current = true;
       setHasMoreMessages(true);
       loadMessages();
+      // ⭐ V6 — charge aussi les messages programmés en attente de cette
+      //    conversation (bandeau ⏰ au-dessus du composer + annulation)
+      loadScheduledMessages();
     }
-  }, [activeConvId, loadMessages]);
+  }, [activeConvId, loadMessages, loadScheduledMessages]);
 
   // ⭐ V5 : le polling n'est plus qu'un filet de secours — rapide (5 s) quand
   //    le socket est déconnecté, lent (30 s) quand il est actif (le temps réel
@@ -5119,9 +5234,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   };
 
   // ⭐ V2: Schedule a message for later
+  //    (scheduledMessages / loadScheduledMessages / cancelScheduledMessage
+  //     sont définis plus haut, avant l'effet d'ouverture de conversation)
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleText, setScheduleText] = useState('');
   const [scheduleDate, setScheduleDate] = useState('');
+
   const handleScheduleMessage = async () => {
     if (!activeConvId || !scheduleText.trim() || !scheduleDate) return;
     try {
@@ -5133,6 +5251,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       toast.success('Message programmé pour ' + new Date(scheduleDate).toLocaleString('fr-FR'));
       setShowScheduleModal(false); setScheduleText(''); setScheduleDate('');
+      loadScheduledMessages(); // ⭐ V6 — rafraîchit le bandeau immédiatement
     } catch (e: any) { toast.error('Échec: ' + e.message); }
   };
 
@@ -5895,22 +6014,32 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             </div>
           ) : (
             <>
-              {/* ⭐ ROLE-BASED CATEGORY FILTERS (Tout / Enseignants / Parents / Administration)
-                  — only shown on the 'discussions' section */}
+              {/* ⭐ V6 (spec — structure Discussions) — SOUS-CATÉGORIES :
+                  Privées | Groupes | Conversations scolaires + filtres rôles.
+                  « Dans discussion, on doit avoir privé, groupe,
+                    conversation scolaire. » */}
               {activeHelmSection === 'discussions' && (
-                <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto">
-                  {(['all', 'enseignants', 'parents', 'admin'] as const).map(cat => (
+                <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto no-scrollbar">
+                  {([
+                    { id: 'all', label: 'Tout' },
+                    { id: 'privees', label: 'Privées' },
+                    { id: 'groupes', label: 'Groupes' },
+                    { id: 'scolaires', label: 'Scolaires' },
+                    { id: 'enseignants', label: 'Enseignants' },
+                    { id: 'parents', label: 'Parents' },
+                    { id: 'admin', label: 'Administration' },
+                  ] as const).map(cat => (
                     <button
-                      key={cat}
-                      onClick={() => setCategoryFilter(cat)}
+                      key={cat.id}
+                      onClick={() => setCategoryFilter(cat.id)}
                       className={cn(
-                        'px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
-                        categoryFilter === cat
+                        'flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
+                        categoryFilter === cat.id
                           ? 'bg-[#1677FF] text-white'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       )}
                     >
-                      {cat === 'all' ? 'Tout' : cat === 'enseignants' ? 'Enseignants' : cat === 'parents' ? 'Parents' : 'Administration'}
+                      {cat.label}
                     </button>
                   ))}
                 </div>
@@ -5927,6 +6056,22 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   const sidebarQ = sidebarSearch.trim().toLowerCase();
                   const groupConvs = visibleConversations.filter(c => c.type === 'GROUP')
                     .filter(c => !sidebarQ || (c.name || '').toLowerCase().includes(sidebarQ));
+                  // ⭐ V6 (spec — Communautés) : sous-catégories Classes |
+                  //    Matières | Enseignants | Parents | Administration | Autres
+                  const COMMUNAUTE_CATS = [
+                    { id: 'all', label: 'Tout' },
+                    { id: 'classes', label: 'Classes' },
+                    { id: 'matieres', label: 'Matières' },
+                    { id: 'enseignants', label: 'Enseignants' },
+                    { id: 'parents', label: 'Parents' },
+                    { id: 'administration', label: 'Administration' },
+                    { id: 'autres', label: 'Autres' },
+                  ] as const;
+                  const catCount = (cat: string) =>
+                    cat === 'all' ? groupConvs.length : groupConvs.filter(c => getCommunauteCategory(c) === cat).length;
+                  const filteredGroupConvs = communauteFilter === 'all'
+                    ? groupConvs
+                    : groupConvs.filter(c => getCommunauteCategory(c) === communauteFilter);
                   if (groupConvs.length === 0) {
                     return (
                       <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -5964,6 +6109,26 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                         <Users className="w-3 h-3" /> Communautés ({groupConvs.length})
                       </div>
+                      {/* ⭐ V6 (spec — Communautés) : SOUS-CATÉGORIES
+                          Classes | Matières | Enseignants | Parents | Administration */}
+                      <div className="flex gap-1 px-3 py-2 border-b border-slate-100 overflow-x-auto no-scrollbar bg-white">
+                        {COMMUNAUTE_CATS.map(cat => (
+                          <button
+                            key={cat.id}
+                            onClick={() => setCommunauteFilter(cat.id)}
+                            className={cn(
+                              'flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition',
+                              communauteFilter === cat.id
+                                ? 'bg-[#1677FF] text-white'
+                                : catCount(cat.id) === 0
+                                  ? 'bg-slate-50 text-slate-400 cursor-default'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            )}
+                          >
+                            {cat.label}{cat.id !== 'all' ? ` · ${catCount(cat.id)}` : ''}
+                          </button>
+                        ))}
+                      </div>
                       {/* ⭐ V3-11: Sync status banner (shown during/after auto-group sync) */}
                       {(communautesSyncing || communautesSyncMessage) && (
                         <div className={cn(
@@ -5981,7 +6146,31 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                           )}
                         </div>
                       )}
-                      {groupConvs.map(conv => renderConversationItem(conv))}
+                      {/* ⭐ V6 — liste (filtrée par sous-catégorie) + regroupements visuels */}
+                      {communauteFilter === 'all' ? (
+                        COMMUNAUTE_CATS.filter(c => c.id !== 'all' && catCount(c.id) > 0).map(cat => (
+                          <div key={cat.id}>
+                            <div className="px-3 py-1.5 bg-blue-50/60 text-[10px] font-bold text-[#0958D9] uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                              {cat.id === 'classes' ? <GraduationCap className="w-3 h-3" />
+                                : cat.id === 'matieres' ? <BookOpen className="w-3 h-3" />
+                                : cat.id === 'enseignants' ? <UserCheck className="w-3 h-3" />
+                                : cat.id === 'parents' ? <Heart className="w-3 h-3" />
+                                : cat.id === 'administration' ? <Building2 className="w-3 h-3" />
+                                : <Users className="w-3 h-3" />}
+                              {cat.label} ({catCount(cat.id)})
+                            </div>
+                            {groupConvs.filter(c => getCommunauteCategory(c) === cat.id).map(conv => renderConversationItem(conv))}
+                          </div>
+                        ))
+                      ) : filteredGroupConvs.length > 0 ? (
+                        filteredGroupConvs.map(conv => renderConversationItem(conv))
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                          <Users className="w-10 h-10 text-slate-300 mb-2" />
+                          <p className="text-sm font-medium text-slate-700">Aucune communauté dans cette catégorie</p>
+                          <p className="text-xs text-slate-500 mt-1">Synchronisez ou changez de catégorie.</p>
+                        </div>
+                      )}
                     </>
                   );
                 }
@@ -6011,6 +6200,23 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                         <Megaphone className="w-3 h-3" /> Canaux ({listChannels.length})
                       </div>
+                      {/* ⭐ V6 (spec §6) — bandeau de sync des canaux officiels */}
+                      {(canauxSyncing || canauxSyncMessage) && (
+                        <div className={cn(
+                          'px-3 py-2 text-[11px] flex items-center gap-2 border-b',
+                          canauxSyncing ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        )}>
+                          {canauxSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                          <span className="flex-1 truncate">
+                            {canauxSyncing ? 'Synchronisation des canaux officiels…' : canauxSyncMessage}
+                          </span>
+                          {!canauxSyncing && (
+                            <button onClick={syncAutoChannels} className="text-blue-600 hover:underline font-semibold">
+                              Re-sync
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {listChannels.map((ch: any) => (
                         <button
                           key={ch.id}
@@ -6020,12 +6226,25 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                             activeChannelId === ch.id && 'bg-[#E6F4FF]'
                           )}
                         >
-                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white flex-shrink-0">
-                            <Megaphone className="w-5 h-5" />
+                          <div className={cn(
+                            'w-11 h-11 rounded-full flex items-center justify-center text-white flex-shrink-0',
+                            ch.isOfficial
+                              ? 'bg-gradient-to-br from-[#CFA63A] to-[#FFE08A]'
+                              : 'bg-gradient-to-br from-blue-500 to-purple-600'
+                          )}>
+                            <Megaphone className={cn('w-5 h-5', ch.isOfficial && 'text-[#0A2A5E]')} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-sm font-semibold text-slate-900 truncate">{ch.name}</span>
+                              <span className="text-sm font-semibold text-slate-900 truncate flex items-center gap-1.5">
+                                <span className="truncate">{ch.name}</span>
+                                {/* ⭐ V6 — badge canal OFFICIEL (créé automatiquement pour l'école) */}
+                                {ch.isOfficial && (
+                                  <span className="flex-shrink-0 text-[8px] font-bold px-1.5 py-px rounded bg-gradient-to-r from-[#CFA63A] to-[#FFE08A] text-[#0A2A5E] uppercase tracking-wide" title="Canal officiel de l'établissement">
+                                    Officiel
+                                  </span>
+                                )}
+                              </span>
                               {ch.lastMessageAt && (
                                 <span className="text-[10px] text-slate-400">{formatTime(ch.lastMessageAt)}</span>
                               )}
@@ -6040,45 +6259,61 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   );
                 }
                 // Default: 'discussions' section
-                // ⭐ Filter DIRECT conversations by role category + recherche
-                //    sidebar (nom de la conv OU nom de l'interlocuteur — parité
-                //    Yeshua : la recherche ne faitait RIEN avant V5).
+                // ⭐ V6 (spec — Discussions) : sous-catégories
+                //    Privées (DIRECT) | Groupes (GROUP hors contexte scolaire) |
+                //    Scolaires (pedagogicalType — classe/matière/devoir/activité/cours)
+                //    + filtres rôles (Enseignants/Parents/Administration sur les DIRECT)
                 const sidebarQ2 = sidebarSearch.trim().toLowerCase();
-                const directConvs = visibleConversations.filter(c => {
+                const matchesSidebarSearch = (c: any) => {
+                  if (!sidebarQ2) return true;
+                  const other = c.participants?.find((p: any) => p.userId !== currentUserId);
+                  const otherName = other ? `${other.firstName || ''} ${other.lastName || ''}`.trim().toLowerCase() : '';
+                  return (c.name || '').toLowerCase().includes(sidebarQ2) || otherName.includes(sidebarQ2);
+                };
+                const isScolaire = (c: any) => !!(c as any).pedagogicalType;
+                const allConvs = visibleConversations.filter(matchesSidebarSearch);
+                const directConvs = allConvs.filter(c => {
                   if (c.type !== 'DIRECT') return false;
                   const other = c.participants.find(p => p.userId !== currentUserId);
-                  if (sidebarQ2) {
-                    const otherName = other ? `${other.firstName || ''} ${other.lastName || ''}`.trim().toLowerCase() : '';
-                    if (!(c.name || '').toLowerCase().includes(sidebarQ2) && !otherName.includes(sidebarQ2)) return false;
+                  if (categoryFilter === 'enseignants' || categoryFilter === 'parents' || categoryFilter === 'admin') {
+                    if (!other) return false;
+                    const role = (other.role_label || '').toUpperCase();
+                    if (categoryFilter === 'enseignants') {
+                      return role === 'ENSEIGNANT' || role === 'TEACHER' || role === 'TEACHER_RESP';
+                    }
+                    if (categoryFilter === 'parents') {
+                      return role === 'PARENT' || role === 'GUARDIAN';
+                    }
+                    if (categoryFilter === 'admin') {
+                      return role === 'PROMOTER' || role === 'SCHOOL_OWNER' || role === 'SCHOOL_ADMIN' ||
+                           role === 'DIRECTOR_GENERAL' || role === 'DIRECTEUR_GENERAL' ||
+                           role === 'SCHOOL_DIRECTOR' || role === 'DIRECTEUR_ETABLISSEMENT' ||
+                           role === 'ADMIN' || role === 'COMPTABLE' || role === 'CAISSIER' ||
+                           role === 'SUPER_ADMIN' || role === 'PLATFORM_OWNER';
+                    }
                   }
-                  if (categoryFilter === 'all') return true;
-                  // Find the other participant
-                  if (!other) return false;
-                  const role = (other.role_label || '').toUpperCase();
-                  if (categoryFilter === 'enseignants') {
-                    return role === 'ENSEIGNANT' || role === 'TEACHER' || role === 'TEACHER_RESP';
-                  }
-                  if (categoryFilter === 'parents') {
-                    return role === 'PARENT' || role === 'GUARDIAN';
-                  }
-                  if (categoryFilter === 'admin') {
-                    return role === 'PROMOTER' || role === 'SCHOOL_OWNER' || role === 'SCHOOL_ADMIN' ||
-                         role === 'DIRECTOR_GENERAL' || role === 'DIRECTEUR_GENERAL' ||
-                         role === 'SCHOOL_DIRECTOR' || role === 'DIRECTEUR_ETABLISSEMENT' ||
-                         role === 'ADMIN' || role === 'COMPTABLE' || role === 'CAISSIER' ||
-                         role === 'SUPER_ADMIN' || role === 'PLATFORM_OWNER';
-                  }
-                  return true;
+                  return true; // 'all' et 'privees' → toutes les DIRECT
                 });
-                const groupConvs = visibleConversations.filter(c => c.type === 'GROUP');
+                const scolairesConvs = allConvs.filter(c => isScolaire(c));
+                const groupConvs = allConvs.filter(c => c.type === 'GROUP' && !isScolaire(c));
                 return (
                   <>
-                    {directConvs.length > 0 && (
+                    {(categoryFilter === 'all' || categoryFilter === 'privees' || categoryFilter === 'enseignants' || categoryFilter === 'parents' || categoryFilter === 'admin') && directConvs.length > 0 && (
                       <>
                         <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
-                          <MessageSquare className="w-3 h-3" /> Discussions
+                          <MessageSquare className="w-3 h-3" /> Discussions privées
                         </div>
                         {directConvs.map(conv => renderConversationItem(conv))}
+                      </>
+                    )}
+                    {/* ⭐ V6 (spec §8) — CONVERSATIONS SCOLAIRES (pédagogiques) :
+                        conversations liées à une classe, matière, devoir, activité, cours */}
+                    {(categoryFilter === 'all' || categoryFilter === 'scolaires') && scolairesConvs.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 bg-blue-50 text-[10px] font-bold text-[#0958D9] uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
+                          <GraduationCap className="w-3 h-3" /> Conversations scolaires
+                        </div>
+                        {scolairesConvs.map(conv => renderConversationItem(conv))}
                       </>
                     )}
                     {/* ⭐ CANAUX (Telegram-style broadcast channels) */}
@@ -6114,13 +6349,31 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         ))}
                       </>
                     )}
-                    {groupConvs.length > 0 && (
+                    {groupConvs.length > 0 && (categoryFilter === 'all' || categoryFilter === 'groupes') && (
                       <>
                         <div className="px-3 py-1.5 bg-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10 flex items-center gap-1.5">
                           <Users className="w-3 h-3" /> Groupes
                         </div>
                         {groupConvs.map(conv => renderConversationItem(conv))}
                       </>
+                    )}
+                    {/* ⭐ V6 — états vides ciblés par sous-catégorie */}
+                    {categoryFilter !== 'all' &&
+                      directConvs.length === 0 && groupConvs.length === 0 && scolairesConvs.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                        <MessageSquare className="w-10 h-10 text-slate-300 mb-2" />
+                        <p className="text-sm font-medium text-slate-700">
+                          {categoryFilter === 'privees' ? 'Aucune conversation privée'
+                            : categoryFilter === 'groupes' ? 'Aucun groupe'
+                            : categoryFilter === 'scolaires' ? 'Aucune conversation scolaire'
+                            : 'Aucune conversation dans cette catégorie'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {categoryFilter === 'scolaires'
+                            ? 'Les enseignants peuvent créer des conversations liées à une classe, une matière ou un devoir.'
+                            : 'Démarrez une nouvelle conversation ou créez un groupe.'}
+                        </p>
+                      </div>
                     )}
                   </>
                 );
@@ -7149,6 +7402,41 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
 
           {/* Input bar — fully responsive (mobile-friendly) */}
           <div className="p-2 sm:p-3 bg-white border-t border-slate-200">
+            {/* ⭐ V6 — BANDEAU DES MESSAGES PROGRAMMÉS EN ATTENTE :
+                affiche chaque message PENDING avec sa date/heure d'envoi
+                prévue + bouton d'annulation. Le dispatch serveur tourne
+                toutes les 60 s (fix tenantId appliqué). */}
+            {scheduledMessages.length > 0 && (
+              <div className="mb-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2">
+                <div className="flex items-center gap-1.5 px-1 mb-1.5 text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                  <Clock className="w-3 h-3" />
+                  {scheduledMessages.length} message{scheduledMessages.length > 1 ? 's' : ''} programmé{scheduledMessages.length > 1 ? 's' : ''}
+                </div>
+                <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto">
+                  {scheduledMessages.map((sm: any) => (
+                    <div key={sm.id} className="flex items-center gap-2 px-2 py-1.5 bg-white rounded-lg border border-amber-100">
+                      <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-slate-800 truncate">
+                          {String(sm.content || '').replace(/<[^>]*>/g, '') || '—'}
+                        </div>
+                        <div className="text-[10px] text-amber-700 font-medium">
+                          {sm.scheduledFor ? new Date(sm.scheduledFor).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                          <span className="text-slate-400"> · envoi automatique</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => cancelScheduledMessage(sm.id)}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded flex-shrink-0"
+                        title="Annuler ce message programmé"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* ⭐ State machine: idle | recording | paused | preview
                 Compact and aesthetic recording UI — small width, clear actions. */}
             {recordingState === 'recording' || recordingState === 'paused' ? (
@@ -7318,7 +7606,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 )}
                 <div className="flex items-end gap-1.5 sm:gap-2">
                   {/* ⭐ DISCORD PARITY: Emoji picker — opens a popover with categorized
-                      common emojis. Clicking an emoji inserts it into the message. */}
+                      common emojis. Clicking an emoji inserts it into the message.
+                      ⭐ V6 MOBILE FIX : le composer était écrasé en « carré restreint »
+                      sur mobile (7 boutons × 40px ≈ 280px + rail 56px > écran).
+                      GIF/sticker/programme sont masqués < sm ; seuls attach +
+                      emoji + micro/envoyer restent (parité WhatsApp mobile). */}
                   <div className="relative flex-shrink-0">
                     <button
                       onClick={() => setShowEmojiPicker(prev => !prev)}
@@ -7364,8 +7656,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   </div>
                   {/* ⭐ DISCORD PARITY: GIF picker — Tenor API search. Opens a popover
                       with a search bar + grid of GIF results. Clicking a GIF sends it
-                      as an IMAGE message. */}
-                  <div className="relative flex-shrink-0">
+                      as an IMAGE message.
+                      ⭐ V6 MOBILE FIX : masqué sur mobile (libère la largeur du composer). */}
+                  <div className="relative flex-shrink-0 hidden sm:block">
                     <button
                       onClick={() => setShowGifPicker(prev => !prev)}
                       className="p-2 text-slate-500 hover:bg-slate-100 rounded-full"
@@ -7415,8 +7708,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                       </>
                     )}
                   </div>
-                  {/* ⭐ DISCORD PARITY: Sticker picker — shows sticker packs + stickers. */}
-                  <div className="relative flex-shrink-0">
+                  {/* ⭐ DISCORD PARITY: Sticker picker — shows sticker packs + stickers.
+                      ⭐ V6 MOBILE FIX : masqué sur mobile (libère la largeur du composer). */}
+                  <div className="relative flex-shrink-0 hidden sm:block">
                     <button
                       onClick={() => {
                         if (!showStickerPicker) loadStickerPacks();
@@ -7621,10 +7915,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                   >
                     {sending || sendingFiles ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   </button>
-                  {/* ⭐ V2: Schedule message button */}
+                  {/* ⭐ V2: Schedule message button
+                      ⭐ V6 MOBILE FIX : masqué sur mobile (accessible via le menu
+                      d'action du message ou en desktop). */}
                   <button
                     onClick={() => { setScheduleText(text.replace(/<[^>]*>/g, '')); setShowScheduleModal(true); }}
-                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full flex-shrink-0"
+                    className="hidden sm:flex p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full flex-shrink-0"
                     title="Programmer l'envoi"
                   >
                     <Clock className="w-4 h-4" />
@@ -8634,6 +8930,10 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           onClose={() => setShowAttachmentMenu(false)}
           onSendFile={async (file) => { addPendingFiles([file]); }}
           onOpenPoll={() => setShowPollModal(true)}
+          onOpenSchedule={() => {
+            setScheduleText(text.replace(/<[^>]*>/g, ''));
+            setShowScheduleModal(true);
+          }}
         />
       )}
       {/* ⭐ Helm Connect V2.6 — Poll creation modal */}

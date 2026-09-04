@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * ============================================================================
  * PORTAIL SECRETAIRE-COMPTABLE — ACCUEIL (home du portail)

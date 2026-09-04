@@ -30,6 +30,12 @@
  *   surveillant → censeur. ✅ Les 6 portails sont désormais ACTIFS —
  *   chaque métier de l'administration atterrit sur SON UI à la connexion.
  *
+ * ⭐ RÈGLE D'UNION (validation utilisateur) : le SECRÉTAIRE-COMPTABLE cumule
+ *   les DEUX métiers — ses modules = l'union complète des modules du
+ *   SECRÉTAIRE et du COMPTABLE (scolarité + finances + paie + communication).
+ *   Le secrétaire « simple » n'a QUE les modules secrétaire ; le comptable
+ *   « simple » n'a QUE les modules comptable.
+ *
  * UI PRINCIPALE PARTAGÉE (PilotageLayout) — réservée à :
  *   - le PROMOTEUR et les rôles full-access (filet de sécurité validé :
  *     accès complet à tous les modules + visite de tous les portails),
@@ -213,15 +219,24 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     active: true,
     roles: SECRETARY_COMPTABLE_ROLES,
     modules: [
-      // ⭐ Le quotidien du secrétaire-comptable est l'ENCAISSEMENT des frais :
-      //    la home du portail est l'outil Encaissements (composant partagé
-      //    TransactionsContent — le même que /app/finance/payments).
+      // ⭐ UNION DES DEUX MÉTIERS (validation utilisateur) : le secrétaire-
+      //    comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
+      //    a. Home = son quotidien : l'outil Encaissements (TransactionsContent
+      //    partagé — le même que /app/finance/payments).
       { path: '/app/secretaire-comptable', label: 'Encaissements', icon: 'Receipt', desc: 'Saisie des encaissements de frais' },
+      // Côté COMPTABLE : tableau de bord financier (page du portail comptable,
+      // rendue dans SON shell — zéro duplication).
+      { path: '/app/comptable', label: 'Tableau de bord financier', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement" },
+      // Côté SECRÉTAIRE : l'outil Élèves & Scolarité (même composant que la
+      // home du portail secrétaire — /app/secretaire et /app/students rendent
+      // StudentsModulePage).
       { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', featureCode: 'STUDENTS' },
+      // Côté COMPTABLE : module Finances & Économat complet.
       { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, recouvrement, trésorerie', featureCode: 'FINANCE' },
+      // Côté SECRÉTAIRE + COMPTABLE : examens (saisie des notes, bulletins).
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
-      // ⭐ Parité d'accès : les secrétaires-comptables voient RH (paie) dans
-      //    l'UI partagée actuelle (HR_ROLES inclut SECRETAIRE_COMPTABLE).
+      // Paie : le secrétaire-comptable gère la paie dans l'UI partagée
+      //    actuelle (HR_ROLES inclut SECRETAIRE_COMPTABLE) — parité conservée.
       { path: '/app/hr', label: 'Personnel, RH & Paie', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', featureCode: 'HR_PAYROLL' },
       { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
@@ -352,6 +367,8 @@ export function getAdminPortalHomeForRole(role: string | undefined | null): stri
 /**
  * Garde d'accès à un portail dédié (défense en profondeur du shell) :
  *   - rôles du portail (lookup exact OU préfixe, actif ou non)
+ *   - UNION : le secrétaire-comptable accède aux portails secrétaire et
+ *     comptable en plus du sien (il cumule les deux métiers)
  *   - rôles full-access (promoteur, admins — filet de sécurité)
  * Renvoie false pour les rôles d'un autre métier et les rôles plateforme.
  */
@@ -366,8 +383,17 @@ export function canRoleAccessAdminPortal(role: string | undefined | null, key: A
 
   if (portal.roles.includes(role)) return true;
 
-  // Fallback par préfixe (variantes niveau-spécifiques générées côté backend)
+  // ⭐ UNION (validation utilisateur) : le secrétaire-comptable cumule les
+  //    deux métiers — il a accès aux portails SECRÉTAIRE et COMPTABLE en plus
+  //    du sien (le layout continue de résoudre SON shell en priorité : la
+  //    résolution getAdminShellForRole passe toujours par secretaire-comptable
+  //    d'abord, cf. ordre des préfixes ci-dessous).
   const r = role.toUpperCase();
+  if (r.startsWith('SECRETAIRE_COMPTABLE')) {
+    return key === 'secretaire-comptable' || key === 'secretaire' || key === 'comptable';
+  }
+
+  // Fallback par préfixe (variantes niveau-spécifiques générées côté backend)
   if (key === 'director') {
     return r.startsWith('DIRECTEUR') || r.startsWith('DIRECTOR') || r === 'PROVISEUR';
   }

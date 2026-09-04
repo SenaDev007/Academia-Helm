@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * ============================================================================
  * PORTAIL COMPTABLE — TABLEAU DE BORD (home du portail)

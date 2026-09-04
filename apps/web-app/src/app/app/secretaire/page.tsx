@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * ============================================================================
  * PORTAIL SECRETAIRE — ACCUEIL (home du portail)

@@ -40,7 +40,7 @@ export default function PromoterEligibilityModal({
 }: PromoterEligibilityModalProps) {
   const [motif, setMotif] = useState('');
   const [expectedDate, setExpectedDate] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {

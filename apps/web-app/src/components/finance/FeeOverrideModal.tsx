@@ -36,7 +36,7 @@ export default function FeeOverrideModal({
       : ''
   );
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // Sélecteurs cascade niveau → classe → élève (pattern NewPaymentModal)
   const [levels, setLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);

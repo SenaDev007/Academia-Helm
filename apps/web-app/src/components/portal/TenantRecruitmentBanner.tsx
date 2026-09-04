@@ -36,7 +36,7 @@ interface Props {
 
 export default function TenantRecruitmentBanner({ tenantId, tenantSlug }: Props) {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const fetchedRef = useRef<string | null>(null);

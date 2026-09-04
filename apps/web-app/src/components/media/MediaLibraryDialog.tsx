@@ -91,7 +91,7 @@ export function MediaLibraryDialog({
   const [items, setItems] = useState<MediaAsset[]>([]);
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

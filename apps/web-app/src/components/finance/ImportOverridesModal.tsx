@@ -94,7 +94,7 @@ export default function ImportOverridesModal({ open, onClose, onSuccess }: Impor
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   if (!open) return null;
 

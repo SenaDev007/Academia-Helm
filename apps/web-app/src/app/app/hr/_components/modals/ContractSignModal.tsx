@@ -24,7 +24,7 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(false);
   const [signerName, setSignerName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [agreed, setAgreed] = useState(false);
   const [signerRole, setSignerRole] = useState<SignerRole>('EMPLOYE');
 

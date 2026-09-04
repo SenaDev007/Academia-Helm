@@ -33,7 +33,7 @@ export function ContractEditorModal({
   const { tenant } = useModuleContext();
   const [articles, setArticles] = useState<Article[]>([]);
   const [originalArticles, setOriginalArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [hasChanges, setHasChanges] = useState(false);

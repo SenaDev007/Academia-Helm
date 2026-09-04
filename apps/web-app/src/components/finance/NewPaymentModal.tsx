@@ -81,7 +81,7 @@ export default function NewPaymentModal({
   const [cashRegisterId, setCashRegisterId] = useState('');
   const [openCashRegisters, setOpenCashRegisters] = useState<any[]>([]);
   const [preview, setPreview] = useState<{ totalPay: number; lines: { name: string; pay: number; feeType: string; personalized: boolean; originalAmount?: number }[] } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // Reçu généré après succès — affiché en bandeau lecture seule
   const [receipt, setReceipt] = useState<{ id: string; receiptNumber: string; createdAt: string } | null>(null);
   const [sendingChannel, setSendingChannel] = useState<string | null>(null);

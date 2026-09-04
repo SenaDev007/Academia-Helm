@@ -70,7 +70,7 @@ export function ContractDocumentEditor({ isOpen, onClose, onSuccess, contract }:
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch articles from the backend (single source of truth)

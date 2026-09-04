@@ -83,7 +83,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportRunResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   if (!open) return null;
 

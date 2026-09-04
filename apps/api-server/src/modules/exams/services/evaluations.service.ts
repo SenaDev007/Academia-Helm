@@ -35,6 +35,113 @@ export class EvaluationsService {
   ) {}
 
   /**
+   * ⭐ V10e — Résolution d'un type d'évaluation PAR NIVEAU.
+   *
+   * Le frontend envoie souvent le CODE (ex. "EM1") car les types viennent de
+   * school_academic_settings.config.assessmentTypes (sans UUID). Or un même
+   * code existe pour PLUSIEURS niveaux (EM1 Maternelle, EM1 Primaire…).
+   * L'ancienne résolution findFirst({ code }) renvoyait un type d'un AUTRE
+   * niveau → les bulletins (qui listent les types filtrés par schoolLevelId)
+   * ne trouvaient aucune évaluation → « Aucun élève / aucune note validée ».
+   *
+   * Ordre de résolution :
+   *   1. UUID exact (si le frontend envoie l'id)
+   *   2. Type scopé au schoolLevelId des classes ciblées (code + niveau)
+   *   3. Type global du tenant (code, schoolLevelId null)
+   *   4. Fallback historique (premier type du code, any niveau)
+   */
+  private async resolveEvaluationType(
+    tenantId: string,
+    evaluationTypeIdOrCode: string,
+    classIds: string[],
+  ) {
+    // 1. UUID exact
+    const byId = await this.prisma.evaluationType.findFirst({
+      where: { id: evaluationTypeIdOrCode },
+    });
+    if (byId) return byId;
+
+    // Niveau scolaire des classes ciblées (résolu une fois, réutilisé)
+    let levelId: string | null = null;
+    if (classIds.length > 0) {
+      const targetClasses = await this.prisma.class.findMany({
+        where: { id: { in: classIds }, tenantId },
+        select: { schoolLevelId: true },
+      });
+      const levelIds = [
+        ...new Set(targetClasses.map((c) => c.schoolLevelId).filter(Boolean)),
+      ];
+      if (levelIds.length === 1) {
+        levelId = levelIds[0];
+        // 2. Type scopé au schoolLevelId des classes ciblées
+        const scopedType = await this.prisma.evaluationType.findFirst({
+          where: {
+            code: evaluationTypeIdOrCode,
+            tenantId,
+            schoolLevelId: levelId,
+          },
+        });
+        if (scopedType) return scopedType;
+      }
+    }
+
+    // 3. Type global du tenant (non scopé à un niveau)
+    const globalType = await this.prisma.evaluationType.findFirst({
+      where: {
+        code: evaluationTypeIdOrCode,
+        tenantId,
+        schoolLevelId: null,
+      },
+    });
+    if (globalType) return globalType;
+
+    // 4. Fallback historique (premier type du code, any niveau)
+    const fallback = await this.prisma.evaluationType.findFirst({
+      where: {
+        OR: [
+          { id: evaluationTypeIdOrCode },
+          { code: evaluationTypeIdOrCode, tenantId },
+        ],
+      },
+    });
+    if (fallback) return fallback;
+
+    // 5. ⭐ V10e — AUTO-CRÉATION pour la piste anglophone :
+    //    les types EN (FIRST_CA / SECOND_CA / EXAM / FCA / SCA…) viennent de
+    //    school_academic_settings.config.assessmentTypes et n'existent PAS
+    //    dans evaluation_types → la création d'évaluations EN échouait avec
+    //    « Type d'évaluation non trouvé ». On crée le type à la volée, scopé
+    //    au niveau des classes ciblées (même logique que les types FR).
+    const EN_TYPE_PRESETS: Record<string, { name: string; maxScore: number }> = {
+      FIRST_CA: { name: 'First CA', maxScore: 40 },
+      SECOND_CA: { name: 'Second CA', maxScore: 40 },
+      FCA: { name: 'First CA', maxScore: 40 },
+      SCA: { name: 'Second CA', maxScore: 40 },
+      EXAM: { name: 'Examination', maxScore: 60 },
+      EXAMINATION: { name: 'Examination', maxScore: 60 },
+    };
+    const preset = EN_TYPE_PRESETS[evaluationTypeIdOrCode.toUpperCase()];
+    const prettified = preset?.name
+      ?? evaluationTypeIdOrCode
+        .toLowerCase()
+        .split(/[_\s-]+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+    return this.prisma.evaluationType.create({
+      data: {
+        tenantId,
+        schoolLevelId: levelId,
+        code: evaluationTypeIdOrCode,
+        name: prettified,
+        isSystem: false,
+        defaultMaxScore: preset?.maxScore ?? 20,
+        defaultCoefficient: 1,
+      },
+    });
+  }
+
+  /**
    * Liste les évaluations filtrées
    */
   async findAll(tenantId: string, academicYearId: string, filters: any) {
@@ -196,17 +303,13 @@ export class EvaluationsService {
    * Crée une nouvelle évaluation
    */
   async create(tenantId: string, academicYearId: string, data: any) {
-    // Validation du type d'évaluation — chercher par id OU par code
-    // (le frontend peut envoyer un code comme "EM1" si le type vient de
-    // school_academic_settings.config.assessmentTypes qui n'a pas d'UUID)
-    const type = await this.prisma.evaluationType.findFirst({
-      where: {
-        OR: [
-          { id: data.evaluationTypeId },
-          { code: data.evaluationTypeId, tenantId },
-        ],
-      },
-    });
+    // ⭐ V10e — Validation du type d'évaluation par id OU par code,
+    // résolu PAR NIVEAU (le code "EM1" existe pour Maternelle ET Primaire).
+    const type = await this.resolveEvaluationType(
+      tenantId,
+      data.evaluationTypeId,
+      data.classId ? [data.classId] : [],
+    );
 
     if (!type) throw new NotFoundException('Type d\'évaluation non trouvé');
 
@@ -275,17 +378,15 @@ export class EvaluationsService {
     coefficient?: number;
     createdBy?: string;
   }) {
-    // Validation du type — chercher par id OU par code
-    // (le frontend peut envoyer un code comme "EM1" si le type vient de
-    // school_academic_settings.config.assessmentTypes qui n'a pas d'UUID)
-    let type = await this.prisma.evaluationType.findFirst({
-      where: {
-        OR: [
-          { id: data.evaluationTypeId },
-          { code: data.evaluationTypeId, tenantId },
-        ],
-      },
-    });
+    // ⭐ V10e — Validation du type par id OU par code, résolu PAR NIVEAU
+    // (le code "EM1" existe pour Maternelle ET Primaire : sans le scope
+    // par niveau, findFirst renvoyait le type d'un AUTRE niveau et les
+    // bulletins — qui filtrent par schoolLevelId — ne trouvaient rien).
+    const type = await this.resolveEvaluationType(
+      tenantId,
+      data.evaluationTypeId,
+      data.classIds || [],
+    );
     if (!type) throw new NotFoundException('Type d\'évaluation non trouvé');
 
     // Vérifier que la période n'est pas clôturée

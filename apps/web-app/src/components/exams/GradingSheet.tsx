@@ -13,11 +13,11 @@
 
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Save, Send, ChevronLeft, Calendar, Users, BookOpen, Loader2,
   Search, School, AlertCircle, CheckCircle2, XCircle,
-  Settings, Settings2, X, Plus, Pencil, Lock,
+  Settings, Settings2, X, Plus, Pencil, Lock, FileText, ClipboardCheck,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -235,6 +235,18 @@ export function GradingSheet({
   // ⭐ Modal de demande de déverrouillage (remplace prompt())
   const [unlockModalOpen, setUnlockModalOpen] = useState(false);
 
+  // ═══ V10e — BROADSHEET ANGLOPHONE (piste EN : Nursery & Primary) ═════════
+  // Modèle « Examination results and teacher's report » (feuille nigériane) :
+  //   Page 1 « Examination Results »  — saisie (élèves en lignes, matières en
+  //   colonnes, colonnes finales AVERAGE / POSITION / TOTAL, lignes de bas de
+  //   tableau MARKS OBTAINABLE / MARKS OBTAINED).
+  //   Page 2 « Head Teacher's Report » — même grille (lecture seule) + colonne
+  //   « Head Teacher's Remarks » persistée via l'API annotations (bulletins).
+  const [broadsheetPage, setBroadsheetPage] = useState<'exam' | 'report'>('exam');
+  const [headRemarks, setHeadRemarks] = useState<Record<string, string>>({});
+  const [remarksLoaded, setRemarksLoaded] = useState(false);
+  const [remarksSaving, setRemarksSaving] = useState(false);
+
   // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
   // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
   const isLocked = group.statuses.some((s) => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
@@ -401,6 +413,12 @@ export function GradingSheet({
   const handleSave = async (submit = false) => {
     setSaving(true);
     try {
+      // 0. ⭐ V10e — Piste EN : sauvegarder aussi les remarques du Head Teacher
+      //    (page 2 du broadsheet) en même temps que les notes.
+      if (isEN) {
+        await saveHeadRemarks();
+      }
+
       // 1. Sauvegarder les notes
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
@@ -507,6 +525,109 @@ export function GradingSheet({
     return { filled, total, absent, studentsAbsent: absentStudentIds.size };
   }, [rows, group.subjects, isMaternelle]);
 
+  // ═══ V10e — BROADSHEET EN : calculs par élève / par matière ══════════════
+  // TOTAL = somme des notes · AVERAGE = moyenne des notes saisies ·
+  // POSITION = rang (1st, 2nd, 3rd…) · MARKS OBTAINED = meilleure note de la
+  // classe pour la matière · MARKS OBTAINABLE = barème (ex: /40, /60).
+  const enTotalOf = useCallback((row: GradeRow): number =>
+    sortedSubjects.reduce((sum, subj) => {
+      const s = row.scores[subj.id];
+      return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+    }, 0), [sortedSubjects]);
+
+  const enAverageOf = useCallback((row: GradeRow): number | null => {
+    const scored = sortedSubjects.filter((subj) => {
+      const s = row.scores[subj.id];
+      return s && typeof s.score === 'number' && !s.isAbsent;
+    });
+    if (!scored.length) return null;
+    return enTotalOf(row) / scored.length;
+  }, [sortedSubjects, enTotalOf]);
+
+  const enRankMap = useMemo(() => {
+    const totals = filteredRows.map((r) => ({ id: r.studentId, total: enTotalOf(r) }));
+    totals.sort((a, b) => b.total - a.total);
+    const map: Record<string, number> = {};
+    let lastTotal: number | null = null;
+    let lastRank = 0;
+    totals.forEach((t, i) => {
+      const rank = lastTotal !== null && t.total === lastTotal ? lastRank : i + 1;
+      map[t.id] = rank;
+      lastTotal = t.total;
+      lastRank = rank;
+    });
+    return map;
+  }, [filteredRows, enTotalOf]);
+
+  const enSubjectMaxOf = useCallback((subjectId: string): number | null => {
+    let max: number | null = null;
+    rows.forEach((r) => {
+      const s = r.scores[subjectId];
+      if (s && typeof s.score === 'number' && !s.isAbsent && (max === null || s.score > max)) {
+        max = s.score;
+      }
+    });
+    return max;
+  }, [rows]);
+
+  // Suffixe ordinal anglais : 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st…
+  const formatOrdinalEn = (n: number): string => {
+    if (n <= 0) return '—';
+    const suffixes = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+  };
+
+  // ── V10e — Chargement des remarques du Head Teacher (page 2) ──────────────
+  // Persistées via l'API annotations des bulletins (enDirectorComment).
+  useEffect(() => {
+    if (!isEN || broadsheetPage !== 'report' || remarksLoaded || rows.length === 0 || !group.periodId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const results = await Promise.all(
+          rows.map(async (r) => {
+            try {
+              const res = await apiClient.get(
+                `/institutional-exams/bulletins/annotations?studentId=${r.studentId}&periodId=${group.periodId}`,
+              );
+              return [r.studentId, (res.data?.enDirectorComment as string) || ''] as const;
+            } catch {
+              return [r.studentId, ''] as const;
+            }
+          }),
+        );
+        if (!cancelled) {
+          setHeadRemarks(Object.fromEntries(results));
+          setRemarksLoaded(true);
+        }
+      } catch {
+        // Silencieux : la page 2 reste utilisable sans remarques persistées
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isEN, broadsheetPage, rows, remarksLoaded, group.periodId]);
+
+  const saveHeadRemarks = useCallback(async () => {
+    if (!group.periodId) return;
+    const entries = Object.entries(headRemarks).filter(([, v]) => v.trim() !== '');
+    if (!entries.length) return;
+    setRemarksSaving(true);
+    try {
+      await Promise.all(
+        entries.map(([studentId, comment]) =>
+          apiClient.patch('/institutional-exams/bulletins/annotations', {
+            studentId,
+            periodId: group.periodId,
+            enDirectorComment: comment,
+          }).catch((e) => console.warn('[headRemarks] save failed for', studentId, e?.message)),
+        ),
+      );
+    } finally {
+      setRemarksSaving(false);
+    }
+  }, [headRemarks, group.periodId]);
+
   const startDate = group.startDate ? new Date(group.startDate) : null;
   const endDate = group.endDate ? new Date(group.endDate) : null;
   const sameDay = startDate && endDate &&
@@ -531,10 +652,15 @@ export function GradingSheet({
             {/* ⭐ Titre de la fiche à l'intérieur de l'onglet */}
             <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
               <h2 className="text-lg font-bold text-slate-900">
-                {isEN ? 'GRADING SHEET' : 'FICHE DE SAISIE DES NOTES'} — {group.evaluationTypeName}
+                {isEN
+                  ? (broadsheetPage === 'exam'
+                      ? 'EXAMINATION RESULTS'
+                      : "HEAD TEACHER'S REPORT")
+                  : 'FICHE DE SAISIE DES NOTES'}
+                {' — '}{group.evaluationTypeName}
               </h2>
               <div className="text-sm text-slate-600 mt-1">
-                {isEN ? 'Class' : 'Classe'} : <strong>{group.className}</strong> • {isEN ? translatePeriodName(group.periodName, language) : group.periodName} • {dateRange}
+                {isEN ? 'Class' : 'Classe'} : <strong>{group.className}</strong> • {isEN ? translatePeriodName(group.periodName, language) : group.periodName} • {isEN ? dateRange.replace(/^Le\s/, '').replace(/^Du\s/, 'From ').replace(/\sau\s/, ' to ').replace(/^Du /, '') : dateRange}
               </div>
             </div>
             {/* ⭐ Bannière de verrouillage si notes soumises/validées */}
@@ -560,7 +686,7 @@ export function GradingSheet({
               <div className="flex items-center gap-2">
                 <Button variant="ghost" onClick={onBack}>
                   <ChevronLeft className="w-4 h-4 mr-1" />
-                  Retour à la liste
+                  {isEN ? 'Back to list' : 'Retour à la liste'}
                 </Button>
                 {/* ⭐ Boutons Mode édition */}
                 {!isLocked && (
@@ -576,7 +702,7 @@ export function GradingSheet({
                       )}
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Ajouter
+                      {isEN ? 'Add' : 'Ajouter'}
                     </button>
                     <button
                       onClick={() => setEditMode('edit')}
@@ -589,7 +715,7 @@ export function GradingSheet({
                       )}
                     >
                       <Pencil className="w-3.5 h-3.5" />
-                      Modifier
+                      {isEN ? 'Modify' : 'Modifier'}
                     </button>
                     {editMode !== 'readonly' && (
                       <button
@@ -597,7 +723,7 @@ export function GradingSheet({
                         className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition-colors"
                       >
                         <Lock className="w-3.5 h-3.5" />
-                        Verrouiller
+                        {isEN ? 'Lock' : 'Verrouiller'}
                       </button>
                     )}
                   </div>
@@ -606,11 +732,11 @@ export function GradingSheet({
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="border-blue-200 text-blue-600 text-xs gap-1">
                   <Users className="w-3 h-3" />
-                  {rows.length} élèves
+                  {rows.length} {isEN ? 'pupils' : 'élèves'}
                 </Badge>
                 <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
                   <BookOpen className="w-3 h-3" />
-                  {group.subjects.length} matières
+                  {group.subjects.length} {isEN ? 'subjects' : 'matières'}
                 </Badge>
                 <Badge variant="outline" className="border-amber-200 text-amber-600 text-xs">
                   {isMaternelle ? 'TS/S/PS' : isEN ? `/${maxScore}` : `/20`}
@@ -623,18 +749,25 @@ export function GradingSheet({
                   className="border-blue-200 text-blue-700 hover:bg-blue-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-                  Sauvegarder
+                  {isEN ? 'Save' : 'Sauvegarder'}
                 </Button>
                 <Button
                   size="sm"
                   onClick={async () => {
                     const ok = await warning(
-                      `Valider la saisie des notes de ${group.className} ?\n\n` +
-                      `Évaluation : ${group.evaluationTypeName}\n` +
-                      `${rows.length} élève(s) · ${group.subjects.length} matière(s)\n\n` +
-                      `Les notes validées seront disponibles dans l'Espace Pédagogique pour soumission au directeur.`,
-                      'Valider la saisie',
-                      'Les notes seront verrouillées pour modification depuis ce module. La soumission finale se fait depuis l\'Espace Pédagogique.'
+                      isEN
+                        ? `Validate the marks of ${group.className}?\n\n` +
+                          `Assessment: ${group.evaluationTypeName}\n` +
+                          `${rows.length} pupil(s) · ${group.subjects.length} subject(s)\n\n` +
+                          `Validated marks become available in the Pedagogical Space for submission to the Director.`
+                        : `Valider la saisie des notes de ${group.className} ?\n\n` +
+                          `Évaluation : ${group.evaluationTypeName}\n` +
+                          `${rows.length} élève(s) · ${group.subjects.length} matière(s)\n\n` +
+                          `Les notes validées seront disponibles dans l'Espace Pédagogique pour soumission au directeur.`,
+                      isEN ? 'Validate marks' : 'Valider la saisie',
+                      isEN
+                        ? 'Marks will be locked for modification from this module. Final submission happens in the Pedagogical Space.'
+                        : 'Les notes seront verrouillées pour modification depuis ce module. La soumission finale se fait depuis l\'Espace Pédagogique.'
                     );
                     if (ok) handleSave(true);
                   }}
@@ -642,7 +775,7 @@ export function GradingSheet({
                   className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-                  Valider
+                  {isEN ? 'Validate' : 'Valider'}
                 </Button>
               </div>
             </div>
@@ -707,6 +840,42 @@ export function GradingSheet({
                   />
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 </div>
+                {/* ═══ V10e — Switcher de pages du broadsheet anglophone ═══ */}
+                {isEN && (
+                  <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setBroadsheetPage('exam')}
+                      className={cn(
+                        'flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors',
+                        broadsheetPage === 'exam'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-100',
+                      )}
+                    >
+                      <FileText className="w-4 h-4" />
+                      Examination Results
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBroadsheetPage('report')}
+                      className={cn(
+                        'flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors',
+                        broadsheetPage === 'report'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:bg-slate-100',
+                      )}
+                    >
+                      <ClipboardCheck className="w-4 h-4" />
+                      Head Teacher's Report
+                    </button>
+                    {broadsheetPage === 'report' && remarksSaving && (
+                      <span className="text-xs text-slate-400 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Loading remarks…
+                      </span>
+                    )}
+                  </div>
+                )}
                 {/* Tableau registre */}
                 <div className={cn(
                   "bg-white border-2 border-slate-800 rounded-xl overflow-x-auto",
@@ -723,6 +892,182 @@ export function GradingSheet({
                       Mode Modification : toutes les cellules sont éditables.
                     </div>
                   )}
+                  {isEN ? (
+                    /* ══════════════════════════════════════════════════════════════
+                     * ⭐ V10e — BROADSHEET ANGLOPHONE (modèle « Examination
+                     * results and teacher's report » — feuille nigériane).
+                     * Nursery & Primary partagent EXACTEMENT la même table.
+                     *
+                     * Page 1 « Examination Results » : saisie —
+                     *   NO | NAMES OF SCHOLARS | matières (auto) | AVERAGE |
+                     *   POSITION | TOTAL, lignes MARKS OBTAINABLE / MARKS OBTAINED.
+                     * Page 2 « Head Teacher's Report » : même grille en lecture
+                     *   seule + colonne « Head Teacher's Remarks » persistée
+                     *   (API annotations — enDirectorComment).
+                     * ══════════════════════════════════════════════════════════ */
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-800 text-white">
+                          <th
+                            colSpan={2 + sortedSubjects.length + 3 + (broadsheetPage === 'report' ? 1 : 0)}
+                            className="border border-slate-700 px-3 py-2 text-center font-black uppercase tracking-wider text-sm"
+                          >
+                            {(broadsheetPage === 'exam' ? 'Examination Results' : "Head Teacher's Report")
+                              + ' — ' + translatePeriodName(group.periodName, language)
+                              + (group.evaluationTypeName ? ' — ' + group.evaluationTypeName : '')}
+                          </th>
+                        </tr>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">No</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase min-w-[180px]">Names of Scholars</th>
+                          {sortedSubjects.map((subject) => (
+                            <th key={subject.id} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                              {subject.name}
+                              <div className="text-[9px] text-slate-400 font-normal">/{maxScore}</div>
+                            </th>
+                          ))}
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-blue-50">Average</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-violet-50">Position</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-emerald-50">Total</th>
+                          {broadsheetPage === 'report' && (
+                            <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[240px] bg-amber-50">Head Teacher's Remarks</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedRows.map((row, idx) => {
+                          const total = enTotalOf(row);
+                          const average = enAverageOf(row);
+                          const position = enRankMap[row.studentId] || 0;
+                          const rowNo = (currentPage - 1) * 100 + idx + 1;
+                          const hasAnyScore = sortedSubjects.some((subj) => {
+                            const s = row.scores[subj.id];
+                            return s && typeof s.score === 'number';
+                          });
+                          return (
+                            <tr
+                              key={row.studentId}
+                              className={cn(
+                                'hover:bg-slate-50 transition-colors',
+                                idx % 2 === 1 && 'bg-slate-50/50',
+                                !hasAnyScore && 'bg-amber-50/30',
+                              )}
+                            >
+                              <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{rowNo}</td>
+                              <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                              {sortedSubjects.map((subject) => {
+                                const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                                const hasNote = score.score !== null;
+                                if (broadsheetPage === 'report') {
+                                  return (
+                                    <td key={subject.id} className={cn('border border-slate-300 px-2 py-1 text-center font-bold', score.isAbsent && 'bg-red-50')}>
+                                      {score.isAbsent
+                                        ? <span className="text-rose-600 text-[10px] font-black">ABS</span>
+                                        : (score.score !== null ? Number(score.score).toFixed(2).replace(/\.00$/, '') : '—')}
+                                    </td>
+                                  );
+                                }
+                                return (
+                                  <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
+                                    <input
+                                      type="number"
+                                      step="0.25"
+                                      min="0"
+                                      max={String(maxScore)}
+                                      value={score.isAbsent ? '' : (score.score ?? '')}
+                                      onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                      disabled={score.isAbsent || (canAdd && hasNote)}
+                                      placeholder="—"
+                                      className={cn(
+                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
+                                        !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
+                                          (Number(score.score) < maxScore * 0.5 ? 'text-rose-600' : Number(score.score) >= maxScore * 0.7 ? 'text-emerald-600' : 'text-slate-900'),
+                                      )}
+                                    />
+                                  </td>
+                                );
+                              })}
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                                {average !== null ? average.toFixed(2) : '—'}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-violet-700 bg-violet-50">
+                                {hasAnyScore ? formatOrdinalEn(position) : '—'}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
+                                {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
+                              </td>
+                              {broadsheetPage === 'report' && (
+                                <td className="border border-slate-300 p-0">
+                                  <input
+                                    type="text"
+                                    value={headRemarks[row.studentId] || ''}
+                                    onChange={(e) => setHeadRemarks((prev) => ({ ...prev, [row.studentId]: e.target.value }))}
+                                    disabled={isLocked}
+                                    placeholder="Head teacher's remark…"
+                                    className="w-full px-2 py-1 text-xs border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                  />
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                        {filteredRows.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={2 + sortedSubjects.length + 3 + (broadsheetPage === 'report' ? 1 : 0)}
+                              className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
+                            >
+                              No pupil found.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        {/* MARKS OBTAINABLE — barème par matière */}
+                        <tr className="bg-slate-100 font-bold">
+                          <td colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtainable</td>
+                          {sortedSubjects.map((s) => (
+                            <td key={`ob-${s.id}`} className="border border-slate-300 px-2 py-1.5 text-center text-slate-600">{maxScore}</td>
+                          ))}
+                          <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-blue-50">{maxScore}</td>
+                          <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</td>
+                          <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-emerald-50">{maxScore * sortedSubjects.length}</td>
+                          {broadsheetPage === 'report' && (
+                            <td className="border border-slate-300 bg-amber-50" />
+                          )}
+                        </tr>
+                        {/* MARKS OBTAINED — meilleure note de la classe par matière */}
+                        <tr className="bg-slate-50 font-bold">
+                          <td colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtained</td>
+                          {sortedSubjects.map((s) => {
+                            const max = enSubjectMaxOf(s.id);
+                            return (
+                              <td key={`mo-${s.id}`} className="border border-slate-300 px-2 py-1.5 text-center text-slate-700">
+                                {max !== null ? Number(max).toFixed(2).replace(/\.00$/, '') : '—'}
+                              </td>
+                            );
+                          })}
+                          {(() => {
+                            const maxes = sortedSubjects.map((s) => enSubjectMaxOf(s.id)).filter((m): m is number => m !== null);
+                            const sum = maxes.reduce((a, b) => a + b, 0);
+                            const avg = maxes.length ? sum / maxes.length : null;
+                            return (
+                              <>
+                                <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-700 bg-blue-50">{avg !== null ? avg.toFixed(2) : '—'}</td>
+                                <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</td>
+                                <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-700 bg-emerald-50">{maxes.length ? Number(sum).toFixed(2).replace(/\.00$/, '') : '—'}</td>
+                                {broadsheetPage === 'report' && (
+                                  <td className="border border-slate-300 bg-amber-50" />
+                                )}
+                              </>
+                            );
+                          })()}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  ) : (
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100">
@@ -1083,6 +1428,7 @@ export function GradingSheet({
                       )}
                     </tbody>
                   </table>
+                  )}
                 </div>
                 {/* Pagination */}
                 {totalPages > 1 && (
@@ -1114,13 +1460,25 @@ export function GradingSheet({
                 {/* Légende */}
                 <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600">
                   <p className="font-semibold mb-1">
-                    {isMaternelle
+                    {isEN
+                      ? 'Legend — Examination Broadsheet (Anglophone Track)'
+                      : isMaternelle
                       ? 'Légende — Évaluation qualitative (Maternelle)'
                       : isSecondaire
                         ? 'Légende — Évaluation quantitative (Secondaire)'
                         : 'Légende — Évaluation quantitative (Primaire)'}
                   </p>
-                  {isMaternelle ? (
+                  {isEN ? (
+                    <ul className="space-y-0.5 ml-4">
+                      <li><strong className="text-slate-700">Names of Scholars</strong> = pupils of the class (one row each)</li>
+                      <li>Each column = one subject automatically retrieved from the assessment</li>
+                      <li><strong className="text-blue-700">Average</strong> = mean of the pupil's marks · <strong className="text-emerald-700">Total</strong> = sum of marks</li>
+                      <li><strong className="text-violet-700">Position</strong> = class rank (1st, 2nd, 3rd…)</li>
+                      <li><strong>Marks Obtainable</strong> = maximum mark per subject (/{maxScore})</li>
+                      <li><strong>Marks Obtained</strong> = highest mark obtained in the class per subject</li>
+                      <li className="mt-1 text-gray-500">Page 2 « Head Teacher's Report »: read-only recap + remarks saved with the marks.</li>
+                    </ul>
+                  ) : isMaternelle ? (
                     <ul className="space-y-0.5 ml-4">
                       <li><strong className="text-emerald-700">TS</strong> = Très Satisfaisant</li>
                       <li><strong className="text-blue-700">S</strong> = Satisfaisant</li>

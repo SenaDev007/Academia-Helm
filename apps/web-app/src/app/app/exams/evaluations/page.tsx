@@ -562,11 +562,21 @@ export default function EvaluationsPage() {
 
       // Convertir assessmentTypes → format EvaluationTypeItem
       const assessmentTypes = activeSettings?.config?.assessmentTypes || [];
+      // ⭐ V10e — Piste EN : barème par CODE (CA = /40, Examination = /60),
+      // indépendamment du scoreMax global de la config (calibré /100 pour
+      // le bulletin consolidé). Les types settings utilisent les codes
+      // FIRST_CA / SECOND_CA / EXAM.
+      const enMaxByCode = (code: string): number => {
+        const c = (code || '').toUpperCase();
+        if (c === 'EXAM' || c === 'EXAMINATION') return 60;
+        if (c === 'FIRST_CA' || c === 'SECOND_CA' || c === 'FCA' || c === 'SCA') return 40;
+        return 40;
+      };
       let typesFromSettings = assessmentTypes.map((at: any) => ({
         id: at.code, // Utiliser le code comme ID (pas d'UUID dans school_academic_settings)
         name: at.label || at.code,
         code: at.code,
-        defaultMaxScore: activeSettings?.config?.scoreMax || 20,
+        defaultMaxScore: isEN ? enMaxByCode(at.code) : (activeSettings?.config?.scoreMax || 20),
         defaultCoefficient: at.includedInAverage ? 1 : 0,
         schoolLevelId: schoolLevelUuid,
         isSystem: false,

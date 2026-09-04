@@ -59,6 +59,35 @@ export interface CashPaymentMarking {
   signedManually?: boolean;
 }
 
+/**
+ * ⭐ Statut global de la création des sous-domaines d'une activation.
+ *    - 'created'        : tous les sous-domaines sont créés (DNS + Vercel + DB)
+ *    - 'partial'        : au moins un créé, au moins un en échec
+ *    - 'failed'         : aucun créé (échec API) — l'école reste fonctionnelle
+ *    - 'not_configured' : le service de domaines n'est pas configuré sur le
+ *                         serveur API (VERCEL_API_TOKEN / VERCEL_PROJECT_ID
+ *                         absents) — VISIBLE au lieu d'un échec silencieux.
+ */
+export type DomainCreationStatus = 'created' | 'partial' | 'failed' | 'not_configured';
+
+/**
+ * ⭐ Rapport de création de sous-domaine pour UNE école (tenant).
+ *    Remonte jusqu'à la réponse de /onboarding/contract/sign : l'appelant
+ *    SAIT si {subdomain}.academiahelm.com existe réellement.
+ */
+export interface TenantDomainReport {
+  tenantId: string;
+  tenantName: string;
+  subdomain: string;
+  domain: string;
+  status: 'created' | 'failed' | 'not_configured';
+  cloudflareCreated?: boolean;
+  vercelAdded?: boolean;
+  vercelVerified?: boolean;
+  dbTracked?: boolean;
+  error?: string;
+}
+
 @Injectable()
 export class OnboardingService {
   private readonly logger = new Logger(OnboardingService.name);
@@ -823,7 +852,9 @@ export class OnboardingService {
     }
 
     // Transaction atomique : créer tenant, subscription, user, etc.
-    return await this.prisma.$transaction(async (tx) => {
+    // ⭐ Le résultat est capturé puis COMPLÉTÉ après le commit (sous-domaines,
+    //    Helm Connect, caches) — voir la fin de la méthode.
+    const activationResult = await this.prisma.$transaction(async (tx) => {
       // 1. Trouver ou créer le pays
       let country = await tx.country.findFirst({
         where: { name: { contains: draft.country, mode: 'insensitive' } },
@@ -1415,8 +1446,10 @@ export class OnboardingService {
         this.logger.warn(`⚠️  Failed to emit ORION events: ${error.message}`);
       }
 
-      // 🔗 Retourner les données AVANT les appels API (la transaction est complète)
-      const activationResult = {
+      // 🔗 Retourner les données — la transaction se limite aux écritures DB.
+      //    Tout ce qui suit (sous-domaines, Helm Connect, caches) s'exécute
+      //    APRÈS le commit : un échec réseau ne fait JAMAIS rollbacker l'école.
+      return {
         tenants: tenants.map(tenant => ({
           id: tenant.id,
           name: tenant.name,
@@ -1434,33 +1467,48 @@ export class OnboardingService {
           role: promoter.role,
         },
       };
-
-      // 🔗 DOMAIN MANAGEMENT - Créer les sous-domaines Cloudflare + Vercel (hors transaction)
-      // Important : Les appels API Cloudflare/Vercel sont lents et ne doivent PAS
-      // bloquer la transaction DB. On les exécute en arrière-plan.
-      this.createSubdomainsAsync(tenants);
-
-      // ⭐ V6 (spec §4/§6) — HELM CONNECT : provisionnement automatique des
-      //    canaux officiels (Direction, Vie scolaire, Transport, Finance,
-      //    Infos pédagogiques, Calendrier scolaire) + abonnement du promoteur,
-      //    puis communautés automatiques dès qu'une année scolaire sera active.
-      //    Fire-and-forget : ne bloque JAMAIS l'activation.
-      this.provisionHelmConnectAsync(tenants);
-
-      // ⭐ Invalider le cache de la liste publique des écoles pour que le nouveau
-      // tenant apparaisse immédiatement dans le modal de sélection du portail.
-      // Sans cette invalidation, le cache Redis (60s) + cache Next.js BFF
-      // empêchent le nouveau tenant d'apparaître pendant jusqu'à 60 secondes.
-      try {
-        await this.cacheService.invalidate('schools:list:all');
-        await this.cacheService.invalidate('schools:list:with-jobs');
-        this.logger.log(`✅ School list cache invalidated after tenant activation`);
-      } catch (cacheErr: any) {
-        this.logger.warn(`⚠️  Failed to invalidate school list cache: ${cacheErr.message}`);
-      }
-
-      return activationResult;
     });
+
+    // 🔗 DOMAIN MANAGEMENT — APRÈS le commit de la transaction.
+    // ⭐ AWAITÉ : la création du sous-domaine (Cloudflare + Vercel + trace
+    //    TenantDomain en DB) fait partie intégrante de la création complète
+    //    de l'école (« du fond en comble »). Le rapport remonte dans la
+    //    réponse de l'activation — fini le fire-and-forget silencieux qui
+    //    laissait des écoles créées SANS sous-domaine, sans qu'aucune erreur
+    //    ne soit visible nulle part.
+    const domainReports = await this.createSubdomains(activationResult.tenants);
+    const domainStatus = this.computeDomainStatus(domainReports);
+    if (domainStatus !== 'created') {
+      this.logger.warn(
+        `⚠️  Sous-domaines : statut « ${domainStatus} » après activation de ` +
+        `${activationResult.tenants.length} école(s) — ${domainReports.map(r => `${r.domain}:${r.status}${r.error ? ` (${r.error})` : ''}`).join(' | ')}`,
+      );
+    }
+
+    // ⭐ V6 (spec §4/§6) — HELM CONNECT : provisionnement automatique des
+    //    canaux officiels (Direction, Vie scolaire, Transport, Finance,
+    //    Infos pédagogiques, Calendrier scolaire) + abonnement du promoteur,
+    //    puis communautés automatiques dès qu'une année scolaire sera active.
+    //    Fire-and-forget : ne bloque JAMAIS l'activation.
+    this.provisionHelmConnectAsync(activationResult.tenants);
+
+    // ⭐ Invalider le cache de la liste publique des écoles pour que le nouveau
+    // tenant apparaisse immédiatement dans le modal de sélection du portail.
+    // Sans cette invalidation, le cache Redis (60s) + cache Next.js BFF
+    // empêchent le nouveau tenant d'apparaître pendant jusqu'à 60 secondes.
+    try {
+      await this.cacheService.invalidate('schools:list:all');
+      await this.cacheService.invalidate('schools:list:with-jobs');
+      this.logger.log(`✅ School list cache invalidated after tenant activation`);
+    } catch (cacheErr: any) {
+      this.logger.warn(`⚠️  Failed to invalidate school list cache: ${cacheErr.message}`);
+    }
+
+    this.logger.log(
+      `✅ ${activationResult.tenants.length} tenant(s) activated - Promoter: ${activationResult.promoter.id} - Subscriptions: ${activationResult.subscriptions.map(s => s.id).join(', ')}`,
+    );
+
+    return { ...activationResult, domainReports, domainStatus };
   }
 
   // Note: generateSlug supprimé - utilise SubdomainService.generateAndValidate()
@@ -1493,49 +1541,117 @@ export class OnboardingService {
   }
 
   /**
-   * Crée les sous-domaines Cloudflare + Vercel de façon asynchrone (fire-and-forget).
-   * Ne bloque PAS la transaction DB — les appels API réseau sont lents.
-   * Si ça échoue, le tenant reste actif mais sans sous-domaine DNS configuré.
+   * ⭐ Crée les sous-domaines Cloudflare + Vercel et les traque en DB —
+   *    AWAITÉ (la création fait partie de l'école « du fond en comble »).
+   *
+   *    Remplace l'ancien createSubdomainsAsync (fire-and-forget silencieux) :
+   *    un échec ou une absence de configuration est maintenant RETOURNÉ dans
+   *    un rapport par école, qui remonte jusqu'à la réponse HTTP de la
+   *    signature du contrat. Idempotent par nature :
+   *    - Cloudflare : vérifie l'enregistrement existant avant création ;
+   *    - Vercel : 409 (déjà présent) = succès ;
+   *    - TenantDomain : upsert (création ou réactivation).
    */
-  private createSubdomainsAsync(tenants: { id: string; subdomain: string | null; name: string }[]): void {
+  private async createSubdomains(
+    tenants: { id: string; subdomain: string | null; name: string }[],
+  ): Promise<TenantDomainReport[]> {
+    const baseDomain = (process.env.APP_BASE_DOMAIN
+      || (process.env.FRONTEND_URL || 'https://academiahelm.com')
+        .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').trim()
+    );
+
     if (!this.domainManagementService.isConfigured()) {
-      this.logger.warn('⚠️  Domain management not configured — skipping subdomain creation. Configure CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, VERCEL_API_TOKEN, VERCEL_PROJECT_ID');
-      return;
+      // ⭐ ERROR (et plus un simple warn) : sans tokens Vercel/Cloudflare, les
+      //    écoles sont créées SANS sous-domaine — c'est un incident de config
+      //    qui doit être visible, pas une simple note de log.
+      this.logger.error(
+        '❌ DOMAIN MANAGEMENT NON CONFIGURÉ — les écoles seront créées SANS sous-domaine. ' +
+        'Configurez VERCEL_API_TOKEN + VERCEL_PROJECT_ID (et idéalement CLOUDFLARE_API_TOKEN + ' +
+        'CLOUDFLARE_ZONE_ID pour les CNAME individuels) sur le serveur API.',
+      );
+      return tenants.map((tenant) => ({
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        subdomain: tenant.subdomain || '',
+        domain: tenant.subdomain ? `${tenant.subdomain}.${baseDomain}` : '',
+        status: 'not_configured' as const,
+        dbTracked: false,
+        error: 'Gestion des domaines non configurée sur le serveur API (VERCEL_API_TOKEN / VERCEL_PROJECT_ID absents)',
+      }));
     }
 
-    // Fire-and-forget : ne pas await, ne pas bloquer la réponse
-    Promise.all(
-      tenants.map(async (tenant) => {
-        if (!tenant.subdomain) {
-          this.logger.warn(`⚠️  No subdomain for tenant ${tenant.id} — skipping domain creation`);
-          return;
-        }
+    const reports: TenantDomainReport[] = [];
+    for (const tenant of tenants) {
+      if (!tenant.subdomain) {
+        this.logger.warn(`⚠️  No subdomain for tenant ${tenant.id} — skipping domain creation`);
+        reports.push({
+          tenantId: tenant.id,
+          tenantName: tenant.name,
+          subdomain: '',
+          domain: '',
+          status: 'failed',
+          error: 'Aucun sous-domaine défini pour ce tenant',
+        });
+        continue;
+      }
 
-        try {
-          const result = await this.domainManagementService.createSchoolSubdomain(
-            tenant.subdomain,
-            tenant.id,
-          );
+      try {
+        const result = await this.domainManagementService.createSchoolSubdomain(
+          tenant.subdomain,
+          tenant.id,
+        );
+        reports.push({
+          tenantId: tenant.id,
+          tenantName: tenant.name,
+          subdomain: tenant.subdomain,
+          domain: result.domain,
+          status: result.success ? 'created' : 'failed',
+          cloudflareCreated: !!result.cloudflareCreated,
+          vercelAdded: !!result.vercelAdded,
+          vercelVerified: !!result.vercelVerified,
+          dbTracked: !!result.dbTracked,
+          error: result.error,
+        });
 
-          if (result.success) {
-            this.logger.log(
-              `✅ Subdomain ${result.domain} created for tenant ${tenant.id} (CF: ${result.cloudflareCreated}, Vercel: ${result.vercelAdded}, Verified: ${result.vercelVerified})`,
-            );
-          } else {
-            this.logger.warn(
-              `⚠️  Subdomain creation partial/failed for ${result.domain}: ${result.error}`,
-            );
-          }
-        } catch (error) {
-          this.logger.error(
-            `❌ Unexpected error creating subdomain for tenant ${tenant.id}: ${error.message}`,
+        if (result.success) {
+          this.logger.log(
+            `✅ Subdomain ${result.domain} created for tenant ${tenant.id} ` +
+            `(CF: ${result.cloudflareCreated}, Vercel: ${result.vercelAdded}, Verified: ${result.vercelVerified})`,
+          );
+        } else {
+          this.logger.warn(
+            `⚠️  Subdomain creation partial/failed for ${result.domain}: ${result.error}`,
           );
         }
-      }),
-    ).catch((error) => {
-      // Catch-all de sécurité (ne devrait jamais arriver)
-      this.logger.error(`❌ Subdomain creation batch failed: ${error.message}`);
-    });
+      } catch (error: any) {
+        this.logger.error(
+          `❌ Unexpected error creating subdomain for tenant ${tenant.id}: ${error.message}`,
+        );
+        reports.push({
+          tenantId: tenant.id,
+          tenantName: tenant.name,
+          subdomain: tenant.subdomain,
+          domain: `${tenant.subdomain}.${baseDomain}`,
+          status: 'failed',
+          error: error.message,
+        });
+      }
+    }
+    return reports;
+  }
+
+  /**
+   * ⭐ Agrège les rapports par école en un statut global d'activation des
+   *    domaines : 'created' / 'partial' / 'failed' / 'not_configured'.
+   */
+  private computeDomainStatus(reports: TenantDomainReport[]): DomainCreationStatus {
+    if (reports.length === 0) return 'not_configured';
+    const statuses = reports.map((r) => r.status);
+    if (statuses.every((s) => s === 'not_configured')) return 'not_configured';
+    const created = statuses.filter((s) => s === 'created').length;
+    if (created === reports.length) return 'created';
+    if (created > 0) return 'partial';
+    return 'failed';
   }
 
   /**
@@ -1769,7 +1885,12 @@ export class OnboardingService {
    * ⭐ Active le tenant après signature du contrat (mode YEHI OR Tech).
    *
    * Ce flux est déclenché par ContractController.signContract() quand le
-   * promoteur et le représentant YEHI OR Tech signent le contrat.
+   * promoteur et le représentant YEHI OR Tech signent le contrat — QUE LE
+   * CONTRAT SOIT SIGNÉ NUMÉRIQUEMENT OU DÉJÀ SIGNÉ MANUELLEMENT (papier) :
+   * les deux chemins convergent ici et produisent la MÊME création complète
+   * de l'école (tenant + souscription + école + niveaux + année + promoteur
+   * + UserTenant + SOUS-DOMAINE Cloudflare/Vercel).
+   *
    * Il n'y a PAS de paiement FedaPay : le paiement est encaissé en ESPÈCES
    * par l'agent YEHI OR Tech, qui le marque comme payé dans le wizard
    * (cases « souscription payée » et « frais bilingue payés »).
@@ -1782,14 +1903,26 @@ export class OnboardingService {
    *    (+ rôle système PROMOTEUR + UserTenant). Les deux modes produisent
    *    donc des écoles strictement identiques.
    *
+   * ⭐ AUTO-RÉPARATION : si le draft est déjà COMPLETED mais que le
+   *    sous-domaine de l'école n'a jamais été créé (ex : activation
+   *    interrompue puis réparée en base), un NOUVEL appel à ce flux recrée
+   *    le domaine manquant (idempotent) au lieu de simplement retourner.
+   *
    * @param draftId ID du draft d'onboarding
    * @param options Flags de paiement en espèces marqués par l'agent
-   * @returns { tenantId, subdomain, hostname, portalUrl }
+   * @returns { tenantId, subdomain, hostname, portalUrl, domainStatus, domainReports }
    */
   async activateTenantAfterContractSign(
     draftId: string,
     options?: CashPaymentMarking,
-  ): Promise<{ tenantId: string | null; subdomain: string; hostname?: string; portalUrl?: string }> {
+  ): Promise<{
+    tenantId: string | null;
+    subdomain: string;
+    hostname?: string;
+    portalUrl?: string;
+    domainStatus?: DomainCreationStatus;
+    domainReports?: TenantDomainReport[];
+  }> {
     this.logger.log(`🔧 Activating tenant after contract sign for draft ${draftId}`);
 
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -1801,42 +1934,50 @@ export class OnboardingService {
       throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
     }
 
-    // Idempotence : si le draft est déjà COMPLETED, le tenant a déjà été créé
+    // Idempotence : si le draft est déjà COMPLETED, le tenant a déjà été créé.
+    // ⭐ On ne se contente PLUS de retourner : on garantit aussi que le
+    //    SOUS-DOMAINE existe (auto-réparation idempotente — cas réel : école
+    //    activée en urgence en base sans que le domaine n'ait jamais été
+    //    créé par le flux applicatif).
     if (draft.status === 'COMPLETED') {
       this.logger.log(`✅ Draft ${draftId} already completed — finding existing tenant`);
       // ⭐ Retrouver le tenant via le paiement SUCCESS (métadonnées firstTenantSubdomain),
       //    fallback par preferredSubdomain, fallback par nom d'école.
       const successPayment = draft.payments.find((p) => p.status === 'SUCCESS');
       const successMeta = (successPayment?.metadata as any) || {};
+      let found: { id: string; name: string; subdomain: string } | null = null;
       if (successMeta.firstTenantSubdomain) {
-        const existingTenant = await this.prisma.tenant.findUnique({
+        found = await this.prisma.tenant.findUnique({
           where: { subdomain: successMeta.firstTenantSubdomain },
-          select: { id: true, subdomain: true },
+          select: { id: true, name: true, subdomain: true },
         });
-        if (existingTenant) {
-          return {
-            tenantId: existingTenant.id,
-            subdomain: existingTenant.subdomain || '',
-            hostname: successMeta.firstTenantHostname,
-            portalUrl: successMeta.firstTenantPortalUrl,
-          };
-        }
       }
-      const bySubdomain = draft.preferredSubdomain
-        ? await this.prisma.tenant.findUnique({
-            where: { subdomain: draft.preferredSubdomain },
-            select: { id: true, subdomain: true },
-          })
-        : null;
-      if (bySubdomain) {
-        return { tenantId: bySubdomain.id, subdomain: bySubdomain.subdomain || '' };
+      if (!found && draft.preferredSubdomain) {
+        found = await this.prisma.tenant.findUnique({
+          where: { subdomain: draft.preferredSubdomain },
+          select: { id: true, name: true, subdomain: true },
+        });
       }
-      const byName = await this.prisma.tenant.findFirst({
-        where: { name: draft.schoolName },
-        select: { id: true, subdomain: true },
-      });
-      if (byName) {
-        return { tenantId: byName.id, subdomain: byName.subdomain || '' };
+      if (!found) {
+        found = await this.prisma.tenant.findFirst({
+          where: { name: draft.schoolName },
+          select: { id: true, name: true, subdomain: true },
+        });
+      }
+      if (found) {
+        // ⭐ AUTO-RÉPARATION du sous-domaine (idempotent : ne refait rien si
+        //    le domaine est déjà créé et traqué — recrée sinon).
+        const domainReports = found.subdomain
+          ? await this.createSubdomains([found])
+          : [];
+        return {
+          tenantId: found.id,
+          subdomain: found.subdomain || '',
+          hostname: successMeta.firstTenantHostname,
+          portalUrl: successMeta.firstTenantPortalUrl,
+          domainStatus: this.computeDomainStatus(domainReports),
+          domainReports,
+        };
       }
       // Draft COMPLETED mais tenant introuvable — on continue la création
       this.logger.warn(`⚠️  Draft ${draftId} is COMPLETED but no tenant found — recreating`);
@@ -1946,15 +2087,21 @@ export class OnboardingService {
     }
 
     // ─── 3. Retourner les infos de connexion (sous-domaine, portail) ───
+    //    ⭐ + l'état RÉEL de la création du sous-domaine (rapport par école) :
+    //    l'appelant sait si {subdomain}.academiahelm.com existe ou non.
     const refreshedPayment = await this.prisma.onboardingPayment.findUnique({
       where: { id: payment.id },
     });
     const meta = (refreshedPayment?.metadata as any) || {};
+    const domainReports = (activation?.domainReports as TenantDomainReport[] | undefined) || [];
     return {
       tenantId: activation?.tenants?.[0]?.id || null,
       subdomain: meta.firstTenantSubdomain || draft.preferredSubdomain || '',
       hostname: meta.firstTenantHostname,
       portalUrl: meta.firstTenantPortalUrl,
+      domainStatus: (activation?.domainStatus as DomainCreationStatus | undefined)
+        || this.computeDomainStatus(domainReports),
+      domainReports,
     };
   }
 

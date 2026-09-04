@@ -187,6 +187,8 @@ export default function OnboardingWizard() {
     hostname?: string;
     portalUrl?: string;
     contractUrl?: string;
+    // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
+    domainStatus?: string;
   } | null>(null);
   const [passwordStrength, setPasswordStrength] = useState<{
     score: number; // 0-4
@@ -3395,6 +3397,7 @@ export default function OnboardingWizard() {
                     hostname: r.hostname || undefined,
                     portalUrl: r.portalUrl || undefined,
                     contractUrl: result.contractUrl,
+                    domainStatus: r.domainStatus || undefined,
                   });
                   setStep(5);
                   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
@@ -3621,6 +3624,42 @@ export default function OnboardingWizard() {
                     )}
                   </div>
                 </div>
+
+                {/* ⭐ Sous-domaine non activé : avertissement VISIBLE (l'école
+                    fonctionne via le domaine principal + identifiants, mais
+                    {subdomain}.academiahelm.com n'existe pas côté Vercel). */}
+                {creationResult?.domainStatus && creationResult.domainStatus !== 'created' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                        <AlertTriangle className="w-4 h-4 text-amber-700" />
+                      </div>
+                      <div className="text-sm text-amber-900 space-y-1">
+                        <p>
+                          <strong>Sous-domaine en attente d&apos;activation.</strong>{' '}
+                          {creationResult?.subdomain ? (
+                            <>
+                              L&apos;école est créée et le promoteur a reçu ses identifiants par email,
+                              mais <strong>{creationResult.subdomain}.academiahelm.com</strong> n&apos;a pas
+                              pu être activé automatiquement
+                            </>
+                          ) : (
+                            <>Le sous-domaine de l&apos;école n&apos;a pas pu être activé automatiquement</>
+                          )}
+                          {creationResult.domainStatus === 'not_configured'
+                            ? ' : la gestion des domaines n\'est pas configurée sur le serveur API (VERCEL_API_TOKEN / VERCEL_PROJECT_ID).'
+                            : ' (échec de la création chez Cloudflare/Vercel).'}
+                          {' '}L&apos;équipe technique peut relancer la création via
+                          l&apos;endpoint de maintenance <code>POST /api/tenants/domains/seed</code>.
+                        </p>
+                        <p className="text-xs text-amber-700">
+                          En attendant, l&apos;école reste pleinement accessible depuis le domaine
+                          principal avec les identifiants transmis au promoteur.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Identifiants + contrat */}
                 <div className="bg-green-50 border border-green-200 rounded-xl p-5">

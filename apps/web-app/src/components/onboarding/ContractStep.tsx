@@ -80,6 +80,9 @@ interface ContractStepProps {
     subdomain?: string;
     hostname?: string;
     portalUrl?: string;
+    // ⭐ État réel du sous-domaine renvoyé par le backend
+    //    (created / partial / failed / not_configured)
+    domainStatus?: string;
   }) => void;
   onBack: () => void;
 }
@@ -234,43 +237,14 @@ export default function ContractStep({
           : {}),
       };
 
-      const genResponse = await fetch('/api/onboarding/contract/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          schoolName, promoterName, directorName: directorName || promoterName,
-          schoolAddress, schoolCity, schoolPhone, schoolEmail,
-          studentCount, planCode, planName, bilingual, subdomain,
-          // ⭐ Multi-écoles — le contrat s'adapte (fiche + Article 3 + Article 4)
-          schoolsCount: effSchoolsCount,
-          ...(effAnnexes.length > 0 ? { annexes: effAnnexes } : {}),
-          effectiveDate: today, activationFee, annualFee, bilingualFee,
-          totalYearOne,
-          paymentMethod: 'cash' as const,
-          ...paymentMarked,
-          ...(signedManually
-            ? {
-                // ⭐ Contrat signé manuellement : PAS de signature numérique,
-                //    mention « déjà signé manuellement » dans le PDF
-                signedManually: true,
-                promoterSignedAt: new Date().toISOString(),
-                providerSignedAt: new Date().toISOString(),
-              }
-            : {
-                promoterSignatureDataUrl: promoterSignature,
-                providerSignatureDataUrl: providerSignature,
-                promoterSignedAt: new Date().toISOString(),
-                providerSignedAt: providerSignature ? new Date().toISOString() : undefined,
-              }),
-        }),
-      });
-
-      if (!genResponse.ok) throw new Error(`HTTP ${genResponse.status}`);
-      const genData = await genResponse.json();
-
-      // ⭐ sign : enregistre les signatures, crée le paiement CASH, active
-      //    l'école via le même flux que le mode self-service, envoie l'email
-      //    (contrat + identifiants). La réponse contient subdomain/portalUrl.
+      // ⭐ UN SEUL appel : /contract/sign. Le backend ACTIVE l'école D'ABORD
+      //    — création complète « du fond en comble » (tenant, souscriptions,
+      //    école, niveaux, année académique, promoteur, UserTenant et
+      //    sous-domaine Cloudflare/Vercel) — PUIS génère le contrat PDF de
+      //    façon non bloquante et renvoie son URL. L'ancien double appel
+      //    /contract/generate + /contract/sign doublait la génération et
+      //    plaçait le PDF (Puppeteer, fragile) AVANT l'activation : un échec
+      //    PDF bloquait la création de l'école entière (blocage du 03/09).
       const signResponse = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -297,25 +271,42 @@ export default function ContractStep({
         }),
       });
 
-      if (!signResponse.ok) throw new Error(`HTTP ${signResponse.status}`);
+      if (!signResponse.ok) {
+        // ⭐ Le message d'erreur RÉEL du backend remonte (ex : « Ce
+        //    sous-domaine est déjà utilisé ») au lieu d'un « HTTP 400 » muet.
+        const errData = await signResponse.json().catch(() => null);
+        throw new Error(errData?.message || `Erreur HTTP ${signResponse.status}`);
+      }
       const signData = await signResponse.json();
 
       if (!signData.success) {
         throw new Error(signData.message || 'Erreur lors de la signature du contrat');
       }
 
+      // ⭐ État RÉEL de la création du sous-domaine par le backend
+      //    (created / partial / failed / not_configured) — plus de succès
+      //    affiché si {subdomain}.academiahelm.com n'existe pas.
+      const domainOk = signData.domainStatus === 'created';
+      const contractOk = signData.contractGenerated !== false && !!signData.contractUrl;
+
       toast({
         title: signedManually ? 'Contrat enregistré — école créée' : 'Contrat signé — école créée',
-        description: signedManually
-          ? "Le contrat PDF (mention « déjà signé manuellement ») et les identifiants de connexion ont été envoyés par email au promoteur."
-          : "Le contrat signé et les identifiants de connexion ont été envoyés par email au promoteur.",
+        description: !domainOk
+          ? "⚠️ L'école a bien été créée et les identifiants envoyés par email au promoteur, mais le sous-domaine n'a pas pu être activé automatiquement (détail à l'étape suivante)."
+          : !contractOk
+            ? "L'école a été créée et les identifiants envoyés par email au promoteur. Le PDF du contrat n'a pas pu être généré — relancez l'étape pour l'obtenir."
+            : signedManually
+              ? "Le contrat PDF (mention « déjà signé manuellement ») et les identifiants de connexion ont été envoyés par email au promoteur."
+              : "Le contrat signé et les identifiants de connexion ont été envoyés par email au promoteur.",
+        ...(!domainOk ? { variant: 'destructive' as const } : {}),
       });
       onComplete({
         signed: true,
-        contractUrl: genData.fileUrl,
+        contractUrl: contractOk ? signData.contractUrl : null,
         subdomain: signData.subdomain,
         hostname: signData.hostname,
         portalUrl: signData.portalUrl,
+        domainStatus: signData.domainStatus,
       });
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });

@@ -46,6 +46,8 @@ interface SignResult {
   portalUrl?: string;
   contractUrl?: string;
   message?: string;
+  // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
+  domainStatus?: string;
 }
 
 export function ContractSignClient({ draftId }: { draftId: string }) {
@@ -178,6 +180,18 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
             message de bienvenue « Vos accès sont prêts » avec vos identifiants de connexion
             (identique au processus de création en ligne).
           </p>
+
+          {/* ⭐ Sous-domaine non activé : avertissement visible (même règle que
+              le wizard — l'école fonctionne, {subdomain}.academiahelm.com non) */}
+          {result.domainStatus && result.domainStatus !== 'created' && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+              <strong>Sous-domaine en attente d&apos;activation</strong> — votre école est créée et vos
+              identifiants vous ont été envoyés, mais
+              {result.subdomain ? ` ${result.subdomain}.academiahelm.com` : ' le sous-domaine'} n&apos;a pas
+              pu être activé automatiquement. L&apos;équipe technique va finaliser son activation ; en
+              attendant, la plateforme reste accessible via le domaine principal.
+            </div>
+          )}
 
           {result.contractUrl && (
             <a

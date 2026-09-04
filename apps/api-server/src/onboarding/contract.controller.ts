@@ -67,9 +67,12 @@ export class ContractController {
    *
    * Flux "Signer et créer l'école" (signLater=false) — mode YEHI OR Tech :
    *   1. Persiste le marquage de paiement en espèces (cases du wizard)
-   *   2. Génère le contrat PDF avec les signatures intégrées
-   *   3. Crée le paiement CASH (provider='cash', status COMPLETED) puis active
-   *      le tenant via le MÊME flux que le mode self-service (activation unifiée)
+   *   2. ⭐ ACTIVE l'école EN PREMIER (création complète « du fond en comble » :
+   *      tenant + souscriptions + école + niveaux + année + promoteur +
+   *      UserTenant + sous-domaine Cloudflare/Vercel). Une erreur d'activation
+   *      remonte à l'appelant — plus jamais avalée derrière un success:true.
+   *   3. Génère le contrat PDF avec les signatures intégrées (NON BLOQUANT :
+   *      l'école est déjà créée ; un échec PDF n'annule rien)
    *   4. Envoie un email au promoteur avec :
    *      - Le contrat PDF signé en pièce jointe
    *      - Les credentials de connexion (email + URL de login)
@@ -77,9 +80,10 @@ export class ContractController {
    *
    * ⭐ Flux "Contrat déjà signé manuellement" (signedManually=true) :
    *   Le contrat a été signé sur papier par les deux parties. Aucune signature
-   *   numérique n'est recueillie. Le contrat PDF est quand même généré avec la
-   *   mention « déjà signé manuellement », l'école est créée, et le promoteur
-   *   reçoit l'email avec le contrat PDF + ses identifiants de connexion.
+   *   numérique n'est recueillie ni exigée — l'école est créée DIRECTEMENT
+   *   (même création complète, sous-domaine compris). Le contrat PDF part
+   *   quand même par email avec la mention « déjà signé manuellement », et le
+   *   promoteur reçoit ses identifiants.
    *
    * Flux "Envoyer pour signature différée" (signLater=true) :
    *   1. Envoie un email au promoteur avec un lien pour signer plus tard
@@ -159,40 +163,25 @@ export class ContractController {
       || !!contractData.signedManually
       || !!(body.paymentMarked as any)?.signedManually;
 
-    // 3. Générer le contrat PDF — avec signatures intégrées OU avec la mention
-    //    « déjà signé manuellement » (aucune signature numérique recueillie)
-    const nowIso = new Date().toISOString();
-    const contractResult = await this.contractService.generateContractPdf({
-      ...contractData,
-      ...(signedManually
-        ? {
-          promoterSignatureDataUrl: undefined,
-          providerSignatureDataUrl: undefined,
-          signedManually: true,
-          promoterSignedAt: nowIso,
-          providerSignedAt: nowIso,
-        }
-        : {
-          promoterSignatureDataUrl: body.promoterSignature,
-          providerSignatureDataUrl: body.providerSignature,
-          promoterSignedAt: nowIso,
-          providerSignedAt: body.providerSignature ? nowIso : undefined,
-        }),
-    });
-
-    this.logger.log(`✅ Contract PDF generated: ${contractResult.fileName}`);
-
-    // ⭐ 3bis. Convertir le HTML du contrat en VRAI PDF (pièce jointe email).
-    //    Le HTML reste servi pour la consultation en ligne (route :fileName) ;
-    //    le promoteur reçoit lui un vrai PDF en pièce jointe.
-    const contractPdf = await this.renderContractPdf(contractResult.filePath, contractResult.fileName);
-
-    // 4. Créer le paiement en espèces + activer le tenant (flux unifié)
+    // 3. ⭐ ACTIVER L'ÉCOLE D'ABORD — création complète « du fond en comble » :
+    //    tenant, souscriptions, école, niveaux, année académique, promoteur,
+    //    UserTenant et SOUS-DOMAINE Cloudflare/Vercel. Contrat signé
+    //    NUMÉRIQUEMENT ou DÉJÀ SIGNÉ MANUELLEMENT (papier) : même flux,
+    //    même résultat — la case « déjà signé » crée l'école directement,
+    //    sans exiger la moindre signature numérique.
+    //    ⚠️ AVANT la génération PDF (Puppeteer) : un échec/timeout de PDF ne
+    //    doit JAMAIS empêcher la création de l'école (cause du blocage du
+    //    03/09 : draft bloqué, données partielles, école recréée à la main).
+    //    ⚠️ Une erreur d'activation RÉELLE (ex : sous-domaine déjà pris) est
+    //    REMONTÉE à l'appelant au lieu d'être avalée derrière un success:true
+    //    mensonger.
     let tenantInfo: {
       tenantId: string | null;
       subdomain: string;
       hostname?: string;
       portalUrl?: string;
+      domainStatus?: string;
+      domainReports?: unknown[];
     } | null = null;
     try {
       tenantInfo = await this.onboardingService.activateTenantAfterContractSign(body.draftId, {
@@ -203,45 +192,115 @@ export class ContractController {
         installments: body.paymentMarked?.installments,
         downPaymentReceived: body.paymentMarked?.downPaymentReceived,
       });
-      this.logger.log(`✅ Tenant created: ${tenantInfo.tenantId} (subdomain: ${tenantInfo.subdomain})`);
+      this.logger.log(
+        `✅ Tenant ensured for draft ${body.draftId}: ${tenantInfo.tenantId} ` +
+        `(subdomain: ${tenantInfo.subdomain}, domain: ${tenantInfo.domainStatus || 'n/a'})`,
+      );
     } catch (err: any) {
-      // Si le tenant existe déjà (idempotence), on continue
-      this.logger.warn(`⚠️  Tenant activation failed (may already exist): ${err.message}`);
+      // ⭐ L'école n'a PAS pu être créée : on NE SIMULE PAS un succès.
+      // L'erreur remonte (HTTP 4xx/500 avec le message réel) — l'agent peut
+      // corriger (ex : changer le sous-domaine) et relancer : l'activation
+      // est idempotente et auto-réparante.
+      this.logger.error(
+        `❌ Tenant activation FAILED for draft ${body.draftId}: ${err.message}`,
+        err.stack,
+      );
+      throw err;
+    }
+
+    // 4. Générer le contrat PDF — NON BLOQUANT : l'école est déjà créée.
+    //    Avec signatures intégrées OU avec la mention « déjà signé
+    //    manuellement » (aucune signature numérique recueillie).
+    const nowIso = new Date().toISOString();
+    let contractResult: { filePath: string; fileName: string; fileUrl: string } | null = null;
+    let contractPdf: { buffer: Buffer; filename: string } | null = null;
+    try {
+      contractResult = await this.contractService.generateContractPdf({
+        ...contractData,
+        ...(signedManually
+          ? {
+              promoterSignatureDataUrl: undefined,
+              providerSignatureDataUrl: undefined,
+              signedManually: true,
+              promoterSignedAt: nowIso,
+              providerSignedAt: nowIso,
+            }
+          : {
+              promoterSignatureDataUrl: body.promoterSignature,
+              providerSignatureDataUrl: body.providerSignature,
+              promoterSignedAt: nowIso,
+              providerSignedAt: body.providerSignature ? nowIso : undefined,
+            }),
+      });
+      this.logger.log(`✅ Contract PDF generated: ${contractResult.fileName}`);
+
+      // 4bis. Convertir le HTML du contrat en VRAI PDF (pièce jointe email).
+      //    Le HTML reste servi pour la consultation en ligne (route :fileName) ;
+      //    le promoteur reçoit lui un vrai PDF en pièce jointe.
+      contractPdf = await this.renderContractPdf(contractResult.filePath, contractResult.fileName);
+    } catch (err: any) {
+      // ⭐ Non-bloquant : l'école EXISTE déjà et le promoteur a reçu ses
+      //    identifiants (email de bienvenue envoyé par l'activation). Relancer
+      //    l'étape régénère le contrat — l'activation reste idempotente.
+      contractResult = null;
+      contractPdf = null;
+      this.logger.error(
+        `⚠️  Contract PDF generation FAILED (school already created) for draft ${body.draftId}: ${err.message}`,
+        err.stack,
+      );
     }
 
     // 5. Envoyer l'email avec le contrat PDF signé + credentials
-    //    (mention « déjà signé manuellement » si applicable)
-    try {
-      await this.sendSignedContractEmail(
-        body.draftId,
-        contractResult.filePath,
-        contractResult.fileName,
-        tenantInfo?.subdomain,
-        tenantInfo?.hostname,
-        tenantInfo?.portalUrl,
-        signedManually,
-        contractPdf,
+    //    (mention « déjà signé manuellement » si applicable) — uniquement
+    //    si le PDF a pu être généré (l'école, elle, est déjà créée).
+    if (contractResult) {
+      try {
+        await this.sendSignedContractEmail(
+          body.draftId,
+          contractResult.filePath,
+          contractResult.fileName,
+          tenantInfo?.subdomain,
+          tenantInfo?.hostname,
+          tenantInfo?.portalUrl,
+          signedManually,
+          contractPdf,
+        );
+        this.logger.log(`✅ Signed contract email sent to promoter`);
+      } catch (err: any) {
+        this.logger.error(`⚠️  Failed to send signed contract email: ${err.message}`, err.stack);
+        // Non-bloquant : le contrat est signé et le tenant créé
+      }
+    } else {
+      this.logger.warn(
+        `⚠️  Email contrat non envoyé (PDF non généré) pour le draft ${body.draftId} — ` +
+        `l'école est créée et les identifiants ont été envoyés par l'email de bienvenue`,
       );
-      this.logger.log(`✅ Signed contract email sent to promoter`);
-    } catch (err: any) {
-      this.logger.error(`⚠️  Failed to send signed contract email: ${err.message}`, err.stack);
-      // Non-bloquant : le contrat est signé et le tenant créé
     }
 
     return {
       success: true,
       message: signedManually
-        ? 'Contrat enregistré (déjà signé manuellement). Le PDF avec la mention « déjà signé manuellement » a été envoyé par email avec vos identifiants de connexion.'
-        : 'Contrat signé avec succès. Le PDF signé a été envoyé par email avec vos identifiants de connexion.',
+        ? contractResult
+          ? 'Contrat enregistré (déjà signé manuellement). Le PDF avec la mention « déjà signé manuellement » a été envoyé par email avec vos identifiants de connexion.'
+          : 'Contrat enregistré (déjà signé manuellement) et école créée. Le PDF du contrat n\'a pas pu être généré — relancez l\'étape pour le recevoir.'
+        : contractResult
+          ? 'Contrat signé avec succès. Le PDF signé a été envoyé par email avec vos identifiants de connexion.'
+          : 'Contrat signé et école créée. Le PDF du contrat n\'a pas pu être généré — relancez l\'étape pour le recevoir.',
       signLater: false,
       signedManually,
       promoterSigned: !!body.promoterSignature || signedManually,
       providerSigned: !!body.providerSignature || signedManually,
-      contractUrl: contractResult.fileUrl,
+      contractUrl: contractResult?.fileUrl ?? null,
+      contractGenerated: !!contractResult,
       tenantId: tenantInfo?.tenantId,
       subdomain: tenantInfo?.subdomain,
       hostname: tenantInfo?.hostname,
       portalUrl: tenantInfo?.portalUrl,
+      // ⭐ État RÉEL de la création du sous-domaine (created / partial /
+      //    failed / not_configured) + rapport par école — l'appelant SAIT
+      //    si {subdomain}.academiahelm.com existe réellement.
+      domainStatus: tenantInfo?.domainStatus ?? null,
+      domainReports: tenantInfo?.domainReports ?? null,
     };
   }
 

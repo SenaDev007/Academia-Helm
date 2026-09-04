@@ -237,13 +237,21 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
     }
   };
 
-  const handleAnnexContractDone = (result: { signed: boolean; subdomain?: string }) => {
+  const handleAnnexContractDone = (result: {
+    signed: boolean;
+    subdomain?: string;
+    domainStatus?: string;
+  }) => {
     setAnnexDraft(null);
     if (result.signed) {
+      // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
+      const domainOk = result.domainStatus === 'created';
       toast({
-        title: 'École annexe créée 🎉',
-        description:
-          "L'établissement a rejoint votre groupe. Retrouvez-le dans « Vue Groupe » et dans le sélecteur d'écoles au prochain rechargement.",
+        title: domainOk ? 'École annexe créée 🎉' : 'École annexe créée — sous-domaine en attente',
+        description: domainOk
+          ? "L'établissement a rejoint votre groupe. Retrouvez-le dans « Vue Groupe » et dans le sélecteur d'écoles au prochain rechargement."
+          : `L'établissement a rejoint votre groupe, mais ${result.subdomain ? `${result.subdomain}.academiahelm.com` : 'son sous-domaine'} n'a pas pu être activé automatiquement (configuration des domaines à vérifier côté serveur API). L'école reste accessible via le domaine principal.`,
+        ...(!domainOk ? { variant: 'destructive' as const } : {}),
       });
       // Rafraîchir la liste des écoles + notifier le parent (ex. recharger la session)
       loadEligibility();

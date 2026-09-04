@@ -1256,15 +1256,44 @@ export class OnboardingService {
         this.logger.warn(`⚠️  Could not assign PROMOTER role: ${err.message}`);
       }
 
-      // 4. Si plusieurs tenants, créer des entrées UserTenant pour lier le promoteur aux autres tenants
-      if (schoolsCount > 1) {
-        // Note: Si une table UserTenant existe, créer les relations ici
-        // Pour l'instant, le promoteur est lié au premier tenant via tenantId
-        // Les autres tenants seront accessibles via la logique d'authentification multi-tenant
-        this.logger.log(
-          `✅ Promoter ${promoter.id} can manage ${tenants.length} tenants (annexes)`
-        );
+      // 4. ⭐ MULTI-ÉCOLES : lier le promoteur à CHACUN des tenants créés.
+      //    Une UserTenant active par école — même périmètre que
+      //    auth.service (getAvailableTenants / selectTenant) et que
+      //    analytics.resolveScope : sans elle, une annexe créée ici serait
+      //    invisible dans la vue groupe et INACCESSIBLE (selectTenant → 403).
+      //    La 1re école est déjà couverte par les branches promoteur ci-dessus
+      //    (contrôle idempotent ci-dessous) ; les annexes 2..N le sont ici.
+      //    Résilient : si la table user_tenants n'existe pas encore en base
+      //    (migration non appliquée), on log et on continue (le tenantId
+      //    direct sur le User garantit au minimum l'accès à la 1re école).
+      for (const tenant of tenants) {
+        const existingUserTenant = await tx.userTenant
+          .findUnique({
+            where: { userId_tenantId: { userId: promoter.id, tenantId: tenant.id } },
+          })
+          .catch(() => null); // table absente → null → on tentera le create (catché aussi)
+        if (existingUserTenant) continue;
+        try {
+          await tx.userTenant.create({
+            data: {
+              userId: promoter.id,
+              tenantId: tenant.id,
+              role: 'PROMOTER',
+              isActive: true,
+            },
+          });
+          this.logger.log(
+            `✅ UserTenant created: promoter ${promoter.id} → tenant ${tenant.id}`,
+          );
+        } catch (e: any) {
+          this.logger.warn(
+            `⚠️ UserTenant creation skipped for tenant ${tenant.id}: ${e.message}`,
+          );
+        }
       }
+      this.logger.log(
+        `✅ Promoter ${promoter.id} can manage ${tenants.length} tenant(s) (annexes)`
+      );
 
       // 5. Mettre à jour le draft
       //    ⭐ Purger le hash du mot de passe : le compte promoteur est créé,

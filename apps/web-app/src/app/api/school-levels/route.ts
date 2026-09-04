@@ -100,6 +100,17 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. Construire le résultat avec schoolLevelId
+    // ⭐ V10c — Miroirs EN : NURSERY/PRIMARY partagent le schoolLevelId de leur
+    //    miroir FR (MATERNELLE/PRIMAIRE — cf. bilingual-structure.service).
+    //    Sans ce mapping, les vues EN tombent sur l'UUID education_levels
+    //    (mauvaise table) → aucune classe/matière/évaluation ne correspond.
+    if (!schoolLevelMap['NURSERY'] && schoolLevelMap['MATERNELLE']) {
+      schoolLevelMap['NURSERY'] = schoolLevelMap['MATERNELLE'];
+    }
+    if (!schoolLevelMap['PRIMARY'] && schoolLevelMap['PRIMAIRE']) {
+      schoolLevelMap['PRIMARY'] = schoolLevelMap['PRIMAIRE'];
+    }
+
     // ⭐ V10c — Source D (dernier recours) : si une source a échoué pour un
     //    niveau, on interroge school_levels directement (endpoint léger).
     //    Ça garantit que schoolLevelId n'est JAMAIS null quand le niveau

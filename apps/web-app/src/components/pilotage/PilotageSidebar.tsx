@@ -307,8 +307,11 @@ const MAIN_MODULES: MainModule[] = [
   // ⭐ Espace Directeur — Score de risque croisé + Décrochage (Secondaire uniquement)
   //    Le directeur a une vue globale (conduite SG + pédagogie censeur + assiduité)
   //    Le score de risque est le différenciateur marché principal.
+  //    ℹ️ /app/director est désormais la home du PORTAIL DIRECTEUR (shell dédié) ;
+  //    le contenu analytique a déménagé vers /app/director/oversight. Cette entrée
+  //    reste visible côté UI partagée pour le promoteur/les admins (filet de sécurité).
   {
-    path: '/app/director', label: 'Espace Directeur', icon: Brain,
+    path: '/app/director/oversight', label: 'Espace Directeur', icon: Brain,
     requiresSecondary: true,
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'admin'],
   },

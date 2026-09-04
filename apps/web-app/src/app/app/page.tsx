@@ -20,6 +20,7 @@
 import { getServerSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { getEffectivePortal } from '@/lib/auth/role-portal-map';
+import { getAdminPortalHomeForRole } from '@/lib/auth/admin-portal-map';
 import PilotageDashboardV2 from '@/components/pilotage/dashboards/PilotageDashboardV2';
 import type { User } from '@/types';
 
@@ -52,8 +53,19 @@ export default async function AppPage() {
   } else if (effectivePortal === 'TEACHER') {
     redirect('/app/teacher');
   }
-  // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le dashboard
-  // (cas normal : admin/directeur connecté via portail école ou login standard).
+
+  // ⭐ PORTAILS ADMIN DÉDIÉS : rediriger le métier migré vers la home de SON
+  // portail (ex: un directeur connecté via le portail École atterrit sur
+  // /app/director — dashboard direction dans le shell directeur).
+  // Le promoteur et les rôles full-access ne sont pas migrés (null) :
+  // ils conservent le tableau de pilotage unifié de l'UI complète partagée.
+  // Les rôles non migrés (censeur, surveillant…) voient aussi ce dashboard.
+  if (effectivePortal === 'SCHOOL') {
+    const adminHome = getAdminPortalHomeForRole(user.role);
+    if (adminHome) {
+      redirect(adminHome);
+    }
+  }
 
   // Pour tous les autres rôles (direction, admin, finance, RH, etc.) on
   // affiche le tableau de bord de pilotage unifié.

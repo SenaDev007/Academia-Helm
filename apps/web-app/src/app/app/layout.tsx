@@ -11,6 +11,13 @@
  * tenant (cookie academia_session).
  *
  * Si pas de session tenant → redirect vers /login (portail école)
+ *
+ * ⭐ PORTAILS ADMIN DÉDIÉS (un shell par métier — validation utilisateur) :
+ *   Le shell est appliqué PAR RÔLE : un directeur voit TOUTES ses routes
+ *   /app/* dans SON shell (AdminPortalShell, navigation propre au métier),
+ *   y compris les pages métier partagées (pédagogie, examens, finances…).
+ *   Les rôles non migrés (censeur, surveillant, …) et le promoteur
+ *   (filet de sécurité : UI complète) conservent le PilotageLayout.
  * ============================================================================
  */
 
@@ -20,8 +27,10 @@ import { headers } from 'next/headers';
 import { getServerSession } from '@/lib/auth/session';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { getEffectivePortal } from '@/lib/auth/role-portal-map';
+import { getAdminShellForRole } from '@/lib/auth/admin-portal-map';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
+import AdminPortalShell from '@/components/portals/admin/AdminPortalShell';
 import type { User, Tenant } from '@/types';
 
 // ✅ Lazy load du layout lourd pour améliorer le temps de chargement initial
@@ -87,41 +96,10 @@ export default async function AppLayout({
     } else if (effectivePortal === 'TEACHER') {
       redirect('/app/teacher');
     }
-    // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le PilotageLayout
-    // (cas normal : connexion via portail école ou login standard).
+    // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le shell ci-dessous
+    // (portail admin dédié du métier, ou PilotageLayout).
   }
 
-  // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement
-  // les children SANS le PilotageLayout.
-  if (isOnDedicatedPortal) {
-    // Tenant info still needed for context
-    const sessionTenant2 = session.tenant;
-    const tenantIdFromUser2 = (user as any).tenantId || '';
-    const effectiveTenantId2 = sessionTenant2?.id || tenantIdFromUser2;
-    const tenant2: Tenant = sessionTenant2 && effectiveTenantId2
-      ? { ...sessionTenant2, id: sessionTenant2.id || effectiveTenantId2 }
-      : {
-          id: effectiveTenantId2,
-          name: effectiveTenantId2 ? 'Mon École' : '',
-          slug: sessionTenant2?.slug ?? '',
-          subdomain: sessionTenant2?.subdomain ?? '',
-          status: 'active',
-          subscriptionStatus: 'ACTIVE_SUBSCRIBED',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          trialEndsAt: undefined,
-          nextPaymentDueAt: undefined,
-        } as Tenant as Tenant;
-
-    return (
-      <ModalProvider>
-        <AppLayoutClient user={user} tenant={tenant2}>
-          {children}
-        </AppLayoutClient>
-      </ModalProvider>
-    );
-  }
-  
   // Tenant : session.tenant prioritaire ; si id manquant, utiliser user.tenantId (connexion avec école en mode dev)
   const sessionTenant = session.tenant;
   const tenantIdFromUser = (user as any).tenantId || '';
@@ -141,6 +119,43 @@ export default async function AppLayout({
         nextPaymentDueAt: undefined,
       } as Tenant as Tenant;
 
+  // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement
+  // les children SANS le PilotageLayout.
+  if (isOnDedicatedPortal) {
+    return (
+      <ModalProvider>
+        <AppLayoutClient user={user} tenant={tenant}>
+          {children}
+        </AppLayoutClient>
+      </ModalProvider>
+    );
+  }
+
+  // ⭐ PORTAIL ADMIN DÉDIÉ : le shell du MÉTIER remplace le PilotageLayout.
+  // La décision est fondée sur le RÔLE (et non le chemin) : toutes les routes
+  // /app/* du directeur s'affichent dans le shell directeur — y compris les
+  // pages métier partagées (pédagogie, examens, finances, RH…), réutilisées
+  // telles quelles avec leurs sous-navigations internes.
+  // Doubles casquettes : le portail choisi à la connexion a déjà été résolu
+  // ci-dessus (getEffectivePortal) — un directeur connecté en tant
+  // qu'enseignant est redirigé vers /app/teacher avant d'arriver ici.
+  const adminShell = getAdminShellForRole(user.role);
+
+  if (adminShell) {
+    return (
+      <ModalProvider>
+        <AppLayoutClient user={user} tenant={tenant}>
+          <AdminPortalShell portalKey={adminShell.key}>
+            {children}
+          </AdminPortalShell>
+        </AppLayoutClient>
+      </ModalProvider>
+    );
+  }
+
+  // ⭐ Défaut : UI complète partagée (PilotageLayout) — rôles non encore migrés
+  // (censeur, surveillant, secrétaire…) et promoteur/admins (filet de sécurité,
+  // accès complet à tous les modules).
   return (
     <ModalProvider>
       <AppLayoutClient user={user} tenant={tenant}>

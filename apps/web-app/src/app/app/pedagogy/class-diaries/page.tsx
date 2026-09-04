@@ -47,7 +47,7 @@ export default function ClassDiariesPage() {
   const { academicYear, schoolLevel } = useModuleContext();
   const { toast } = useToast();
   const [classDiaries, setClassDiaries] = useState<ClassDiary[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);

@@ -160,7 +160,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [fiches, setFiches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingFiche, setEditingFiche] = useState<any>(null);
   const [filterType, setFilterType] = useState<string>("");

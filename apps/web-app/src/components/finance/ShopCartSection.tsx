@@ -42,7 +42,7 @@ export default function ShopCartSection({
   onItemsChange,
 }: ShopCartSectionProps) {
   const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showProductPicker, setShowProductPicker] = useState(false);
   // ⭐ Sélection multiple : liste des IDs sélectionnés dans le picker

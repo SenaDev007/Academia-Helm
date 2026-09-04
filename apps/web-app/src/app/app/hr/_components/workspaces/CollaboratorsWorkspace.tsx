@@ -61,7 +61,7 @@ export function CollaboratorsWorkspace() {
   const [contractsList, setContractsList] = useState<any[]>([]);
   const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
   const [trainingsList, setTrainingsList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncingDepts, setSyncingDepts] = useState(false);
 

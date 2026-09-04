@@ -46,7 +46,7 @@ type Filter = 'all' | 'pending' | 'published';
 
 export default function SaisieMasterTestimonialsModeration() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [actionLoading, setActionLoading] = useState<string | null>(null);

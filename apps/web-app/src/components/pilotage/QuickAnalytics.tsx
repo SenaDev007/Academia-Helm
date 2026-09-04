@@ -30,7 +30,7 @@ interface BilingualData {
 
 export default function QuickAnalytics({ academicYearId, schoolLevelId }: QuickAnalyticsProps) {
   const [analytics, setAnalytics] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadAnalytics = async () => {

@@ -41,7 +41,7 @@ interface SemainierNotificationBannerProps {
 
 export function SemainierNotificationBanner({ teacherId, academicYearId }: SemainierNotificationBannerProps) {
   const [assignment, setAssignment] = useState<{ currentWeek: any | null; nextWeek: any | null } | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const loadAssignment = async () => {
     if (!teacherId || !academicYearId) return;

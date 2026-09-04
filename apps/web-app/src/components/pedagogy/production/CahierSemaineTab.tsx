@@ -905,7 +905,7 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [dailyReport, setDailyReport] = useState<any>(null);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // ⭐ Modal personnalisé professionnel pour l'envoi au directeur (remplace confirm())
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);

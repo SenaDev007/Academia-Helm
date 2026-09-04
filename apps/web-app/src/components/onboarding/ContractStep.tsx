@@ -86,7 +86,7 @@ export default function ContractStep({
   //    avec la mention « déjà signé manuellement », l'école est créée et le
   //    promoteur reçoit ses identifiants.
   const [signedManually, setSignedManually] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   const totalYearOne = activationFee + annualFee + (bilingual ? BILINGUAL_FEE : 0);

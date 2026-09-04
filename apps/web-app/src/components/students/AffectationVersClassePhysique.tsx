@@ -73,7 +73,7 @@ export default function AffectationVersClassePhysique() {
   const confirmDialog = useConfirmDialog();
   const [studentsWithoutClass, setStudentsWithoutClass] = useState<StudentWithoutClass[]>([]);
   const [physicalClasses, setPhysicalClasses] = useState<PhysicalClassInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 

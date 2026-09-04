@@ -34,7 +34,7 @@ export default function PromoterEligibilityToggle({
 }: PromoterEligibilityToggleProps) {
   const [isActive, setIsActive] = useState(initialIsActive);
   const [modalOpen, setModalOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {

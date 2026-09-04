@@ -45,7 +45,7 @@ interface SessionsListProps {
 export function SessionsList({ onResume }: SessionsListProps) {
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState<ProspectSession[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {

@@ -2137,7 +2137,7 @@ function MoyennesTab({
   setActiveMoyenneTab: (t: 'trimestriel' | 'annuel') => void;
 }) {
   const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id || '');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [trimesterData, setTrimesterData] = useState<any[]>([]);
   const [annualData, setAnnualData] = useState<any[]>([]);
 
@@ -2599,7 +2599,7 @@ function WorkflowBar({
   evaluationTypeCode?: string;
 }) {
   const [workflowStatus, setWorkflowStatus] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showSignModal, setShowSignModal] = useState<'director' | 'teacher' | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);

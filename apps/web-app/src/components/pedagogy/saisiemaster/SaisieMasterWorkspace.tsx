@@ -64,7 +64,7 @@ export function SaisieMasterWorkspace() {
   const [selectedTrimester, setSelectedTrimester] = useState<number>(1);
   const [evaluations, setEvaluations] = useState<Record<string, any>>({});
   const [activeEval, setActiveEval] = useState<string>("EF1");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportingZip, setExportingZip] = useState(false);
 
@@ -364,7 +364,7 @@ function EvaluationEditor({
 }: any) {
   const [eval_, setEval] = useState<any>(existingEval);
   const [scores, setScores] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState<any>(null);
 

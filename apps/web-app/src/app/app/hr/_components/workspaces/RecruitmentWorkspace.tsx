@@ -239,7 +239,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
   };
 
   const [activeTab, setActiveTab] = useState<'jobs' | 'candidates' | 'interviews' | 'tests' | 'embauches' | 'talent_pool'>(initialTab || 'jobs');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Core data states
   const [jobs, setJobs] = useState<Job[]>([]);

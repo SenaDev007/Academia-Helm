@@ -59,7 +59,7 @@ export default function ClassLogManagement() {
   const { toast } = useToast();
 
   const [logs, setLogs] = useState<ClassDiaryRow[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   /* Create / Edit modal state */

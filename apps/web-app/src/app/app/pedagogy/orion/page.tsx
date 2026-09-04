@@ -71,7 +71,7 @@ export default function OrionPedagogyPage() {
 
   const { academicYear } = useModuleContext();
   const [dashboard, setDashboard] = useState<OrionDashboard | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -36,7 +36,7 @@ interface OgMeta {
 export function LinkEmbed({ text }: { text: string }) {
   const urls = useMemo(() => extractUrls(text || ''), [text]);
   const [meta, setMeta] = useState<OgMeta | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const firstUrl = urls[0];
 

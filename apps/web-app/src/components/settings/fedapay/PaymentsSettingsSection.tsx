@@ -19,7 +19,7 @@ export function PaymentsSettingsSection() {
     fedapaySecretKey: '',
     fedapayEnvironment: 'sandbox',
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {

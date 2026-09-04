@@ -614,7 +614,7 @@ function AvailabilityTab({ config, schoolLevelId }: { config: any; schoolLevelId
   const { toast } = useToast();
   const [teachers, setTeachers] = useState<any[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
   const timeBlocks = useMemo(() => {
@@ -764,7 +764,7 @@ const CONSTRAINT_TYPES = [
 function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
   const { toast } = useToast();
   const [constraints, setConstraints] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);

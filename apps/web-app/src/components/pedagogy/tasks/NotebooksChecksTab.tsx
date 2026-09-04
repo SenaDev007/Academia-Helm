@@ -503,7 +503,7 @@ function TodayNotebookCheck({
   const [classId, setClassId] = useState('');
   const [date, setDate] = useState(todayStr);
   const [lessons, setLessons] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // Pour chaque homeworkId, on stocke : { students, loading, expanded, drafts }
   const [studentsByHw, setStudentsByHw] = useState<
     Record<string, { students: any[]; loading: boolean; expanded: boolean; contentOpen: boolean }>
@@ -1215,7 +1215,7 @@ function HistoryNotebookCheck({
 }) {
   const [classId, setClassId] = useState('');
   const [lessons, setLessons] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // Cache : studentsByHw[hwId] = any[]
   const [studentsByHw, setStudentsByHw] = useState<Record<string, any[]>>({});
   const [loadingStudents, setLoadingStudents] = useState<string | null>(null);

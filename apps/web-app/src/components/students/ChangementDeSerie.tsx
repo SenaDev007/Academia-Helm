@@ -76,7 +76,7 @@ export default function ChangementDeSerie() {
   const [enrollments, setEnrollments] = useState<EnrollmentInfo[]>([]);
   const [physicalClasses, setPhysicalClasses] = useState<PhysicalClassInfo[]>([]);
   const [availableSeries, setAvailableSeries] = useState<SeriesInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isChanging, setIsChanging] = useState(false);
 
   // Filtres + sélection

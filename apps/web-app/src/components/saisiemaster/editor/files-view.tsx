@@ -43,7 +43,7 @@ import { toast } from "sonner";
  */
 export function FilesView() {
   const [sessions, setSessions] = useState<ProspectSession[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);

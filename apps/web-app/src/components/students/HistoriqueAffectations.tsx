@@ -59,7 +59,7 @@ function formatDate(d?: string) {
 export default function HistoriqueAffectations() {
   const { academicYear, schoolLevel } = useModuleContext();
   const [transfers, setTransfers] = useState<ClassTransferRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('');
 

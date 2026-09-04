@@ -61,7 +61,7 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
   const { user } = useAppSession();
   const [activeSubTab, setActiveSubTab] = useState<"config" | "list" | "cahier">("config");
   const [configs, setConfigs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   // ⭐ Modal de confirmation professionnel pour la génération auto (remplace confirm())
   const [showAutoGenModal, setShowAutoGenModal] = useState(false);
@@ -905,7 +905,7 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [dailyReport, setDailyReport] = useState<any>(null);
   const [weeklyReport, setWeeklyReport] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   // ⭐ Modal personnalisé professionnel pour l'envoi au directeur (remplace confirm())
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);

@@ -120,7 +120,7 @@ export default function StudentsModulePage() {
   const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [statistics, setStatistics] = useState<any>(null);
   
   // Modals

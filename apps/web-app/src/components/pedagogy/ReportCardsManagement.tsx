@@ -59,7 +59,7 @@ export default function ReportCardsManagement() {
   const { toast } = useToast();
 
   const [reportCards, setReportCards] = useState<HonorRollRow[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);

@@ -226,7 +226,7 @@ export default function ParentTasksView() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('dueDate');
   const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // === Auto-sélection du premier enfant ===
   useEffect(() => {

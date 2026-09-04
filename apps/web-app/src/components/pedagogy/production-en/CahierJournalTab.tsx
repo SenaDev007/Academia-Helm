@@ -135,7 +135,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
   const [directorSignature, setDirectorSignature] = useState<string | null>(null);
   const [exporting, setExporting] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // ⭐ Modal de confirmation professionnel (remplace confirm())

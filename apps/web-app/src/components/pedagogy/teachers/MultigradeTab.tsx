@@ -89,7 +89,7 @@ export function MultigradeTab() {
   const [assignments, setAssignments] = useState<MultigradeAssignment[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 

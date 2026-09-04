@@ -38,7 +38,7 @@ export default function StudentMatriculesSection() {
   const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
   const [stats, setStats] = useState<MatriculeStats | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchMatricule, setSearchMatricule] = useState('');
   const [selectedStudent] = useState<string | null>(null);
 

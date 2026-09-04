@@ -822,7 +822,7 @@ function HistoryLessonTracking({
 }) {
   const [classId, setClassId] = useState('');
   const [lessons, setLessons] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [studentsByHw, setStudentsByHw] = useState<Record<string, any[]>>({});
   const [loadingStudents, setLoadingStudents] = useState<string | null>(null);
 

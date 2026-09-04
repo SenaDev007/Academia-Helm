@@ -107,7 +107,7 @@ export default function StudentIdCardsSection() {
   const [activeTab, setActiveTab] = useState<'list' | 'design'>('list');
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [grouped, setGrouped] = useState<GroupedResult | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadingCardId, setDownloadingCardId] = useState<string | null>(null);
   const [downloadingClassId, setDownloadingClassId] = useState<string | null>(null);

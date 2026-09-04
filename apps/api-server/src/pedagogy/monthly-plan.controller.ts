@@ -178,8 +178,11 @@ export class MonthlyPlanController {
 
   /**
    * ⭐ POST /pedagogy/monthly-plans/validate?academicYearId=Y&classLevel=CM2&month=Octobre&teacherId=T
-   *    body: { action: 'VALIDATE' | 'REJECT', directorSignature?, directorObservation? }
+   *    body: { action: 'VALIDATE' | 'REJECT', directorSignature?, directorObservation?,
+   *            headTeacherInitials?, headTeacherDate?, headTeacherSignature? }
    *    Valide ou rejette la planification mensuelle (côté directeur).
+   *    ⭐ FIX (correction 7) : les champs Head Teacher (WEEKLY_RECORD) sont
+   *    propagés au service ({ ...body }) et persistés pendant la validation.
    */
   @Post('validate')
   async validatePlan(
@@ -188,7 +191,14 @@ export class MonthlyPlanController {
     @Query('classLevel') classLevel: string,
     @Query('month') month: string,
     @Query('teacherId') teacherId: string,
-    @Body() body: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string },
+    @Body() body: {
+      action: 'VALIDATE' | 'REJECT';
+      directorSignature?: string;
+      directorObservation?: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+    },
     @Query('documentType') documentType?: string,
   ) {
     if (!academicYearId || !classLevel || !month || !teacherId) {

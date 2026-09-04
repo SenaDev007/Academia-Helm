@@ -49,12 +49,37 @@ export const WEEK_SHORT_LABELS = Array.from({ length: WEEKS_PER_TERM }, (_, i) =
 // Système de dates (pattern cahier journal)
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Vendredi de la semaine courante (fin de semaine scolaire Lun-Ven). */
+/**
+ * Vendredi le plus récent (fin de semaine scolaire Lun-Ven).
+ *
+ * ⭐ FIX (correction 2 — dates sous en-têtes) : l'ancienne formule
+ *   `day === 0 ? 5 : day === 6 ? 6 : 5 - day` était fausse 5 jours sur 7 :
+ *   mardi → samedi, mercredi → lundi, jeudi → mercredi, samedi → dimanche,
+ *   dimanche → mardi ! Seuls lundi et vendredi tombaient juste.
+ *   Formule correcte pour « le vendredi le plus récent » : (day + 2) % 7.
+ */
 export function currentFriday(): Date {
   const d = new Date();
-  const day = d.getDay(); // 0=dim, 5=ven, 6=sam
-  const diff = day === 0 ? 5 : day === 6 ? 6 : 5 - day; // revenir au vendredi
-  d.setDate(d.getDate() - (diff < 0 ? 0 : diff));
+  const day = d.getDay(); // 0=dim, 1=lun, …, 5=ven, 6=sam
+  const diff = (day + 7 - 5) % 7; // reculer jusqu'au dernier vendredi
+  d.setDate(d.getDate() - diff);
+  d.setHours(12, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Calque une date sur le vendredi de sa semaine scolaire (Lun-Ven).
+ * ⭐ FIX (correction 2) : si l'enseignant saisit un mardi ou un mercredi,
+ *   les 12 dates restent alignées sur des vendredis (fins de semaine).
+ *   Lun-Ven → avance au vendredi de la semaine ; Sam/Dim → recule au
+ *   vendredi de la semaine écoulée (lundi = +4, samedi = −1, dimanche = −2).
+ */
+export function snapToFriday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=dim, 1=lun, …, 5=ven, 6=sam
+  let diff = (5 - day + 7) % 7; // lundi..vendredi → vendredi de la semaine
+  if (diff > 4) diff -= 7; // samedi (−1) / dimanche (−2) → vendredi PRÉCÉDENT
+  d.setDate(d.getDate() + diff);
   d.setHours(12, 0, 0, 0);
   return d;
 }
@@ -62,8 +87,10 @@ export function currentFriday(): Date {
 /** Calcule les 12 dates de fin de semaine à partir de la 1ère (chacune +7 j). */
 export function computeWeekDates(firstWeekEnding: string): string[] {
   const dates: string[] = [];
-  const base = parseLocalDate(firstWeekEnding);
-  if (!base) return dates;
+  const parsed = parseLocalDate(firstWeekEnding);
+  if (!parsed) return dates;
+  // ⭐ FIX : la 1ère date est calée sur le vendredi de la semaine choisie
+  const base = snapToFriday(parsed);
   for (let i = 0; i < WEEKS_PER_TERM; i++) {
     const d = new Date(base);
     d.setDate(d.getDate() + i * 7);
@@ -258,8 +285,18 @@ export async function exportWeeklyRecordPdf(meta: WeeklyRecordPdfMeta): Promise<
 
     // ⭐ Dernière page : note officielle + Head Teacher + signatures
     if (isLastChunk) {
+      // ⭐ FIX (correction 8 — PDF paginé) : si le tableau de cette page
+      //    se termine trop bas, la note + le bloc Head Teacher + les
+      //    signatures passaient PAR-DESSUS le tableau (chevauchement).
+      //    → page dédiée lorsqu'il reste moins de ~62 mm.
       const finalY = (doc as any).lastAutoTable?.finalY || 180;
-      let y = Math.min(finalY + 8, pageHeight - 45);
+      let y = finalY + 8;
+      if (y > pageHeight - 62) {
+        doc.addPage();
+        drawOfficialHeader(doc, meta.header, pageWidth);
+        drawFooter(doc, pageWidth, pageHeight, doc.internal.getNumberOfPages());
+        y = 50;
+      }
 
       // Note officielle
       doc.setFont('times', 'italic');
@@ -315,5 +352,6 @@ export async function exportWeeklyRecordPdf(meta: WeeklyRecordPdfMeta): Promise<
     }
   }
 
-  doc.save(meta.filename || `Weekly_Record_of_Work_${(meta.classLabel || '').replace(/\s+/g, '_')}_${meta.termLabel}.pdf`);
+  const safeName = (s: string) => String(s || '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '');
+  doc.save(meta.filename || `Weekly_Record_of_Work_${safeName(meta.classLabel)}_${safeName(meta.termLabel)}.pdf`);
 }

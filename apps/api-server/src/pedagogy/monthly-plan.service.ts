@@ -657,6 +657,11 @@ export class MonthlyPlanService {
    *    - Si action=REJECT : status=REJECTED, directorObservation stockée
    * ⭐ documentType (optionnel) : scope la validation à un type de document
    *    (SCHEME_OF_WORK / WEEKLY_RECORD).
+   * ⭐ FIX (correction 7 — signature Head Teacher) : pour le Weekly Record,
+   *    le directeur (Head Teacher) peut renseigner initiales/date/signature
+   *    PENDANT la validation — elles sont persistées sur toutes les lignes du
+   *    document (avant : champs verrouillés dès la soumission, personne ne
+   *    pouvait signer après coup).
    */
   async validateMonthlyPlan(
     tenantId: string,
@@ -664,7 +669,15 @@ export class MonthlyPlanService {
     classLevel: string,
     month: string,
     teacherId: string,
-    options: { action: 'VALIDATE' | 'REJECT'; directorSignature?: string; directorObservation?: string; documentType?: string },
+    options: {
+      action: 'VALIDATE' | 'REJECT';
+      directorSignature?: string;
+      directorObservation?: string;
+      documentType?: string;
+      headTeacherInitials?: string | null;
+      headTeacherDate?: string | null;
+      headTeacherSignature?: string | null;
+    },
   ): Promise<{ success: boolean; validatedAt: Date }> {
     const scopeFilters: string[] = ['"tenantId" = $1', '"academicYearId" = $2', '"classLevel" = $3', '"month" = $4', '"teacherId" = $5'];
     const scopeParams: any[] = [tenantId, academicYearId, classLevel, month, teacherId];
@@ -708,6 +721,16 @@ export class MonthlyPlanService {
       sets.push(`"updatedAt" = NOW()`);
       this.logger.log(`Monthly plan REJECTED: class=${classLevel}, month=${month}, teacher=${teacherId}, doc=${options.documentType || 'PLAN'}`);
     }
+
+    // ⭐ FIX (correction 7 — signature Head Teacher) : persistance des champs
+    //    Head Teacher renseignés PENDANT la validation (WEEKLY_RECORD uniquement).
+    //    Les indices positionnels continuent ceux des SET précédents (SET avant WHERE).
+    if (options.documentType === 'WEEKLY_RECORD') {
+      if (options.headTeacherInitials !== undefined) { sets.push(`"headTeacherInitials" = $${pIdx++}`); params.push(options.headTeacherInitials); }
+      if (options.headTeacherDate !== undefined) { sets.push(`"headTeacherDate" = $${pIdx++}`); params.push(options.headTeacherDate); }
+      if (options.headTeacherSignature !== undefined) { sets.push(`"headTeacherSignature" = $${pIdx++}`); params.push(options.headTeacherSignature); }
+    }
+
     const whereClauses: string[] = [];
     whereClauses.push(`"tenantId" = $${pIdx++}`); params.push(tenantId);
     whereClauses.push(`"academicYearId" = $${pIdx++}`); params.push(academicYearId);

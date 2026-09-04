@@ -81,7 +81,12 @@ async function proxy(request: NextRequest, method: string) {
       path.startsWith('/student-engagement') ||
       path.startsWith('/activity-stats') ||
       path.startsWith('/notebook-checks') ||
-      path.startsWith('/cahier-textes');
+      path.startsWith('/cahier-textes') ||
+      // ⭐ FIX (correction 3 — Catalogue) : le catalogue des Weekly Records
+      //    était mis en cache 60s côté serveur (s-maxage=60) → un enregistrement
+      //    fraîchement sauvegardé n'apparaissait PAS au Catalogue pendant
+      //    une minute. → no-store : apparition immédiate.
+      path.startsWith('/weekly-record-catalogue');
     const cacheControl = isVolatilePath
       ? 'no-store, max-age=0'
       : 'public, s-maxage=60, stale-while-revalidate=300';

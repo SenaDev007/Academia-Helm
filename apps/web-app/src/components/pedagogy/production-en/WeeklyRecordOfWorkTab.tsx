@@ -2,25 +2,36 @@
 
 /**
  * ============================================================================
- * WEEKLY RECORD OF WORK — EN track (V2)
+ * WEEKLY RECORD OF WORK — EN track (V3)
  * ============================================================================
  *
  * Grid: subjects (rows) × 12 weeks (columns) per term.
  * Each cell is a RichTextEditor where the teacher records what was done
  * that week for that subject.
  *
- * ⭐ V2 — CORRECTIONS DEMANDÉES :
- *   1. Colonnes de semaines DOUBLÉES (minWidth 2800px + éditeurs plus hauts)
- *   2. Dates de fin de semaine sous chaque colonne (même schéma que le
- *      cahier journal : on fixe la fin de la 1ère semaine, les 11 suivantes
- *      sont calculées +7 jours — persistées en base via weekDates)
- *   3. Catalogue année par année (WeeklyRecordCatalogueTab — sous-onglet)
- *   4. Soumission → Director Validation (pattern Scheme of Work) :
- *      le directeur voit le même tableau + colonne Observations par matière
- *      + section Observations générales
- *   5. "HEAD TEACHER'S INITIAL AND DATE" = vrais champs (initiales + date +
- *      signature) persistés en base
- *   6. PDF découpé en pages de 3 colonnes de semaines (1-3, 4-6, 7-9, 10-12)
+ * ⭐ V3 — 8 CORRECTIONS (retour de formation) :
+ *   1. Colonnes de semaines élargies (minWidth 3200px, éditeurs 120px)
+ *      + colonne OBSERVATIONS du directeur en lecture seule (hors DRAFT)
+ *   2. Dates de fin de semaine SOUS les en-têtes : currentFriday() corrigé
+ *      (l'ancienne formule rendait 5 jours sur 7) + calage automatique sur
+ *      le vendredi de la semaine choisie (computeWeekDates → snapToFriday)
+ *   3. Catalogue : plus de cache BFF 60s (le BFF pedagogy-space passe la
+ *      route en no-store → un enregistrement fraîchement sauvegardé
+ *      apparaît immédiatement)
+ *   4. Sauvegarde BD : setInterval 5s SUPPRIMÉ (POST parasite à chaque
+ *      visite, même sur documents soumis/validés) → sauvegarde
+ *      événementielle (debounce 2,5 s après la dernière saisie), Save
+ *      manuel, sauvegarde avant soumission, rechargement SILENCIEUX après
+ *      succès, garde anti-écrasement pendant l'édition, saveRef toujours
+ *      à jour (jamais l'état périmé)
+ *   5. Soumission directeur : un document REJETÉ peut être corrigé puis
+ *      RE-SOUMIS (bouton Submit visible en DRAFT et REJECTED)
+ *   6. Observations du directeur : colonne rouge dédiée dans la grille
+ *      enseignant (plus seulement un bandeau d'info)
+ *   7. Signature Head Teacher : bloc éditable côté DIRECTEUR pendant la
+ *      validation (voir DirectorPedagogyControlEN) — plus verrouillé
+ *   8. PDF paginé : page dédiée si le bloc signatures chevauche le
+ *      tableau + nom de fichier assaini (voir weekly-record-pdf.ts)
  *
  * ⭐ documentType = 'WEEKLY_RECORD' sur tous les appels API — sépare
  *    proprement le Weekly Record du Scheme of Work (même table monthly_plans,
@@ -42,7 +53,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { translateClassName } from "@/lib/pedagogy/class-name-en";
 import {
   WEEKS_PER_TERM, WEEK_LABELS,
-  computeWeekDates, currentFriday, parseWeekDatesJson, formatDateEN,
+  computeWeekDates, currentFriday, parseWeekDatesJson, formatDateEN, formatLocalISO,
   exportWeeklyRecordPdf, type WeeklyRecordCellData,
 } from "@/lib/pedagogy/weekly-record-pdf";
 
@@ -153,9 +164,8 @@ export function WeeklyRecordOfWorkTab({
   const [showHeadTeacherSignPad, setShowHeadTeacherSignPad] = useState(false);
 
   // ⭐ V2 : dates de semaines (pattern cahier journal) — 12 dates YYYY-MM-DD
-  const [weekDates, setWeekDates] = useState<string[]>(() => computeWeekDates(
-    `${currentFriday().getFullYear()}-${String(currentFriday().getMonth() + 1).padStart(2, '0')}-${String(currentFriday().getDate()).padStart(2, '0')}`
-  ));
+  //    ⭐ V3 (correction 2) : défaut = dernier vendredi (formule corrigée)
+  const [weekDates, setWeekDates] = useState<string[]>(() => computeWeekDates(formatLocalISO(currentFriday())));
 
   // ⭐ V2 : champs Head Teacher persistés
   const [headTeacherInitials, setHeadTeacherInitials] = useState("");
@@ -170,7 +180,48 @@ export function WeeklyRecordOfWorkTab({
   const isReadOnly = planStatus === "SUBMITTED" || planStatus === "VALIDATED";
   const StatusBadge = STATUS_BADGES[planStatus] || STATUS_BADGES.DRAFT;
   const StatusIcon = StatusBadge.icon;
-  const saveRef = useRef<() => Promise<void>>(async () => {});
+  // ⭐ FIX (correction 4 — sauvegarde BD) : saveRef accepte une liste explicite
+  //    (overrideCells) et handleSave lit cellsRef — jamais l'état périmé d'un
+  //    rendu antérieur (même correctif que la planification mensuelle, anomalie 3).
+  const saveRef = useRef<(overrideCells?: WeeklyCell[]) => Promise<boolean>>(async () => false);
+  const cellsRef = useRef<WeeklyCell[]>([]);
+  cellsRef.current = cells;
+
+  // ─── Dirty tracking + sauvegarde événementielle (correction 4) ───
+  // ⭐ FIX : l'ancien snapshot marquait « sale » au simple CHARGEMENT (cells.length
+  //    passait de 0 à N) → l'intervalle 5s POSTait le document à CHAQUE visite,
+  //    y compris les documents SOUMIS/VALIDÉS en lecture seule.
+  //    → plus AUCUN setInterval : la sauvegarde est déclenchée par les
+  //      SAISIES (debounce 2,5 s après la dernière modification), par le bouton
+  //      Save et avant la soumission. Aucun POST parasite, zéro rechargement.
+  const isDirtyRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editSeqRef = useRef(0);
+  const savingRef = useRef(false); // garde anti-POST concurrents (debounce pendant un vol)
+
+  const clearDirty = useCallback(() => {
+    isDirtyRef.current = false;
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+  }, []);
+
+  // ⭐ markDirty = réservé aux actions UTILISATEUR (saisie de cellule, date de
+  //    1ère semaine, champs Head Teacher). Chaque saisie reprogramme le debounce.
+  const markDirty = useCallback(() => {
+    isDirtyRef.current = true;
+    editSeqRef.current++;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    const fire = () => {
+      saveTimerRef.current = null;
+      if (!isDirtyRef.current) return;
+      if (savingRef.current) {
+        // une sauvegarde est déjà en vol → on réessaie dans 1 s (pas de POST concurrent)
+        saveTimerRef.current = setTimeout(fire, 1000);
+        return;
+      }
+      void saveRef.current();
+    };
+    saveTimerRef.current = setTimeout(fire, 2500);
+  }, []);
 
   // ─── Load classes ───
   useEffect(() => {
@@ -219,13 +270,29 @@ export function WeeklyRecordOfWorkTab({
   const subjects = selectedClass?.subjects || [];
 
   // ─── Load plan (documentType=WEEKLY_RECORD) ───
-  const loadPlan = useCallback(async () => {
+  // ⭐ FIX (correction 4) : silent=true → rechargement SANS spinner qui ne
+  //    remplace JAMAIS l'état local tant qu'il reste des modifications non
+  //    sauvegardées (garde anti-écrasement — pattern anomalie 3).
+  // ⭐ FIX e81fbe69 (préservé lors du rebase) : pas de setLoading(false)
+  //    dans le retour anticipé — sinon le message « No class assigned »
+  //    clignote pendant le chargement des classes (l'effet de chargement des
+  //    classes relève le spinner quand la liste est vide).
+  const loadPlan = useCallback(async (silent = false) => {
     if (!academicYearId || !selectedClassValue) { return; }
-    setLoading(true);
+    if (!silent) {
+      // Changement de classe/terme ou rafraîchissement manuel : on repart de
+      // la base — les modifications non sauvegardées du document précédent
+      // ne doivent ni suivre, ni bloquer ce chargement.
+      clearDirty();
+      setLoading(true);
+    }
     try {
       const data = await pedagogyFetch<WeeklyPlanResponse>(
         `/api/pedagogy/monthly-plans?academicYearId=${academicYearId}&classLevel=${encodeURIComponent(selectedClassValue)}&month=${encodeURIComponent(selectedTerm)}&teacherId=${teacherId}&documentType=${DOC_TYPE}`
       );
+      // ⛔ Garde anti-écrasement : un rechargement silencieux ne doit jamais
+      //    écraser des saisies en cours (elles seront re-sauvegardées).
+      if (silent && isDirtyRef.current) return;
       setCells(data.cells || []);
       setPlanStatus(data.status || "DRAFT");
       setTeacherSignature(data.teacherSignature || null);
@@ -242,13 +309,23 @@ export function WeeklyRecordOfWorkTab({
       setHeadTeacherSignature(data.headTeacherSignature || null);
     } catch (e: any) {
       console.error("Failed to load weekly record:", e);
-      setCells([]);
+      if (!silent) {
+        // Pas d'effacement silencieux : on n'efface l'écran que sur un
+        // chargement explicite (changement de classe/terme, bouton Refresh).
+        setCells([]);
+        toast.error("Failed to load the Weekly Record: " + (e.message || 'network error'));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [academicYearId, selectedClassValue, selectedTerm, teacherId]);
+  }, [academicYearId, selectedClassValue, selectedTerm, teacherId, clearDirty]);
 
   useEffect(() => { loadPlan(); }, [loadPlan]);
+
+  // ⭐ Nettoyage du debounce au démontage
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  }, []);
 
   // ─── Load director name ───
   useEffect(() => {
@@ -263,14 +340,19 @@ export function WeeklyRecordOfWorkTab({
     })();
   }, []);
 
-  // ─── Dirty tracking (cells + dates + head teacher) ───
-  const isDirtyRef = useRef(false);
-  const markDirty = useCallback(() => { isDirtyRef.current = true; }, []);
-
   // ─── Save (cells + weekDates + head teacher) ───
-  const handleSave = useCallback(async () => {
-    if (!academicYearId || !selectedClassValue) return;
+  // ⭐ FIX (correction 4) : handleSave accepte une liste explicite (overrideCells)
+  //    et lit cellsRef — le POST /save part TOUJOURS avec l'état à jour.
+  //    Après succès : rechargement SILENCIEUX (resynchronise les ids persistés
+  //    sans spinner) — sauf si de nouvelles saisies sont arrivées pendant le POST
+  //    (numéro de séquence) : on garde alors le drapeau sale et le debounce
+  //    relancera la sauvegarde.
+  const handleSave = useCallback(async (overrideCells?: WeeklyCell[]): Promise<boolean> => {
+    if (!academicYearId || !selectedClassValue) return false;
+    const cellsToSave = Array.isArray(overrideCells) ? overrideCells : cellsRef.current;
+    const seqAtSave = editSeqRef.current;
     setSaving(true);
+    savingRef.current = true;
     try {
       await pedagogyFetch("/api/pedagogy/monthly-plans/save", {
         method: "POST",
@@ -279,7 +361,7 @@ export function WeeklyRecordOfWorkTab({
           classLevel: selectedClassValue,
           month: selectedTerm,
           teacherId,
-          cells,
+          cells: cellsToSave,
           documentType: DOC_TYPE,
           weekDates: JSON.stringify(weekDates),
           headTeacherInitials: headTeacherInitials || null,
@@ -287,32 +369,25 @@ export function WeeklyRecordOfWorkTab({
           headTeacherSignature: headTeacherSignature || null,
         },
       });
-      isDirtyRef.current = false;
+      if (editSeqRef.current === seqAtSave) {
+        clearDirty();
+        // ⭐ Rechargement silencieux après sauvegarde réussie (garde anti-écrasement)
+        await loadPlan(true);
+      }
+      return true;
     } catch (e: any) {
       toast.error("Save failed: " + e.message);
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [academicYearId, selectedClassValue, selectedTerm, teacherId, cells, weekDates, headTeacherInitials, headTeacherDate, headTeacherSignature]);
+  }, [academicYearId, selectedClassValue, selectedTerm, teacherId, weekDates, headTeacherInitials, headTeacherDate, headTeacherSignature, loadPlan, clearDirty]);
+
   saveRef.current = handleSave;
 
-  // ─── Auto-save 5s (silencieux) ───
-  const prevSnapshotRef = useRef("");
-  useEffect(() => {
-    const snapshot = JSON.stringify({ c: cells.length, d: weekDates[0], h: headTeacherInitials, hd: headTeacherDate, s: !!headTeacherSignature });
-    if (prevSnapshotRef.current !== snapshot) {
-      isDirtyRef.current = true;
-      prevSnapshotRef.current = snapshot;
-    }
-  }, [cells, weekDates, headTeacherInitials, headTeacherDate, headTeacherSignature]);
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (isDirtyRef.current && !saving && !loading && !submitting) {
-        await saveRef.current();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [saving, loading, submitting]);
+  // (⭐ correction 2/4 des 5 anomalies — l'auto-save par setInterval est SUPPRIMÉ :
+  //  voir markDirty ci-dessus pour la sauvegarde événementielle par debounce.)
 
   // ─── Submit (pattern Scheme of Work) ───
   const handleSubmit = useCallback(async () => {
@@ -322,7 +397,13 @@ export function WeeklyRecordOfWorkTab({
     }
     setSubmitting(true);
     try {
-      await saveRef.current();
+      // ⭐ Sauvegarder AVANT de soumettre — si la sauvegarde échoue (réseau),
+      //    on n'envoie PAS une soumission avec des données périmées.
+      const savedOk = await saveRef.current();
+      if (!savedOk) {
+        toast.error("Could not save before submitting — check your connection and retry.");
+        return;
+      }
       const params = new URLSearchParams({
         academicYearId, classLevel: selectedClassValue,
         month: selectedTerm, teacherId: teacherId || 'unknown',
@@ -458,6 +539,16 @@ export function WeeklyRecordOfWorkTab({
     return cells.filter(c => (c.subDomain || '') === 'DIRECTOR_OBS' && c.content);
   }, [cells]);
 
+  // ⭐ FIX (correction 6 — Observations) : map matière → observation + colonne
+  //    OBSERVATIONS visible dès que le document n'est plus en brouillon (la vue
+  //    du directeur écrit dedans — l'enseignant doit les voir DANS la grille).
+  const showObsColumn = planStatus !== "DRAFT";
+  const directorObsBySubject = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const obs of directorPerSubjectObs) m.set(obs.domain, obs.content);
+    return m;
+  }, [directorPerSubjectObs]);
+
   // ─── Render ───
   if (loading) {
     return (
@@ -512,16 +603,24 @@ export function WeeklyRecordOfWorkTab({
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium bg-white">
             {TERMS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
-          <button onClick={handleSave} disabled={saving || isReadOnly}
+          <button onClick={() => handleSave()} disabled={saving || isReadOnly}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save
           </button>
-          {planStatus === "DRAFT" && (
+          {planStatus === "DRAFT" ? (
             <button onClick={() => setShowSignatureModal(true)} disabled={submitting}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Submit
             </button>
-          )}
+          ) : planStatus === "REJECTED" ? (
+            // ⭐ FIX (correction 5 — soumission directeur) : un document REJETÉ
+            //    peut être corrigé puis RE-SOUMIS (le backend l'autorisait déjà,
+            //    seul le front bloquait — impasse de workflow).
+            <button onClick={() => setShowSignatureModal(true)} disabled={submitting}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Re-submit
+            </button>
+          ) : null}
           <button onClick={handleNotifyDirector} disabled={notifyingDirector || !selectedClassValue}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold">
             {notifyingDirector ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />} Notify
@@ -530,7 +629,7 @@ export function WeeklyRecordOfWorkTab({
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold">
             {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} PDF
           </button>
-          <button onClick={loadPlan}
+          <button onClick={() => loadPlan()}
             className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </button>
@@ -551,7 +650,13 @@ export function WeeklyRecordOfWorkTab({
           <strong>{selectedTerm}</strong> — Weekly Record of Work for <strong>{selectedClass?.label}</strong>
           {planStatus === "SUBMITTED" && <div className="mt-1 font-semibold">📋 Submitted to director — pending validation.</div>}
           {planStatus === "VALIDATED" && <div className="mt-1 font-semibold">✅ Validated by the director.</div>}
-          {planStatus === "REJECTED" && directorObservation && <div className="mt-1"><strong>Rejected:</strong> {directorObservation}</div>}
+          {planStatus === "REJECTED" && (
+          <div className="mt-1">
+            <strong>Rejected:</strong> {directorObservation || '—'}
+            {/* ⭐ correction 5 : inviter explicitement à corriger puis re-soumettre */}
+            <div className="mt-1 font-semibold">↩ Correct the record above, then click <strong>Re-submit</strong> to send it back to the director.</div>
+          </div>
+        )}
           {planStatus === "DRAFT" && <div className="mt-1">Fill in the weekly record for each subject, then click <strong>Submit</strong> to send to the director.</div>}
           {directorPerSubjectObs.length > 0 && (
             <div className="mt-2 space-y-1">
@@ -576,7 +681,10 @@ export function WeeklyRecordOfWorkTab({
       ) : (
         <>
           {/* ⭐ Weekly Record of Work — grid: subjects (rows) × 12 weeks (columns)
-              V2 : colonnes DOUBLÉES (minWidth 2800px) + dates sous chaque colonne */}
+              ⭐ V3 (correction 1) : colonnes de semaines ÉLARGIES (minWidth 3200px →
+              ~245px par semaine au lieu de 210px) + éditeurs plus hauts (120px)
+              ⭐ V3 (correction 6) : colonne OBSERVATIONS du directeur (lecture
+              seule) dès que le document n'est plus en brouillon */}
           <div className="bg-white rounded-xl border-2 border-slate-800 overflow-hidden shadow-sm">
             {/* Title bar */}
             <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
@@ -607,12 +715,13 @@ export function WeeklyRecordOfWorkTab({
               </div>
             </div>
 
-            {/* Grid table — colonnes doublées */}
+            {/* Grid table — ⭐ V3 : colonnes élargies + colonne Observations conditionnelle */}
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-xs" style={{ minWidth: "2800px" }}>
+              <table className="w-full border-collapse text-xs" style={{ minWidth: showObsColumn ? "3400px" : "3200px" }}>
                 <colgroup>
-                  <col style={{ width: "10%" }} />
-                  {WEEK_LABELS.map((_, i) => <col key={i} style={{ width: `${90 / WEEKS_PER_TERM}%` }} />)}
+                  <col style={{ width: "9%" }} />
+                  {WEEK_LABELS.map((_, i) => <col key={i} style={{ width: `${(showObsColumn ? 82 : 91) / WEEKS_PER_TERM}%` }} />)}
+                  {showObsColumn && <col style={{ width: "9%" }} />}
                 </colgroup>
                 <thead>
                   {/* Rangée 1 : libellés des semaines */}
@@ -625,6 +734,11 @@ export function WeeklyRecordOfWorkTab({
                         {label}
                       </th>
                     ))}
+                    {showObsColumn && (
+                      <th rowSpan={2} className="p-2 border border-slate-300 text-center font-bold text-red-700 uppercase bg-red-50 text-[10px]">
+                        OBSERVATIONS
+                      </th>
+                    )}
                   </tr>
                   {/* ⭐ Rangée 2 : dates de fin de semaine (pattern cahier journal) */}
                   <tr className="bg-amber-50">
@@ -638,7 +752,7 @@ export function WeeklyRecordOfWorkTab({
                 <tbody>
                   {subjects.map((subject, subjIdx) => (
                     <tr key={subject.id || subjIdx} className={cn2("hover:bg-purple-50/30", subjIdx % 2 === 1 && "bg-slate-50/50")}>
-                      <td className="p-2 border border-slate-300 font-bold text-slate-800 bg-slate-100 sticky left-0 z-10" style={{ minWidth: "280px" }}>
+                      <td className="p-2 border border-slate-300 font-bold text-slate-800 bg-slate-100 sticky left-0 z-10" style={{ minWidth: "260px" }}>
                         {subject.name}
                       </td>
                       {WEEK_LABELS.map((_, weekIdx) => {
@@ -652,11 +766,18 @@ export function WeeklyRecordOfWorkTab({
                               onChange={(html) => updateCellLocal(subject.name, week, html)}
                               disabled={isReadOnly}
                               placeholder="—"
-                              minHeight="100px"
+                              minHeight="120px"
                             />
                           </td>
                         );
                       })}
+                      {showObsColumn && (
+                        <td className="p-2 border border-slate-300 bg-red-50/30 align-top text-[11px] text-red-900">
+                          {directorObsBySubject.get(subject.name)
+                            ? <div dangerouslySetInnerHTML={{ __html: directorObsBySubject.get(subject.name)! }} />
+                            : <span className="text-red-300">—</span>}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -901,8 +1022,10 @@ function SubmissionSignatureModal({
 
 // ─────────────────────────────────────────────────────────────────────────
 // ⭐ Head Teacher signature pad — signature persistée en base
+//    (⭐ V3 correction 7 : exporté — réutilisé par la vue de validation
+//     du directeur dans DirectorPedagogyControlEN)
 // ─────────────────────────────────────────────────────────────────────────
-function HeadTeacherSignaturePad({
+export function HeadTeacherSignaturePad({
   onCancel, onConfirm,
 }: {
   onCancel: () => void;

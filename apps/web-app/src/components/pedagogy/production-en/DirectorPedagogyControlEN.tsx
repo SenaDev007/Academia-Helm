@@ -43,6 +43,9 @@ import {
   useEvaluationDetail,
 } from "@/lib/query/pedagogy-hooks";
 import { pedagogySpaceService } from "@/services/pedagogy-space.service";
+// ⭐ FIX (correction 7 — signature Head Teacher) : pad de signature réutilisé
+//    depuis l'onglet enseignant (composant exporté)
+import { HeadTeacherSignaturePad } from "./WeeklyRecordOfWorkTab";
 import apiClient from "@/lib/api/client";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -6228,6 +6231,13 @@ function PendingWeeklyRecordsTab({
   const [savingObs, setSavingObs] = useState(false);
   const [validating, setValidating] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // ⭐ FIX (correction 7 — signature Head Teacher) : le directeur (Head Teacher)
+  //    renseigne initiales + date + signature PENDANT la validation — plus de
+  //    bloc en lecture seule que personne ne peut remplir après la soumission.
+  const [headTeacherInitials, setHeadTeacherInitials] = useState("");
+  const [headTeacherDate, setHeadTeacherDate] = useState("");
+  const [headTeacherSignature, setHeadTeacherSignature] = useState<string | null>(null);
+  const [showHeadTeacherSignPad, setShowHeadTeacherSignPad] = useState(false);
 
   // Load pending weekly record plans
   const loadPending = useCallback(async () => {
@@ -6303,6 +6313,10 @@ function PendingWeeklyRecordsTab({
         }
       }
       setSubjectObservations(obs);
+      // ⭐ FIX (correction 7) : pré-remplir les champs Head Teacher persistés
+      setHeadTeacherInitials(data.headTeacherInitials || "");
+      setHeadTeacherDate(data.headTeacherDate || "");
+      setHeadTeacherSignature(data.headTeacherSignature || null);
     } catch (e: any) {
       console.error("Failed to load plan detail:", e);
       setPlanDetail(null);
@@ -6387,6 +6401,10 @@ function PendingWeeklyRecordsTab({
             action,
             directorSignature: directorSignature,
             directorObservation: generalObservation,
+            // ⭐ FIX (correction 7) : champs Head Teacher persistés à la validation
+            headTeacherInitials: headTeacherInitials || null,
+            headTeacherDate: headTeacherDate || null,
+            headTeacherSignature: headTeacherSignature || null,
           }),
         }
       );
@@ -6436,9 +6454,10 @@ function PendingWeeklyRecordsTab({
         teacherSignature: planDetail.teacherSignature || null,
         directorSignature,
         directorName,
-        headTeacherInitials: planDetail.headTeacherInitials || null,
-        headTeacherDate: planDetail.headTeacherDate || null,
-        headTeacherSignature: planDetail.headTeacherSignature || null,
+        // ⭐ correction 7 : valeurs Head Teacher courantes (celles saisies/validées)
+        headTeacherInitials: headTeacherInitials || null,
+        headTeacherDate: headTeacherDate || null,
+        headTeacherSignature: headTeacherSignature || null,
         header: {
           schoolName: schoolInfo.schoolName || schoolInfo.name || 'School',
           schoolLogoUrl: schoolInfo.logoUrl || schoolInfo.logo || null,
@@ -6532,11 +6551,11 @@ function PendingWeeklyRecordsTab({
             <span className="text-sm font-semibold">{selectedPlan.className || selectedPlan.classLevel} — {selectedPlan.month}</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs" style={{ minWidth: "2950px" }}>
+            <table className="w-full border-collapse text-xs" style={{ minWidth: "3300px" }}>
               <colgroup>
-                <col style={{ width: "8%" }} />
-                {WEEKS.map((_, i) => <col key={i} style={{ width: "6.5%" }} />)}
-                <col style={{ width: "14%" }} />
+                <col style={{ width: "8.5%" }} />
+                {WEEKS.map((_, i) => <col key={i} style={{ width: "6.9%" }} />)}
+                <col style={{ width: "8.7%" }} />
               </colgroup>
               <thead>
                 <tr className="bg-slate-100">
@@ -6545,7 +6564,7 @@ function PendingWeeklyRecordsTab({
                     const n = week;
                     const suffix = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
                     return (
-                      <th key={week} className="px-1.5 py-2 border border-slate-300 text-center font-bold text-slate-700 uppercase text-[9px]">
+                      <th key={week} className="px-1.5 py-2 border border-slate-300 text-center font-bold text-slate-700 uppercase text-[10px]">
                         {n}{suffix.toUpperCase()} WEEK ENDING
                       </th>
                     );
@@ -6556,7 +6575,7 @@ function PendingWeeklyRecordsTab({
                 </tr>
                 <tr className="bg-amber-50">
                   {WEEKS.map((week) => (
-                    <th key={week} className="px-1.5 py-1 border border-slate-300 text-center font-bold text-amber-800 text-[9px] tabular-nums">
+                    <th key={week} className="px-1.5 py-1 border border-slate-300 text-center font-bold text-amber-800 text-[10px] tabular-nums">
                       {weekDates[week - 1] ? fmtDate(weekDates[week - 1]) : '—'}
                     </th>
                   ))}
@@ -6613,21 +6632,50 @@ function PendingWeeklyRecordsTab({
           />
         </div>
 
-        {/* Head Teacher + Signatures */}
+        {/* ⭐ Head Teacher — ÉDITABLE pendant la validation (correction 7) + Signatures */}
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
+            <div className="space-y-2">
               <div className="text-sm font-bold text-slate-800">Head Teacher&apos;s Initial and Date</div>
-              {planDetail.headTeacherInitials || planDetail.headTeacherDate ? (
-                <div className="text-sm text-slate-600 mt-1">
-                  {planDetail.headTeacherInitials || '—'} — {planDetail.headTeacherDate ? fmtDate(planDetail.headTeacherDate) : '—'}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Initials</label>
+                  <input
+                    type="text"
+                    value={headTeacherInitials}
+                    onChange={(e) => setHeadTeacherInitials(e.target.value)}
+                    placeholder="e.g. J.K."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  />
                 </div>
-              ) : (
-                <div className="text-xs text-slate-400 mt-1">Not filled</div>
-              )}
-              {planDetail.headTeacherSignature && (
-                <img src={planDetail.headTeacherSignature} alt="Head teacher signature" className="max-h-16 mt-2" />
-              )}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Date</label>
+                  <input
+                    type="date"
+                    value={headTeacherDate}
+                    onChange={(e) => setHeadTeacherDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-800 focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Signature</label>
+                {headTeacherSignature ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-lg p-1 flex items-center gap-2">
+                    <img src={headTeacherSignature} alt="Head teacher signature" className="max-h-14 mx-auto" />
+                    <button onClick={() => setHeadTeacherSignature(null)}
+                      className="text-[10px] text-red-500 hover:underline flex-shrink-0 pr-1">
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowHeadTeacherSignPad(true)}
+                    className="w-full h-14 px-3 py-2 border-2 border-dashed border-slate-300 rounded-lg text-xs font-semibold text-slate-500 hover:border-amber-400 hover:text-amber-600 transition-colors">
+                    ✍️ Draw Head Teacher signature
+                  </button>
+                )}
+                <p className="text-[10px] text-slate-400">Saved when you Validate or Reject this record.</p>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -6649,6 +6697,17 @@ function PendingWeeklyRecordsTab({
             </div>
           </div>
         </div>
+
+        {/* ⭐ Pad de signature Head Teacher (correction 7) */}
+        {showHeadTeacherSignPad && (
+          <HeadTeacherSignaturePad
+            onCancel={() => setShowHeadTeacherSignPad(false)}
+            onConfirm={(dataUrl) => {
+              setHeadTeacherSignature(dataUrl);
+              setShowHeadTeacherSignPad(false);
+            }}
+          />
+        )}
       </div>
     );
   }

@@ -3,6 +3,8 @@
 // ============================================================================
 // Vue conversation avec bulles de messages (style WhatsApp).
 // Identité Azure : bulles envoyées sur fond #E6F4FF, reçues sur #FFFFFF.
+// ⭐ V7 (alignement mobile) : couleurs par expéditeur, bandeau épinglés,
+//    pills CALL_LOG, séparateurs de date, pagination, temps réel étendu.
 // ============================================================================
 
 import 'dart:async';
@@ -46,6 +48,51 @@ class CryptoService {
   static Future<String> encryptMessage(String content, String recipientKey) async => content;
   static Future<bool> hasPrivateKey() async => false;
   static Future<String> generateKeyPair() async => '';
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ⭐ V7 (parité web/Yeshua) — COULEURS DE BULLE PAR UTILISATEUR
+//    Hash djb2 (identique au web) → index stable dans 2 palettes de 8 :
+//    fond légèrement teinté pour les bulles des AUTRES en groupe +
+//    teinte franche pour le nom/l'avatar. Mes bulles restent bleu Azure.
+// ═════════════════════════════════════════════════════════════════
+const List<(Color, Color)> kUserBubbleColors = [
+  (Color(0xFFEFF6FF), Color(0xFFDBEAFE)), // bleu clair
+  (Color(0xFFF0FDF4), Color(0xFFDCFCE7)), // vert clair
+  (Color(0xFFFFF7ED), Color(0xFFFFEDD5)), // orange clair
+  (Color(0xFFFDF4FF), Color(0xFFFAE8FF)), // violet clair
+  (Color(0xFFECFEFF), Color(0xFFCFFAFE)), // cyan clair
+  (Color(0xFFFEF9C3), Color(0xFFFEF08A)), // jaune clair
+  (Color(0xFFFDF2F8), Color(0xFFFBCFE8)), // rose clair
+  (Color(0xFFF5F5F4), Color(0xFFE7E5E4)), // pierre clair
+];
+
+const List<Color> kUserTextColors = [
+  Color(0xFF0958D9), // bleu Helm
+  Color(0xFF059669), // vert
+  Color(0xFFD97706), // ambre
+  Color(0xFF7C3AED), // violet
+  Color(0xFF0891B2), // cyan
+  Color(0xFFCA8A04), // jaune doré
+  Color(0xFFDB2777), // rose
+  Color(0xFF57534E), // pierre
+];
+
+/// Hash djb2 → index stable dans la palette (même logique que le web).
+int hashUserId(String userId) {
+  var h = 5381;
+  for (var i = 0; i < userId.length; i++) {
+    h = (((h << 5) + h + userId.codeUnitAt(i)) & 0x7FFFFFFF);
+    // masque 32 bits non signé ≈ web >>> 0
+  }
+  return h % kUserBubbleColors.length;
+}
+
+/// ⭐ V7 — durée d'appel lisible façon WhatsApp : 45 s / 3 min 12 s / 2 h 0 min.
+String formatCallDuration(int seconds) {
+  if (seconds < 60) return '$seconds s';
+  if (seconds < 3600) return '${seconds ~/ 60} min ${seconds % 60} s';
+  return '${seconds ~/ 3600} h ${(seconds % 3600) ~/ 60} min';
 }
 
 class ConversationDetailScreen extends StatefulWidget {
@@ -366,7 +413,158 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           _loadMessages(); // Refresh to get the new message
           // ⭐ V3-4: When a new message arrives, the other person is no longer typing
           if (mounted) setState(() => _isOtherTyping = false);
+          // ⭐ V7 (parité web) — accusé de distribution ✓✓ gris : je préviens
+          //    l'expéditeur que son message m'est parvenu (best effort).
+          final msg = data['message'];
+          if (msg is Map<String, dynamic> &&
+              msg['senderId'] != _currentUserId &&
+              msg['id'] != null) {
+            ApiService.deliverMessage(msg['id'].toString());
+          }
         }
+      };
+      // ⭐ V7 — messages lus par l'autre (✓✓ bleu temps réel)
+      _socket.onMessageRead = (conversationId, readerId, messageIds) {
+        if (conversationId == widget.conversation.id && mounted) {
+          setState(() {
+            _messages = _messages.map((m) {
+              if (!m.isOwn || !messageIds.contains(m.id)) return m;
+              final already = m.readBy.any((r) => r['userId'] == readerId);
+              if (already) return m;
+              return Message(
+                id: m.id,
+                conversationId: m.conversationId,
+                senderId: m.senderId,
+                type: m.type,
+                content: m.content,
+                attachmentUrl: m.attachmentUrl,
+                attachmentName: m.attachmentName,
+                attachmentSize: m.attachmentSize,
+                attachmentMime: m.attachmentMime,
+                duration: m.duration,
+                replyToId: m.replyToId,
+                replyToContent: m.replyToContent,
+                replyToSenderName: m.replyToSenderName,
+                createdAt: m.createdAt,
+                editedAt: m.editedAt,
+                deletedAt: m.deletedAt,
+                deliveredAt: m.deliveredAt,
+                reactions: m.reactions,
+                readBy: [...m.readBy, {'userId': readerId, 'readAt': DateTime.now().toIso8601String()}],
+                isPinned: m.isPinned,
+                isImportant: m.isImportant,
+                senderFirstName: m.senderFirstName,
+                senderLastName: m.senderLastName,
+                senderRole: m.senderRole,
+                isOwn: m.isOwn,
+                callMeta: m.callMeta,
+                status: m.status,
+                localId: m.localId,
+              );
+            }).toList();
+          });
+        }
+      };
+      // ⭐ V7 — message modifié temps réel
+      _socket.onMessageEdited = (messageId, content, editedAt) {
+        if (mounted) {
+          setState(() {
+            _messages = _messages.map((m) {
+              if (m.id != messageId) return m;
+              return Message(
+                id: m.id,
+                conversationId: m.conversationId,
+                senderId: m.senderId,
+                type: m.type,
+                content: content,
+                attachmentUrl: m.attachmentUrl,
+                attachmentName: m.attachmentName,
+                attachmentSize: m.attachmentSize,
+                attachmentMime: m.attachmentMime,
+                duration: m.duration,
+                replyToId: m.replyToId,
+                replyToContent: m.replyToContent,
+                replyToSenderName: m.replyToSenderName,
+                createdAt: m.createdAt,
+                editedAt: editedAt != null ? DateTime.tryParse(editedAt) ?? m.editedAt : m.editedAt,
+                deletedAt: m.deletedAt,
+                deliveredAt: m.deliveredAt,
+                reactions: m.reactions,
+                readBy: m.readBy,
+                isPinned: m.isPinned,
+                isImportant: m.isImportant,
+                senderFirstName: m.senderFirstName,
+                senderLastName: m.senderLastName,
+                senderRole: m.senderRole,
+                isOwn: m.isOwn,
+                callMeta: m.callMeta,
+                status: m.status,
+                localId: m.localId,
+              );
+            }).toList();
+          });
+        }
+      };
+      // ⭐ V7 — message supprimé pour tous temps réel
+      _socket.onMessageDeleted = (messageId) {
+        if (mounted) {
+          setState(() {
+            _messages = _messages.where((m) => m.id != messageId).toList();
+          });
+        }
+      };
+      // ⭐ V7 — réaction ajoutée/retirée temps réel (sans rechargement complet)
+      _socket.onReactionToggle = (messageId, emoji, reactorId, action, count) {
+        if (mounted) {
+          setState(() {
+            _messages = _messages.map((m) {
+              if (m.id != messageId) return m;
+              var reactions = [...m.reactions];
+              if (action == 'added') {
+                reactions = [...reactions.where((r) => !(r.userId == reactorId && r.emoji == emoji)), Reaction(emoji: emoji, userId: reactorId)];
+              } else {
+                reactions = reactions.where((r) => !(r.userId == reactorId && r.emoji == emoji)).toList();
+              }
+              return Message(
+                id: m.id,
+                conversationId: m.conversationId,
+                senderId: m.senderId,
+                type: m.type,
+                content: m.content,
+                attachmentUrl: m.attachmentUrl,
+                attachmentName: m.attachmentName,
+                attachmentSize: m.attachmentSize,
+                attachmentMime: m.attachmentMime,
+                duration: m.duration,
+                replyToId: m.replyToId,
+                replyToContent: m.replyToContent,
+                replyToSenderName: m.replyToSenderName,
+                createdAt: m.createdAt,
+                editedAt: m.editedAt,
+                deletedAt: m.deletedAt,
+                deliveredAt: m.deliveredAt,
+                reactions: reactions,
+                readBy: m.readBy,
+                isPinned: m.isPinned,
+                isImportant: m.isImportant,
+                senderFirstName: m.senderFirstName,
+                senderLastName: m.senderLastName,
+                senderRole: m.senderRole,
+                isOwn: m.isOwn,
+                callMeta: m.callMeta,
+                status: m.status,
+                localId: m.localId,
+              );
+            }).toList();
+          });
+        }
+      };
+      // ⭐ V7 — épinglage/désépinglage temps réel → recharge (bandeau + bulles)
+      _socket.onMessagePinned = (conversationId, messageId, by) {
+        if (conversationId == widget.conversation.id && mounted) _loadMessages();
+      };
+      _socket.onMessageUnpinned = (conversationId, messageId, by) {
+        if (conversationId == widget.conversation.id && mounted) _loadMessages();
       };
       // ⭐ V3-4: Typing indicator — bind onTypingStart / onTypingStop
       _socket.onTypingStart = (String conversationId, String typingUserId) {
@@ -736,6 +934,107 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     super.dispose();
   }
 
+  // ⭐ V7 — pagination des messages (charge plus d'historique au demande)
+  bool _hasMoreMessages = false;
+  bool _loadingMore = false;
+
+  // ⭐ V7 — charge 50 messages plus anciens (curseur `before`) et PRÉSERVE la
+  //    position de lecture (pas de saut vers le bas).
+  Future<void> _loadOlderMessages() async {
+    if (_loadingMore || _messages.isEmpty) return;
+    setState(() => _loadingMore = true);
+    try {
+      final oldestId = _messages.first.id;
+      final older = await ApiService.listMessages(widget.conversation.id, limit: 50, before: oldestId);
+      if (mounted) {
+        setState(() {
+          _messages = [...older.map((m) => Message.fromJson(m, _currentUserId)), ..._messages];
+          _hasMoreMessages = older.length >= 50;
+          _loadingMore = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  // ⭐ V7 — séparateur de date centré (parité web)
+  Widget _buildDateSeparator(DateTime dt) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              _dateSeparatorLabel(dt),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+            ),
+          ),
+          const Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+        ],
+      ),
+    );
+  }
+
+  // ⭐ V7 — pill CALL_LOG (parité web) : icône + couleur selon statut + durée
+  Widget _buildCallLogPill(Message msg, bool isOwn) {
+    final meta = msg.callMeta ?? const <String, dynamic>{};
+    final video = (meta['callType'] ?? 'audio') == 'video';
+    final status = (meta['status'] ?? 'ended').toString();
+    final durationSec = (meta['durationSec'] as num?)?.toInt() ?? 0;
+    final byName = (meta['byName'] ?? msg.senderName).toString();
+    IconData icon;
+    Color color;
+    String label;
+    switch (status) {
+      case 'missed':
+        icon = video ? Icons.videocam_off_outlined : Icons.phone_missed;
+        color = const Color(0xFFEF4444);
+        label = 'Appel ${video ? 'vidéo' : 'audio'} manqué';
+        break;
+      case 'declined':
+      case 'rejected':
+        icon = video ? Icons.videocam_off_outlined : Icons.phone_disabled;
+        color = const Color(0xFFF59E0B);
+        label = 'Appel ${video ? 'vidéo' : 'audio'} refusé';
+        break;
+      case 'cancelled':
+        icon = video ? Icons.videocam_outlined : Icons.phone_callback;
+        color = const Color(0xFF94A3B8);
+        label = isOwn ? 'Appel sans réponse' : 'Appel annulé';
+        break;
+      default:
+        icon = video ? Icons.videocam_outlined : Icons.phone_in_talk;
+        color = const Color(0xFF10B981);
+        label = 'Appel ${video ? 'vidéo' : 'audio'} terminé${durationSec > 0 ? ' · ${formatCallDuration(durationSec)}' : ''}';
+    }
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              '$label${byName.isNotEmpty && !isOwn ? ' · $byName' : ''}',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadMessages() async {
     // ⭐ V3-1: Read local cache first (instant display)
     try {
@@ -775,6 +1074,9 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         setState(() {
           _messages = json.map((m) => Message.fromJson(m, userId ?? '')).toList();
           _loading = false;
+          // ⭐ V7 — pagination : s'il y a 50 messages chargés, il y en a
+          //    probablement plus anciens (bouton « Charger… » en tête de liste).
+          _hasMoreMessages = json.length >= 50;
         });
         // ⭐ V3-4: Hydrate the reply-quote cache for messages with replyToId.
         //    For each message with a replyToId, find the parent in the loaded
@@ -940,11 +1242,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     }
 
     try {
-      await ApiService.sendTextMessage(
-        conversationId: widget.conversation.id,
-        content: content,
-        replyToId: replyToId,
-      );
+      // ⭐ V7 (parité web) — CANAUX : diffusion via POST /chat/channels/:id/broadcast
+      //    (l'envoi texte classique est refusé sur les conversations CHANNEL).
+      if (widget.conversation.type == 'CHANNEL') {
+        await ApiService.broadcastChannelMessage(widget.conversation.id, content);
+      } else {
+        await ApiService.sendTextMessage(
+          conversationId: widget.conversation.id,
+          content: content,
+          replyToId: replyToId,
+        );
+      }
       // Success — remove from pending queue + reload from server (replaces localId with server id)
       await ChatLocalStorage.removePendingMessage(localId);
       await _loadMessages();
@@ -1168,10 +1476,124 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
     return '$h:$m';
   }
 
+  // ⭐ V7 — libellé de séparateur de date (Aujourd'hui / Hier / date)
+  String _dateSeparatorLabel(DateTime dt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final d = DateTime(dt.year, dt.month, dt.day);
+    if (d == today) return "Aujourd'hui";
+    if (d == yesterday) return 'Hier';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  // ⭐ V7 — messages épinglés de la conversation (bandeau sous l'app bar)
+  List<Message> get _pinnedMessages => _messages.where((m) => m.isPinned && !m.isDeleted).toList();
+
+  // ⭐ V7 — bandeau épinglés (parité web) : « N messages épinglés » + aperçu du
+  //    dernier + tap → liste (aperçu + désépingler).
+  Widget _buildPinnedBanner() {
+    final pinned = _pinnedMessages;
+    if (pinned.isEmpty) return const SizedBox.shrink();
+    final last = pinned.last;
+    return InkWell(
+      onTap: () => _showPinnedModal(pinned),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: const BoxDecoration(
+          color: Color(0xFFEFF6FF),
+          border: Border(bottom: BorderSide(color: Color(0xFFDBEAFE))),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.push_pin, size: 16, color: Color(0xFF0958D9)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${pinned.length} message${pinned.length > 1 ? 's' : ''} épinglé${pinned.length > 1 ? 's' : ''} • ${stripHtml(last.content).isEmpty ? (last.isAttachment ? 'Pièce jointe' : 'Message') : stripHtml(last.content)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF0958D9)),
+              ),
+            ),
+            const Icon(Icons.expand_more, size: 16, color: Color(0xFF0958D9)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPinnedModal(List<Message> pinned) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.push_pin, color: Color(0xFF0958D9)),
+                    const SizedBox(width: 8),
+                    Text('Messages épinglés (${pinned.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: pinned.length,
+                  itemBuilder: (context, i) {
+                    final m = pinned[i];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: kUserTextColors[hashUserId(m.senderId) % kUserTextColors.length],
+                        child: Text(m.senderName.isNotEmpty ? m.senderName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                      title: Text(
+                        stripHtml(m.content).isEmpty ? (m.isAttachment ? (m.attachmentName ?? 'Pièce jointe') : 'Message') : stripHtml(m.content),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      subtitle: Text('${m.senderName} • ${_formatTime(m.createdAt)}', style: const TextStyle(fontSize: 11)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                        tooltip: 'Désépingler',
+                        onPressed: () async {
+                          try {
+                            await ApiService.pinMessage(m.id);
+                            Navigator.pop(context);
+                            _loadMessages();
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                            }
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.conversation.type == 'GROUP'
-        ? (widget.conversation.name ?? 'Groupe')
+    final isChannel = widget.conversation.type == 'CHANNEL';
+    final displayName = isChannel || widget.conversation.type == 'GROUP'
+        ? (widget.conversation.name ?? (isChannel ? 'Canal' : 'Groupe'))
         : (widget.conversation.participants.isNotEmpty
             ? widget.conversation.participants.firstWhere(
                 (p) => p.userId != (widget.conversation.createdBy),
@@ -1189,12 +1611,14 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           children: [
             CircleAvatar(
               backgroundColor: Colors.white.withOpacity(0.2),
-              child: widget.conversation.type == 'GROUP'
-                  ? const Icon(Icons.group, color: Colors.white, size: 20)
-                  : Text(
-                      _getInitials(displayName),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
+              child: isChannel
+                  ? const Icon(Icons.feed, color: Colors.white, size: 20)
+                  : widget.conversation.type == 'GROUP'
+                      ? const Icon(Icons.group, color: Colors.white, size: 20)
+                      : Text(
+                          _getInitials(displayName),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1204,7 +1628,11 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   Text(displayName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   // ⭐ V6 — présence RÉELLE (avant : « en ligne » en dur)
                   Text(
-                    _isOtherTyping ? 'tape…' : _presenceLabel,
+                    isChannel
+                        ? 'Canal de diffusion'
+                        : _isOtherTyping
+                            ? 'tape…'
+                            : _presenceLabel,
                     style: TextStyle(
                       fontSize: 11,
                       color: _isOtherTyping || _otherOnline ? HelmColors.goldLight : HelmColors.goldLight.withOpacity(0.65),
@@ -1219,20 +1647,23 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         // ⭐ V5: Phone + Video call buttons (DIRECT 1-1 + GROUP mesh)
         // ⭐ V3-11: Action icons use gold accent (Helm Connect palette)
         actions: [
-          IconButton(
-            icon: const Icon(Icons.phone, color: HelmColors.goldLight),
-            tooltip: widget.conversation.type == 'GROUP'
-                ? 'Appel audio de groupe'
-                : 'Appel audio',
-            onPressed: () => _startCall('AUDIO'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
-            tooltip: widget.conversation.type == 'GROUP'
-                ? 'Appel vidéo de groupe'
-                : 'Appel vidéo',
-            onPressed: () => _startCall('VIDEO'),
-          ),
+          // ⭐ V7 — pas d'appel sur les CANAUX (diffusion unidirectionnelle)
+          if (!isChannel) ...[
+            IconButton(
+              icon: const Icon(Icons.phone, color: HelmColors.goldLight),
+              tooltip: widget.conversation.type == 'GROUP'
+                  ? 'Appel audio de groupe'
+                  : 'Appel audio',
+              onPressed: () => _startCall('AUDIO'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.videocam, color: HelmColors.goldLight),
+              tooltip: widget.conversation.type == 'GROUP'
+                  ? 'Appel vidéo de groupe'
+                  : 'Appel vidéo',
+              onPressed: () => _startCall('VIDEO'),
+            ),
+          ],
           // ⭐ V5 — écran membres / gestion des groupes
           if (widget.conversation.type == 'GROUP')
             IconButton(
@@ -1257,6 +1688,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       ),
       body: Column(
         children: [
+          // ⭐ V7 (parité web) — bandeau des messages épinglés
+          _buildPinnedBanner(),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: HelmColors.primary))
@@ -1267,10 +1700,47 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                         child: ListView.builder(
                           controller: _scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: _messages.length,
+                          itemCount: _messages.length + 2, // ⭐ V7 — + séparateurs + bouton pagination
                           itemBuilder: (context, index) {
-                            final msg = _messages[index];
-                            return _buildMessageBubble(msg);
+                            // ⭐ V7 — bouton « Charger les messages précédents » en tête
+                            if (index == 0) {
+                              if (_hasMoreMessages) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: Center(
+                                    child: TextButton.icon(
+                                      onPressed: _loadingMore ? null : _loadOlderMessages,
+                                      icon: _loadingMore
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(strokeWidth: 2, color: HelmColors.primary),
+                                            )
+                                          : const Icon(Icons.history, size: 16),
+                                      label: Text(
+                                        _loadingMore ? 'Chargement…' : 'Charger les messages précédents',
+                                        style: const TextStyle(fontSize: 12, color: HelmColors.primary),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            }
+                            final msgIndex = index - 1;
+                            if (msgIndex >= _messages.length) return const SizedBox.shrink();
+                            final msg = _messages[msgIndex];
+                            // ⭐ V7 — séparateur de date entre jours différents
+                            final showDateSeparator = msgIndex == 0 ||
+                                DateTime(_messages[msgIndex - 1].createdAt.year, _messages[msgIndex - 1].createdAt.month, _messages[msgIndex - 1].createdAt.day) !=
+                                    DateTime(msg.createdAt.year, msg.createdAt.month, msg.createdAt.day);
+                            if (msgIndex > 0 && index == _messages.length + 1) return const SizedBox.shrink();
+                            return Column(
+                              children: [
+                                if (showDateSeparator) _buildDateSeparator(msg.createdAt),
+                                _buildMessageBubble(msg),
+                              ],
+                            );
                           },
                         ),
                       ),
@@ -1648,6 +2118,33 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   }
 
   Widget _buildMessageBubble(Message msg) {
+    // ⭐ V7 — messages SYSTÈME : pastille centrée discrète (« X a rejoint »…)
+    if (msg.type == 'SYSTEM' && (msg.content ?? '').isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              stripHtml(msg.content),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+            ),
+          ),
+        ),
+      );
+    }
+    // ⭐ V7 — messages CALL_LOG : pill colorée (aucune bulle texte brute)
+    if (msg.type == 'CALL_LOG') {
+      return Align(
+        alignment: Alignment.center,
+        child: _buildCallLogPill(msg, msg.isOwn),
+      );
+    }
     if (msg.isDeleted) {
       return Align(
         alignment: msg.isOwn ? Alignment.centerRight : Alignment.centerLeft,
@@ -1663,6 +2160,17 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
       );
     }
     final isOwn = msg.isOwn;
+    // ⭐ V7 (parité web/Yeshua) — couleur de bulle STABLE par expéditeur :
+    //    hash djb2 du senderId → palette 8 teintes (groupes uniquement ;
+    //    mes bulles restent bleu Azure, les DIRECT des autres restent blancs).
+    final (bubbleBg, bubbleBorder) = !isOwn && widget.conversation.type == 'GROUP'
+        ? kUserBubbleColors[hashUserId(msg.senderId)]
+        : isOwn
+            ? (const Color(0xFFE6F4FF), const Color(0xFFBAE0FF))
+            : (Colors.white, const Color(0xFFE2E8F0));
+    final senderTextColor = !isOwn && widget.conversation.type == 'GROUP'
+        ? kUserTextColors[hashUserId(msg.senderId)]
+        : const Color(0xFF0958D9);
 
     // ⭐ V3-4: Group reactions by emoji with count — whatsapp style
     final Map<String, int> reactionCounts = {};
@@ -1681,18 +2189,31 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         padding: const EdgeInsets.all(12),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isOwn ? const Color(0xFFE6F4FF) : Colors.white,
+          color: bubbleBg,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: isOwn ? const Radius.circular(16) : const Radius.circular(4),
             bottomRight: isOwn ? const Radius.circular(4) : const Radius.circular(16),
           ),
-          border: isOwn ? Border.all(color: const Color(0xFFBAE0FF), width: 0.5) : Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: bubbleBorder, width: isOwn ? 0.5 : 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ⭐ V7 — icône épinglé en tête de bulle (parité web)
+            if (msg.isPinned)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.push_pin, size: 12, color: senderTextColor),
+                    const SizedBox(width: 4),
+                    Text('Épinglé', style: TextStyle(fontSize: 10, color: senderTextColor, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
             // ⭐ V3-4: Reply quote preview (whatsapp-style)
             if (msg.replyToId != null)
               Builder(builder: (context) {
@@ -1732,13 +2253,13 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                   ),
                 );
               }),
-            // Sender name (for groups)
+            // Sender name (for groups) — ⭐ V7 couleur SIGNATURE stable par utilisateur
             if (!isOwn && widget.conversation.type == 'GROUP')
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
                   msg.senderName,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0958D9)),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: senderTextColor),
                 ),
               ),
             // Content (V3-4: strip HTML before display)
@@ -2005,7 +2526,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
             ),
           ),
         ),
-      );
+      ),
+    ),
       },
     );
   }
@@ -2464,8 +2986,72 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                 _deleteMessage(msg, forEveryone: false);
               },
             ),
+            // ⭐ V7 (parité web) — Signaler un message (modération)
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Color(0xFFDC2626)),
+              title: const Text('Signaler'),
+              onTap: () {
+                Navigator.pop(context);
+                _reportMessage(msg);
+              },
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ⭐ V7 — Signaler un message : POST /chat/messages/:id/report
+  void _reportMessage(Message msg) async {
+    final reasonController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Signaler ce message'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Décrivez le problème (contenu inapproprié, harcèlement…). Le message sera transmis à la modération.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Raison (optionnel)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                final reason = reasonController.text.trim();
+                await ApiService.reportMessage(msg.id, reason: reason.isEmpty ? 'Signalement' : reason);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Message signalé — la modération a été notifiée')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec: $e')));
+                }
+              } finally {
+                reasonController.dispose();
+              }
+            },
+            child: const Text('Signaler'),
+          ),
+        ],
       ),
     );
   }

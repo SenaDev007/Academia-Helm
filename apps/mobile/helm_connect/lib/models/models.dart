@@ -75,7 +75,7 @@ class Tenant {
 
 class Conversation {
   final String id;
-  final String type; // DIRECT | GROUP
+  final String type; // DIRECT | GROUP | CHANNEL
   final String? name;
   final String? description;
   final String? avatarUrl;
@@ -88,6 +88,13 @@ class Conversation {
   final int unreadCount;
   final List<Participant> participants;
   final bool isMuted;
+  // ⭐ V6.1/V7 (parité web — badges d'appels dans la liste) :
+  //   type du dernier message (CALL_LOG, AUDIO, TEXT…), statut et sens
+  //   de l'appel pour les pastilles rouges/ambre/gris/vert.
+  final String? lastMessageType;
+  final String? lastMessageCallType;
+  final String? lastMessageCallStatus;
+  final bool? lastMessageSentByMe;
 
   Conversation({
     required this.id,
@@ -104,6 +111,10 @@ class Conversation {
     this.unreadCount = 0,
     this.participants = const [],
     this.isMuted = false,
+    this.lastMessageType,
+    this.lastMessageCallType,
+    this.lastMessageCallStatus,
+    this.lastMessageSentByMe,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -125,7 +136,43 @@ class Conversation {
               .toList() ??
           [],
       isMuted: json['isMuted'] as bool? ?? false,
+      lastMessageType: json['lastMessageType'] as String?,
+      lastMessageCallType: json['lastMessageCallType'] as String?,
+      lastMessageCallStatus: json['lastMessageCallStatus'] as String?,
+      lastMessageSentByMe: json['lastMessageSentByMe'] as bool?,
     );
+  }
+
+  bool get isChannel => type == 'CHANNEL';
+
+  /// ⭐ V7 (parité web) : rendu de l'aperçu selon le type du dernier message.
+  ///   CALL_LOG → « Appel audio terminé · Xs » style web ; AUDIO → 🎤 vocal.
+  String get lastMessagePreviewLabel {
+    final t = lastMessageType;
+    if (t == 'CALL_LOG') {
+      final video = (lastMessageCallType ?? 'audio') == 'video';
+      final status = lastMessageCallStatus ?? 'ended';
+      final out = lastMessageSentByMe == true;
+      switch (status) {
+        case 'missed':
+          return out ? 'Appel ${video ? 'vidéo' : 'audio'} manqué (sortant)' : 'Appel ${video ? 'vidéo' : 'audio'} manqué';
+        case 'declined':
+        case 'rejected':
+          return 'Appel ${video ? 'vidéo' : 'audio'} refusé';
+        case 'cancelled':
+          return out ? 'Appel sans réponse' : 'Appel annulé';
+        default:
+          return 'Appel ${video ? 'vidéo' : 'audio'} terminé';
+      }
+    }
+    if (t == 'AUDIO') return '🎤 Message vocal';
+    if (t == 'IMAGE') return '📷 Photo';
+    if (t == 'VIDEO') return '🎬 Vidéo';
+    if (t == 'DOCUMENT') return '📎 Document';
+    if (t == 'POLL') return '📊 Sondage';
+    if (t == 'ANNOUNCEMENT') return '📢 Annonce';
+    final preview = stripHtml(lastMessagePreview);
+    return preview.isEmpty ? 'Aucun message' : preview;
   }
 
   String get displayName => name ?? participants
@@ -206,7 +253,7 @@ class Message {
   final String id;
   final String conversationId;
   final String senderId;
-  final String type; // TEXT | AUDIO | DOCUMENT | IMAGE | VIDEO | POLL | SYSTEM
+  final String type; // TEXT | AUDIO | DOCUMENT | IMAGE | VIDEO | POLL | SYSTEM | CALL_LOG
   final String? content;
   final String? attachmentUrl;
   final String? attachmentName;
@@ -228,6 +275,9 @@ class Message {
   final String? senderLastName;
   final String? senderRole;
   final bool isOwn;
+  // ⭐ V7 (parité web) : métadonnées d'appel pour les messages CALL_LOG
+  //    { callType, status, durationSec, byName, kind? } — rendues en pill.
+  final Map<String, dynamic>? callMeta;
   // ⭐ V3-1: local-only fields (for offline pending messages)
   final String? status; // 'pending' | 'sent' | 'failed' — used only locally
   final String? localId;
@@ -258,6 +308,7 @@ class Message {
     this.senderLastName,
     this.senderRole,
     this.isOwn = false,
+    this.callMeta,
     this.status,
     this.localId,
   });
@@ -306,6 +357,7 @@ class Message {
       senderLastName: senderLastName,
       senderRole: senderRole,
       isOwn: (json['senderId'] as String?) == currentUserId,
+      callMeta: json['callMeta'] as Map<String, dynamic>?,
       status: json['status'] as String?,
       localId: json['localId'] as String?,
     );

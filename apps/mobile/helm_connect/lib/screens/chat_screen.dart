@@ -36,6 +36,7 @@ import 'group_call_screen.dart';
 import 'announcements_screen.dart';
 import 'notification_prefs_screen.dart';
 import 'global_search_screen.dart';
+import 'new_chat_screen.dart';
 import 'notification_center_screen.dart';
 import 'helm_connect_sections.dart';
 
@@ -86,6 +87,19 @@ class _ChatScreenState extends State<ChatScreen> {
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadConversations());
     // ⭐ V5 — socket global + écoute des appels + polling REST de secours
     _initGlobalCallHandling();
+    // ⭐ V7 (parité web) — refresh LIVE de la liste : inbox:new / channel:message
+    //    rechargent les conversations instantanément (avant : polling 30 s seul,
+    //    les badges non-lus et aperçus restaient figés jusqu'à 30 s).
+    _socket.onInboxNew = (conversationId, preview, senderName) {
+      if (mounted) _loadConversations();
+    };
+    _socket.onChannelMessage = (channelId, message) {
+      if (mounted) _loadConversations();
+    };
+    _socket.onMessageRead = (conversationId, userId, messageIds) {
+      // Quelqu'un a lu mes messages → les badges non-lus peuvent changer
+      if (mounted) _loadConversations();
+    };
   }
 
   @override
@@ -94,6 +108,10 @@ class _ChatScreenState extends State<ChatScreen> {
     _incomingPollTimer?.cancel();
     CallService.instance.removeListener(_onCallStateChanged);
     GroupCallService.instance.removeListener(_onGroupCallStateChanged);
+    // ⭐ V7 — ne pas laisser les callbacks de liste pointant vers un State disposé
+    _socket.onInboxNew = null;
+    _socket.onChannelMessage = null;
+    _socket.onMessageRead = null;
     super.dispose();
   }
 
@@ -290,10 +308,9 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: Icons.add,
               tooltip: 'Nouvelle discussion',
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Nouvelle discussion — utilisez la recherche pour démarrer une conversation')),
-                );
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const GlobalSearchScreen()));
+                // ⭐ V7 — recherche de membres d'école (nom/email/téléphone),
+                //    invitations inter-écoles + invitations reçues.
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const NewChatScreen()));
               },
             )
           : null,
@@ -422,6 +439,33 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // Discussions — liste des conversations (existing code)
+  // ⭐ V7 (parité web V6.1) — badge d'appel dans la liste des conversations :
+  //    rouge = manqué, ambre = refusé, gris = annulé, vert = terminé.
+  (IconData, Color, String) _callBadge(Conversation conv) {
+    final video = (conv.lastMessageCallType ?? 'audio') == 'video';
+    final status = conv.lastMessageCallStatus ?? 'ended';
+    final outgoing = conv.lastMessageSentByMe == true;
+    switch (status) {
+      case 'missed':
+        return (
+          video ? Icons.videocam_off_outlined : Icons.phone_missed,
+          const Color(0xFFEF4444),
+          outgoing ? 'Appel manqué (sortant)' : 'Appel manqué',
+        );
+      case 'declined':
+      case 'rejected':
+        return (video ? Icons.videocam_off_outlined : Icons.phone_disabled, const Color(0xFFF59E0B), 'Appel refusé');
+      case 'cancelled':
+        return (
+          video ? Icons.videocam_outlined : Icons.phone_callback,
+          const Color(0xFF94A3B8),
+          outgoing ? 'Appel sans réponse' : 'Appel annulé',
+        );
+      default:
+        return (video ? Icons.videocam_outlined : Icons.phone_in_talk, const Color(0xFF10B981), 'Appel terminé');
+    }
+  }
+
   Widget _buildDiscussionsBody() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(color: HelmColors.primary));
@@ -454,7 +498,7 @@ class _ChatScreenState extends State<ChatScreen> {
         subtitle: 'Démarrez une nouvelle discussion avec le bouton + en bas à droite.',
         ctaLabel: 'Nouvelle discussion',
         onCta: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const GlobalSearchScreen()));
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const NewChatScreen()));
         },
       );
     }
@@ -464,36 +508,69 @@ class _ChatScreenState extends State<ChatScreen> {
         itemCount: _conversations.length,
         itemBuilder: (context, index) {
           final conv = _conversations[index];
-          final displayName = conv.type == 'GROUP'
-              ? (conv.name ?? 'Groupe')
+          final isGroup = conv.type == 'GROUP';
+          final isChannel = conv.type == 'CHANNEL';
+          final displayName = isGroup || isChannel
+              ? (conv.name ?? (isChannel ? 'Canal' : 'Groupe'))
               : (conv.participants.isNotEmpty
                   ? conv.participants.firstWhere((p) => p.userId != _currentUser?.id, orElse: () => conv.participants.first).fullName
                   : 'Conversation');
+          // ⭐ V7 — badge d'appel si le dernier message est un CALL_LOG
+          final isCallLog = conv.lastMessageType == 'CALL_LOG';
+          final (badgeIcon, badgeColor, badgeLabel) = isCallLog ? _callBadge(conv) : (null, Colors.transparent, '');
           return ListTile(
             leading: CircleAvatar(
-              backgroundColor: conv.type == 'GROUP' ? const Color(0xFF10B981) : const Color(0xFF1677FF),
-              child: conv.type == 'GROUP'
-                  ? const Icon(Icons.group, color: Colors.white, size: 20)
-                  : Text(displayName.isNotEmpty ? displayName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              backgroundColor: isChannel
+                  ? const Color(0xFF8B5CF6)
+                  : isGroup
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF1677FF),
+              child: isChannel
+                  ? const Icon(Icons.feed, color: Colors.white, size: 20)
+                  : isGroup
+                      ? const Icon(Icons.group, color: Colors.white, size: 20)
+                      : Text(displayName.isNotEmpty ? displayName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
-            title: Text(displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            subtitle: Text(
-              // ⭐ V3-11: strip HTML tags from the preview (was showing raw HTML).
-              //   stripHtml returns '' for null/empty input — show 'Aucun message'
-              //   in that case.
-              (() {
-                final preview = stripHtml(conv.lastMessagePreview);
-                return preview.isEmpty ? 'Aucun message' : preview;
-              })(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: conv.unreadCount > 0 ? FontWeight.bold : FontWeight.w600)),
+                ),
+                if (conv.isMuted) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.notifications_off_outlined, size: 14, color: Colors.grey[400]),
+                ],
+              ],
+            ),
+            subtitle: Row(
+              children: [
+                // ⭐ V7 — pastille d'appel (icône colorée) + aperçu
+                if (isCallLog) ...[
+                  Icon(badgeIcon, size: 14, color: badgeColor),
+                  const SizedBox(width: 4),
+                ],
+                Expanded(
+                  child: Text(
+                    // ⭐ V7 — aperçu typé (Appel X terminé / vocal / photo…)
+                    isCallLog
+                        ? badgeLabel
+                        : conv.lastMessagePreviewLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isCallLog ? badgeColor : Colors.grey[600],
+                      fontWeight: isCallLog && (conv.lastMessageCallStatus == 'missed' || conv.lastMessageCallStatus == 'declined') ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ],
             ),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(_formatTimestamp(conv.lastMessageAt), style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                Text(_formatTimestamp(conv.lastMessageAt), style: TextStyle(fontSize: 11, color: conv.unreadCount > 0 ? const Color(0xFF1677FF) : Colors.grey[500])),
                 if (conv.unreadCount > 0) ...[
                   const SizedBox(height: 4),
                   Container(
@@ -503,7 +580,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${conv.unreadCount}',
+                      conv.unreadCount > 99 ? '99+' : '${conv.unreadCount}',
                       style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -511,7 +588,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
             onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)))
+                  .then((_) => _loadConversations()); // ⭐ V7 — refresh au retour (badges à jour)
             },
           );
         },

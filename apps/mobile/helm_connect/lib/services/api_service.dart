@@ -412,12 +412,14 @@ class ApiService {
     return _handleResponse(response) as Map<String, dynamic>;
   }
 
-  static Future<List<Map<String, dynamic>>> listMessages(String conversationId, {int limit = 50}) async {
+  static Future<List<Map<String, dynamic>>> listMessages(String conversationId, {int limit = 50, String? before}) async {
     final base = await ApiConfig.baseUrl;
     final userId = await AuthService.getUserId();
     final headers = await _getHeaders();
+    // ⭐ V7 — pagination par curseur `before` (id du plus ancien message chargé)
+    final beforeParam = before != null ? '&before=$before' : '';
     final response = await http.get(
-      Uri.parse('$base/chat/conversations/$conversationId/messages?userId=$userId&limit=$limit'),
+      Uri.parse('$base/chat/conversations/$conversationId/messages?userId=$userId&limit=$limit$beforeParam'),
       headers: headers,
     );
     final data = await _handleResponse(response);
@@ -1071,6 +1073,219 @@ class ApiService {
       Uri.parse('$base/notifications/read-all'),
       headers: headers,
     );
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ⭐ V7 (alignement mobile — parité web/Yeshua)
+  // ═════════════════════════════════════════════════════════════════
+
+  /// Recherche des membres de l'école (users + guardians fusionnés).
+  /// Le téléphone fonctionne (normalisation serveur V6.1) : nom, email, téléphone.
+  /// Backend: GET /chat/search-users?userId=&q=&includeOtherTenants=&limit=
+  /// Résultat: [{userId, firstName, lastName, email, role, roleLabel, tenantName,
+  ///   isSameTenant, canStartDirectConversation, childrenNames, source, phone?, guardianId?}]
+  static Future<List<Map<String, dynamic>>> searchUsers(String query,
+      {bool includeOtherTenants = true, int limit = 20}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get(
+        '/chat/search-users?userId=$userId&q=${Uri.encodeQueryComponent(query)}'
+        '&includeOtherTenants=$includeOtherTenants&limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['results'] as List<dynamic>? ?? data['users'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Conversation directe avec un PARENT sans compte user (auto-provisionné).
+  /// Backend: POST /chat/conversations/guardian-direct {currentUserId, guardianId}
+  static Future<Map<String, dynamic>> createGuardianDirectConversation(String guardianId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/guardian-direct', {
+      'currentUserId': userId,
+      'guardianId': guardianId,
+    });
+  }
+
+  /// Envoyer une invitation (autre école / nouveau contact).
+  /// Backend: POST /chat/invitations {senderId, recipientId?|recipientEmail?, recipientName?, message?}
+  static Future<Map<String, dynamic>> sendInvitation({
+    String? recipientId,
+    String? recipientEmail,
+    String? recipientName,
+    String? message,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/invitations', {
+      'senderId': userId,
+      if (recipientId != null) 'recipientId': recipientId,
+      if (recipientEmail != null) 'recipientEmail': recipientEmail,
+      if (recipientName != null) 'recipientName': recipientName,
+      if (message != null) 'message': message,
+    });
+  }
+
+  /// Invitations reçues en attente.
+  /// Backend: GET /chat/invitations/pending?userId=
+  static Future<List<Map<String, dynamic>>> getPendingInvitations() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/invitations/pending?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['invitations'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Accepter une invitation → crée/retourne la conversation DIRECT.
+  /// Backend: POST /chat/invitations/:id/accept {currentUserId}
+  static Future<Map<String, dynamic>> acceptInvitation(String invitationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/invitations/$invitationId/accept', {'currentUserId': userId});
+  }
+
+  /// Refuser une invitation.
+  /// Backend: POST /chat/invitations/:id/decline {currentUserId}
+  static Future<Map<String, dynamic>> declineInvitation(String invitationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/invitations/$invitationId/decline', {'currentUserId': userId});
+  }
+
+  /// Bloquer un utilisateur (plus de messages privés entrants).
+  /// Backend: POST /chat/blocks/:userId
+  static Future<Map<String, dynamic>> blockUser(String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/blocks/$targetUserId', {'blockerId': userId});
+  }
+
+  /// Débloquer un utilisateur.
+  /// Backend: DELETE /chat/blocks/:userId
+  static Future<Map<String, dynamic>> unblockUser(String targetUserId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return _deleteWithBody('/chat/blocks/$targetUserId', {'blockerId': userId});
+  }
+
+  /// Liste des canaux (broadcast) — avec abonnement et compteur.
+  /// Backend: GET /chat/channels?userId= → rows + subscriberCount + isSubscribed
+  static Future<List<Map<String, dynamic>>> listChannels() async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/channels?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['channels'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Créer un canal de diffusion.
+  /// Backend: POST /chat/channels {creatorId, name, description?}
+  static Future<Map<String, dynamic>> createChannel({
+    required String name,
+    String? description,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/channels', {
+      'creatorId': userId,
+      'name': name,
+      if (description != null) 'description': description,
+    });
+  }
+
+  /// S'abonner à un canal (notify=true → message système « X a rejoint »).
+  /// Backend: POST /chat/channels/:id/subscribe {userId, notify?}
+  static Future<Map<String, dynamic>> subscribeChannel(String channelId, {bool notify = false}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/channels/$channelId/subscribe', {
+      'userId': userId,
+      'notify': notify,
+    });
+  }
+
+  /// Se désabonner d'un canal.
+  /// Backend: POST /chat/channels/:id/unsubscribe {userId}
+  static Future<Map<String, dynamic>> unsubscribeChannel(String channelId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/channels/$channelId/unsubscribe', {'userId': userId});
+  }
+
+  /// Diffuser un message sur un canal (V6.1 : conversation miroir CHANNEL).
+  /// Backend: POST /chat/channels/:id/broadcast {senderId, content}
+  static Future<Map<String, dynamic>> broadcastChannelMessage(String channelId, String content) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/channels/$channelId/broadcast', {
+      'senderId': userId,
+      'content': content,
+    });
+  }
+
+  /// Messages d'un canal.
+  /// Backend: GET /chat/channels/:id/messages?limit=
+  static Future<List<Map<String, dynamic>>> listChannelMessages(String channelId, {int limit = 50}) async {
+    final dynamic data = await get('/chat/channels/$channelId/messages?limit=$limit');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['messages'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Programmer l'envoi d'un message (dispatch serveur toutes les 60 s).
+  /// Backend: POST /chat/conversations/:id/schedule {senderId, content, scheduledFor}
+  static Future<Map<String, dynamic>> scheduleMessage({
+    required String conversationId,
+    required String content,
+    required DateTime scheduledFor,
+  }) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/conversations/$conversationId/schedule', {
+      'senderId': userId,
+      'content': content,
+      'scheduledFor': scheduledFor.toIso8601String(),
+    });
+  }
+
+  /// Messages programmés en attente pour une conversation.
+  /// Backend: GET /chat/conversations/:id/scheduled?userId=
+  static Future<List<Map<String, dynamic>>> listScheduledMessages(String conversationId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    final dynamic data = await get('/chat/conversations/$conversationId/scheduled?userId=$userId');
+    if (data is List) return data.cast<Map<String, dynamic>>().toList();
+    if (data is Map<String, dynamic>) {
+      final items = data['scheduled'] as List<dynamic>? ?? [];
+      return items.cast<Map<String, dynamic>>().toList();
+    }
+    return [];
+  }
+
+  /// Annuler un message programmé.
+  /// Backend: DELETE /chat/scheduled/:schedId {userId}
+  static Future<Map<String, dynamic>> cancelScheduledMessage(String schedId) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return _deleteWithBody('/chat/scheduled/$schedId', {'userId': userId});
+  }
+
+  /// Signaler un message (modération).
+  /// Backend: POST /chat/messages/:id/report {reporterId, reason}
+  static Future<Map<String, dynamic>> reportMessage(String messageId, {String reason = 'Signalement'}) async {
+    final userId = await AuthService.getUserId() ?? '';
+    return post('/chat/messages/$messageId/report', {
+      'reporterId': userId,
+      'reason': reason,
+    });
+  }
+
+  /// Accuser réception d'un message (✓ → ✓✓ gris pour l'expéditeur).
+  /// Backend: POST /chat/messages/:id/deliver
+  static Future<void> deliverMessage(String messageId) async {
+    try {
+      await post('/chat/messages/$messageId/deliver', {});
+    } catch (_) {
+      // silencieux — best effort
+    }
   }
 
   // ─── Generic helpers ───────────────────────────────────────────

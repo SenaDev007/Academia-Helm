@@ -14,6 +14,14 @@
  *
  * Events handled:
  *   - message:new        → new message received
+ *   - message:read       → ⭐ V7 someone read my messages (✓✓ blue)
+ *   - message:edited     → ⭐ V7 a message was edited
+ *   - message:deleted    → ⭐ V7 a message was deleted for everyone
+ *   - reaction:toggle    → ⭐ V7 a reaction was added/removed
+ *   - message:pinned     → ⭐ V7 a message was pinned
+ *   - message:unpinned   → ⭐ V7 a message was unpinned
+ *   - channel:message    → ⭐ V7 new message on a subscribed channel
+ *   - inbox:new          → ⭐ V7 new message in ANY conv (badge + refresh)
  *   - typing:start       → someone started typing
  *   - typing:stop        → someone stopped typing
  *   - user:online        → user came online
@@ -50,6 +58,15 @@ class SocketService {
 
   // Callbacks
   void Function(Map<String, dynamic> message)? onNewMessage;
+  // ⭐ V7 (parité web) — events temps réel étendus
+  void Function(String conversationId, String userId, List<String> messageIds)? onMessageRead;
+  void Function(String messageId, String content, String? editedAt)? onMessageEdited;
+  void Function(String messageId)? onMessageDeleted;
+  void Function(String messageId, String emoji, String userId, String action, int count)? onReactionToggle;
+  void Function(String conversationId, String messageId, String by)? onMessagePinned;
+  void Function(String conversationId, String messageId, String by)? onMessageUnpinned;
+  void Function(String channelId, Map<String, dynamic> message)? onChannelMessage;
+  void Function(String conversationId, String preview, String senderName)? onInboxNew;
   void Function(String conversationId, String userId)? onTypingStart;
   void Function(String conversationId, String userId)? onTypingStop;
   void Function(String userId)? onUserOnline;
@@ -115,6 +132,94 @@ class SocketService {
     _socket!.on('message:new', (data) {
       if (data is Map<String, dynamic>) {
         onNewMessage?.call(data);
+      }
+    });
+
+    // ⭐ V7 (parité web) — accusés de lecture temps réel (✓✓ bleu)
+    _socket!.on('message:read', (data) {
+      if (data is Map) {
+        final ids = (data['messageIds'] as List<dynamic>? ?? [])
+            .map((e) => e.toString())
+            .toList();
+        onMessageRead?.call(
+          data['conversationId']?.toString() ?? '',
+          data['userId']?.toString() ?? '',
+          ids,
+        );
+      }
+    });
+
+    // ⭐ V7 — message modifié
+    _socket!.on('message:edited', (data) {
+      if (data is Map) {
+        onMessageEdited?.call(
+          data['messageId']?.toString() ?? '',
+          data['content']?.toString() ?? '',
+          data['editedAt']?.toString(),
+        );
+      }
+    });
+
+    // ⭐ V7 — message supprimé pour tous
+    _socket!.on('message:deleted', (data) {
+      if (data is Map) {
+        onMessageDeleted?.call(data['messageId']?.toString() ?? '');
+      }
+    });
+
+    // ⭐ V7 — réaction ajoutée/retirée
+    _socket!.on('reaction:toggle', (data) {
+      if (data is Map) {
+        onReactionToggle?.call(
+          data['messageId']?.toString() ?? '',
+          data['emoji']?.toString() ?? '',
+          data['userId']?.toString() ?? '',
+          data['action']?.toString() ?? 'added',
+          (data['count'] as num?)?.toInt() ?? 0,
+        );
+      }
+    });
+
+    // ⭐ V7 — épinglage / désépinglage temps réel
+    _socket!.on('message:pinned', (data) {
+      if (data is Map) {
+        onMessagePinned?.call(
+          data['conversationId']?.toString() ?? '',
+          data['messageId']?.toString() ?? '',
+          data['by']?.toString() ?? '',
+        );
+      }
+    });
+
+    _socket!.on('message:unpinned', (data) {
+      if (data is Map) {
+        onMessageUnpinned?.call(
+          data['conversationId']?.toString() ?? '',
+          data['messageId']?.toString() ?? '',
+          data['by']?.toString() ?? '',
+        );
+      }
+    });
+
+    // ⭐ V7 — message d'un canal auquel je suis abonné (room personnelle)
+    _socket!.on('channel:message', (data) {
+      if (data is Map<String, dynamic>) {
+        final channelId = data['channelId']?.toString() ?? '';
+        final message = data['message'];
+        if (message is Map<String, dynamic>) {
+          onChannelMessage?.call(channelId, message);
+        }
+      }
+    });
+
+    // ⭐ V7 — nouveau message dans N'IMPORTE QUELLE conversation (badge liste)
+    _socket!.on('inbox:new', (data) {
+      if (data is Map) {
+        onInboxNew?.call(
+          data['conversationId']?.toString() ?? '',
+          data['preview']?.toString() ?? '',
+          data['senderName']?.toString() ?? '',
+        );
       }
     });
 
@@ -216,6 +321,40 @@ class SocketService {
 
   void stopTyping(String conversationId) {
     _socket?.emit('typing:stop', {'conversationId': conversationId});
+  }
+
+  // ⭐ V7 (parité web) — demander l'état en ligne d'un utilisateur
+  //    (la gateway répond user:online / user:offline)
+  void checkUserOnline(String userId) {
+    _socket?.emit('user:check-online', {'userId': userId});
+  }
+
+  /// ⭐ V7 — recharge les callbacks sans reconnexion (le socket est un
+  ///    singleton partagé : les écrans réaffectent leurs callbacks à chaque
+  ///    initState — ex. chat_screen après retour d'une conversation).
+  void reset() {
+    onNewMessage = null;
+    onMessageRead = null;
+    onMessageEdited = null;
+    onMessageDeleted = null;
+    onReactionToggle = null;
+    onMessagePinned = null;
+    onMessageUnpinned = null;
+    onChannelMessage = null;
+    onInboxNew = null;
+    onTypingStart = null;
+    onTypingStop = null;
+    onUserOnline = null;
+    onUserOffline = null;
+    onCallOffer = null;
+    onCallAnswer = null;
+    onCallIceCandidate = null;
+    onCallReject = null;
+    onCallHangup = null;
+    onCallIncoming = null;
+    onGroupCallInvite = null;
+    onGroupCallLeave = null;
+    onConnectCallback = null;
   }
 
   void disconnect() {

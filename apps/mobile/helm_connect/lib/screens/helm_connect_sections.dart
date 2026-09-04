@@ -286,6 +286,10 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> {
 
 // ============================================================================
 // 2. CANAUX — broadcast channels (Telegram-style)
+// ⭐ V7 (parité web) — vraie API /chat/channels : avant, heuristique sur les
+//    conversations GROUP dont le nom commence par « # » (aucun canal réel
+//    n'apparaissait). Maintenant : liste réelle + abonnement + compteur
+//    d'abonnés + aperçu du dernier message + création.
 // ============================================================================
 class ChannelsScreen extends StatefulWidget {
   const ChannelsScreen({super.key});
@@ -295,7 +299,7 @@ class ChannelsScreen extends StatefulWidget {
 }
 
 class _ChannelsScreenState extends State<ChannelsScreen> {
-  List<Conversation> _channels = [];
+  List<Map<String, dynamic>> _channels = [];
   bool _loading = true;
   String? _error;
 
@@ -311,13 +315,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
       _error = null;
     });
     try {
-      final json = await ApiService.listConversations();
-      // Channels are GROUP-type conversations whose name starts with '#' (channel convention)
-      // OR are flagged isChannel=true. We use a heuristic on the client side.
-      final channels = json
-          .map((c) => Conversation.fromJson(c))
-          .where((c) => c.type == 'GROUP' && (c.name?.startsWith('#') == true || c.name?.toLowerCase().contains('canal') == true))
-          .toList();
+      final channels = await ApiService.listChannels();
       if (mounted) {
         setState(() {
           _channels = channels;
@@ -334,6 +332,109 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     }
   }
 
+  // ⭐ V7 — abonnement / désabonnement (message système « X a rejoint » si notify)
+  Future<void> _toggleSubscription(Map<String, dynamic> channel) async {
+    final channelId = channel['id'] as String;
+    final subscribed = channel['isSubscribed'] == true;
+    try {
+      if (subscribed) {
+        await ApiService.unsubscribeChannel(channelId);
+      } else {
+        await ApiService.subscribeChannel(channelId, notify: true);
+      }
+      await _loadChannels();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec : $e')));
+      }
+    }
+  }
+
+  // ⭐ V7 — ouvrir le canal : conversation miroir CHANNEL (même id, V6.1)
+  void _openChannel(Map<String, dynamic> channel) {
+    final conv = Conversation.fromJson({
+      'id': channel['id'],
+      'type': 'CHANNEL',
+      'name': channel['name'],
+      'description': channel['description'],
+      'createdBy': channel['createdBy'] ?? '',
+      'createdAt': channel['createdAt'] ?? DateTime.now().toIso8601String(),
+      'updatedAt': channel['updatedAt'] ?? DateTime.now().toIso8601String(),
+    });
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: conv)),
+    ).then((_) => _loadChannels());
+  }
+
+  // ⭐ V7 — créer un canal (nom + description)
+  Future<void> _createChannel() async {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nouveau canal'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Un canal diffuse vos messages à tous les abonnés (unidirectionnel, style Telegram).', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Nom du canal',
+                prefixText: '# ',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Description (optionnel)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(context);
+              try {
+                final desc = descController.text.trim();
+                await ApiService.createChannel(name: name, description: desc.isEmpty ? null : desc);
+                await _loadChannels();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Canal « $name » créé')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec : $e')));
+                }
+              } finally {
+                nameController.dispose();
+                descController.dispose();
+              }
+            },
+            child: const Text('Créer'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -344,11 +445,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
             title: 'Canaux',
             subtitle: 'CANAUX DE DIFFUSION (BROADCAST UNIDIRECTIONNEL)',
             actionIcon: Icons.add,
-            onAction: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Création de canal — bientôt disponible')),
-              );
-            },
+            onAction: _createChannel,
           ),
           Expanded(
             child: _loading
@@ -375,35 +472,57 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                             title: 'Aucun canal',
                             subtitle: 'Les canaux de diffusion apparaîtront ici. Créez un canal pour diffuser des annonces à grande audience.',
                           )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _channels.length,
-                            itemBuilder: (context, index) {
-                              final channel = _channels[index];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 6),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: const Color(0xFF8B5CF6),
-                                    child: const Icon(Icons.feed, color: Colors.white, size: 20),
-                                  ),
-                                  title: Text(channel.name ?? 'Canal', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  subtitle: Text('${channel.participants.length} abonnés', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                  trailing: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF8B5CF6).withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(12),
+                        : RefreshIndicator(
+                            onRefresh: _loadChannels,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(8),
+                              itemCount: _channels.length,
+                              itemBuilder: (context, index) {
+                                final channel = _channels[index];
+                                final subscribed = channel['isSubscribed'] == true;
+                                final subscriberCount = (channel['subscriberCount'] as num?)?.toInt() ?? 0;
+                                final preview = stripHtml(channel['lastMessagePreview'] as String?);
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: subscribed ? const Color(0xFF8B5CF6) : Colors.grey[300],
+                                      child: const Icon(Icons.feed, color: Colors.white, size: 20),
                                     ),
-                                    child: const Text('CANAL', style: TextStyle(fontSize: 10, color: Color(0xFF8B5CF6), fontWeight: FontWeight.bold)),
+                                    title: Text(
+                                      channel['name'] as String? ?? 'Canal',
+                                      style: TextStyle(fontWeight: FontWeight.w600, color: subscribed ? null : Colors.grey),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          preview.isEmpty ? 'Aucune diffusion' : preview,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                        ),
+                                        Text(
+                                          '$subscriberCount abonné${subscriberCount > 1 ? 's' : ''}',
+                                          style: TextStyle(fontSize: 10, color: subscribed ? const Color(0xFF8B5CF6) : Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                    trailing: TextButton(
+                                      onPressed: () => _toggleSubscription(channel),
+                                      style: TextButton.styleFrom(
+                                        backgroundColor: subscribed ? Colors.grey[200] : const Color(0xFF8B5CF6),
+                                        foregroundColor: subscribed ? Colors.grey[700] : Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      ),
+                                      child: Text(subscribed ? 'Abonné' : 'S\'abonner', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                    ),
+                                    onTap: () => _openChannel(channel),
                                   ),
-                                  onTap: () {
-                                    Navigator.push(context, MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: channel)));
-                                  },
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
           ),
         ],
@@ -941,6 +1060,10 @@ class _VoiceEntry {
 
 // ============================================================================
 // 5. APPELS — call history
+// ⭐ V7 (parité web) — vraie API /chat/calls/history : avant, liste
+//    FANTÔME des conversations DIRECT (statut/direction/sens codés en dur).
+//    Maintenant : CALL_LOG réels (callMeta : statut, durée, type, initiateur)
+//    + bouton Rappeler qui ouvre la conversation.
 // ============================================================================
 class CallsScreen extends StatefulWidget {
   const CallsScreen({super.key});
@@ -950,7 +1073,7 @@ class CallsScreen extends StatefulWidget {
 }
 
 class _CallsScreenState extends State<CallsScreen> {
-  List<_CallEntry> _calls = [];
+  List<Map<String, dynamic>> _calls = [];
   bool _loading = true;
   String? _error;
 
@@ -966,26 +1089,7 @@ class _CallsScreenState extends State<CallsScreen> {
       _error = null;
     });
     try {
-      // Heuristic: load DIRECT conversations + look for call system messages or use last activity as call log
-      final conversations = await ApiService.listConversations();
-      final List<_CallEntry> calls = [];
-      for (final conv in conversations) {
-        if ((conv['type'] as String?) == 'DIRECT') {
-          final participants = (conv['participants'] as List<dynamic>?) ?? [];
-          final otherParticipant = participants.isNotEmpty ? participants.first as Map<String, dynamic> : null;
-          final otherName = otherParticipant != null
-              ? '${otherParticipant['firstName'] ?? ''} ${otherParticipant['lastName'] ?? ''}'.trim()
-              : 'Utilisateur';
-          calls.add(_CallEntry(
-            conversationId: conv['id'] as String,
-            participantName: otherName,
-            lastActivity: (conv['lastMessageAt'] as String?) ?? DateTime.now().toIso8601String(),
-            callType: 'AUDIO', // Default to audio
-            direction: 'outgoing', // Default to outgoing
-          ));
-        }
-      }
-      calls.sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
+      final calls = await ApiService.getCallHistory(limit: 60);
       if (mounted) {
         setState(() {
           _calls = calls;
@@ -1002,19 +1106,79 @@ class _CallsScreenState extends State<CallsScreen> {
     }
   }
 
-  String _formatDate(String isoDate) {
+  // ⭐ V7 — callMeta (CALL_LOG) ou colonnes (chat_call_history) → rendu unifié
+  (IconData, Color, String, String, DateTime) _callInfo(Map<String, dynamic> call) {
+    final meta = call['callMeta'] as Map<String, dynamic>?;
+    final callType = (meta?['callType'] ?? call['callType'] ?? 'audio').toString();
+    final status = (meta?['status'] ?? call['status'] ?? 'ended').toString();
+    final durationSec = (meta?['durationSec'] as num? ?? call['duration'] as num?)?.toInt() ?? 0;
+    final createdAt = DateTime.tryParse((call['createdAt'] ?? call['startedAt'] ?? '').toString()) ?? DateTime.now();
+    final initiator = (meta?['byName'] ?? call['initiatorName'] ?? '').toString().trim();
+    final video = callType == 'video';
+    String label;
+    IconData icon;
+    Color color;
+    switch (status) {
+      case 'missed':
+        icon = video ? Icons.videocam_off_outlined : Icons.phone_missed;
+        color = const Color(0xFFEF4444);
+        label = 'Appel ${video ? 'vidéo' : 'audio'} manqué';
+        break;
+      case 'declined':
+      case 'rejected':
+        icon = video ? Icons.videocam_off_outlined : Icons.phone_disabled;
+        color = const Color(0xFFF59E0B);
+        label = 'Appel ${video ? 'vidéo' : 'audio'} refusé';
+        break;
+      case 'cancelled':
+        icon = video ? Icons.videocam_outlined : Icons.phone_callback;
+        color = const Color(0xFF94A3B8);
+        label = 'Appel annulé';
+        break;
+      default:
+        icon = video ? Icons.videocam_outlined : Icons.phone_in_talk;
+        color = const Color(0xFF10B981);
+        label = durationSec > 0 ? 'Appel ${video ? 'vidéo' : 'audio'} · ${formatCallDuration(durationSec)}' : 'Appel ${video ? 'vidéo' : 'audio'} terminé';
+    }
+    return (icon, color, label, initiator, createdAt);
+  }
+
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return "À l'instant";
+    if (diff.inHours < 1) return 'Il y a ${diff.inMinutes}min';
+    if (diff.inDays == 0) return "Aujourd'hui à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}";
+    if (diff.inDays == 1) return 'Hier à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+    if (diff.inDays < 7) return 'Il y a ${diff.inDays}j';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  // ⭐ V7 — Rappeler : ouvre la conversation (boutons d'appel audio/vidéo)
+  Future<void> _openConversation(String conversationId) async {
     try {
-      final dt = DateTime.parse(isoDate);
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-      if (diff.inMinutes < 1) return "À l'instant";
-      if (diff.inHours < 1) return 'Il y a ${diff.inMinutes}min';
-      if (diff.inDays == 0) return "Aujourd'hui à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}";
-      if (diff.inDays == 1) return 'Hier à ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-      if (diff.inDays < 7) return 'Il y a ${diff.inDays}j';
-      return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) {
-      return '';
+      final convs = await ApiService.listConversations();
+      final match = convs.cast<Map<String, dynamic>?>().firstWhere(
+        (c) => c!['id'] == conversationId,
+        orElse: () => null,
+      );
+      if (match == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Conversation introuvable')),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ConversationDetailScreen(conversation: Conversation.fromJson(match))),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Échec : $e')));
+      }
     }
   }
 
@@ -1053,79 +1217,60 @@ class _CallsScreenState extends State<CallsScreen> {
                             title: 'Aucun appel',
                             subtitle: 'Votre historique d\'appels audio et vidéo apparaîtra ici, avec les appels manqués, émis et reçus.',
                           )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _calls.length,
-                            itemBuilder: (context, index) {
-                              final call = _calls[index];
-                              final isVideo = call.callType == 'VIDEO';
-                              final isIncoming = call.direction == 'incoming';
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 4),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                  leading: CircleAvatar(
-                                    backgroundColor: HelmColors.primary,
-                                    child: Text(
-                                      call.participantName.isNotEmpty ? call.participantName[0].toUpperCase() : '?',
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        : RefreshIndicator(
+                            onRefresh: _loadCalls,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(8),
+                              itemCount: _calls.length,
+                              itemBuilder: (context, index) {
+                                final call = _calls[index];
+                                final (icon, color, label, initiator, createdAt) = _callInfo(call);
+                                final conversationId = call['conversationId'] as String? ?? '';
+                                final displayName = (call['convName'] as String?) ??
+                                    (initiator.isNotEmpty ? initiator : 'Utilisateur');
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                    leading: CircleAvatar(
+                                      backgroundColor: color.withOpacity(0.15),
+                                      child: Icon(icon, color: color, size: 20),
                                     ),
-                                  ),
-                                  title: Text(call.participantName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                  subtitle: Row(
-                                    children: [
-                                      Icon(
-                                        isIncoming ? Icons.call_received : Icons.call_made,
-                                        size: 14,
-                                        color: isIncoming ? const Color(0xFF10B981) : const Color(0xFF1C6FE8),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      if (isVideo) ...[
-                                        const Icon(Icons.videocam, size: 14, color: Color(0xFF06B6D4)),
+                                    title: Text(
+                                      displayName,
+                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                    ),
+                                    subtitle: Row(
+                                      children: [
+                                        Icon(icon, size: 13, color: color),
                                         const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            '$label • ${_formatDate(createdAt)}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(fontSize: 11, color: color),
+                                          ),
+                                        ),
                                       ],
-                                      Text(_formatDate(call.lastActivity), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                    ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.phone, color: HelmColors.primaryVivid),
+                                      tooltip: 'Rappeler',
+                                      onPressed: conversationId.isEmpty ? null : () => _openConversation(conversationId),
+                                    ),
+                                    onTap: conversationId.isEmpty ? null : () => _openConversation(conversationId),
                                   ),
-                                  trailing: IconButton(
-                                    icon: const Icon(Icons.phone, color: HelmColors.primaryVivid),
-                                    onPressed: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Appel à ${call.participantName} — bientôt disponible')),
-                                      );
-                                    },
-                                  ),
-                                  onTap: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Appel à ${call.participantName} — bientôt disponible')),
-                                    );
-                                  },
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
           ),
         ],
       ),
     );
   }
-}
-
-class _CallEntry {
-  final String conversationId;
-  final String participantName;
-  final String lastActivity;
-  final String callType; // AUDIO | VIDEO
-  final String direction; // incoming | outgoing
-
-  _CallEntry({
-    required this.conversationId,
-    required this.participantName,
-    required this.lastActivity,
-    required this.callType,
-    required this.direction,
-  });
 }
 
 // ============================================================================

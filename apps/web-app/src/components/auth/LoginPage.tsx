@@ -1217,6 +1217,32 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     const resolvedSlug = tenantSlug || data.tenant?.slug || data.tenant?.subdomain || data.tenant?.id;
     const resolvedTenantId = tenantIdForApi || data.tenant?.id;
 
+    // ⭐ PROMOTEUR MULTI-ÉCOLES : si le promoteur gère plusieurs établissements
+    // (relations UserTenant), sa home est la VUE STRATÉGIQUE du groupe — il y
+    // choisit l'école dans laquelle entrer (« Entrer dans l'établissement » ;
+    // l'UI complète de chaque école reste le filet de sécurité). Uniquement
+    // quand aucune destination explicite n'était demandée (deep-link
+    // ?redirect=… respecté) et pour les rôles promoteur.
+    const PROMOTER_HOME_ROLES = ['PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'];
+    const userRole = data.user?.role || '';
+    if (redirectPath === '/app' && PROMOTER_HOME_ROLES.includes(userRole) && data.accessToken) {
+      try {
+        const tenantsResp = await fetch('/api/auth/available-tenants', {
+          headers: { Authorization: `Bearer ${data.accessToken}` },
+        });
+        if (tenantsResp.ok) {
+          const availableTenants = await tenantsResp.json();
+          if (Array.isArray(availableTenants) && availableTenants.length > 1) {
+            markFreshLogin();
+            window.location.href = '/promoteur';
+            return;
+          }
+        }
+      } catch {
+        // Silencieux : en cas d'échec on poursuit vers l'école sélectionnée.
+      }
+    }
+
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: resolvedSlug,
       tenantId: resolvedTenantId,

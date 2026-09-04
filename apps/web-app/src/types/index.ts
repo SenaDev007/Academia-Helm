@@ -279,8 +279,35 @@ export interface KpiSystemHealth {
 }
 
 /**
+ * KPI d'un établissement du groupe — données isolées par tenant, jamais de mélange.
+ * Calculés côté backend sur l'année académique active de l'école (toutes
+ * périodes si aucune année active n'est configurée).
+ */
+export interface GroupSchoolKpi {
+  tenantId: string;
+  tenantName: string;
+  schoolName: string;
+  slug: string;
+  subdomain: string | null;
+  city: string | null;
+  country: string | null;
+  logoUrl: string | null;
+  /** Année académique de référence de cet établissement */
+  periodLabel: string;
+  kpi: {
+    totalStudents: number;
+    totalTeachers: number;
+    totalRevenue: number;
+    unpaidAmount: number;
+    recoveryRate: number; // 0-100
+    currency: string;
+  };
+}
+
+/**
  * Bilans consolidés multi-écoles (lecture seule, agrégation explicite)
- * Uniquement pour les SUPER_DIRECTOR
+ * Uniquement pour les promoteurs (PROMOTER / SUPER_DIRECTOR) et rôles plateforme.
+ * Source : GET /api/analytics/consolidated (vue stratégique du groupe).
  */
 export interface ConsolidatedKpiResponse {
   /**
@@ -294,19 +321,14 @@ export interface ConsolidatedKpiResponse {
     totalStudents: number;
     totalTeachers: number;
     totalRevenue: number;
+    unpaidAmount: number;
     currency: string;
-    averageRecoveryRate: number; // Moyenne pondérée
-    averageTeacherPresenceRate: number; // Moyenne pondérée
+    averageRecoveryRate: number; // Moyenne pondérée par le volume de paiements
   };
   /**
    * KPI par établissement (données isolées, pas de mélange)
    */
-  bySchool: Array<{
-    tenantId: string;
-    schoolName: string;
-    subdomain: string;
-    kpi: DirectionKpiSummary;
-  }>;
+  bySchool: GroupSchoolKpi[];
   /**
    * Période de référence
    */

@@ -34,6 +34,10 @@ import { DesktopUpdateBadge } from '@/components/header/DesktopUpdateBadge';
 // import { SyncButton } from '@/components/header/SyncButton';
 import type { User, Tenant } from '@/types';
 
+// ── Rôles promoteur : seuls à voir le bouton « Vue Groupe » (vue stratégique
+//    multi-écoles — miroir des rôles stratégiques du backend /analytics).
+const PROMOTER_GROUP_ROLES = ['PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR'];
+
 interface SchoolIdentity {
   schoolName: string;
   schoolAcronym?: string;
@@ -518,6 +522,22 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
               <Star className="w-3.5 h-3.5" fill="#C9A84C" stroke="#C9A84C" />
               <span>Avis</span>
             </button>
+            )}
+
+            {/* ── Vue Groupe — visible UNIQUEMENT pour les rôles promoteur ──
+                Vue stratégique multi-écoles : KPIs consolidés du groupe + bascule
+                entre établissements (chaîne select-tenant existante). */}
+            {PROMOTER_GROUP_ROLES.includes(user.role) && (
+              <button
+                onClick={() => {
+                  window.location.href = '/promoteur';
+                }}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                title="Vue stratégique du groupe — tous vos établissements"
+              >
+                <School className="w-3.5 h-3.5" />
+                <span>Vue Groupe</span>
+              </button>
             )}
 
             {/* Profil avec Dropdown */}

@@ -69,6 +69,7 @@ import { HRModule } from './hr/hr.module';
 import { CommunicationModule } from './communication/communication.module';
 import { PortalModule } from './portal/portal.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { BillingModule } from './billing/billing.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { NotificationModule } from './notifications/notification.module';
@@ -305,6 +306,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Dashboard module
     DashboardModule,
+
+    // Analytics module (vue stratégique consolidée multi-écoles — promoteur)
+    AnalyticsModule,
     
     // Billing module (Subscription & Billing)
     BillingModule,

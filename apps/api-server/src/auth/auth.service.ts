@@ -842,6 +842,7 @@ export class AuthService {
 
     // Utilisateur normal → retourne son tenant (ou ses tenants si multi-tenant)
     const tenants = [];
+    const seenTenantIds = new Set<string>();
     
     // Si l'utilisateur a un tenantId direct
     if (user.tenantId) {
@@ -864,6 +865,7 @@ export class AuthService {
       });
 
       if (tenant && tenant.status === 'active') {
+        seenTenantIds.add(tenant.id);
         tenants.push({
           tenantId: tenant.id,
           schoolName: tenant.schools?.name || tenant.name,
@@ -876,8 +878,59 @@ export class AuthService {
       }
     }
 
-    // TODO: Ajouter la logique pour les utilisateurs multi-tenant si nécessaire
-    // (par exemple via une table de relation UserTenant)
+    // ⭐ MULTI-ÉCOLES : un promoteur peut gérer plusieurs établissements.
+    // Les relations UserTenant (créées par l'onboarding lorsqu'un promoteur
+    // existant fonde une nouvelle école) étendent son périmètre au-delà du
+    // tenant par défaut. Résilient : si la table user_tenants n'existe pas
+    // encore en base (migration non appliquée), on retombe sur le tenant direct.
+    try {
+      const userTenants = await this.prisma.userTenant.findMany({
+        where: { userId, isActive: true },
+        include: {
+          tenant: {
+            include: {
+              schools: {
+                select: {
+                  name: true,
+                  logo: true,
+                },
+              },
+              country: {
+                select: {
+                  name: true,
+                  code: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      for (const ut of userTenants) {
+        const tenant = ut.tenant;
+        if (!tenant || tenant.status !== 'active' || tenant.type !== 'SCHOOL') {
+          continue;
+        }
+        if (seenTenantIds.has(tenant.id)) {
+          continue;
+        }
+        seenTenantIds.add(tenant.id);
+        tenants.push({
+          tenantId: tenant.id,
+          schoolName: tenant.schools?.name || tenant.name,
+          tenantName: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain,
+          logoUrl: tenant.schools?.logo ?? null,
+          country: tenant.country?.name || null,
+        });
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `⚠️ UserTenant indisponible (fallback tenant direct) : ${err?.message || err}`,
+      );
+    }
 
     return tenants;
   }
@@ -908,7 +961,23 @@ export class AuthService {
 
     // Vérifier que l'utilisateur a le droit d'accéder à ce tenant
     const isOwner = this.isPlatformOwner(user);
-    const hasAccess = isOwner || user.tenantId === tenantId;
+    let hasAccess = isOwner || user.tenantId === tenantId;
+
+    // ⭐ MULTI-ÉCOLES : le promoteur peut basculer vers n'importe lequel de ses
+    // établissements (relation UserTenant active — même périmètre que
+    // getAvailableTenants). Résilient si la table n'existe pas encore en base.
+    if (!hasAccess && user.id) {
+      try {
+        const userTenant = await this.prisma.userTenant.findUnique({
+          where: { userId_tenantId: { userId: user.id, tenantId } },
+        });
+        hasAccess = !!userTenant && userTenant.isActive;
+      } catch (err: any) {
+        this.logger.warn(
+          `⚠️ UserTenant indisponible (contrôle d'accès limité au tenant direct) : ${err?.message || err}`,
+        );
+      }
+    }
 
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this tenant');

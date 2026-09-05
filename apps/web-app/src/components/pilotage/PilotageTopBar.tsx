@@ -30,6 +30,8 @@ import AcademicTrackSelector from './AcademicTrackSelector';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import { DesktopUpdateBadge } from '@/components/header/DesktopUpdateBadge';
+// ⭐ Double casquette : bascule instantanée vers l'UI Enseignant sans déconnexion
+import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé
 // import { SyncButton } from '@/components/header/SyncButton';
 import type { User, Tenant } from '@/types';
@@ -620,6 +622,13 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                   </div>
 
                   <div className="border-t border-gray-100 py-1">
+                    {/* ⭐ Double casquette : bascule vers l'UI Enseignant —
+                        visible seulement si profil Teacher actif rattaché. */}
+                    <PortalSwitchButton
+                      target="TEACHER"
+                      variant="dropdown"
+                      tenantSlugFallback={tenant?.slug}
+                    />
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"

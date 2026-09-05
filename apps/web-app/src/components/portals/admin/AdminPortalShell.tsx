@@ -46,6 +46,8 @@ import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { LogoutModal } from '@/components/auth/LogoutModal';
+// ⭐ Double casquette : bascule instantanée vers l'UI Enseignant sans déconnexion
+import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import AcademicYearSelector from '@/components/pilotage/AcademicYearSelector';
 import SchoolLevelSelector from '@/components/pilotage/SchoolLevelSelector';
@@ -323,6 +325,10 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 space-y-1">
+          {/* ⭐ Double casquette (ex : secrétaire + enseignant) : bascule vers
+              l'UI Enseignant SANS déconnexion — visible seulement si
+              l'utilisateur dispose d'un profil Teacher actif. */}
+          <PortalSwitchButton target="TEACHER" tenantSlugFallback={tenant?.slug} />
           <button
             onClick={() => setLogoutOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"

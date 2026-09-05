@@ -34,6 +34,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+// ⭐ Double casquette : bascule instantanée vers l'UI École sans déconnexion
+import PortalSwitchButton from "@/components/auth/PortalSwitchButton";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 // ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
@@ -181,6 +183,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 space-y-1">
+          {/* ⭐ Double casquette (ex : secrétaire + enseignant) : bascule vers
+              l'UI École SANS déconnexion — visible seulement si l'utilisateur
+              dispose d'un rôle administratif / poste admin actif. */}
+          <PortalSwitchButton target="SCHOOL" tenantSlugFallback={tenant?.slug} />
           <button
             onClick={() => setLogoutOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"

@@ -19,6 +19,8 @@ import { PlatformMarketingReviewService } from './services/platform-marketing-re
 import { PortalController } from './controllers/portal.controller';
 import { PortalLogController } from './controllers/portal-log.controller';
 import { PortalAuthController } from './controllers/portal-auth.controller';
+import { PortalSwitchController } from './controllers/portal-switch.controller';
+import { PortalSwitchService } from './services/portal-switch.service';
 import { OrionModule } from '../orion/orion.module';
 import { CommunicationModule } from '../communication/communication.module';
 
@@ -45,6 +47,7 @@ import { CommunicationModule } from '../communication/communication.module';
     OrionInitService,
     PortalAuthService,
     MapStatsService,
+    PortalSwitchService,
   ],
   controllers: [
     PublicPlatformReviewsController,
@@ -52,6 +55,7 @@ import { CommunicationModule } from '../communication/communication.module';
     PortalController,
     PortalAuthController,
     PortalLogController,
+    PortalSwitchController,
   ],
   exports: [
     SchoolSearchService,
@@ -59,6 +63,7 @@ import { CommunicationModule } from '../communication/communication.module';
     OrionInitService,
     PortalAuthService,
     MapStatsService,
+    PortalSwitchService,
   ],
 })
 export class PortalModule {}

@@ -22,6 +22,8 @@ import { TaxService } from './services/tax.service';
 import { PayrollTaxService } from './services/payroll-tax.service';
 import { PayrollPdfService } from './services/payroll-pdf.service';
 import { PayrollEngineService } from './services/payroll-engine.service';
+import { PayrollDocumentsService } from './services/payroll-documents.service';
+import { PayrollDocumentsController } from './payroll-documents.controller';
 import { HROrionService } from './services/hr-orion.service';
 import { ContractPdfService } from './services/contract-pdf.service';
 import { ContractSignTokenService } from './services/contract-sign-token.service';
@@ -81,6 +83,7 @@ import { BillingModule } from '../billing/billing.module';
     PayrollTaxService,
     PayrollPdfService,
     PayrollEngineService,
+    PayrollDocumentsService,
     HROrionService,
     ContractPdfService,
     ContractSignTokenService,
@@ -108,6 +111,7 @@ import { BillingModule } from '../billing/billing.module';
     AllowancesPrismaController,
     EvaluationsPrismaController,
     PayrollPrismaController,
+    PayrollDocumentsController,
     CNSSPrismaController,
     HrOverviewController,
     RecruitmentPrismaController,
@@ -137,6 +141,7 @@ import { BillingModule } from '../billing/billing.module';
     PayrollTaxService,
     PayrollPdfService,
     PayrollEngineService,
+    PayrollDocumentsService,
     HROrionService,
     ContractPdfService,
     ContractSignTokenService,

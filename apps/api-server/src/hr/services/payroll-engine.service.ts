@@ -40,6 +40,8 @@ export interface FiscalRateSet {
   aibSansIfu: number;
   smig: number;
   cnssMensuelSeuil: number;
+  /// Jours de congés payés acquis par mois travaillé (1,5 par défaut — à confirmer 2)
+  joursCongesParMois: number;
   categoryRules: Record<string, { essai: string; renouvellement: string; preavis: string }> | null;
   sourceNotes?: string | null;
 }
@@ -139,6 +141,7 @@ export class PayrollEngineService {
       aibSansIfu: Number(row.aibSansIfu ?? 0),
       smig: Number(row.smig ?? 0),
       cnssMensuelSeuil: Number(row.cnssMensuelSeuil ?? 20),
+      joursCongesParMois: Number(row.joursCongesParMois ?? 1.5),
       categoryRules: (row.categoryRules as any) ?? null,
       sourceNotes: row.sourceNotes ?? null,
     };

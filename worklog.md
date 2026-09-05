@@ -9413,3 +9413,22 @@ Work Log:
 Stage Summary:
 - RECETTE SWITCH : 9/9 API + BFF complet + 3/3 points d'entrée UI validés (TeacherLayout footer, AdminPortalShell footer, PilotageTopBar dropdown) ; bascule réversible, sécurité identique au login direct, bouton masqué sans double casquette
 - Dépôt GitHub CSPEB supprimé définitivement (plus de repo wrapper : seul Academia-Helm subsiste) ; personnel de test Fatou/Sophie laissé en DB pour recette manuelle par l'utilisateur (suppression facile par email)
+
+---
+Task ID: 9
+Agent: Super Z (agent principal)
+Task: Déploiement Vercel des correctifs (5 bugs paramètres + barème + switch) + validation production du switch + contrats signés pour les users de recette
+
+Work Log:
+- Diagnostic des 5 bugs du module Paramètres → ONDES : les correctifs existent TOUS dans le code courant (3a3cecd5 : overlay z-[70]+overlayTop anti-chevauchement sidebar, échéancier de tranches + « Fait à » prérempli, correctif loading=false [case papier/boutons grisés], bilingue 100 000 FCFA/an ; b77dbabe : barème progressif ; 968fbfd8 : contrat papier) MAIS la prod web-app tournait sur l'ancien build
+- CAUSE RACINE du non-déploiement : Vercel ignore les pushes dont l'email d'auteur ≠ s.akpovitohou@gmail.com (Ignored Build Step documenté dans TRIGGER-DEPLOY.txt) — tous les commits z@container depuis le 04/09 soir (3a3cecd5, 706f60c1, b77dbabe, 5668acb9, bc270137) n'ont JAMAIS été déployés ; Railway, lui, auto-déploie tout
+- Déclencheur : commit 0f7bfec9 signé SenaDev007 <s.akpovitohou@gmail.com> touchant TRIGGER-DEPLOY.txt + .vercel-deploy-trigger (pattern établi du repo) → push → build Vercel en < 2 min → nouveau dpl_2RxjninvMXGYz34tMTUmG33cd1Rk
+- Découverte importante : database-triggers-bootstrap.service.ts (runHrStatusDataFix, à CHAQUE démarrage API) rétrograde tout staff ACTIVE sans contrat signé (employment_contracts status ACTIVE + signedAt) en PENDING_SIGNATURE → le staff de recette perdait sa casquette école (hasActiveAdminAssignment exige staff ACTIVE) après chaque redéploiement Railway
+- Correctif données de test : contrats de travail SIGNÉS créés pour Fatou et Sophie (employment_contracts CDI, status ACTIVE, signedAt) + scripts de création mis à jour (idempotents : le DELETE staff cascade le contrat)
+- Validation PRODUCTION complète (BFF déployé cspeb-eveildafriqueeducation.academiahelm.com) : login enseignant 200 → switch-options [SCHOOL] + matricule → bascule ÉCOLE 200 → bascule retour ENSEIGNANT 200 → Promoteur available [] (bouton masqué)
+- Note : les vraies doubles casquettes (Aurore SECRETAIRE_COMPTABLE, Queen/dawesakpovi DIRECTEUR_MAT_PRI) accèdent au portail école via leur RÔLE (pattern admin) — non affectées par la synchro RH ; seule la voie « affectation » (User ENSEIGNANT + poste admin) dépend du staff ACTIVE
+
+Stage Summary:
+- Vercel redéployé : les 5 bugs des paramètres (corrigés dans le code depuis ce matin), le barème progressif et le switch double casquette sont ENFIN en production ; procédure de déploiement documentée (commit signé s.akpovitohou@gmail.com)
+- Switch validé de bout en bout en production ; users de recette Fatou/Sophie désormais avec contrats signés (résistants aux redémarrages API)
+- À retester par l'utilisateur sur la prod : les 5 bugs des paramètres (onglet écoles et groupe → création annexe)

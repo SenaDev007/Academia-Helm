@@ -76,6 +76,21 @@ async function main() {
   );
   console.log(`✓ Affectation admin créée: SECRETAIRE / MAT_PRI (active) — id ${assignmentId}`);
 
+  // ── 5. Contrat de travail SIGNÉ (emploi_contracts) ──
+  //    OBLIGATOIRE : le bootstrap de l'API (database-triggers-bootstrap
+  //    runHrStatusDataFix) rétrograde en PENDING_SIGNATURE tout staff ACTIVE
+  //    sans contrat signé à chaque redémarrage — ce qui ferait perdre à Fatou
+  //    sa casquette école (hasActiveAdminAssignment exige staff status ACTIVE).
+  //    Un contrat signé + statut ACTIVE = cycle RH réel (cf. Aurore AKPOVI).
+  const contractId = crypto.randomUUID();
+  await client.query(
+    `INSERT INTO employment_contracts (id, "tenantId", "staffId", "contractType",
+        "startDate", "baseSalary", "paymentMode", status, "signedAt", "signedBy", "updatedAt")
+     VALUES ($1, $2, $3, 'CDI', CURRENT_DATE, 0, 'CASH', 'ACTIVE', now(), 'Recette switch', now())`,
+    [contractId, TENANT_ID, staffId],
+  );
+  console.log(`✓ Contrat signé créé (ACTIVE, signedAt) — id ${contractId}`);
+
   // ── Récapitulatif ──
   const check = await client.query(`
     SELECT

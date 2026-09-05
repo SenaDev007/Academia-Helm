@@ -60,6 +60,18 @@ async function main() {
   );
   console.log(`✓ Teacher créé: matricule ${MATRICULE} (actif)`);
 
+  // 4. Contrat de travail SIGNÉ — indispensable pour que le staff reste ACTIVE
+  //    au redémarrage de l'API (bootstrap runHrStatusDataFix : sans contrat
+  //    signé, tout staff ACTIVE est rétrogradé PENDING_SIGNATURE).
+  const contractId = crypto.randomUUID();
+  await client.query(
+    `INSERT INTO employment_contracts (id, "tenantId", "staffId", "contractType",
+        "startDate", "baseSalary", "paymentMode", status, "signedAt", "signedBy", "updatedAt")
+     VALUES ($1, $2, $3, 'CDI', CURRENT_DATE, 0, 'CASH', 'ACTIVE', now(), 'Recette switch', now())`,
+    [contractId, TENANT_ID, staffId],
+  );
+  console.log(`✓ Contrat signé créé (ACTIVE, signedAt) — id ${contractId}`);
+
   console.log(`\nCredentials Sophie TEST :`);
   console.log(`  Portail ÉCOLE (email): ${EMAIL}`);
   console.log(`  Portail ENSEIGNANT (matricule): ${MATRICULE}`);

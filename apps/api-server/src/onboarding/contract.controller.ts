@@ -400,6 +400,25 @@ export class ContractController {
           .filter((a) => a.name.length >= 2)
       : [];
     const perSchoolTotal = activationFee + annualFee + bilingualFee;
+    // ⭐ Barème progressif du coût d'activation (annexes — contrat Article 4) :
+    //    rang, tarif de base et remise portés par le snapshot (createAnnexDraft
+    //    pour l'annexe mono-école, selectPlan pour le multi-écoles du signup).
+    const annexRank = priceSnap.annexRank != null ? Number(priceSnap.annexRank) : undefined;
+    const activationBaseFee = priceSnap.activationBaseFee != null
+      ? Number(priceSnap.activationBaseFee)
+      : undefined;
+    const activationDiscountPercent = priceSnap.activationDiscountPercent != null
+      ? Number(priceSnap.activationDiscountPercent)
+      : 0;
+    // ⭐ Total Année 1 : l'activation du groupe N'EST PAS activation × N —
+    //    chaque rang porte sa remise (2e −15 %, 3e −20 %, 4e −25 %).
+    //    Mono-école : initialFee est déjà le tarif remisé de l'annexe.
+    const activationTotal = Number(priceSnap.activationTotal ?? 0) || 0;
+    const totalYearOne = schoolsCount > 1
+      ? (activationTotal > 0
+        ? activationTotal + (annualFee + bilingualFee) * schoolsCount
+        : perSchoolTotal * schoolsCount)
+      : perSchoolTotal;
 
     return {
       schoolName: draft.schoolName || '',
@@ -421,8 +440,13 @@ export class ContractController {
       activationFee,
       annualFee,
       bilingualFee,
-      // ⭐ Total = PAR ÉCOLE × nombre d'écoles (le contrat s'adapte)
-      totalYearOne: schoolsCount > 1 ? perSchoolTotal * schoolsCount : perSchoolTotal,
+      // ⭐ Barème progressif du coût d'activation (annexes remisées)
+      ...(annexRank != null ? { annexRank } : {}),
+      ...(activationBaseFee != null ? { activationBaseFee } : {}),
+      ...(activationDiscountPercent > 0 ? { activationDiscountPercent } : {}),
+      // ⭐ Total = PAR ÉCOLE × nombre d'écoles (le contrat s'adapte) — activation
+      //    du groupe au barème progressif (remises par rang, cf. ci-dessus)
+      totalYearOne,
       // ⭐ Paiement en espèces (mode YEHI OR Tech)
       paymentMethod: 'cash',
       subscriptionPaid: marked.subscriptionPaid ?? true,
@@ -478,7 +502,15 @@ export class ContractController {
     const emailActivationFee = Number(priceSnap.initialPayment ?? priceSnap.initialFee ?? 500000) || 0;
     const emailAnnualFee = Number(priceSnap.yearlyPrice ?? 0) || 0;
     const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 100000) || 0 : 0;
-    const totalPaid = emailActivationFee + emailAnnualFee + emailBilingualFee;
+    // ⭐ Barème progressif du coût d'activation : le total encaissé suit le
+    //    barème du groupe (2e école −15 %, 3e −20 %, 4e −25 %) et non un
+    //    simple × N. Mono-école annexe : initialFee déjà remisé dans le snapshot.
+    const emailSchoolsCount = Math.max(1, draft.schoolsCount || 1);
+    const emailActivationTotal = Number(priceSnap.activationTotal ?? 0) > 0
+      ? Number(priceSnap.activationTotal)
+      : emailActivationFee * emailSchoolsCount;
+    const emailActivationDiscount = Number(priceSnap.activationDiscountPercent ?? 0) || 0;
+    const totalPaid = emailActivationTotal + (emailAnnualFee + emailBilingualFee) * emailSchoolsCount;
 
     // ⭐ Échéancier par tranches (si paymentPlan='installments' persisté à
     //    l'étape 3) — remplace le bloc « payé en espèces » par le détail
@@ -522,7 +554,7 @@ export class ContractController {
       <table style="width: 100%; font-size: 13px; color: #1f2937;">
         <tr><td style="padding: 2px 0; color: #6b7280;">Souscription :</td><td style="padding: 2px 0;"><strong>${marked.subscriptionPaid !== false ? 'Payée (espèces)' : 'À régler'}</strong></td></tr>
         ${draft.bilingual ? `<tr><td style="padding: 2px 0; color: #6b7280;">Option bilingue FR/EN :</td><td style="padding: 2px 0;"><strong>${marked.bilingualPaid !== false ? 'Payée — facturation annuelle' : 'À régler (annuelle)'}</strong></td></tr>` : ''}
-        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Détail :</td><td style="padding: 2px 0;">Activation ${emailActivationFee.toLocaleString('fr-FR')} + Annuel ${emailAnnualFee.toLocaleString('fr-FR')}${emailBilingualFee > 0 ? ' + Bilingue ' + emailBilingualFee.toLocaleString('fr-FR') : ''} FCFA</td></tr>` : ''}
+        ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Détail :</td><td style="padding: 2px 0;">Activation ${emailActivationTotal.toLocaleString('fr-FR')}${emailSchoolsCount > 1 ? ` (groupe ${emailSchoolsCount} écoles — barème progressif)` : emailActivationDiscount > 0 ? ` (−${emailActivationDiscount} % — barème annexe)` : ''} + Annuel ${(emailAnnualFee * emailSchoolsCount).toLocaleString('fr-FR')}${emailBilingualFee > 0 ? ' + Bilingue ' + (emailBilingualFee * emailSchoolsCount).toLocaleString('fr-FR') : ''} FCFA</td></tr>` : ''}
         ${totalPaid > 0 ? `<tr><td style="padding: 2px 0; color: #6b7280;">Total encaissé :</td><td style="padding: 2px 0;"><strong>${totalPaid.toLocaleString('fr-FR')} FCFA</strong></td></tr>` : ''}
         ${marked.receivedBy ? `<tr><td style="padding: 2px 0; color: #6b7280;">Encaissé par :</td><td style="padding: 2px 0;">${marked.receivedBy} (YEHI OR Tech)</td></tr>` : ''}
       </table>

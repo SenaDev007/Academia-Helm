@@ -103,6 +103,88 @@ export const BILINGUAL_ADDON = {
   annual: 100000, // 100 000 FCFA/an (référence mensuelle : 10 000 FCFA)
 } as const;
 
+// ⭐ Tarification échelonnée du COÛT D'ACTIVATION — écoles annexes
+//    (barème progressif automatique, contrat Article 4) :
+//      Rang 1 (école principale) : 100 %  →  500 000 FCFA
+//      Rang 2 (2e école)         : −15 %  →  425 000 FCFA
+//      Rang 3 (3e école)         : −20 %  →  400 000 FCFA
+//      Rang 4 (4e école)         : −25 %  →  375 000 FCFA
+//      Rang 5 et +               : TARIFICATION NÉGOCIÉE (aucun tarif
+//                                  automatique — contact support).
+//    Les remises portent UNIQUEMENT sur le coût d'activation : les frais
+//    annuels du plan et l'option bilingue restent au tarif plein, par école.
+//    Miroir exact du backend : apps/api-server/src/common/utils/annex-activation-pricing.ts
+export const ANNEX_ACTIVATION_DISCOUNTS: Record<number, number> = {
+  1: 0, // école principale — tarif plein
+  2: 15,
+  3: 20,
+  4: 25,
+};
+
+/** À partir de ce rang : tarification négociée (pas de tarif automatique). */
+export const ANNEX_NEGOTIATED_RANK = 5;
+
+export interface AnnexActivationPricing {
+  /** Rang de l'école dans le groupe (1 = principale). */
+  rank: number;
+  /** Tarif de base avant remise (FCFA). */
+  baseFee: number;
+  /** Tarif applicable (FCFA) — null en tarification négociée. */
+  fee: number | null;
+  /** Remise appliquée (0 / 15 / 20 / 25) — 0 si négocié. */
+  discountPercent: number;
+  /** true = tarification négociée (rang ≥ 5). */
+  negotiated: boolean;
+}
+
+/**
+ * Tarif d'activation pour l'école de rang `rank` (barème progressif).
+ * rank 1 → 500 000 ; 2 → 425 000 ; 3 → 400 000 ; 4 → 375 000 ; ≥5 → négocié.
+ */
+export function getAnnexActivationPricing(
+  rank: number,
+  baseFee: number = HELM_ACTIVATION_FEE,
+): AnnexActivationPricing {
+  const r = Math.max(1, Math.round(rank));
+  const base = Number(baseFee) > 0 ? Math.round(Number(baseFee)) : HELM_ACTIVATION_FEE;
+  if (r >= ANNEX_NEGOTIATED_RANK) {
+    return { rank: r, baseFee: base, fee: null, discountPercent: 0, negotiated: true };
+  }
+  const discountPercent = ANNEX_ACTIVATION_DISCOUNTS[r] ?? 0;
+  const fee = Math.round((base * (100 - discountPercent)) / 100);
+  return { rank: r, baseFee: base, fee, discountPercent, negotiated: false };
+}
+
+/** Ligne du barème par rang (affichage + payloads contrat). */
+export interface AnnexActivationTier {
+  rank: number;
+  fee: number;
+  discountPercent: number;
+}
+
+/**
+ * Barème d'activation d'un groupe de `schoolsCount` établissements :
+ * frais par rang (1..N) + total du groupe (Σ remises).
+ * ⚠️ ≥ 5 écoles : total = null (tarification négociée — aucun tarif auto).
+ */
+export function getGroupActivationTiers(
+  schoolsCount: number,
+  baseFee: number = HELM_ACTIVATION_FEE,
+): { tiers: AnnexActivationTier[]; total: number | null; negotiated: boolean } {
+  const n = Math.max(1, Math.round(schoolsCount));
+  const tiers: AnnexActivationTier[] = [];
+  let total = 0;
+  for (let rank = 1; rank <= n; rank++) {
+    const pricing = getAnnexActivationPricing(rank, baseFee);
+    if (pricing.negotiated) {
+      return { tiers, total: null, negotiated: true };
+    }
+    tiers.push({ rank, fee: pricing.fee as number, discountPercent: pricing.discountPercent });
+    total += pricing.fee as number;
+  }
+  return { tiers, total, negotiated: false };
+}
+
 // ⭐ Tous les modules inclus quel que soit le plan
 // Contrat : 21 modules métier + 6 modules complémentaires (27 modules au total)
 export const ALL_MODULES = [

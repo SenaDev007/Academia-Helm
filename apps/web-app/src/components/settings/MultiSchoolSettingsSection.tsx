@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
-import { HELM_PLANS, HELM_ACTIVATION_FEE, BILINGUAL_ADDON } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, HELM_ACTIVATION_FEE, BILINGUAL_ADDON, getAnnexActivationPricing } from '@/lib/services/HelmPricingService';
 import ContractStep from '@/components/onboarding/ContractStep';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -59,6 +59,16 @@ interface EligibilityData {
   eligible: boolean;
   currentSchools: EligibilitySchool[];
   nextAnnexIndex: number;
+  // ⭐ Barème progressif du coût d'activation de la prochaine annexe :
+  //    rang (2e école → −15 %, 3e → −20 %, 4e → −25 %), negotiated = true
+  //    dès la 5e école (tarification négociée — aucun tarif automatique).
+  annexActivation?: {
+    rank: number;
+    negotiated: boolean;
+    baseFee: number;
+    fee: number | null;
+    discountPercent: number;
+  };
   pricing: {
     currency: string;
     bilingualYearly: number;
@@ -143,6 +153,10 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
     activationFee?: number;
     annualFee?: number;
     bilingualFee?: number;
+    // ⭐ Barème progressif (snapshot serveur — source de vérité du contrat)
+    annexRank?: number;
+    activationBaseFee?: number;
+    activationDiscountPercent?: number;
     payment?: {
       paymentPlan: 'full' | 'installments';
       installments?: { label: string; amount: number; dueDate?: string }[];
@@ -208,16 +222,29 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
 
   // ⭐ Prix de l'annexe : PAR ÉCOLE (activation + frais annuels + bilingue)
   //    — source : eligibility.pricing (pricing_plans), fallback HELM_PLANS.
+  //    ⭐ Barème progressif du coût d'activation : le tarif de l'annexe dépend
+  //    de son rang dans le groupe (2e −15 % → 425 000, 3e −20 % → 400 000,
+  //    4e −25 % → 375 000 ; dès la 5e école : tarification négociée).
   const pricing = useMemo(() => {
     const bilingualYearly = eligibility?.pricing?.bilingualYearly ?? BILINGUAL_ADDON.annual ?? 100000;
+    // Rang de la prochaine annexe → tarif d'activation remisé (ou négocié)
+    const rank = eligibility?.annexActivation?.rank
+      ?? eligibility?.nextAnnexIndex
+      ?? (eligibility?.currentSchools?.length || 0) + 1;
+    const annexTier = eligibility?.annexActivation
+      ?? getAnnexActivationPricing(rank, HELM_ACTIVATION_FEE);
+    const tierFee = annexTier.negotiated
+      ? HELM_ACTIVATION_FEE // négocié : tarif de base (l'UI bloque la création)
+      : (annexTier.fee ?? HELM_ACTIVATION_FEE);
     const plans = (eligibility?.pricing?.plans?.length
       ? eligibility.pricing.plans
       : (['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((code) => ({
           code,
           name: HELM_PLANS[code].name,
-          activationFee: HELM_PLANS[code].setupFee ?? HELM_ACTIVATION_FEE,
+          // ⭐ Fallback local : activation AU BARÈME (remise du rang)
+          activationFee: tierFee,
           annualFee: HELM_PLANS[code].annualPrice,
-          yearOnePerSchool: (HELM_PLANS[code].setupFee ?? HELM_ACTIVATION_FEE) + HELM_PLANS[code].annualPrice,
+          yearOnePerSchool: tierFee + HELM_PLANS[code].annualPrice,
           studentMin: code === 'SEED' ? 1 : code === 'GROW' ? 51 : code === 'LEAD' ? 151 : 401,
           studentMax: code === 'SEED' ? 50 : code === 'GROW' ? 150 : code === 'LEAD' ? 400 : null,
         }))) as EligibilityPlan[];
@@ -227,9 +254,14 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
       plans,
       plan,
       bilingualFee,
+      annexTier,
       totalYearOne: (plan.activationFee + plan.annualFee + bilingualFee),
     };
   }, [eligibility, form.planCode, form.bilingual]);
+
+  // ⭐ Tarification négociée (dès la 5e école) : la création en libre-service
+  //    est bloquée — le promoteur est orienté vers la négociation (support).
+  const annexNegotiated = pricing.annexTier.negotiated === true;
 
   const handleCreateAnnexDraft = async () => {
     // Validation minimale du formulaire
@@ -310,6 +342,19 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
           data.promoter?.firstName || data.promoter?.lastName
             ? `${data.promoter?.firstName || ''} ${data.promoter?.lastName || ''}`.trim()
             : `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
+        // ⭐ Barème progressif : tarif d'activation remisé + métadonnées du
+        //    rang depuis le snapshot serveur (source de vérité du contrat,
+        //    du paiement cash et de la signature différée).
+        activationFee: Number(data.pricing?.initialFee ?? data.pricing?.initialPayment) > 0
+          ? Number(data.pricing?.initialFee ?? data.pricing?.initialPayment)
+          : undefined,
+        activationBaseFee: data.pricing?.activationBaseFee != null
+          ? Number(data.pricing.activationBaseFee)
+          : undefined,
+        activationDiscountPercent: data.pricing?.activationDiscountPercent != null
+          ? Number(data.pricing.activationDiscountPercent)
+          : undefined,
+        annexRank: data.pricing?.annexRank != null ? Number(data.pricing.annexRank) : undefined,
         payment: {
           paymentPlan: paymentMarked.paymentPlan,
           installments:
@@ -407,6 +452,14 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
       activationFee: Number(snapshot.initialFee ?? snapshot.initialPayment ?? 0) || undefined,
       annualFee: Number(snapshot.yearlyPrice ?? 0) || undefined,
       bilingualFee: d.bilingual ? Number(snapshot.bilingualFee ?? 0) || undefined : 0,
+      // ⭐ Barème progressif (persisté dans le snapshot à la création)
+      activationBaseFee: snapshot.activationBaseFee != null
+        ? Number(snapshot.activationBaseFee)
+        : undefined,
+      activationDiscountPercent: snapshot.activationDiscountPercent != null
+        ? Number(snapshot.activationDiscountPercent)
+        : undefined,
+      annexRank: snapshot.annexRank != null ? Number(snapshot.annexRank) : undefined,
       payment: {
         paymentPlan: marked.paymentPlan === 'installments' ? 'installments' : 'full',
         installments: Array.isArray(marked.installments) ? marked.installments : undefined,
@@ -465,6 +518,13 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         }
         activationFee={annexDraft.activationFee ?? pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE}
         annualFee={annexDraft.annualFee ?? pricing.plan?.annualFee ?? 50000}
+        // ⭐ Barème progressif : rang/remise du tarif d'activation de l'annexe
+        //    (snapshot du draft repris, sinon éligibilité courante)
+        annexRank={annexDraft.annexRank ?? (annexNegotiated ? undefined : pricing.annexTier.rank)}
+        activationBaseFee={annexDraft.activationBaseFee ?? (annexNegotiated ? undefined : pricing.annexTier.baseFee)}
+        activationDiscountPercent={
+          annexDraft.activationDiscountPercent ?? (annexNegotiated ? undefined : pricing.annexTier.discountPercent)
+        }
         schoolsCount={1}
         paymentPlan={pay?.paymentPlan ?? 'full'}
         installments={pay?.installments}
@@ -558,18 +618,35 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         </div>
       )}
 
-      {/* ── Tarif multi-écoles (rappel clair : payant par école) ── */}
-      <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
-        <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+      {/* ── Tarif multi-écoles (barème progressif du coût d'activation) ── */}
+      <div className={`rounded-lg border p-4 ${annexNegotiated ? 'border-blue-200 bg-blue-50/70' : 'border-amber-200 bg-amber-50/70'}`}>
+        <p className={`text-sm font-semibold flex items-center gap-2 ${annexNegotiated ? 'text-blue-900' : 'text-amber-900'}`}>
           <Info className="w-4 h-4" /> Le multi-écoles est payant, en fonction du nombre d&apos;écoles
         </p>
-        <p className="text-xs text-amber-800 mt-1.5 leading-relaxed">
-          Chaque école annexe souscrit sa propre offre : frais d&apos;activation uniques de{' '}
-          <strong>{formatCurrency(HELM_ACTIVATION_FEE)} FCFA</strong> + frais annuels du plan choisi
-          (50 000 à 150 000 FCFA selon l&apos;effectif), le cas échéant l&apos;option bilingue FR/EN
-          (<strong>{formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 100000)} FCFA/an</strong>).
-          Le contrat d&apos;abonnement — conforme au contrat type — détaillera la souscription de l&apos;annexe.
-        </p>
+        {annexNegotiated ? (
+          <p className="text-xs text-blue-800 mt-1.5 leading-relaxed">
+            Votre groupe compte déjà <strong>{eligibility?.currentSchools?.length ?? 0} écoles</strong> : à partir de la
+            5<sup>e</sup> école, le coût d&apos;activation relève d&apos;une <strong>tarification négociée</strong>
+            (barème automatique : 1<sup>re</sup> école {formatCurrency(HELM_ACTIVATION_FEE)}, 2<sup>e</sup> −15 %,
+            3<sup>e</sup> −20 %, 4<sup>e</sup> −25 %). Contactez{' '}
+            <strong>support@academiahelm.com</strong> pour convenir d&apos;un tarif de groupe — la création en
+            libre-service est réservée aux 4 premières écoles.
+          </p>
+        ) : (
+          <p className="text-xs text-amber-800 mt-1.5 leading-relaxed">
+            Chaque école annexe souscrit sa propre offre : coût d&apos;activation de{' '}
+            <strong>{formatCurrency(pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE)}</strong>
+            {pricing.annexTier.discountPercent > 0 ? (
+              <> — <strong>remise de {pricing.annexTier.discountPercent} %</strong> (tarif de la{' '}
+              {pricing.annexTier.rank}<sup>e</sup> école du groupe, barème progressif : 2<sup>e</sup> −15 %,
+              3<sup>e</sup> −20 %, 4<sup>e</sup> −25 %, dès la 5<sup>e</sup> tarification négociée)</>
+            ) : (
+              <> (tarif plein)</>
+            )} + frais annuels du plan choisi (50 000 à 150 000 F CFA selon l&apos;effectif), le cas échéant
+            l&apos;option bilingue FR/EN (<strong>{formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 100000)}</strong>).
+            Le contrat d&apos;abonnement — conforme au contrat type — détaillera la souscription de l&apos;annexe au barème.
+          </p>
+        )}
       </div>
 
       {error && (
@@ -584,8 +661,9 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
               setError(null);
               setShowForm(true);
             }}
-            disabled={!eligibility?.eligible}
+            disabled={!eligibility?.eligible || annexNegotiated}
             className="bg-slate-900 hover:bg-slate-800 text-white"
+            title={annexNegotiated ? 'Tarification négociée dès la 5e école — contactez support@academiahelm.com' : undefined}
           >
             <Plus className="w-4 h-4 mr-1" />
             Ajouter une école annexe
@@ -593,6 +671,12 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
           {!eligibility?.eligible && !loading && (
             <p className="text-xs text-slate-500">
               Aucune école active n&apos;est rattachée à votre compte.
+            </p>
+          )}
+          {annexNegotiated && !loading && (
+            <p className="text-xs text-blue-700">
+              À partir de la 5<sup>e</sup> école, la tarification est négociée — contactez{' '}
+              <strong>support@academiahelm.com</strong>.
             </p>
           )}
         </div>
@@ -713,10 +797,13 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                     {p.studentMax ? `${p.studentMin} à ${p.studentMax} élèves` : `${p.studentMin} élèves et +`}
                   </p>
                   <p className="text-xs font-semibold text-slate-700 mt-1.5">
-                    {formatCurrency(p.annualFee)} FCFA/an
+                    {formatCurrency(p.annualFee)}/an
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    + activation {formatCurrency(p.activationFee)} FCFA
+                    + activation {formatCurrency(p.activationFee)}
+                    {!annexNegotiated && pricing.annexTier.discountPercent > 0
+                      ? ` (−${pricing.annexTier.discountPercent} % — ${pricing.annexTier.rank}e école)`
+                      : ''}
                   </p>
                 </button>
               ))}
@@ -728,7 +815,7 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
             <div>
               <p className="text-sm font-medium text-slate-800">Option bilingue FR/EN</p>
               <p className="text-xs text-slate-500">
-                Parcours académiques en français et en anglais — +{formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 100000)} FCFA/an
+                Parcours académiques en français et en anglais — +{formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 100000)}/an
               </p>
             </div>
             <input
@@ -836,9 +923,13 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                         className="mt-1 w-4 h-4 accent-amber-600"
                       />
                       <span className="text-sm text-slate-800">
-                        <strong>La souscription a été payée</strong> — frais d'activation{' '}
-                        {formatCurrency(pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE)} FCFA + frais annuels du plan{' '}
-                        {pricing.plan?.name || ''} ({formatCurrency(pricing.plan?.annualFee ?? 0)} FCFA), en espèces
+                        <strong>La souscription a été payée</strong> — frais d&apos;activation{' '}
+                        {formatCurrency(pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE)}
+                        {!annexNegotiated && pricing.annexTier.discountPercent > 0
+                          ? ` (−${pricing.annexTier.discountPercent} % — barème annexe)`
+                          : ''}{' '}
+                        + frais annuels du plan{' '}
+                        {pricing.plan?.name || ''} ({formatCurrency(pricing.plan?.annualFee ?? 0)}), en espèces
                       </span>
                     </label>
 
@@ -852,8 +943,8 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                           className="mt-1 w-4 h-4 accent-amber-600"
                         />
                         <span className="text-sm text-slate-800">
-                          <strong>Les frais de l'option bilingue ont été payés</strong> — facturation annuelle (
-                          {formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 0)} FCFA / an), en espèces
+                          <strong>Les frais de l&apos;option bilingue ont été payés</strong> — facturation annuelle (
+                          {formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 0)} / an), en espèces
                         </span>
                       </label>
                     )}
@@ -885,7 +976,7 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                         className="px-3 py-1.5 text-xs font-semibold text-blue-900 bg-white border border-amber-300 rounded-md hover:bg-amber-50 transition-colors"
                         title="Répartir le total équitablement entre les tranches"
                       >
-                        Répartir équitablement ({formatCurrency(cashTotal)} FCFA)
+                        Répartir équitablement ({formatCurrency(cashTotal)})
                       </button>
                     </div>
 
@@ -950,10 +1041,10 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                     {/* Totaux de contrôle */}
                     <div className="flex items-center justify-between gap-2 p-3 bg-white rounded-lg border border-amber-200 text-sm">
                       <span className="text-slate-700">
-                        Réparti : <strong>{formatCurrency(allocated)} FCFA</strong>
+                        Réparti : <strong>{formatCurrency(allocated)}</strong>
                         {form.bilingual && (
                           <span className="text-[10px] text-slate-500 block">
-                            (option bilingue {formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 0)} FCFA incluse)
+                            (option bilingue {formatCurrency(pricing.bilingualFee || BILINGUAL_ADDON.annual || 0)} incluse)
                           </span>
                         )}
                       </span>
@@ -961,8 +1052,8 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                         {remaining === 0
                           ? '✓ Total couvert'
                           : remaining > 0
-                            ? `Reste à répartir : ${formatCurrency(remaining)} FCFA`
-                            : `Excédent : ${formatCurrency(-remaining)} FCFA`}
+                            ? `Reste à répartir : ${formatCurrency(remaining)}`
+                            : `Excédent : ${formatCurrency(-remaining)}`}
                       </span>
                     </div>
                   </div>
@@ -999,14 +1090,17 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                 {form.bilingual ? ' + bilingue' : ''}
               </p>
               <p className="text-[11px] text-slate-400 mt-1">
-                Activation {formatCurrency(pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE)} +
+                Activation {formatCurrency(pricing.plan?.activationFee ?? HELM_ACTIVATION_FEE)}
+                {!annexNegotiated && pricing.annexTier.discountPercent > 0
+                  ? ` (−${pricing.annexTier.discountPercent} % — ${pricing.annexTier.rank}e école du groupe, barème progressif)`
+                  : ''} +
                 frais annuels {formatCurrency(pricing.plan?.annualFee ?? 0)}
                 {form.bilingual ? ` + bilingue ${formatCurrency(pricing.bilingualFee)}` : ''} — à régler
                 en espèces selon les modalités choisies ci-dessus, reprises dans le contrat (Article 4).
               </p>
             </div>
             <p className="text-2xl font-bold text-amber-400 whitespace-nowrap">
-              {formatCurrency(pricing.totalYearOne)} <span className="text-xs text-slate-400 font-normal">FCFA</span>
+              {formatCurrency(pricing.totalYearOne)}
             </p>
           </div>
 

@@ -21,7 +21,7 @@ import {
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
 import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { formatCurrency } from '@/lib/utils';
-import { HELM_PLANS } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, getGroupActivationTiers, ANNEX_ACTIVATION_DISCOUNTS } from '@/lib/services/HelmPricingService';
 
 interface DraftData {
   id: string;
@@ -37,6 +37,8 @@ interface DraftData {
   preferredSubdomain?: string;
   selectedPlanId?: string;
   status: string;
+  // ⭐ MULTI-ÉCOLES : nombre d'établissements souscrits (signup multi-annexes)
+  schoolsCount?: number;
   priceSnapshot?: any;
 }
 
@@ -221,7 +223,18 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
   // ⭐ Option bilingue : 100 000 FCFA/an (révision tarifaire) — snapshot
   //    serveur (source de vérité), fallback tarif officiel courant.
   const bilingualFee = draft?.bilingual ? Number(snapshot.bilingualFee ?? 100000) || 100000 : 0;
-  const totalYearOne = activationFee + annualFee + bilingualFee;
+  // ⭐ Barème progressif du coût d'activation (annexes) : l'annexe créée depuis
+  //    les paramètres porte DÉJÀ son tarif remisé (snapshot.initialFee) + les
+  //    métadonnées du rang ; le multi-écoles du signup porte le total du groupe
+  //    (Σ remises par rang : 2e −15 %, 3e −20 %, 4e −25 %).
+  const signSchoolsCount = Math.max(1, Number(draft?.schoolsCount ?? 1) || 1);
+  const activationBaseFee = snapshot.activationBaseFee != null ? Number(snapshot.activationBaseFee) : undefined;
+  const activationDiscountPercent = Number(snapshot.activationDiscountPercent ?? 0) || 0;
+  const annexRank = snapshot.annexRank != null ? Number(snapshot.annexRank) : undefined;
+  const activationTotal = Number(snapshot.activationTotal ?? 0) > 0
+    ? Number(snapshot.activationTotal)
+    : activationFee * signSchoolsCount;
+  const totalYearOne = activationTotal + (annualFee + bilingualFee) * signSchoolsCount;
   const promoterName = `${draft?.promoterFirstName || ''} ${draft?.promoterLastName || ''}`.trim();
   const alreadyCompleted = draft?.status === 'COMPLETED';
 
@@ -277,23 +290,42 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
                 <span className="font-semibold text-blue-900">{plan?.name || snapshot.planName || planCode}</span>
               </div>
               <div className="flex items-center justify-between text-sm mt-2">
-                <span className="text-slate-600">Frais d'activation</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(activationFee)} FCFA</span>
+                <span className="text-slate-600">
+                  Frais d'activation{signSchoolsCount > 1 ? ` (${signSchoolsCount} écoles — barème progressif)` : ''}
+                </span>
+                <span className="font-semibold text-slate-900">
+                  {formatCurrency(activationTotal)}
+                  {signSchoolsCount === 1 && activationDiscountPercent > 0 && (
+                    <span className="ml-1 text-emerald-700 text-xs">(−{activationDiscountPercent} % — barème annexe)</span>
+                  )}
+                </span>
               </div>
               <div className="flex items-center justify-between text-sm mt-2">
-                <span className="text-slate-600">Frais annuels</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(annualFee)} FCFA</span>
+                <span className="text-slate-600">Frais annuels{signSchoolsCount > 1 ? ` (${signSchoolsCount} écoles)` : ''}</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(annualFee * signSchoolsCount)}</span>
               </div>
               {draft?.bilingual && (
                 <div className="flex items-center justify-between text-sm mt-2">
                   <span className="text-slate-600">Option bilingue FR/EN (annuelle)</span>
-                  <span className="font-semibold text-slate-900">{formatCurrency(bilingualFee)} FCFA / an</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(bilingualFee)} / an</span>
                 </div>
               )}
               <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-blue-200">
                 <span className="font-semibold text-blue-900">Total Année 1</span>
-                <span className="font-bold text-green-700">{formatCurrency(totalYearOne)} FCFA</span>
+                <span className="font-bold text-green-700">{formatCurrency(totalYearOne)}</span>
               </div>
+              {(signSchoolsCount > 1 || activationDiscountPercent > 0) && (
+                <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                  Barème progressif du coût d'activation : 1re école {formatCurrency(activationBaseFee ?? activationFee)}
+                  {signSchoolsCount > 1
+                    ? getGroupActivationTiers(signSchoolsCount, activationBaseFee ?? activationFee).tiers
+                        .map((t) => ` ; ${t.rank}e école ${formatCurrency(t.fee)}${ANNEX_ACTIVATION_DISCOUNTS[t.rank] ? ` (−${ANNEX_ACTIVATION_DISCOUNTS[t.rank]} %)` : ''}`)
+                        .join('')
+                    : annexRank != null
+                      ? ` ; annexe souscrite : ${annexRank}e école → ${formatCurrency(activationFee)} (−${activationDiscountPercent} %)`
+                      : ''}.
+                </p>
+              )}
             </div>
 
             {/* Paiement en espèces — intégral OU échéancier de tranches */}

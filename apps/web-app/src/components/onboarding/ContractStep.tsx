@@ -32,7 +32,7 @@ import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrappe
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
 import { formatCurrency } from '@/lib/utils';
-import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE, getAnnexActivationPricing, ANNEX_ACTIVATION_DISCOUNTS } from '@/lib/services/HelmPricingService';
 
 // ⭐ Tranche de l'échéancier de paiement (espèces — mode YEHI OR Tech)
 interface ContractInstallmentItem {
@@ -63,6 +63,15 @@ interface ContractStepProps {
   subdomain: string;
   activationFee: number;
   annualFee: number;
+  // ⭐ Barème progressif du coût d'activation (écoles annexes) :
+  //    - annexRank : rang de l'école souscrite (annexe créée depuis les
+  //      paramètres — activationFee est DÉJÀ le tarif remisé du rang) ;
+  //    - activationBaseFee : tarif de base avant remise (défaut activationFee) ;
+  //    - activationDiscountPercent : remise appliquée (0/15/20/25).
+  //    Multi-écoles (signup) : les écoles 2..N sont remisées par rang.
+  annexRank?: number;
+  activationBaseFee?: number;
+  activationDiscountPercent?: number;
   // ⭐ MULTI-ÉCOLES : nombre d'établissements souscrits + annexes déclarées
   schoolsCount?: number;
   annexes?: ContractStepAnnex[];
@@ -173,7 +182,9 @@ const SUPPORT_EMAIL = 'support@academiahelm.com';
 export default function ContractStep({
   draftId, schoolName, promoterName, directorName, schoolAddress, schoolCity,
   schoolPhone, schoolEmail, studentCount, planCode, planName, bilingual,
-  subdomain, activationFee, annualFee, schoolsCount = 1, annexes = [],
+  subdomain, activationFee, annualFee,
+  annexRank, activationBaseFee, activationDiscountPercent,
+  schoolsCount = 1, annexes = [],
   subscriptionPaid = true, bilingualPaid = false,
   receivedBy, paymentPlan = 'full', installments, downPaymentReceived,
   onComplete, onBack, overlayTop = 64,
@@ -193,12 +204,29 @@ export default function ContractStep({
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  // ⭐ MULTI-ÉCOLES — totaux cohérents : PAR ÉCOLE × nombre d'écoles
+  // ⭐ MULTI-ÉCOLES — totaux cohérents PAR ÉCOLE, activation AU BAREME progressif
   const effSchoolsCount = Math.max(1, schoolsCount);
   const effAnnexes = (annexes || []).filter((a) => a?.name && String(a.name).trim().length >= 2);
   const bilingualFee = bilingual ? BILINGUAL_FEE : 0;
-  const perSchoolTotal = activationFee + annualFee + bilingualFee;
-  const totalYearOne = effSchoolsCount > 1 ? perSchoolTotal * effSchoolsCount : perSchoolTotal;
+  // ⭐ Barème progressif du coût d'activation (contrat Article 4) — chaque
+  //    rang porte sa remise : 1re école 100 %, 2e −15 %, 3e −20 %, 4e −25 %,
+  //    5e et + négociée. Contrat mono-école d'annexe (paramètres) :
+  //    activationFee est DÉJÀ le tarif remisé du rang (annexRank) — aucun
+  //    recalcul. Multi-écoles (signup) : les écoles 2..N sont remisées ici.
+  const activationBase = activationBaseFee != null && activationBaseFee > 0 ? activationBaseFee : activationFee;
+  const rowActivation: number[] = [];
+  for (let i = 0; i < effSchoolsCount; i++) {
+    if (i === 0) {
+      rowActivation.push(activationFee);
+    } else {
+      const tier = getAnnexActivationPricing(i + 1, activationBase);
+      rowActivation.push(tier.negotiated ? activationBase : (tier.fee as number));
+    }
+  }
+  const activationTotal = rowActivation.reduce((s, f) => s + f, 0);
+  const annexDiscount = activationDiscountPercent ?? 0;
+  // ⭐ Total Année 1 : Σ activations (barème par rang) + (annuel + bilingue) × N
+  const totalYearOne = activationTotal + (annualFee + bilingualFee) * effSchoolsCount;
   const contractRef = `CT-AH-${new Date().getFullYear()}-${subdomain.toUpperCase().substring(0, 12)}`;
 
   // ⭐ Échéancier de tranches (mode paiement par tranches) : montants nettoyés
@@ -276,6 +304,11 @@ export default function ContractStep({
             ...(effAnnexes.length > 0 ? { annexes: effAnnexes } : {}),
             effectiveDate: today, activationFee, annualFee, bilingualFee,
             totalYearOne,
+            // ⭐ Barème progressif du coût d'activation (annexes) — le PDF
+            //    backend en tient compte (Articles 3/4, détail multi-écoles)
+            ...(annexRank != null ? { annexRank } : {}),
+            ...(activationBase != null ? { activationBaseFee: activationBase } : {}),
+            ...(annexDiscount > 0 ? { activationDiscountPercent: annexDiscount } : {}),
             paymentMethod: 'cash' as const,
             ...paymentMarked,
             ...(signedManually ? { signedManually: true } : {}),
@@ -573,10 +606,19 @@ export default function ContractStep({
             </tbody>
           </table>
           </ResponsiveTableWrapper>
+          {/* ⭐ Barème progressif du coût d'activation — documenté dans le contrat
+              (tous niveaux) : remises par rang + tarification négociée ≥ 5e école */}
+          <p className="text-[9.5px] italic text-slate-600 mb-2">
+            Barème progressif du coût d&apos;activation (écoles annexes) : 1re école {activationBase.toLocaleString('fr-FR')} FCFA (tarif plein) ;
+            2e école −15 % ({(getAnnexActivationPricing(2, activationBase).fee as number).toLocaleString('fr-FR')} FCFA) ;
+            3e école −20 % ({(getAnnexActivationPricing(3, activationBase).fee as number).toLocaleString('fr-FR')} FCFA) ;
+            4e école −25 % ({(getAnnexActivationPricing(4, activationBase).fee as number).toLocaleString('fr-FR')} FCFA) ;
+            à partir de la 5e école, tarification négociée entre les Parties.
+          </p>
           <p className={articleText}>
             {bilingual ? checkOn : checkOff} Option bilingue FR/EN souscrite — supplément de{' '}
-            <strong>{formatCurrency(bilingualFee)} ({amountToFrenchWords(bilingualFee)}) FCFA par an</strong>, à
-            facturation annuelle{effSchoolsCount > 1 ? `, par établissement (${effSchoolsCount} établissements → ${formatCurrency(bilingualFee * effSchoolsCount)} FCFA/an)` : ''}.
+            <strong>{formatCurrency(bilingualFee)} ({amountToFrenchWords(bilingualFee)}) par an</strong>, à
+            facturation annuelle{effSchoolsCount > 1 ? `, par établissement (${effSchoolsCount} établissements → ${formatCurrency(bilingualFee * effSchoolsCount)}/an)` : ''}.
           </p>
           <p className={articleText}>
             {bilingual ? checkOff : checkOn} Option bilingue non souscrite.
@@ -606,14 +648,26 @@ export default function ContractStep({
                   {Array.from({ length: effSchoolsCount }).map((_, i) => {
                     const name = i === 0 ? schoolName : (effAnnexes[i - 1]?.name || `${schoolName} - Annexe ${i}`);
                     const city = i === 0 ? schoolCity : (effAnnexes[i - 1]?.city || schoolCity);
+                    // ⭐ Barème progressif : remise par rang (2e −15 %, 3e −20 %, 4e −25 %)
+                    //    — l'annexe mono-école (paramètres) porte la remise de son rang.
+                    const rank = i + 1;
+                    const disc = ANNEX_ACTIVATION_DISCOUNTS[rank] ?? 0;
+                    const showDiscount = disc > 0 || (i === 0 && annexDiscount > 0);
                     return (
                       <tr key={i}>
                         <td className={`${tblTd} text-center`}>{i + 1}</td>
                         <td className={tblTd}>{name}</td>
                         <td className={tblTd}>{city}</td>
-                        <td className={`${tblTd} text-right`}>{activationFee.toLocaleString('fr-FR')}</td>
+                        <td className={`${tblTd} text-right`}>
+                          {rowActivation[i].toLocaleString('fr-FR')}
+                          {showDiscount && (
+                            <span className="ml-1 text-emerald-700 text-[9.5px] font-semibold whitespace-nowrap">
+                              (−{disc > 0 ? disc : annexDiscount} %)
+                            </span>
+                          )}
+                        </td>
                         <td className={`${tblTd} text-right`}>{annualFee.toLocaleString('fr-FR')}</td>
-                        <td className={`${tblTd} text-right`}>{(activationFee + annualFee).toLocaleString('fr-FR')}</td>
+                        <td className={`${tblTd} text-right`}>{(rowActivation[i] + annualFee).toLocaleString('fr-FR')}</td>
                       </tr>
                     );
                   })}
@@ -624,7 +678,7 @@ export default function ContractStep({
                     </tr>
                   )}
                   <tr className="bg-amber-50 font-bold">
-                    <td className={tblTd} colSpan={5}>TOTAL ANNÉE 1 — GROUPE ({effSchoolsCount} établissements)</td>
+                    <td className={tblTd} colSpan={5}>TOTAL ANNÉE 1 — GROUPE ({effSchoolsCount} établissements — activation au barème progressif)</td>
                     <td className={`${tblTd} text-right`}>{totalYearOne.toLocaleString('fr-FR')}</td>
                   </tr>
                 </tbody>
@@ -634,8 +688,12 @@ export default function ContractStep({
           )}
           <p className={articleText}>
             <strong>Coût total Année 1, option bilingue incluse le cas échéant :</strong>{' '}
-            <strong className="text-emerald-800">{formatCurrency(totalYearOne)} ({amountToFrenchWords(totalYearOne)}) FCFA</strong>
-            {effSchoolsCount > 1 ? ` — soit ${formatCurrency(perSchoolTotal)} FCFA par établissement × ${effSchoolsCount} établissements` : ''}.
+            <strong className="text-emerald-800">{formatCurrency(totalYearOne)} ({amountToFrenchWords(totalYearOne)})</strong>
+            {effSchoolsCount > 1
+              ? ` — dont coût d'activation du groupe : ${activationTotal.toLocaleString('fr-FR')} FCFA (barème progressif : ${rowActivation.map((f) => f.toLocaleString('fr-FR')).join(' + ')})`
+              : annexDiscount > 0
+                ? ` — dont frais d'activation remisés (−${annexDiscount} % : ${activationBase.toLocaleString('fr-FR')} − ${(activationBase - activationFee).toLocaleString('fr-FR')} = ${activationFee.toLocaleString('fr-FR')} FCFA)`
+                : ''}.
           </p>
 
           {/* ── Article 4 — Prix et modalités de paiement ── */}
@@ -643,10 +701,41 @@ export default function ContractStep({
 
           <h4 className={subTitle}>4.1 — Conditions générales de prix</h4>
           <p className={articleText}>
-            Le Client verse au Prestataire : d&apos;une part, des frais d&apos;activation uniques de 500 000 (cinq cent
-            mille) FCFA{effSchoolsCount > 1 ? ' par établissement souscrit' : ''}, dus intégralement à la signature du
-            présent contrat ; d&apos;autre part, des frais annuels d&apos;abonnement conformes au plan souscrit à
-            l&apos;Article 3, payables d&apos;avance à chaque date d&apos;échéance annuelle. Le règlement s&apos;effectue
+            Le Client verse au Prestataire : d&apos;une part,{' '}
+            {effSchoolsCount > 1 ? (
+              <>
+                des frais d&apos;activation uniques par établissement souscrit, au barème progressif du groupe :{' '}
+                <strong>{rowActivation[0].toLocaleString('fr-FR')} ({amountToFrenchWords(rowActivation[0])}) FCFA</strong>{' '}
+                pour la 1<sup>re</sup> école
+                {rowActivation.slice(1).map((fee, i) => {
+                  const rank = i + 2;
+                  const disc = ANNEX_ACTIVATION_DISCOUNTS[rank] ?? 0;
+                  return (
+                    <span key={rank}>
+                      , <strong>{fee.toLocaleString('fr-FR')} FCFA (−{disc} %)</strong> pour la {rank}
+                      <sup>e</sup> école
+                    </span>
+                  );
+                })}
+                {' '}— soit un coût d&apos;activation total de{' '}
+                <strong>{activationTotal.toLocaleString('fr-FR')} ({amountToFrenchWords(activationTotal)}) FCFA</strong>
+              </>
+            ) : annexRank != null && annexRank >= 2 && annexDiscount > 0 ? (
+              <>
+                des frais d&apos;activation uniques de{' '}
+                <strong>{activationFee.toLocaleString('fr-FR')} ({amountToFrenchWords(activationFee)}) FCFA</strong>, tarif
+                applicable à la {annexRank}
+                <sup>e</sup> école du groupe (remise de {annexDiscount} % sur le tarif de base de{' '}
+                {activationBase.toLocaleString('fr-FR')} FCFA — barème progressif des écoles annexes)
+              </>
+            ) : (
+              <>
+                des frais d&apos;activation uniques de{' '}
+                <strong>{activationFee.toLocaleString('fr-FR')} ({amountToFrenchWords(activationFee)}) FCFA</strong>
+              </>
+            )}
+            , dus intégralement à la signature du présent contrat ; d&apos;autre part, des frais annuels d&apos;abonnement conformes au plan
+            souscrit à l&apos;Article 3, payables d&apos;avance à chaque date d&apos;échéance annuelle. Le règlement s&apos;effectue
             en espèces contre reçu établi par le Prestataire, modalité de référence du présent contrat, ou, le cas
             échéant, par virement bancaire ou Mobile Money. Le service de messagerie Helm Connect est inclus
             gratuitement et sans limitation. Ce service de messagerie est à l&apos;instar de WhatsApp, mais sans
@@ -671,9 +760,13 @@ export default function ContractStep({
               complétée et signée par le Prestataire :
             </p>
             <p className="text-[10.5px] leading-[1.55] text-slate-800">
-              {!isInstallments && subscriptionPaid ? checkOn : checkOff} La souscription — frais d&apos;activation de
-              500 000 FCFA{effSchoolsCount > 1 ? ` × ${effSchoolsCount} établissements` : ''} et frais annuels du plan
-              souscrit — a été intégralement réglée en espèces.
+              {!isInstallments && subscriptionPaid ? checkOn : checkOff} La souscription —{' '}
+              {effSchoolsCount > 1
+                ? `frais d'activation du groupe au barème progressif (${rowActivation.map((f) => f.toLocaleString('fr-FR')).join(' + ')} = ${activationTotal.toLocaleString('fr-FR')} FCFA)`
+                : annexDiscount > 0
+                  ? `frais d'activation de ${activationFee.toLocaleString('fr-FR')} FCFA (remise de ${annexDiscount} % — barème annexe)`
+                  : `frais d'activation de ${activationFee.toLocaleString('fr-FR')} FCFA`}{' '}
+              et frais annuels du plan souscrit — a été intégralement réglée en espèces.
             </p>
             <p className="text-[10.5px] leading-[1.55] text-slate-800">
               {bilingual && !isInstallments && bilingualPaid ? checkOn : checkOff} Option bilingue FR/EN souscrite :

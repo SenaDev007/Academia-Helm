@@ -33,6 +33,13 @@ import { DRAFT_EXPIRY_HOURS } from './draft-cleanup.service';
 //    dès l'activation d'un établissement
 import { HelmConnectBootstrapService } from '../../communication/services/helm-connect-bootstrap.service';
 import { isSchoolTenantType, schoolTenantTypeFilter } from '../../common/constants/school-tenant-types';
+// ⭐ Barème progressif du coût d'activation (écoles annexes — contrat Article 4)
+import {
+  getAnnexActivationPricing,
+  getGroupActivationTiers,
+  ANNEX_NEGOTIATED_RANK,
+  ANNEX_NEGOTIATED_MESSAGE,
+} from '../../common/utils/annex-activation-pricing';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -549,6 +556,20 @@ export class OnboardingService {
       ? planInitialFee
       : await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
 
+    // ⭐ Barème progressif du coût d'activation (contrat Article 4) — appliqué
+    //    PAR RANG : 1re école 100 % (500 000), 2e −15 % (425 000),
+    //    3e −20 % (400 000), 4e −25 % (375 000). À partir de la 5e école,
+    //    tarification NÉGOCIÉE : la souscription en libre-service est
+    //    bloquée ici (défense serveur — le wizard limite à 3 annexes).
+    //    Mono-école : pas de barème (l'annexe créée depuis les paramètres
+    //    reçoit sa remise de rang dans createAnnexDraft).
+    const schoolsCountN = Math.max(1, draft.schoolsCount || 1);
+    const activationBaseFee = initialPayment; // tarif de base = rang 1 (école principale)
+    const groupTiers = getGroupActivationTiers(schoolsCountN, activationBaseFee);
+    if (groupTiers.negotiated) {
+      throw new BadRequestException(ANNEX_NEGOTIATED_MESSAGE);
+    }
+
     // Construire le priceSnapshot avec le breakdown complet
     // ⭐ Inclure monthlyPrice et yearlPrice pour que HelmSubscription.monthlyAmount
     // et annualAmount soient correctement remplis lors de l'activation.
@@ -566,6 +587,16 @@ export class OnboardingService {
       yearlyPrice: pricingResult.plan.yearlyPrice ?? 0,
       initialFee: planInitialFee ?? initialPayment, // ⭐ Frais d'activation (contrat Article 4 — lu en priorité par le contrat / paiement cash)
       initialPayment, // Alias historique (mêmes frais d'activation)
+      // ⭐ Barème progressif du coût d'activation (écoles 2..N remisées) :
+      //    total d'activation du groupe + lignes par rang — consommés par le
+      //    contrat (Article 3/4) et le paiement cash (total Année 1).
+      activationBaseFee,
+      ...(schoolsCountN > 1
+        ? {
+            activationTotal: groupTiers.total,
+            activationTiers: groupTiers.tiers as unknown as Prisma.InputJsonValue,
+          }
+        : {}),
       breakdown: pricingResult.breakdown as unknown as Prisma.InputJsonValue, // Breakdown complet pour audit
       currency: 'XOF',
     };
@@ -2019,7 +2050,16 @@ export class OnboardingService {
     const perSchoolTotal = totalFromSnapshot > 0
       ? Math.round(activationFee + totalFromSnapshot)
       : Math.round(activationFee + annualFee + bilingualFee);
-    const totalAmount = schoolsCount > 1 ? perSchoolTotal * schoolsCount : perSchoolTotal;
+    // ⭐ Barème progressif du coût d'activation : le total du groupe n'est PAS
+    //    activation × N — chaque rang porte sa remise (2e −15 %, 3e −20 %,
+    //    4e −25 %). Mono-école (annexe depuis les paramètres) : initialFee est
+    //    DÉJÀ le tarif remisé (patch createAnnexDraft) → formule inchangée.
+    const activationTotal = Number(pricing.activationTotal ?? 0) || 0;
+    const totalAmount = schoolsCount > 1
+      ? (activationTotal > 0
+        ? Math.round(activationTotal + (perSchoolTotal - activationFee) * schoolsCount)
+        : perSchoolTotal * schoolsCount)
+      : perSchoolTotal;
 
     // Réutiliser un paiement cash existant (idempotence), sinon le créer
     let payment = draft.payments.find((p) => p.provider === 'cash');
@@ -2047,7 +2087,16 @@ export class OnboardingService {
               receivedBy: receivedBy || null,
               markedAt: new Date().toISOString(),
             },
-            breakdown: { activationFee, annualFee, bilingualFee, schoolsCount, perSchoolTotal, total: totalAmount },
+            breakdown: {
+              activationFee, annualFee, bilingualFee, schoolsCount, perSchoolTotal, total: totalAmount,
+              // ⭐ Barème progressif du coût d'activation (audit — contrat Article 4)
+              ...(activationTotal > 0 ? { activationTotal } : {}),
+              ...(pricing.activationBaseFee != null ? { activationBaseFee: Number(pricing.activationBaseFee) } : {}),
+              ...(pricing.activationDiscountPercent != null
+                ? { activationDiscountPercent: Number(pricing.activationDiscountPercent) }
+                : {}),
+              ...(pricing.annexRank != null ? { annexRank: Number(pricing.annexRank) } : {}),
+            },
             ...(hasInstallments
               ? {
                   paymentPlan: 'installments' as const,
@@ -2150,7 +2199,10 @@ export class OnboardingService {
     }));
 
     // Prix d'une nouvelle annexe : PAR ÉCOLE (contrat Article 3/4) —
-    // activation 500 000 FCFA + frais annuels du plan + option bilingue.
+    // activation + frais annuels du plan + option bilingue.
+    // ⭐ Barème progressif du COÛT D'ACTIVATION selon le rang de l'annexe
+    //    dans le groupe : 1re école 100 % (500 000), 2e −15 % (425 000),
+    //    3e −20 % (400 000), 4e −25 % (375 000), 5e et + NÉGOCIÉ.
     const plans = await this.prisma.pricingPlan
       .findMany({
         where: { code: { in: ['SEED', 'GROW', 'LEAD', 'NETWORK'] }, isActive: true },
@@ -2166,22 +2218,46 @@ export class OnboardingService {
       // fallback constant
     }
 
+    // ⭐ Rang de la prochaine annexe → tarif d'activation remisé (ou négocié)
+    const nextAnnexIndex = bySchool.length + 1;
+    const baseActivationFee = plans.length > 0 && (plans as any[])[0].initialFee != null
+      ? Number((plans as any[])[0].initialFee)
+      : 500000;
+    const annexActivation = getAnnexActivationPricing(nextAnnexIndex, baseActivationFee);
+
     return {
       eligible: bySchool.length >= 1,
       currentSchools: bySchool,
-      nextAnnexIndex: bySchool.length + 1,
+      nextAnnexIndex,
+      // ⭐ Tarif d'activation de la prochaine annexe (barème progressif).
+      //    negotiated = true dès la 5e école : aucun tarif automatique,
+      //    l'UI oriente vers la tarification négociée (contact support).
+      annexActivation: {
+        rank: annexActivation.rank,
+        negotiated: annexActivation.negotiated,
+        baseFee: annexActivation.baseFee,
+        fee: annexActivation.fee,
+        discountPercent: annexActivation.discountPercent,
+      },
       pricing: {
         currency: 'XOF',
         bilingualYearly,
-        plans: (plans as any[]).map((p) => ({
-          code: p.code,
-          name: p.name,
-          activationFee: Number(p.initialFee ?? 500000),
-          annualFee: Number(p.yearlyAmount ?? 0),
-          yearOnePerSchool: Number(p.initialFee ?? 500000) + Number(p.yearlyAmount ?? 0),
-          studentMin: p.studentMin ?? 0,
-          studentMax: p.studentMax ?? null,
-        })),
+        plans: (plans as any[]).map((p) => {
+          const planBase = Number(p.initialFee ?? 500000);
+          const tier = getAnnexActivationPricing(nextAnnexIndex, planBase);
+          // Non négocié : tarif remisé par rang ; négocié : tarif de base
+          // (l'UI affiche la mention « tarification négociée » et bloque).
+          const activationFee = tier.negotiated ? planBase : (tier.fee as number);
+          return {
+            code: p.code,
+            name: p.name,
+            activationFee,
+            annualFee: Number(p.yearlyAmount ?? 0),
+            yearOnePerSchool: activationFee + Number(p.yearlyAmount ?? 0),
+            studentMin: p.studentMin ?? 0,
+            studentMax: p.studentMax ?? null,
+          };
+        }),
       },
     };
   }
@@ -2237,6 +2313,27 @@ export class OnboardingService {
       );
     }
 
+    // 2bis. ⭐ Barème progressif du coût d'activation : rang de l'annexe =
+    //       nombre d'écoles ACTIVES déjà gérées + 1 (1re école = principale).
+    //       2e école −15 %, 3e −20 %, 4e −25 % — à partir de la 5e école,
+    //       tarification NÉGOCIÉE : la création en libre-service est bloquée,
+    //       le promoteur est orienté vers la négociation avec la plateforme.
+    let managedSchoolCount = 0;
+    if (managedTenantIds.size > 0) {
+      try {
+        managedSchoolCount = await this.prisma.tenant.count({
+          where: { id: { in: Array.from(managedTenantIds) }, status: 'active', type: schoolTenantTypeFilter() },
+        });
+      } catch {
+        // Type absent (base non migrée) → approximation prudente
+        managedSchoolCount = managedTenantIds.size;
+      }
+    }
+    const annexRank = Math.max(1, managedSchoolCount + 1);
+    if (annexRank >= ANNEX_NEGOTIATED_RANK) {
+      throw new BadRequestException(ANNEX_NEGOTIATED_MESSAGE);
+    }
+
     // 3. Pays : celui du tenant courant du promoteur (annexe même pays)
     const currentTenant = await this.prisma.tenant.findFirst({
       where: { id: { in: Array.from(managedTenantIds) } },
@@ -2279,6 +2376,36 @@ export class OnboardingService {
       planId: data.planCode,
       periodType: 'YEARLY',
     });
+
+    // 6bis. ⭐ Barème progressif — le coût d'activation de l'annexe est
+    //       remisé selon son rang (2e école −15 % → 425 000, 3e −20 % →
+    //       400 000, 4e −25 % → 375 000). Le snapshot de prix (source de
+    //       vérité du contrat, du paiement cash et de la reprise de draft)
+    //       porte le tarif remisé + les métadonnées du barème (base, remise,
+    //       rang) pour que le contrat en tienne compte à tous les niveaux.
+    const annexSnapshot = (planSelection.pricing as any) || {};
+    const baseActivationFee = Number(annexSnapshot.initialFee ?? annexSnapshot.initialPayment ?? 500000) || 500000;
+    const annexTier = getAnnexActivationPricing(annexRank, baseActivationFee);
+    if (!annexTier.negotiated && annexTier.fee != null) {
+      const patchedSnapshot = {
+        ...annexSnapshot,
+        initialFee: annexTier.fee,
+        initialPayment: annexTier.fee, // alias historique — même tarif remisé
+        activationBaseFee: baseActivationFee,
+        activationDiscountPercent: annexTier.discountPercent,
+        annexRank: annexTier.rank,
+      };
+      await this.prisma.onboardingDraft.update({
+        where: { id: updated.id },
+        data: { priceSnapshot: patchedSnapshot as unknown as Prisma.InputJsonValue },
+      });
+      planSelection.pricing = patchedSnapshot;
+      updated.priceSnapshot = patchedSnapshot as unknown as Prisma.InputJsonValue;
+      this.logger.log(
+        `🎓 Barème activation annexe appliqué (draft ${updated.id}) : rang ${annexTier.rank} → ` +
+        `${annexTier.fee} XOF (−${annexTier.discountPercent} % sur ${baseActivationFee})`,
+      );
+    }
 
     this.logger.log(
       `🏫 Annexe draft created for promoter ${promoter.email}: ${draft.id} « ${data.annexName} » (plan ${data.planCode}${data.bilingual ? ' + bilingue' : ''})`,

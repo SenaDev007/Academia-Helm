@@ -62,7 +62,7 @@ import {
   Plus as PlusIcon,
   Trash2 as TrashIcon,
 } from 'lucide-react';
-import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE, fetchPricingPlans, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, BILINGUAL_ADDON, HELM_ACTIVATION_FEE, fetchPricingPlans, getGroupActivationTiers, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import FedaPayCheckout from './FedaPayCheckout';
@@ -261,11 +261,20 @@ export default function OnboardingWizard() {
   // ⭐ MULTI-ÉCOLES : nombre d'établissements déclarés (1 école principale +
   //    N annexes valides). Source unique du facteur de facturation — chaque
   //    école paie sa propre souscription (activation + annuel + bilingue).
+  //    ⭐ Plafond libre-service : 3 annexes (4 écoles) — au-delà, tarification
+  //    négociée (le backend bloque selectPlan dès la 5e école).
+  const MAX_ANNEXES = 3;
   const annexSchoolsCount = Math.max(1, 1 + (data.annexes || []).filter((a) => String(a?.name || '').trim().length >= 2).length);
   // Annexes nettoyées (transmises au draft + au contrat)
   const annexCleanList = (data.annexes || [])
     .map((a) => ({ name: String(a?.name || '').trim(), city: a?.city ? String(a.city).trim() : undefined }))
     .filter((a) => a.name.length >= 2);
+  // ⭐ Barème progressif du coût d'activation (contrat Article 4) : total
+  //    d'activation du groupe — 1re école plein tarif (500 000 F CFA),
+  //    2e −15 % (425 000), 3e −20 % (400 000), 4e −25 % (375 000).
+  //    (annexSchoolsCount ≤ 4 : plafond du wizard ; fallback défensif × N.)
+  const activationTiers = getGroupActivationTiers(annexSchoolsCount, HELM_ACTIVATION_FEE);
+  const groupActivationTotal = activationTiers.total ?? HELM_ACTIVATION_FEE * annexSchoolsCount;
 
   // ⭐ Lire les query params au montage (?plan=seed&bilingual=true)
   //    Permet à la page /tarification de pré-remplir l'onboarding quand
@@ -740,7 +749,7 @@ export default function OnboardingWizard() {
           // ⭐ Paiement échelonné : valider l'échéancier (total × nombre d'écoles)
           const list = paymentMarked.installments;
           const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-          const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
+          const cashTotal = groupActivationTotal + (planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
           const allocated = list.reduce((s, t) => s + (Number(t.amount) || 0), 0);
           if (list.length < 2) {
             newErrors.paymentMarked = 'Un paiement par tranches comporte au moins deux (2) tranches.';
@@ -749,7 +758,7 @@ export default function OnboardingWizard() {
           } else if (list.slice(1).some((t) => !t.dueDate)) {
             newErrors.paymentMarked = "Chaque tranche (hors acompte) doit avoir une date d'échéance.";
           } else if (allocated !== cashTotal) {
-            newErrors.paymentMarked = `La somme des tranches (${formatCurrency(allocated)} FCFA) doit être égale au total à régler (${formatCurrency(cashTotal)} FCFA). Utilisez « Répartir équitablement » puis ajustez.`;
+            newErrors.paymentMarked = `La somme des tranches (${formatCurrency(allocated)}) doit être égale au total à régler (${formatCurrency(cashTotal)} — barème progressif : activation ${formatCurrency(groupActivationTotal)} + ${annexSchoolsCount} × frais annuels). Utilisez « Répartir équitablement » puis ajustez.`;
           } else if (!paymentMarked.downPaymentReceived) {
             newErrors.paymentMarked = "Veuillez confirmer que l'acompte (tranche 1) a été encaissé à la signature.";
           }
@@ -2002,11 +2011,14 @@ export default function OnboardingWizard() {
                     <button
                       type="button"
                       onClick={() => {
-                        if ((data.annexes || []).length >= 9) return;
+                        if ((data.annexes || []).length >= MAX_ANNEXES) return;
                         setData({ ...data, annexes: [...(data.annexes || []), { name: '', city: '' }] });
                       }}
-                      disabled={(data.annexes || []).length >= 9}
+                      disabled={(data.annexes || []).length >= MAX_ANNEXES}
                       className="px-3 py-1.5 text-xs font-semibold rounded-md border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                      title={(data.annexes || []).length >= MAX_ANNEXES
+                        ? "Au-delà de 4 écoles, la tarification du coût d'activation est négociée (contactez support@academiahelm.com)"
+                        : 'Ajouter une école annexe'}
                     >
                       <PlusIcon className="w-3.5 h-3.5" />
                       Ajouter une école annexe
@@ -2074,9 +2086,19 @@ export default function OnboardingWizard() {
                       ))}
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <strong>Facturation multi-écoles :</strong> {data.annexes.length + 1} établissements seront
-                        créés — chacun avec ses frais d&apos;activation (500 000 FCFA) et ses frais annuels.
-                        Le contrat détaillera la souscription par établissement.
+                        créés — le coût d&apos;activation suit le <strong>barème progressif</strong> : 1re école{' '}
+                        {formatCurrency(HELM_ACTIVATION_FEE)}, 2e −15 % ({formatCurrency(425000)}), 3e −20 % ({formatCurrency(400000)}),
+                        4e −25 % ({formatCurrency(375000)}) — soit <strong>{formatCurrency(groupActivationTotal)}</strong>
+                        d&apos;activation pour le groupe, en plus des frais annuels du plan choisi (par école).
+                        Le contrat détaillera la souscription par établissement au barème.
                       </p>
+                      {(data.annexes || []).length >= MAX_ANNEXES && (
+                        <p className="text-xs text-slate-500">
+                          Au-delà de 4 écoles, la tarification du coût d&apos;activation est <strong>négociée</strong> avec
+                          Academia Helm (contactez support@academiahelm.com) — l&apos;ajout d&apos;annexes supplémentaires
+                          est réservé aux groupes de 4 écoles maximum en libre-service.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2923,7 +2945,7 @@ export default function OnboardingWizard() {
                               Activation : <strong>{formatCurrency(setupFee)}</strong>
                             </div>
                             <div className="text-[11px] font-semibold text-emerald-700 whitespace-nowrap">
-                              Total Année 1 : {formatCurrency(yearOneTotal)} FCFA
+                              Total Année 1 : {formatCurrency(yearOneTotal)}
                             </div>
                           </div>
                         </button>
@@ -3073,7 +3095,7 @@ export default function OnboardingWizard() {
                   // Totaux de référence pour l'échéancier (mêmes valeurs que l'affichage du plan)
                   // ⭐ MULTI-ÉCOLES : PAR ÉCOLE × nombre d'établissements déclarés
                   const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-                  const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
+                  const cashTotal = groupActivationTotal + (planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
                   const allocated = paymentMarked.installments.reduce((s, t) => s + (Number(t.amount) || 0), 0);
                   const remaining = cashTotal - allocated;
 
@@ -3162,9 +3184,14 @@ export default function OnboardingWizard() {
                         className="mt-1 w-4 h-4 accent-amber-600"
                       />
                       <span className="text-sm text-graphite-800">
-                        <strong>La souscription a été payée</strong> — frais d'activation 500 000 FCFA + frais annuels du
+                        <strong>La souscription a été payée</strong> — frais d'activation{' '}
+                        {formatCurrency(groupActivationTotal)}
+                        {annexSchoolsCount > 1
+                          ? ` (barème progressif — ${annexSchoolsCount} écoles : ${activationTiers.tiers.map((t) => `${formatCurrency(t.fee)}${t.discountPercent > 0 ? ` −${t.discountPercent} %` : ''}`).join(' + ')})`
+                          : ''}{' '}
+                        + frais annuels du
                         plan {HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || ''} (
-                        {formatCurrency(HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000)} FCFA),
+                        {formatCurrency(HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000)}),
                         en espèces
                       </span>
                     </label>
@@ -3180,7 +3207,7 @@ export default function OnboardingWizard() {
                       />
                       <span className="text-sm text-graphite-800">
                         <strong>Les frais de l'option bilingue ont été payés</strong> — facturation
-                        annuelle ({formatCurrency(BILINGUAL_ADDON.annual || 0)} FCFA / an), en espèces
+                        annuelle ({formatCurrency(BILINGUAL_ADDON.annual || 0)} / an), en espèces
                       </span>
                     </label>
                     )}
@@ -3212,7 +3239,7 @@ export default function OnboardingWizard() {
                         className="px-3 py-1.5 text-xs font-semibold text-blue-900 bg-white border border-amber-300 rounded-md hover:bg-amber-50 transition-colors"
                         title="Répartir le total équitablement entre les tranches"
                       >
-                        Répartir équitablement ({formatCurrency(cashTotal)} FCFA)
+                        Répartir équitablement ({formatCurrency(cashTotal)})
                       </button>
                     </div>
 
@@ -3273,10 +3300,10 @@ export default function OnboardingWizard() {
                     {/* Totaux de contrôle */}
                     <div className="flex items-center justify-between gap-2 p-3 bg-white rounded-lg border border-amber-200 text-sm">
                       <span className="text-graphite-700">
-                        Réparti : <strong>{formatCurrency(allocated)} FCFA</strong>
+                        Réparti : <strong>{formatCurrency(allocated)}</strong>
                         {data.bilingual && (
                           <span className="text-[10px] text-graphite-500 block">
-                            (option bilingue {formatCurrency(BILINGUAL_ADDON.annual || 0)} FCFA incluse)
+                            (option bilingue {formatCurrency(BILINGUAL_ADDON.annual || 0)} incluse)
                           </span>
                         )}
                       </span>
@@ -3284,8 +3311,8 @@ export default function OnboardingWizard() {
                         {remaining === 0
                           ? '✓ Total couvert'
                           : remaining > 0
-                            ? `Reste à répartir : ${formatCurrency(remaining)} FCFA`
-                            : `Excédent : ${formatCurrency(-remaining)} FCFA`}
+                            ? `Reste à répartir : ${formatCurrency(remaining)}`
+                            : `Excédent : ${formatCurrency(-remaining)}`}
                       </span>
                     </div>
                   </div>

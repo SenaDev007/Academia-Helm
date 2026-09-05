@@ -15,14 +15,17 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
-  HttpCode, HttpStatus, BadRequestException, Logger, Res,
+  HttpCode, HttpStatus, BadRequestException, Logger, Res, UseGuards,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SaisieMasterService } from './saisiemaster.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 
 @Controller('saisiemaster')
-@Public()
+// ⭐ FIX 2026-09-06 (F9) : fin du @Public() — ce contrôleur DOUBLON celui de
+//    src/saisiemaster/ (même chemin) et c'était lui qui répondait en prod.
+//    Le CRUD d'évaluations et la saisie de notes exigent désormais le JWT.
+@UseGuards(JwtAuthGuard)
 export class SaisieMasterController {
   private readonly logger = new Logger(SaisieMasterController.name);
 

@@ -1,1 +1,1 @@
-Trigger deployment with valid author email (s.akpovitohou@gmail.com) at 1788626538// Vercel deployment trigger Sat Sep 5 16:42:18 UTC 2026 — déploie les documents de paie FP/EP (Task 11 : émission, registre, fiches/états, flux mensuel période)
+Trigger deployment with valid author email (s.akpovitohou@gmail.com) at 1788631823// Vercel deployment trigger Sat Sep 5 18:10:23 UTC 2026 — relance web-app : email auteur corrigé (z@container.local invalide), front documents FP/EP Task 11 prêt

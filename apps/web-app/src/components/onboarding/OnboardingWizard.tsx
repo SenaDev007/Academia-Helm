@@ -605,12 +605,12 @@ export default function OnboardingWizard() {
 
     // Prix de l'option bilingue — dynamique (pricing_plans via API publique,
     // tarif central piloté depuis le back-office), fallback BILINGUAL_ADDON
-    // (5 000 F CFA/mois de référence → 50 000 F CFA/an, 2 mois offerts)
+    // (10 000 F CFA/mois de référence → 100 000 F CFA/an, 2 mois offerts)
     const bilingualYearly = data.bilingual
       ? Number(
           pricingPlans.find((p: any) => p.code === data.planCode)?.bilingualYearly
             ?? BILINGUAL_ADDON.annual
-            ?? 50000,
+            ?? 100000,
         )
       : 0;
 
@@ -740,7 +740,7 @@ export default function OnboardingWizard() {
           // ⭐ Paiement échelonné : valider l'échéancier (total × nombre d'écoles)
           const list = paymentMarked.installments;
           const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-          const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0)) * annexSchoolsCount;
+          const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
           const allocated = list.reduce((s, t) => s + (Number(t.amount) || 0), 0);
           if (list.length < 2) {
             newErrors.paymentMarked = 'Un paiement par tranches comporte au moins deux (2) tranches.';
@@ -3073,7 +3073,7 @@ export default function OnboardingWizard() {
                   // Totaux de référence pour l'échéancier (mêmes valeurs que l'affichage du plan)
                   // ⭐ MULTI-ÉCOLES : PAR ÉCOLE × nombre d'établissements déclarés
                   const planAnnual = HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000;
-                  const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 50000) : 0)) * annexSchoolsCount;
+                  const cashTotal = (HELM_ACTIVATION_FEE + planAnnual + (data.bilingual ? (BILINGUAL_ADDON.annual || 100000) : 0)) * annexSchoolsCount;
                   const allocated = paymentMarked.installments.reduce((s, t) => s + (Number(t.amount) || 0), 0);
                   const remaining = cashTotal - allocated;
 

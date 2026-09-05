@@ -366,7 +366,7 @@ export class SubscriptionLifecycleController {
 
     // ⭐ Tarif bilingue : source centrale en DB (plan add-on BILINGUAL →
     // pricing_configs), pilotée depuis le back-office /platform/subscriptions.
-    // monthly = tarif mensuel de référence (5 000 F CFA), yearly = 50 000 F CFA/an
+    // monthly = tarif mensuel de référence (10 000 F CFA), yearly = 100 000 F CFA/an
     // (2 mois offerts) — seul le tarif annuel est facturé (contrat Article 4).
     const bilingualAddon = await getBilingualAddonPrice(this.prisma);
     const monthlyAddon = bilingualAddon.monthly;
@@ -561,10 +561,13 @@ export class SubscriptionLifecycleController {
         select: { name: true, subdomain: true },
       });
 
-      // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
-      // Quel que soit le billingCycle stocké (potentiellement MONTHLY pour d'anciennes données),
-      // on facture le tarif annuel.
-      const amount = 50000;  // bilingualYearly — 50 000 FCFA/an (contrat Article 4)
+      // ⭐ Contrat Article 4 : option bilingue facturée au tarif ANNUEL courant
+      //    (source centrale pricing_plans/pricing_configs via
+      //    getBilingualAddonPrice — révision tarifaire : 100 000 FCFA/an),
+      //    quel que soit le billingCycle stocké (potentiellement MONTHLY pour
+      //    d'anciennes données), on facture le tarif annuel.
+      const bilingualAddon = await getBilingualAddonPrice(this.prisma);
+      const amount = bilingualAddon.yearly; // bilingualYearly — tarif annuel officiel (contrat Article 4)
 
       await this.invoiceService.createAndSendInvoice({
         tenantId,

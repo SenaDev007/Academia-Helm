@@ -1,7 +1,7 @@
 // Add-ons optionnels — alignés sur le contrat d'abonnement Academia Helm (Article 4).
 //
 // Contrat :
-//   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan, quel que soit le plan)
+//   - Option bilingue FR/EN : 100 000 FCFA/an (en supplément du plan, quel que soit le plan)
 //   - SMS : facturé au Client au prix coûtant (selon pays de destination)
 //   - Email : facturé au Client au prix coûtant
 //   - Voice (appel vocal) : facturé au Client au prix coûtant
@@ -11,7 +11,7 @@ const ADDONS = [
   {
     code: 'BILINGUAL',
     name: 'Option bilingue FR/EN',
-    price: '50 000 FCFA / an',
+    price: '100 000 FCFA / an',
     description:
       'Interface et tous documents générés en FR et EN simultanément. Séparation des matières, examens et bulletins par langue.',
   },

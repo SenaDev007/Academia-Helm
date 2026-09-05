@@ -136,7 +136,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
    *   - Facturation annuelle uniquement (plus d'option mensuelle)
    *   - Frais d'activation uniformes : 500 000 FCFA
    *   - Tranches d'élèves : 1-50, 51-150, 151-400, 401+
-   *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
+   *   - Add-ons : bilingue 100 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
    */
   private async loadPricingContent(): Promise<string> {
     try {

@@ -457,7 +457,7 @@ export default function BillingPage() {
               <div>
                 <span className="text-slate-400 font-medium">Tarif annuel (contrat Article 4)</span>
                 <p className="font-bold text-slate-700">
-                  {(bilingualStatus.yearlyAddon ?? 50000).toLocaleString('fr-FR')} FCFA / an
+                  {(bilingualStatus.yearlyAddon ?? 100000).toLocaleString('fr-FR')} FCFA / an
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   Facturation annuelle uniquement — pas d&apos;option mensuelle.
@@ -533,7 +533,7 @@ export default function BillingPage() {
                   <p className="text-sm text-slate-700">
                     Vous allez activer l'option bilingue pour{' '}
                     <strong>
-                      {(bilingualStatus.yearlyAddon ?? 50000).toLocaleString('fr-FR')} FCFA
+                      {(bilingualStatus.yearlyAddon ?? 100000).toLocaleString('fr-FR')} FCFA
                     </strong>{' '}
                     / an (contrat Article 4 — facturation annuelle uniquement).
                   </p>

@@ -99,7 +99,7 @@ export class PricingAdminController {
     // ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
     //   - Frais d'activation : 500 000 FCFA (uniforme)
     //   - Facturation annuelle uniquement
-    //   - Option bilingue : 50 000 FCFA/an
+    //   - Option bilingue : 100 000 FCFA/an
     const newConfig = await this.prisma.pricingConfig.create({
       data: {
         initialSubscriptionFee: data.initialSubscriptionFee ?? 500000,
@@ -107,7 +107,7 @@ export class PricingAdminController {
         yearlyBasePrice: data.yearlyBasePrice ?? 50000,
         yearlyDiscountPercent: data.yearlyDiscountPercent ?? 0,
         bilingualMonthlyAddon: data.bilingualMonthlyAddon ?? 0,
-        bilingualYearlyAddon: data.bilingualYearlyAddon ?? 50000,
+        bilingualYearlyAddon: data.bilingualYearlyAddon ?? 100000,
         schoolAdditionalPrice: data.schoolAdditionalPrice ?? 0,
         trialDays: data.trialDays ?? 30,
         graceDays: data.graceDays ?? 15, // Contrat : 15 jours après échéance → suspension

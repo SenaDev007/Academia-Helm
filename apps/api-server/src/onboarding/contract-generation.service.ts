@@ -263,7 +263,7 @@ export class ContractGenerationService {
   ): string {
     const schoolsCount = Math.max(1, data.schoolsCount || 1);
     const annexes = (data.annexes || []).filter((a) => a?.name && String(a.name).trim().length >= 2);
-    const bilingualFee = data.bilingual ? (data.bilingualFee ?? 50000) : 0;
+    const bilingualFee = data.bilingual ? (data.bilingualFee ?? 100000) : 0;
     // ⭐ Total cohérent : PAR ÉCOLE (activation + annuel + bilingue) × nombre d'écoles
     const perSchoolTotal = data.activationFee + data.annualFee + bilingualFee;
     const totalYearOne = schoolsCount > 1 ? perSchoolTotal * schoolsCount : perSchoolTotal;
@@ -546,7 +546,7 @@ export class ContractGenerationService {
   <p class="p">Le présent contrat et ses éventuels avenants expriment l'intégralité de l'accord des Parties sur son objet et se substituent à toute correspondance, proposition ou document antérieur. Toute modification doit faire l'objet d'un avenant écrit, daté et signé des deux Parties. Si l'une quelconque des stipulations du présent contrat était déclarée nulle ou inapplicable, les autres stipulations conserveraient toute leur force et leur portée. L'échéancier de paiement par tranches éventuellement complété en application de l'Article 4 fait partie intégrante du présent contrat.</p>
 
   <h2 class="parties">Signatures</h2>
-  <p class="p">Fait à _________________, le ____ / ____ / ________, en deux (2) exemplaires originaux, dont un pour chaque Partie.</p>
+  <p class="p">Fait à ${this.esc(data.schoolCity || '_________________')}, le ${today}, en deux (2) exemplaires originaux, dont un pour chaque Partie.</p>
   <table class="signatures">
     <tr>
       <td>

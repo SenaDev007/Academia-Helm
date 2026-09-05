@@ -128,7 +128,7 @@ const PRODUCT_KNOWLEDGE = {
       },
     ],
     addOns: [
-      { name: 'Option bilingue FR/EN', description: '50 000 FCFA/an en supplément du plan (Article 4). Interface et documents générés en FR et EN simultanément.' },
+      { name: 'Option bilingue FR/EN', description: '100 000 FCFA/an en supplément du plan (Article 4). Interface et documents générés en FR et EN simultanément.' },
       { name: 'WhatsApp', description: 'GRATUIT et illimité — inclus dans tous les plans (Article 4)' },
       { name: 'SMS', description: 'Facturé au prix coûtant selon le pays de destination (Article 4)' },
       { name: 'Email', description: 'Facturé au prix coûtant selon la consommation réelle (Article 4)' },
@@ -413,7 +413,7 @@ const PRODUCT_KNOWLEDGE = {
   faq: [
     {
       question: 'Combien coûte Academia Helm ?',
-      answer: 'Academia Helm propose 4 plans alignés sur le contrat d\'abonnement (Article 4) : HELM ESSENTIEL à 50 000 FCFA/an (1-50 élèves), HELM CROISSANCE à 75 000 FCFA/an (51-150 élèves, le plus populaire), HELM PERFORMANCE à 100 000 FCFA/an (151-400 élèves), et HELM INSTITUTION à 150 000 FCFA/an (401 élèves et +). Frais d\'activation uniques de 500 000 FCFA à la signature (uniforme). Facturation annuelle uniquement. Tous les plans incluent les 21 modules métier + 6 modules complémentaires et les 3 agents IA (ORION, SARA, ATLAS). Option bilingue FR/EN : 50 000 FCFA/an en supplément. WhatsApp gratuit et illimité.',
+      answer: 'Academia Helm propose 4 plans alignés sur le contrat d\'abonnement (Article 4) : HELM ESSENTIEL à 50 000 FCFA/an (1-50 élèves), HELM CROISSANCE à 75 000 FCFA/an (51-150 élèves, le plus populaire), HELM PERFORMANCE à 100 000 FCFA/an (151-400 élèves), et HELM INSTITUTION à 150 000 FCFA/an (401 élèves et +). Frais d\'activation uniques de 500 000 FCFA à la signature (uniforme). Facturation annuelle uniquement. Tous les plans incluent les 21 modules métier + 6 modules complémentaires et les 3 agents IA (ORION, SARA, ATLAS). Option bilingue FR/EN : 100 000 FCFA/an en supplément. WhatsApp gratuit et illimité.',
       category: 'PRICING',
     },
     {

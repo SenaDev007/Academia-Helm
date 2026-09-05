@@ -16,7 +16,7 @@
 //   - Réglement : virement bancaire, Mobile Money (FedaPay), espèces
 //
 // Add-ons (Article 4) :
-//   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)
+//   - Option bilingue FR/EN : 100 000 FCFA/an (en supplément du plan)
 //   - SMS / Email / Voice : facturés au prix coûtant selon consommation
 //   - WhatsApp : GRATUIT et illimité, inclus dans tous les plans
 //
@@ -91,8 +91,8 @@ export const HELM_PLANS = {
 export type HelmPlanKey = keyof typeof HELM_PLANS;
 
 // ⭐ Option bilingue (FR/EN) — payante, ajoutée au plan de base
-// Tarif officiel : 5 000 FCFA/mois de référence → 50 000 FCFA/an, soit
-// 2 mois offerts (12 × 5 000 = 60 000 → 50 000). Facturée annuellement
+// Tarif officiel : 10 000 FCFA/mois de référence → 100 000 FCFA/an, soit
+// 2 mois offerts (12 × 10 000 = 120 000 → 100 000). Facturée annuellement
 // (contrat Article 4).
 // ⚠️ Ces constantes ne sont qu'un FALLBACK d'affichage : la valeur active est
 // pilotée en base (pricing_plans code 'BILINGUAL') depuis le back-office
@@ -100,7 +100,7 @@ export type HelmPlanKey = keyof typeof HELM_PLANS;
 // /api/public/pricing/plans (champs bilingualMonthly/bilingualYearly).
 export const BILINGUAL_ADDON = {
   monthly: null as number | null, // Pas de facturation mensuelle (annuel uniquement)
-  annual: 50000, // 50 000 FCFA/an (référence mensuelle : 5 000 FCFA)
+  annual: 100000, // 100 000 FCFA/an (référence mensuelle : 10 000 FCFA)
 } as const;
 
 // ⭐ Tous les modules inclus quel que soit le plan
@@ -123,7 +123,7 @@ export const PRICING_NOTES = [
   '21 modules métier + 6 modules complémentaires inclus dans TOUS les plans — aucune restriction',
   'Frais d\'activation uniques : 500 000 FCFA (payables à la signature)',
   'Frais annuels dus chaque année à la date d\'échéance annuelle',
-  'Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)',
+  'Option bilingue FR/EN : 100 000 FCFA/an (en supplément du plan)',
   'WhatsApp inclus gratuitement et illimité dans tous les plans',
   'SMS, Email et Voice : facturés au prix coûtant selon consommation',
   'Web + Desktop + Mobile — Offline-first — Agents IA (ORION, SARA, ATLAS)',

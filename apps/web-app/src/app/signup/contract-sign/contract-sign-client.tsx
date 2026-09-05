@@ -218,7 +218,9 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
   const plan = HELM_PLANS[planCode as keyof typeof HELM_PLANS];
   const activationFee = Number(snapshot.initialPayment ?? snapshot.initialFee ?? 500000) || 500000;
   const annualFee = Number(snapshot.yearlyPrice ?? plan?.annualPrice ?? 50000) || 50000;
-  const bilingualFee = draft?.bilingual ? Number(snapshot.bilingualFee ?? 50000) || 50000 : 0;
+  // ⭐ Option bilingue : 100 000 FCFA/an (révision tarifaire) — snapshot
+  //    serveur (source de vérité), fallback tarif officiel courant.
+  const bilingualFee = draft?.bilingual ? Number(snapshot.bilingualFee ?? 100000) || 100000 : 0;
   const totalYearOne = activationFee + annualFee + bilingualFee;
   const promoterName = `${draft?.promoterFirstName || ''} ${draft?.promoterLastName || ''}`.trim();
   const alreadyCompleted = draft?.status === 'COMPLETED';

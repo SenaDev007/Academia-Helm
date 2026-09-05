@@ -10,7 +10,7 @@
  *   - 4 plans : Helm Essentiel / Croissance / Performance / Institution
  *   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
  *   - Frais d'activation uniformes : 500 000 FCFA
- *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
+ *   - Add-ons : bilingue 100 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
  *
  * Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335, White
  */
@@ -41,13 +41,14 @@ import { Footer2 } from '@/components/ui/footer-2';
 //    Les liens hébergés FedaPay ci-dessous doivent être recréés dans le
 //    tableau de bord FedaPay avec le NOUVEAU montant (500 000 FCFA), puis
 //    mis à jour ici (sinon la page de paiement FedaPay encaissera 300 000).
-//    L'option bilingue a son propre lien séparé (50 000 FCFA/an).
+//    L'option bilingue a son propre lien séparé (100 000 FCFA/an — ⚠️ à
+//    recréer dans FedaPay avec le nouveau montant).
 const FEDAPAY_LINKS: Record<string, string> = {
   SEED: 'https://me.fedapay.com/fR9fHMGM',     // Helm Essentiel — activation (à recréer à 500 000)
   GROW: 'https://me.fedapay.com/C10KvvLW',     // Helm Croissance — activation (à recréer à 500 000)
   LEAD: 'https://me.fedapay.com/UwOWk2GZ',     // Helm Performance — activation (à recréer à 500 000)
   NETWORK: 'https://me.fedapay.com/IlZhBDDi',  // Helm Institution — activation (à recréer à 500 000)
-  BILINGUAL: 'https://me.fedapay.com/JZSXICow', // Option bilingue — 50k/an
+  BILINGUAL: 'https://me.fedapay.com/JZSXICow', // Option bilingue — 100k/an (à recréer à 100 000)
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -104,8 +105,8 @@ export default function TarificationPage() {
       });
   }, []);
 
-  // Add-ons (contrat Article 4) — bilingue 50 000 FCFA/an
-  const bilingualYearly = plans[0]?.bilingualYearly || 50000;
+  // Add-ons (contrat Article 4) — bilingue 100 000 FCFA/an (révision tarifaire)
+  const bilingualYearly = plans[0]?.bilingualYearly || 100000;
 
   return (
     <>
@@ -291,7 +292,7 @@ export default function TarificationPage() {
               />
               <FAQItem
                 question="Comment fonctionne l'option bilingue ?"
-                answer="L'option bilingue FR/EN est un add-on de 50 000 FCFA/an qui permet de séparer les matières et examens pour les écoles qui enseignent en français ET en anglais. Elle peut être ajoutée à n'importe quel plan, quel que soit le nombre d'élèves."
+                answer="L'option bilingue FR/EN est un add-on de 100 000 FCFA/an qui permet de séparer les matières et examens pour les écoles qui enseignent en français ET en anglais. Elle peut être ajoutée à n'importe quel plan, quel que soit le nombre d'élèves."
               />
               <FAQItem
                 question="Comment payer l'activation de mon compte ?"

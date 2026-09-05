@@ -13,10 +13,10 @@
  *   2. pricing_configs (isActive = true)             ← fallback versionné
  *      (bilingualMonthlyAddon / bilingualYearlyAddon, POST /admin/pricing/config).
  *   3. Valeurs par défaut codées                     ← dernier recours si la
- *      base est vide : 5 000 FCFA/mois de référence → 50 000 FCFA/an,
- *      soit 2 mois offerts (12 × 5 000 = 60 000 → 50 000).
+ *      base est vide : 10 000 FCFA/mois de référence → 100 000 FCFA/an,
+ *      soit 2 mois offerts (12 × 10 000 = 120 000 → 100 000).
  *
- * ⚠️ Règle : ne plus jamais coder le tarif bilingue « 50 000 » en dur dans
+ * ⚠️ Règle : ne plus jamais coder le tarif bilingue « 100 000 » en dur dans
  *    les services. Toujours passer par getBilingualAddonPrice(prisma).
  *
  * Le résultat est mis en cache 60 secondes (lu à chaud par la page publique
@@ -37,17 +37,17 @@ export interface BilingualAddonPrice {
   currency: string;
   /** D'où vient le tarif : plan add-on BILINGUAL, pricing_configs, ou défaut */
   source: BilingualAddonSource;
-  /** Mois offerts si annuel < 12 × mensuel (ex. 50 000 vs 60 000 → 2) */
+  /** Mois offerts si annuel < 12 × mensuel (ex. 10 000/mois vs 100 000/an → 2) */
   monthsFree: number;
 }
 
 /**
  * Dernier recours — aligné sur le tarif officiel :
- * 5 000 FCFA/mois de référence → 50 000 FCFA/an (2 mois offerts).
+ * 10 000 FCFA/mois de référence → 100 000 FCFA/an (2 mois offerts).
  */
 export const BILINGUAL_ADDON_DEFAULTS: BilingualAddonPrice = {
-  monthly: 5000,
-  yearly: 50000,
+  monthly: 10000,
+  yearly: 100000,
   currency: 'XOF',
   source: 'DEFAULT',
   monthsFree: 2,
@@ -61,7 +61,7 @@ function computeMonthsFree(monthly: number | null, yearly: number): number {
   const saved = monthly * 12 - yearly;
   if (saved <= 0) return 0;
   // Arrondi vers le bas (prudent) : ne jamais surestimer la réduction.
-  // Cas officiel : 5 000/mois → 50 000/an → 10 000 économisés = 2 mois offerts.
+  // Cas officiel : 10 000/mois → 100 000/an → 20 000 économisés = 2 mois offerts.
   const months = Math.floor(saved / monthly);
   return months >= 1 ? months : 0;
 }

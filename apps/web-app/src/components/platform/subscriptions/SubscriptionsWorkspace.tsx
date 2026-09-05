@@ -553,8 +553,8 @@ function StatCard({
 // bilingualMonthly / bilingualYearly éditables via le modal pilotent le tarif
 // affiché dans l'onglet « Bilingue » des paramètres des écoles, la page
 // /tarification, le wizard d'onboarding et la facturation (activation
-// bilingue, renouvellement). Tarif officiel : 5 000 F CFA/mois de référence
-// → 50 000 F CFA/an (2 mois offerts).
+// bilingue, renouvellement). Tarif officiel : 10 000 F CFA/mois de référence
+// → 100 000 F CFA/an (2 mois offerts).
 // ──────────────────────────────────────────────────────────────────────────
 function AddonCard({ plan }: { plan: Plan }) {
   const features: string[] = Array.isArray(plan.features) ? plan.features : [];
@@ -947,7 +947,7 @@ function PlanEditCard({
             type="number"
             value={draft.bilingualYearly}
             onChange={(e) => onChange({ bilingualYearly: e.target.value })}
-            placeholder={isBilingual ? 'Ex : 50000' : 'Optionnel'}
+            placeholder={isBilingual ? 'Ex : 100000' : 'Optionnel'}
             className={bilingualInputClass}
           />
         </Field>

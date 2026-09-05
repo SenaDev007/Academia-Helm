@@ -86,10 +86,16 @@ interface ContractStepProps {
     domainStatus?: string;
   }) => void;
   onBack: () => void;
+  /**
+   * ⭐ Ancrage supérieur de l'overlay (px). Défaut : 64 (en-tête du wizard
+   * d'inscription). Dans l'application (paramètres → groupe d'écoles), passer
+   * 58 pour s'arrêter juste sous la barre supérieure fixe (56 px + liseré).
+   */
+  overlayTop?: number;
 }
 
 // ── Grille tarifaire (contrat Article 3 — source unique HELM_PLANS) ─────────
-const BILINGUAL_FEE = BILINGUAL_ADDON.annual ?? 50000;
+const BILINGUAL_FEE = BILINGUAL_ADDON.annual ?? 100000;
 const PLAN_TABLE = (['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((code) => {
   const plan = HELM_PLANS[code];
   const annual = plan.annualPrice;
@@ -170,7 +176,7 @@ export default function ContractStep({
   subdomain, activationFee, annualFee, schoolsCount = 1, annexes = [],
   subscriptionPaid = true, bilingualPaid = false,
   receivedBy, paymentPlan = 'full', installments, downPaymentReceived,
-  onComplete, onBack,
+  onComplete, onBack, overlayTop = 64,
 }: ContractStepProps) {
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
   const [providerSignature, setProviderSignature] = useState<string | null>(null);
@@ -179,7 +185,12 @@ export default function ContractStep({
   //    avec la mention « déjà signé manuellement », l'école est créée et le
   //    promoteur reçoit ses identifiants.
   const [signedManually, setSignedManually] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // ⭐ CORRECTIF : false (et non true) — l'état initial `true` laissait la
+  //    case « déjà signé manuellement » et les boutons « Signer et créer » /
+  //    « Signature différée » définitivement désactivés (seul « Retour »
+  //    répondait) car AUCUN code ne repassait loading à false avant un clic
+  //    impossible. Le chargement n'a lieu que pendant les appels de signature.
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   // ⭐ MULTI-ÉCOLES — totaux cohérents : PAR ÉCOLE × nombre d'écoles
@@ -373,7 +384,13 @@ export default function ContractStep({
       // ⭐ Le contrat prend TOUT l'écran sous la navbar ; le DOCUMENT défile
       //    verticalement (une colonne, comme le Word de référence) et la barre
       //    d'actions reste fixe en bas.
-      className="fixed inset-0 top-[64px] z-30 bg-slate-100 overflow-hidden flex flex-col"
+      //    z-[70] : au-dessus de la sidebar applicative (z-40), du backdrop
+      //    mobile (z-[55]) et du drawer (z-[60]) — sinon la sidebar masquait
+      //    la zone « Contrat d'abonnement et de licence d'utilisation » dans
+      //    les paramètres (groupe d'écoles). overlayTop permet de s'arrêter
+      //    juste sous la barre supérieure de l'application (58 px).
+      style={{ top: `${overlayTop}px` }}
+      className="fixed inset-x-0 bottom-0 z-[70] bg-slate-100 overflow-hidden flex flex-col"
     >
       {/* ── Bandeau titre minimal ── */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-white border-b border-slate-200">
@@ -852,7 +869,11 @@ export default function ContractStep({
             Signatures
           </h2>
           <p className={articleText}>
-            Fait à _________________, le ____ / ____ / ________, en deux (2) exemplaires originaux, dont un pour
+            {/* ⭐ « Fait à …, le … » pré-rempli automatiquement (ville de
+                l'établissement + date du jour) — conformément au reste du
+                document, aucune saisie manuelle n'est requise. */}
+            Fait à <strong>{schoolCity || '_________________'}</strong>, le{' '}
+            <strong>{today}</strong>, en deux (2) exemplaires originaux, dont un pour
             chaque Partie.
           </p>
 

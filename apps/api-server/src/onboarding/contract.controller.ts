@@ -388,7 +388,7 @@ export class ContractController {
     const subdomain = draft.preferredSubdomain
       || draft.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20)
       || 'ecole';
-    const bilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
+    const bilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 100000) || 0 : 0;
     const activationFee = Number(priceSnap.initialFee || priceSnap.initialPayment || 500000) || 500000;
     const annualFee = Number(priceSnap.yearlyPrice || 50000) || 50000;
     // ⭐ MULTI-ÉCOLES : nombre d'établissements du draft + annexes déclarées
@@ -477,7 +477,7 @@ export class ContractController {
     // Breakdown depuis le priceSnapshot (source de vérité du pricing)
     const emailActivationFee = Number(priceSnap.initialPayment ?? priceSnap.initialFee ?? 500000) || 0;
     const emailAnnualFee = Number(priceSnap.yearlyPrice ?? 0) || 0;
-    const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 50000) || 0 : 0;
+    const emailBilingualFee = draft.bilingual ? Number(priceSnap.bilingualFee ?? 100000) || 0 : 0;
     const totalPaid = emailActivationFee + emailAnnualFee + emailBilingualFee;
 
     // ⭐ Échéancier par tranches (si paymentPlan='installments' persisté à

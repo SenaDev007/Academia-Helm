@@ -2009,7 +2009,7 @@ export class OnboardingService {
     // subscriptionPrice (snapshot PricingService) inclut déjà l'option bilingue.
     const activationFee = Number(pricing.initialPayment ?? pricing.initialFee ?? 500000) || 0;
     const annualFee = Number(pricing.yearlyPrice ?? 50000) || 0;
-    const bilingualFee = draft.bilingual ? Number(pricing.bilingualFee ?? 50000) || 0 : 0;
+    const bilingualFee = draft.bilingual ? Number(pricing.bilingualFee ?? 100000) || 0 : 0;
     const totalFromSnapshot = Number(pricing.subscriptionPrice ?? 0) || 0;
     // ⭐ MULTI-ÉCOLES : chaque école fondée paie sa propre souscription
     //    (activation + frais annuels + option bilingue) — « c'est payant en
@@ -2158,7 +2158,7 @@ export class OnboardingService {
       })
       .catch(() => [] as any[]);
 
-    let bilingualYearly = 50000;
+    let bilingualYearly = 100000;
     try {
       const bilingualPlan = await this.prisma.pricingPlan.findUnique({ where: { code: 'BILINGUAL' } });
       if (bilingualPlan?.yearlyAmount != null) bilingualYearly = Number(bilingualPlan.yearlyAmount);

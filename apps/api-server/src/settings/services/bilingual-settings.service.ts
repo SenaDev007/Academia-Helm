@@ -503,10 +503,10 @@ export class BilingualSettingsService {
    *      2. pricing_configs active (bilingualMonthlyAddon / bilingualYearlyAddon)
    *      3. settings_bilingual.pricingSupplement (override legacy par tenant,
    *         uniquement si aucune source centrale n'existe en base)
-   *      4. Défauts (5 000 FCFA/mois de référence → 50 000 FCFA/an, 2 mois offerts)
+   *      4. Défauts (10 000 FCFA/mois de référence → 100 000 FCFA/an, 2 mois offerts)
    *
    * Retourne { monthly, annual, monthsFree, currency, source } — monthsFree
-   * indique la réduction annuelle en mois offerts (ex. 50 000 vs 60 000 → 2).
+   * indique la réduction annuelle en mois offerts (ex. 100 000 vs 120 000 → 2).
    */
   async getBillingImpact(tenantId: string) {
     const settings = await this.getSettings(tenantId);
@@ -540,7 +540,7 @@ export class BilingualSettingsService {
     }
 
     // Mois offerts en annuel (arrondi prudent vers le bas, jamais surestimé) :
-    // ex. 5 000/mois → 50 000/an = 10 000 économisés = 2 mois offerts.
+    // ex. 10 000/mois → 100 000/an = 20 000 économisés = 2 mois offerts.
     const monthsFree =
       monthly && monthly > 0 && annual < monthly * 12
         ? Math.max(0, Math.floor((monthly * 12 - annual) / monthly))

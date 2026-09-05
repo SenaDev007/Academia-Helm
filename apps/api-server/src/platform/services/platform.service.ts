@@ -1366,7 +1366,7 @@ export class PlatformService {
    *
    * ⭐ Le plan add-on BILINGUAL est EXCLU de la liste (c'est un add-on affiché
    * à part, pas un plan). Son tarif central (5 000 F CFA/mois de référence →
-   * 50 000 F CFA/an, 2 mois offerts) est tamponné sur chaque plan via les
+   * 100 000 F CFA/an, 2 mois offerts) est tamponné sur chaque plan via les
    * champs bilingualMonthly / bilingualYearly — la page /tarification et le
    * wizard d'onboarding reflètent ainsi automatiquement le tarif piloté depuis
    * le back-office /platform/subscriptions.

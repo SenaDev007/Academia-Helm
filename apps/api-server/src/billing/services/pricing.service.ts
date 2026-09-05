@@ -112,7 +112,7 @@ export class PricingService {
    *   - Frais d'activation uniques : 500 000 FCFA (uniforme)
    *   - Facturation annuelle uniquement (monthlyBasePrice = 0)
    *   - Base annuelle (Helm Essentiel) : 50 000 FCFA/an
-   *   - Option bilingue : 50 000 FCFA/an (pas d'option mensuelle)
+   *   - Option bilingue : 100 000 FCFA/an (pas d'option mensuelle)
    */
   private getDefaultConfig() {
     return {
@@ -121,8 +121,8 @@ export class PricingService {
       monthlyBasePrice: 0, // 0 — plus d'option mensuelle
       yearlyBasePrice: 50000, // 50 000 FCFA/an (base Helm Essentiel)
       yearlyDiscountPercent: 0, // 0% — pas de remise (annuel = seul cycle)
-      bilingualMonthlyAddon: 5000, // 5 000 FCFA/mois — référence (5 000 × 12 = 60 000 → 50 000 en annuel = 2 mois offerts)
-      bilingualYearlyAddon: 50000, // 50 000 FCFA/an
+      bilingualMonthlyAddon: 10000, // 10 000 FCFA/mois — référence (10 000 × 12 = 120 000 → 100 000 en annuel = 2 mois offerts)
+      bilingualYearlyAddon: 100000, // 100 000 FCFA/an
       schoolAdditionalPrice: 0, // 0 — pricing par tranche d'élèves, pas par école
       trialDays: 30,
       graceDays: 15, // Contrat : 15 jours après échéance → suspension possible
@@ -360,8 +360,8 @@ export class PricingService {
    * Calcule le prix de l'option bilingue.
    *
    * ⭐ Priorité : source CENTRALE (plan add-on BILINGUAL → pricing_configs,
-   * éditable depuis le back-office /platform/subscriptions — 5 000 F CFA/mois
-   * de référence, 50 000 F CFA/an, 2 mois offerts) > prix bilingue du PLAN
+   * éditable depuis le back-office /platform/subscriptions — 10 000 F CFA/mois
+   * de référence, 100 000 F CFA/an, 2 mois offerts) > prix bilingue du PLAN
    * (pricing_plans.bilingualMonthly/Yearly, legacy) > config (fallback).
    */
   private calculateBilingualPrice(

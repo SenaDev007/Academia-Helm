@@ -552,28 +552,46 @@ async function bootstrap() {
       //    SEED 50 000/an · GROW 75 000/an · LEAD 100 000/an · NETWORK 150 000/an
       //    (totaux Année 1 : 550 000 / 575 000 / 600 000 / 650 000 FCFA).
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'SEED', 'Helm Essentiel', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 50, 500000, NULL, 50000, 5000, 50000, '["Tous les modules inclus sans restriction","Jusqu''à 50 élèves","Abonnement de 30 jours offert","Support par email","Sauvegarde automatique (restauration 24h)"]', false, true, 1, NOW(), NOW()
+       SELECT gen_random_uuid(), 'SEED', 'Helm Essentiel', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 50, 500000, NULL, 50000, 10000, 100000, '["Tous les modules inclus sans restriction","Jusqu''à 50 élèves","Abonnement de 30 jours offert","Support par email","Sauvegarde automatique (restauration 24h)"]', false, true, 1, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'SEED')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'GROW', 'Helm Croissance', 'Pilotez votre croissance', 'Pour les écoles en pleine expansion qui ont besoin d''outils avancés.', 51, 150, 500000, NULL, 75000, 5000, 50000, '["Tous les modules inclus sans restriction","51 à 150 élèves","Abonnement de 30 jours offert","Support prioritaire email + WhatsApp","Sauvegarde automatique (restauration 24h)","Tableaux de bord ORION"]', true, true, 2, NOW(), NOW()
+       SELECT gen_random_uuid(), 'GROW', 'Helm Croissance', 'Pilotez votre croissance', 'Pour les écoles en pleine expansion qui ont besoin d''outils avancés.', 51, 150, 500000, NULL, 75000, 10000, 100000, '["Tous les modules inclus sans restriction","51 à 150 élèves","Abonnement de 30 jours offert","Support prioritaire email + WhatsApp","Sauvegarde automatique (restauration 24h)","Tableaux de bord ORION"]', true, true, 2, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'GROW')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'LEAD', 'Helm Performance', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 151, 400, 500000, NULL, 100000, 5000, 50000, '["Tous les modules inclus sans restriction","151 à 400 élèves","Abonnement de 30 jours offert","Support dédié 7j/7","Sauvegarde automatique (restauration 1h)","Tableaux de bord ORION + alertes intelligentes"]', false, true, 3, NOW(), NOW()
+       SELECT gen_random_uuid(), 'LEAD', 'Helm Performance', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 151, 400, 500000, NULL, 100000, 10000, 100000, '["Tous les modules inclus sans restriction","151 à 400 élèves","Abonnement de 30 jours offert","Support dédié 7j/7","Sauvegarde automatique (restauration 1h)","Tableaux de bord ORION + alertes intelligentes"]', false, true, 3, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'LEAD')`,
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'NETWORK', 'Helm Institution', 'La catégorie multi-école', 'Pour les réseaux d''écoles et les établissements multi-école.', 401, NULL, 500000, NULL, 150000, 5000, 50000, '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', false, true, 4, NOW(), NOW()
+       SELECT gen_random_uuid(), 'NETWORK', 'Helm Institution', 'La catégorie multi-école', 'Pour les réseaux d''écoles et les établissements multi-école.', 401, NULL, 500000, NULL, 150000, 10000, 100000, '["Tous les modules inclus sans restriction","Plus de 400 élèves","Abonnement de 30 jours offert","Account manager dédié","Sauvegarde temps réel + réplication","Tableaux de bord ORION + alertes intelligentes","Gestion multi-écoles","Formation sur site"]', false, true, 4, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'NETWORK')`,
       // ⭐ Option bilingue (add-on) — plan BILINGUAL : SOURCE DE VÉRITÉ du tarif
       //    bilingue, éditable depuis le back-office /platform/subscriptions
       //    (carte « Option bilingue FR/EN », champs Bilingue mensuel/annuel).
-      //    Tarif : 5 000 F CFA/mois de référence → 50 000 F CFA/an (2 mois offerts).
+      //    Tarif : 10 000 F CFA/mois de référence → 100 000 F CFA/an (2 mois offerts).
       //    Exclu de la liste publique des plans (affiché à part comme add-on).
       `INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "createdAt", "updatedAt")
-       SELECT gen_random_uuid(), 'BILINGUAL', 'Option bilingue FR/EN', 'Supplément option bilingue', 'Option bilingue FR/EN — en supplément de n''importe quel plan. Facturée annuellement (contrat Article 4) : 5 000 F CFA/mois de référence, 50 000 F CFA/an (2 mois offerts).', 0, NULL, 0, NULL, NULL, 5000, 50000, '["Classes, matières, examens et bulletins en français ET en anglais","Structure EN miroir (Nursery 1/2, Primary 1-6) créée automatiquement","Espace Pédagogique EN dédié (Scheme of Work, Attendance)","Facturation annuelle — tarif piloté depuis le back-office"]', false, true, 5, NOW(), NOW()
+       SELECT gen_random_uuid(), 'BILINGUAL', 'Option bilingue FR/EN', 'Supplément option bilingue', 'Option bilingue FR/EN — en supplément de n''importe quel plan. Facturée annuellement (contrat Article 4) : 10 000 F CFA/mois de référence, 100 000 F CFA/an (2 mois offerts).', 0, NULL, 0, NULL, NULL, 10000, 100000, '["Classes, matières, examens et bulletins en français ET en anglais","Structure EN miroir (Nursery 1/2, Primary 1-6) créée automatiquement","Espace Pédagogique EN dédié (Scheme of Work, Attendance)","Facturation annuelle — tarif piloté depuis le back-office"]', false, true, 5, NOW(), NOW()
        WHERE NOT EXISTS (SELECT 1 FROM "pricing_plans" WHERE "code" = 'BILINGUAL')`,
       // Sécurité : ne remplir les tarifs add-on que s'ils sont NULL (ne JAMAIS
       // écraser une valeur modifiée depuis le back-office au redémarrage).
-      `UPDATE "pricing_plans" SET "bilingualMonthly" = 5000, "bilingualYearly" = 50000, "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "bilingualMonthly" IS NULL AND "bilingualYearly" IS NULL`,
+      `UPDATE "pricing_plans" SET "bilingualMonthly" = 10000, "bilingualYearly" = 100000, "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "bilingualMonthly" IS NULL AND "bilingualYearly" IS NULL`,
+
+      // ─── Révision tarifaire bilingue (contrat Article 4) : 50 000 → 100 000 FCFA/an ───
+      // ⭐ CONDITIONNELLE sur l'ancien tarif officiel (mensuel 5 000 / annuel
+      //    50 000) afin de ne JAMAIS écraser un tarif personnalisé modifié
+      //    depuis le back-office. La référence mensuelle passe à 10 000 F CFA
+      //    (12 × 10 000 = 120 000 → 100 000 en annuel = 2 mois offerts,
+      //    réduction inchangée). S'applique au plan BILINGUAL ET aux colonnes
+      //    bilingues tamponnées sur chaque plan (SEED/GROW/LEAD/NETWORK —
+      //    lues par PricingService.calculateBilingualPrice). Les textes
+      //    (description/features) sont rafraîchis uniquement s'ils portent
+      //    encore l'ancien montant.
+      `UPDATE "pricing_plans" SET "bilingualMonthly" = 10000, "bilingualYearly" = 100000, "updatedAt" = NOW() WHERE "bilingualYearly" = 50000 AND ("bilingualMonthly" = 5000 OR "bilingualMonthly" IS NULL)`,
+      `UPDATE "pricing_plans" SET "yearlyAmount" = 100000, "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "yearlyAmount" = 50000`,
+      `UPDATE "pricing_plans" SET "description" = 'Option bilingue FR/EN — en supplément de n''importe quel plan. Facturée annuellement (contrat Article 4) : 10 000 F CFA/mois de référence, 100 000 F CFA/an (2 mois offerts).', "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "description" LIKE '%50 000%'`,
+      `UPDATE "pricing_plans" SET "features" = '["Classes, matières, examens et bulletins en français ET en anglais","Structure EN miroir (Nursery 1/2, Primary 1-6) créée automatiquement","Espace Pédagogique EN dédié (Scheme of Work, Attendance)","Facturation annuelle — tarif piloté depuis le back-office"]', "updatedAt" = NOW() WHERE "code" = 'BILINGUAL' AND "features" LIKE '%50 000%'`,
+      // pricing_configs (fallback versionné — colonnes SNAKE_CASE) : idem,
+      //    conditionnel sur l'ancien tarif officiel.
+      `UPDATE "pricing_configs" SET "bilingual_monthly_addon" = 10000, "bilingual_yearly_addon" = 100000 WHERE "is_active" = true AND "bilingual_yearly_addon" = 50000 AND ("bilingual_monthly_addon" = 5000 OR "bilingual_monthly_addon" IS NULL)`,
 
       // ─── Migration tarifaire conditionnelle (contrat Article 4) ───
       // ⭐ Révision tarifaire complète : activation UNIFORME 500 000 FCFA +

@@ -868,7 +868,7 @@ ACCÈS AUX DONNÉES — STRICTEMENT LIMITÉ AU PRICING
 - Les frais d'activation uniques (500 000 FCFA — uniformes quel que soit le plan)
 - Les frais annuels par plan (50 000 à 150 000 FCFA/an selon la tranche d'élèves)
 - Les tranches d'élèves : 1-50, 51-150, 151-400, 401 et +
-- Les add-ons (bilingue FR/EN 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant)
+- Les add-ons (bilingue FR/EN 100 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant)
 - La configuration pricing active (mise à jour automatiquement quand le site est modifié)
 
 ⭐ CONNAISSANCE DU CONTRAT (Article 4) :
@@ -1074,7 +1074,7 @@ ACCÈS AUX DONNÉES — STRICTEMENT LIMITÉ AU PRICING
 - Les frais d'activation uniques (500 000 FCFA — uniformes quel que soit le plan)
 - Les frais annuels par plan (50 000 à 150 000 FCFA/an selon la tranche d'élèves)
 - Les tranches d'élèves : 1-50, 51-150, 151-400, 401 et +
-- Les add-ons (bilingue FR/EN 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant)
+- Les add-ons (bilingue FR/EN 100 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant)
 
 ⭐ CONNAISSANCE DU CONTRAT (Article 4) :
 - Facturation ANNUELLE uniquement (pas d'option mensuelle)

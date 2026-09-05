@@ -449,7 +449,7 @@ export default function SupportChatWidget() {
             "  - Frais annuels : 150 000 F CFA / an\n" +
             "  - Coût total Année 1 : 650 000 F CFA\n\n" +
             "Tous les plans incluent les 21 modules métier + 6 modules complémentaires, Web + Desktop + Mobile, offline-first, agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque et site institutionnel.\n\n" +
-            "Add-ons : Option bilingue FR/EN 50 000 FCFA/an · WhatsApp gratuit illimité · SMS/Email/Voice au prix coûtant.";
+            "Add-ons : Option bilingue FR/EN 100 000 FCFA/an · WhatsApp gratuit illimité · SMS/Email/Voice au prix coûtant.";
         } else if (faq[category] && faq[category].questions[0]) {
           answer = faq[category].questions[0].a;
         }

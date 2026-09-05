@@ -695,6 +695,7 @@ model AcademicYear {
   payrolls                         Payroll[]
   payrollPeriods                   PayrollPeriod[]
   oneTimeBonuses                   OneTimeBonus[]
+  payrollDocuments                 PayrollDocument[]
   pedagogicalDocumentComments      PedagogicalDocumentComment[]
   pedagogicalDocumentNotifications PedagogicalDocumentNotification[]
   pedagogicalDocumentReviews       PedagogicalDocumentReview[]

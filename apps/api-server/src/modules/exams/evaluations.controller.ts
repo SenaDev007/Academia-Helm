@@ -47,6 +47,66 @@ export class EvaluationsController {
     return this.evaluationsService.findAll(tenantId, academicYearId, filters);
   }
 
+  /**
+   * ⭐ V10f — Head Teacher's Report (page 2 du broadsheet anglophone).
+   * GET /institutional-exams/evaluations/broadsheet-remarks
+   *   ?classId=X&periodId=Y&evaluationTypeId=Z
+   * Retourne { remarks: { "<subjectId>": "comment", "__extra__": {...} } }.
+   * ⚠️ Déclaré AVANT @Get(':id') pour ne pas être capturé par la route :id.
+   */
+  @Get('broadsheet-remarks')
+  @Permissions('exams.read')
+  async getBroadsheetRemarks(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('evaluationTypeId') evaluationTypeId: string,
+  ) {
+    const row = await this.prisma.enBroadsheetRemark.findUnique({
+      where: {
+        tenantId_classId_periodId_evaluationTypeId: {
+          tenantId, classId, periodId, evaluationTypeId,
+        },
+      },
+    });
+    return { remarks: (row?.remarks as Record<string, any>) || {} };
+  }
+
+  /**
+   * ⭐ V10f — Sauvegarde des commentaires du Head Teacher par matière.
+   * PATCH /institutional-exams/evaluations/broadsheet-remarks
+   * Body: { classId, periodId, evaluationTypeId, remarks }
+   * Upsert d'une seule ligne par fiche (classe × période × type d'évaluation).
+   * ⚠️ Déclaré AVANT @Patch(':id') pour ne pas être capturé par la route :id.
+   */
+  @Patch('broadsheet-remarks')
+  @Permissions('exams.manage')
+  async saveBroadsheetRemarks(
+    @TenantId() tenantId: string,
+    @UserId() userId: string,
+    @Body() body: {
+      classId: string;
+      periodId: string;
+      evaluationTypeId: string;
+      remarks: Record<string, any>;
+    },
+  ) {
+    const { classId, periodId, evaluationTypeId, remarks } = body;
+    if (!classId || !periodId || !evaluationTypeId || !remarks || typeof remarks !== 'object') {
+      throw new NotFoundException('classId, periodId, evaluationTypeId et remarks sont requis');
+    }
+    const saved = await this.prisma.enBroadsheetRemark.upsert({
+      where: {
+        tenantId_classId_periodId_evaluationTypeId: {
+          tenantId, classId, periodId, evaluationTypeId,
+        },
+      },
+      create: { tenantId, classId, periodId, evaluationTypeId, remarks, createdBy: userId },
+      update: { remarks, createdBy: userId },
+    });
+    return { remarks: saved.remarks as Record<string, any>, updatedAt: saved.updatedAt };
+  }
+
   @Get(':id')
   @Permissions('exams.read')
   async findOne(

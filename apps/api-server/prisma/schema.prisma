@@ -15240,6 +15240,28 @@ model Evaluation {
   @@map("evaluations")
 }
 
+/// ⭐ V10f — Head Teacher's Report (page 2 du broadsheet anglophone).
+/// Modèle « Examination results and teacher's report » (feuille nigériane) :
+/// une ligne par fiche (classe × période × type d'évaluation) contenant les
+/// commentaires du Head Teacher POUR CHAQUE MATIÈRE —
+/// remarks = JSON { "<subjectId>": "comment", "__extra__": { name, comment } }.
+/// La clé "__extra__" correspond à la zone « EXTRA SUBJECT » du modèle PDF.
+model EnBroadsheetRemark {
+  id               String   @id @default(uuid())
+  tenantId         String
+  classId          String
+  periodId         String
+  evaluationTypeId String
+  remarks          Json     @default("{}")
+  createdBy        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tenantId, classId, periodId, evaluationTypeId])
+  @@index([tenantId, classId])
+  @@map("en_broadsheet_remarks")
+}
+
 model EvaluationType {
   id                 String       @id @default(uuid())
   tenantId           String

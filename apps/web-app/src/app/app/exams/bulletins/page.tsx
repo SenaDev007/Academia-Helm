@@ -997,10 +997,10 @@ function BulletinsContent() {
           {/* Summary bar */}
           <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <Badge variant="outline" className="text-xs gap-1"><Users className="w-3 h-3" />{bulletinData.results.length} élèves</Badge>
-              <Badge variant="outline" className="text-xs gap-1"><BookOpen className="w-3 h-3" />{bulletinData.subjects.length} matières</Badge>
+              <Badge variant="outline" className="text-xs gap-1"><Users className="w-3 h-3" />{bulletinData.results.length} {scopeLang === 'EN' ? 'pupils' : 'élèves'}</Badge>
+              <Badge variant="outline" className="text-xs gap-1"><BookOpen className="w-3 h-3" />{bulletinData.subjects.length} {scopeLang === 'EN' ? 'subjects' : 'matières'}</Badge>
               {!isMaternelle && bulletinData.stats.classAverage !== null && (
-                <Badge variant="outline" className="text-xs gap-1"><Award className="w-3 h-3" />Moy. classe: {bulletinData.stats.classAverage.toFixed(2)}/20</Badge>
+                <Badge variant="outline" className="text-xs gap-1"><Award className="w-3 h-3" />{scopeLang === 'EN' ? 'Class average' : 'Moy. classe'}: {bulletinData.stats.classAverage.toFixed(2)}{scopeLang === 'EN' ? '/100' : '/20'}</Badge>
               )}
             </div>
           </div>
@@ -1014,20 +1014,23 @@ function BulletinsContent() {
                   className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div>
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div>
                     <div className="text-left">
                       <div className="text-sm font-bold text-slate-900 whitespace-nowrap">{student.studentName}</div>
                       <div className="text-xs text-slate-500">
-                        {student.matricule || '—'} · Rang {formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}
-                        {!isMaternelle && student.generalAverage !== null && ` · ${student.generalAverage.toFixed(2)}/20`}
+                        {student.matricule || '—'} · {scopeLang === 'EN' ? 'Position' : 'Rang'} {scopeLang === 'EN' ? enOrdinal(student.classRank) : formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}
+                        {!isMaternelle && student.generalAverage !== null && ` · ${student.generalAverage.toFixed(2)}${scopeLang === 'EN' ? '/100' : '/20'}`}
                         {isMaternelle && student.appreciationGlobale && ` · ${student.appreciationGlobale}`}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {!isMaternelle && student.generalAverage !== null && (
-                      <span className={cn('px-2 py-1 rounded text-xs font-bold', student.generalAverage >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')}>
-                        {student.generalAverage.toFixed(2)}/20
+                      <span className={cn('px-2 py-1 rounded text-xs font-bold',
+                        scopeLang === 'EN'
+                          ? ((student.generalAverage ?? 0) >= 50 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700')
+                          : (student.generalAverage >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'))}>
+                        {student.generalAverage.toFixed(2)}{scopeLang === 'EN' ? '/100' : '/20'}
                       </span>
                     )}
                     {isMaternelle && student.appreciationGlobale && (

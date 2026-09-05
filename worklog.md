@@ -9500,3 +9500,21 @@ Stage Summary:
 - API production : documents de paie FP/EP EN LIGNE (tables créées, routes gardées, barème étendu)
 - Web-app : code poussé et prêt, déploiement bloqué par la limite du compte Vercel (action utilisateur : vérifier la facturation/usage Vercel puis redéployer)
 - Enseignement outillage : prisma validate sur copie patchée ajouté au workflow sandbox (le transpile seul ne détecte pas les relations Prisma)
+
+---
+Task ID: 12
+Agent: Super Z (agent principal)
+Task: Correction de l'identité de commit (email auteur invalide) et relance du déploiement Vercel de la web-app
+
+Contexte: après réactivation du compte Vercel par l'utilisateur, le déploiement restait bloqué — Vercel refuse d'identifier l'auteur du commit head de main (31b3c19d, email z@container.local non valide). Instruction utilisateur : configurer s.akpovitohou@gmail.com puis pousser un nouveau commit pour déclencher un nouveau déploiement.
+
+Work Log:
+- git config --global user.email "s.akpovitohou@gmail.com" (email du compte GitHub) + configuration locale du clone alignée ; user.name = SenaDev007 (convention déjà en place sur tout l'historique — seul l'email posait problème)
+- Commit de relance signé SenaDev007 <s.akpovitohou@gmail.com> touchant TRIGGER-DEPLOY.txt + .vercel-deploy-trigger (pattern de déclenchement documenté en Task 9 : Vercel ignore les pushes dont l'email auteur est invalide)
+- Aucun changement de code applicatif : Railway/API inchangés (documents FP/EP déjà en ligne), seul le front attend son build Vercel
+- Nettoyage sandbox associé : le commit local accidentel 34eb150 (message UUID, gitlink academia-helm) re-committé proprement sur la branche de référence fiches-de-paie sans le gitlink
+
+Stage Summary:
+- Identité git corrigée durablement : tous les futurs commits (sandbox et clone monorepo) porteront l'email valide
+- Push de relance sur main → Vercel redéploie la web-app : émission FP/EP, registre des documents et flux mensuel par période deviennent visibles en production
+- Vérification à faire après le build (< 2 min selon le pattern Task 9) : onglet RH → Paie → période → « Émettre FP/EP » + registre des documents émis

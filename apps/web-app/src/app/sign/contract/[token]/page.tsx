@@ -68,6 +68,8 @@ const CONTRACT_TYPE_LABELS: Record<string, string> = {
   STAGE: 'Convention de Stage',
   CONSULTANT: 'Contrat de Consultant',
   APPRENTISSAGE: "Contrat d'Apprentissage",
+  // ⭐ RH Bénin — prestataire de services (état de paiement, AIB)
+  PRESTATION: 'Contrat de Prestation de Services',
 };
 
 const PAYMENT_MODE_LABELS: Record<string, string> = {

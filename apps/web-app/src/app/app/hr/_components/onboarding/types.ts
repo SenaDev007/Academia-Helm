@@ -32,6 +32,11 @@ export interface OnboardingState {
     roleType: string;
     hireDate: string;
     qualifications: string;
+    // ⭐ Statut contractuel RH Bénin (choix BLOQUANT, avant tout champ financier) :
+    //   SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE
+    // Détermine le gabarit de contrat, le document de paie (fiche/état) et la
+    // branche du moteur de calcul. Verrouillé après création du profil.
+    statutContractuel: string;
     // ⭐ Multi-poste : permet de préciser un poste enseignant en plus du
     //    poste principal. Le promoteur peut décider qu'un comptable enseigne
     //    aussi une matière. Le contrat reflétera les deux postes.
@@ -62,6 +67,14 @@ export interface OnboardingState {
     mobileMoneyOperator: string;
     cnssNumber: string;
     ifuNumber: string;
+    // ⭐ Prestataire de services (statutContractuel = PRESTATAIRE_SERVICE)
+    prestationPaymentMode: 'FORFAIT' | 'HORAIRE';
+    prestationAmount: string;
+    prestationDescription: string;
+    prestationCalendrier: string;
+    prestationRenouvelable: boolean;
+    prestationConfidentialite: boolean;
+    prestationPropriete: boolean;
   };
 
   // Step 5: Preview
@@ -115,6 +128,7 @@ export const INITIAL_STATE: OnboardingState = {
     roleType: 'TEACHER',
     hireDate: new Date().toISOString().split('T')[0],
     qualifications: '',
+    statutContractuel: '',
     secondaryPosition: '',
     isAlsoTeacher: false,
   },
@@ -144,6 +158,13 @@ export const INITIAL_STATE: OnboardingState = {
     mobileMoneyOperator: '',
     cnssNumber: '',
     ifuNumber: '',
+    prestationPaymentMode: 'FORFAIT',
+    prestationAmount: '',
+    prestationDescription: '',
+    prestationCalendrier: '',
+    prestationRenouvelable: false,
+    prestationConfidentialite: true,
+    prestationPropriete: true,
   },
 
   articles: [],

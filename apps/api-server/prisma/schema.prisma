@@ -374,6 +374,7 @@ model Tenant {
   staffDocuments                   StaffDocument[]
   staffEvaluations                 StaffEvaluation[]
   staffTrainings                   StaffTraining[]
+  staffStatutChanges               StaffStatutChange[]
   staffPhotos                      StaffPhoto[]
   staffNumberSequence              StaffNumberSequence?
   jobNumberSequence                JobNumberSequence?
@@ -5448,6 +5449,21 @@ model Staff {
   cnssNumber                String?
   /// Numéro IFU (Identifiant Fiscal Unique)
   ifuNumber                 String?
+  /// Statut contractuel (cadre RH Bénin) : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE.
+  /// Champ pivot du module RH : conditionne le document de paie (FICHE_DE_PAIE | ETAT_DE_PAIEMENT),
+  /// la déclaration CNSS, l'IFU/AIB et la branche du moteur de calcul. Verrouillé après création
+  /// du profil — tout changement passe par une procédure tracée (staff_statut_changes).
+  statutContractuel         String?
+  /// Date de déclaration CNSS (renseignée quand le salarié est déclaré)
+  cnssDeclarationDate       DateTime?
+  /// Type de document de paie dérivé du statut contractuel : FICHE_DE_PAIE | ETAT_DE_PAIEMENT
+  documentPaieType          String?
+  /// Mode de rémunération du prestataire de services : FORFAIT | HORAIRE
+  prestationPaymentMode     String?
+  /// Montant du forfait (FORFAIT) ou taux horaire (HORAIRE) — prestataires de services
+  prestationAmount          Decimal?                   @db.Decimal(12, 2)
+  /// Date de verrouillage du statut contractuel (après création du profil)
+  statutContractuelLockedAt DateTime?
   /// Type de départ: RESIGNATION, DISMISSAL, MUTUAL_AGREEMENT, END_OF_CONTRACT, RETIREMENT, DEATH, ABANDONMENT, OTHER
   terminationType           String?
   /// Détails de la résiliation/débauche (motif, préavis, entretien de sortie, etc.)
@@ -5484,6 +5500,7 @@ model Staff {
   transportAttendants       TransportAttendant[]
   transportDrivers          TransportDriver[]
   photo                     StaffPhoto?
+  statutChanges             StaffStatutChange[]
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
   organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
@@ -5660,6 +5677,14 @@ model Contract {
   staffId           String
   templateId        String?
   contractType      String
+  /// Statut contractuel : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE (miroir du staff)
+  statutContractuel String?
+  /// Document de paie dérivé du statut contractuel : FICHE_DE_PAIE | ETAT_DE_PAIEMENT
+  documentPaieType  String?
+  /// Mode de rémunération du prestataire : FORFAIT | HORAIRE
+  prestationPaymentMode String?
+  /// Montant du forfait ou taux horaire (prestataire de services)
+  prestationAmount  Decimal? @db.Decimal(12, 2)
   startDate         DateTime            @db.Date
   endDate           DateTime?           @db.Date
   baseSalary        Decimal             @db.Decimal(10, 2)
@@ -5732,6 +5757,84 @@ model ContractTemplate {
 
   @@index([tenantId])
   @@map("contract_templates")
+}
+
+/// Procédure tracée de changement de statut contractuel d'un membre du personnel.
+/// Le statut (SALARIE_DECLARE / SALARIE_NON_DECLARE / PRESTATAIRE_SERVICE) est verrouillé
+/// après la création du profil : un changement en cours d'année a des implications légales
+/// réelles (CNSS, ITS, AIB) et doit passer par une action explicite avec date d'effet et
+/// justification — jamais une simple édition de champ.
+model StaffStatutChange {
+  id               String    @id @default(uuid())
+  tenantId         String
+  staffId          String
+  /// Statut avant le changement (null si le staff n'en avait pas)
+  previousStatut   String?
+  /// Nouveau statut : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE
+  newStatut        String
+  /// Date d'effet juridique du changement
+  effectiveDate    DateTime  @db.Date
+  /// Justification obligatoire (motif administratif, régularisation CNSS, requalification…)
+  justification    String
+  /// ID de l'utilisateur (User) ayant réalisé la procédure
+  performedBy      String?
+  /// Email de l'utilisateur ayant réalisé la procédure (dénormalisé pour l'audit)
+  performedByEmail String?
+  createdAt        DateTime  @default(now())
+  staff            Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@index([tenantId, effectiveDate])
+  @@map("staff_statut_changes")
+}
+
+/// Barème fiscal & social du Bénin versionné par année fiscale — SOURCE UNIQUE des taux du
+/// moteur de paie RH (aucun taux codé en dur dans la logique métier). Les lois de finances
+/// annuelles font bouger ces valeurs : on modifie une ligne en base, tout le moteur suit.
+/// ⚠️ Deux points en attente de confirmation officielle (cnss.bj / impots.finances.bj) :
+///   - prestations familiales patronales : 9 % (cnss.bj) contre 12 % (guide tiers)
+///   - barème ITS : version annuelle DGI 2026 vs ancien barème mensuel — voir itsBrackets
+model PayrollFiscalRate {
+  id                          String   @id @default(uuid())
+  /// Code pays ISO (BJ = Bénin) — barèmes nationaux, pas par tenant
+  countryCode                 String   @default("BJ")
+  /// Année fiscale (ex. 2026)
+  fiscalYear                  Int
+  /// Cotisation salariale CNSS globale (% du brut, précompte employeur) — 3,6
+  cnssSalarial                Decimal  @db.Decimal(5, 2) @default(3.6)
+  /// Part patronale prestations familiales (% du brut) — 9 (à confirmer : 9 ou 12)
+  cnssPrestationsFamiliales   Decimal  @db.Decimal(5, 2) @default(9)
+  /// Part patronale risques professionnels — borne min (% selon l'activité)
+  cnssRisquesProMin           Decimal  @db.Decimal(5, 2) @default(1)
+  /// Part patronale risques professionnels — borne max (% selon l'activité)
+  cnssRisquesProMax           Decimal  @db.Decimal(5, 2) @default(4)
+  /// Vieillesse, invalidité, décès (% global réparti employeur/salarié)
+  cnssVieillesse              Decimal  @db.Decimal(5, 2) @default(16)
+  /// Cotisation patronale globale de référence (% du brut)
+  cnssPatronalGlobal          Decimal  @db.Decimal(5, 2) @default(15.4)
+  /// Barème ITS progressif MENSUEL : [{ "min": 0, "max": 60000, "rate": 0 }, …] (max null = au-delà)
+  itsBrackets                 Json
+  /// AIB retenue à la source — prestataire AVEC IFU (%)
+  aibAvecIfu                  Decimal  @db.Decimal(5, 2) @default(3)
+  /// AIB — prestataire SANS IFU / inconnu de la DGI (%)
+  aibSansIfu                  Decimal  @db.Decimal(5, 2) @default(5)
+  /// SMIG mensuel (FCFA) — plancher légal du salaire brut (contrats de travail)
+  smig                        Decimal  @db.Decimal(12, 2) @default(52000)
+  /// Seuil de versement CNSS : effectif déclaré ≥ seuil → mensuel, sinon trimestriel
+  cnssMensuelSeuil            Int      @default(20)
+  /// Barèmes par catégorie professionnelle (période d'essai / préavis) :
+  /// { "OUVRIER": { "essai": "un (1) mois", "renouvellement": "une fois", "preavis": "15 jours" }, … }
+  categoryRules               Json?
+  /// Date d'entrée en vigueur du barème
+  effectiveFrom               DateTime @db.Date
+  /// Traçabilité des sources (cnss.bj, impots.finances.bj, comptable) + points à confirmer
+  sourceNotes                 String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@unique([countryCode, fiscalYear])
+  @@map("payroll_fiscal_rates")
 }
 
 model StaffAttendance {
@@ -14975,6 +15078,9 @@ model HrJob {
   assets           String?
   salary           String?
   contractType     String?
+  /// Statut contractuel visé par l'embauche : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE.
+  /// Hérité par le Staff et le contrat lors de la déclaration ÉLIGIBLE du candidat.
+  statutContractuel String?
   /// Niveau scolaire visé par le poste (MATERNELLE, PRIMARY, SECONDAIRE, MAT_PRI, ALL).
   /// Permet de filtrer les offres par niveau sur le site public de recrutement.
   /// MAT_PRI = poste couvrant maternelle + primaire (mode FUSED).

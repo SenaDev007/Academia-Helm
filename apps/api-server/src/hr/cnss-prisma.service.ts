@@ -26,6 +26,112 @@ export class CNSSPrismaService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ============================================================================
+  // EXPORT CNSS — salariés déclarés + règle de fréquence de versement
+  // ============================================================================
+
+  /**
+   * ⭐ Vue d'export CNSS (RH Bénin) — filtre UNIQUEMENT les salariés déclarés et
+   * applique la règle de fréquence de versement issue de la procédure CNSS :
+   *   effectif déclaré ≥ seuil (payroll_fiscal_rates.cnssMensuelSeuil, 20 par défaut)
+   *     → versement MENSUEL
+   *   effectif déclaré < seuil → versement TRIMESTRIEL
+   *
+   * Salariés « déclarés » = statutContractuel = SALARIE_DECLARE, ou (héritage)
+   * staff sans statut mais avec affiliation EmployeeCNSS active + n° CNSS.
+   * Retourne la synthèse + un CSV prêt à télécharger.
+   */
+  async getExportSummary(tenantId: string) {
+    // 1. Salariés déclarés
+    const declared = await this.prisma.staff.findMany({
+      where: {
+        tenantId,
+        status: { not: 'ARCHIVED' },
+        OR: [
+          { statutContractuel: 'SALARIE_DECLARE' },
+          {
+            statutContractuel: null,
+            employeeCNSS: { isActive: true, cnssNumber: { not: null } },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        employeeNumber: true,
+        globalMatricule: true,
+        tenantMatricule: true,
+        firstName: true,
+        lastName: true,
+        position: true,
+        roleType: true,
+        hireDate: true,
+        salary: true,
+        cnssNumber: true,
+        cnssDeclarationDate: true,
+        employeeCNSS: { select: { cnssNumber: true, affiliationDate: true } },
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    const rows = declared.map((s: any) => ({
+      matricule: s.tenantMatricule || s.globalMatricule || s.employeeNumber,
+      nom: s.lastName,
+      prenoms: s.firstName,
+      poste: s.position || '',
+      cnssNumber: s.cnssNumber || s.employeeCNSS?.cnssNumber || '',
+      affiliationDate: s.cnssDeclarationDate || s.employeeCNSS?.affiliationDate || null,
+      hireDate: s.hireDate,
+      salary: s.salary != null ? Number(s.salary) : null,
+    }));
+
+    // 2. Seuil + fréquence (payroll_fiscal_rates — jamais en dur)
+    const rates = await this.prisma.payrollFiscalRate.findFirst({
+      where: { countryCode: 'BJ', effectiveFrom: { lte: new Date() } },
+      orderBy: { effectiveFrom: 'desc' },
+    }).catch(() => null);
+    const seuil = rates ? Number((rates as any).cnssMensuelSeuil ?? 20) : 20;
+    const effectif = rows.length;
+    const frequency: 'MENSUEL' | 'TRIMESTRIEL' = effectif >= seuil ? 'MENSUEL' : 'TRIMESTRIEL';
+
+    // 3. Prochaine échéance (rappel automatique) : fin du mois courant (mensuel)
+    //    ou fin du trimestre courant (trimestriel)
+    const now = new Date();
+    let nextDueDate: Date;
+    if (frequency === 'MENSUEL') {
+      nextDueDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else {
+      const quarterEndMonth = Math.floor(now.getMonth() / 3) * 3 + 2; // dernier mois du trimestre
+      nextDueDate = new Date(now.getFullYear(), quarterEndMonth + 1, 0);
+    }
+
+    // 4. CSV (séparateur « ; », format Excel FR)
+    const esc = (v: any) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const header = ['Matricule', 'Nom', 'Prénoms', 'Poste', 'N° CNSS', 'Date affiliation', 'Date embauche', 'Salaire (FCFA)'];
+    const csv = [
+      header.join(';'),
+      ...rows.map((r) => [
+        esc(r.matricule), esc(r.nom), esc(r.prenoms), esc(r.poste), esc(r.cnssNumber),
+        esc(r.affiliationDate ? new Date(r.affiliationDate).toLocaleDateString('fr-FR') : ''),
+        esc(r.hireDate ? new Date(r.hireDate).toLocaleDateString('fr-FR') : ''),
+        esc(r.salary != null ? r.salary.toLocaleString('fr-FR') : ''),
+      ].join(';')),
+    ].join('\n');
+
+    return {
+      effectifDeclare: effectif,
+      seuilMensuel: seuil,
+      frequency,
+      frequencyLabel: frequency === 'MENSUEL'
+        ? `Versement MENSUEL (effectif déclaré ${effectif} ≥ ${seuil})`
+        : `Versement TRIMESTRIEL (effectif déclaré ${effectif} < ${seuil})`,
+      nextDueDate,
+      fiscalYear: (rates as any)?.fiscalYear ?? null,
+      sourceNotes: (rates as any)?.sourceNotes ?? null,
+      staff: rows,
+      csv,
+    };
+  }
+
+  // ============================================================================
   // TAUX CNSS (CNSSRate — global par pays, pas par tenant)
   // ============================================================================
 

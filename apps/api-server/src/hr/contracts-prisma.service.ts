@@ -13,16 +13,26 @@ import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { StorageService } from '../common/services/storage.service';
+import { deriveDocumentPaieType, isValidStatutContractuel } from './services/employment-contract-templates';
+import { PayrollEngineService } from './services/payroll-engine.service';
 
 @Injectable()
 export class ContractsPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly payrollEngine: PayrollEngineService,
   ) {}
 
   /**
    * Crée un contrat de travail
+   *
+   * ⭐ Statut contractuel (RH Bénin) : SALARIE_DECLARE | SALARIE_NON_DECLARE |
+   * PRESTATAIRE_SERVICE. Validations backend (jamais seulement en UI) :
+   *   - SALARIE_*       → salaire brut ≥ SMIG (payroll_fiscal_rates)
+   *   - SALARIE_DECLARE → n° CNSS obligatoire sur la fiche du personnel
+   *   - PRESTATAIRE     → mode de rémunération (FORFAIT/HORAIRE) + montant requis,
+   *                       contractType forcé à PRESTATION, IFU facultatif (taux AIB)
    */
   async createContract(data: {
     tenantId: string;
@@ -38,7 +48,70 @@ export class ContractsPrismaService {
     terms?: any;
     templateId?: string;
     schoolLevelId?: string;
+    statutContractuel?: string;
+    prestationPaymentMode?: string;
+    prestationAmount?: number;
   }) {
+    // ── Validations conditionnelles par statut (backend) ──
+    const statut = data.statutContractuel || null;
+    if (statut && !isValidStatutContractuel(statut)) {
+      throw new BadRequestException(`Statut contractuel invalide : ${statut}`);
+    }
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: data.staffId, tenantId: data.tenantId },
+      include: { employeeCNSS: true },
+    });
+    if (!staff) throw new NotFoundException(`Personnel ${data.staffId} introuvable`);
+
+    let contractType = data.contractType;
+    let prestationAmount = data.prestationAmount ?? null;
+    let baseSalary = data.baseSalary ?? 0;
+
+    if (statut === 'PRESTATAIRE_SERVICE') {
+      // Contrat de prestation de services — jamais un contrat de travail
+      contractType = 'PRESTATION';
+      if (!data.prestationPaymentMode || !['FORFAIT', 'HORAIRE'].includes(data.prestationPaymentMode)) {
+        throw new BadRequestException(
+          'Mode de rémunération du prestataire requis : FORFAIT (montant global) ou HORAIRE (taux horaire).',
+        );
+      }
+      const amount = Number(data.prestationAmount);
+      if (!amount || isNaN(amount) || amount <= 0) {
+        throw new BadRequestException(
+          data.prestationPaymentMode === 'HORAIRE'
+            ? 'Le taux horaire du prestataire est requis et doit être supérieur à 0.'
+            : 'Le montant du forfait du prestataire est requis et doit être supérieur à 0.',
+        );
+      }
+      prestationAmount = amount;
+      // Pas de SMIG pour un prestataire (pas de lien de subordination) :
+      // baseSalary porte le forfait (FORFAIT) ou 0 (HORAIRE — le brut se calcule
+      // au relevé d'heures lors de la paie)
+      baseSalary = data.prestationPaymentMode === 'FORFAIT' ? amount : 0;
+    } else if (statut === 'SALARIE_DECLARE' || statut === 'SALARIE_NON_DECLARE') {
+      // Contrat de travail : salaire plancher = SMIG (payroll_fiscal_rates — jamais en dur)
+      const rates = await this.payrollEngine.getFiscalRates();
+      const smig = rates?.smig ?? 0;
+      const brut = Number(data.baseSalary ?? 0);
+      if (smig > 0 && brut < smig) {
+        throw new BadRequestException(
+          `Salaire brut mensuel inférieur au SMIG en vigueur (${smig.toLocaleString('fr-FR')} FCFA). ` +
+          'Le salaire d\u2019un contrat de travail ne peut pas descendre sous ce plancher légal.',
+        );
+      }
+      if (statut === 'SALARIE_DECLARE') {
+        const cnss = staff.cnssNumber || (staff as any).employeeCNSS?.cnssNumber;
+        if (!cnss) {
+          throw new BadRequestException(
+            'Ce salarié est déclaré à la CNSS : le numéro CNSS est obligatoire sur sa fiche avant la création du contrat.',
+          );
+        }
+      }
+    }
+
+    const documentPaieType = deriveDocumentPaieType(statut);
+
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant
       // IMPORTANT: On n'expire PAS les CDI (sans date de fin) — ils restent en vigueur
@@ -51,7 +124,7 @@ export class ContractsPrismaService {
           staffId: data.staffId,
           tenantId: data.tenantId,
           status: 'ACTIVE',
-          contractType: { in: ['CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT'] },
+          contractType: { in: ['CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT', 'PRESTATION'] },
         },
         select: { id: true },
       });
@@ -76,10 +149,14 @@ export class ContractsPrismaService {
           ...prismaCreateDefaults(),
           tenantId: data.tenantId,
           staffId: data.staffId,
-          contractType: data.contractType,
+          contractType,
+          statutContractuel: statut,
+          documentPaieType,
+          prestationPaymentMode: statut === 'PRESTATAIRE_SERVICE' ? data.prestationPaymentMode : null,
+          prestationAmount,
           startDate: data.startDate ? new Date(data.startDate) : new Date(),
           endDate: data.endDate ? new Date(data.endDate) : null,
-          baseSalary: new Prisma.Decimal(data.baseSalary ?? 0),
+          baseSalary: new Prisma.Decimal(baseSalary),
           paymentMode: data.paymentMode ?? 'BANK',
           status: contractStatus,
           terms: data.terms ?? null,
@@ -89,6 +166,24 @@ export class ContractsPrismaService {
         },
         include: { staff: true },
       });
+
+      // ⭐ Miroir du statut sur la fiche du personnel (si pas encore défini)
+      // + date de déclaration CNSS automatique quand le numéro CNSS est déjà connu
+      if (statut) {
+        const staffPatch: any = {
+          statutContractuel: statut,
+          documentPaieType,
+          statutContractuelLockedAt: new Date(),
+        };
+        if (statut === 'SALARIE_DECLARE' && (staff.cnssNumber || (staff as any).employeeCNSS?.cnssNumber) && !staff.cnssDeclarationDate) {
+          staffPatch.cnssDeclarationDate = new Date();
+        }
+        if (statut === 'PRESTATAIRE_SERVICE' && data.prestationPaymentMode) {
+          staffPatch.prestationPaymentMode = data.prestationPaymentMode;
+          staffPatch.prestationAmount = prestationAmount;
+        }
+        await tx.staff.update({ where: { id: data.staffId }, data: staffPatch }).catch(() => null);
+      }
 
       // Si le contrat est créé en PENDING (non signé), mettre le personnel en PENDING_SIGNATURE
       if (contractStatus === 'PENDING' || contractStatus === 'DRAFT') {
@@ -206,12 +301,27 @@ export class ContractsPrismaService {
    * Met à jour un contrat
    */
   async updateContract(id: string, tenantId: string, data: any) {
-    await this.findContractById(id, tenantId);
+    const current = await this.findContractById(id, tenantId);
+
+    // ⭐ Le statut contractuel ne se modifie JAMAIS par simple édition de champ :
+    //    un changement de statut (CNSS, requalification salarié/prestataire) a des
+    //    implications légales et passe par une procédure tracée. Sur un contrat
+    //    signé, le statut est intégralement verrouillé.
+    if (data.statutContractuel !== undefined && data.statutContractuel !== current.statutContractuel) {
+      throw new BadRequestException(
+        'Le statut contractuel ne peut pas être modifié par édition directe. ' +
+        'Utilisez la procédure tracée de changement de statut (date d\u2019effet + justification).',
+      );
+    }
+    if (current.signedAt && data.statutContractuel !== undefined) {
+      throw new BadRequestException('Contrat déjà signé : le statut contractuel est verrouillé.');
+    }
 
     const updateData: any = {};
     const allowedFields = [
       'contractType', 'startDate', 'endDate', 'baseSalary', 'paymentMode',
       'status', 'terms', 'templateId', 'academicYearId', 'schoolLevelId',
+      'prestationPaymentMode', 'prestationAmount',
     ];
 
     for (const field of allowedFields) {

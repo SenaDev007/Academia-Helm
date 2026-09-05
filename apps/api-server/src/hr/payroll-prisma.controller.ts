@@ -17,6 +17,7 @@ import { Response } from 'express';
 import { PayrollPrismaService } from './payroll-prisma.service';
 import { TaxService } from './services/tax.service';
 import { PayrollTaxService } from './services/payroll-tax.service';
+import { PayrollEngineService } from './services/payroll-engine.service';
 import { PayrollPdfService } from './services/payroll-pdf.service';
 import { HROrionService } from './services/hr-orion.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -41,6 +42,7 @@ export class PayrollPrismaController {
     private readonly payrollTaxService: PayrollTaxService,
     private readonly payrollPdfService: PayrollPdfService,
     private readonly hrOrionService: HROrionService,
+    private readonly payrollEngine: PayrollEngineService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -306,6 +308,25 @@ export class PayrollPrismaController {
   ) {
     const tid = tenant?.id ?? tenantIdFallback;
     return this.payrollService.getPayrollStatistics(tid, academicYearId);
+  }
+
+  /**
+   * ⭐ RH Bénin — barème fiscal & social en vigueur (payroll_fiscal_rates).
+   * Utilisé par l'UI d'embauche pour les hints (SMIG, AIB 3/5 %, ITS) SANS
+   * jamais coder de taux en dur côté front. Lecture seule.
+   */
+  @Get('fiscal-rates')
+  async getFiscalRates(@Query('countryCode') countryCode: string = 'BJ') {
+    const rates = await this.payrollEngine.getFiscalRates(countryCode);
+    return rates ?? {
+      fiscalYear: null,
+      cnssSalarial: null,
+      aibAvecIfu: null,
+      aibSansIfu: null,
+      smig: null,
+      itsBrackets: [],
+      sourceNotes: 'Aucun barème payroll_fiscal_rates disponible pour ce pays.',
+    };
   }
 
   // ──────────────────────────────────────────────────────────────────────────

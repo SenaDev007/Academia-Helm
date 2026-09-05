@@ -80,6 +80,8 @@ interface Job {
   assets?: string;
   salary?: string;
   contractType?: string;
+  /** ⭐ Statut contractuel RH Bénin (hérité par le Staff/contrat à l'embauche) */
+  statutContractuel?: string;
 }
 
 interface CandidateDocument {
@@ -259,7 +261,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [newJob, setNewJob] = useState<Partial<Job>>({
-    title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '',
+    title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '', statutContractuel: 'SALARIE_DECLARE',
   });
 
   // Department list (fetched from /api/departments) for the job modal selector
@@ -676,7 +678,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
       }
       setIsAddJobOpen(false);
       setEditingJob(null);
-      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '' });
+      setNewJob({ title: '', dept: '', loc: '', status: 'PUBLIÉE', contractType: 'CDI', salary: '', academicLevel: '', experience: '', skillsRequired: '', assets: '', description: '', missions: '', responsibilities: '', statutContractuel: 'SALARIE_DECLARE' });
       loadData();
     } catch (err) {
       console.error('Failed to save job:', err);
@@ -690,6 +692,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
     setNewJob({
       title: job.title, dept: job.dept, loc: job.loc, status: job.status,
       contractType: job.contractType || 'CDI', salary: job.salary || '',
+      statutContractuel: job.statutContractuel || 'SALARIE_DECLARE',
       academicLevel: job.academicLevel || '', experience: job.experience || '',
       skillsRequired: job.skillsRequired || '', assets: job.assets || '',
       description: job.description || '', missions: job.missions || '',
@@ -1560,13 +1563,48 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.loc} onChange={(e) => setNewJob({ ...newJob, loc: e.target.value })} placeholder="Adresse de l'école" required />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de Contrat</label>
-                          <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.contractType} onChange={(e) => setNewJob({ ...newJob, contractType: e.target.value })}>
-                            <option value="CDI">CDI</option>
-                            <option value="CDD">CDD</option>
-                            <option value="Prestataire">Prestataire</option>
-                            <option value="Stage">Stage</option>
+                          {/* ⭐ Statut contractuel RH Bénin — détermine le contrat signé à l'embauche,
+                              le document de paie et les retenues (CNSS/ITS vs AIB) */}
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut Contractuel *</label>
+                          <select
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                            value={newJob.statutContractuel || 'SALARIE_DECLARE'}
+                            onChange={(e) => {
+                              const statut = e.target.value;
+                              setNewJob({
+                                ...newJob,
+                                statutContractuel: statut,
+                                // Un prestataire signe un contrat de PRESTATION (pas un contrat de travail)
+                                contractType: statut === 'PRESTATAIRE_SERVICE' ? 'PRESTATION' : (newJob.contractType === 'PRESTATION' ? 'CDI' : newJob.contractType),
+                              });
+                            }}
+                          >
+                            <option value="SALARIE_DECLARE">Salarié déclaré (CNSS)</option>
+                            <option value="SALARIE_NON_DECLARE">Salarié non déclaré</option>
+                            <option value="PRESTATAIRE_SERVICE">Prestataire de services</option>
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type de Contrat</label>
+                          <select
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                            value={newJob.contractType}
+                            onChange={(e) => setNewJob({ ...newJob, contractType: e.target.value })}
+                            disabled={newJob.statutContractuel === 'PRESTATAIRE_SERVICE'}
+                          >
+                            {newJob.statutContractuel === 'PRESTATAIRE_SERVICE' ? (
+                              <option value="PRESTATION">Prestation de services</option>
+                            ) : (
+                              <>
+                                <option value="CDI">CDI</option>
+                                <option value="CDD">CDD</option>
+                                <option value="Stage">Stage</option>
+                              </>
+                            )}
+                          </select>
+                          {newJob.statutContractuel === 'PRESTATAIRE_SERVICE' && (
+                            <p className="text-[9px] text-slate-400 mt-0.5">Type imposé par le statut prestataire — pas de CDI/CDD.</p>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Salaire / Échelle</label>

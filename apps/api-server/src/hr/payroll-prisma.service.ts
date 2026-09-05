@@ -22,6 +22,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { PayrollEngineService } from './services/payroll-engine.service';
 // ⭐ FedaPay supprimé — les payouts Mobile Money ne sont plus disponibles
 // tant qu'une nouvelle intégration payout n'est pas configurée.
 // Les méthodes de paiement de salaire lèveront une erreur explicite.
@@ -62,7 +63,7 @@ export class PayrollPrismaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    
+    private readonly payrollEngine: PayrollEngineService,
   ) {}
 
   // ============================================================================
@@ -614,12 +615,28 @@ export class PayrollPrismaService {
           .plus(overtimeAmount)
           .plus(bonuses);
 
+        // ─── ⭐ RH Bénin — moteur à deux branches selon le statut contractuel ───
+        //   PRESTATAIRE_SERVICE → état de paiement : retenue AIB uniquement
+        //                          (pas de CNSS, pas d'ITS, mention légale)
+        //   SALARIE_NON_DECLARE → fiche de paie sans CNSS (ITS uniquement)
+        //   SALARIE_DECLARE     → fiche de paie complète (CNSS salariale + ITS
+        //                          progressif + charges patronales provisionnées)
+        //   Staff sans statut (héritage) → logique historique inchangée ci-dessous.
+        //   Tous les taux proviennent de payroll_fiscal_rates (jamais en dur).
+        const statutContractuel = (staff as any).statutContractuel || null;
+        const engineResult: any = statutContractuel
+          ? await this.payrollEngine.calculateForStatut(Number(grossSalary), statutContractuel, {
+              ifuPresent: !!(staff as any).ifuNumber,
+            })
+          : null;
+        let aibAmount = new Prisma.Decimal(0);
+
         // ─── Calcul CNSS (uniquement pour les permanents, PAS les vacataires) ──
         let cnssEmployee = new Prisma.Decimal(0);
         let cnssEmployer = new Prisma.Decimal(0);
         let taxableAmount = grossSalary; // Pour les vacataires, tout le brut est "imposable" mais non taxé
 
-        if (!vacataire && cnssRate) {
+        if (!vacataire && !engineResult && cnssRate) {
           // Vérifier que le staff a un numéro CNSS actif
           const hasCnss = staff.employeeCNSS?.isActive && staff.employeeCNSS?.cnssNumber;
           if (hasCnss) {
@@ -635,7 +652,7 @@ export class PayrollPrismaService {
 
         // ─── Calcul IRPP (uniquement pour les permanents, PAS les vacataires) ──
         let irppAmount = new Prisma.Decimal(0);
-        if (!vacataire && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
+        if (!vacataire && !engineResult && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
           let remaining = taxableAmount;
 
           for (const bracket of taxRates) {
@@ -662,7 +679,25 @@ export class PayrollPrismaService {
           }
         }
 
-        const otherDeductions = new Prisma.Decimal(0);
+        // ─── ⭐ RH Bénin — override par le moteur (staff avec statut contractuel) ───
+        if (engineResult) {
+          if (engineResult.documentPaieType === 'ETAT_DE_PAIEMENT') {
+            // État de paiement (prestataire) : AIB en retenue, aucune cotisation
+            aibAmount = new Prisma.Decimal(engineResult.aib ?? 0);
+            cnssEmployee = new Prisma.Decimal(0);
+            cnssEmployer = new Prisma.Decimal(0);
+            taxableAmount = new Prisma.Decimal(0);
+            irppAmount = new Prisma.Decimal(0);
+          } else {
+            // Fiche de paie : CNSS si déclaré, ITS barème progressif (payroll_fiscal_rates)
+            cnssEmployee = new Prisma.Decimal(engineResult.cnssSalarial ?? 0);
+            cnssEmployer = new Prisma.Decimal(engineResult.chargesPatronales?.total ?? 0);
+            taxableAmount = new Prisma.Decimal(engineResult.brutImposable ?? Number(grossSalary));
+            irppAmount = new Prisma.Decimal(engineResult.its ?? 0);
+          }
+        }
+
+        const otherDeductions = aibAmount;
         const totalDeductions = cnssEmployee
           .plus(irppAmount)
           .plus(otherDeductions);
@@ -690,6 +725,35 @@ export class PayrollPrismaService {
             status: 'PENDING',
           },
         });
+
+        // ⭐ RH Bénin — trace fiscale de la retenue AIB (prestataires) :
+        //    audit via tax_withholdings, même mécanique que l'IRPP.
+        if (statutContractuel === 'PRESTATAIRE_SERVICE' && aibAmount.greaterThan(0)) {
+          try {
+            await tx.taxWithholding.create({
+              data: {
+                ...prismaCreateDefaults(),
+                tenantId,
+                academicYearId: academicYearId ?? payroll.academicYearId,
+                payrollItemId: payrollItem.id,
+                staffId: staff.id,
+                taxType: 'AIB',
+                taxableAmount: grossSalary,
+                ratePercentage: new Prisma.Decimal(engineResult?.tauxAib ?? 0),
+                withheldAmount: aibAmount,
+                calculationDetails: {
+                  statutContractuel,
+                  documentPaieType: 'ETAT_DE_PAIEMENT',
+                  ifuPresent: !!(staff as any).ifuNumber,
+                  mention: engineResult?.mention ?? null,
+                  source: 'payroll-engine (payroll_fiscal_rates)',
+                },
+              },
+            });
+          } catch (twErr: any) {
+            this.logger?.warn?.(`AIB withholding trace échoué (non bloquant) : ${twErr?.message}`);
+          }
+        }
 
         results.push(payrollItem);
       }

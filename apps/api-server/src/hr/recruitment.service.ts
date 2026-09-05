@@ -10,6 +10,7 @@ import { ContractSignTokenService } from './services/contract-sign-token.service
 import { StaffCredentialService } from './services/staff-credential.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoCreatedAt, prismaCreateNoUpdatedAt, prismaCreateIdOnly, uuid, now } from '../common/utils/prisma-helpers';
 import { Prisma } from '@prisma/client';
+import { deriveDocumentPaieType } from './services/employment-contract-templates';
 
 /**
  * Valid status transitions for the recruitment pipeline.
@@ -1034,6 +1035,7 @@ export class RecruitmentPrismaService {
             const employeeNumber = tenantMatricule
               || `STF-${new Date().getFullYear().toString().slice(-2)}-${String(Date.now()).slice(-5)}`;
 
+            const jobStatut = application.job.statutContractuel || null;
             const staffData: Record<string, any> = {
               id: uuid(),
               createdAt: now(),
@@ -1054,6 +1056,11 @@ export class RecruitmentPrismaService {
               roleType,
               hireDate: new Date(),
               contractType: application.job.contractType || 'CDI',
+              // ⭐ Statut contractuel RH Bénin — hérité de l'offre d'emploi
+              //    (SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE)
+              statutContractuel: jobStatut,
+              documentPaieType: deriveDocumentPaieType(jobStatut) || null,
+              statutContractuelLockedAt: jobStatut ? now() : null,
               // Staff is pending hire — will be activated during EMBAUCHÉ
               status: 'PENDING_HIRE',
               salary: parsedSalary,
@@ -1079,7 +1086,13 @@ export class RecruitmentPrismaService {
           // ─── Create DRAFT contract (waiting for employer preparation/signature) ───
           let contract = null;
           if (staffRecord) {
-            const contractType = application.job.contractType || 'CDI';
+            // ⭐ Statut contractuel : un PRESTATAIRE signe un contrat de PRESTATION,
+            //    un salarié un contrat de travail (CDD/CDI par défaut de l'offre)
+            const statutContrat = (application.job.statutContractuel
+              || staffRecord.statutContractuel) as string | null;
+            const contractType = statutContrat === 'PRESTATAIRE_SERVICE'
+              ? 'PRESTATION'
+              : (application.job.contractType || 'CDI');
             let baseSalary = new Prisma.Decimal(0);
             if (application.job.salary) {
               const allDigits = application.job.salary.replace(/[^0-9]/g, '');
@@ -1111,6 +1124,8 @@ export class RecruitmentPrismaService {
               tenantId: application.tenantId,
               staffId: staffRecord.id,
               contractType,
+              statutContractuel: statutContrat || null,
+              documentPaieType: deriveDocumentPaieType(statutContrat) || null,
               startDate: new Date(),
               baseSalary,
               paymentMode: 'BANK',
@@ -1239,6 +1254,31 @@ export class RecruitmentPrismaService {
             'Le contrat doit être signé par le recruteur avant l\'embauche. ' +
             'Veuillez préparer et signer le contrat avant de finaliser l\'embauche.',
           );
+        }
+
+        // ⭐ RH Bénin — validations de statut contractuel avant EMBAUCHÉ :
+        //    - SALARIE_DECLARE : n° CNSS obligatoire (la déclaration CNSS est le cœur du statut)
+        //    - PRESTATAIRE_SERVICE : mode + montant de rémunération requis sur le contrat
+        const staffStatut = ((existingStaff as any).statutContractuel
+          || (contract as any).statutContractuel) as string | null;
+        if (staffStatut === 'SALARIE_DECLARE') {
+          const employeeCNSS: any = await this.prisma.employeeCNSS.findUnique({
+            where: { staffId: existingStaff.id },
+          }).catch(() => null);
+          if (!(existingStaff as any).cnssNumber && !employeeCNSS?.cnssNumber) {
+            throw new BadRequestException(
+              'Impossible d\'embaucher : ce salarié est déclaré à la CNSS mais aucun numéro CNSS n\'est renseigné sur sa fiche. ' +
+              'Renseignez le numéro CNSS (Collaborateurs → fiche du personnel) avant de finaliser l\'embauche.',
+            );
+          }
+        }
+        if (staffStatut === 'PRESTATAIRE_SERVICE') {
+          if (!(contract as any).prestationPaymentMode || !(contract as any).prestationAmount) {
+            throw new BadRequestException(
+              'Impossible d\'embaucher : le mode de rémunération du prestataire (forfait ou taux horaire) et son montant ' +
+              'doivent être renseignés sur le contrat avant de finaliser l\'embauche.',
+            );
+          }
         }
 
         this.logger.log(

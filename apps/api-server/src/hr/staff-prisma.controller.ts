@@ -39,7 +39,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import {
   CreateStaffDto, UpdateStaffDto, AddStaffDocumentDto,
-  ValidateDocumentDto, BatchAssignLevelDto,
+  ValidateDocumentDto, BatchAssignLevelDto, ChangeStatutContractuelDto,
 } from './dto/index';
 import type { Response, Request } from 'express';
 
@@ -115,6 +115,31 @@ export class StaffPrismaController {
   }
 
   // ─── TERMINATE / REACTIVATE ────────────────────────────────────────────────
+
+  /**
+   * ⭐ Procédure tracée de changement de statut contractuel (RH Bénin).
+   * POST /hr/staff/:id/statut-contractuel/change
+   * { newStatut, effectiveDate, justification } — le statut est sinon verrouillé.
+   */
+  @Post(':id/statut-contractuel/change')
+  async changeStatutContractuel(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: ChangeStatutContractuelDto,
+    @Req() req: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    const user = req?.user;
+    return this.staffService.changeStatutContractuel(id, tid, {
+      ...body,
+      performedBy: user?.id || null,
+      performedByEmail: user?.email || null,
+    });
+  }
 
   @Post(':id/terminate')
   async terminateStaff(

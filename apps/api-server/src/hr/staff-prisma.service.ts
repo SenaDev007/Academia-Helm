@@ -20,6 +20,7 @@ import { StorageService } from '../common/services/storage.service';
 import { StaffCredentialService } from './services/staff-credential.service';
 import { prismaCreateDefaults, prismaUpdateDefaults, prismaCreateNoUpdatedAt } from '../common/utils/prisma-helpers';
 import { BatchAssignLevelDto } from './dto/index';
+import { deriveDocumentPaieType, isValidStatutContractuel, STATUT_CONTRACTUEL_LABELS } from './services/employment-contract-templates';
 
 // Mapping catégorie UI → roleType Prisma
 const CATEGORY_TO_ROLE: Record<string, string> = {
@@ -155,6 +156,20 @@ export class StaffPrismaService {
     // Falls back to the provided employeeNumber if tenantMatricule generation failed
     const finalEmployeeNumber = tenantMatricule || employeeNumber;
 
+    // ⭐ Statut contractuel (RH Bénin) — validation à la création : un salarié
+    //    déclaré ne peut pas être enregistré sans numéro CNSS (spec backend).
+    if (data.statutContractuel) {
+      if (!isValidStatutContractuel(data.statutContractuel)) {
+        throw new BadRequestException(`Statut contractuel invalide : ${data.statutContractuel}`);
+      }
+      if (data.statutContractuel === 'SALARIE_DECLARE' && !data.cnssNumber) {
+        throw new BadRequestException(
+          'Un salarié déclaré à la CNSS ne peut pas être enregistré sans numéro CNSS. ' +
+          'Renseignez le numéro CNSS (ou utilisez le statut « salarié non déclaré » puis régularisez).',
+        );
+      }
+    }
+
     const created = await this.prisma.staff.create({
       data: {
         ...prismaCreateDefaults(),
@@ -175,14 +190,18 @@ export class StaffPrismaService {
         department:     data.department || null,
         roleType,
         hireDate:       data.hireDate ? new Date(data.hireDate) : new Date(),
-        // ⭐ Aligné avec le flux de recrutement public qui crée aussi le staff
-        //    à PENDING_HIRE à la transition ÉLIGIBLE. Le statut PENDING_HIRE
-        //    signifie "embauche initiée, en attente de finalisation (signature
-        //    contrat + activation)". Le statut PENDING_SIGNATURE était trop
-        //    spécifique et incohérent avec le flux public.
         status:         data.status || 'PENDING_HIRE',
         qualifications: data.qualifications || null,
         notes:          data.notes || null,
+        // ⭐ Statut contractuel + champs conditionnels (RH Bénin)
+        statutContractuel: data.statutContractuel || null,
+        documentPaieType: deriveDocumentPaieType(data.statutContractuel) || null,
+        cnssNumber: data.cnssNumber || null,
+        ifuNumber: data.ifuNumber || null,
+        cnssDeclarationDate: data.statutContractuel === 'SALARIE_DECLARE' && data.cnssNumber ? new Date() : null,
+        prestationPaymentMode: data.statutContractuel === 'PRESTATAIRE_SERVICE' ? (data.prestationPaymentMode || null) : null,
+        prestationAmount: data.statutContractuel === 'PRESTATAIRE_SERVICE' ? (data.prestationAmount ?? null) : null,
+        statutContractuelLockedAt: data.statutContractuel ? new Date() : null,
       },
     });
 
@@ -429,7 +448,7 @@ export class StaffPrismaService {
    * Met à jour un membre du personnel
    */
   async updateStaff(id: string, tenantId: string, data: any) {
-    await this.findStaffById(id, tenantId);
+    const staff: any = await this.findStaffById(id, tenantId);
 
     // Mapper les champs UI vers Prisma
     const updateData: any = {};
@@ -442,8 +461,29 @@ export class StaffPrismaService {
       'academicYearId', 'schoolLevelId',
       'nationality', 'maritalStatus', 'numberOfChildren',
       'nationalId', 'cnssNumber', 'ifuNumber',
+      'prestationPaymentMode', 'prestationAmount', 'cnssDeclarationDate',
       'terminationType', 'noticePeriodDays',
     ];
+
+    // ⭐ Statut contractuel — VERROUILLÉ après définition : un changement en cours
+    //    d'année a des implications légales (CNSS, ITS, AIB) et passe uniquement
+    //    par la procédure tracée POST :id/statut-contractuel/change.
+    if (data.statutContractuel !== undefined && data.statutContractuel !== null && data.statutContractuel !== '') {
+      if (staff.statutContractuel && staff.statutContractuel !== data.statutContractuel) {
+        throw new BadRequestException(
+          `Le statut contractuel de ce personnel est déjà « ${STATUT_CONTRACTUEL_LABELS[staff.statutContractuel] || staff.statutContractuel} » et ne peut pas être modifié par édition directe. ` +
+          'Utilisez la procédure tracée de changement de statut (date d\u2019effet + justification).',
+        );
+      }
+      if (!isValidStatutContractuel(data.statutContractuel)) {
+        throw new BadRequestException(`Statut contractuel invalide : ${data.statutContractuel}`);
+      }
+      // Définition initiale (wizard étape 2) : le document de paie est DÉRIVÉ,
+      // jamais saisi manuellement.
+      updateData.statutContractuel = data.statutContractuel;
+      updateData.documentPaieType = deriveDocumentPaieType(data.statutContractuel) || null;
+      updateData.statutContractuelLockedAt = new Date();
+    }
 
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
@@ -461,7 +501,7 @@ export class StaffPrismaService {
     }
 
     // Handle date fields — convert empty strings to null, valid strings to Date
-    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate', 'terminatedAt', 'lastWorkingDate'];
+    const dateFields = ['birthDate', 'dateOfBirth', 'hireDate', 'terminatedAt', 'lastWorkingDate', 'cnssDeclarationDate'];
     for (const df of dateFields) {
       if (df in updateData) {
         if (updateData[df] === '' || updateData[df] === null || updateData[df] === undefined) {
@@ -470,6 +510,18 @@ export class StaffPrismaService {
           updateData[df] = new Date(updateData[df]);
         }
       }
+    }
+
+    // ⭐ Date de déclaration CNSS automatique : dès qu'un numéro CNSS est
+    //    renseigné pour un salarié déclaré sans date de déclaration
+    if (updateData.cnssNumber && staff.statutContractuel === 'SALARIE_DECLARE' && !staff.cnssDeclarationDate && !updateData.cnssDeclarationDate) {
+      updateData.cnssDeclarationDate = new Date();
+    }
+
+    // prestationAmount : nombre ou null
+    if ('prestationAmount' in updateData) {
+      const amt = Number(updateData.prestationAmount);
+      updateData.prestationAmount = (!isNaN(amt) && amt > 0) ? amt : null;
     }
 
     // Handle integer fields — convert empty strings to null
@@ -545,6 +597,122 @@ export class StaffPrismaService {
       where: { id },
       data: { ...prismaUpdateDefaults(), status: 'INACTIVE' },
     });
+  }
+
+  /**
+   * ⭐ Procédure tracée de changement de statut contractuel (RH Bénin).
+   * Le statut est verrouillé après la création du profil : un changement a des
+   * implications légales réelles (CNSS, ITS, AIB) et exige une action explicite
+   * avec date d'effet et justification — jamais une simple édition de champ.
+   * Trace : staff_statut_changes + avenant STATUS_CHANGE sur le contrat actif.
+   */
+  async changeStatutContractuel(
+    id: string,
+    tenantId: string,
+    data: {
+      newStatut: string;
+      effectiveDate: string | Date;
+      justification: string;
+      performedBy?: string;
+      performedByEmail?: string;
+    },
+  ) {
+    const staff: any = await this.findStaffById(id, tenantId);
+
+    if (!isValidStatutContractuel(data.newStatut)) {
+      throw new BadRequestException(`Statut contractuel invalide : ${data.newStatut}`);
+    }
+    if (staff.statutContractuel === data.newStatut) {
+      throw new BadRequestException(
+        `Le statut contractuel de ce personnel est déjà « ${STATUT_CONTRACTUEL_LABELS[data.newStatut] || data.newStatut} ».`,
+      );
+    }
+    // Cohérence : on ne peut pas déclarer un salarié à la CNSS sans numéro CNSS
+    if (data.newStatut === 'SALARIE_DECLARE' && !staff.cnssNumber) {
+      throw new BadRequestException(
+        'Renseignez d\u2019abord le numéro CNSS sur la fiche de ce personnel avant de le déclarer comme salarié déclaré.',
+      );
+    }
+
+    const effective = new Date(data.effectiveDate);
+    const documentPaieType = deriveDocumentPaieType(data.newStatut);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      // 1. Trace du changement (staff_statut_changes)
+      const record = await tx.staffStatutChange.create({
+        data: {
+          tenantId,
+          staffId: id,
+          previousStatut: staff.statutContractuel || null,
+          newStatut: data.newStatut,
+          effectiveDate: effective,
+          justification: data.justification,
+          performedBy: data.performedBy || null,
+          performedByEmail: data.performedByEmail || null,
+        },
+      });
+
+      // 2. Mise à jour de la fiche personnel (statut + document dérivé + verrou)
+      const staffPatch: any = {
+        ...prismaUpdateDefaults(),
+        statutContractuel: data.newStatut,
+        documentPaieType: documentPaieType || null,
+        statutContractuelLockedAt: new Date(),
+      };
+      if (data.newStatut === 'SALARIE_DECLARE' && !staff.cnssDeclarationDate) {
+        staffPatch.cnssDeclarationDate = new Date();
+      }
+      if (data.newStatut !== 'PRESTATAIRE_SERVICE') {
+        staffPatch.prestationPaymentMode = null;
+        staffPatch.prestationAmount = null;
+      }
+      await tx.staff.update({ where: { id }, data: staffPatch });
+
+      // 3. Avenant STATUS_CHANGE sur le contrat le plus récent (traçabilité
+      //    contractuelle) + miroir du statut si le contrat n'est pas encore signé
+      const activeContract = await tx.contract.findFirst({
+        where: { staffId: id, tenantId, status: { in: ['ACTIVE', 'PENDING', 'DRAFT'] } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (activeContract) {
+        await tx.contractAmendment.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            contractId: activeContract.id,
+            amendmentType: 'STATUS_CHANGE',
+            description:
+              `Changement de statut contractuel : ${staff.statutContractuel || '(non défini)'} → ${data.newStatut}. ` +
+              `Justification : ${data.justification}`,
+            previousValue: staff.statutContractuel || null,
+            newValue: data.newStatut,
+            effectiveDate: effective,
+            status: 'ACTIVE',
+          },
+        }).catch(() => null);
+
+        if (!activeContract.signedAt) {
+          await tx.contract.update({
+            where: { id: activeContract.id },
+            data: {
+              ...prismaUpdateDefaults(),
+              statutContractuel: data.newStatut,
+              documentPaieType: documentPaieType || null,
+            },
+          }).catch(() => null);
+        }
+      }
+
+      return record;
+    });
+
+    return {
+      change,
+      staffId: id,
+      previousStatut: staff.statutContractuel || null,
+      newStatut: data.newStatut,
+      documentPaieType,
+    };
   }
 
   /**

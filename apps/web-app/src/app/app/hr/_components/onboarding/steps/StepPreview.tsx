@@ -24,6 +24,10 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
+  // ⭐ Contrat « statut contractuel » (RH Bénin) : gabarit complet rendu depuis
+  //    contract_templates (contrat_travail / contrat_prestation) — pas d'édition
+  //    d'articles JSON. L'étape est auto-validée dès le chargement de l'aperçu.
+  const [isStatutContract, setIsStatutContract] = useState(false);
 
   // ⭐ Chargement initial : on charge l'aperçu ET les articles résolus par
   //    défaut (avec variables {{...}} remplacées par les vraies valeurs du
@@ -31,20 +35,31 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
   //    visualiser les articles directement à l'arrivée à l'étape 5, sans
   //    devoir cliquer "Éditer" pour les charger. S'il y a déjà des
   //    customArticles sauvegardés, on les charge à la place.
+  //    Pour les contrats statutaires, l'aperçu suffit (pas d'articles).
   useEffect(() => {
     if (!contractId) return;
-    loadPreview();
-    loadArticles(); // ⭐ chargement automatique au montage
+    (async () => {
+      const isStatut = await loadPreview();
+      if (!isStatut) loadArticles();
+    })();
   }, [contractId]);
 
-  const loadPreview = async () => {
-    if (!contractId) return;
+  const loadPreview = async (): Promise<boolean> => {
+    if (!contractId) return false;
     try {
       setLoading(true);
       const res = await hrFetch<any>(hrUrl(`contracts/${contractId}/preview`, { tenantId }));
       if (res.html) setPreviewHtml(res.html);
+      // ⭐ Contrat statutaire : auto-validation (gabarit complet, pas d'articles éditables)
+      if (res?.contract?.statutContractuel) {
+        setIsStatutContract(true);
+        onArticlesSaved();
+        return true;
+      }
+      return false;
     } catch (err: any) {
       console.warn('Preview load failed:', err?.message);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -140,26 +155,42 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
           </div>
           <div>
             <h4 className="text-sm font-bold text-slate-800">Aperçu &amp; Édition du Contrat</h4>
-            <p className="text-[11px] text-slate-400">Vérifiez et modifiez les articles avant signature</p>
+            <p className="text-[11px] text-slate-400">
+              {isStatutContract
+                ? 'Gabarit contractuel complet (statut contractuel) — vérifiez avant signature'
+                : 'Vérifiez et modifiez les articles avant signature'}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={switchToPreview}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${mode === 'preview' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
-          >
-            <Eye className="h-3.5 w-3.5" /> Aperçu
-          </button>
-          <button
-            type="button"
-            onClick={switchToEdit}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${mode === 'edit' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
-          >
-            <Edit3 className="h-3.5 w-3.5" /> Éditer
-          </button>
-        </div>
+        {!isStatutContract && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={switchToPreview}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${mode === 'preview' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+              <Eye className="h-3.5 w-3.5" /> Aperçu
+            </button>
+            <button
+              type="button"
+              onClick={switchToEdit}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${mode === 'edit' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+              <Edit3 className="h-3.5 w-3.5" /> Éditer
+            </button>
+          </div>
+        )}
       </div>
+
+      {isStatutContract && (
+        <div className="p-3 rounded-xl bg-[#1d4fa5]/5 border border-[#1d4fa5]/20 text-[11px] text-slate-600 leading-relaxed">
+          <CheckCircle className="h-3.5 w-3.5 inline-block mr-1 -mt-0.5 text-[#1d4fa5]" />
+          Ce contrat est généré à partir du gabarit <strong>statut contractuel</strong> (contrat de travail ou
+          contrat de prestation de services selon le statut choisi à l&apos;étape Emploi). Le document intègre
+          automatiquement le bloc CNSS (salarié déclaré), le régime AIB (prestataire), les barèmes
+          d&apos;essai/préavis et le hash d&apos;intégrité après signature.
+        </div>
+      )}
 
       {mode === 'preview' && (
         <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
@@ -179,7 +210,7 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
         </div>
       )}
 
-      {mode === 'edit' && (
+      {mode === 'edit' && !isStatutContract && (
         <div className="space-y-3 max-h-[400px] overflow-y-auto">
           {articles.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">Chargement des articles par défaut...</p>
@@ -226,7 +257,7 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
           et qu'ils sont acceptables tels quels, l'utilisateur peut
           valider sans modifier en cliquant "Utiliser les articles par défaut
           et continuer". Cela débloque l'étape 5 sans obliger à éditer. */}
-      {!articlesSaved && articles.length > 0 && (
+      {!articlesSaved && !isStatutContract && articles.length > 0 && (
         <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-center justify-between gap-3">
           <p className="text-xs text-blue-700 flex-1">
             <CheckCircle className="h-3.5 w-3.5 inline mr-1" />
@@ -249,7 +280,11 @@ export function StepPreview({ contractId, tenantId, articlesSaved, onArticlesSav
         <div className="flex items-center gap-2">
           {articlesSaved && <CheckCircle className="h-4 w-4 text-emerald-500" />}
           <span className="text-xs font-semibold text-slate-600">
-            {articlesSaved ? 'Articles sauvegardés — Prêt pour la génération PDF' : 'Sauvegardez les articles avant de générer le PDF'}
+            {isStatutContract
+              ? 'Gabarit contractuel prêt — générez le PDF avant signature'
+              : articlesSaved
+              ? 'Articles sauvegardés — Prêt pour la génération PDF'
+              : 'Sauvegardez les articles avant de générer le PDF'}
           </span>
         </div>
         <button

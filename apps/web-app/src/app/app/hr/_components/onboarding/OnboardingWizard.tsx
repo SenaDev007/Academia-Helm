@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { X, User, ArrowLeft, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -26,9 +26,31 @@ interface OnboardingWizardProps {
 const NAVY = '#0b2f73';
 const BLUE = '#1d4fa5';
 
+// ⭐ RH Bénin — barème fiscal en vigueur (payroll_fiscal_rates, via l'API) :
+// hints SMIG / AIB / CNSS pour la validation et l'aide à la saisie, SANS taux
+// codé en dur côté front. Cache module-level 60 s (pattern PortalSwitchButton).
+let fiscalHintsCache: { data: any; at: number } | null = null;
+async function loadFiscalHints(): Promise<any | null> {
+  if (fiscalHintsCache && Date.now() - fiscalHintsCache.at < 60_000) return fiscalHintsCache.data;
+  try {
+    const res = await fetch('/api/hr/payroll/fiscal-rates?countryCode=BJ', { credentials: 'include', cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    fiscalHintsCache = { data, at: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: OnboardingWizardProps) {
   const [state, setState] = useState<OnboardingState>({ ...INITIAL_STATE });
   const [savingStep, setSavingStep] = useState(false);
+  const [fiscalHints, setFiscalHints] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (isOpen) loadFiscalHints().then(setFiscalHints);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -40,13 +62,38 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       case 1:
         return !!(state.identity.firstName && state.identity.lastName && state.identity.email && state.identity.phone && state.identity.birthDate && state.identity.nationalId);
       case 2:
-        return !!(state.employment.position && state.employment.hireDate);
+        // ⭐ Statut contractuel BLOQUANT — avant tout champ financier (étape 4)
+        return !!(state.employment.position && state.employment.hireDate && state.employment.statutContractuel);
       case 3:
         // ⭐ Tous les documents sont optionnels en embauche interne — l'utilisateur
         //    peut téléverser ce qu'il a maintenant et continuer. Aucune contrainte.
         return true;
-      case 4:
-        return !!(state.contract.contractType && state.contract.baseSalary && state.contract.startDate);
+      case 4: {
+        // ⭐ Validation conditionnelle selon le statut contractuel
+        const statut = state.employment.statutContractuel;
+        if (statut === 'PRESTATAIRE_SERVICE') {
+          const amount = parseFloat(state.contract.prestationAmount);
+          return !!(
+            state.contract.prestationPaymentMode &&
+            amount > 0 &&
+            state.contract.prestationDescription.trim().length >= 10 &&
+            state.contract.prestationCalendrier.trim().length >= 3 &&
+            state.contract.startDate &&
+            state.contract.endDate
+          );
+        }
+        // Salariés (déclarés ou non) : type + salaire ≥ SMIG + dates
+        const smig = Number(fiscalHints?.smig) > 0 ? Number(fiscalHints.smig) : 52000;
+        const salaire = parseFloat(state.contract.baseSalary);
+        const cnssOk = statut !== 'SALARIE_DECLARE' || !!state.contract.cnssNumber.trim();
+        return !!(
+          state.contract.contractType &&
+          salaire >= smig &&
+          state.contract.startDate &&
+          (state.contract.contractType === 'CDI' || !!state.contract.endDate) &&
+          cnssOk
+        );
+      }
       case 5:
         return state.articlesSaved;
       case 6:
@@ -135,6 +182,8 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       roleType: state.employment.roleType,
       hireDate: state.employment.hireDate || undefined,
       qualifications: state.employment.qualifications || undefined,
+      // ⭐ Statut contractuel (définition initiale — dérivation du document de paie côté serveur)
+      statutContractuel: state.employment.statutContractuel || undefined,
     };
 
     // ⭐ Multi-poste : si le staff est aussi enseignant, on met à jour
@@ -208,6 +257,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   const saveStep4AndAdvance = async () => {
     if (!state.staffId) return;
 
+    const statut = state.employment.statutContractuel;
+    const isPrestation = statut === 'PRESTATAIRE_SERVICE';
+    const isDeclare = statut === 'SALARIE_DECLARE';
+
     // Update staff with CNSS, IFU, bank details (including Mobile Money for FedaPay)
     const bankDetails: any = {};
     if (state.contract.paymentMode === 'BANK' && state.contract.bankName) {
@@ -220,28 +273,62 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       bankDetails.mobileMoneyOperator = state.contract.mobileMoneyOperator;
     }
 
+    const staffBody: any = {
+      bankDetails: Object.keys(bankDetails).length > 0 ? bankDetails : undefined,
+    };
+    if (isDeclare) {
+      // N° CNSS obligatoire pour un salarié déclaré (validation miroir du serveur)
+      staffBody.cnssNumber = state.contract.cnssNumber || undefined;
+    }
+    if (isPrestation) {
+      staffBody.ifuNumber = state.contract.ifuNumber || undefined;
+      staffBody.prestationPaymentMode = state.contract.prestationPaymentMode;
+      staffBody.prestationAmount = parseFloat(state.contract.prestationAmount) || undefined;
+    } else if (!isDeclare) {
+      staffBody.cnssNumber = state.contract.cnssNumber || undefined;
+    }
+
     await hrFetch(hrUrl(`staff/${state.staffId}`, { tenantId }), {
       method: 'PUT',
-      body: {
-        cnssNumber: state.contract.cnssNumber || undefined,
-        ifuNumber: state.contract.ifuNumber || undefined,
-        bankDetails: Object.keys(bankDetails).length > 0 ? bankDetails : undefined,
-      },
+      body: staffBody,
     });
 
     // Create contract if not yet created
     if (!state.contractId) {
       const contractBody: any = {
         staffId: state.staffId,
-        contractType: state.contract.contractType,
         startDate: state.contract.startDate,
-        baseSalary: parseFloat(state.contract.baseSalary) || 0,
         paymentMode: state.contract.paymentMode,
         status: 'DRAFT',
+        ...(statut ? { statutContractuel: statut } : {}),
       };
-      if (state.contract.endDate) {
-        contractBody.endDate = state.contract.endDate;
+
+      if (isPrestation) {
+        // ⭐ Contrat de prestation de services — jamais un contrat de travail
+        contractBody.contractType = 'PRESTATION';
+        contractBody.prestationPaymentMode = state.contract.prestationPaymentMode;
+        contractBody.prestationAmount = parseFloat(state.contract.prestationAmount) || 0;
+        contractBody.baseSalary =
+          state.contract.prestationPaymentMode === 'FORFAIT'
+            ? parseFloat(state.contract.prestationAmount) || 0
+            : 0;
+        if (state.contract.endDate) contractBody.endDate = state.contract.endDate;
+        contractBody.terms = {
+          prestation: {
+            description: state.contract.prestationDescription.trim(),
+            calendrier: state.contract.prestationCalendrier.trim(),
+            renouvelable: state.contract.prestationRenouvelable,
+            confidentialite: state.contract.prestationConfidentialite,
+            proprieteContenus: state.contract.prestationPropriete,
+          },
+        };
+      } else {
+        // Salarié (déclaré ou non déclaré)
+        contractBody.contractType = state.contract.contractType;
+        contractBody.baseSalary = parseFloat(state.contract.baseSalary) || 0;
+        if (state.contract.endDate) contractBody.endDate = state.contract.endDate;
       }
+
       const contractResponse = await hrFetch<any>(hrUrl('contracts', { tenantId }), {
         method: 'POST',
         body: contractBody,
@@ -405,6 +492,8 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
               {state.currentStep === 4 && (
                 <StepContract
                   contract={state.contract}
+                  statutContractuel={state.employment.statutContractuel}
+                  fiscalHints={fiscalHints}
                   onUpdate={(field, value) =>
                     setState((prev) => ({ ...prev, contract: { ...prev.contract, [field]: value } }))
                   }

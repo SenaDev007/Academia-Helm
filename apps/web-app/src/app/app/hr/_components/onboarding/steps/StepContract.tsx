@@ -1,12 +1,19 @@
 'use client';
 
-import { FileText, DollarSign, Building2, Landmark, Smartphone } from 'lucide-react';
+import { FileText, DollarSign, Building2, Landmark, Smartphone, Handshake, CalendarClock, Info } from 'lucide-react';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
   'focus:outline-none focus:border-[#1d4fa5] focus:ring-2 focus:ring-[#1d4fa5]/10 transition';
 
 const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
+interface FiscalHints {
+  smig?: number | null;
+  aibAvecIfu?: number | null;
+  aibSansIfu?: number | null;
+  cnssSalarial?: number | null;
+}
 
 interface StepContractProps {
   contract: {
@@ -23,14 +30,34 @@ interface StepContractProps {
     mobileMoneyOperator: string;
     cnssNumber: string;
     ifuNumber: string;
+    prestationPaymentMode: 'FORFAIT' | 'HORAIRE';
+    prestationAmount: string;
+    prestationDescription: string;
+    prestationCalendrier: string;
+    prestationRenouvelable: boolean;
+    prestationConfidentialite: boolean;
+    prestationPropriete: boolean;
   };
+  /** ⭐ Statut contractuel choisi à l'étape 2 (bloquant) */
+  statutContractuel: string;
+  /** Barème en vigueur (payroll_fiscal_rates — jamais codé en dur côté front) */
+  fiscalHints?: FiscalHints | null;
   onUpdate: (field: string, value: any) => void;
 }
 
-export function StepContract({ contract, onUpdate }: StepContractProps) {
+export function StepContract({ contract, statutContractuel, fiscalHints, onUpdate }: StepContractProps) {
   const showBankFields = contract.paymentMode === 'BANK';
   const showMobileMoneyFields = contract.paymentMode === 'MOBILE_MONEY';
-  const showEndDate = contract.contractType !== 'CDI';
+  const isPrestation = statutContractuel === 'PRESTATAIRE_SERVICE';
+  const isDeclare = statutContractuel === 'SALARIE_DECLARE';
+  const isSalarie = statutContractuel === 'SALARIE_DECLARE' || statutContractuel === 'SALARIE_NON_DECLARE';
+
+  const smig = fiscalHints?.smig ?? 52000;
+  const fmt = (n?: number | null) => (n == null ? '' : Number(n).toLocaleString('fr-FR'));
+  const smigInferieur = isSalarie && contract.baseSalary !== '' && Number(contract.baseSalary) > 0 && Number(contract.baseSalary) < smig;
+  const tauxAibApplique = contract.ifuNumber
+    ? (fiscalHints?.aibAvecIfu ?? 3)
+    : (fiscalHints?.aibSansIfu ?? 5);
 
   return (
     <div className="space-y-4">
@@ -39,44 +66,239 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
           <FileText className="h-4 w-4" />
         </div>
         <div>
-          <h4 className="text-sm font-bold text-slate-800">Contrat de Travail</h4>
-          <p className="text-[11px] text-slate-400">Param&egrave;tres du contrat et r&eacute;mun&eacute;ration</p>
+          <h4 className="text-sm font-bold text-slate-800">
+            {isPrestation ? 'Contrat de Prestation de Services' : 'Contrat de Travail'}
+          </h4>
+          <p className="text-[11px] text-slate-400">
+            {isPrestation
+              ? 'Prestation indépendante — état de paiement, retenue AIB'
+              : isDeclare
+              ? 'Salarié déclaré — fiche de paie, CNSS + ITS'
+              : statutContractuel
+              ? 'Salarié non déclaré — fiche de paie, ITS uniquement'
+              : 'Paramètres du contrat et rémunération'}
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className={labelClass}>Type de contrat *</label>
-          <select className={inputClass} value={contract.contractType} onChange={(e) => onUpdate('contractType', e.target.value)}>
-            <option value="CDD">Contrat &agrave; Dur&eacute;e D&eacute;termin&eacute;e (CDD)</option>
-            <option value="CDI">Contrat &agrave; Dur&eacute;e Ind&eacute;termin&eacute;e (CDI)</option>
-            <option value="VACATAIRE">Vacataire</option>
-            <option value="STAGE">Stage</option>
-            <option value="CONSULTANT">Consultant</option>
-          </select>
-        </div>
-        <div>
-          <label className={labelClass}>Salaire de Base (Mensuel) *</label>
-          <div className="relative">
-            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input required type="number" min="0" className={inputClass + ' pl-9'} value={contract.baseSalary} onChange={(e) => onUpdate('baseSalary', e.target.value)} />
+      {/* ═══ Prestataire de services ═══ */}
+      {isPrestation && (
+        <>
+          <div className="p-3 rounded-xl bg-[#1d4fa5]/5 border border-[#1d4fa5]/20 text-[11px] text-slate-600 leading-relaxed">
+            <Handshake className="h-3.5 w-3.5 inline-block mr-1 -mt-0.5 text-[#1d4fa5]" />
+            Le prestataire signe un <strong>contrat de prestation de services</strong> (pas un contrat de
+            travail) : absence de lien de subordination, paiement sur facture ou relevé d&apos;heures,
+            retenue AIB à la source de <strong>{tauxAibApplique} %</strong> (IFU {contract.ifuNumber ? 'renseigné → taux réduit' : 'absent → taux plein'})
+            {fiscalHints?.aibAvecIfu != null ? '' : ' (taux indicatif)'}.
           </div>
-        </div>
-      </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Mode de rémunération *</label>
+              <select
+                className={inputClass}
+                value={contract.prestationPaymentMode}
+                onChange={(e) => onUpdate('prestationPaymentMode', e.target.value)}
+              >
+                <option value="FORFAIT">Forfait (montant global)</option>
+                <option value="HORAIRE">Taux horaire (relevé d&apos;heures)</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>
+                {contract.prestationPaymentMode === 'HORAIRE' ? 'Taux horaire (FCFA) *' : 'Montant du forfait (FCFA) *'}
+              </label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  className={inputClass + ' pl-9'}
+                  placeholder={contract.prestationPaymentMode === 'HORAIRE' ? 'Ex : 5000' : 'Ex : 300000'}
+                  value={contract.prestationAmount}
+                  onChange={(e) => onUpdate('prestationAmount', e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Description de la prestation *</label>
+            <textarea
+              required
+              className={inputClass + ' min-h-[80px]'}
+              placeholder="Ex : Animation des séances de renforcement en mathématiques pour les classes de 3e, préparation aux examens…"
+              value={contract.prestationDescription}
+              onChange={(e) => onUpdate('prestationDescription', e.target.value)}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Soyez précis : une description générique fragilise la clause d&apos;absence de subordination.
+            </p>
+          </div>
+
+          <div>
+            <label className={labelClass}>Calendrier des interventions *</label>
+            <div className="relative">
+              <CalendarClock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                required
+                type="text"
+                className={inputClass + ' pl-9'}
+                placeholder="Ex : plages indicatives de 15h à 17h, mardis et jeudis, d'octobre à juin"
+                value={contract.prestationCalendrier}
+                onChange={(e) => onUpdate('prestationCalendrier', e.target.value)}
+            />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Formulez des <em>plages indicatives</em> convenues d&apos;un commun accord — jamais des horaires imposés.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>N&deg; IFU (Identifiant Fiscal Unique)</label>
+              <input
+                type="text"
+                placeholder="Numéro IFU du prestataire"
+                className={inputClass}
+                value={contract.ifuNumber}
+                onChange={(e) => onUpdate('ifuNumber', e.target.value)}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Laisser vide si le prestataire n&apos;a pas d&apos;IFU — la retenue AIB passe au taux de{' '}
+                {fmt(fiscalHints?.aibSansIfu ?? 5)} %.
+              </p>
+            </div>
+            <div className="space-y-2 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={contract.prestationRenouvelable}
+                  onChange={(e) => onUpdate('prestationRenouvelable', e.target.checked)}
+                  className="w-4 h-4 accent-[#1d4fa5] rounded"
+                />
+                <span className="text-xs font-semibold text-slate-700">Contrat renouvelable par accord exprès</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={contract.prestationConfidentialite}
+                  onChange={(e) => onUpdate('prestationConfidentialite', e.target.checked)}
+                  className="w-4 h-4 accent-[#1d4fa5] rounded"
+                />
+                <span className="text-xs font-semibold text-slate-700">Clause de confidentialité</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={contract.prestationPropriete}
+                  onChange={(e) => onUpdate('prestationPropriete', e.target.checked)}
+                  className="w-4 h-4 accent-[#1d4fa5] rounded"
+                />
+                <span className="text-xs font-semibold text-slate-700">Cession des contenus produits</span>
+              </label>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ═══ Salariés (déclarés ou non déclarés) ═══ */}
+      {isSalarie && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Type de contrat *</label>
+              <select className={inputClass} value={contract.contractType} onChange={(e) => onUpdate('contractType', e.target.value)}>
+                <option value="CDD">Contrat &agrave; Dur&eacute;e D&eacute;termin&eacute;e (CDD)</option>
+                <option value="CDI">Contrat &agrave; Dur&eacute;e Ind&eacute;termin&eacute;e (CDI)</option>
+                <option value="VACATAIRE">Vacataire</option>
+                <option value="STAGE">Stage</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Salaire de Base (Mensuel) *</label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input required type="number" min="0" className={inputClass + ' pl-9'} value={contract.baseSalary} onChange={(e) => onUpdate('baseSalary', e.target.value)} />
+              </div>
+              {smigInferieur ? (
+                <p className="text-[10px] text-red-600 mt-1 font-semibold">
+                  Inférieur au SMIG ({fmt(smig)} FCFA/mois) — le serveur refusera la création du contrat.
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Plancher légal : SMIG = {fmt(smig)} FCFA/mois{fiscalHints?.smig == null ? ' (valeur indicative — barème serveur indisponible)' : ''}.
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Dates (tous statuts) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className={labelClass}>Date de prise d&apos;effet *</label>
           <input required type="date" className={inputClass} value={contract.startDate} onChange={(e) => onUpdate('startDate', e.target.value)} />
         </div>
-        {showEndDate && (
+        {(isPrestation || (isSalarie && contract.contractType !== 'CDI')) && (
           <div>
-            <label className={labelClass}>Date de fin de contrat *</label>
-            <input type="date" className={inputClass} value={contract.endDate} onChange={(e) => onUpdate('endDate', e.target.value)} />
+            <label className={labelClass}>Date de fin *</label>
+            <input required type="date" className={inputClass} value={contract.endDate} onChange={(e) => onUpdate('endDate', e.target.value)} />
           </div>
         )}
       </div>
 
+      {/* ═══ CNSS (salarié déclaré uniquement) ═══ */}
+      {isDeclare && (
+        <div className="space-y-3 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-emerald-700" />
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Déclaration CNSS (obligatoire)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>N&deg; CNSS *</label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  required
+                  type="text"
+                  placeholder="Numéro d'immatriculation CNSS"
+                  className={inputClass + ' pl-9'}
+                  value={contract.cnssNumber}
+                  onChange={(e) => onUpdate('cnssNumber', e.target.value)}
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Le contrat ne peut pas être signé sans ce numéro. Cotisation salariale :{' '}
+                {fiscalHints?.cnssSalarial != null ? `${fmt(fiscalHints.cnssSalarial)} % du brut (précompte)` : 'selon le barème en vigueur'}.
+              </p>
+            </div>
+            <div className="flex items-start gap-2 text-[11px] text-slate-600 leading-relaxed">
+              <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+              <p>
+                La date de déclaration CNSS est renseignée automatiquement. La part patronale est
+                provisionnée pour la déclaration CNSS (mensuelle si effectif déclaré ≥ 20, trimestrielle sinon).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Note salarié non déclaré */}
+      {statutContractuel === 'SALARIE_NON_DECLARE' && (
+        <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-100 text-[11px] text-amber-800 leading-relaxed">
+          <Info className="h-3.5 w-3.5 inline-block mr-1 -mt-0.5" />
+          Situation de régularisation progressive : ce salarié perçoit une fiche de paie avec ITS, sans
+          cotisations CNSS. Un encart interne (visible uniquement au back-office) rappelle que la
+          régularisation CNSS reste due. La régularisation se fera par la procédure tracée de changement
+          de statut.
+        </div>
+      )}
+
+      {/* Mode de paiement (tous statuts) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className={labelClass}>Mode de paiement *</label>
@@ -86,13 +308,18 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
             <option value="MOBILE_MONEY">Mobile Money</option>
           </select>
         </div>
-        <div>
-          <label className={labelClass}>N&deg; CNSS</label>
-          <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <input type="text" placeholder="Num&eacute;ro CNSS" className={inputClass + ' pl-9'} value={contract.cnssNumber} onChange={(e) => onUpdate('cnssNumber', e.target.value)} />
+        {!isPrestation && !isDeclare && (
+          <div>
+            <label className={labelClass}>N&deg; CNSS (optionnel)</label>
+            <div className="relative">
+              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input type="text" placeholder="Num&eacute;ro CNSS" className={inputClass + ' pl-9'} value={contract.cnssNumber} onChange={(e) => onUpdate('cnssNumber', e.target.value)} />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Si ce numéro est renseigné maintenant, le personnel pourra être régularisé plus facilement.
+            </p>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Bank details (conditional) */}
@@ -109,7 +336,7 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
             </div>
             <div>
               <label className={labelClass}>N&deg; Compte</label>
-              <input type="text" placeholder="Num&eacute;ro de compte" className={inputClass} value={contract.accountNumber} onChange={(e) => onUpdate('accountNumber', e.target.value)} />
+              <input type="text" placeholder="Numéro de compte" className={inputClass} value={contract.accountNumber} onChange={(e) => onUpdate('accountNumber', e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>Titulaire</label>
@@ -119,7 +346,7 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
         </div>
       )}
 
-      {/* Mobile Money details (conditional) — for salary payment via FedaPay */}
+      {/* Mobile Money details (conditional) — for salary payment */}
       {showMobileMoneyFields && (
         <div className="space-y-4 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
           <div className="flex items-center gap-2 mb-1">
@@ -127,7 +354,9 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Coordonn&eacute;es Mobile Money</span>
           </div>
           <p className="text-[11px] text-slate-500 -mt-1 mb-2">
-            Num&eacute;ro et op&eacute;rateur utilis&eacute;s pour le paiement des salaires via FedaPay.
+            {isPrestation
+              ? 'Numéro et opérateur utilisés pour le versement des prestations.'
+              : 'Num&eacute;ro et op&eacute;rateur utilis&eacute;s pour le paiement des salaires via FedaPay.'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -159,11 +388,6 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
           </div>
         </div>
       )}
-
-      <div>
-        <label className={labelClass}>N&deg; IFU (Identifiant Fiscal Unique)</label>
-        <input type="text" placeholder="Num&eacute;ro IFU (optionnel)" className={inputClass} value={contract.ifuNumber} onChange={(e) => onUpdate('ifuNumber', e.target.value)} />
-      </div>
     </div>
   );
 }

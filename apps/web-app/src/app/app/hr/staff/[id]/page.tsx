@@ -202,6 +202,44 @@ export default function StaffDetailPage() {
   const [terminationModalOpen, setTerminationModalOpen] = useState(false);
   const [reactivateLoading, setReactivateLoading] = useState(false);
 
+  // ⭐ RH Bénin — procédure tracée de changement de statut contractuel
+  //    (le statut est verrouillé après création du profil)
+  const [statutChangeOpen, setStatutChangeOpen] = useState(false);
+  const [statutChanging, setStatutChanging] = useState(false);
+  const [statutForm, setStatutForm] = useState({
+    newStatut: '',
+    effectiveDate: new Date().toISOString().split('T')[0],
+    justification: '',
+  });
+
+  // ⭐ RH Bénin — POST staff/:id/statut-contractuel/change (date d'effet + justification)
+  const handleChangeStatutContractuel = async () => {
+    if (!tenant?.id || !member) return;
+    if (!statutForm.newStatut) {
+      toast({ variant: 'error', title: 'Nouveau statut requis', description: 'Choisissez le statut contractuel cible.' });
+      return;
+    }
+    if (statutForm.justification.trim().length < 10) {
+      toast({ variant: 'error', title: 'Justification requise', description: 'Rédigez une justification d\u2019au moins 10 caractères (implications légales CNSS/ITS/AIB).' });
+      return;
+    }
+    try {
+      setStatutChanging(true);
+      await hrFetch(hrUrl(`staff/${member.id}/statut-contractuel/change`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: statutForm,
+      });
+      toast({ variant: 'success', title: 'Statut contractuel modifié', description: 'Changement enregistré et tracé (historique + avenant au contrat).' });
+      setStatutChangeOpen(false);
+      setStatutForm({ newStatut: '', effectiveDate: new Date().toISOString().split('T')[0], justification: '' });
+      fetchMember();
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Erreur', description: err?.message });
+    } finally {
+      setStatutChanging(false);
+    }
+  };
+
   const fetchMember = useCallback(async () => {
     if (!tenant?.id || !id) return;
     try {
@@ -770,6 +808,37 @@ export default function StaffDetailPage() {
                 </div>
               </div>
 
+                {/* ⭐ Statut contractuel (RH Bénin) — verrouillé, procédure tracée obligatoire */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className={labelClass + ' mb-0.5'}>Statut contractuel (RH Bénin)</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {member?.statutContractuel
+                          ? ({ SALARIE_DECLARE: 'Salarié déclaré (CNSS)', SALARIE_NON_DECLARE: 'Salarié non déclaré', PRESTATAIRE_SERVICE: 'Prestataire de services' } as Record<string, string>)[member.statutContractuel] || member.statutContractuel
+                          : 'Non défini (profil antérieur)'}
+                      </p>
+                      {member?.documentPaieType && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Document de paie : {member.documentPaieType === 'ETAT_DE_PAIEMENT' ? 'État de paiement (AIB)' : `Fiche de paie (ITS${member.statutContractuel === 'SALARIE_DECLARE' ? ' + CNSS' : ''})`}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStatutChangeOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-2 border border-[#1d4fa5] text-[#1d4fa5] rounded-lg text-xs font-bold hover:bg-[#1d4fa5]/5 transition shrink-0"
+                    >
+                      Changer le statut
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2">
+                    Le statut contractuel est verrouillé : un changement en cours d’année (régularisation CNSS, requalification
+                    salarié/prestataire) passe par une procédure tracée avec date d’effet et justification — jamais une simple
+                    édition de champ. Le contrat actif reçoit un avenant et l’historique est conservé.
+                  </p>
+                </div>
+
               {/* ── Section: Rémunération ── */}
               <div className="space-y-4 pt-2">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -840,6 +909,11 @@ export default function StaffDetailPage() {
                   <div>
                     <label className={labelClass}>N° IFU</label>
                     <input type="text" className={inputClass} value={editForm.ifuNumber} onChange={(e) => setEditForm({ ...editForm, ifuNumber: e.target.value })} placeholder="Identifiant Fiscal Unique" />
+                    {member?.statutContractuel === 'PRESTATAIRE_SERVICE' && (
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        IFU du prestataire — détermine le taux AIB (3 % avec IFU, 5 % sans, selon le barème en vigueur).
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2005,6 +2079,88 @@ export default function StaffDetailPage() {
         }}
         tenantId={tenant?.id || ''}
       />
+
+      {/* ⭐ RH Bénin — Dialogue de procédure tracée : changement de statut contractuel */}
+      {statutChangeOpen && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
+          onClick={() => !statutChanging && setStatutChangeOpen(false)}
+        >
+          <div
+            className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 text-white" style={{ background: 'linear-gradient(135deg, #0b2f73 0%, #1d4fa5 100%)' }}>
+              <h3 className="text-sm font-bold">Changement de statut contractuel</h3>
+              <p className="text-[11px] text-white/70 mt-0.5">
+                Procédure tracée — date d&apos;effet + justification (le statut est verrouillé)
+              </p>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500 leading-relaxed">
+                Statut actuel :{' '}
+                <strong>
+                  {member?.statutContractuel
+                    ? ({ SALARIE_DECLARE: 'Salarié déclaré (CNSS)', SALARIE_NON_DECLARE: 'Salarié non déclaré', PRESTATAIRE_SERVICE: 'Prestataire de services' } as Record<string, string>)[member.statutContractuel] || member.statutContractuel
+                    : 'Non défini'}
+                </strong>
+                . Un changement de statut en cours d&apos;année a des implications légales (CNSS, ITS, AIB) :
+                le contrat actif reçoit un avenant STATUS_CHANGE et le changement est archivé.
+              </div>
+              <div>
+                <label className={labelClass}>Nouveau statut *</label>
+                <select
+                  className={inputClass}
+                  value={statutForm.newStatut}
+                  onChange={(e) => setStatutForm({ ...statutForm, newStatut: e.target.value })}
+                >
+                  <option value="">— Choisir —</option>
+                  <option value="SALARIE_DECLARE">Salarié déclaré (CNSS)</option>
+                  <option value="SALARIE_NON_DECLARE">Salarié non déclaré</option>
+                  <option value="PRESTATAIRE_SERVICE">Prestataire de services</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Date d&apos;effet *</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={statutForm.effectiveDate}
+                  onChange={(e) => setStatutForm({ ...statutForm, effectiveDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Justification (obligatoire) *</label>
+                <textarea
+                  className={inputClass + ' min-h-[90px]'}
+                  placeholder="Ex : Régularisation CNSS effective au 1er du mois — immatriculation du salarié effectuée le…"
+                  value={statutForm.justification}
+                  onChange={(e) => setStatutForm({ ...statutForm, justification: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={statutChanging}
+                onClick={() => setStatutChangeOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={statutChanging || !statutForm.newStatut || statutForm.justification.trim().length < 10}
+                onClick={handleChangeStatutContractuel}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition hover:opacity-90"
+                style={{ backgroundColor: '#1d4fa5' }}
+              >
+                {statutChanging ? 'Enregistrement…' : 'Enregistrer le changement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </HRShell>
   );

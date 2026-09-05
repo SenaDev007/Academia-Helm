@@ -19,6 +19,21 @@ import { RecruitmentNotificationService } from '../recruitment-notification.serv
 import * as Handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import {
+  CONTRAT_TRAVAIL_TEMPLATE,
+  CONTRAT_PRESTATION_TEMPLATE,
+  CONTRAT_TRAVAIL_VARIABLES,
+  CONTRAT_PRESTATION_VARIABLES,
+  renderStatutTemplate,
+  statutToTemplateType,
+  STATUT_CONTRACTUEL_LABELS,
+  DOCUMENT_PAIE_LABELS,
+  CATEGORY_LABELS,
+  categoryKeyFromRoleType,
+  TEMPLATE_TYPE_CONTRAT_TRAVAIL,
+} from './employment-contract-templates';
+import { PayrollEngineService } from './payroll-engine.service';
 
 // ─── Handlebars Helpers ───────────────────────────────────────────────────────
 Handlebars.registerHelper('formatDate', (date: Date | string) => {
@@ -62,6 +77,7 @@ export class ContractPdfService {
     private readonly credentialService: StaffCredentialService,
     @Inject(forwardRef(() => RecruitmentNotificationService))
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly payrollEngine: PayrollEngineService,
   ) {
     this.loadDependencies();
   }
@@ -170,6 +186,13 @@ export class ContractPdfService {
     }
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    // ⭐ Statut contractuel (RH Bénin) — générateur DÉDIÉ :
+    // 2 gabarits distincts (contrat_travail avec bloc CNSS conditionnel /
+    // contrat_prestation_service), jamais un template unique à champs masqués.
+    if (contract.statutContractuel) {
+      return this.generateStatutContractPdf(contract, tenantId);
+    }
 
     // 1b. Charger les données complètes de l'école depuis SchoolSettings / TenantIdentityProfile
     // Wrap dans try/catch : si une colonne manque (ex: fedapayShopId), on fallback vers null
@@ -432,7 +455,9 @@ export class ContractPdfService {
     // 7. Sauvegarder sur le filesystem
     const pdfUrl = await this.savePdf(tenantId, contractId, pdfBuffer);
 
-    // 8. Mettre à jour le contrat avec l'URL du PDF
+    // 8. Mettre à jour le contrat avec l'URL du PDF + hash d'intégrité (SHA-256)
+    //    Le hash prouve qu'aucune modification n'a eu lieu après signature.
+    const contentHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
     await this.prisma.contract.update({
       where: { id: contractId },
       data: {
@@ -440,6 +465,7 @@ export class ContractPdfService {
           ...((contract.terms as any) || {}),
           pdfUrl,
           pdfGeneratedAt: new Date().toISOString(),
+          contentHash,
         },
       },
     });
@@ -486,6 +512,12 @@ export class ContractPdfService {
     });
 
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
+
+    // ⭐ Statut contractuel : gabarit dédié (contrat_travail / contrat_prestation)
+    if (contract.statutContractuel) {
+      const { html, templateVars } = await this.generateStatutContractHtml(contract, tenantId);
+      return { html, contract, templateVars };
+    }
 
     const schoolSettings = await this.prisma.schoolSettings.findFirst({ where: { tenantId } });
     const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
@@ -778,6 +810,19 @@ export class ContractPdfService {
     if (signerRole === 'EMPLOYEUR') {
       if (terms.employerSignedAt) {
         throw new BadRequestException("L'employeur a déjà signé ce contrat.");
+      }
+
+      // ⭐ RH Bénin — validation backend : un SALARIÉ DÉCLARÉ ne peut pas voir son
+      //    contrat signé sans numéro CNSS (la déclaration CNSS est le cœur du statut).
+      if (contract.statutContractuel === 'SALARIE_DECLARE') {
+        const staffRow = await this.prisma.staff.findUnique({ where: { id: contract.staffId } }).catch(() => null);
+        const employeeCNSS: any = await this.prisma.employeeCNSS.findUnique({ where: { staffId: contract.staffId } }).catch(() => null);
+        const cnssNumber = staffRow?.cnssNumber || employeeCNSS?.cnssNumber;
+        if (!cnssNumber) {
+          throw new BadRequestException(
+            "Impossible de signer : ce salarié est déclaré à la CNSS mais aucun numéro CNSS n'est renseigné sur sa fiche. Renseignez le numéro CNSS avant la signature.",
+          );
+        }
       }
 
       const updatedContract = await this.prisma.contract.update({
@@ -1362,6 +1407,524 @@ export class ContractPdfService {
     if (typeof val === 'object' && val.$numberDecimal) return parseFloat(val.$numberDecimal) || 0;
     if (typeof val === 'object' && val.toString) return parseFloat(val.toString()) || 0;
     return 0;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // GÉNÉRATEUR « STATUT CONTRACTUEL » (RH Bénin — 3 statuts, 2 gabarits)
+  //   SALARIE_DECLARE / SALARIE_NON_DECLARE → CONTRAT_TRAVAIL (bloc CNSS conditionnel)
+  //   PRESTATAIRE_SERVICE                  → CONTRAT_PRESTATION (AIB, pas de CNSS)
+  // Gabarits stockés dans contract_templates (contractType = CONTRAT_TRAVAIL |
+  // CONTRAT_PRESTATION), jamais en dur dans ce composant (bootstrap-on-demand).
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /** Récupère (et seed si absent) le template en base pour le statut du contrat. */
+  private async getStatutTemplate(tenantId: string, statut: string): Promise<{ templateId: string | null; source: string }> {
+    const templateType = statutToTemplateType(statut);
+    let tmpl: any = await this.prisma.contractTemplate.findFirst({
+      where: { tenantId, contractType: templateType, isActive: true },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => null);
+
+    if (!tmpl) {
+      // Bootstrap-on-demand : seed idempotent du gabarit par défaut pour ce tenant
+      try {
+        tmpl = await this.prisma.contractTemplate.create({
+          data: {
+            tenantId,
+            name: templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL
+              ? 'Contrat de travail (salariés — avec ou sans CNSS)'
+              : 'Contrat de prestation de services (prestataires)',
+            contractType: templateType,
+            template: templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL
+              ? CONTRAT_TRAVAIL_TEMPLATE
+              : CONTRAT_PRESTATION_TEMPLATE,
+            variables: (templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL
+              ? CONTRAT_TRAVAIL_VARIABLES
+              : CONTRAT_PRESTATION_VARIABLES) as any,
+            isActive: true,
+          },
+        });
+        this.logger.log(`Template ${templateType} seedé pour le tenant ${tenantId}`);
+      } catch (err: any) {
+        this.logger.warn(`Seed template ${templateType} échoué : ${err?.message}`);
+      }
+    }
+    return {
+      templateId: tmpl?.id ?? null,
+      source: tmpl?.template
+        || (templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL ? CONTRAT_TRAVAIL_TEMPLATE : CONTRAT_PRESTATION_TEMPLATE),
+    };
+  }
+
+  /** Génère le HTML du contrat selon le statut contractuel (sans PDF). */
+  private async generateStatutContractHtml(
+    contract: any,
+    tenantId: string,
+  ): Promise<{ html: string; templateVars: Record<string, any> }> {
+    const statut: string = contract.statutContractuel;
+    const isPrestation = statut === 'PRESTATAIRE_SERVICE';
+    const terms = (contract.terms as any) || {};
+    const staff = contract.staff || {};
+    const BLANK = '________________';
+
+    // ── Identité école / employeur (SchoolSettings > IdentityProfile > School > Tenant) ──
+    const schoolSettings: any = await this.prisma.schoolSettings.findFirst({ where: { tenantId } }).catch(() => null);
+    const identityProfile: any = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId, isActive: true }, orderBy: { version: 'desc' },
+    }).catch(() => null);
+    let school: any = contract.tenant?.schools || null;
+    if (!school) school = await this.prisma.school.findFirst({ where: { tenantId } }).catch(() => null);
+    // Fiche R1 (module Impôts) : identité légale de l'employeur
+    const financialHeader: any = await this.prisma.financialReportHeader.findFirst({
+      where: { tenantId }, orderBy: { updatedAt: 'desc' },
+    }).catch(() => null);
+    const recruiter: any = await this.prisma.recruiterProfile.findFirst({ where: { tenantId } }).catch(() => null);
+
+    const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || contract.tenant?.name || "L'École";
+    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || BLANK;
+    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+    const rawSchoolCountry = schoolSettings?.country || identityProfile?.country || '';
+    const schoolCountry = (rawSchoolCountry && rawSchoolCountry.length === 2)
+      ? (contract.tenant?.country?.name || rawSchoolCountry)
+      : (rawSchoolCountry || contract.tenant?.country?.name || 'Bénin');
+    const schoolPhone = schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || '';
+    const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
+    const directorName = recruiter?.fullName || school?.directorPrimary || 'Le Directeur';
+    const directorQualite = recruiter?.functionLabel || 'Directeur(trice)';
+
+    let schoolLogoUrl = '';
+    const rawLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
+    const logoStr = typeof rawLogo === 'string' ? rawLogo : (rawLogo as any)?.url || '';
+    if (logoStr) {
+      try { schoolLogoUrl = await this.storageService.resolveFileUrl(logoStr); } catch { schoolLogoUrl = logoStr; }
+    }
+
+    // ── Barème fiscal en vigueur (payroll_fiscal_rates — jamais en dur) ──
+    const rates = await this.payrollEngine.getFiscalRates();
+    const categoryRule = this.payrollEngine.getCategoryRule(rates, staff.roleType);
+
+    // ── Template en base ──
+    const { source: templateSource } = await this.getStatutTemplate(tenantId, statut);
+
+    // ── QR code de vérification ──
+    const verificationUrl = `${process.env.APP_URL || 'https://academia-helm.app'}/verify/contract/${contract.id}`;
+    let qrCodeDataUrl = '';
+    if (this.qrcode) {
+      try {
+        qrCodeDataUrl = await this.qrcode.toDataURL(verificationUrl, {
+          width: 100, margin: 1, color: { dark: '#1A2BA6', light: '#ffffff' },
+        });
+      } catch (e) { this.logger.warn('QR Code generation failed', e); }
+    }
+
+    // ── Formatage ──
+    const fmtDate = (d: any) => d
+      ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+      : BLANK;
+    const fmtMoney = (n: any) => (n == null ? '0' : Number(n).toLocaleString('fr-FR'));
+    const isCDI = contract.contractType === 'CDI';
+    const paymentModeLabel: Record<string, string> = {
+      BANK: 'virement bancaire', CASH: 'espèces', MOBILE_MONEY: 'Mobile Money',
+    };
+
+    // ── Identité employeur (fiche R1 en priorité, sinon à compléter) ──
+    const employeur = {
+      raison_sociale: financialHeader?.denominationSociale || schoolName,
+      forme_juridique: financialHeader?.formeJuridique || terms.employer?.formeJuridique || BLANK,
+      capital: financialHeader?.capitalSocial || terms.employer?.capital || BLANK,
+      rccm: financialHeader?.numeroRC || terms.employer?.rccm || BLANK,
+      ifu: financialHeader?.numeroIF || terms.employer?.ifu || BLANK,
+      adresse: schoolAddress + (schoolCity ? `, ${schoolCity}` : '') + (schoolCountry ? `, ${schoolCountry}` : ''),
+      representant_nom: terms.employerSignerName || directorName,
+      representant_qualite: terms.employer?.representantQualite || directorQualite,
+    };
+
+    // ── Identité salarié / prestataire ──
+    const personne = {
+      civilite: staff.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
+      nom: staff.lastName || BLANK,
+      prenoms: staff.firstName || BLANK,
+      date_naissance: fmtDate(staff.birthDate || staff.dateOfBirth),
+      lieu_naissance: terms.personne?.lieuNaissance || BLANK,
+      nationalite: staff.nationality || 'béninoise',
+      type_piece: staff.nationalId ? 'CNI / Passeport' : BLANK,
+      numero_piece: staff.nationalId || BLANK,
+      adresse: staff.address || BLANK,
+    };
+
+    const cnssNumber = staff.employeeCNSS?.cnssNumber || staff.cnssNumber || BLANK;
+    const ifuNumber = staff.ifuNumber || '';
+
+    // ── Règles de catégorie (essai / préavis) depuis payroll_fiscal_rates ──
+    const periodeEssai = categoryRule?.essai || 'un (1) mois';
+    const periodeEssaiRenouv = categoryRule?.renouvellement || 'une (1) fois';
+    const dureePreavis = categoryRule?.preavis || 'un (1) mois';
+
+    const signatureDate = contract.signedAt || terms.employerSignedAt || new Date();
+    const lieuSignature = schoolCity || schoolCountry || BLANK;
+
+    // ── Variables selon le gabarit ──
+    let templateVars: Record<string, any>;
+    if (isPrestation) {
+      const p = (terms.prestation as any) || {};
+      const tauxAib = ifuNumber ? (rates?.aibAvecIfu ?? 5) : (rates?.aibSansIfu ?? 5);
+      templateVars = {
+        // Client = école
+        client_raison_sociale: employeur.raison_sociale,
+        client_forme_juridique: employeur.forme_juridique,
+        client_ifu: employeur.ifu,
+        client_adresse: employeur.adresse,
+        client_representant_nom: employeur.representant_nom,
+        client_representant_qualite: employeur.representant_qualite,
+        // Prestataire
+        prestataire_civilite: personne.civilite,
+        prestataire_nom: personne.nom,
+        prestataire_prenoms: personne.prenoms,
+        prestataire_adresse: personne.adresse,
+        prestataire_type_piece: personne.type_piece,
+        prestataire_numero_piece: personne.numero_piece,
+        if_prestataire_ifu: !!ifuNumber,
+        prestataire_ifu: ifuNumber || BLANK,
+        // Prestation
+        description_prestation: p.description || staff.position || 'Prestation de services (à préciser)',
+        calendrier_interventions: p.calendrier || 'selon un calendrier arrêté d\u2019un commun accord entre les parties',
+        date_debut: fmtDate(contract.startDate),
+        date_fin: fmtDate(contract.endDate),
+        if_renouvelable: p.renouvelable === true,
+        if_forfait: contract.prestationPaymentMode !== 'HORAIRE',
+        if_horaire: contract.prestationPaymentMode === 'HORAIRE',
+        montant_forfait: fmtMoney(contract.prestationAmount ?? contract.baseSalary),
+        taux_horaire: fmtMoney(contract.prestationAmount),
+        periodicite_paiement: p.periodicite || 'mensuellement',
+        // Régime fiscal — taux AIB TOUJOURS calculé depuis payroll_fiscal_rates
+        taux_aib: tauxAib,
+        if_confidentialite: p.confidentialite !== false,
+        if_propriete_contenus: p.proprieteContenus !== false,
+        delai_mise_en_demeure: p.delaiMiseEnDemeure || 'quinze (15) jours',
+        juridiction_competente: p.juridiction || schoolCity || 'Cotonou',
+        lieu_signature: lieuSignature,
+        nombre_exemplaires: 'deux (2)',
+        date_signature: fmtDate(signatureDate),
+      };
+    } else {
+      // Salarié (déclaré ou non déclaré) — durée CDD/CDI sur le contrat
+      let cddDuree = BLANK;
+      if (!isCDI && contract.startDate && contract.endDate) {
+        const months = Math.max(1, Math.round(
+          (new Date(contract.endDate).getTime() - new Date(contract.startDate).getTime()) / (1000 * 60 * 60 * 24 * 30.44),
+        ));
+        cddDuree = `${months} mois`;
+      }
+      const cddMotifDefault: Record<string, string> = {
+        VACATAIRE: 'remplacement / enseignement en vacation',
+        STAGE: 'stage académique',
+        CDD: 'surcroît d\u2019activité',
+      };
+      templateVars = {
+        // Employeur
+        employeur_raison_sociale: employeur.raison_sociale,
+        employeur_forme_juridique: employeur.forme_juridique,
+        employeur_capital: employeur.capital,
+        employeur_rccm: employeur.rccm,
+        employeur_ifu: employeur.ifu,
+        employeur_adresse: employeur.adresse,
+        employeur_representant_nom: employeur.representant_nom,
+        employeur_representant_qualite: employeur.representant_qualite,
+        // Salarié
+        salarie_civilite: personne.civilite,
+        salarie_nom: personne.nom,
+        salarie_prenoms: personne.prenoms,
+        salarie_date_naissance: personne.date_naissance,
+        salarie_lieu_naissance: personne.lieu_naissance,
+        salarie_nationalite: personne.nationalite,
+        salarie_type_piece: personne.type_piece,
+        salarie_numero_piece: personne.numero_piece,
+        salarie_adresse: personne.adresse,
+        // Poste
+        poste_intitule: staff.position || BLANK,
+        poste_categorie: CATEGORY_LABELS[categoryKeyFromRoleType(staff.roleType)] || 'Ouvriers et employés',
+        poste_echelon: terms.poste?.echelon || BLANK,
+        lieu_affectation: schoolAddress || schoolCity || 'l\u2019établissement',
+        // Durée
+        type_contrat_libelle: isCDI ? 'à Durée Indéterminée (CDI)' : 'à Durée Déterminée (CDD)',
+        if_cdi: isCDI,
+        if_cdd: !isCDI,
+        cdd_duree: cddDuree,
+        cdd_motif: terms.cddMotif || cddMotifDefault[contract.contractType] || 'surcroît d\u2019activité',
+        date_debut: fmtDate(contract.startDate),
+        date_fin: fmtDate(contract.endDate),
+        // Essai / préavis — dérivés de payroll_fiscal_rates.categoryRules
+        periode_essai_duree: periodeEssai,
+        periode_essai_renouvelable: periodeEssaiRenouv,
+        duree_preavis: dureePreavis,
+        // Travail
+        duree_hebdomadaire: String(terms.weeklyHours || 40),
+        repartition_horaires: terms.workSchedule || 'du lundi au vendredi, selon les horaires affichés par la Direction',
+        // Rémunération
+        salaire_brut: fmtMoney(contract.baseSalary),
+        periodicite_paiement: 'mensuellement',
+        mode_paiement: paymentModeLabel[contract.paymentMode] || contract.paymentMode || 'virement bancaire',
+        if_primes: !!terms.primes,
+        liste_primes: terms.primes || '',
+        // Protection sociale — if_cnss_declare DÉRIVÉ strictement du statut, jamais saisi
+        if_cnss_declare: statut === 'SALARIE_DECLARE',
+        cnss_numero: cnssNumber,
+        // Congés
+        jours_conges_par_mois: terms.joursCongesParMois || '1,5',
+        // Divers
+        nombre_exemplaires: 'deux (2)',
+        lieu_signature: lieuSignature,
+        date_signature: fmtDate(signatureDate),
+      };
+    }
+
+    // ── Rendu (syntaxe maison {{#if_x}} → blocs Handlebars) ──
+    const bodyText = renderStatutTemplate(templateSource, templateVars);
+
+    // ── Shell HTML professionnel (en-tête école, filigrane, signatures, QR) ──
+    const html = this.buildStatutDocumentHtml({
+      bodyText,
+      schoolName,
+      ministry: null,
+      schoolLogoUrl,
+      schoolAddress,
+      schoolCity,
+      schoolCountry,
+      schoolPhone,
+      schoolEmail,
+      contractReference:
+        staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || contract.id,
+      statutLabel: STATUT_CONTRACTUEL_LABELS[statut] || statut,
+      documentPaieLabel: DOCUMENT_PAIE_LABELS[contract.documentPaieType || (isPrestation ? 'ETAT_DE_PAIEMENT' : 'FICHE_DE_PAIE')] || '',
+      isPrestation,
+      employerLabel: isPrestation ? 'Pour le Client' : 'Pour l\u2019Employeur',
+      employeeLabel: isPrestation ? 'Le Prestataire' : 'Le Salarié',
+      employerSignerName: terms.employerSignerName || employeur.representant_nom,
+      employerSignatureData: terms.employerSignatureData || null,
+      employerSignedAt: terms.employerSignedAt ? fmtDate(terms.employerSignedAt) : null,
+      employeeSignerName: contract.signedBy || `${staff.firstName || ''} ${staff.lastName || ''}`.trim(),
+      employeeSignatureData: terms.signatureData || null,
+      employeeSignedAt: contract.signedAt ? fmtDate(contract.signedAt) : null,
+      qrCodeDataUrl,
+      verificationUrl,
+    });
+
+    return { html, templateVars };
+  }
+
+  /** Génère le PDF du contrat « statut contractuel » + hash d'intégrité. */
+  private async generateStatutContractPdf(
+    contract: any,
+    tenantId: string,
+  ): Promise<{ pdfBuffer: Buffer; pdfUrl: string; contract: any }> {
+    const { html } = await this.generateStatutContractHtml(contract, tenantId);
+
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await this.renderPdf(html);
+    } catch (renderError: any) {
+      this.logger.error('PDF rendering failed (statut)', renderError?.message || renderError);
+      throw new BadRequestException(
+        `Impossible de générer le PDF du contrat. Détail : ${renderError?.message || 'Erreur inconnue'}`,
+      );
+    }
+
+    const pdfUrl = await this.savePdf(tenantId, contract.id, pdfBuffer);
+    // Hash SHA-256 du PDF : prouve qu'aucune modification n'a eu lieu après signature
+    const contentHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+    await this.prisma.contract.update({
+      where: { id: contract.id },
+      data: {
+        terms: {
+          ...((contract.terms as any) || {}),
+          pdfUrl,
+          pdfGeneratedAt: new Date().toISOString(),
+          contentHash,
+          generator: 'STATUT_V1',
+        },
+      },
+    });
+
+    this.logger.log(
+      `Contrat PDF (statut ${contract.statutContractuel}) généré : ${pdfUrl} — hash ${contentHash.slice(0, 12)}…`,
+    );
+    const updated = await this.prisma.contract.findFirst({ where: { id: contract.id, tenantId } });
+    return { pdfBuffer, pdfUrl, contract: updated || contract };
+  }
+
+  /** Shell HTML du contrat statutaire (même langage visuel que les autres documents). */
+  private buildStatutDocumentHtml(o: {
+    bodyText: string;
+    schoolName: string; ministry?: string | null; schoolLogoUrl: string;
+    schoolAddress: string; schoolCity: string; schoolCountry: string;
+    schoolPhone: string; schoolEmail: string;
+    contractReference: string; statutLabel: string; documentPaieLabel: string;
+    isPrestation: boolean;
+    employerLabel: string; employeeLabel: string;
+    employerSignerName?: string; employerSignatureData?: string | null; employerSignedAt?: string | null;
+    employeeSignerName?: string; employeeSignatureData?: string | null; employeeSignedAt?: string | null;
+    qrCodeDataUrl: string; verificationUrl: string;
+  }): string {
+    const esc = (s: string) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    // Texte rendu → paragraphes ; 1re ligne « CONTRAT … » détectée comme titre
+    const rawParagraphs = o.bodyText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    let title = o.isPrestation ? 'CONTRAT DE PRESTATION DE SERVICES' : 'CONTRAT DE TRAVAIL';
+    const paragraphs: string[] = [];
+    for (const p of rawParagraphs) {
+      if (/^CONTRAT\b/i.test(p) && paragraphs.length === 0) {
+        title = p.split('\n')[0].trim();
+        const rest = p.split('\n').slice(1).join('\n').trim();
+        if (rest) paragraphs.push(rest);
+        continue;
+      }
+      paragraphs.push(p);
+    }
+
+    let bodyHtml = '';
+    for (const p of paragraphs) {
+      if (/^ARTICLE\s+\d+\s*—/i.test(p)) {
+        const lines = p.split('\n');
+        bodyHtml += `<div class="article-title">${esc(lines[0].trim())}</div>`;
+        const content = lines.slice(1).join('\n').trim();
+        if (content) bodyHtml += `<p class="article-body">${esc(content).replace(/\n/g, '<br/>')}</p>`;
+      } else {
+        bodyHtml += `<p class="article-body">${esc(p).replace(/\n/g, '<br/>')}</p>`;
+      }
+    }
+
+    const sigCell = (
+      label: string, name?: string, img?: string | null, date?: string | null,
+    ) => `
+      <div class="sig-cell">
+        <div class="sig-label">${esc(label)}</div>
+        <div class="sig-name">${esc(name || '')}</div>
+        ${img ? `<img class="sig-img" src="${img.replace(/"/g, '&quot;')}" alt="signature" />` : '<div class="sig-box">Signature</div>'}
+        ${date ? `<div class="sig-date">Signé le ${esc(date)}</div>` : ''}
+      </div>`;
+
+    const generatedAt = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const generatedTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Times New Roman', serif; color: #1a1a1a; font-size: 11pt; line-height: 1.65; background: white; }
+    .watermark {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      font-size: 68pt; color: #1A2BA6; opacity: 0.04; font-weight: bold;
+      z-index: 0; white-space: nowrap; pointer-events: none;
+    }
+    .page { position: relative; z-index: 1; }
+    .header { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 3px double #1A2BA6; }
+    .header-table { width: 100%; border-collapse: collapse; }
+    .header-table td { vertical-align: middle; padding: 4px 8px; }
+    .header-left { text-align: center; width: 18%; }
+    .header-center { text-align: center; width: 64%; }
+    .school-name { font-size: 14pt; font-weight: bold; text-transform: uppercase; color: #1A2BA6; line-height: 1.3; }
+    .school-info { font-size: 8.5pt; color: #555; margin-top: 4px; line-height: 1.4; }
+    .logo { max-height: 70px; max-width: 120px; }
+    .contract-meta { text-align: right; margin-bottom: 14px; }
+    .contract-meta .ref, .contract-meta .badge {
+      font-size: 8pt; color: #555; border: 1px solid #ddd; padding: 3px 8px;
+      border-radius: 4px; display: inline-block; margin-bottom: 3px; margin-left: 4px;
+    }
+    .contract-meta .badge { background: #EEF2FB; color: #1A2BA6; border-color: #C6D2EE; font-weight: bold; }
+    .contract-title { text-align: center; margin: 18px 0 16px; }
+    .contract-title h2 {
+      font-size: 13.5pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1.5px;
+      border: 2px solid #1A2BA6; color: #0D1F6E; padding: 8px 18px; display: inline-block;
+    }
+    .article-title {
+      font-size: 10.5pt; font-weight: bold; text-transform: uppercase; color: #0D1F6E;
+      margin: 14px 0 4px; padding-bottom: 2px; border-bottom: 1px solid #C6D2EE;
+    }
+    p.article-body { text-align: justify; margin-bottom: 8px; }
+    .parties { margin: 10px 0 4px; }
+    .signature-section { margin-top: 26px; page-break-inside: avoid; }
+    .sig-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .sig-table td { width: 50%; vertical-align: top; padding: 8px 14px; }
+    .sig-cell { text-align: center; }
+    .sig-label { font-size: 9.5pt; font-weight: bold; color: #0D1F6E; margin-bottom: 4px; }
+    .sig-name { font-size: 9pt; color: #333; min-height: 14px; }
+    .sig-box {
+      margin: 6px auto 0; width: 220px; height: 80px; border: 1px dashed #999;
+      border-radius: 6px; display: flex; align-items: center; justify-content: center;
+      color: #aaa; font-size: 9pt; font-style: italic;
+    }
+    .sig-img { margin-top: 6px; max-width: 220px; max-height: 80px; }
+    .sig-date { font-size: 8.5pt; color: #555; margin-top: 4px; }
+    .footer {
+      margin-top: 24px; padding-top: 10px; border-top: 2px solid #0D1F6E;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-info { font-size: 7.5pt; color: #666; line-height: 1.5; }
+    .footer-info .url { color: #1A2BA6; font-weight: bold; }
+    .footer-qr { text-align: center; }
+    .footer-qr img { width: 74px; height: 74px; }
+    .footer-qr .verify { font-size: 6.5pt; color: #666; margin-top: 2px; max-width: 90px; }
+  </style>
+</head>
+<body>
+  <div class="watermark">ACADEMIA HELM</div>
+  <div class="page">
+    <div class="header">
+      <table class="header-table">
+        <tr>
+          <td class="header-left">
+            ${o.schoolLogoUrl ? `<img class="logo" src="${o.schoolLogoUrl.replace(/"/g, '&quot;')}" alt="logo" />` : ''}
+          </td>
+          <td class="header-center">
+            <div class="school-name">${esc(o.schoolName)}</div>
+            <div class="school-info">
+              ${esc(o.schoolAddress)}${o.schoolCity ? ` — ${esc(o.schoolCity)}` : ''}${o.schoolCountry ? ` (${esc(o.schoolCountry)})` : ''}<br/>
+              ${o.schoolPhone ? `${esc(o.schoolPhone)} — ` : ''}${esc(o.schoolEmail)}
+            </div>
+          </td>
+          <td class="header-right"></td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="contract-meta">
+      <span class="ref">Réf. ${esc(o.contractReference)}</span>
+      <span class="badge">${esc(o.statutLabel)}</span>
+      ${o.documentPaieLabel ? `<span class="badge">Document de paie : ${esc(o.documentPaieLabel)}</span>` : ''}
+    </div>
+
+    <div class="contract-title"><h2>${esc(title)}</h2></div>
+
+    <div class="parties">${bodyHtml}</div>
+
+    <div class="signature-section">
+      <table class="sig-table">
+        <tr>
+          <td>${sigCell(o.employerLabel, o.employerSignerName, o.employerSignatureData, o.employerSignedAt)}</td>
+          <td>${sigCell(o.employeeLabel, o.employeeSignerName, o.employeeSignatureData, o.employeeSignedAt)}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div class="footer-info">
+        Document généré par Academia Helm le ${esc(generatedAt)} à ${esc(generatedTime)}.<br/>
+        Contrôle d'intégrité : hash SHA-256 archivé avec le contrat signé.<br/>
+        Vérification en ligne : <span class="url">${esc(o.verificationUrl)}</span>
+      </div>
+      <div class="footer-qr">
+        ${o.qrCodeDataUrl ? `<img src="${o.qrCodeDataUrl}" alt="QR" />` : ''}
+        <div class="verify">Scanner pour vérifier</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
   }
 
   private async renderPdf(html: string): Promise<Buffer> {

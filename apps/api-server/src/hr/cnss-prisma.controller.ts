@@ -11,13 +11,14 @@
 
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards,
-  BadRequestException,
+  BadRequestException, Res,
 } from '@nestjs/common';
 import { CNSSPrismaService } from './cnss-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { UpsertCNSSRateDto, CreateCNSSDeclarationDto } from './dto/index';
+import type { Response } from 'express';
 
 @Controller('hr/cnss')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -74,7 +75,45 @@ export class CNSSPrismaController {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // DÉCLARATIONS
+  // EXPORT CNSS — salariés déclarés + règle de fréquence de versement
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /hr/cnss/export — JSON de synthèse : effectif déclaré, fréquence
+   * (mensuel si effectif ≥ seuil, trimestriel sinon), prochaine échéance,
+   * liste des salariés déclarés + CSV prêt à télécharger.
+   */
+  @Get('export')
+  async exportDeclaredStaff(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.cnssService.getExportSummary(tid);
+  }
+
+  /** GET /hr/cnss/export/csv — fichier CSV (séparateur « ; », Excel FR). */
+  @Get('export/csv')
+  async exportDeclaredStaffCsv(
+    @GetTenant() tenant: any,
+    @Res() res: Response,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const summary = await this.cnssService.getExportSummary(tid);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="cnss-salaries-declares-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    // BOM UTF-8 pour Excel
+    res.send('\uFEFF' + summary.csv);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // DÉCLARATIONS CNSS
   // ──────────────────────────────────────────────────────────────────────────
 
   @Post('declarations')

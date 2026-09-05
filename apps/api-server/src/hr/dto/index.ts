@@ -64,6 +64,14 @@ export class CreateStaffDto {
   @IsOptional() @IsString() nationalId?: string;
   @IsOptional() @IsString() cnssNumber?: string;
   @IsOptional() @IsString() ifuNumber?: string;
+  /** Statut contractuel RH Bénin : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
+  /** Date de déclaration CNSS (salarié déclaré) — ISO string */
+  @IsOptional() cnssDeclarationDate?: string | null;
+  /** Mode de rémunération du prestataire : FORFAIT | HORAIRE */
+  @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
+  /** Montant du forfait ou taux horaire (prestataire) */
+  @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend OnboardingWizardModal sends status: 'ACTIVE' */
@@ -104,6 +112,13 @@ export class UpdateStaffDto {
   @IsOptional() @IsString() nationalId?: string;
   @IsOptional() @IsString() cnssNumber?: string;
   @IsOptional() @IsString() ifuNumber?: string;
+  /** Statut contractuel — VERROUILLÉ : ne passe jamais par l'édition directe,
+   *  uniquement par la procédure tracée (POST staff/:id/statut-contractuel/change).
+   *  Accepté ici uniquement à valeur identique (idempotence wizard). */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
+  @IsOptional() cnssDeclarationDate?: string | null;
+  @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
   @IsOptional() @IsString() terminationType?: string;
   @IsOptional() terminationDetails?: Record<string, any>;
   @IsOptional() terminatedAt?: string | null;
@@ -118,7 +133,14 @@ export class UpdateStaffDto {
 
 export class CreateContractDto {
   @IsUUID() staffId: string;
-  @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType: string;
+  @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT', 'PRESTATION']) contractType: string;
+  /** Statut contractuel RH Bénin — détermine le gabarit (contrat_travail / contrat_prestation),
+   *  le document de paie (fiche_de_paie / etat_de_paiement) et la branche du moteur de calcul. */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
+  /** Mode de rémunération du prestataire : FORFAIT | HORAIRE */
+  @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
+  /** Montant du forfait ou taux horaire (prestataire) */
+  @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
   @IsDateString() startDate: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsNumber() @Type(() => Number) baseSalary: number;
@@ -135,7 +157,11 @@ export class CreateContractDto {
 
 export class UpdateContractDto {
   @IsOptional() @IsUUID() staffId?: string;
-  @IsOptional() @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT']) contractType?: string;
+  @IsOptional() @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT', 'PRESTATION']) contractType?: string;
+  /** Statut contractuel — verrouillé après création (procédure tracée obligatoire) */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
+  @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsOptional() @IsNumber() @Type(() => Number) baseSalary?: number;
@@ -146,6 +172,15 @@ export class UpdateContractDto {
   @IsOptional() @IsUUID() academicYearId?: string;
   @IsOptional() @IsUUID() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
+}
+
+/** Procédure tracée de changement de statut contractuel (jamais une édition directe). */
+export class ChangeStatutContractuelDto {
+  @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) newStatut: string;
+  /** Date d'effet juridique du changement */
+  @IsDateString() effectiveDate: string;
+  /** Justification obligatoire (min. 10 caractères) — implications légales CNSS/ITS/AIB */
+  @IsString() @MinLength(10) justification: string;
 }
 
 export class CreateAmendmentDto {
@@ -540,6 +575,8 @@ export class CreateJobDto {
   @IsOptional() @IsString() assets?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Statut contractuel visé par l'embauche : SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
   /** Date when the job was published — set automatically on publish/republish */
   @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
@@ -567,6 +604,8 @@ export class UpdateJobDto {
   @IsOptional() @IsString() assets?: string;
   @IsOptional() @IsString() salary?: string;
   @IsOptional() @IsString() contractType?: string;
+  /** Statut contractuel visé par l'embauche (hérité par le Staff/contrat à la déclaration ÉLIGIBLE) */
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
   /** Date when the job was published — updated automatically on republish */
   @IsOptional() @IsDateString() publishedAt?: string;
   /** Frontend may send tenantId — ignored */

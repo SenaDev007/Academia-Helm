@@ -19,8 +19,9 @@
 -- ============================================================================
 
 -- 1. Rescaler les notes existantes des évaluations CA (/2, arrondi 2 décimales)
+--    ⚠️ ROUND(double precision, int) n'existe pas en PostgreSQL — cast numeric obligatoire
 UPDATE grades g
-SET score = ROUND(g.score / 2.0, 2)
+SET score = ROUND((g.score / 2.0)::numeric, 2)
 FROM evaluations e
 JOIN evaluation_types et ON et.id = e."evaluationTypeId"
 WHERE g."evaluationId" = e.id

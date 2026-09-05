@@ -22,6 +22,9 @@ import {
   Loader2,
   Wallet,
   HandCoins,
+  FileBadge2,
+  Eye,
+  X,
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -44,6 +47,13 @@ const PERIOD_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Brouillon',
 };
 
+// ─── Statut contractuel RH Bénin (dérive le document de paie FP/EP) ───
+const STATUT_LABELS: Record<string, { label: string; className: string }> = {
+  SALARIE_DECLARE: { label: 'Déclaré CNSS', className: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  SALARIE_NON_DECLARE: { label: 'Non déclaré', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  PRESTATAIRE_SERVICE: { label: 'Prestataire', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+};
+
 const PAYROLL_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Brouillon',
   CALCULATED: 'Calculé',
@@ -64,6 +74,11 @@ export default function PayrollDetailPage() {
   const [payingItem, setPayingItem] = useState<string | null>(null);
   const [payingAll, setPayingAll] = useState(false);
   const [showPayAllConfirm, setShowPayAllConfirm] = useState(false);
+  // Documents de paie officiels FP/EP
+  const [issuingItem, setIssuingItem] = useState<string | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerDocs, setRegisterDocs] = useState<any[]>([]);
+  const [registerLoading, setRegisterLoading] = useState(false);
 
   const fetchPayroll = async () => {
     if (!tenant?.id || !id) return;
@@ -85,9 +100,8 @@ export default function PayrollDetailPage() {
   const handleGeneratePayrolls = async () => {
     try {
       setProcessing(true);
-      // Use the correct backend endpoint: POST /batches/:id/generate
-      // academicYearId is passed as query param (not body)
-      await hrFetch<any>(hrUrl(`payroll/batches/${id}/generate`, {
+      // Opération au niveau PÉRIODE (le lot sous-jacent est résolu côté API)
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/generate`, {
         tenantId: tenant.id,
         ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
       }), { method: 'POST' });
@@ -117,10 +131,9 @@ export default function PayrollDetailPage() {
   const handleCalculateAll = async () => {
     try {
       setProcessing(true);
-      // POST /batches/:id/calculate
-      await hrFetch<any>(hrUrl(`payroll/batches/${id}/calculate`, {
+      // POST periods/:id/calculate (niveau période)
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/calculate`, {
         tenantId: tenant.id,
-        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
       }), { method: 'POST' });
       toast({ variant: 'success', title: 'Calcul global terminé' });
       fetchPayroll();
@@ -134,8 +147,8 @@ export default function PayrollDetailPage() {
   const handleValidateAndPay = async () => {
     try {
       setProcessing(true);
-      // Use the correct backend endpoint: PUT /batches/:id/status
-      await hrFetch<any>(hrUrl(`payroll/batches/${id}/status`, { tenantId: tenant.id }), {
+      // PUT periods/:id/status (niveau période)
+      await hrFetch<any>(hrUrl(`payroll/periods/${id}/status`, { tenantId: tenant.id }), {
         method: 'PUT',
         body: { status: 'PAID' },
       });
@@ -321,6 +334,93 @@ export default function PayrollDetailPage() {
     }
   };
 
+  // ─── Documents de paie officiels FP/EP (RH Bénin) ──
+  // Fiche de paie (FP) pour les salariés, état de paiement (EP) pour les
+  // prestataires — le type est dérivé du statut contractuel, jamais choisi ici.
+
+  const handleIssueDocument = async (itemId: string, staffName: string) => {
+    const confirmed = window.confirm(
+      `Émettre le document de paie officiel de ${staffName} pour cette période ?\n\n` +
+      `Le document est immuable : numéroté séquentiellement (FP/EP), scellé par empreinte ` +
+      `SHA-256 et archivé. Toute erreur exigera un document rectificatif.`,
+    );
+    if (!confirmed) return;
+    try {
+      setIssuingItem(itemId);
+      const result = await hrFetch<any>(hrUrl(`payroll/documents/issue/${itemId}`, { tenantId: tenant.id }), {
+        method: 'POST',
+      });
+      toast({
+        variant: 'success',
+        title: `Document émis : ${result?.document?.documentNumber}`,
+        description: 'PDF archivé et scellé (SHA-256) — téléchargeable depuis le registre.',
+      });
+      fetchPayroll();
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Émission impossible', description: error?.message });
+    } finally {
+      setIssuingItem(null);
+    }
+  };
+
+  const handlePreviewDocument = async (itemId: string) => {
+    try {
+      const result = await hrFetch<any>(hrUrl(`payroll/documents/preview/${itemId}`, { tenantId: tenant.id }), {
+        method: 'POST',
+      });
+      if (result?.html) {
+        const blob = new Blob([result.html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } else {
+        toast({ variant: 'info', title: 'Aperçu indisponible', description: 'Aucun rendu retourné.' });
+      }
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Aperçu impossible', description: error?.message });
+    }
+  };
+
+  const handleDownloadDocument = async (docId: string) => {
+    try {
+      const response = await fetch(`/api/hr/payroll/documents/${docId}/download?tenantId=${tenant.id}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || 'Erreur téléchargement');
+      }
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `document-paie.pdf`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast({ variant: 'success', title: 'Téléchargement lancé (intégrité vérifiée).' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Téléchargement impossible', description: error?.message });
+    }
+  };
+
+  const openDocumentsRegister = async () => {
+    try {
+      setShowRegister(true);
+      setRegisterLoading(true);
+      const start = period?.startDate ? new Date(period.startDate) : new Date();
+      const docs = await hrFetch<any[]>(hrUrl('payroll/documents', {
+        tenantId: tenant.id,
+        periodYear: start.getFullYear(),
+        periodMonth: start.getMonth() + 1,
+      }));
+      setRegisterDocs(docs || []);
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Registre indisponible', description: error?.message });
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
@@ -368,6 +468,17 @@ export default function PayrollDetailPage() {
           </div>
           
           <div className="flex gap-3 flex-wrap">
+            <button
+              onClick={openDocumentsRegister}
+              className="flex items-center gap-2 px-4 py-2 bg-[#1e3a5f] text-white rounded-xl hover:bg-[#2a4f7d] transition-all font-bold text-sm"
+              title="Registre des fiches de paie (FP) et états de paiement (EP) émis"
+            >
+              <FileBadge2 size={16} />
+              Documents émis
+              <span className="bg-white/20 rounded-full px-2 py-0.5 text-[10px]">
+                {period.payrolls?.filter((p: any) => p.payrollDocument).length || 0}
+              </span>
+            </button>
             {period.status === 'OPEN' && (
               <>
                 <button
@@ -430,6 +541,9 @@ export default function PayrollDetailPage() {
               {period.payrolls?.map((payroll: any) => {
                 const totalDeductions = Number(payroll.cnssEmployee) + Number(payroll.irppAmount) + Number(payroll.otherDeductions || 0);
                 const isVacataire = payroll.staff?.contractType === 'VACATAIRE';
+                const statut = payroll.staff?.statutContractuel || null;
+                const statutInfo = statut ? STATUT_LABELS[statut] : null;
+                const doc = payroll.payrollDocument || null;
                 return (
                 <tr key={payroll.id} className="hover:bg-blue-50/10 transition-colors">
                   <td className="px-3 sm:px-6 py-3 sm:py-4">
@@ -443,8 +557,18 @@ export default function PayrollDetailPage() {
                         </span>
                         <span className="text-[10px] text-gray-400 font-bold uppercase">{payroll.staff?.staffCode || payroll.staff?.employeeNumber}</span>
                         {isVacataire && (
-                          <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">
+                          <span className="inline-block ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">
                             VACATAIRE
+                          </span>
+                        )}
+                        {statutInfo && (
+                          <span className={`inline-block ml-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${statutInfo.className}`}>
+                            {statutInfo.label}
+                          </span>
+                        )}
+                        {doc && (
+                          <span className={`inline-block ml-1 text-[9px] font-black px-1.5 py-0.5 rounded font-mono ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {doc.documentNumber}
                           </span>
                         )}
                       </div>
@@ -531,12 +655,52 @@ export default function PayrollDetailPage() {
                         </button>
                         </>
                       )}
-                      <button onClick={() => handlePreviewPayslip(payroll.id)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Aperçu Bulletin">
-                        <FileText size={18} />
-                      </button>
-                      <button onClick={() => handleDownloadPayslip(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)} className="p-2 text-gray-400 hover:text-gray-900 transition-colors" title="Télécharger PDF">
-                        <Download size={18} />
-                      </button>
+                      {statut ? (
+                        /* ── Personnel AVEC statut contractuel → documents officiels FP/EP ──
+                           (les anciens boutons « bulletin » génériques sont masqués : risque
+                           juridique de confusion fiche de paie / état de paiement) */
+                        <>
+                          {doc ? (
+                            <button
+                              onClick={() => handleDownloadDocument(doc.id)}
+                              className={`p-2 rounded-lg transition-colors ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1e3a5f] hover:bg-blue-50'}`}
+                              title={`Télécharger ${doc.documentNumber} (PDF scellé)`}
+                            >
+                              <Download size={18} />
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handlePreviewDocument(payroll.id)}
+                                disabled={payroll.status === 'PENDING'}
+                                className="p-2 text-gray-400 hover:text-[#1e3a5f] transition-colors disabled:opacity-40"
+                                title={payroll.status === 'PENDING' ? 'Calculez d\u2019abord la ligne' : 'Aperçu du document (fiche ou état selon le statut)'}
+                              >
+                                <Eye size={18} />
+                              </button>
+                              <button
+                                onClick={() => handleIssueDocument(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)}
+                                disabled={issuingItem === payroll.id || payroll.status === 'PENDING'}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-[#1e3a5f] rounded-lg hover:bg-[#2a4f7d] transition-all disabled:opacity-50"
+                                title={payroll.status === 'PENDING' ? 'Calculez d\u2019abord la ligne (impossible sur PENDING)' : 'Émettre le document officiel (immuable, numéroté, scellé)'}
+                              >
+                                {issuingItem === payroll.id ? <Loader2 size={14} className="animate-spin" /> : <FileBadge2 size={14} />}
+                                Émettre {statut === 'PRESTATAIRE_SERVICE' ? 'EP' : 'FP'}
+                              </button>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        /* ── Personnel SANS statut → boutons historiques (bulletin générique) ── */
+                        <>
+                          <button onClick={() => handlePreviewPayslip(payroll.id)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Aperçu Bulletin">
+                            <FileText size={18} />
+                          </button>
+                          <button onClick={() => handleDownloadPayslip(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)} className="p-2 text-gray-400 hover:text-gray-900 transition-colors" title="Télécharger PDF">
+                            <Download size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -611,6 +775,104 @@ export default function PayrollDetailPage() {
               {payingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Confirmer le paiement groupé
             </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Registre des documents de paie émis (FP fiches / EP états) ── */}
+    {showRegister && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="bg-white w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+          <div className="px-6 py-5 text-white flex items-center justify-between" style={{ background: '#1e3a5f' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
+                <FileBadge2 className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-base">Documents de paie émis</h3>
+                <p className="text-white/70 text-xs mt-0.5">
+                  {new Date(period.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} ·
+                  FP = fiches de paie · EP = états de paiement (prestataires)
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setShowRegister(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors">
+              <X className="h-5 w-5 text-white" />
+            </button>
+          </div>
+          <div className="overflow-x-auto overflow-y-auto flex-grow">
+            {registerLoading ? (
+              <div className="p-10 text-center text-gray-400 animate-pulse">Chargement du registre…</div>
+            ) : registerDocs.length === 0 ? (
+              <div className="p-12 text-center">
+                <AlertCircle className="mx-auto mb-3 opacity-20" size={40} />
+                <p className="text-sm text-gray-500">
+                  Aucun document émis pour cette période.<br />
+                  <span className="text-xs">Émettez les fiches / états ligne par ligne (« Émettre FP/EP »).</span>
+                </p>
+              </div>
+            ) : (
+              <table className="w-full text-left">
+                <thead className="bg-gray-50/70 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">N° document</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Type</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Personnel</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase text-right">Net</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Émis le</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase">Empreinte</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-400 uppercase text-right">PDF</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {registerDocs.map((d: any) => {
+                    const snapshot = d.snapshot || {};
+                    const net = snapshot.kind === 'FICHE_DE_PAIE' ? snapshot.net : snapshot.decompte?.net;
+                    const isEP = d.documentType === 'ETAT_DE_PAIEMENT';
+                    return (
+                      <tr key={d.id} className="hover:bg-blue-50/10">
+                        <td className="px-4 py-3 font-mono text-xs font-bold text-gray-800">{d.documentNumber}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isEP ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                            {isEP ? 'État de paiement' : 'Fiche de paie'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-700">
+                          {d.staff?.firstName} {d.staff?.lastName}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                          {net != null ? formatCurrency(net) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {d.issuedAt ? new Date(d.issuedAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[10px] text-gray-400" title={d.contentHash}>
+                          {d.contentHash ? `${d.contentHash.slice(0, 10)}…` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleDownloadDocument(d.id)}
+                            className={`p-2 rounded-lg transition-colors ${isEP ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1e3a5f] hover:bg-blue-50'}`}
+                            title="Télécharger le PDF émis (vérification SHA-256 incluse)"
+                          >
+                            <Download size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="px-6 py-3 bg-slate-50 border-t border-slate-100">
+            <p className="text-[11px] text-slate-500">
+              Documents immuables : numéro séquentiel annuel (FP-2026-000001 / EP-2026-000001),
+              snapshot figé à l'émission, PDF scellé par SHA-256. Les fiches de paie (FP) concernent
+              les salariés (déclarés ou non) ; les états de paiement (EP) les prestataires de services
+              (retenue AIB, aucune affiliation CNSS).
+            </p>
           </div>
         </div>
       </div>

@@ -156,12 +156,25 @@ export class PayrollPrismaService {
                 position: true,
                 roleType: true,
                 contractType: true,
+                statutContractuel: true,
+                documentPaieType: true,
+                ifuNumber: true,
                 employeeCNSS: {
                   select: { cnssNumber: true },
                 },
               },
             },
             salarySlip: true,
+            // Document de paie officiel (FP/EP) — présence = déjà émis (immuable)
+            payrollDocument: {
+              select: {
+                id: true,
+                documentNumber: true,
+                documentType: true,
+                issuedAt: true,
+                contentHash: true,
+              },
+            },
             payments: {
               orderBy: { createdAt: 'desc' },
               take: 1,
@@ -1125,18 +1138,145 @@ export class PayrollPrismaService {
   }
 
   /**
-   * Récupère une période de paie par ID
+   * Récupère une période de paie par ID — avec les LIGNES DE PAIE flattées
+   * (page front : period.payrolls = lignes items avec staff/salaryPayment/payrollDocument).
+   * Le statut affiché suit le LOT sous-jacent (DRAFT→CALCULATED→PAID) dès qu'il existe.
    */
   async findPayrollPeriodById(id: string, tenantId: string) {
     const period = await this.prisma.payrollPeriod.findFirst({
       where: { id, tenantId },
       include: {
-        payrolls: true,
+        payrolls: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: {
+            items: {
+              include: {
+                staff: {
+                  select: {
+                    id: true,
+                    employeeNumber: true,
+                    firstName: true,
+                    lastName: true,
+                    position: true,
+                    roleType: true,
+                    contractType: true,
+                    statutContractuel: true,
+                    documentPaieType: true,
+                    ifuNumber: true,
+                    employeeCNSS: {
+                      select: { cnssNumber: true },
+                    },
+                  },
+                },
+                salarySlip: true,
+                payrollDocument: {
+                  select: {
+                    id: true,
+                    documentNumber: true,
+                    documentType: true,
+                    issuedAt: true,
+                    contentHash: true,
+                  },
+                },
+                payments: {
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
         academicYear: { select: { id: true, name: true } },
       },
     });
     if (!period) throw new NotFoundException(`Période de paie ${id} introuvable.`);
-    return period;
+
+    const batch: any = (period as any).payrolls?.[0] ?? null;
+    const items: any[] = batch?.items ?? [];
+
+    // période CLOSE/LOCKED = verrou administratif ; sinon le statut suit le lot
+    const displayStatus =
+      period.status === 'CLOSED' || period.status === 'LOCKED'
+        ? period.status
+        : batch?.status ?? period.status;
+
+    return {
+      ...period,
+      payrolls: items.map((item: any) => ({
+        ...item,
+        salaryPayment: item.payments?.[0] || null,
+      })),
+      batchId: batch?.id ?? null,
+      batchStatus: batch?.status ?? null,
+      status: displayStatus,
+    };
+  }
+
+  /**
+   * Résout le LOT de paie d'une période (find-or-create) : la page mensuelle
+   * travaille au niveau PÉRIODE ; le lot est un détail d'implémentation.
+   */
+  private async resolvePeriodBatch(periodId: string, tenantId: string) {
+    const period = await this.prisma.payrollPeriod.findFirst({
+      where: { id: periodId, tenantId },
+    });
+    if (!period) throw new NotFoundException(`Période de paie ${periodId} introuvable.`);
+    if (period.status === 'CLOSED' || period.status === 'LOCKED') {
+      throw new BadRequestException(`La période est ${period.status} — aucune opération de paie possible.`);
+    }
+
+    const existing = await this.prisma.payroll.findFirst({
+      where: {
+        tenantId,
+        academicYearId: period.academicYearId,
+        payrollPeriodId: period.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) return existing;
+
+    // find-or-create par mois (contrainte unique tenant+année académique+mois)
+    const month = period.month
+      ?? `${period.startDate.getFullYear()}-${String(period.startDate.getMonth() + 1).padStart(2, '0')}`;
+    const byMonth = await this.prisma.payroll.findFirst({
+      where: { tenantId, academicYearId: period.academicYearId, month },
+    });
+    if (byMonth) return byMonth;
+
+    return this.prisma.payroll.create({
+      data: {
+        ...prismaCreateDefaults(),
+        tenantId,
+        academicYearId: period.academicYearId,
+        schoolLevelId: period.schoolLevelId ?? null,
+        payrollPeriodId: period.id,
+        month,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        status: 'DRAFT',
+        totalAmount: new Prisma.Decimal(0),
+        notes: `Lot auto-résolu depuis la période ${period.name}`,
+      },
+    });
+  }
+
+  /** Génération des lignes de paie d'une PÉRIODE (résout/crée le lot, puis délègue). */
+  async generatePayrollItemsForPeriod(periodId: string, tenantId: string, academicYearId?: string) {
+    const batch = await this.resolvePeriodBatch(periodId, tenantId);
+    return this.generatePayrollItems(batch.id, tenantId, academicYearId ?? batch.academicYearId);
+  }
+
+  /** Calcul global d'une PÉRIODE. */
+  async calculateAllItemsForPeriod(periodId: string, tenantId: string) {
+    const batch = await this.resolvePeriodBatch(periodId, tenantId);
+    return this.calculateAllItems(batch.id, tenantId);
+  }
+
+  /** Changement de statut du lot d'une PÉRIODE (DRAFT→CALCULATED→VALIDATED→PAID). */
+  async updatePeriodPayrollStatus(periodId: string, tenantId: string, status: string, processedBy?: string) {
+    const batch = await this.resolvePeriodBatch(periodId, tenantId);
+    return this.updatePayrollStatus(batch.id, tenantId, status, processedBy);
   }
 
   /**

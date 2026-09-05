@@ -1104,6 +1104,72 @@ async function bootstrap() {
       logger.warn(`RH statut contractuel bootstrap warning: ${statutErr.message}`);
     }
 
+    // ─── Ensure RH Bénin — documents de paie FP/EP (migration 20260906140000) ──
+    // payroll_documents : snapshot figé + hash SHA-256 + numérotation séquentielle annuelle.
+    // Idempotent, rejoué à chaque boot (même pattern que le bloc RH statut ci-dessus).
+    try {
+      // Congés payés par mois (barème — 1,5 à confirmer vs 2) sur payroll_fiscal_rates
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "payroll_fiscal_rates" ADD COLUMN IF NOT EXISTS "joursCongesParMois" DECIMAL(4,2) NOT NULL DEFAULT 1.5`,
+      );
+      await prisma.$executeRawUnsafe(
+        `UPDATE "payroll_fiscal_rates" SET "joursCongesParMois" = 1.5 WHERE "joursCongesParMois" IS NULL`,
+      );
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "payroll_documents" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "tenantId" TEXT NOT NULL,
+            "academicYearId" TEXT,
+            "staffId" TEXT NOT NULL,
+            "payrollItemId" TEXT,
+            "documentType" TEXT NOT NULL,
+            "documentNumber" TEXT NOT NULL,
+            "periodYear" INTEGER NOT NULL,
+            "periodMonth" INTEGER NOT NULL,
+            "fiscalYear" INTEGER NOT NULL,
+            "periodLabel" TEXT NOT NULL,
+            "statutContractuel" TEXT,
+            "snapshot" JSONB NOT NULL,
+            "contentHash" TEXT NOT NULL,
+            "filePath" TEXT,
+            "issuedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "issuedBy" TEXT,
+            "issuedByName" TEXT,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "fk_pd_staff" FOREIGN KEY ("staffId") REFERENCES "staff"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT "fk_pd_payroll_item" FOREIGN KEY ("payrollItemId") REFERENCES "payroll_items"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT "fk_pd_academic_year" FOREIGN KEY ("academicYearId") REFERENCES "academic_years"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+            CONSTRAINT "fk_pd_tenant" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "payroll_documents_documentNumber_key" ON "payroll_documents"("documentNumber")`);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "payroll_documents_payrollItemId_key" ON "payroll_documents"("payrollItemId")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "payroll_documents_tenantId_fiscalYear_documentType_idx" ON "payroll_documents"("tenantId", "fiscalYear", "documentType")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "payroll_documents_tenantId_periodYear_periodMonth_idx" ON "payroll_documents"("tenantId", "periodYear", "periodMonth")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "payroll_documents_staffId_idx" ON "payroll_documents"("staffId")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "payroll_documents_documentType_idx" ON "payroll_documents"("documentType")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "payroll_documents_issuedAt_idx" ON "payroll_documents"("issuedAt")`);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "payroll_document_sequences" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "tenantId" TEXT NOT NULL,
+            "documentType" TEXT NOT NULL,
+            "fiscalYear" INTEGER NOT NULL,
+            "lastNumber" INTEGER NOT NULL DEFAULT 0,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "fk_pds_tenant" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "payroll_document_sequences_tenantId_documentType_fiscalYear_key" ON "payroll_document_sequences"("tenantId", "documentType", "fiscalYear")`);
+      logger.log('✅ RH Bénin : payroll_documents (FP/EP) + payroll_document_sequences + joursCongesParMois ensured');
+    } catch (payrollDocsErr: any) {
+      logger.warn(`RH payroll documents bootstrap warning: ${payrollDocsErr.message}`);
+    }
+
     logger.log('HR tables & columns ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);

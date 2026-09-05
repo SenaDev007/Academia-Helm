@@ -509,6 +509,53 @@ export class PayrollPrismaController {
     return this.payrollService.closePayrollPeriod(id, tid, user?.id);
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // OPÉRATIONS AU NIVEAU PÉRIODE (la page mensuelle pilote la période ; le lot
+  // de paie sous-jacent est résolu automatiquement — find-or-create)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  @Post('periods/:id/generate')
+  async generateForPeriod(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.generatePayrollItemsForPeriod(id, tid, academicYearId);
+  }
+
+  @Post('periods/:id/calculate')
+  async calculateForPeriod(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.calculateAllItemsForPeriod(id, tid);
+  }
+
+  @Put('periods/:id/status')
+  async updatePeriodStatus(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: UpdatePayrollStatusDto,
+    @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.updatePeriodPayrollStatus(id, tid, body.status, user?.id);
+  }
+
   @Delete('periods/:id')
   async deletePayrollPeriod(
     @GetTenant() tenant: any,

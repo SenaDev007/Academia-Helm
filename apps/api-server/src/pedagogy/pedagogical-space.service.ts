@@ -7094,6 +7094,9 @@ export class PedagogicalSpaceService {
       weeklyLogsByStatus,
       weeklySummariesByStatus,
       cahierTestsByStatus,
+      // ⭐ V3-12: 9e requête (monthly_plans) — doit être déstructurée ici,
+      // sinon son résultat est perdu et `results[8]` ci-dessous n'existe pas.
+      monthlyPlansByStatus,
     ] = await Promise.all([
       this.prisma.$queryRawUnsafe(
         `SELECT "status", COUNT(*)::int as count FROM "cahier_journal_entries"
@@ -7173,8 +7176,7 @@ export class PedagogicalSpaceService {
       return row?.count || 0;
     };
 
-    // ⭐ V3-12: Extract monthly plans counts (results[8])
-    const monthlyPlansByStatus = results[8] as any[];
+    // ⭐ V3-12: Extract monthly plans counts (déstructuré ci-dessus)
     const monthlyPlansPending = extractCount(monthlyPlansByStatus, 'SUBMITTED');
     const monthlyPlansValidated = extractCount(monthlyPlansByStatus, 'VALIDATED');
     const monthlyPlansRejected = extractCount(monthlyPlansByStatus, 'REJECTED');

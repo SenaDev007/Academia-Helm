@@ -405,7 +405,7 @@ export class ComptaExportService {
     }
 
     this.logger.log(
-      `ComptaExport: ${ecritures.length} écritures générées (${transactions.length} transactions, ${expenses.length} dépenses)`,
+      `ComptaExport: ${ecritures.length} écritures générées (${txRows.length} transactions, ${expenses.length} dépenses)`,
     );
     return ecritures;
   }

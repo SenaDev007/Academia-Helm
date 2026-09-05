@@ -26,6 +26,7 @@ import {
   Min,
   Max,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 

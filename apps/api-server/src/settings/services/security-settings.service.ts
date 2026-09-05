@@ -1,5 +1,5 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 

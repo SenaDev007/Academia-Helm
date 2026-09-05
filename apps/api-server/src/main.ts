@@ -1110,6 +1110,12 @@ async function bootstrap() {
     logger.warn('Some HR recruitment features may not work');
   }
 
+  // ⚒️ RE-FETCH prisma : la const ci-dessus est block-scopée au try/catch
+  // précédent — sans ceci, tous les fallbacks suivants levait
+  // "ReferenceError: prisma is not defined" (avalié par leurs try/catch,
+  // donc les migrations DDL de secours échouaient silencieusement au boot).
+  const prisma = app.get(PrismaService);
+
   // ============================================================================
   // FALLBACK: Migration studentEnrollmentBlocked sur tenants
   // ============================================================================

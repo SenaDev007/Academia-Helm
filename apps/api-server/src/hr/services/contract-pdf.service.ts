@@ -2148,6 +2148,10 @@ export class ContractPdfService {
   // ─── Default Templates ──────────────────────────────────────────────────────
 
   getDefaultTemplate(contractType: string): string {
+    // Couleur institutionnelle — même défaut que cfg.style_primary_color
+    // (sans cette const, le template levait "ReferenceError: primaryColor is
+    // not defined" au moment de générer le HTML du contrat par défaut).
+    const primaryColor = '#1A2BA6';
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>

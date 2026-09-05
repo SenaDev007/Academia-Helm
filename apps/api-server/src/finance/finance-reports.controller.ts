@@ -195,7 +195,6 @@ export class FinanceReportsController {
     @Query('dateTo') dateTo?: string,
     @Query('classId') classId?: string,
     @Query('cashRegisterId') cashRegisterId?: string,
-    @CurrentUser() user: any,
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) {
@@ -222,7 +221,6 @@ export class FinanceReportsController {
     @Query('dateTo') dateTo?: string,
     @Query('cashRegisterId') cashRegisterId?: string,
     @Query('type') type?: string,
-    @CurrentUser() user: any,
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) {
@@ -246,7 +244,6 @@ export class FinanceReportsController {
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
     @Query('minAmount') minAmount?: string,
-    @CurrentUser() user: any,
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) {
@@ -282,7 +279,6 @@ export class FinanceReportsController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
-    @CurrentUser() user: any,
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return { missed: [], stats: { totalExpected: 0, totalMissed: 0, totalDone: 0, missRate: 0 } };
@@ -298,7 +294,6 @@ export class FinanceReportsController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
-    @CurrentUser() user: any,
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return [];

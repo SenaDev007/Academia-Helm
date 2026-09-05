@@ -27,6 +27,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { IMAGE_ONLY_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
 import {
   CreateStudentPrismaDto,

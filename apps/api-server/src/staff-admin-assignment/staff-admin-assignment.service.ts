@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
+import { AccessScopeService } from '../common/context/access-scope.service';
 import { v4 as uuidv4 } from 'uuid';
 import { ADMIN_ROLES, isValidAdminRole, ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel } from '../common/constants/admin-roles';
 
@@ -65,6 +66,7 @@ export class StaffAdminAssignmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly adminStructureService: AdminStructureService,
+    private readonly accessScopeService: AccessScopeService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -198,6 +200,11 @@ export class StaffAdminAssignmentService {
 
     this.logger.log(`Admin assignment created: staff=${staff.firstName} ${staff.lastName}, role=${data.adminRole}, level=${data.schoolLevelCode}`);
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux : invalider le cache de scope du user
+    //    lié (résolu par email) pour que la nouvelle affectation prenne effet
+    //    immédiatement (sinon latence cache 2 min).
+    await this.invalidateUserScopeForStaff(tenantId, row.staff?.email);
+
     // ⭐ Mettre à jour le rôle du User existant si le staff a déjà un compte.
     //    Quand on affecte un poste admin à un staff, son compte User doit
     //    refléter ce rôle pour que l'UI affichée soit correcte (secrétaire,
@@ -293,6 +300,8 @@ export class StaffAdminAssignmentService {
     // ⭐ Re-sync User.role si adminRole ou schoolLevelCode a changé
     //    (même logique que dans create(), mais ici on compare avec les valeurs
     //    AVANT update vs APRÈS update)
+    // ⭐ + invalidation du cache de scope (périmètre niveaux/pistes)
+    await this.invalidateUserScopeForStaff(tenantId, row.staff?.email);
     const newAdminRole = data.adminRole ?? existing.adminRole;
     const newSchoolLevelCode = data.schoolLevelCode ?? existing.schoolLevelCode;
     if ((data.adminRole !== undefined || data.schoolLevelCode !== undefined) && row.staff?.email) {
@@ -334,8 +343,34 @@ export class StaffAdminAssignmentService {
       where: { id, tenantId },
     });
     if (!existing) throw new NotFoundException('Affectation introuvable');
+    // ⭐ Invalider le cache de scope AVANT suppression (l'email du staff est
+    //    dans l'affectation existante)
+    const staffBefore = await this.prisma.staff.findUnique({
+      where: { id: existing.staffId },
+      select: { email: true },
+    }).catch(() => null);
     await this.prisma.staffAdminAssignment.delete({ where: { id } });
+    await this.invalidateUserScopeForStaff(tenantId, staffBefore?.email);
     this.logger.log(`Admin assignment deleted: ${id}`);
+  }
+
+  /**
+   * ⭐ Filtre Rôles × Pistes × Niveaux — invalide le cache de scope des users
+   *    liés au staff (par email) après tout changement d'affectation.
+   */
+  private async invalidateUserScopeForStaff(tenantId: string, staffEmail?: string | null): Promise<void> {
+    if (!staffEmail) return;
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { tenantId, email: { equals: staffEmail, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      for (const u of users) {
+        await this.accessScopeService.invalidateScope(u.id, tenantId);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Scope invalidation failed for ${staffEmail}: ${e.message}`);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════

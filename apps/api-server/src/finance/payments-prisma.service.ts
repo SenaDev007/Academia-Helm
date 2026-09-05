@@ -8,12 +8,37 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { levelWhere, paymentTrackWhere, assertLevelInScope } from '../common/context/scope-where';
 
 @Injectable()
 export class PaymentsPrismaService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * ⭐ Piste d'un élève : UUID de l'AcademicTrack de sa classe courante
+   *    (ClassStudent le plus récent → Class.language). null si indéterminée.
+   */
+  async resolveStudentTrackId(tenantId: string, studentId: string): Promise<string | null> {
+    const cs = await this.prisma.classStudent.findFirst({
+      where: { studentId, tenantId },
+      orderBy: { createdAt: 'desc' },
+      select: { class: { select: { language: true, academicTrackId: true } } },
+    });
+    const cls = cs?.class;
+    if (!cls) return null;
+    if (cls.academicTrackId) return cls.academicTrackId;
+    if (cls.language === 'FR' || cls.language === 'EN') {
+      const track = await this.prisma.academicTrack.findFirst({
+        where: { tenantId, code: cls.language },
+        select: { id: true },
+      });
+      return track?.id ?? null;
+    }
+    return null;
+  }
 
   /**
    * Enregistre un paiement
@@ -30,6 +55,7 @@ export class PaymentsPrismaService {
     reference?: string;
     notes?: string;
     createdBy?: string;
+    academicTrackId?: string | null;
   }) {
     // Vérifier que l'élève existe
     const student = await this.prisma.student.findFirst({
@@ -108,7 +134,8 @@ export class PaymentsPrismaService {
       startDate?: Date;
       endDate?: Date;
       search?: string;
-    }
+    },
+    scope?: AccessScope | null,
   ) {
     // Mode "année stricte" : warning si pas d'academicYearId
     if (!filters?.academicYearId) {
@@ -126,9 +153,21 @@ export class PaymentsPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    // Niveau scolaire : filtrer sauf en mode 'ALL'
+    // ⭐ Filtre Rôles × Pistes × Niveaux — le niveau est IMPOSÉ par le scope
+    //    serveur (le filtre client ne peut qu'affiner DANS le périmètre).
+    //    La sentinelle 'ALL' ne bypass plus pour les comptes restreints.
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
+    }
+
+    // ⭐ Piste : paiements de SA piste uniquement (null = indéterminé, exonéré)
+    const scopeTrack = paymentTrackWhere(scope || undefined);
+    if (scopeTrack) {
+      where.AND = [...(where.AND || []), scopeTrack];
     }
 
     if (filters?.studentId) {
@@ -185,8 +224,9 @@ export class PaymentsPrismaService {
 
   /**
    * Récupère un paiement par ID
+   * ⭐ Anti-IDOR : le paiement doit appartenir au périmètre niveau de l'utilisateur.
    */
-  async findPaymentById(id: string, tenantId: string) {
+  async findPaymentById(id: string, tenantId: string, scope?: AccessScope | null) {
     const payment = await this.prisma.payment.findFirst({
       where: { id, tenantId },
       include: {
@@ -203,6 +243,9 @@ export class PaymentsPrismaService {
     if (!payment) {
       throw new NotFoundException(`Payment with ID ${id} not found`);
     }
+
+    // ⭐ Filtre Rôles × Pistes × Niveaux — anti-IDOR
+    assertLevelInScope(scope || undefined, payment, 'ce paiement');
 
     return payment;
   }
@@ -284,7 +327,8 @@ export class PaymentsPrismaService {
   async reversePayment(
     paymentId: string,
     tenantId: string,
-    params: { reversalReason: string; createdBy?: string }
+    params: { reversalReason: string; createdBy?: string },
+    scope?: AccessScope | null,
   ) {
     const original = await this.prisma.payment.findFirst({
       where: { id: paymentId, tenantId },
@@ -294,6 +338,9 @@ export class PaymentsPrismaService {
     if (!original) {
       throw new NotFoundException(`Payment with ID ${paymentId} not found`);
     }
+
+    // ⭐ Filtre Rôles × Pistes × Niveaux — annulation restreinte au périmètre
+    assertLevelInScope(scope || undefined, original, 'ce paiement');
 
     if (original.transactionType === 'REVERSAL') {
       throw new BadRequestException('Cannot reverse a reversal payment');
@@ -327,6 +374,8 @@ export class PaymentsPrismaService {
         reversedFromId: original.id,
         reversalReason: params.reversalReason,
         createdBy: params.createdBy,
+        // ⭐ Conserve la piste dénormalisée du paiement original
+        academicTrackId: original.academicTrackId,
       },
       include: {
         student: true,

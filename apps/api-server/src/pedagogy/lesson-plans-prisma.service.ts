@@ -10,6 +10,8 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { levelWhere, classTrackWhere } from '../common/context/scope-where';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 
 @Injectable()
@@ -77,6 +79,13 @@ export class LessonPlansPrismaService {
   async findAllLessonPlans(
     tenantId: string,
     academicYearId?: string,
+    filters?: {
+      schoolLevelId?: string;
+      classId?: string;
+      subjectId?: string;
+      teacherId?: string;
+    },
+    scope?: AccessScope | null,
   ) {
     const where: any = {
       tenantId,
@@ -84,6 +93,31 @@ export class LessonPlansPrismaService {
 
     if (academicYearId) {
       where.academicYearId = academicYearId;
+    }
+
+    // ⭐ FIX 2026-09-06 (F1-pedagogy) : les filtres déclarés sont désormais APPLIQUÉS
+    //    (avant : acceptés puis ignorés → tout le tenant était renvoyé).
+    //    + périmètre IMPOSÉ par le scope serveur (niveau + piste de l'utilisateur).
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
+    if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
+      where.schoolLevelId = filters.schoolLevelId;
+    }
+    if (filters?.classId) {
+      where.classId = filters.classId;
+    }
+    if (filters?.subjectId) {
+      where.subjectId = filters.subjectId;
+    }
+    if (filters?.teacherId) {
+      where.teacherId = filters.teacherId;
+    }
+    // Piste : via la classe de la fiche (language/track de la classe)
+    const trackBlock = classTrackWhere(scope || undefined);
+    if (trackBlock) {
+      where.class = trackBlock as any;
     }
 
     return this.prisma.lessonPlan.findMany({

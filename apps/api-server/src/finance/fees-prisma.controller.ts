@@ -71,6 +71,7 @@ export class FeesPrismaController {
   async findAllDefinitions(
     @TenantId() tenantId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('classId') classId?: string,
     @Query('feeCategoryId') feeCategoryId?: string,
@@ -82,12 +83,16 @@ export class FeesPrismaController {
       classId,
       feeCategoryId,
       search,
-    });
+    }, user?.scope ?? null);
   }
 
   @Get('definitions/:id')
-  async findDefinitionById(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.feesService.findFeeDefinitionById(id, tenantId);
+  async findDefinitionById(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.feesService.findFeeDefinitionById(id, tenantId, user?.scope ?? null);
   }
 
   @Put('definitions/:id')

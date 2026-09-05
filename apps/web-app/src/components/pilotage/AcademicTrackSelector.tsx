@@ -19,6 +19,7 @@ import { useFeature, FeatureCode } from '@/hooks/useFeature';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
+import { getUserScope } from '@/lib/auth/user-scope';
 
 // ⭐ Rôles directeur niveau-spécifiques qui peuvent être language-locked
 const LEVEL_SPECIFIC_DIRECTOR_ROLES = [
@@ -51,13 +52,21 @@ export default function AcademicTrackSelector({
   const user = session?.user;
 
   // ⭐ Déterminer la langue lockée du directeur (si applicable)
-  //    On lit depuis user.accreditations ou user.function qui peut contenir
-  //    des infos sur la langue. Pour l'instant on se base sur une convention
-  //    simple : si le user a une accreditation "EN" ou "ANGLOPHONE", il est
-  //    locké sur EN. Sinon FR.
-  //    TODO: récupérer la langue depuis /api/hr/school-directors/me pour
-  //    avoir la langue authoritative configurée dans le module RH.
-  const lockedTrack: 'FR' | 'EN' | null = (() => {
+  //    ⭐ P4 (2026-09-06) : SOURCE DE VÉRITÉ = le périmètre serveur résolu à la
+  //    connexion (user_scope : pistes autorisées depuis StaffAdminAssignment /
+  //    Teacher.assignedLanguages). L'ancienne heuristique (accréditations /
+  //    user.function) reste en fallback si le scope est absent.
+  //    TODO résolu : la langue authoritative vient désormais du serveur.
+  const scopeLockedTrack: 'FR' | 'EN' | null = (() => {
+    const scope = getUserScope();
+    if (!scope) return null;
+    if (scope.allTracks) return null; // bi-piste / transverse → pas de lock
+    const tracks = Array.isArray(scope.trackCodes) ? scope.trackCodes : [];
+    if (tracks.length === 1) return tracks[0] === 'EN' ? 'EN' : 'FR';
+    return null;
+  })();
+
+  const heuristicLockedTrack: 'FR' | 'EN' | null = (() => {
     if (!user) return null;
     if (FULL_ACCESS_ROLES.includes(user.role)) return null; // Pas de lock
     if (!LEVEL_SPECIFIC_DIRECTOR_ROLES.includes(user.role)) return null;
@@ -75,6 +84,9 @@ export default function AcademicTrackSelector({
     // Par défaut, on ne lock pas (le directeur peut basculer)
     return null;
   })();
+
+  // Le lock serveur prime sur l'heuristique
+  const lockedTrack = scopeLockedTrack ?? heuristicLockedTrack;
 
   // ⭐ Si le directeur est language-locked, force la piste sur sa langue
   useEffect(() => {

@@ -220,11 +220,98 @@ export function resolveUserRoleWithLevel(adminRole: string, schoolLevelCode: str
 
   // Vérifier si ce rôle niveau-spécifique existe dans ROLE_LEVEL_SCOPES
   // (défini dans level-scope.guard.ts — on importe la liste des rôles valides)
-  const LEVEL_SPECIFIC_SUFFIXES = ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'MAT_PRI'];
+  // ⭐ FIX 2026-09-06 : les codes courts MAT / PRI / SEC sont documentés sur
+  //    StaffAdminAssignment (« Code du niveau administré : MAT, PRI, SEC, MAT_PRI, ALL »)
+  //    et utilisés en production. AVANT ce fix, une affectation « SECRETAIRE_COMPTABLE @ SEC »
+  //    produisait le rôle GÉNÉRIQUE (tous niveaux) — la restriction niveau était
+  //    perdue dès la création du compte.
+  const LEVEL_SPECIFIC_SUFFIXES = [
+    'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'MAT_PRI',
+    'MAT', 'PRI', 'SEC',
+  ];
   if (LEVEL_SPECIFIC_SUFFIXES.includes(schoolLevelCode)) {
     return levelSpecificRole;
   }
 
-  // Fallback : rôle générique
+  // ALL / codes inconnus : rôle générique (pas de restriction de niveau via le rôle)
   return baseRole;
+}
+
+/**
+ * ⭐ FIX CUMULS (2026-09-06) — Agrège PLUSIEURS affectations admin actives.
+ *    Avant, seul la PREMIÈRE affectation (take:1) déterminait le rôle →
+ *    un staff « Directeur MAT_PRI + Enseignant » ou « Directeur MAT + Directeur SEC »
+ *    perdait ses autres casquettes.
+ *
+ * Stratégie :
+ *   - Le rôle de BASE retenu est celui de la plus haute priorité hiérarchique
+ *     (le portail/routing frontend en dépend — on garde le profil le plus englobant).
+ *   - Le suffixe de NIVEAU reflète l'UNION des niveaux administrés :
+ *     MAT+PRI → _MAT_PRI ; MAT+PRI+SEC (ou ALL) → rôle générique (tous niveaux).
+ *
+ * @param assignments Affectations actives {adminRole, schoolLevelCode}
+ * @returns Le UserRole agrégé
+ */
+const ADMIN_ROLE_PRIORITY: string[] = [
+  'DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT',
+  'CENSEUR', 'SURVEILLANT_GENERAL', 'SURVEILLANT',
+  'ECONOME', 'INTENDANT', 'SECRETAIRE_COMPTABLE', 'COMPTABLE',
+  'SECRETAIRE', 'RESP_SCOLARITE', 'RESPONSABLE_ORIENTATIONS', 'CONSEILLER_PEDAGOGIQUE', 'PROMOTEUR', 'AUTRE',
+];
+
+const LEVEL_CODE_TO_SET: Record<string, string[]> = {
+  MAT: ['MAT'], MATERNELLE: ['MAT'],
+  PRI: ['PRI'], PRIMAIRE: ['PRI'],
+  SEC: ['SEC'], SECONDAIRE: ['SEC'],
+  MAT_PRI: ['MAT', 'PRI'],
+  ALL: ['MAT', 'PRI', 'SEC'],
+};
+
+const LEVEL_SET_TO_SUFFIX: Record<string, string> = {
+  'MAT': 'MAT',
+  'PRI': 'PRI',
+  'SEC': 'SEC',
+  'MAT+PRI': 'MAT_PRI',
+};
+
+export function resolveAggregatedUserRole(
+  assignments: Array<{ adminRole: string; schoolLevelCode: string }>,
+): string {
+  if (!assignments || assignments.length === 0) {
+    return 'SECRETAIRE';
+  }
+  if (assignments.length === 1) {
+    return resolveUserRoleWithLevel(assignments[0].adminRole, assignments[0].schoolLevelCode);
+  }
+
+  // 1. Base role = plus haute priorité parmi les affectations
+  let best = assignments[0];
+  let bestRank = ADMIN_ROLE_PRIORITY.indexOf(ADMIN_ROLE_TO_USER_ROLE[best.adminRole] || best.adminRole);
+  for (const a of assignments) {
+    const mapped = ADMIN_ROLE_TO_USER_ROLE[a.adminRole] || a.adminRole;
+    const rank = ADMIN_ROLE_PRIORITY.indexOf(mapped);
+    if (rank !== -1 && (bestRank === -1 || rank < bestRank)) {
+      best = a;
+      bestRank = rank;
+    }
+  }
+  const baseRole = ADMIN_ROLE_TO_USER_ROLE[best.adminRole] || 'SECRETAIRE';
+
+  // 2. Union des niveaux administrés
+  const levelSet = new Set<string>();
+  for (const a of assignments) {
+    const levels = LEVEL_CODE_TO_SET[a.schoolLevelCode];
+    if (!levels) continue; // code inconnu → n'ajoute rien (prudence : on garde le résolu du best)
+    levels.forEach((l) => levelSet.add(l));
+  }
+  if (levelSet.size === 0) {
+    // Aucun niveau reconnu → rôle de la meilleure affectation, résolu comme une seule
+    return resolveUserRoleWithLevel(best.adminRole, best.schoolLevelCode);
+  }
+  if (levelSet.has('MAT') && levelSet.has('PRI') && levelSet.has('SEC')) {
+    return baseRole; // tous niveaux → générique
+  }
+  const key = Array.from(levelSet).sort().join('+');
+  const suffix = LEVEL_SET_TO_SUFFIX[key];
+  return suffix ? `${baseRole}_${suffix}` : baseRole;
 }

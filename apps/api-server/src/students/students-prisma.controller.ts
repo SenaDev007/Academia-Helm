@@ -62,6 +62,7 @@ export class StudentsPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('status') status?: string,
@@ -82,12 +83,13 @@ export class StudentsPrismaController {
       hasArrears: hasArrears === 'true' ? true : hasArrears === 'false' ? false : undefined,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
-    });
+    }, user?.scope ?? null);
   }
 
   @Get('statistics')
   async getStatistics(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId?: string,
   ) {
@@ -95,6 +97,7 @@ export class StudentsPrismaController {
       tenantId,
       academicYearId,
       schoolLevelId,
+      user?.scope ?? null,
     );
   }
 
@@ -107,6 +110,7 @@ export class StudentsPrismaController {
   @Get('abandons')
   async getAbandons(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId?: string,
   ) {
@@ -114,6 +118,7 @@ export class StudentsPrismaController {
       tenantId,
       academicYearId,
       schoolLevelId,
+      user?.scope ?? null,
     );
   }
 
@@ -168,8 +173,9 @@ export class StudentsPrismaController {
   async findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
   ) {
-    return this.studentsService.findStudentById(id, tenantId);
+    return this.studentsService.findStudentById(id, tenantId, user?.scope ?? null);
   }
 
   @Put(':id')

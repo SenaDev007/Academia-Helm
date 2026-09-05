@@ -8,8 +8,10 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { assertLevelInScope } from '../common/context/scope-where';
 
 @Injectable()
 export class ExamScoresPrismaService {
@@ -31,17 +33,53 @@ export class ExamScoresPrismaService {
     coefficient?: number;
     remarks?: string;
     recordedBy?: string;
-  }) {
-    // Vérifier que l'examen existe
+  }, scope?: AccessScope | null) {
+    // Vérifier que l'examen existe (avec son classSubject pour l'assignation)
     const exam = await this.prisma.exam.findFirst({
       where: {
         id: data.examId,
         tenantId: data.tenantId,
       },
+      include: {
+        classSubject: { select: { id: true, classId: true } },
+      },
     });
 
     if (!exam) {
       throw new NotFoundException(`Exam with ID ${data.examId} not found`);
+    }
+
+    // ⭐ Filtre Rôles × Pistes × Niveaux (F8) — la saisie de notes est restreinte :
+    //    1. Le niveau de l'EXAMEN doit être dans le périmètre de l'utilisateur
+    //       (le schoolLevelId du DTO est ignoré au profit de celui de l'examen).
+    //    2. Un enseignant ne saisit que les notes de ses matières/classes
+    //       (TeacherClassAssignment ou classes de son scope).
+    assertLevelInScope(scope || undefined, exam, 'cet examen');
+    data.schoolLevelId = exam.schoolLevelId;
+    data.academicTrackId = data.academicTrackId || exam.academicTrackId || undefined;
+
+    if (scope?.resolved && scope.isTeacher && !scope.isAdmin) {
+      const teacherId = scope.teacherId;
+      let assigned = false;
+      if (exam.classSubject?.id) {
+        const tca = await this.prisma.teacherClassAssignment.findFirst({
+          where: {
+            tenantId: data.tenantId,
+            classSubjectId: exam.classSubject.id,
+            ...(teacherId ? { teacherId } : {}),
+          },
+          select: { id: true },
+        });
+        assigned = !!tca;
+      }
+      if (!assigned && scope.classIds && exam.classSubject?.classId) {
+        assigned = scope.classIds.includes(exam.classSubject.classId);
+      }
+      if (!assigned) {
+        throw new ForbiddenException(
+          "Accès refusé : vous n'êtes pas affecté à cette matière/classe pour la saisie de notes.",
+        );
+      }
     }
 
     // Vérifier que l'élève existe

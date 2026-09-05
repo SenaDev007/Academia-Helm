@@ -22,6 +22,8 @@ import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreatePaymentDto } from './dto';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { assertLevelInScope } from '../common/context/scope-where';
 
 @Controller('finance/payments')
 @UseGuards(JwtAuthGuard)
@@ -48,6 +50,11 @@ export class PaymentsPrismaController {
       throw new BadRequestException(`Student fee with ID ${createDto.studentFeeId} not found`);
     }
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux : l'écriture d'un paiement est réservée
+    //    au périmètre de l'utilisateur (niveau de l'ÉLÈVE validé contre le scope).
+    const scope: AccessScope | null = user?.scope ?? null;
+    assertLevelInScope(scope, studentFee.student ?? {}, 'cet élève');
+
     return this.paymentsService.createPayment({
       tenantId,
       academicYearId: createDto.academicYearId || studentFee.academicYearId || '',
@@ -59,6 +66,11 @@ export class PaymentsPrismaController {
       paymentDate: new Date(),
       reference: createDto.reference,
       createdBy: user?.id,
+      // ⭐ Piste de l'élève (dénormalisée sur le paiement) résolue depuis sa classe
+      academicTrackId: await this.paymentsService.resolveStudentTrackId(
+        tenantId,
+        studentFee.studentId,
+      ),
     });
   }
 
@@ -66,6 +78,7 @@ export class PaymentsPrismaController {
   async findAllPayments(
     @TenantId() tenantId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('studentId') studentId?: string,
     @Query('paymentMethod') paymentMethod?: string,
@@ -81,7 +94,7 @@ export class PaymentsPrismaController {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       search,
-    });
+    }, user?.scope ?? null);
   }
 
   @Get('student/:studentId/summary')
@@ -98,8 +111,12 @@ export class PaymentsPrismaController {
   }
 
   @Get(':id')
-  async findPaymentById(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.paymentsService.findPaymentById(id, tenantId);
+  async findPaymentById(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.paymentsService.findPaymentById(id, tenantId, user?.scope ?? null);
   }
 
   /**
@@ -118,7 +135,7 @@ export class PaymentsPrismaController {
     return this.paymentsService.reversePayment(id, tenantId, {
       reversalReason: body.reversalReason.trim(),
       createdBy: user?.id,
-    });
+    }, user?.scope ?? null);
   }
 }
 

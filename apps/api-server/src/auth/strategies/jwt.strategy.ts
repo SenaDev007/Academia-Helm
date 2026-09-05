@@ -6,6 +6,7 @@ import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
 import { PrismaService } from '../../database/prisma.service';
 import { CacheService } from '../../common/services/cache.service';
+import { AccessScopeService } from '../../common/context/access-scope.service';
 
 const TOKEN_COOKIE = 'academia_token';
 
@@ -23,6 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private usersService: UsersService,
     private prisma: PrismaService,
     private cacheService: CacheService,
+    private accessScopeService: AccessScopeService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -76,6 +78,26 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ? payload.tenantId
         : user.tenantId;
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux — résolution SERVEUR du périmètre
+    //    (niveaux autorisés, pistes autorisées, classes enseignant).
+    //    Résolu ici une fois par requête et attaché à request.user.scope :
+    //    les guards (AccessScopeGuard) et les services (scope-where.ts)
+    //    l'imposent ensuite aux requêtes Prisma. Ne jamais trust le client.
+    let scope: any = null;
+    try {
+      scope = await this.accessScopeService.resolveUserScope({
+        id: user.id,
+        email: user.email,
+        tenantId: tenantIdFromToken ?? null,
+        role: payload.role ?? (user as { role?: string }).role,
+        isSuperAdmin: user.isSuperAdmin,
+      });
+    } catch {
+      // La résolution du scope ne doit JAMAIS casser l'authentification —
+      // en cas d'erreur on reste sur un scope non résolu (rétro-compat).
+      scope = null;
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -85,6 +107,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       roles: user.roles || [],
       permissions: this.extractPermissions(user.roles || []),
       portalType: payload.portalType || null,
+      scope,
     };
   }
 

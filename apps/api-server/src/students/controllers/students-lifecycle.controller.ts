@@ -30,6 +30,10 @@ const MANAGEMENT_ROLES = [
   'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
   'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
   'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT',
+  // ⭐ 2026-09-06 : secrétaires et comptables gèrent les inscriptions/listes —
+  //    usage métier légitime (le RolesGuard normalise les suffixes de niveau).
+  'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'SECRETARY', 'COMPTABLE', 'ACCOUNTANT',
+  'RESP_SCOLARITE', 'CENSEUR', 'ECONOME', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
 ];
 
 @Controller('students')
@@ -402,6 +406,7 @@ export class StudentsLifecycleController {
    * Génère un fichier Excel GLOBAL avec TOUTES les classes officielles de TOUS les niveaux.
    * Une feuille par classe officielle.
    */
+  @Roles(...MANAGEMENT_ROLES)
   @Get('export/global-excel')
   async exportGlobalExcel(
     @TenantId() tenantId: string,
@@ -425,6 +430,7 @@ export class StudentsLifecycleController {
    * Génère un PDF GLOBAL avec TOUTES les classes de TOUS les niveaux.
    * Chaque classe commence sur une nouvelle page.
    */
+  @Roles(...MANAGEMENT_ROLES)
   @Get('export/global-pdf')
   async exportGlobalPdf(
     @TenantId() tenantId: string,
@@ -483,6 +489,7 @@ export class StudentsLifecycleController {
    * Une feuille par section physique.
    * Utilisé par l'onglet "Liste des Élèves".
    */
+  @Roles(...MANAGEMENT_ROLES)
   @Get('export/global-physical-excel')
   async exportGlobalPhysicalExcel(
     @TenantId() tenantId: string,
@@ -507,6 +514,7 @@ export class StudentsLifecycleController {
    * Chaque section commence sur une nouvelle page.
    * Utilisé par l'onglet "Liste des Élèves".
    */
+  @Roles(...MANAGEMENT_ROLES)
   @Get('export/global-physical-pdf')
   async exportGlobalPhysicalPdf(
     @TenantId() tenantId: string,

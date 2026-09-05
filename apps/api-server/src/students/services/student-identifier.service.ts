@@ -289,10 +289,15 @@ export class StudentIdentifierService {
 
   /**
    * Recherche un élève par matricule global
+   * ⭐ Filtre tenant obligatoire (F7) : ne renvoie que les élèves du tenant courant.
    */
-  async findStudentByMatricule(globalMatricule: string) {
-    const identifier = await this.prisma.studentIdentifier.findUnique({
-      where: { globalMatricule },
+  async findStudentByMatricule(globalMatricule: string, tenantId?: string) {
+    const identifier = await this.prisma.studentIdentifier.findFirst({
+      where: {
+        globalMatricule,
+        // ⭐ Si tenantId fourni, restreindre au tenant courant
+        ...(tenantId ? { student: { tenantId } } : {}),
+      },
       include: {
         student: {
           include: {

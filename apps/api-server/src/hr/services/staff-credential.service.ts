@@ -24,7 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { UserRole, ROLE_PORTAL_MAP, Portal } from '../../common/enums/user-role.enum';
-import { ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel } from '../../common/constants/admin-roles';
+import { ADMIN_ROLE_TO_USER_ROLE, resolveUserRoleWithLevel, resolveAggregatedUserRole } from '../../common/constants/admin-roles';
 import { renderCredentialEmail, TenantBranding } from '../recruitment-email-templates';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -222,15 +222,19 @@ export class StaffCredentialService {
       //        schoolLevelCode de l'affectation pour produire un UserRole
       //        niveau-spécifique (ex: SECRETAIRE_COMPTABLE_MAT_PRI).
       let userRole: UserRole;
+      // ⭐ FIX CUMULS (2026-09-06) : toutes les affectations actives sont agrégées
+      //    (avant : take:1 → un staff « Directeur + Enseignant » ou multi-postes
+      //    perdait ses autres casquettes au moment de créer son compte).
       const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
         where: { staffId, tenantId, isActive: true },
         orderBy: { startDate: 'desc' },
-        take: 1,
       });
       if (adminAssignments.length > 0) {
-        const resolvedRole = resolveUserRoleWithLevel(adminAssignments[0].adminRole, adminAssignments[0].schoolLevelCode);
+        const resolvedRole = resolveAggregatedUserRole(
+          adminAssignments.map((a) => ({ adminRole: a.adminRole, schoolLevelCode: a.schoolLevelCode })),
+        );
         userRole = resolvedRole as UserRole;
-        this.logger.log(`Role determined from admin assignment: ${adminAssignments[0].adminRole} @ ${adminAssignments[0].schoolLevelCode} → ${userRole}`);
+        this.logger.log(`Role determined from admin assignments (aggregated): ${adminAssignments.map((a) => `${a.adminRole}@${a.schoolLevelCode}`).join(' + ')} → ${userRole}`);
       } else {
         userRole = refineUserRole(staff.roleType, staff.position);
         this.logger.log(`Role determined from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);
@@ -399,15 +403,17 @@ export class StaffCredentialService {
       //    ⭐⭐ On utilise resolveUserRoleWithLevel pour produire un UserRole
       //        niveau-spécifique (ex: SECRETAIRE_COMPTABLE_MAT_PRI).
       let userRole: UserRole;
+      // ⭐ FIX CUMULS (2026-09-06) : agrégation de toutes les affectations actives
       const adminAssignments = await this.prisma.staffAdminAssignment.findMany({
         where: { staffId, tenantId, isActive: true },
         orderBy: { startDate: 'desc' },
-        take: 1,
       });
       if (adminAssignments.length > 0) {
-        const resolvedRole = resolveUserRoleWithLevel(adminAssignments[0].adminRole, adminAssignments[0].schoolLevelCode);
+        const resolvedRole = resolveAggregatedUserRole(
+          adminAssignments.map((a) => ({ adminRole: a.adminRole, schoolLevelCode: a.schoolLevelCode })),
+        );
         userRole = resolvedRole as UserRole;
-        this.logger.log(`[generateOrRegenerate] Role from admin assignment: ${adminAssignments[0].adminRole} @ ${adminAssignments[0].schoolLevelCode} → ${userRole}`);
+        this.logger.log(`[generateOrRegenerate] Role from admin assignments (aggregated): ${adminAssignments.map((a) => `${a.adminRole}@${a.schoolLevelCode}`).join(' + ')} → ${userRole}`);
       } else {
         userRole = refineUserRole(staff.roleType, staff.position);
         this.logger.log(`[generateOrRegenerate] Role from refineUserRole: roleType=${staff.roleType}, position=${staff.position} → ${userRole}`);

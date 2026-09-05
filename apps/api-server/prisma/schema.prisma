@@ -1748,6 +1748,8 @@ model AcademicTrack {
   reportCards           ReportCard[]
   studentAcademicTracks StudentAcademicTrack[]
   subjects              Subject[]
+  staffAdminAssignments  StaffAdminAssignment[]  @relation("StaffAdminAssignmentTrack")
+  paymentsTrack          Payment[]               @relation("PaymentTrack")
 
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
@@ -2816,6 +2818,10 @@ model Payment {
   transactionType    String                @default("PAYMENT")
   reversedFromId     String?
   reversalReason     String?
+  /// ⭐ Piste linguistique de l'élève payeur (dénormalisée à l'écriture depuis
+  /// sa classe courante) — NULL = piste indéterminée (exonéré du filtre piste).
+  academicTrackId    String?
+  academicTrack      AcademicTrack?         @relation("PaymentTrack", fields: [academicTrackId], references: [id], onDelete: SetNull)
   paymentAllocations PaymentAllocation[]
   notifications      PaymentNotification[]
   receipt            PaymentReceipt?
@@ -2835,6 +2841,7 @@ model Payment {
   @@index([studentFeeId])
   @@index([transactionType])
   @@index([reversedFromId])
+  @@index([tenantId, schoolLevelId, academicTrackId])
   @@map("payments")
 }
 
@@ -5626,6 +5633,11 @@ model StaffAdminAssignment {
   /// Rôle administratif : DIRECTEUR, SECRETAIRE, SECRETAIRE_COMPTABLE,
   /// CENSEUR, ECONOME, DIRECTEUR_GENERAL, etc.
   adminRole       String
+  /// ⭐ Piste linguistique administrée (écoles bilingues) :
+  /// NULL = les deux pistes (rétro-compatibilité), sinon l'UUID du AcademicTrack.
+  /// Permet de modéliser « Directeur piste FR ≠ Directeur piste EN ».
+  academicTrackId String?
+  academicTrack   AcademicTrack? @relation("StaffAdminAssignmentTrack", fields: [academicTrackId], references: [id], onDelete: SetNull)
   /// Année scolaire (optionnel — si null, affectation permanente)
   academicYearId  String?
   startDate       DateTime  @default(now())
@@ -5642,6 +5654,7 @@ model StaffAdminAssignment {
   @@index([tenantId, staffId])
   @@index([tenantId, schoolLevelCode])
   @@index([tenantId, adminRole, isActive])
+  @@index([tenantId, schoolLevelCode, academicTrackId])
   @@map("staff_admin_assignments")
 }
 

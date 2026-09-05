@@ -40,6 +40,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getUserScope } from '@/lib/auth/user-scope';
 import * as settingsService from '@/services/settings.service';
 
 export type LanguageTrack = 'FR' | 'EN';
@@ -105,13 +106,27 @@ export function BilingualProvider({ children }: { children: ReactNode }) {
   });
 
   // ── Initialiser la track courante quand les settings sont reçus ─────────────
-  //    Par défaut on commence sur FR (langue principale au Bénin). On ne
-  //    restaure PAS depuis localStorage pour éviter qu'un utilisateur qui a
-  //    basculé sur EN une fois reste bloqué sur EN à chaque visite.
+  //    ⭐ FIX 2026-09-06 (P4) : initialisation intelligente —
+  //      1. Si le scope serveur de l'utilisateur (résolu depuis ses profils
+  //         métier) est mono-piste → SA piste est imposée.
+  //      2. Sinon (bi-piste / promoteur) → restauration de la dernière piste
+  //         choisie (localStorage) puis FR par défaut.
   useEffect(() => {
     if (settings) {
-      // Toujours commencer sur FR par défaut (sauf si l'utilisateur a explicitement
-      // basculé ce session en cours — mais le state React est déjà réinitialisé au reload)
+      const userScope = getUserScope();
+      if (userScope && !userScope.allTracks && Array.isArray(userScope.trackCodes) && userScope.trackCodes.length === 1) {
+        // Mono-piste : la piste du profil est imposée (UI + données)
+        setCurrentTrackState(userScope.trackCodes[0] === 'EN' ? 'EN' : 'FR');
+        return;
+      }
+      const stored =
+        typeof window !== 'undefined'
+          ? (localStorage.getItem(STORAGE_KEY) as LanguageTrack | null)
+          : null;
+      if (stored === 'FR' || stored === 'EN') {
+        setCurrentTrackState(stored);
+        return;
+      }
       setCurrentTrackState('FR');
     }
   }, [settings]);

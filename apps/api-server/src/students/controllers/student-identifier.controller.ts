@@ -118,8 +118,13 @@ export class StudentIdentifierController {
   @Get('search/:matricule')
   @UseGuards(RolesGuard)
   @Roles(...MATRICULE_MANAGER_ROLES)
-  async findStudentByMatricule(@Param('matricule') matricule: string) {
-    return this.identifierService.findStudentByMatricule(matricule);
+  async findStudentByMatricule(
+    @Param('matricule') matricule: string,
+    @GetTenant() tenant: any,
+  ) {
+    // ⭐ FIX 2026-09-06 (F7) : filtre tenant — avant, un utilisateur authentifié
+    //    pouvait rechercher un matricule d'un AUTRE tenant et voir ses données.
+    return this.identifierService.findStudentByMatricule(matricule, tenant?.id);
   }
 
   /**

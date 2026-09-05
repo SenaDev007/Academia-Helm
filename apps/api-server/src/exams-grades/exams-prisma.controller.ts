@@ -39,6 +39,7 @@ export class ExamsPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('academicTrackId') academicTrackId?: string,
@@ -59,7 +60,7 @@ export class ExamsPrismaController {
       subjectId,
       examType,
       search,
-    });
+    }, user?.scope ?? null);
   }
 
   @Post()
@@ -94,6 +95,7 @@ export class ExamsPrismaController {
   @Get('evaluations')
   async findEvaluations(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('academicTrackId') academicTrackId?: string,
@@ -112,7 +114,7 @@ export class ExamsPrismaController {
       subjectId,
       examType,
       search,
-    });
+    }, user?.scope ?? null);
   }
 
   @Get('evaluations/:id/grading-sheet')
@@ -140,7 +142,8 @@ export class ExamsPrismaController {
     @Query('academicYearId') academicYearId: string,
   ) {
     // ⭐ Robust tenantId resolution
-    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    // ⭐ FIX 2026-09-06 (F10) : le tenant du JWT/@TenantId est la SEULE source — plus de fallback header client (contournable cross-tenant)
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;
     return this.examsService.getAverages(resolvedTenantId, classId, periodId, academicYearId);
   }
 
@@ -162,7 +165,8 @@ export class ExamsPrismaController {
     @Body() body: CalculateAveragesDto,
   ) {
     // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
-    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    // ⭐ FIX 2026-09-06 (F10) : le tenant du JWT/@TenantId est la SEULE source — plus de fallback header client (contournable cross-tenant)
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;
     return this.examsService.calculateAverages(
       resolvedTenantId,
       body.classId,
@@ -190,7 +194,8 @@ export class ExamsPrismaController {
     @Body() body: CalculateEvaluationAveragesDto,
   ) {
     // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
-    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    // ⭐ FIX 2026-09-06 (F10) : le tenant du JWT/@TenantId est la SEULE source — plus de fallback header client (contournable cross-tenant)
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;
     if (!resolvedTenantId) {
       throw new BadRequestException('Tenant ID non résolu — veuillez vous reconnecter.');
     }

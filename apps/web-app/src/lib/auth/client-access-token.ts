@@ -22,6 +22,8 @@ export type PersistClientSessionInput = {
   };
   tenant?: { id: string; name?: string; slug?: string; [key: string]: unknown } | null;
   expiresAt?: string | null;
+  /** ⭐ P4 : périmètre serveur (niveaux/pistes autorisés) — depuis le login */
+  scope?: unknown;
 };
 
 // ⭐ P2 — Constantes pour le miroir du token JWT dans Cache API.
@@ -126,12 +128,33 @@ export function persistClientAccessToken(data: {
 }
 
 /**
+ * ⭐ P4 — persiste le scope serveur depuis la réponse de login.
+ *    Accepte `data.scope` (réponse login enseignant) ou `data.user.scope`.
+ */
+function persistUserScopeFromLogin(data: { scope?: unknown; user?: { scope?: unknown } | null }): void {
+  if (typeof window === 'undefined') return;
+  const scope = (data?.scope ?? data?.user?.scope) as Record<string, unknown> | null | undefined;
+  if (scope && typeof scope === 'object') {
+    try {
+      localStorage.setItem('user_scope', JSON.stringify(scope));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
  * Persiste tokens + miroir `session` (tenantId, ids PostgreSQL) pour sync offline / pas de déphasage.
  */
 export function persistClientSession(data: PersistClientSessionInput): void {
   persistClientAccessToken(data);
 
   if (typeof window === 'undefined') return;
+
+  // ⭐ P4 (filtre Rôles × Pistes × Niveaux) : persiste le scope serveur s'il est
+  //    présent dans la réponse de login (portail enseignant / context bootstrap).
+  //    La langue UI, la piste courante et les sélecteurs verrouillés en découlent.
+  persistUserScopeFromLogin(data as any);
 
   const sid = data.serverSessionId?.trim();
   if (sid) localStorage.setItem('serverSessionId', sid);

@@ -49,6 +49,7 @@ export class PedagogicalSpaceController {
   async getMyClasses(
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearIdFromDecorator: string | null,
+    @CurrentUser() user: any,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
@@ -57,7 +58,7 @@ export class PedagogicalSpaceController {
     if (!teacherId || !resolvedAcademicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getMyClasses(tenantId, teacherId, resolvedAcademicYearId);
+    return this.service.getMyClasses(tenantId, teacherId, resolvedAcademicYearId, user);
   }
 
   // ─── APPEL JOURNALIER ─────────────────────────────────────────────────────
@@ -110,6 +111,7 @@ export class PedagogicalSpaceController {
   @Get('class-logs')
   async getClassLogs(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('classId') classId?: string,
@@ -118,7 +120,7 @@ export class PedagogicalSpaceController {
     if (!teacherId || !academicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getClassLogs(tenantId, teacherId, academicYearId, classId, date);
+    return this.service.getClassLogs(tenantId, teacherId, academicYearId, classId, date, user);
   }
 
   @Post('class-logs')
@@ -492,6 +494,7 @@ export class PedagogicalSpaceController {
   @Get('cahier-journal')
   async getCahierJournals(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('classId') classId?: string,
@@ -499,7 +502,7 @@ export class PedagogicalSpaceController {
     if (!teacherId || !academicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getCahierJournals(tenantId, teacherId, academicYearId, classId);
+    return this.service.getCahierJournals(tenantId, teacherId, academicYearId, classId, user);
   }
 
   @Post('cahier-journal')
@@ -685,6 +688,7 @@ export class PedagogicalSpaceController {
   @Get('fiches')
   async getPedagogicalFiches(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('sheetType') sheetType?: string,
@@ -693,7 +697,7 @@ export class PedagogicalSpaceController {
     if (!teacherId || !academicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getPedagogicalFiches(tenantId, teacherId, academicYearId, sheetType, classId);
+    return this.service.getPedagogicalFiches(tenantId, teacherId, academicYearId, sheetType, classId, user);
   }
 
   @Get('fiches/:id')

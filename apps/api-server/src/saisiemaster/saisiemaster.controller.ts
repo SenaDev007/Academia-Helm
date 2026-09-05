@@ -30,7 +30,7 @@ import {
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   SaisieMasterService,
   type ActivityType,
@@ -43,7 +43,10 @@ import {
 } from './saisiemaster-testimonial.service';
 
 @Controller('saisiemaster')
-@Public()
+// ⭐ FIX 2026-09-06 (F9) : fin du @Public() — le CRUD d'évaluations et la saisie
+//    de notes SaisieMaster exigent désormais l'authentification JWT (avant :
+//    accessible sans aucune authentification).
+@UseGuards(JwtAuthGuard)
 export class SaisieMasterController {
   private readonly logger = new Logger(SaisieMasterController.name);
 

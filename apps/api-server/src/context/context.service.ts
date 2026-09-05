@@ -12,6 +12,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { AccessScopeService } from '../common/context/access-scope.service';
 
 @Injectable()
 export class ContextService {
@@ -20,6 +21,7 @@ export class ContextService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly accessScopeService: AccessScopeService,
   ) {}
 
   /**
@@ -111,6 +113,33 @@ export class ContextService {
     // Récupérer le résumé ORION (si applicable)
     const orionSummary = await this.getOrionSummary(role, tenantId, academicYear?.id);
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux — périmètre serveur résolu depuis les
+    //    profils métier (Teacher/Staff/affectations). Le frontend pilote sa
+    //    langue UI et ses sélecteurs (niveau, piste) depuis ces données.
+    let scope: any = null;
+    try {
+      const resolved = await this.accessScopeService.resolveUserScope({
+        id: user.id,
+        email: user.email,
+        tenantId,
+        role: user.role,
+      });
+      scope = {
+        levelCodes: resolved.levelCodes,
+        levelIds: resolved.levelIds,
+        allLevels: resolved.allLevels,
+        trackCodes: resolved.trackCodes,
+        allTracks: resolved.allTracks,
+        locale: resolved.locale,
+        teacherId: resolved.teacherId,
+        staffId: resolved.staffId,
+        isTeacher: resolved.isTeacher,
+        classIds: resolved.classIds,
+      };
+    } catch (e: any) {
+      this.logger.warn(`Scope resolution failed for user ${user.id}: ${e.message}`);
+    }
+
     return {
       tenant: {
         id: tenant.id,
@@ -152,6 +181,7 @@ export class ContextService {
       } : null,
       permissions: permissions,
       orionSummary: orionSummary,
+      scope,
       timestamp: new Date().toISOString(),
     };
   }

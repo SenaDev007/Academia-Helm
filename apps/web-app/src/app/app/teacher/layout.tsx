@@ -36,6 +36,8 @@ import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
 // ⭐ Double casquette : bascule instantanée vers l'UI École sans déconnexion
 import PortalSwitchButton from "@/components/auth/PortalSwitchButton";
+// ⭐ P4 : bascule FR/EN (masquée si mono-piste — langue du profil)
+import { LanguageSwitcher } from "@/contexts/I18nContext";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 // ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
@@ -226,6 +228,9 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ P4 : bascule FR/EN — visible uniquement pour les profils bi-piste
+                (mono-piste : langue UI verrouillée sur la piste du profil) */}
+            <LanguageSwitcher />
             {/* ⭐ V3-4: Cloche notifications enseignant (absences justifiées / évaluations / examens) */}
             <NotificationDropdown />
             {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé */}

@@ -9,6 +9,7 @@ import { SaisieMasterModule } from './saisiemaster/saisiemaster.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { AccessScopeGuard } from './common/guards/access-scope.guard';
 import { AppController } from './app.controller';
 import { HealthController } from './health/health.controller';
 import { DatabaseModule } from './database/database.module';
@@ -348,6 +349,15 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard, // ✅ Authentification JWT (seul guard global)
+    },
+    {
+      // ⭐ Filtre intelligent Rôles × Pistes × Niveaux — enforcement du périmètre
+      //    serveur (bloque les headers/query/body hors scope : niveau, 'ALL',
+      //    piste). Ne fait rien pour les routes @Public / comptes transverses /
+      //    scopes non résolus (rétro-compat). Les listes sans filtre sont
+      //    restreintes par les services via scope-where.ts (P3).
+      provide: APP_GUARD,
+      useClass: AccessScopeGuard,
     },
     // ✅ TenantValidationGuard et TenantIsolationGuard retirés des guards globaux
     // Ils seront appliqués uniquement sur les routes marquées avec @RequireTenant()

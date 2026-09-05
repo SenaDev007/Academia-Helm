@@ -49,6 +49,7 @@ import { LogoutModal } from '@/components/auth/LogoutModal';
 // ⭐ Double casquette : bascule instantanée vers l'UI Enseignant sans déconnexion
 import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
+import { LanguageSwitcher } from '@/contexts/I18nContext';
 import AcademicYearSelector from '@/components/pilotage/AcademicYearSelector';
 import SchoolLevelSelector from '@/components/pilotage/SchoolLevelSelector';
 import AcademicTrackSelector from '@/components/pilotage/AcademicTrackSelector';
@@ -370,6 +371,8 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Cloche notifications (validations, alertes, messages) */}
             <NotificationDropdown />
+            {/* ⭐ P4 : bascule FR/EN (masquée si mono-piste — langue du profil) */}
+            <LanguageSwitcher />
             {/* Sélecteurs de contexte global (année / niveau / piste) — les mêmes
                 que la topbar partagée : les dashboards métier (examens, pédagogie,
                 finances…) consomment ces contextes et restent pilotables. */}

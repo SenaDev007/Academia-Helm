@@ -22,6 +22,7 @@ import { SecurityModule } from '../security/security.module';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { MatriculeGeneratorService } from './services/matricule-generator.service';
 import { ModelEnsembleService } from './services/model-ensemble.service';
+import { AccessScopeService } from './context/access-scope.service';
 
 @Global()
 @Module({
@@ -44,6 +45,7 @@ import { ModelEnsembleService } from './services/model-ensemble.service';
     AdminStructureService, // Pour LevelScopeGuard
     MatriculeGeneratorService,
     ModelEnsembleService, // ⭐ Multi-modèle IA (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
+    AccessScopeService, // ⭐ Filtre Rôles × Pistes × Niveaux — résolution du périmètre serveur
   ],
   exports: [
     CacheService,
@@ -59,6 +61,7 @@ import { ModelEnsembleService } from './services/model-ensemble.service';
     AdminStructureService, // Pour LevelScopeGuard dans autres modules
     MatriculeGeneratorService,
     ModelEnsembleService, // ⭐ Exporté pour que tous les agents puissent l'utiliser
+    AccessScopeService, // ⭐ Exporté pour JwtStrategy + guards + services métier
   ],
 })
 export class CommonModule {}

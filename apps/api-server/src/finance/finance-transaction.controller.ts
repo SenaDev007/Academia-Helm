@@ -17,7 +17,22 @@ const PARENT_ROLES = ['PARENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_R
 // ⭐ FIX : ajouter 'PROMOTEUR' (FR) en plus de 'PROMOTER' (EN) — le RBAC bootstrap
 //    crée le rôle système 'PROMOTEUR' (FR), mais l'onboarding crée les users avec
 //    'PROMOTER' (EN). Les deux variantes doivent être reconnues comme staff.
-const STAFF_ROLES = ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER', 'PROMOTEUR'];
+// ⭐ FIX 2026-09-06 : élargissement + normalisation des suffixes de niveau —
+//    les rôles niveau-spécifiques (SECRETAIRE_COMPTABLE_MAT_PRI, DIRECTEUR_SEC…)
+//    sont rattachés à leur rôle de base avant comparaison.
+const STAFF_ROLES = [
+  'DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL',
+  'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER', 'PROMOTEUR',
+  // ⭐ Ajoutés (fermeture du fail-open sans casser les flux légitimes) :
+  'DIRECTEUR', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTOR_GENERAL',
+  'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE',
+  'SECRETARY', 'ECONOME', 'INTENDANT', 'CFO', 'FINANCE_MANAGER', 'CASHIER', 'CAISSIER',
+  'RECOVERY_MANAGER', 'RESP_SCOLARITE', 'ADMIN_AGENT', 'INTERNAL_AUDITOR', 'SUPER_ADMIN',
+  'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+];
+const ROLE_LEVEL_SUFFIX = /_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE)$/;
+const isStaffRole = (role: string) =>
+  STAFF_ROLES.includes(role) || STAFF_ROLES.includes(role.replace(ROLE_LEVEL_SUFFIX, ''));
 
 // ⭐ Rôles autorisés à encaisser sur la caisse FONDE (caisse promoteur/fondateur).
 //    Empêche un caissier (ACCOUNTANT) d'encaisser sur la caisse du promoteur.
@@ -52,13 +67,19 @@ export class FinanceTransactionController {
     const role = (user.role || '').toUpperCase();
 
     // Staff → bypass
-    if (STAFF_ROLES.includes(role)) return;
+    if (isStaffRole(role)) return;
 
     // Parent → vérifier ownership
     if (!PARENT_ROLES.includes(role)) {
-      // Rôle non reconnu (TEACHER, etc.) → on laisse passer par sécurité
-      // (le JwtAuthGuard a déjà validé l'authenticité du user)
-      return;
+      // ⭐ FIX 2026-09-06 (F6) — ferme le fail-open : avant, un rôle non reconnu
+      //    (TEACHER, STUDENT, etc.) passait et pouvait lire n'importe quel reçu.
+      //    Désormais : rôles non listés → refus explicite. Les rôles staff
+      //    légitimes doivent être ajoutés à STAFF_ROLES (avec normalisation
+      //    des suffixes de niveau _MAT/_PRI/_SEC/_MAT_PRI).
+      this.logger.warn(
+        `assertParentCanAccessTransaction: ACCÈS REFUSÉ — user ${user.id} (role=${role}) non autorisé sur la transaction ${transactionId}`,
+      );
+      throw new ForbiddenException("Vous n'avez pas accès à ce reçu");
     }
 
     // Récupérer le studentId de la transaction

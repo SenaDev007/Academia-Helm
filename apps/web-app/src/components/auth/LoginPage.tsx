@@ -1283,6 +1283,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       tenant: data.tenant,
       portalType: 'TEACHER',
       expiresAt: data.expiresAt,
+      // ⭐ P4 : périmètre serveur (niveaux/pistes) — pilote la langue UI et
+      //    les sélecteurs verrouillés de l'espace enseignant
+      scope: data.scope ?? undefined,
     });
 
     // ⭐ FIX : utiliser le slug du tenant retourné par l'API (data.tenant.slug)

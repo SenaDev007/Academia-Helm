@@ -104,6 +104,7 @@ export class ExpensesPrismaController {
   async findAllExpenses(
     @TenantId() tenantId: string,
     @SchoolLevelId() schoolLevelId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('category') category?: string,
     @Query('status') status?: string,
@@ -119,12 +120,16 @@ export class ExpensesPrismaController {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       search,
-    });
+    }, user?.scope ?? null);
   }
 
   @Get(':id')
-  async findExpenseById(@Param('id') id: string, @TenantId() tenantId: string) {
-    return this.expensesService.findExpenseById(id, tenantId);
+  async findExpenseById(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.expensesService.findExpenseById(id, tenantId, user?.scope ?? null);
   }
 
   @Put(':id')

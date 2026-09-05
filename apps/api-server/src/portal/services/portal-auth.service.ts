@@ -21,6 +21,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { PortalSessionService } from './portal-session.service';
 import { SmsService } from '../../communication/services/sms.service';
 import { EmailService } from '../../communication/services/email.service';
+import { AccessScopeService } from '../../common/context/access-scope.service';
 import {
   SchoolPortalLoginDto,
   TeacherPortalLoginDto,
@@ -42,6 +43,7 @@ export class PortalAuthService {
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly accessScopeService: AccessScopeService,
   ) {}
 
   /**
@@ -445,6 +447,32 @@ export class PortalAuthService {
       data: { lastLogin: new Date() },
     });
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux — périmètre serveur dans la réponse
+    //    login : le frontend initialise sa langue UI et ses sélecteurs depuis
+    //    ces données (plus d'heuristique côté client).
+    let scopeSummary: any = null;
+    try {
+      const scope = await this.accessScopeService.resolveUserScope({
+        id: user.id,
+        email: user.email,
+        tenantId: user.tenantId,
+        role: user.role,
+        isSuperAdmin: false,
+      });
+      scopeSummary = {
+        levelCodes: scope.levelCodes,
+        allLevels: scope.allLevels,
+        trackCodes: scope.trackCodes,
+        allTracks: scope.allTracks,
+        locale: scope.locale,
+        teacherId: scope.teacherId,
+        isTeacher: scope.isTeacher,
+        classIds: scope.classIds,
+      };
+    } catch {
+      scopeSummary = null;
+    }
+
     return {
       user: {
         id: user.id,
@@ -458,6 +486,7 @@ export class PortalAuthService {
         id: teacher.id,
         matricule: teacher.matricule,
       },
+      scope: scopeSummary,
       token,
       sessionId: session.id,
       portalType: PortalType.TEACHER,

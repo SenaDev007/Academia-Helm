@@ -27,6 +27,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { getUserScope, isMonoTrack } from '@/lib/auth/user-scope';
 
 export type Locale = 'fr' | 'en' | 'ar';
 
@@ -55,6 +56,8 @@ interface I18nContextType {
   dir: 'ltr' | 'rtl';
   /** True if the current locale is an RTL language. */
   isRTL: boolean;
+  /** ⭐ P4 : le changement de langue UI est-il autorisé ? (mono-piste = verrouillé) */
+  canSwitchLocale: boolean;
 }
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
@@ -86,10 +89,24 @@ function interpolate(str: string, params?: Record<string, string | number>): str
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  // Detect initial locale from localStorage, cookie, or browser
+  // Detect initial locale: localStorage, cookie, or browser
   const [locale, setLocaleState] = useState<Locale>('fr');
+  // ⭐ P4 : mono-piste → changement de langue UI verrouillé (décision D5)
+  const [canSwitchLocale, setCanSwitchLocale] = useState<boolean>(true);
 
   useEffect(() => {
+    // 0. ⭐ P4 — LOCALE DU PROFIL (source de vérité serveur) :
+    //    un utilisateur mono-piste EN a l'UI en anglais, mono-piste FR en
+    //    français. La priorité : profil > localStorage > cookie > navigateur.
+    const scope = getUserScope();
+    if (scope?.locale === 'en' || scope?.locale === 'fr') {
+      setLocaleState(scope.locale);
+      // Mono-piste → UI verrouillée sur la langue du profil
+      if (isMonoTrack(scope)) {
+        setCanSwitchLocale(false);
+      }
+      return;
+    }
     // 1. Check localStorage
     const stored = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (stored === 'fr' || stored === 'en' || stored === 'ar') {
@@ -127,6 +144,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   const setLocale = useCallback((newLocale: Locale) => {
+    // ⭐ P4 : verrou mono-piste — la langue UI suit le profil utilisateur
+    if (!canSwitchLocale) return;
     setLocaleState(newLocale);
     // Persist to localStorage
     if (typeof window !== 'undefined') {
@@ -136,7 +155,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     if (typeof document !== 'undefined') {
       document.cookie = `${COOKIE_NAME}=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
     }
-  }, []);
+  }, [canSwitchLocale]);
 
   const t = useCallback(
     (key: string, params?: Record<string, string | number>) => {
@@ -160,8 +179,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const dir = isRTL ? 'rtl' : 'ltr';
 
   const value = useMemo<I18nContextType>(
-    () => ({ locale, setLocale, t, dir, isRTL }),
-    [locale, setLocale, t, dir, isRTL],
+    () => ({ locale, setLocale, t, dir, isRTL, canSwitchLocale }),
+    [locale, setLocale, t, dir, isRTL, canSwitchLocale],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
@@ -183,6 +202,7 @@ export function useI18n(): I18nContextType {
       t: (key: string) => key,
       dir: 'ltr' as const,
       isRTL: false,
+      canSwitchLocale: true,
     };
   }
   return context;
@@ -190,10 +210,17 @@ export function useI18n(): I18nContextType {
 
 /**
  * Language switcher component — can be placed anywhere in the app.
- * Shows a compact FR/EN/AR toggle.
+ * Shows a compact FR/EN toggle.
+ * ⭐ P4 : masqué (null) si l'utilisateur est mono-piste — sa langue UI est
+ *    imposée par son profil (piste FR → français, piste EN → anglais).
+ *    Un compte bi-piste (ou promoteur) voit le toggle FR/EN.
  */
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
-  const { locale, setLocale } = useI18n();
+  const { locale, setLocale, canSwitchLocale } = useI18n();
+
+  if (!canSwitchLocale) {
+    return null; // mono-piste : langue UI verrouillée sur le profil
+  }
 
   return (
     <div className={`flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 ${className}`}>
@@ -220,18 +247,6 @@ export function LanguageSwitcher({ className = '' }: { className?: string }) {
         title="English"
       >
         EN
-      </button>
-      <button
-        type="button"
-        onClick={() => setLocale('ar')}
-        className={`px-2 py-1 rounded-md text-xs font-bold transition ${
-          locale === 'ar'
-            ? 'bg-white text-blue-600 shadow-sm'
-            : 'text-slate-500 hover:text-slate-700'
-        }`}
-        title="العربية"
-      >
-        AR
       </button>
     </div>
   );

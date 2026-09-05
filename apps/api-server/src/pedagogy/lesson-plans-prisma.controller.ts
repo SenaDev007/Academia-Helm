@@ -18,6 +18,7 @@ import {
 import { LessonPlansPrismaService } from './lesson-plans-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateLessonPlanDto } from './dto/create-lesson-plan.dto';
 import { UpdateLessonPlanDto } from './dto/update-lesson-plan.dto';
 
@@ -37,6 +38,7 @@ export class LessonPlansPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('classId') classId?: string,
@@ -45,7 +47,12 @@ export class LessonPlansPrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.lessonPlansService.findAllLessonPlans(tenantId, academicYearId);
+    return this.lessonPlansService.findAllLessonPlans(tenantId, academicYearId, {
+      schoolLevelId,
+      classId,
+      subjectId,
+      teacherId,
+    }, user?.scope ?? null);
   }
 
   @Get(':id')

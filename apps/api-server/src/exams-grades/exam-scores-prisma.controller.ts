@@ -35,7 +35,7 @@ export class ExamScoresPrismaController {
       ...createDto,
       tenantId,
       recordedBy: user?.id,
-    });
+    }, user?.scope ?? null);
   }
 
   @Post('validate')

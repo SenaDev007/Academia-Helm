@@ -12,6 +12,8 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { MatriculeService } from './services/matricule.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { levelWhere, studentTrackRelation, assertLevelInScope } from '../common/context/scope-where';
 import { PublicVerificationService } from './services/public-verification.service';
 import { StudentCountVerifierService } from '../billing/services/student-count-verifier.service';
 
@@ -133,7 +135,8 @@ export class StudentsPrismaService {
       hasArrears?: boolean;
       page?: number;
       limit?: number;
-    }
+    },
+    scope?: AccessScope | null,
   ) {
     // Mode "année stricte" : warning si pas d'academicYearId
     if (!filters?.academicYearId) {
@@ -151,9 +154,22 @@ export class StudentsPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
-    // Niveau scolaire : filtrer sauf en mode 'ALL' (plateforme)
+    // ⭐ Filtre Rôles × Pistes × Niveaux — niveau IMPOSÉ par le scope serveur
+    //    (le filtre client ne peut qu'affiner DANS le périmètre ; la sentinelle
+    //    'ALL' ne bypass plus pour les comptes restreints).
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
+    }
+
+    // ⭐ Piste linguistique : élèves de SA piste uniquement
+    //    (FR = non marqués EN ; EN = marqués EN via classe courante)
+    const scopeTrack = studentTrackRelation(scope || undefined);
+    if (scopeTrack) {
+      where.AND = [...(where.AND || []), scopeTrack as any];
     }
 
     if (filters?.status) {
@@ -238,8 +254,9 @@ export class StudentsPrismaService {
 
   /**
    * Récupère un élève par ID
+   * ⭐ Anti-IDOR (F3) : l'élève doit appartenir au périmètre niveau + piste.
    */
-  async findStudentById(id: string, tenantId: string) {
+  async findStudentById(id: string, tenantId: string, scope?: AccessScope | null) {
     const student = await this.prisma.student.findFirst({
       where: { id, tenantId },
       include: {
@@ -276,7 +293,37 @@ export class StudentsPrismaService {
       throw new NotFoundException(`Student with ID ${id} not found`);
     }
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux — anti-IDOR (niveau puis piste)
+    assertLevelInScope(scope || undefined, student, 'cet élève');
+    if (scope?.resolved && !scope.allTracks) {
+      const trackOk = (await this.countStudentEnMark(student)) > 0;
+      if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
+        if (!trackOk) {
+          throw new ForbiddenException("Accès refusé : cet élève n'appartient pas à votre piste linguistique.");
+        }
+      } else if (scope.trackCodes.includes('FR') && !scope.trackCodes.includes('EN')) {
+        if (trackOk) {
+          throw new ForbiddenException("Accès refusé : cet élève n'appartient pas à votre piste linguistique.");
+        }
+      }
+    }
+
     return student;
+  }
+
+  /**
+   * L'élève a-t-il une classe marquée EN (via classStudents ou studentEnrollments) ?
+   */
+  private async countStudentEnMark(student: any): Promise<number> {
+    return this.prisma.student.count({
+      where: {
+        id: student.id,
+        OR: [
+          { classStudents: { some: { class: { language: 'EN' } } } },
+          { studentEnrollments: { some: { class: { language: 'EN' } } } },
+        ],
+      },
+    });
   }
 
   /**
@@ -443,7 +490,12 @@ export class StudentsPrismaService {
    * Les comptes sont séparés par statut pour éviter de mélanger
    * les élèves actifs avec les pré-inscrits/acceptés/archivés.
    */
-  async getStudentStatistics(tenantId: string, academicYearId: string, schoolLevelId?: string) {
+  async getStudentStatistics(
+    tenantId: string,
+    academicYearId: string,
+    schoolLevelId?: string,
+    scope?: AccessScope | null,
+  ) {
     // ⭐ FIX : les statistiques de l'année scolaire DOIVENT être comptées sur
     //    StudentEnrollment (qui porte le statut par année : ACTIVE, ADMITTED,
     //    PROMOTED, PRE_REGISTERED, RE_ENROLLED, WITHDRAWN, etc.) — et NON sur
@@ -462,8 +514,18 @@ export class StudentsPrismaService {
       tenantId,
       academicYearId,
     };
+    // ⭐ Filtre Rôles × Pistes × Niveaux — niveau IMPOSÉ par le scope serveur
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      enrollmentWhere.schoolLevelId = scopeLvl.schoolLevelId;
+    }
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       enrollmentWhere.schoolLevelId = schoolLevelId;
+    }
+    // ⭐ Piste : filtrer via l'élève (règle héritage FR / marquage EN classe)
+    const scopeTrack = studentTrackRelation(scope || undefined);
+    if (scopeTrack) {
+      enrollmentWhere.student = scopeTrack as any;
     }
 
     // ⭐ Statuts sur StudentEnrollment (cohérents avec byClass/byGenderByLevel)
@@ -643,14 +705,24 @@ export class StudentsPrismaService {
     tenantId: string,
     academicYearId: string,
     schoolLevelId?: string,
+    scope?: AccessScope | null,
   ) {
     const where: any = {
       tenantId,
       academicYearId,
       status: 'WITHDRAWN',
     };
+    // ⭐ Filtre Rôles × Pistes × Niveaux — niveau + piste IMPOSÉS par le scope
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
+    }
+    const scopeTrack = studentTrackRelation(scope || undefined);
+    if (scopeTrack) {
+      where.AND = [...(where.AND || []), scopeTrack as any];
     }
 
     const students = await this.prisma.student.findMany({

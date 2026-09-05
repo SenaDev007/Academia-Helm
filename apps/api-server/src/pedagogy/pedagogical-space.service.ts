@@ -58,7 +58,22 @@ export class PedagogicalSpaceService {
   private async resolveTeacherId(
     tenantId: string,
     id: string,
+    caller?: { id?: string; email?: string; role?: string } | null,
   ): Promise<{ teacherId: string | null; userRole: string | null }> {
+    // ⭐ FIX 2026-09-06 (F7) — anti-impersonation : si l'APPELANT authentifié a
+    //    un profil Teacher, SON identité PRIME sur l'ID fourni en paramètre
+    //    client. Le paramètre ne reste utile qu'aux rôles direction (consultation
+    //    des fiches d'un enseignant précis).
+    if (caller?.email) {
+      const own = await this.prisma.teacher.findFirst({
+        where: { tenantId, email: { equals: caller.email, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (own) {
+        return { teacherId: own.id, userRole: caller.role ?? null };
+      }
+    }
+
     // Vérifier si c'est déjà un Teacher
     const directTeacher = await this.prisma.teacher.findFirst({
       where: { id, tenantId },
@@ -119,12 +134,13 @@ export class PedagogicalSpaceService {
   private async resolveTeacherFilter(
     tenantId: string,
     rawTeacherId: string,
+    caller?: any,
   ): Promise<
     | { mode: 'teacher'; teacherId: string }
     | { mode: 'all' }
     | { mode: 'none' }
   > {
-    const { teacherId, userRole } = await this.resolveTeacherId(tenantId, rawTeacherId);
+    const { teacherId, userRole } = await this.resolveTeacherId(tenantId, rawTeacherId, caller);
     if (teacherId) return { mode: 'teacher', teacherId };
     if (userRole && PedagogicalSpaceService.GLOBAL_ACCESS_ROLES.has(userRole)) {
       return { mode: 'all' };
@@ -186,11 +202,12 @@ export class PedagogicalSpaceService {
    * l'ID du Teacher car teacher_class_assignments.teacherId référence
    * la table teachers, pas users.
    */
-  async getMyClasses(tenantId: string, teacherId: string, academicYearId: string) {
+  async getMyClasses(tenantId: string, teacherId: string, academicYearId: string, caller?: any) {
     // ⭐ Résoudre l'ID du Teacher (le frontend passe user.id, pas teacher.id)
     const { teacherId: resolvedTeacherId, userRole } = await this.resolveTeacherId(
       tenantId,
       teacherId,
+      caller,
     );
 
     // ⭐ MODE ACCÈS GLOBAL (restreint aux rôles plateforme + promoteur) :
@@ -1662,10 +1679,10 @@ export class PedagogicalSpaceService {
     academicYearId: string,
     classId?: string,
     date?: string,
-  ) {
+   caller?: any) {
     // ⭐ TEST PROMOTEUR/DIRECTION : si l'utilisateur n'a pas de profil Teacher
     // mais a un rôle direction, on ne filtre PAS par teacherId (vue superviseur).
-    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId, caller);
     if (filter.mode === 'none') return [];
 
     const where: any = { tenantId, academicYearId };
@@ -3243,9 +3260,11 @@ export class PedagogicalSpaceService {
     teacherId: string,
     academicYearId: string,
     classId?: string,
+    caller?: any,
   ) {
     // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
-    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    // caller (F7) : l'identité de l'appelant prime sur le paramètre client.
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId, caller);
     if (filter.mode === 'none') return [];
 
     // ⭐ Enrichir avec le nom + genre du titulaire (via JOIN teachers)
@@ -5203,9 +5222,11 @@ export class PedagogicalSpaceService {
     academicYearId: string,
     sheetType?: string,
     classId?: string,
+    caller?: any,
   ) {
     // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
-    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    // ⭐ caller (F7) : l'identité de l'appelant prime sur le paramètre client.
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId, caller);
     if (filter.mode === 'none') return [];
 
     // Construction dynamique de la requête selon le mode

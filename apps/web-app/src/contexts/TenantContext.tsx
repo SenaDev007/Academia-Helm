@@ -13,6 +13,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { persistUserScope } from '@/lib/auth/user-scope';
 import { offlineCacheService } from '../services/offline-cache.service';
 import {
   clearClientSessionSync,
@@ -151,6 +152,7 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
             if (retry.ok) {
               const data = await retry.json();
               setContext(data);
+              persistUserScope(data?.scope);
               offlineCacheService.cacheContext(data);
               return;
             }
@@ -190,6 +192,9 @@ export function TenantContextProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       setContext(data);
+      // ⭐ P4 : persiste le périmètre serveur (niveaux/pistes) — langue UI +
+      //    sélecteurs verrouillés + piste courante en découlent
+      persistUserScope(data?.scope);
       offlineCacheService.cacheContext(data);
     } catch (err: any) {
       console.error('Error loading context:', err);

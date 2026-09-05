@@ -10,6 +10,8 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { levelWhere, assertLevelInScope } from '../common/context/scope-where';
 
 @Injectable()
 export class ExpensesPrismaService {
@@ -225,7 +227,8 @@ export class ExpensesPrismaService {
       startDate?: Date;
       endDate?: Date;
       search?: string;
-    }
+    },
+    scope?: AccessScope | null,
   ) {
     // Mode "année stricte" : warning si pas d'academicYearId
     if (!filters?.academicYearId) {
@@ -243,6 +246,12 @@ export class ExpensesPrismaService {
       where.academicYearId = filters.academicYearId;
     }
 
+    // ⭐ Filtre Rôles × Pistes × Niveaux — niveau IMPOSÉ par le scope serveur
+    //    (la sentinelle 'ALL' ne bypass plus pour les comptes restreints).
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
@@ -286,8 +295,9 @@ export class ExpensesPrismaService {
 
   /**
    * Récupère une dépense par ID
+   * ⭐ Anti-IDOR : la dépense doit appartenir au périmètre niveau de l'utilisateur.
    */
-  async findExpenseById(id: string, tenantId: string) {
+  async findExpenseById(id: string, tenantId: string, scope?: AccessScope | null) {
     const expense = await this.prisma.expense.findFirst({
       where: { id, tenantId },
       include: {
@@ -299,6 +309,9 @@ export class ExpensesPrismaService {
     if (!expense) {
       throw new NotFoundException(`Expense with ID ${id} not found`);
     }
+
+    // ⭐ Filtre Rôles × Pistes × Niveaux — anti-IDOR
+    assertLevelInScope(scope || undefined, expense, 'cette dépense');
 
     return expense;
   }

@@ -10,6 +10,8 @@
 
 import { Injectable, NotFoundException, BadRequestException, Optional, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { levelWhere, languageColumnTrackWhere, assertLevelInScope } from '../common/context/scope-where';
 import { AcademicRulesEngine } from './academic-rules-engine.service';
 import { AcademicSettingsService } from './academic-settings.service';
 import { ReportCardsPrismaService } from './report-cards-prisma.service';
@@ -153,11 +155,29 @@ export class ExamsPrismaService {
       subjectId?: string;
       examType?: string;
       search?: string;
-    }
+    },
+    scope?: AccessScope | null,
   ) {
     const where: any = {
       tenantId,
     };
+
+    // ⭐ Filtre Rôles × Pistes × Niveaux — périmètre IMPOSÉ par le scope serveur
+    //    quand le client ne filtre pas : niveau + piste de SA piste uniquement.
+    //    (les valeurs explicites hors scope sont déjà bloquées par AccessScopeGuard)
+    const scopeLvl = levelWhere(scope || undefined);
+    if (scopeLvl) {
+      where.schoolLevelId = scopeLvl.schoolLevelId;
+    }
+    const scopeTrack = languageColumnTrackWhere(scope || undefined);
+    if (scopeTrack && !filters?.language) {
+      // Mono-piste : injecter SA langue par défaut (les Exam non marqués = FR)
+      if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
+        where.language = 'EN';
+      } else {
+        where.language = { in: ['FR', null] };
+      }
+    }
 
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
@@ -501,17 +521,40 @@ export class ExamsPrismaService {
     // ⭐ Check serveur : seul l'enseignant assigné (ou un directeur/admin) peut saisir les notes
     // Vérifie via TeacherClassAssignment si l'utilisateur est bien l'enseignant de la matière
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const isDirectorOrAdmin = user && ['DIRECTOR', 'ADMIN', 'SCHOOL_DIRECTOR', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_GENERAL', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_ADMIN'].includes(user.role || '');
+    // ⭐ FIX 2026-09-06 : normalisation des suffixes de niveau (DIRECTEUR_MAT_PRI, etc.)
+    const userBaseRole = (user?.role || '').replace(/_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE)$/, '');
+    const isDirectorOrAdmin = user && ['DIRECTOR', 'ADMIN', 'SCHOOL_DIRECTOR', 'DIRECTEUR', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_GENERAL', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'CENSEUR'].includes(userBaseRole || '');
 
-    if (!isDirectorOrAdmin && exam.classSubject) {
-      // Vérifier que l'utilisateur est bien l'enseignant assigné à cette matière
-      const teacherAssignment = await this.prisma.teacherClassAssignment.findFirst({
-        where: {
-          tenantId,
-          classSubjectId: exam.classSubject.id,
-          teacher: { createdBy: userId },
-        },
-      });
+    // ⭐ FIX 2026-09-06 (F7-exams) : plus de bypass quand exam.classSubject est null —
+    //    un examen sans classSubject est vérifié par la résolution email↔Teacher.
+    if (!isDirectorOrAdmin) {
+      let teacherAssignment = null;
+      if (exam.classSubject) {
+        teacherAssignment = await this.prisma.teacherClassAssignment.findFirst({
+          where: {
+            tenantId,
+            classSubjectId: exam.classSubject.id,
+            teacher: { createdBy: userId },
+          },
+        });
+      }
+      if (!teacherAssignment && exam.classSubject && user?.email) {
+        // ⭐ Fallback robuste : résolution User→Teacher par email (le lien createdBy
+        //    échoue quand le Teacher a été créé par un admin)
+        const teacher = await this.prisma.teacher.findFirst({
+          where: { tenantId, email: { equals: user.email, mode: 'insensitive' } },
+          select: { id: true },
+        });
+        if (teacher) {
+          teacherAssignment = await this.prisma.teacherClassAssignment.findFirst({
+            where: {
+              tenantId,
+              classSubjectId: exam.classSubject.id,
+              teacherId: teacher.id,
+            },
+          });
+        }
+      }
       // Si pas d'assignation trouvée → refuser
       if (!teacherAssignment) {
         throw new BadRequestException(

@@ -3,15 +3,17 @@
  * EXAM ANGLOPHONE CONFIG — Configuration du système anglophone
  * ============================================================================
  *
- * Barèmes anglophones :
- *   - First CA / Second CA : 0 à 40
+ * ⭐ V10g — Barèmes anglophones (CORRECTION métier confirmée par l'utilisateur) :
+ *   - First CA              : 0 à 20
+ *   - Second CA             : 0 à 20
  *   - Examination           : 0 à 60
- *   - Overall (CA+Exam)     : 0 à 100
+ *   - Récapitulatif trimestriel / matière : First CA + Second CA + Examination
+ *     = 20 + 20 + 60 = 0 à 100
  *
  * Types d'évaluation anglophones :
- *   - First CA (code: FCA)
- *   - Second CA (code: SCA)
- *   - Examination (code: EXAM)
+ *   - First CA (codes: FCA / FIRST_CA)
+ *   - Second CA (codes: SCA / SECOND_CA)
+ *   - Examination (codes: EXAM / EXAMINATION)
  *
  * Mentions /100 :
  *   90-100 : Outstanding
@@ -23,7 +25,7 @@
  *   0-39   : Very Weak
  *
  * Seuils de réussite :
- *   - CA (sur 40)  : ≥ 20 (50%)
+ *   - CA (sur 20)  : ≥ 10 (50%)
  *   - Exam (sur 60): ≥ 30 (50%)
  *   - Overall /100 : ≥ 50
  * ============================================================================
@@ -36,16 +38,16 @@ export const EN_EVALUATION_TYPES = [
     code: 'FCA',
     name: 'First CA',
     label: 'First CA',
-    maxScore: 40,
-    passingScore: 20,
+    maxScore: 20,
+    passingScore: 10,
     includedInAverage: true,
   },
   {
     code: 'SCA',
     name: 'Second CA',
     label: 'Second CA',
-    maxScore: 40,
-    passingScore: 20,
+    maxScore: 20,
+    passingScore: 10,
     includedInAverage: true,
   },
   {
@@ -101,15 +103,39 @@ export function getEvaluationTypes(language: 'FR' | 'EN' | undefined) {
   return language === 'EN' ? EN_EVALUATION_TYPES : FR_EVALUATION_TYPES;
 }
 
+// ─── Helper : normaliser le code d'un type d'évaluation anglophone ───────────
+// Les types EN existent sous DEUX familles de codes selon la source :
+//   - school_academic_settings.config.assessmentTypes → FIRST_CA / SECOND_CA / EXAM
+//   - types par défaut / types créés à la volée          → FCA / SCA / EXAM
+// ⭐ V10g — La normalisation rend les helpers de barème robustes aux DEUX familles.
+
+export type EnComponentKey = 'CA1' | 'CA2' | 'EXAM';
+
+export interface EnTermComponent {
+  key: EnComponentKey;
+  label: string;      // 'First CA', 'Second CA', 'Examination'
+  maxScore: number;   // 20, 20, 60
+}
+
+export function enComponentForCode(typeCode: string): EnTermComponent | null {
+  const c = (typeCode || '').toUpperCase().trim();
+  if (c === 'FIRST_CA' || c === 'FCA') return { key: 'CA1', label: 'First CA', maxScore: 20 };
+  if (c === 'SECOND_CA' || c === 'SCA') return { key: 'CA2', label: 'Second CA', maxScore: 20 };
+  if (c === 'EXAM' || c === 'EXAMINATION') return { key: 'EXAM', label: 'Examination', maxScore: 60 };
+  return null;
+}
+
+// Récapitulatif trimestriel : CA1 + CA2 + Exam = /100 par matière
+export const EN_TERM_TOTAL_PER_SUBJECT = 100;
+
 // ─── Helper : obtenir le barème selon le type d'évaluation ──────────────────
 
 export function getMaxScoreForType(typeCode: string, language: 'FR' | 'EN' | undefined): number {
   if (language === 'EN') {
-    const types = EN_EVALUATION_TYPES;
-    const found = types.find(t => t.code === typeCode);
-    if (found) return found.maxScore;
+    const comp = enComponentForCode(typeCode);
+    if (comp) return comp.maxScore;
     // Default for unknown EN types
-    return 40;
+    return 20;
   }
   // FR default
   return 20;
@@ -117,9 +143,9 @@ export function getMaxScoreForType(typeCode: string, language: 'FR' | 'EN' | und
 
 export function getPassingScoreForType(typeCode: string, language: 'FR' | 'EN' | undefined): number {
   if (language === 'EN') {
-    const found = EN_EVALUATION_TYPES.find(t => t.code === typeCode);
-    if (found) return found.passingScore;
-    return 20; // 50% of 40
+    const comp = enComponentForCode(typeCode);
+    if (comp) return comp.maxScore * 0.5; // 50% du barème
+    return 10; // 50% of 20
   }
   return 10; // 50% of 20
 }
@@ -262,13 +288,10 @@ export function getAppreciation(
 // ─── Conversion de score entre barèmes ───────────────────────────────────────
 
 /**
- * Convertit un score vers /100 selon le système anglophone.
- * - CA (sur 40) : CA contribue pour 40% du total (2 CA × 20% chacun = 40%, Exam = 60%)
- * - Exam (sur 60) : Exam contribue pour 60% du total
- *
- * Si on a First CA + Second CA + Exam :
- *   Overall = (FirstCA + SecondCA) + Exam → total sur 140 → ramener à /100
- *   Overall = ((FirstCA + SecondCA) + Exam) / 140 * 100
+ * Total trimestriel anglophone par matière (/100).
+ * ⭐ V10g — Premier CA /20 + Second CA /20 + Examination /60 = /100 exactement
+ * (plus aucune conversion par /140 : le total brut EST sur 100).
+ * Les composantes manquantes comptent pour 0 (récap partiel en cours de trimestre).
  */
 export function convertToOverall100(
   firstCA: number | null,
@@ -278,8 +301,8 @@ export function convertToOverall100(
   const ca1 = firstCA ?? 0;
   const ca2 = secondCA ?? 0;
   const examScore = exam ?? 0;
-  const total = ca1 + ca2 + examScore; // Max = 40 + 40 + 60 = 140
-  return total / 140 * 100;
+  const total = ca1 + ca2 + examScore; // Max = 20 + 20 + 60 = 100
+  return total;
 }
 
 // ─── Labels UI anglophones ───────────────────────────────────────────────────

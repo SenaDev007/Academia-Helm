@@ -191,7 +191,7 @@ export class ScoreEntrySchemaService {
 
     // ⭐ Mode quantitatif (PRIMAIRE et SECONDAIRE)
     // Système FRANCOPHONE : notes /20 (CM/CP pour primaire, Interros/Devoirs pour secondaire)
-    // Système ANGLOPHONE : notes /100 (First CA /40 + Second CA /40 + Exam /60)
+    // Système ANGLOPHONE : /100 par matière (First CA /20 + Second CA /20 + Exam /60)
 
     // Resolve the assessment-type list — period-specific overrides first
     let assessmentTypes: any[] = [];
@@ -213,10 +213,10 @@ export class ScoreEntrySchemaService {
     // selon le niveau scolaire ET la piste linguistique
     if (assessmentTypes.length === 0) {
       if (isAnglophone) {
-        // ⭐ SYSTÈME ANGLOPHONE : First CA (/40) + Second CA (/40) + Exam (/60) = /100
+        // ⭐ V10g — SYSTÈME ANGLOPHONE : First CA (/20) + Second CA (/20) + Exam (/60) = /100
         assessmentTypes = [
-          { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-          { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'FIRST_CA', label: 'First CA', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'SECOND_CA', label: 'Second CA', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
           { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
         ];
       } else if (isPrimaire) {

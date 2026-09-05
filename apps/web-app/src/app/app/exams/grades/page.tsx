@@ -327,7 +327,7 @@ export default function GradesPage() {
                 {isMaternelle
                   ? 'Qualitatif (TS / S / PS) — Évaluation maternelle'
                   : scopeLang === 'EN'
-                    ? 'Quantitative (/100) — First CA (/40), Second CA (/40), Examination (/60)'
+                    ? 'Quantitative — First CA (/20), Second CA (/20), Examination (/60) — term total /100 per subject'
                     : isPrimaire
                       ? 'Quantitatif (/20) avec CM + CP — Évaluation primaire'
                       : 'Quantitatif (/20) — Évaluation secondaire'}

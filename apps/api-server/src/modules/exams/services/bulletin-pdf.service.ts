@@ -69,10 +69,11 @@ export interface BulletinPdfData {
     // ⭐ Visa du directeur par matière (auto-rempli depuis appreciation, éditable)
     directorVisa?: string | null;
     // ⭐ Notes anglophones par matière (3 composantes CA + Exam)
-    firstCA?: number | null;   // /40
-    secondCA?: number | null;  // /40
+    // V10g — First CA /20 + Second CA /20 + Exam /60 → total = /100 exact
+    firstCA?: number | null;   // /20
+    secondCA?: number | null;  // /20
     exam?: number | null;      // /60
-    total?: number | null;     // /100 (conversion de (FCA+SCA+Exam)/140*100)
+    total?: number | null;     // /100 (FCA + SCA + Exam, somme brute)
   }>;
   // Stats
   generalAverage: number | null;
@@ -698,7 +699,7 @@ ${page2Content}
   // ║    - Header officiel (Republic of Benin + flag + ministry + school)      ║
   // ║    - Term ending + pupil info (name, age, class, position, adm. num,     ║
   // ║      session, pupil's average)                                           ║
-  // ║    - Grades table: Subject | First CA (/40) | Second CA (/40) |          ║
+  // ║    - Grades table: Subject | First CA (/20) | Second CA (/20) |          ║
   // ║      Exam (/60) | Total (/100)                                           ║
   // ║                                                                          ║
   // ║  Page 2:                                                                 ║
@@ -727,8 +728,9 @@ ${page2Content}
       const fca = Number(s.firstCA ?? 0);
       const sca = Number(s.secondCA ?? 0);
       const ex = Number(s.exam ?? 0);
-      // /100 conversion: (FCA+SCA+Exam) / 140 * 100
-      return (fca + sca + ex) / 140 * 100;
+      // ⭐ V10g — 20 + 20 + 60 = 100 : le total brut EST sur /100
+      // (plus aucune conversion par /140).
+      return fca + sca + ex;
     });
     const markObtained = subjectTotals100.reduce((a, b) => a + b, 0);
     const markObtainable = 100 * nbSubjects;
@@ -894,8 +896,8 @@ ${page2Content}
         <thead>
           <tr style="background:#0A2A5E;color:white;">
             <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-align:left;text-transform:uppercase;">Subject</th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">First CA<br/><span style="font-size:7px;font-weight:normal;">/40</span></th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Second CA<br/><span style="font-size:7px;font-weight:normal;">/40</span></th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">First CA<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Second CA<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
             <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Exam<br/><span style="font-size:7px;font-weight:normal;">/60</span></th>
             <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Total<br/><span style="font-size:7px;font-weight:normal;">/100</span></th>
           </tr>

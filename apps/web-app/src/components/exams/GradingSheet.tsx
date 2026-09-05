@@ -535,7 +535,7 @@ export function GradingSheet({
   // ═══ V10e — BROADSHEET EN : calculs par élève / par matière ══════════════
   // TOTAL = somme des notes · AVERAGE = moyenne des notes saisies ·
   // POSITION = rang (1st, 2nd, 3rd…) · MARKS OBTAINED = meilleure note de la
-  // classe pour la matière · MARKS OBTAINABLE = barème (ex: /40, /60).
+  // classe pour la matière · MARKS OBTAINABLE = barème (First/Second CA /20, Examination /60).
   const enTotalOf = useCallback((row: GradeRow): number =>
     sortedSubjects.reduce((sum, subj) => {
       const s = row.scores[subj.id];

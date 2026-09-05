@@ -116,11 +116,13 @@ export class EvaluationsService {
     //    dans evaluation_types → la création d'évaluations EN échouait avec
     //    « Type d'évaluation non trouvé ». On crée le type à la volée, scopé
     //    au niveau des classes ciblées (même logique que les types FR).
+    // ⭐ V10g — Barèmes anglophones corrigés : First CA /20, Second CA /20,
+    // Examination /60 → récapitulatif trimestriel = 20+20+60 = /100 par matière.
     const EN_TYPE_PRESETS: Record<string, { name: string; maxScore: number }> = {
-      FIRST_CA: { name: 'First CA', maxScore: 40 },
-      SECOND_CA: { name: 'Second CA', maxScore: 40 },
-      FCA: { name: 'First CA', maxScore: 40 },
-      SCA: { name: 'Second CA', maxScore: 40 },
+      FIRST_CA: { name: 'First CA', maxScore: 20 },
+      SECOND_CA: { name: 'Second CA', maxScore: 20 },
+      FCA: { name: 'First CA', maxScore: 20 },
+      SCA: { name: 'Second CA', maxScore: 20 },
       EXAM: { name: 'Examination', maxScore: 60 },
       EXAMINATION: { name: 'Examination', maxScore: 60 },
     };

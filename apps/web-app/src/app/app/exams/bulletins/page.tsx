@@ -34,6 +34,7 @@ import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
+import { enComponentForCode } from '@/lib/exam-anglophone-config';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
@@ -72,10 +73,11 @@ interface SubjectScore {
   appreciation: string;
   directorVisa?: string | null;
   // ⭐ Champs anglophones : 3 composantes par matière (CA + Exam)
-  firstCA?: number | null;   // /40
-  secondCA?: number | null;  // /40
+  // ⭐ V10g — First CA /20 + Second CA /20 + Exam /60 → total = /100 exact
+  firstCA?: number | null;   // /20
+  secondCA?: number | null;  // /20
   exam?: number | null;      // /60
-  total?: number | null;     // /100 (conversion de (FCA+SCA+Exam)/140*100)
+  total?: number | null;     // /100 (somme brute FCA + SCA + Exam)
 }
 
 /**
@@ -345,16 +347,20 @@ function BulletinsContent() {
             const scoreVal = grade.isAbsent
               ? null
               : (grade.score !== null ? Number(grade.score) : null);
-            if (evalCode === 'FCA') existing.firstCA = scoreVal;
-            else if (evalCode === 'SCA') existing.secondCA = scoreVal;
-            else if (evalCode === 'EXAM') existing.exam = scoreVal;
+            // ⭐ V10g — Normalisation des codes : les types EN existent sous
+            // FIRST_CA/SECOND_CA/EXAM (settings) OU FCA/SCA/EXAM (défauts).
+            const comp = enComponentForCode(evalCode || '');
+            if (comp?.key === 'CA1') existing.firstCA = scoreVal;
+            else if (comp?.key === 'CA2') existing.secondCA = scoreVal;
+            else if (comp?.key === 'EXAM') existing.exam = scoreVal;
             existing.isAbsent = existing.isAbsent || grade.isAbsent;
-            // Recompute total /100: (FCA+SCA+Exam) / 140 * 100
+            // ⭐ V10g — Recompute total /100 : 20 + 20 + 60 = 100 (somme brute,
+            // plus aucune conversion par /140)
             const fca = existing.firstCA ?? 0;
             const sca = existing.secondCA ?? 0;
             const ex = existing.exam ?? 0;
             const hasAnyScore = existing.firstCA !== null || existing.secondCA !== null || existing.exam !== null;
-            existing.total = hasAnyScore ? (fca + sca + ex) / 140 * 100 : null;
+            existing.total = hasAnyScore ? (fca + sca + ex) : null;
             existing.score = existing.total; // for rank computation
             // Appreciation based on /100
             const t100 = existing.total;
@@ -1348,8 +1354,8 @@ function BulletinAnglophonePage1({ student, bulletinData }: { student: StudentRe
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
             <th className="border px-2 py-1 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '120px' }}>Subject</th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>First CA<br/><span className="font-normal text-[8px]">/40</span></th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Second CA<br/><span className="font-normal text-[8px]">/40</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>First CA<br/><span className="font-normal text-[8px]">/20</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Second CA<br/><span className="font-normal text-[8px]">/20</span></th>
             <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Exam<br/><span className="font-normal text-[8px]">/60</span></th>
             <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
           </tr>

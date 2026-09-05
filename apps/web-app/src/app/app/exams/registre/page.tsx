@@ -41,6 +41,7 @@ import { filterClassesForLevel } from '../level-isolation';
 import { HierarchicalEvaluationList } from '@/components/exams/HierarchicalEvaluationList';
 import type { GroupedEvaluation, GradeRow } from '@/components/exams/GradingSheet';
 import { formatRang, computeAppreciationGlobale, getSubjectOrderIndex } from '@/components/exams/GradingSheet';
+import { getMaxScoreForType, translatePeriodName } from '@/lib/exam-anglophone-config';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -208,6 +209,7 @@ function RegistreContent() {
         isMaternelle={isMaternelle}
         isPrimaire={isPrimaire}
         isSecondaire={isSecondaire}
+        language={language as 'FR' | 'EN'}
         scopedSubModules={scopedSubModules}
         onBack={() => {
           setSelectedGroup(null);
@@ -293,6 +295,7 @@ function RegistreDetailSheet({
   isMaternelle,
   isPrimaire,
   isSecondaire,
+  language,
   scopedSubModules,
   onBack,
 }: {
@@ -300,11 +303,17 @@ function RegistreDetailSheet({
   isMaternelle: boolean;
   isPrimaire: boolean;
   isSecondaire: boolean;
+  language: 'FR' | 'EN';
   scopedSubModules: any;
   onBack: () => void;
 }) {
   const [rows, setRows] = useState<GradeRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const isEN = language === 'EN';
+  // ⭐ V10g — Barème de l'évaluation selon le code du type (piste EN) :
+  // First CA / Second CA = /20, Examination = /60.
+  const evalTypeCode = group.evaluationTypeCode || '';
+  const maxScore = isEN ? getMaxScoreForType(evalTypeCode, language) : 20;
 
   const sortedSubjects = useMemo(() => {
     return [...group.subjects].sort((a, b) =>
@@ -485,15 +494,69 @@ function RegistreDetailSheet({
       : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
     : 'Date non définie';
 
+  // ═══ V10g — BROADSHEET EN (lecture seule) : mêmes calculs que GradingSheet ═══
+  // TOTAL = somme des notes · AVERAGE = moyenne des notes saisies ·
+  // POSITION = rang (1st, 2nd, 3rd…) · MARKS OBTAINED = meilleure note de la
+  // classe pour la matière · MARKS OBTAINABLE = barème (First/Second CA /20,
+  // Examination /60).
+  const enTotalOf = useCallback((row: GradeRow): number =>
+    sortedSubjects.reduce((sum, subj) => {
+      const s = row.scores[subj.id];
+      return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+    }, 0), [sortedSubjects]);
+
+  const enAverageOf = useCallback((row: GradeRow): number | null => {
+    const scored = sortedSubjects.filter((subj) => {
+      const s = row.scores[subj.id];
+      return s && typeof s.score === 'number' && !s.isAbsent;
+    });
+    if (!scored.length) return null;
+    return enTotalOf(row) / scored.length;
+  }, [sortedSubjects, enTotalOf]);
+
+  const enRankMap = useMemo(() => {
+    const totals = rows.map((r) => ({ id: r.studentId, total: enTotalOf(r) }));
+    totals.sort((a, b) => b.total - a.total);
+    const map: Record<string, number> = {};
+    let lastTotal: number | null = null;
+    let lastRank = 0;
+    totals.forEach((t, i) => {
+      const rank = lastTotal !== null && t.total === lastTotal ? lastRank : i + 1;
+      map[t.id] = rank;
+      lastTotal = t.total;
+      lastRank = rank;
+    });
+    return map;
+  }, [rows, enTotalOf]);
+
+  const enSubjectMaxOf = useCallback((subjectId: string): number | null => {
+    let max: number | null = null;
+    rows.forEach((r) => {
+      const s = r.scores[subjectId];
+      if (s && typeof s.score === 'number' && !s.isAbsent && (max === null || s.score > max)) {
+        max = s.score;
+      }
+    });
+    return max;
+  }, [rows]);
+
+  // Suffixe ordinal anglais : 1st, 2nd, 3rd, 4th, 11th, 12th, 13th, 21st…
+  const formatOrdinalEn = (n: number): string => {
+    if (n <= 0) return '—';
+    const suffixes = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+  };
+
   return (
     <div className="space-y-4">
             {/* Titre */}
             <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
               <h2 className="text-lg font-bold text-slate-900">
-                REGISTRE DES NOTES — {group.evaluationTypeName}
+                {isEN ? 'GRADES REGISTER' : 'REGISTRE DES NOTES'} — {isEN ? group.evaluationTypeName : group.evaluationTypeName}
               </h2>
               <div className="text-sm text-slate-600 mt-1">
-                Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
+                {isEN ? 'Class' : 'Classe'} : <strong>{group.className}</strong> • {isEN ? translatePeriodName(group.periodName, language) : group.periodName} • {isEN ? dateRange.replace(/^Le\s/, '').replace(/^Du\s/, 'From ').replace(/\sau\s/, ' to ') : dateRange}
               </div>
             </div>
 
@@ -501,20 +564,20 @@ function RegistreDetailSheet({
             <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
               <Button variant="ghost" onClick={onBack}>
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                Retour à la liste
+                {isEN ? 'Back to list' : 'Retour à la liste'}
               </Button>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="border-blue-200 text-blue-600 text-xs gap-1">
                   <Users className="w-3 h-3" />
-                  {rows.length} élèves
+                  {rows.length} {isEN ? 'pupils' : 'élèves'}
                 </Badge>
                 <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
                   <BookOpen className="w-3 h-3" />
-                  {group.subjects.length} matières
+                  {group.subjects.length} {isEN ? 'subjects' : 'matières'}
                 </Badge>
                 <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
                   <CheckCircle2 className="w-3 h-3" />
-                  Validé
+                  {isEN ? 'Validated' : 'Validé'}
                 </Badge>
               </div>
             </div>
@@ -535,8 +598,126 @@ function RegistreDetailSheet({
               <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
                 <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-700 font-semibold flex items-center gap-2">
                   <Lock className="w-4 h-4" />
-                  Registre des notes validées — lecture seule
+                  {isEN ? 'Validated marks register — read only' : 'Registre des notes validées — lecture seule'}
                 </div>
+                {isEN ? (
+                  /* ══════════════════════════════════════════════════════════════
+                   * ⭐ V10g — Piste EN : le Grade Register affiche le broadsheet
+                   * « Examination Results » en lecture seule — EXACTEMENT la
+                   * même table que la saisie (page 1) et que le récapitulatif
+                   * trimestriel : No | NAMES OF SCHOLARS | matières (/barème) |
+                   * AVERAGE | POSITION | TOTAL, avec les lignes MARKS
+                   * OBTAINABLE / MARKS OBTAINED AVANT les élèves.
+                   * Barème : First/Second CA /20 · Examination /60.
+                   * ═══════════════════════════════════════════════════════════ */
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-800 text-white">
+                        <th
+                          colSpan={2 + sortedSubjects.length + 3}
+                          className="border border-slate-700 px-3 py-2 text-center font-black uppercase tracking-wider text-sm"
+                        >
+                          {'Grades Register — ' + (translatePeriodName(group.periodName, language) || group.periodName)
+                            + (group.evaluationTypeName ? ' — ' + group.evaluationTypeName : '')}
+                        </th>
+                      </tr>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">No</th>
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase min-w-[180px]">Names of Scholars</th>
+                        {sortedSubjects.map((subject) => (
+                          <th key={subject.id} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                            {subject.name}
+                            <div className="text-[9px] text-slate-400 font-normal">/{maxScore}</div>
+                          </th>
+                        ))}
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-blue-50">Average</th>
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-violet-50">Position</th>
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-emerald-50">Total</th>
+                      </tr>
+                      {/* ⭐ MARKS OBTAINABLE — barème par matière — AVANT la liste des élèves (modèle PDF) */}
+                      <tr className="bg-slate-100 font-bold">
+                        <th colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtainable</th>
+                        {sortedSubjects.map((s) => (
+                          <th key={`ob-${s.id}`} className="border border-slate-300 px-2 py-1.5 text-center text-slate-600">{maxScore}</th>
+                        ))}
+                        <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-blue-50">{maxScore}</th>
+                        <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</th>
+                        <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-emerald-50">{maxScore * sortedSubjects.length}</th>
+                      </tr>
+                      {/* ⭐ MARKS OBTAINED — meilleure note de la classe par matière — AVANT la liste des élèves (modèle PDF) */}
+                      <tr className="bg-slate-50 font-bold">
+                        <th colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtained</th>
+                        {sortedSubjects.map((s) => {
+                          const max = enSubjectMaxOf(s.id);
+                          return (
+                            <th key={`mo-${s.id}`} className="border border-slate-300 px-2 py-1.5 text-center text-slate-700">
+                              {max !== null ? Number(max).toFixed(2).replace(/\.00$/, '') : '—'}
+                            </th>
+                          );
+                        })}
+                        {(() => {
+                          const maxes = sortedSubjects.map((s) => enSubjectMaxOf(s.id)).filter((m): m is number => m !== null);
+                          const sum = maxes.reduce((a, b) => a + b, 0);
+                          const avg = maxes.length ? sum / maxes.length : null;
+                          return (
+                            <>
+                              <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-700 bg-blue-50">{avg !== null ? avg.toFixed(2) : '—'}</th>
+                              <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</th>
+                              <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-700 bg-emerald-50">{maxes.length ? Number(sum).toFixed(2).replace(/\.00$/, '') : '—'}</th>
+                            </>
+                          );
+                        })()}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row, idx) => {
+                        const total = enTotalOf(row);
+                        const average = enAverageOf(row);
+                        const position = enRankMap[row.studentId] || 0;
+                        const hasAnyScore = sortedSubjects.some((subj) => {
+                          const s = row.scores[subj.id];
+                          return s && typeof s.score === 'number';
+                        });
+                        return (
+                          <tr
+                            key={row.studentId}
+                            className={cn(
+                              'hover:bg-slate-50 transition-colors',
+                              idx % 2 === 1 && 'bg-slate-50/50',
+                              !hasAnyScore && 'bg-amber-50/30',
+                            )}
+                          >
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                            {sortedSubjects.map((subject) => {
+                              const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                              const t = typeof score.score === 'number' && !score.isAbsent ? score.score : null;
+                              return (
+                                <td key={subject.id} className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold',
+                                  t === null && 'text-slate-300 font-normal',
+                                  t !== null && t < maxScore * 0.5 ? 'text-rose-600' : t !== null && t >= maxScore * 0.7 ? 'text-emerald-600' : 'text-slate-900',
+                                )}>
+                                  {score.isAbsent ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                                    : t !== null ? t.toFixed(2).replace(/\.00$/, '') : '—'}
+                                </td>
+                              );
+                            })}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                              {average !== null ? average.toFixed(2) : '—'}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-violet-700 bg-violet-50">
+                              {hasAnyScore ? formatOrdinalEn(position) : '—'}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
+                              {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-100">
@@ -712,6 +893,7 @@ function RegistreDetailSheet({
                     })}
                   </tbody>
                 </table>
+                )}
               </div>
             )}
 

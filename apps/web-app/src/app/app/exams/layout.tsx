@@ -89,6 +89,7 @@ const SUB_MODULE_LABELS_EN: Record<string, string> = {
   validation: 'Validation',
   'unlock-requests': 'Unlock Requests',
   registre: 'Grades Register',
+  'term-recap': 'Termly Recap',
   bulletins: 'Report Cards',
   councils: 'Class Councils',
   analytics: 'Statistics',
@@ -109,7 +110,14 @@ export function useExamSubModules(baseModules: any[]) {
   const lang = languageForLevel(level);
   const isEN = lang === 'EN';
 
-  return baseModules.map((m: any) => ({
+  // ⭐ V10g — L'onglet « Récapitulatif trimestriel » (Termly Recap) n'existe que
+  // pour la piste ANGLOPHONE (First CA + Second CA + Exam = /100 par matière).
+  // On le masque pour les niveaux francophones.
+  const visibleModules = isEN
+    ? baseModules
+    : baseModules.filter((m: any) => m.id !== 'term-recap');
+
+  return visibleModules.map((m: any) => ({
     ...m,
     // ⭐ V10 — libellés des onglets dans la langue du niveau :
     // Nursery/Primary → anglais, sinon français.
@@ -133,14 +141,15 @@ const LEVEL_ICONS: Record<string, any> = {
 // Libellés + descriptions dans la langue DU NIVEAU :
 // les niveaux FR se décrivent en français, les miroirs EN en anglais.
 // ⭐ V10b — Nursery est QUANTITATIF exactement comme Primary
-//    (First CA /40 + Second CA /40 + Exam /60 = /100) ;
+//    ⭐ V10g — Barème corrigé : First CA /20 + Second CA /20 + Exam /60
+//    = /100 par matière au récapitulatif trimestriel ;
 //    seule la Maternelle FR reste qualitative (TS / S / PS).
 const LEVEL_DESCRIPTIONS: Record<string, string> = {
   MATERNELLE: 'Évaluation qualitative (TS / S / PS)',
   PRIMAIRE: 'Évaluation quantitative /20 — coefficient 1',
   SECONDAIRE: 'Évaluation quantitative /20 — coefficient variable',
-  NURSERY: 'Quantitative assessment /100 — First CA, Second CA, Examination',
-  PRIMARY: 'Quantitative assessment /100 — First CA, Second CA, Examination',
+  NURSERY: 'First CA /20 + Second CA /20 + Exam /60 — term total /100 per subject',
+  PRIMARY: 'First CA /20 + Second CA /20 + Exam /60 — term total /100 per subject',
 };
 
 const LEVEL_COLORS: Record<string, string> = {

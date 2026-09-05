@@ -64,6 +64,15 @@ export const EXAMS_SUB_MODULES = [
     icon: ClipboardList
   },
   {
+    // ⭐ V10g — Récapitulatif trimestriel (piste anglophone uniquement) :
+    // First CA + Second CA + Examination = /100 par matière.
+    // Onglet masqué pour les niveaux francophones (useExamSubModules).
+    id: 'term-recap',
+    label: 'Récapitulatif trimestriel',
+    href: '/app/exams/recap',
+    icon: Calculator
+  },
+  {
     id: 'bulletins',
     label: 'Bulletins',
     href: '/app/exams/bulletins',

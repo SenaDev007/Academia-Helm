@@ -9482,3 +9482,21 @@ Stage Summary:
 - Documents de paie officiels conformes au cadrage : deux documents légalement et visuellement distincts (FP fiches / EP états), immuables, numérotés FP-2026-000001/EP-2026-000001 par exercice, scellés SHA-256, archivés (R2/S3 + repli local), cumuls recalculés depuis les documents émis, taux 100 % issus de payroll_fiscal_rates (joursCongesParMois ajouté au barème)
 - Flux mensuel réparé et complété : période → génération (lot auto-résolu) → calcul → émission FP/EP → registre → paiement
 - Reste à confirmer par l'utilisateur (barème, sans toucher au code) : joursCongesParMois 1,5 vs 2 ; PF 9 vs 12 % ; barème ITS — prochaine étape : reçus de paiement
+
+---
+Task ID: 11 (suite)
+Agent: Super Z (agent principal)
+Task: Post-déploiement — échec build Railway diagnostiqué et corrigé, validation production
+
+Work Log:
+- Le premier déploiement Railway a ÉCHOUÉ silencieusement (ancienne instance toujours en service ~50 min après le push) : cause = PayrollDocument.academicYear sans back-relation sur AcademicYear → prisma generate échoue (P1012 « missing an opposite relation field ») → Docker build KO
+- Reproduit et prouvé en sandbox avec un schéma minimal (prisma validate) ; au passage : 2 corrections annexes (doublon payrollDocuments dans Tenant créé par une application partielle d'un MultiEdit « échoué », puis oneTimeBonuses supprimé du Tenant par un sed sur mauvaise ligne — les deux détectés par prisma validate et réparés)
+- Validation finale : copie du schéma patchée pour le prisma 6.19 du sandbox (partialIndexes/partial-unique retirés de la COPIE uniquement) → « The schema is valid 🚀 » ; diff réel = +1 ligne (AcademicYear.payrollDocuments)
+- Commit 60f0d323 poussé → Railway rebuild OK : instance renouvelée (uptime 5 s), /api/hr/payroll/documents → 401 (garde JWT)
+- Validation production (login promoteur via API directe) : GET documents?tenantId → [] (table payroll_documents créée par le bootstrap ✓) ; GET fiscal-rates → joursCongesParMois = 1,5 (colonne ajoutée ✓) ; health/fiscal-rates/periods/documents tous conformes
+- ⚠️ Vercel web-app : DEPLOYMENT_DISABLED (réponse 402 « Payment required » sur TOUT le domaine, y compris /app — limite de facturation du compte Vercel, indépendant du code) : le dépôt contient bien le trigger ca9e7f58 + le fix 60f0d323 ; à réactiver côté compte Vercel puis redéployer — aucune action code nécessaire
+
+Stage Summary:
+- API production : documents de paie FP/EP EN LIGNE (tables créées, routes gardées, barème étendu)
+- Web-app : code poussé et prêt, déploiement bloqué par la limite du compte Vercel (action utilisateur : vérifier la facturation/usage Vercel puis redéployer)
+- Enseignement outillage : prisma validate sur copie patchée ajouté au workflow sandbox (le transpile seul ne détecte pas les relations Prisma)

@@ -9393,3 +9393,23 @@ Stage Summary:
 - 8/8 corrections livrées : largeurs, dates (formule vendredis corrigée + calage automatique), catalogue (no-store), sauvegarde (fin du POST parasite + debounce événementiel + anti-écrasement), re-soumission après rejet, observations dans la grille, signature Head Teacher côté directeur persistée à la validation, PDF sans chevauchement
 - 6 fichiers : WeeklyRecordOfWorkTab.tsx, DirectorPedagogyControlEN.tsx, weekly-record-pdf.ts, pedagogy-space BFF, monthly-plan.service.ts, monthly-plan.controller.ts
 - Workflow complet enseignant → directeur : DRAFT → (Save silencieux) → Submit → observations/head teacher pendant la validation → VALIDATED/REJECTED → re-soumission possible
+
+---
+Task ID: 8
+Agent: Super Z (agent principal)
+Task: Recette complète du switch de portail double casquette (API production + BFF + UI navigateur, 3 points d'entrée) + suppression du dépôt GitHub CSPEB
+
+Work Log:
+- Suppression du dépôt GitHub SenaDev007/CSPEB demandée par l'utilisateur (créé sans demande) : DELETE via API GitHub (token du remote, scope delete_repo) → 204, vérification GET → 404 ; origin retiré du repo local principal (worklog local uniquement)
+- Backend Railway REDÉPLOYÉ automatiquement après le push 5668acb9 : GET /api/portal/auth/switch-options → 401 (route vivante, garde JWT) ; le web-app Vercel n'avait PAS redéployé (BFF 404) → recette UI faite en local (next dev -p 3001) contre l'API de production
+- Personnel de test créé dans la DB Neon (tenant CSPEB 59b8c348, patterns réels) : Fatou TEST (User ENSEIGNANT + Staff TEACHER ACTIVE CSPEBE-26-00013 + profil Teacher actif + affectation admin SECRETAIRE/MAT_PRI) et Sophie TEST (User SECRETAIRE + Staff ADMIN + profil Teacher actif CSPEBE-26-00014) — mdp Recette@2026 — scripts idempotents scripts/_recette_switch_create_*.js
+- Recette API contre production (scripts/_recette_switch_api.js) : 9/9 OK — login ÉCOLE par email (ENSEIGNANT + affectation), switch-options SCHOOL→[TEACHER] avec matricule, bascule ÉCOLE→ENSEIGNANT (nouveau JWT + sessionId), switch-options TEACHER→[SCHOOL], bascule retour (réversibilité), négatifs 400 (portail courant / cible invalide), login direct enseignant par matricule, Promoteur sans 2e casquette → available=[] (bouton masqué)
+- Recette BFF locale : POST /api/portal/auth/teacher → cookie httpOnly + user.portal TEACHER + teacherId/teacherMatricule ; GET switch-options (cookie) ; POST switch → cookie REMPLACÉ sans logout (user.portal SCHOOL) ; GET /app 200
+- Recette UI navigateur (agent-browser, localhost:3001 → API prod, CORS localhost autorisé) : login enseignant Fatou → /app/teacher (données teacher réelles my-classes/attendance) ; point d'entrée 1 = TeacherLayout footer « Basculer vers l'UI École » → /app?portal=school ; point d'entrée 3 = PilotageTopBar dropdown profil « Basculer vers l'UI Enseignant » → retour /app/teacher ; login école Sophie → /app/secretaire (AdminPortalShell) ; point d'entrée 2 = AdminPortalShell footer « Basculer vers l'UI Enseignant » → /app/teacher ; round-trips complets sans déconnexion ni ressaisie
+- Vérifié : PortalSwitchButton ne déclenche la bascule QUE sur clic (aucun auto-trigger) ; le bouton n'apparaît pas sans 2e casquette (available vide) ; routage /app cohérent (session.portalType prime via getEffectivePortal ; ENSEIGNANT basculé ÉCOLE → dashboard pilotage ; SECRETAIRE → /app/secretaire)
+- Environnement : 2 OOM du next dev local (sandbox 3.9 Go) résolus en arrêtant l'ancien prototype du port 3000, cap --max-old-space-size, précompilation curl des pages avant réouverture du navigateur
+- Scripts de recette persistés dans scripts/ (inspection DB, création Fatou/Sophie, test API 9 cas) — connexion DB Neon : cf. scripts (même pratique que check-users.js)
+
+Stage Summary:
+- RECETTE SWITCH : 9/9 API + BFF complet + 3/3 points d'entrée UI validés (TeacherLayout footer, AdminPortalShell footer, PilotageTopBar dropdown) ; bascule réversible, sécurité identique au login direct, bouton masqué sans double casquette
+- Dépôt GitHub CSPEB supprimé définitivement (plus de repo wrapper : seul Academia-Helm subsiste) ; personnel de test Fatou/Sophie laissé en DB pour recette manuelle par l'utilisateur (suppression facile par email)

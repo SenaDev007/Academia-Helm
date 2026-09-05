@@ -196,7 +196,7 @@ export function ContractSignModal({ isOpen, onClose, onSuccess, contract }: Cont
             <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
               Je signe en tant que
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSignerRole('EMPLOYEUR')}

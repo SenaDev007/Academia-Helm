@@ -185,7 +185,7 @@ export function ContractEditModal({ isOpen, onClose, onSuccess, contract }: Cont
           </div>
 
           {/* Date row */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Start Date */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -217,7 +217,7 @@ export function ContractEditModal({ isOpen, onClose, onSuccess, contract }: Cont
           </div>
 
           {/* Salary + Payment Mode */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Base Salary */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">

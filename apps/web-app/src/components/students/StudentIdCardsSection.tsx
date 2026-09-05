@@ -859,7 +859,7 @@ export default function StudentIdCardsSection() {
             </div>
             <div className="px-6 py-4 space-y-4">
               {/* Choix de la portée */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   onClick={() => { setGenScope('all'); setGenLevelId(''); setGenClassId(''); }}
                   className={cn(
@@ -1142,7 +1142,7 @@ export default function StudentIdCardsSection() {
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sortie du matin</label>
                       <input type="time" value={cardSettings.maternellePickupMorning}
@@ -1183,7 +1183,7 @@ export default function StudentIdCardsSection() {
                 <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-indigo-600" /> Éléments affichés
                 </h4>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
                     { key: 'cardShowPhoto', label: 'Photo de l\'élève' },
                     { key: 'cardShowQRCode', label: 'QR code de vérification' },

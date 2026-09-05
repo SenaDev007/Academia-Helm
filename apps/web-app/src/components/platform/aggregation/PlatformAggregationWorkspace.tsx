@@ -16,6 +16,7 @@
 
 import { useState } from 'react';
 import { usePlatformData } from '@/hooks/usePlatformData';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { Loader2, AlertCircle, Building2, Users, DollarSign, GraduationCap, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 
 const PRIMARY = '#0D1F6E';
@@ -154,6 +155,7 @@ export default function PlatformAggregationWorkspace() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <h3 className="text-lg font-bold text-gray-900 p-6 border-b border-slate-100">Répartition par établissement</h3>
           {tenantList.length > 0 ? (
+            <ResponsiveTableWrapper>
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
@@ -184,6 +186,7 @@ export default function PlatformAggregationWorkspace() {
                 ))}
               </tbody>
             </table>
+            </ResponsiveTableWrapper>
           ) : (
             <div className="p-12 text-center text-gray-400 text-sm">
               Aucune donnée détaillée par établissement disponible. Les données d'agrégation sont récupérées en temps réel depuis l'API.

@@ -386,7 +386,7 @@ export default function FeeStructureModal({
               )}
             </div>
           )}
-          <div className="flex gap-2 justify-end pt-4">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button type="submit" disabled={isInstallment && !installmentsValid}>
               {isEdit

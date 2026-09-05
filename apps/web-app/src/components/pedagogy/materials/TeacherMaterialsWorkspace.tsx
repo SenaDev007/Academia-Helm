@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
+import ResponsiveTableWrapper from "@/components/ui/tables/ResponsiveTableWrapper";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { cn } from "@/lib/utils";
 
@@ -357,6 +358,7 @@ export function TeacherMaterialsWorkspace({
                   </span>
                 </div>
                 {/* Items */}
+                <ResponsiveTableWrapper minWidth="800px">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -480,6 +482,7 @@ export function TeacherMaterialsWorkspace({
                     })}
                   </tbody>
                 </table>
+                </ResponsiveTableWrapper>
               </div>
             );
           })}

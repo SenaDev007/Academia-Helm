@@ -161,7 +161,7 @@ export function LeavesWorkspace() {
                   {LEAVE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Date de début</label>
                   <input type="date" className={inputClass} value={modalForm.startDate} onChange={(e) => setModalForm({ ...modalForm, startDate: e.target.value })} required />
@@ -175,7 +175,7 @@ export function LeavesWorkspace() {
                 <label className={labelClass}>Motif</label>
                 <textarea className={inputClass + ' min-h-[80px] resize-none'} value={modalForm.reason} onChange={(e) => setModalForm({ ...modalForm, reason: e.target.value })} placeholder="Raison de la demande…" />
               </div>
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
                 <button type="submit" disabled={modalLoading || !modalForm.staffId} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
                   {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Soumettre la demande
@@ -187,7 +187,7 @@ export function LeavesWorkspace() {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Demandes en attente', value: requests.filter((r) => r.status === 'PENDING').length },
           { label: 'Approuvées ce mois',  value: requests.filter((r) => r.status === 'APPROVED').length },

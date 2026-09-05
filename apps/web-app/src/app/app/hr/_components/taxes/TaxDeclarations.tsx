@@ -265,7 +265,7 @@ export function TaxDeclarations() {
                           <label className="flex items-center gap-1"><input type="radio" name={`istpay-${decl.id}`} defaultChecked={data.payment?.mode === 'CHEQUE'} /> Chèque</label>
                           <label className="flex items-center gap-1"><input type="radio" name={`istpay-${decl.id}`} defaultChecked={data.payment?.mode === 'VIREMENT'} /> Virement</label>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                           <div><span className="text-slate-500">N° chèque:</span> <span className="font-mono">{data.payment?.chequeNumber || '—'}</span></div>
                           <div><span className="text-slate-500">Banque:</span> <span>{data.payment?.bank || '—'}</span></div>
                         </div>

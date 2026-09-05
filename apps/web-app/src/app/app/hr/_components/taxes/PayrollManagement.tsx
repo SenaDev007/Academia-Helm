@@ -93,7 +93,7 @@ export function PayrollManagement() {
       </div>
 
       {payslips.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Salaire brut total</p><p className="text-lg font-bold text-slate-900">{formatCurrency(totalGross)}</p></div>
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Retenues totales</p><p className="text-lg font-bold text-red-600">{formatCurrency(totalDeductions)}</p></div>
           <div className="bg-white rounded-xl border border-slate-200 p-4"><p className="text-xs text-slate-500">Net à payer total</p><p className="text-lg font-bold text-emerald-600">{formatCurrency(totalNet)}</p></div>

@@ -403,7 +403,7 @@ export default function StudentEnrollmentForm({
       {/* ─── Étape 1 : Identité ─── */}
       {step === 1 && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Prénom *</label>
               <input type="text" value={formData.firstName} onChange={e => handleInputChange('firstName', e.target.value)}
@@ -415,7 +415,7 @@ export default function StudentEnrollmentForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
               <input type="date" value={formData.dateOfBirth} onChange={e => handleInputChange('dateOfBirth', e.target.value)}
@@ -431,7 +431,7 @@ export default function StudentEnrollmentForm({
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Lieu de naissance</label>
               <input type="text" value={formData.placeOfBirth} onChange={e => handleInputChange('placeOfBirth', e.target.value)}
@@ -543,13 +543,13 @@ export default function StudentEnrollmentForm({
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input type="text" placeholder="Prénom" value={g.firstName} onChange={e => updateGuardian(idx, 'firstName', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <input type="text" placeholder="Nom" value={g.lastName} onChange={e => updateGuardian(idx, 'lastName', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input type="tel" placeholder="Téléphone" value={g.phone} onChange={e => updateGuardian(idx, 'phone', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <input type="email" placeholder="Email" value={g.email} onChange={e => updateGuardian(idx, 'email', e.target.value)}

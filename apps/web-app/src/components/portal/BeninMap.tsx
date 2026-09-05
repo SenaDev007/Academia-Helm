@@ -50,6 +50,7 @@ import {
   BENIN_SECONDAIRE_TOTALS,
   type DepartmentData,
 } from '@/data/benin-departments';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { useGovData } from '@/lib/hooks/use-gov-data';
 import { useSchoolsMap, type SchoolPin } from '@/lib/hooks/use-schools-map';
 
@@ -1450,6 +1451,7 @@ export default function BeninMap({
                                 className="overflow-hidden"
                               >
                                 <div className="max-h-52 overflow-y-auto">
+                                  <ResponsiveTableWrapper>
                                   <table className="w-full text-[10px]">
                                     <thead>
                                       <tr
@@ -1511,6 +1513,7 @@ export default function BeninMap({
                                       ))}
                                     </tbody>
                                   </table>
+                                  </ResponsiveTableWrapper>
                                 </div>
                               </motion.div>
                             )}

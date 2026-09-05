@@ -366,7 +366,7 @@ export function OffboardingWizard({
                     </div>
                     {!state.employerSigned ? (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <input type="text" placeholder="Nom du signataire" value={employerName} onChange={(e) => setEmployerName(e.target.value)} className={inputClass} />
                           <select value={employerRole} onChange={(e) => setEmployerRole(e.target.value)} className={inputClass}>
                             <option value="Directeur">Directeur(rice)</option>

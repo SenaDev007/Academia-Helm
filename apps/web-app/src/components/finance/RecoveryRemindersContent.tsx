@@ -176,7 +176,7 @@ export default function RecoveryRemindersContent() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => setManualModal(false)}>Annuler</Button>
                 <Button onClick={handleSendManual} disabled={!manualAccountId}>Envoyer</Button>
               </div>

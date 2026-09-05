@@ -376,13 +376,32 @@ function HeroTab({ config, onSave, saving }: any) {
       }
       right={
         <div className="rounded-xl overflow-hidden shadow-lg">
-          {/* Preview Hero avec overlay dynamique */}
-          <div className={`relative min-h-[300px] flex items-center justify-center p-8 ${alignmentClass}`}
-            style={{
-              background: form.heroImageUrl
-                ? `linear-gradient(135deg, rgba(11,47,115,${form.heroOverlayOpacity / 100}), rgba(29,79,165,${form.heroOverlayOpacity / 200})), url(${form.heroImageUrl}) center/cover`
-                : 'linear-gradient(135deg, #0b2f73 0%, #1d4fa5 50%, #091f4a 100%)',
-            }}>
+          {/* Preview Hero avec overlay dynamique — CDC §5.6 : image en <img> natif + overlay séparé (plus de background-image sur div) */}
+          <div className={`relative min-h-[300px] flex items-center justify-center p-8 ${alignmentClass}`}>
+            {form.heroImageUrl ? (
+              <>
+                <img
+                  src={form.heroImageUrl}
+                  alt="Aperçu de l'image de fond de la page d'accueil"
+                  loading="lazy"
+                  decoding="async"
+                  width={1200}
+                  height={400}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: `linear-gradient(135deg, rgba(11,47,115,${form.heroOverlayOpacity / 100}), rgba(29,79,165,${form.heroOverlayOpacity / 200}))`,
+                  }}
+                />
+              </>
+            ) : (
+              <div
+                className="absolute inset-0"
+                style={{ background: 'linear-gradient(135deg, #0b2f73 0%, #1d4fa5 50%, #091f4a 100%)' }}
+              />
+            )}
             <div className="relative z-10 max-w-md">
               <h1 className="text-2xl font-extrabold text-white leading-tight mb-3 drop-shadow-lg">
                 {form.heroTitle || 'Titre de votre établissement'}

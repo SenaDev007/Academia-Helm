@@ -40,6 +40,7 @@ import {
   SETTINGS_BILINGUAL_UPDATED_EVENT,
 } from '@/lib/settings/events';
 import { useToast } from '@/components/ui/use-toast';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';
@@ -1546,6 +1547,7 @@ export function AcademicStructureWorkspace() {
               </button>
             )}
           </div>
+          <ResponsiveTableWrapper>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1622,6 +1624,7 @@ export function AcademicStructureWorkspace() {
               )}
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
         </div>
       )}
 
@@ -1655,6 +1658,7 @@ export function AcademicStructureWorkspace() {
               </button>
             )}
           </div>
+          <ResponsiveTableWrapper>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1715,6 +1719,7 @@ export function AcademicStructureWorkspace() {
               )}
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
         </div>
       )}
 
@@ -1945,6 +1950,7 @@ export function AcademicStructureWorkspace() {
                   matières sont issues du référentiel de l&apos;année scolaire active.
                 </p>
               </div>
+              <ResponsiveTableWrapper>
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
@@ -2013,6 +2019,7 @@ export function AcademicStructureWorkspace() {
                   )}
                 </tbody>
               </table>
+              </ResponsiveTableWrapper>
             </>
           )}
         </div>
@@ -2097,6 +2104,7 @@ export function AcademicStructureWorkspace() {
               </button>
             </div>
           </div>
+          <ResponsiveTableWrapper minWidth="800px">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
@@ -2149,6 +2157,7 @@ export function AcademicStructureWorkspace() {
               )}
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
         </div>
       )}
 

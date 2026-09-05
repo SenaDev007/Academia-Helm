@@ -98,7 +98,7 @@ export default function AcademicSettingsPanel() {
         {activeSection === 'scales' && (
           <div className="p-8">
             <h3 className="font-black text-slate-900 mb-6">Barèmes de Notation</h3>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 { name: 'Barème /20', max: 20, pass: 10, default: true },
                 { name: 'Barème /10', max: 10, pass: 5, default: false },

@@ -1611,7 +1611,7 @@ export default function CashRegistersContent() {
                     })()}
 
                     {/* Infos détaillées */}
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-xs text-slate-500 mb-1">Responsable</p>
                         <p className="font-medium text-slate-800">
@@ -1660,7 +1660,7 @@ export default function CashRegistersContent() {
                           <Banknote className="w-4 h-4 text-amber-600" />
                           <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                           {selectedRegister.bankName && (
                             <div><span className="text-xs text-slate-500">Banque :</span> <span className="font-medium text-slate-800">{selectedRegister.bankName}</span></div>
                           )}
@@ -1694,7 +1694,7 @@ export default function CashRegistersContent() {
                         </div>
                         <div className="border border-slate-200 rounded-lg overflow-hidden">
                           <div className="max-h-80 overflow-auto">
-                            <table className="w-full text-sm">
+                            <table className="w-full text-sm min-w-[640px]">
                               <thead className="bg-slate-50 sticky top-0">
                                 <tr>
                                   <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
@@ -1827,7 +1827,7 @@ export default function CashRegistersContent() {
                         </div>
                         <div className="border border-rose-200 rounded-lg overflow-hidden">
                           <div className="max-h-60 overflow-auto">
-                            <table className="w-full text-sm">
+                            <table className="w-full text-sm min-w-[640px]">
                               <thead className="bg-rose-50/50 sticky top-0">
                                 <tr>
                                   <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
@@ -1912,7 +1912,7 @@ export default function CashRegistersContent() {
                         </div>
                         <div className="border border-emerald-200 rounded-lg overflow-hidden">
                           <div className="max-h-64 overflow-auto">
-                            <table className="w-full text-sm">
+                            <table className="w-full text-sm min-w-[640px]">
                               <thead className="bg-emerald-50/60 sticky top-0">
                                 <tr>
                                   <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
@@ -1991,7 +1991,7 @@ export default function CashRegistersContent() {
                         </div>
                         <div className="border border-rose-200 rounded-lg overflow-hidden">
                           <div className="max-h-64 overflow-auto">
-                            <table className="w-full text-sm">
+                            <table className="w-full text-sm min-w-[640px]">
                               <thead className="bg-rose-50/60 sticky top-0">
                                 <tr>
                                   <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Date</th>
@@ -2217,7 +2217,7 @@ export default function CashRegistersContent() {
             </div>
 
             {/* 2. Code + Solde d'ouverture */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="code">Code *</Label>
                 <Input
@@ -2288,7 +2288,7 @@ export default function CashRegistersContent() {
                   <Banknote className="w-4 h-4 text-amber-600" />
                   <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="bankName" className="text-xs">Nom de la banque</Label>
                     <Input id="bankName" placeholder="ex: Ecobank Bénin" value={formData.bankName} onChange={(e) => setFormData({ ...formData, bankName: e.target.value })} />
@@ -2343,7 +2343,7 @@ export default function CashRegistersContent() {
               </div>
 
               {/* Solde d'ouverture (lecture seule en édition = solde courant modifiable) */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="edit-openingBalance">Solde d'ouverture (XOF)</Label>
                   <Input
@@ -2401,7 +2401,7 @@ export default function CashRegistersContent() {
                     <Banknote className="w-4 h-4 text-amber-600" />
                     <p className="text-sm font-semibold text-amber-800">Informations bancaires</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">Nom de la banque</Label>
                       <Input value={editModal.bankName || ''} onChange={(e) => setEditModal({ ...editModal, bankName: e.target.value } as any)} />
@@ -2435,7 +2435,7 @@ export default function CashRegistersContent() {
               )}
 
               {/* Infos dynamiques (lecture seule) */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-600">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-600">
                 <div><strong>Ouverte le :</strong> {editModal.openedAt ? new Date(editModal.openedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div>
                 <div><strong>Fermée le :</strong> {editModal.closedAt ? new Date(editModal.closedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</div>
                 <div><strong>Ouv. par :</strong> {editModal.openedBy ? `${editModal.openedBy.firstName || ''} ${editModal.openedBy.lastName || ''}`.trim() : '—'}</div>
@@ -2498,7 +2498,7 @@ export default function CashRegistersContent() {
           {stats && (
             <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
               {/* KPIs principaux */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                 <div className="bg-emerald-50 p-3 rounded-lg">
                   <p className="text-[10px] text-emerald-600 uppercase tracking-wide font-semibold">Volume total</p>
                   <p className="text-base font-bold text-emerald-900">{formatCurrency(stats.totalVolume)}</p>
@@ -2522,7 +2522,7 @@ export default function CashRegistersContent() {
               </div>
 
               {/* Transferts in/out */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
                   <p className="text-xs font-semibold text-emerald-700 mb-1">Transferts entrants</p>
                   <p className="text-2xl font-bold text-emerald-900">{stats.transfersIn || 0}</p>

@@ -246,7 +246,7 @@ export function SchoolFeePaymentDialog({
           {/* Method toggle */}
           <div>
             <Label>Mode de paiement</Label>
-            <div className="grid grid-cols-2 gap-3 mt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
               <button
                 type="button"
                 onClick={() => setMethod('CASH')}
@@ -401,7 +401,7 @@ export function SchoolFeePaymentDialog({
                   Le parent recevra une notification sur ce numéro pour confirmer le paiement.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label>Prénom du payeur (optionnel)</Label>
                   <Input

@@ -70,7 +70,7 @@ export function TaxDashboard() {
         <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
           <Users className="h-4 w-4 text-slate-400" /> Année académique : {currentYear?.name || 'N/A'}
         </h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-xs text-slate-500">Déclarations totales</p>
             <p className="font-bold text-slate-900">{data.declarationsCount || 0}</p>

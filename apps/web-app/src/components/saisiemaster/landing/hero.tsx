@@ -15,19 +15,21 @@ export function Hero({ onUploadClick }: HeroProps) {
     <section className="relative overflow-hidden">
       {/* ⭐ Image de fond — desktop/tablette (1717x916, ratio 1.875:1)
           Utilise aspect-ratio pour que la hauteur s'adapte automatiquement
-          au ratio de l'image. L'image est affichée EN ENTIER (bg-contain)
+          au ratio de l'image. L'image est affichée EN ENTIER (object-contain)
           sans zoom ni crop. */}
       <div
         className="relative w-full hidden sm:block"
         style={{ aspectRatio: '1717 / 916' }}
       >
-        <div
-          className="absolute inset-0 bg-contain bg-top bg-no-repeat"
-          style={{
-            backgroundImage: 'url("/images/Background-SaisieMaster-hero.webp")',
-            backgroundColor: '#0B3B6B',
-          }}
-          aria-hidden
+        <img
+          src="/images/Background-SaisieMaster-hero.webp"
+          alt="Illustration d'accueil SaisieMaster — logiciel de saisie et de gestion des notes"
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          width={1717}
+          height={916}
+          className="absolute inset-0 h-full w-full bg-[#0B3B6B] object-contain object-top"
         />
         {/* ⭐ Boutons OVERLAY sur l'image (en bas, centrés) */}
         <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-center pb-6 sm:pb-8 px-4">
@@ -53,13 +55,15 @@ export function Hero({ onUploadClick }: HeroProps) {
         className="relative w-full sm:hidden"
         style={{ aspectRatio: '853 / 1844' }}
       >
-        <div
-          className="absolute inset-0 bg-contain bg-top bg-no-repeat"
-          style={{
-            backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.webp")',
-            backgroundColor: '#0B3B6B',
-          }}
-          aria-hidden
+        <img
+          src="/images/Background-SaisieMaster-hero-mobile.webp"
+          alt="Illustration d'accueil SaisieMaster pour mobile — saisie et gestion des notes"
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+          width={853}
+          height={1844}
+          className="absolute inset-0 h-full w-full bg-[#0B3B6B] object-contain object-top"
         />
         {/* ⭐ Boutons OVERLAY sur l'image (en bas, centrés) */}
         <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-center pb-6 px-4">

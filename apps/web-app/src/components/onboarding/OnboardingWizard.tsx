@@ -3126,7 +3126,7 @@ export default function OnboardingWizard() {
                   </div>
 
                   {/* Choix de la modalité : intégral vs tranches */}
-                  <div className="grid grid-cols-2 gap-2 p-1 bg-amber-100/70 rounded-lg border border-amber-200 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-1 bg-amber-100/70 rounded-lg border border-amber-200 mb-4">
                     <button
                       type="button"
                       onClick={() => setPaymentMarked((prev) => ({ ...prev, paymentPlan: 'full' }))}

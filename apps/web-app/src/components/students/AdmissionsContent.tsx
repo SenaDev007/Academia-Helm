@@ -1487,7 +1487,7 @@ export default function AdmissionsContent() {
             {/* Identité */}
             <div>
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Identité du Candidat</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Nom :</span> <strong>{selectedAdmission.lastName}</strong></div>
                 <div><span className="text-slate-400">Prénom :</span> <strong>{selectedAdmission.firstName}</strong></div>
                 <div><span className="text-slate-400">Sexe :</span> {selectedAdmission.gender === 'M' ? 'Masculin' : selectedAdmission.gender === 'F' ? 'Féminin' : '—'}</div>
@@ -1501,7 +1501,7 @@ export default function AdmissionsContent() {
             {/* Vœux académiques */}
             <div>
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Vœux Académiques</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div><span className="text-slate-400">Niveau souhaité :</span> <strong>{getLevelLabel(selectedAdmission.schoolLevelId)}</strong></div>
                 <div><span className="text-slate-400">Classe souhaitée :</span> <strong>{getClassLabel(selectedAdmission)}</strong></div>
                 <div className="col-span-2"><span className="text-slate-400">Établissement précédent :</span> {selectedAdmission.previousSchool || '—'}</div>
@@ -1511,7 +1511,7 @@ export default function AdmissionsContent() {
             {/* Responsable légal */}
             <div>
               <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Responsable Légal</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="col-span-2"><span className="text-slate-400">Nom :</span> <strong>{selectedAdmission.mainGuardianName || '—'}</strong></div>
                 <div><span className="text-slate-400">Téléphone :</span> {selectedAdmission.mainGuardianPhone || '—'}</div>
                 <div><span className="text-slate-400">Email :</span> {selectedAdmission.mainGuardianEmail || '—'}</div>
@@ -1522,7 +1522,7 @@ export default function AdmissionsContent() {
             {selectedAdmission.decisionDate && (
               <div>
                 <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Décision</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div><span className="text-slate-400">Date décision :</span> {format(new Date(selectedAdmission.decisionDate), 'dd/MM/yyyy', { locale: fr })}</div>
                   {selectedAdmission.notes && (
                     <div className="col-span-2"><span className="text-slate-400">Notes :</span> {selectedAdmission.notes}</div>

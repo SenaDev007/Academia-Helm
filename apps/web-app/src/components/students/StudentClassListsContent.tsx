@@ -32,6 +32,7 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 import ImportElevesModal from './ImportElevesModal';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { cn } from '@/lib/utils';
 import { useAllClasses, useEnrollments } from '@/lib/query/student-queries';
 import { useQueryClient } from '@tanstack/react-query';
@@ -587,6 +588,7 @@ export default function StudentClassListsContent() {
                                       {filteredStudents.length === 0 ? (
                                         <p className="px-5 py-3 text-xs text-slate-400 italic pl-14">Aucun élève affecté à cette section.</p>
                                       ) : (
+                                        <ResponsiveTableWrapper>
                                         <table className="w-full text-xs">
                                           <thead className="bg-slate-50/60">
                                             <tr>
@@ -615,6 +617,7 @@ export default function StudentClassListsContent() {
                                             ))}
                                           </tbody>
                                         </table>
+                                        </ResponsiveTableWrapper>
                                       )}
                                     </motion.div>
                                   )}

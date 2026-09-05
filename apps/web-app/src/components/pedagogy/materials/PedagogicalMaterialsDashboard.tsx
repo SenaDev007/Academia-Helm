@@ -29,6 +29,7 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { cn } from "@/lib/utils";
 import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
+import ResponsiveTableWrapper from "@/components/ui/tables/ResponsiveTableWrapper";
 
 const cn2 = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -465,6 +466,7 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                 </span>
               </div>
               {/* Liste des enseignants */}
+              <ResponsiveTableWrapper>
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -513,6 +515,7 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                   })}
                 </tbody>
               </table>
+              </ResponsiveTableWrapper>
               {/* Affectations existantes pour ce groupe (si search vide) */}
               {!searchTeacher && assignments.filter((a) => {
                 const teacher = group.teachers.find((t: any) => t.id === a.teacherId);
@@ -605,6 +608,7 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                       Créez-en depuis l'onglet Inventaire d'abord.
                     </div>
                   ) : (
+                    <ResponsiveTableWrapper>
                     <table className="w-full">
                       <thead className="sticky top-0 bg-slate-50 z-10">
                         <tr className="border-b border-slate-200">
@@ -681,6 +685,7 @@ function DistributionView({ academicYearId, user }: DistributionViewProps) {
                         })}
                       </tbody>
                     </table>
+                    </ResponsiveTableWrapper>
                   )}
                 </div>
               </div>
@@ -911,6 +916,7 @@ function ReturnsView({ academicYearId, user }: ReturnsViewProps) {
                   )}
                 </div>
               </div>
+              <ResponsiveTableWrapper minWidth="800px">
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50/50 border-b border-slate-200">
@@ -974,6 +980,7 @@ function ReturnsView({ academicYearId, user }: ReturnsViewProps) {
                   ))}
                 </tbody>
               </table>
+              </ResponsiveTableWrapper>
             </div>
           ))}
         </div>

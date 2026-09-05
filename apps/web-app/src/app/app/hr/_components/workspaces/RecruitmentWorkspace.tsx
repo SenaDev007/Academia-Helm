@@ -1518,7 +1518,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl border border-slate-100 my-8">
                     <h3 className="font-bold text-slate-900 text-base mb-4">{editingJob ? 'Modifier l\'offre d\'emploi' : 'Créer une offre d\'emploi détaillée'}</h3>
                     <form onSubmit={handleSaveJob} className="space-y-4 max-h-[75vh] overflow-y-auto pr-2">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Intitulé du poste</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.title} onChange={(e) => setNewJob({ ...newJob, title: e.target.value })} required />
@@ -1554,7 +1554,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Localisation</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.loc} onChange={(e) => setNewJob({ ...newJob, loc: e.target.value })} placeholder="Adresse de l'école" required />
@@ -1587,7 +1587,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Niveau académique requis</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newJob.academicLevel} onChange={(e) => setNewJob({ ...newJob, academicLevel: e.target.value })} placeholder="Ex: Master" />
@@ -1766,7 +1766,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100">
                     <h3 className="font-bold text-slate-900 text-base mb-4">Enregistrer une candidature</h3>
                     <form onSubmit={handleCreateCandidate} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Prénom</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.firstName} onChange={(e) => setNewCandidate({ ...newCandidate, firstName: e.target.value })} required />
@@ -1777,7 +1777,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Email</label>
                           <input type="email" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.email} onChange={(e) => setNewCandidate({ ...newCandidate, email: e.target.value })} required />
@@ -1788,7 +1788,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Adresse</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.address} onChange={(e) => setNewCandidate({ ...newCandidate, address: e.target.value })} />
@@ -1802,7 +1802,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Associer à l'offre</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newCandidate.jobId} onChange={(e) => setNewCandidate({ ...newCandidate, jobId: e.target.value })} required>
@@ -2037,7 +2037,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                             const candidateLinkedin = parsedProfile.linkedinUrl || "";
                             return (
                               <>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Nom complet</p>
                                     <p className="font-bold text-slate-900 text-sm mt-0.5">{selectedCandidate.name}</p>
@@ -2047,7 +2047,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     <p className="font-bold text-slate-900 text-sm mt-0.5">{selectedCandidate.gender === 'F' ? 'Féminin' : 'Masculin'}</p>
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Email</p>
                                     <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.email}</p>
@@ -2057,7 +2057,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.phone || 'Non renseigné'}</p>
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Adresse</p>
                                     <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.address || 'Non renseignée'}</p>
@@ -2073,7 +2073,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     <a href={candidateLinkedin} target="_blank" rel="noopener noreferrer" className="text-[#0A66C2] text-xs font-bold hover:underline">Profil LinkedIn</a>
                                   </div>
                                 )}
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3">
                                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Date de dépôt</p>
                                     <p className="text-slate-700 text-xs mt-0.5">{selectedCandidate.date}</p>
@@ -2162,7 +2162,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                             </div>
                           </div>
                           {/* Score breakdown: Documents, Interview, Test */}
-                          <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-center">
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-[10px] text-slate-400 font-bold uppercase">Score Documents</p>
                               <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.docScore}%</p>
@@ -2180,7 +2180,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                             </div>
                           </div>
                           {/* Document analysis sub-scores */}
-                          <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-center">
                             <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                               <p className="text-[10px] text-slate-400 font-bold uppercase">Score CV</p>
                               <p className="text-sm font-bold text-slate-900 mt-1">{selectedCandidate.scoreCV}%</p>
@@ -2372,7 +2372,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </select>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'entretien</label>
                           <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.type} onChange={(e) => setNewInterview({ ...newInterview, type: e.target.value })}>
@@ -2392,7 +2392,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date</label>
                           <input type="date" min={new Date().toISOString().split('T')[0]} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.date} onChange={(e) => setNewInterview({ ...newInterview, date: e.target.value })} required />
@@ -2407,7 +2407,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="col-span-2">
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                             Évaluateur (RH/Manager)
@@ -2495,7 +2495,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         <>
                           <div className="border-t border-slate-100 pt-4">
                             <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Statut & Résultat</span>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut</label>
                                 <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newInterview.status} onChange={(e) => setNewInterview({ ...newInterview, status: e.target.value })}>
@@ -2990,7 +2990,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                     </div>
                     <div className="p-6 space-y-4">
                       <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-                        <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                           <div>
                             <span className="text-slate-400 font-bold text-[10px] uppercase">Candidat</span>
                             <p className="font-bold text-slate-900 mt-0.5">{hireCandidate.name}</p>
@@ -3013,7 +3013,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         {/* Score breakdown */}
                         <div className="border-t border-slate-200 pt-2 mt-2">
                           <span className="text-slate-400 font-bold text-[10px] uppercase">Détail des scores</span>
-                          <div className="grid grid-cols-3 gap-2 mt-1.5 text-xs">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5 text-xs">
                             <div className="bg-white rounded-lg p-2 text-center border border-slate-100">
                               <div className="text-[10px] text-slate-400 font-medium">Documents</div>
                               <div className="font-bold text-slate-700">{hireCandidate.docScore}%</div>
@@ -3145,7 +3145,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                         </select>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Catégorie technique/métier</label>
                           <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" value={newTalent.category} onChange={(e) => setNewTalent({ ...newTalent, category: e.target.value })} required placeholder="Ex: Informatique, Admin" />

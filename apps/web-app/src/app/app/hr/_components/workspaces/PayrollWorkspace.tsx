@@ -122,7 +122,7 @@ export function PayrollWorkspace() {
               <button onClick={() => setModalOpen(false)} className="rounded-lg p-1.5 hover:bg-white/15 transition-colors"><X className="h-5 w-5" /></button>
             </div>
             <form onSubmit={handleCreatePeriod} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Mois</label>
                   <select className={inputClass} value={modalForm.month} onChange={(e) => setModalForm({ ...modalForm, month: parseInt(e.target.value) })}>
@@ -134,7 +134,7 @@ export function PayrollWorkspace() {
                   <input type="number" className={inputClass} value={modalForm.year} onChange={(e) => setModalForm({ ...modalForm, year: parseInt(e.target.value) })} min={2020} max={2040} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Date de début</label>
                   <input type="date" className={inputClass} value={modalForm.startDate} onChange={(e) => setModalForm({ ...modalForm, startDate: e.target.value })} required />
@@ -149,7 +149,7 @@ export function PayrollWorkspace() {
                   <p className="text-xs text-slate-500">Année académique : <span className="font-bold text-slate-700">{academicYear.name || academicYear.label || `ID: ${academicYear.id}`}</span></p>
                 </div>
               )}
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end pt-4 border-t border-slate-100">
                 <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-sm font-semibold hover:bg-slate-50 transition">Annuler</button>
                 <button type="submit" disabled={modalLoading} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-sm hover:opacity-90 disabled:opacity-50 transition" style={{ backgroundColor: PRIMARY }}>
                   {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Créer la période
@@ -161,7 +161,7 @@ export function PayrollWorkspace() {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
         {[
           { label: 'Masse annuelle', value: stats?.totalAmount ? `${Math.round(stats.totalAmount / 1000000)}M XOF` : '—' },
           { label: 'Effectif moyen', value: stats?.totalStaff ? `${stats.totalStaff} pers.` : '—' },
@@ -226,7 +226,7 @@ function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4 sm:gap-8 flex-grow w-full md:max-w-md">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 flex-grow w-full md:max-w-md">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
                 <p className="text-lg font-black text-slate-900">{formatCurrency(payroll.totalAmount)}</p>

@@ -184,7 +184,7 @@ export default function PedagogicalOptionsSettings() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 onClick={() => {
                   setShowConfirmModal(false);

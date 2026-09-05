@@ -253,7 +253,7 @@ export default function AbsencesContent() {
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {[
           { label: 'Absents aujourd\'hui', value: stats.total, icon: Users, color: 'bg-rose-50 text-rose-600' },
           { label: 'Justifiées', value: stats.justified, icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },

@@ -527,7 +527,7 @@ export default function TreasuryPage() {
                   </div>
                   <div className="p-4 space-y-3">
                     {/* Totaux */}
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       <div className="bg-emerald-50 rounded-lg p-2 text-center">
                         <div className="text-[10px] uppercase text-emerald-600 font-semibold">Encaissé</div>
                         <div className="text-sm font-bold text-emerald-700">{formatCurrency(previewData.totalIncome || 0)}</div>
@@ -581,7 +581,7 @@ export default function TreasuryPage() {
                   <strong>⚠️ Verrouillage :</strong> Après validation, les transactions de cette journée ne pourront plus être modifiées.
                 </p>
               </div>
-              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2 border-t border-slate-100">
                 <Button type="button" variant="outline" onClick={() => setModalClosure(false)}>Annuler</Button>
                 <Button type="submit" disabled={submitting}>
                   {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Lock className="w-4 h-4 mr-2" />}
@@ -608,7 +608,7 @@ export default function TreasuryPage() {
               </p>
             </div>
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
                   <div className="text-[10px] uppercase tracking-wide text-emerald-600 font-semibold mb-1">Encaissé</div>
                   <div className="font-bold text-emerald-700">{formatCurrency(Number(detailClosure.totalIncome ?? 0))}</div>
@@ -624,7 +624,7 @@ export default function TreasuryPage() {
               </div>
 
               {detailClosure.physicalAmount != null && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="bg-slate-50 rounded-lg p-3">
                     <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Montant physique</div>
                     <div className="font-medium text-slate-800">{formatCurrency(Number(detailClosure.physicalAmount))}</div>

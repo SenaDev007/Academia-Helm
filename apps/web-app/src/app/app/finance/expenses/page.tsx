@@ -1370,7 +1370,7 @@ export default function ExpensesPage() {
             </div>
             {/* Formulaire */}
             <form onSubmit={handleCreate} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Catégorie *</Label>
                   <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
@@ -1416,7 +1416,7 @@ export default function ExpensesPage() {
                 />
               </div>
               {/* Fournisseur + Référence facture (côte à côte) */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Fournisseur</Label>
                   <Input
@@ -1437,7 +1437,7 @@ export default function ExpensesPage() {
                 </div>
               </div>
               {/* Demandé par + À approuver par (côte à côte) */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Demandé par</Label>
                   {expenseUsers.length > 0 && (
@@ -1546,7 +1546,7 @@ export default function ExpensesPage() {
                   {' '}Formats acceptés : PDF, JPG, PNG.
                 </p>
               </div>
-              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2 border-t border-slate-100">
                 <Button type="button" variant="outline" onClick={() => setModalCreate(false)}>Annuler</Button>
                 <Button type="submit">
                   <Plus className="w-4 h-4 mr-1.5" />
@@ -1578,7 +1578,7 @@ export default function ExpensesPage() {
             </div>
             {/* Corps */}
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="bg-slate-50 rounded-lg p-3">
                   <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Date</div>
                   <div className="font-medium text-slate-800">
@@ -1627,7 +1627,7 @@ export default function ExpensesPage() {
 
               {/* Fournisseur + Réf facture */}
               {(detailExpense.vendor || detailExpense.invoiceRef) && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {detailExpense.vendor && (
                     <div className="bg-slate-50 rounded-lg p-3">
                       <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Fournisseur</div>
@@ -1751,7 +1751,7 @@ export default function ExpensesPage() {
                   💡 Si un budget existe déjà pour cette catégorie, il sera mis à jour.
                 </p>
               </div>
-              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2 border-t border-slate-100">
                 <Button type="button" variant="outline" onClick={() => setModalBudget(false)}>Annuler</Button>
                 <Button type="submit">
                   <Wallet className="w-4 h-4 mr-1.5" />
@@ -1818,7 +1818,7 @@ export default function ExpensesPage() {
                   Numéro de compte OHADA (classe 6) pour l'export comptable FEC / OHADA.
                   Laisser vide pour utiliser le compte par défaut « 607000 — Autres achats ».
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-[11px] text-slate-600 mb-1 block">N° compte</Label>
                     <Input
@@ -1846,7 +1846,7 @@ export default function ExpensesPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-slate-100">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2 border-t border-slate-100">
                 <Button type="button" variant="outline" onClick={() => { setModalCategory(false); setEditingCategoryId(null); }} disabled={savingCategory}>Annuler</Button>
                 <Button type="submit" disabled={savingCategory}>
                   {savingCategory ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Plus className="w-4 h-4 mr-1.5" />}
@@ -1909,7 +1909,7 @@ export default function ExpensesPage() {
               </div>
             </div>
             {/* Actions */}
-            <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+            <div className="bg-slate-50 px-6 py-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end border-t border-slate-200">
               <Button type="button" variant="outline" onClick={() => setRejectModal(null)} disabled={rejecting}>
                 Annuler
               </Button>

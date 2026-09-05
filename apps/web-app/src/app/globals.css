@@ -1045,3 +1045,60 @@ body {
 [contenteditable] u {
   text-decoration: underline;
 }
+
+/* ============================================================
+   CDC RESPONSIVE — règles globales mobile-first
+   (Refonte responsive complète Academia Helm — YEHI OR Tech)
+   ============================================================ */
+
+/* §5.5 — Clavier virtuel : iOS/Android zooment automatiquement la page quand un
+   champ focus a une police < 16px. On force 16px sur les contrôles de formulaire
+   en écran tactile, sans toucher au rendu desktop. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* §5.5 — Scroll automatique vers le champ focus (le clavier ne masque plus
+   jamais le champ actif) ; comportement natif renforcé. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  scroll-margin-block: 120px;
+}
+
+/* §5.2 — Les petits boutons bruts (hors composant Button) gagnent une cible
+   tactile étendue sans changer leur rendu visuel : zone de clic ≥ 44px. */
+@media (pointer: coarse) {
+  button[data-touch="sm"],
+  [role="button"][data-touch="sm"] {
+    position: relative;
+  }
+  button[data-touch="sm"]::before,
+  [role="button"][data-touch="sm"]::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+}
+
+/* §5.6 — Fluidité des images : jamais plus larges que leur conteneur ;
+   ratio préservé ; pas de débordement horizontal par une image oubliée. */
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* §6 — Filet de sécurité : tout élément qui provoquerait un débordement
+   horizontal de la page est rogné silencieusement (la cause est corrigée
+   à la source dans les composants — ceci est le dernier rempart). */
+html {
+  overflow-x: clip;
+}

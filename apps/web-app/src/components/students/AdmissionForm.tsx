@@ -399,7 +399,7 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
           <div className="flex items-center gap-2">
             <div className="text-xs font-bold text-blue-700 uppercase">Statut de l'élève</div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => setFormData({ ...formData, isNewStudent: true })}

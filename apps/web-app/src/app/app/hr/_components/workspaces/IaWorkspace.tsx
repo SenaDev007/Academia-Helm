@@ -1079,7 +1079,7 @@ export function IaWorkspace() {
               </div>
 
               {matchingData && (
-                <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
                   <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Candidats analysés</p>
                     <p className="text-xl font-black text-slate-900 mt-1">{matchingData.totalCandidates || candidates.length}</p>
@@ -1137,7 +1137,7 @@ export function IaWorkspace() {
                 )}
               </div>
               {fraudData && (
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   <div className="bg-rose-50/50 border border-rose-100 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-rose-400">Anomalies détectées</p>
                     <p className="text-xl font-black text-rose-700 mt-1">{fraudData.totalAnomalies}</p>

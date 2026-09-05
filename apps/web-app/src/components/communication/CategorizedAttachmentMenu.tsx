@@ -279,7 +279,7 @@ export default function CategorizedAttachmentMenu({
           </button>
         </div>
         {/* Grid of options */}
-        <div className="grid grid-cols-4 gap-3 p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
           {options.map(opt => (
             <button
               key={opt.key}

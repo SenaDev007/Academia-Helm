@@ -10438,7 +10438,7 @@ function AvailabilitySection({ currentUserId }: { currentUserId: string }) {
       )}
       {adding ? (
         <div className="flex flex-col gap-2 bg-blue-50/50 border border-blue-100 rounded-xl p-3">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             <select value={day} onChange={e => setDay(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
               {DAYS.map((d, i) => <option key={i} value={String(i + 1)}>{d}</option>)}
             </select>
@@ -11547,7 +11547,7 @@ function AnalyticsSection({ currentUserId }: { conversations?: ChatConversation[
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {kpis.map((kpi) => (
               <div key={kpi.label} className={cn(
                 'p-3 rounded-lg',

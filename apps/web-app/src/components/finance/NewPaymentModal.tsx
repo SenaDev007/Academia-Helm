@@ -593,7 +593,7 @@ export default function NewPaymentModal({
               <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm font-semibold text-emerald-900">Paiement enregistré avec succès</p>
-                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 text-xs">
                   <div>
                     <span className="text-emerald-700">N° reçu : </span>
                     <span className="font-mono font-bold text-emerald-900">{receipt.receiptNumber}</span>
@@ -653,7 +653,7 @@ export default function NewPaymentModal({
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: receipt ? 'none' : undefined }}>
           {/* Sélecteurs Niveau + Classe (filtrage en cascade) */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Niveau scolaire</Label>
               <Select value={selectedLevelId || 'ALL'} onValueChange={(v) => { setSelectedLevelId(v === 'ALL' ? '' : v); setSelectedClassId(''); }}>
@@ -873,7 +873,7 @@ export default function NewPaymentModal({
             </div>
           )}
 
-          <div className="flex gap-2 justify-end pt-4 md:col-span-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-4 md:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button
               type="submit"

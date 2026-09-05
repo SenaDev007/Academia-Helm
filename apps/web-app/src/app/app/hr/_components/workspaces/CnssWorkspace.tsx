@@ -222,7 +222,7 @@ export function CnssWorkspace() {
               <h3 className="font-bold text-slate-900 text-base">Générer la déclaration CNSS</h3>
             </div>
             <form onSubmit={handleCreateDeclaration} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Début de période</label>
                   <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} required />
@@ -232,7 +232,7 @@ export function CnssWorkspace() {
                   <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} required />
                 </div>
               </div>
-              <div className="flex gap-2 justify-end mt-6">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end mt-6">
                 <button type="button" onClick={() => setIsCreateOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
                 <button type="submit" disabled={generating} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
                   {generating ? 'Génération...' : 'Lancer la génération'}

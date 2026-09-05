@@ -480,7 +480,7 @@ function QuestionnaireEditor({ questionnaire, tenantId, onClose, onSuccess }: {
                 </div>
                 <input type="text" value={q.question} onChange={e => updateQuestion(idx, { question: e.target.value })}
                   placeholder="Texte de la question" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   <select value={q.type} onChange={e => {
                     const type = e.target.value as Question['type'];
                     updateQuestion(idx, { type, options: type === 'TRUE_FALSE' ? ['Vrai', 'Faux'] : (type === 'SINGLE_CHOICE' || type === 'MULTIPLE_CHOICE') ? (q.options || ['', '']) : undefined, correctAnswers: [] });

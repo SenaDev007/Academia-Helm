@@ -190,7 +190,7 @@ export function ContractTerminationModal({
             </div>
 
             {/* Date & Reason */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Date de résiliation</label>
                 <input
@@ -248,7 +248,7 @@ export function ContractTerminationModal({
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Type</p>
                 <p className="text-sm font-bold text-slate-900">{selectedType?.label}</p>

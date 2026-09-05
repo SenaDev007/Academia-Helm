@@ -114,7 +114,7 @@ export function MediaGalleryModal({ onClose, onOpenConversation }: {
               <p className="text-xs text-slate-500 mt-1">Les images et vidéos des conversations apparaîtront ici.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {mediaFiles.map((f, i) => {
                 const abs = absoluteAttachmentUrl(f.url);
                 return (

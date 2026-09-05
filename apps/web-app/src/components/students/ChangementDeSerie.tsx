@@ -246,7 +246,7 @@ export default function ChangementDeSerie() {
   return (
     <div className="flex flex-col h-full space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: 'Élèves avec série', value: stats.totalEnrollments, icon: Users, color: 'bg-blue-50 text-blue-600' },
           { label: 'Filtrés', value: stats.filtered, icon: Search, color: 'bg-amber-50 text-amber-600' },
@@ -391,7 +391,7 @@ export default function ChangementDeSerie() {
                   <p className="text-[10px] font-mono text-slate-400">
                     {selectedEnrollment?.student.matricule || selectedEnrollment?.student.studentCode || '—'}
                   </p>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     <div>
                       <span className="text-slate-500">Classe physique :</span>{' '}
                       <strong className="text-slate-700">{selectedEnrollment?.class?.name || '—'}</strong>

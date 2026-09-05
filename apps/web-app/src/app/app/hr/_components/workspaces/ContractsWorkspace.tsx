@@ -169,7 +169,7 @@ export function ContractsWorkspace() {
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Type de contrat</label>
                   <select className={inputClass} value={modalForm.contractType} onChange={(e) => setModalForm({ ...modalForm, contractType: e.target.value })}>
@@ -189,7 +189,7 @@ export function ContractsWorkspace() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Date de début</label>
                   <input type="date" className={inputClass} value={modalForm.startDate} onChange={(e) => setModalForm({ ...modalForm, startDate: e.target.value })} required />

@@ -450,7 +450,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                   <p className="mt-1">Une fois validé, l'école destination recevra une notification et pourra accepter ou rejeter la demande.</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="bg-slate-50 rounded-lg p-3">
                   <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Élève</p>
                   <p className="font-semibold text-slate-800">{selectedStudent?.lastName} {selectedStudent?.firstName}</p>

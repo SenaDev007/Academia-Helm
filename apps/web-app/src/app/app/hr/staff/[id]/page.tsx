@@ -1245,7 +1245,7 @@ export default function StaffDetailPage() {
                 {/* Exit Checklist Summary */}
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Liste de contrôle de sortie</p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
                       { label: 'Entretien de sortie', value: terminationDetails?.exitInterviewConducted, icon: FileText },
                       { label: 'Matériel restitué', value: terminationDetails?.equipmentReturned, icon: Package },
@@ -1662,7 +1662,7 @@ export default function StaffDetailPage() {
                             </div>
                             <Badge className={st.className}>{st.label}</Badge>
                           </div>
-                          <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-3 border-t border-slate-50">
                             <div>
                               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Salaire de base</p>
                               <p className="text-sm font-bold text-emerald-600">{formatCurrency(contract.baseSalary)}</p>

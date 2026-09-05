@@ -6,13 +6,13 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ arrearId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const { arrearId } = await params;
+  const { id } = await params;
   const body = await request.json();
   const headers = await getProxyAuthHeaders(request);
   const r = await fetch(
-    normalizeApiUrl(`${API_URL}/finance/recovery-reminders/${encodeURIComponent(arrearId)}/notify`),
+    normalizeApiUrl(`${API_URL}/finance/recovery-reminders/${encodeURIComponent(id)}/notify`),
     {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },

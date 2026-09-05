@@ -142,7 +142,7 @@ export function SettingsWorkspace() {
             )}
 
             <form onSubmit={handleSaveSettings} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>CNSS - Part Salariale (%)</label>
                   <input type="number" step="0.01" className={inputClass} value={rates.cnssEmployeeRate}

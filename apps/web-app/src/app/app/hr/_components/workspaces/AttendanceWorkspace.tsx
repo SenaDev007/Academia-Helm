@@ -324,7 +324,7 @@ export function AttendanceWorkspace() {
                       required
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Statut</label>
                       <select

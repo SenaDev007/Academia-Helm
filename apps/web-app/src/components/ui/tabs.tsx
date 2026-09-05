@@ -51,7 +51,9 @@ export function TabsList({ children, className }: TabsListProps) {
   return (
     <div
       className={cn(
-        'inline-flex h-10 items-center justify-center rounded-md bg-gray-100 p-1 text-gray-500',
+        // CDC responsive §5.4 — scroll horizontal contrôlé quand les onglets débordent,
+        // l'onglet actif reste visible, jamais de compression illisible du texte
+        'flex h-11 max-w-full items-center gap-0.5 overflow-x-auto rounded-md bg-gray-100 p-1 text-gray-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:h-10',
         className
       )}
     >
@@ -85,7 +87,8 @@ export function TabsTrigger({ children, value, className, disabled }: TabsTrigge
       type="button"
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+        // CDC §5.2 — cible tactile 44px en base (mobile-first), compact dès sm:
+        'inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-medium ring-offset-white transition-all min-h-[40px] sm:min-h-0 sm:py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
         isActive
           ? 'bg-white text-gray-900 shadow-sm'
           : 'text-gray-600 hover:bg-gray-200 hover:text-gray-900',

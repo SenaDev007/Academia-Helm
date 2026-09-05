@@ -297,7 +297,7 @@ export default function FeeOverrideModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Sélecteurs cascade : Niveau scolaire → Classe (filtre les élèves ci-dessous) */}
           {!isEdit && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Niveau scolaire</Label>
                 <Select value={selectedLevelId || 'ALL'} onValueChange={(v) => {
@@ -465,7 +465,7 @@ export default function FeeOverrideModal({
               <p className="text-xs text-slate-500 -mt-1">
                 Choisissez le mode de réduction : pourcentage ou montant. Le montant personnalisé est calculé automatiquement.
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Réduction (%)</Label>
                   <Input
@@ -490,7 +490,7 @@ export default function FeeOverrideModal({
                 </div>
               </div>
               {/* Récapitulatif visuel */}
-              <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs pt-2 border-t border-slate-200">
                 <div>
                   <span className="text-slate-500 block">Initial</span>
                   <p className="font-semibold text-slate-700">{formatCurrency(originalAmount)}</p>
@@ -534,7 +534,7 @@ export default function FeeOverrideModal({
               required
             />
           </div>
-          <div className="flex gap-2 justify-end pt-4">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-4">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button type="submit" disabled={loading || !customAmount}>
               {loading ? 'Envoi...' : isEdit ? 'Enregistrer les modifications' : 'Valider la personnalisation'}

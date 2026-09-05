@@ -1190,7 +1190,7 @@ function SettingsTab() {
           </div>
 
           {/* Fréquence + Heure */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Fréquence</Label>
               <Select value={form.autoRecoveryFrequency} onValueChange={(v) => setForm((f) => ({ ...f, autoRecoveryFrequency: v }))}>
@@ -1215,7 +1215,7 @@ function SettingsTab() {
           {/* Niveaux de relance (jours) */}
           <div>
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 block">Niveaux de relance (en jours)</Label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label className="text-[10px] text-slate-500 mb-1 block">1ère relance (J+)</Label>
                 <Input
@@ -2284,7 +2284,7 @@ function ManualArrearModal({
         </p>
         <div className="space-y-4">
           {/* Ligne 1 : Niveau scolaire + Classe (côte à côte) */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
                 Niveau scolaire
@@ -2409,7 +2409,7 @@ function ManualArrearModal({
           </div>
 
           {/* Ligne 3 : Année scolaire + Montant (côte à côte) */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">
                 Année scolaire concernée
@@ -3810,7 +3810,7 @@ function DeleteArrearModal({
           </div>
 
           {/* Récapitulatif financier */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
               <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Total dû</div>
               <div className="text-sm font-bold text-slate-700">{formatCurrency(data.totalDue)}</div>
@@ -4119,7 +4119,7 @@ function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => 
 
         <div className="space-y-4">
           {/* Statut + escalade */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
               <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Statut</p>
               <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
@@ -4134,7 +4134,7 @@ function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => 
 
           {/* Montants */}
           <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Total dû</p>
                 <p className="text-base font-bold text-slate-900">{formatCurrency(caseData.totalDue)}</p>
@@ -4151,7 +4151,7 @@ function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => 
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Dernière action</p>
               <p className="text-slate-700">

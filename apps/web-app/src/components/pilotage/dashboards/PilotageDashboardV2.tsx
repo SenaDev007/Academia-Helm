@@ -670,7 +670,7 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
     return (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
         <div className="h-5 w-48 bg-gray-200 rounded mb-4" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-16 bg-gray-100 rounded" />
           ))}
@@ -1327,7 +1327,7 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
     return (
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
         <div className="h-5 w-64 bg-gray-200 rounded mb-4" />
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="h-32 bg-gray-100 rounded-lg" />
           ))}

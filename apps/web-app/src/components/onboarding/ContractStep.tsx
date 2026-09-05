@@ -28,6 +28,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Send, CheckCircle2, Loader2, User, Building2, FileText, Stamp, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
 import { formatCurrency } from '@/lib/utils';
@@ -393,7 +394,7 @@ export default function ContractStep({
             onClick={() => window.print()}
             size="sm"
             variant="outline"
-            className="h-7 text-xs border-slate-300 text-slate-600"
+            className="text-xs border-slate-300 text-slate-600"
             title="Imprimer le contrat"
           >
             <Printer className="w-3 h-3 mr-1" /> Imprimer
@@ -403,7 +404,7 @@ export default function ContractStep({
 
       {/* ── Document A4 — une colonne, défilement vertical ── */}
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="mx-auto max-w-[820px] bg-white shadow-xl border border-slate-300 px-10 py-10 sm:px-14 sm:py-12 text-slate-800">
+        <div className="mx-auto max-w-[820px] bg-white shadow-xl border border-slate-300 px-4 py-5 text-slate-800 sm:px-10 sm:py-10 md:px-14 md:py-12">
 
           {/* ── Titre du document (Word : 2 lignes + plateforme + référence) ── */}
           <div className="text-center mb-6">
@@ -454,6 +455,7 @@ export default function ContractStep({
             notamment la détermination du plan applicable et la création de l&apos;espace de l&apos;établissement
             sur la plateforme.
           </p>
+          <ResponsiveTableWrapper minWidth="480px">
           <table className="w-full border-collapse mb-3">
             <thead>
               <tr>
@@ -505,6 +507,7 @@ export default function ContractStep({
               <tr><td className={`${tblTd} font-semibold`}>Date d&apos;effet souhaitée</td><td className={tblTd}>{today}</td></tr>
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
 
           {/* ── Article 2 — Objet du contrat (texte intégral) ── */}
           <h3 className={articleTitle}>Article 2 — Objet du contrat</h3>
@@ -525,6 +528,7 @@ export default function ContractStep({
             correspond à l&apos;effectif déclaré à l&apos;Article 1. Les montants s&apos;entendent en francs CFA (FCFA),
             toutes taxes comprises.
           </p>
+          <ResponsiveTableWrapper minWidth="800px">
           <table className="w-full border-collapse mb-3">
             <thead>
               <tr>
@@ -551,6 +555,7 @@ export default function ContractStep({
               ))}
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
           <p className={articleText}>
             {bilingual ? checkOn : checkOff} Option bilingue FR/EN souscrite — supplément de{' '}
             <strong>{formatCurrency(bilingualFee)} ({amountToFrenchWords(bilingualFee)}) FCFA par an</strong>, à
@@ -568,6 +573,7 @@ export default function ContractStep({
                 <strong>{effSchoolsCount} établissements</strong>, chacun disposant de son espace isolé sur la
                 plateforme (données, personnels, élèves, frais de scolarité propres) et facturé comme suit :
               </p>
+              <ResponsiveTableWrapper minWidth="720px">
               <table className="w-full border-collapse mb-3">
                 <thead>
                   <tr>
@@ -606,6 +612,7 @@ export default function ContractStep({
                   </tr>
                 </tbody>
               </table>
+              </ResponsiveTableWrapper>
             </>
           )}
           <p className={articleText}>
@@ -673,6 +680,7 @@ export default function ContractStep({
             Chaque règlement donne lieu à l&apos;établissement d&apos;un reçu, dont le numéro est reporté dans
             l&apos;échéancier, et à l&apos;émargement (paraphe) du représentant du Prestataire.
           </p>
+          <ResponsiveTableWrapper minWidth="800px">
           <table className="w-full border-collapse mb-2">
             <thead>
               <tr>
@@ -727,6 +735,7 @@ export default function ContractStep({
               )}
             </tbody>
           </table>
+          </ResponsiveTableWrapper>
           <p className="text-[9.5px] italic text-slate-600 mb-2">
             Émargement : paraphe apposé par le représentant du Prestataire lors de chaque encaissement.
             L&apos;échéancier complété fait partie intégrante du présent contrat au sens de l&apos;Article 14.
@@ -870,9 +879,9 @@ export default function ContractStep({
             </span>
           </label>
 
-          <div className="grid grid-cols-2 gap-0 border border-[#0a1d3f]">
+          <div className="grid grid-cols-1 gap-0 border border-[#0a1d3f] sm:grid-cols-2">
             {/* LE CLIENT */}
-            <div className="p-4 border-r border-[#0a1d3f]">
+            <div className="p-4 border-b border-[#0a1d3f] sm:border-b-0 sm:border-r">
               <div className="text-center font-bold text-[11px] text-[#0a1d3f] uppercase tracking-wide mb-3">
                 Le Client
               </div>

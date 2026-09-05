@@ -7,9 +7,9 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ cardId: string }> }
+  { params }: { params: Promise<{ studentId: string }> }
 ) {
-  const { cardId } = await params;
+  const { studentId: cardId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(

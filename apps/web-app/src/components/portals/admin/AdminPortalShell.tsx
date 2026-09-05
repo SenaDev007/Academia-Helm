@@ -260,7 +260,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
           {/* Bouton fermer (mobile only) */}
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="lg:hidden p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"
+            className="lg:hidden flex h-11 w-11 items-center justify-center text-slate-400 hover:bg-slate-100 rounded-lg"
             aria-label="Fermer le menu"
           >
             <X className="h-5 w-5" />
@@ -352,7 +352,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             {/* Bouton hamburger (mobile only) */}
             <button
               onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              className="lg:hidden flex h-11 w-11 items-center justify-center text-slate-600 hover:bg-slate-100 rounded-lg"
               aria-label="Ouvrir le menu"
             >
               <Menu className="h-5 w-5" />

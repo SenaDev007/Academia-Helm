@@ -25,6 +25,7 @@ import {
   Loader2, ArrowRight, Receipt, UserCheck, UserX, HelpCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { useToast } from '@/components/ui/use-toast';
 
 interface PreviewRow {
@@ -316,7 +317,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
           {step === 'preview' && preview && (
             <div className="space-y-4">
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-center">
                   <p className="text-2xl font-bold text-slate-800">{preview.totalRows}</p>
                   <p className="text-xs text-slate-500">Total lignes</p>
@@ -360,6 +361,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
               {/* Tableau preview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <ResponsiveTableWrapper minWidth="800px">
                 <div className="max-h-[320px] overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 sticky top-0">
@@ -398,6 +400,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                     </tbody>
                   </table>
                 </div>
+                </ResponsiveTableWrapper>
                 {preview.rows.length > 100 && (
                   <div className="p-2 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
                     100 premières lignes affichées sur {preview.rows.length}
@@ -451,7 +454,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
                   <p className="text-2xl font-bold text-emerald-700">{runResult.imported}</p>
                   <p className="text-xs text-emerald-600">Importées</p>
@@ -472,6 +475,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                     <p className="text-sm font-semibold text-rose-800">Détails des échecs</p>
                   </div>
                   <div className="max-h-[200px] overflow-y-auto">
+                    <ResponsiveTableWrapper>
                     <table className="w-full text-sm">
                       <tbody className="divide-y divide-slate-100">
                         {runResult.results.filter((r) => !r.success && r.error).map((r) => (
@@ -484,6 +488,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                         ))}
                       </tbody>
                     </table>
+                    </ResponsiveTableWrapper>
                   </div>
                 </div>
               )}

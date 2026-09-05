@@ -364,7 +364,7 @@ export function AllowancesWorkspace() {
                   Le montant sera défini au moment de l'assignation à chaque collaborateur.
                 </p>
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={() => setIsTypeModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
                 <button type="submit" disabled={savingType} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
                   {savingType ? 'Création...' : 'Créer'}
@@ -407,7 +407,7 @@ export function AllowancesWorkspace() {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Montant (F CFA) — à définir</label>
                 <input type="number" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignAmount} onChange={(e) => setAssignAmount(e.target.value)} placeholder="Saisir le montant" required />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date d'effet</label>
                   <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignStartDate} onChange={(e) => setAssignStartDate(e.target.value)} required />
@@ -417,7 +417,7 @@ export function AllowancesWorkspace() {
                   <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={assignEndDate} onChange={(e) => setAssignEndDate(e.target.value)} />
                 </div>
               </div>
-              <div className="flex gap-2 justify-end">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
                 <button type="submit" disabled={savingAssign} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
                   {savingAssign ? 'Assignation...' : 'Assigner'}

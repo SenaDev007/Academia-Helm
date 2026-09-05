@@ -826,7 +826,7 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
           /* ⭐ Onglet Informations administratives (MODULE ELEVES.md §9) */
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Informations administratives</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Numéro de dossier</p>
                 <p className="text-sm text-slate-800 font-mono">{student.studentCode || student.matricule || 'N/A'}</p>

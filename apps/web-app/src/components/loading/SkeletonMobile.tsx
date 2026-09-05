@@ -93,7 +93,7 @@ export function ListSkeletonMobile({ items = 5 }: { items?: number }) {
 export function TableSkeletonMobile({ rows = 5 }: { rows?: number }) {
   return (
     <div className="overflow-x-auto">
-      <div className="min-w-[600px]">
+      <div className="min-w-full">
         {/* En-tête */}
         <div className="flex space-x-3 mb-3 pb-2 border-b border-slate-50">
           <Skeleton className="h-3 w-20 rounded-full flex-shrink-0" />

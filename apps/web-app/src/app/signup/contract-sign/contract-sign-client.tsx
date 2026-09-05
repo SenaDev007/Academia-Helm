@@ -19,6 +19,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
+import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { formatCurrency } from '@/lib/utils';
 import { HELM_PLANS } from '@/lib/services/HelmPricingService';
 
@@ -308,6 +309,7 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
                       <Banknote className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
                       <div className="text-sm text-green-900 w-full">
                         <strong>Paiement en espèces — par tranches ({insts.length})</strong>
+                        <ResponsiveTableWrapper>
                         <table className="w-full text-xs mt-2 border-collapse">
                           <thead>
                             <tr className="text-left text-slate-500">
@@ -338,6 +340,7 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
                             </tr>
                           </tbody>
                         </table>
+                        </ResponsiveTableWrapper>
                         <p className="mt-2">
                           Acompte : <strong>{received ? 'encaissé à la signature' : 'à encaisser'}</strong>
                           {marked.receivedBy ? `, par ${marked.receivedBy} (YEHI OR Tech)` : ''} — solde restant{' '}

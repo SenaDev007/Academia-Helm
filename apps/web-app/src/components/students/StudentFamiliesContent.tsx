@@ -301,7 +301,7 @@ export default function StudentFamiliesContent() {
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-blue-50"><Users className="w-4 h-4 text-blue-600" /></div>
           <div><p className="text-[10px] font-medium text-slate-500 uppercase">Familles</p><p className="text-base font-bold text-slate-900">{totalFamilies}</p></div>
@@ -447,7 +447,7 @@ export default function StudentFamiliesContent() {
               </div>
               <div className="px-5 py-4 space-y-3">
                 <p className="text-xs text-slate-500">Pour : <strong>{editingStudent.firstName} {editingStudent.lastName}</strong></p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Prénom *</label>
                     <input type="text" value={guardianForm.firstName} onChange={e => setGuardianForm({ ...guardianForm, firstName: e.target.value })}
@@ -459,7 +459,7 @@ export default function StudentFamiliesContent() {
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Téléphone</label>
                     <input type="tel" value={guardianForm.phone} onChange={e => setGuardianForm({ ...guardianForm, phone: e.target.value })}
@@ -471,7 +471,7 @@ export default function StudentFamiliesContent() {
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Lien</label>
                     <select value={guardianForm.relationship} onChange={e => setGuardianForm({ ...guardianForm, relationship: e.target.value })}

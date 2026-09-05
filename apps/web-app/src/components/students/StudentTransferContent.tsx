@@ -364,7 +364,7 @@ export default function StudentTransferContent() {
         </div>
 
         {/* Stats rapides — style cohérent avec Sorties & Abandons */}
-        <div className="grid grid-cols-4 gap-2 p-3 border-t border-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 p-3 border-t border-slate-100">
           {[
             { label: 'Sortants', value: stats.outgoing, color: 'text-blue-600 bg-blue-50' },
             { label: 'Entrants', value: stats.incoming, color: 'text-emerald-600 bg-emerald-50' },
@@ -566,7 +566,7 @@ export default function StudentTransferContent() {
                 </div>
               ) : dossierData ? (
                 <div className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <p className="text-xs font-bold text-slate-400 uppercase">Élève</p>
                       <p className="font-semibold text-slate-800">{dossierTransfer.student.lastName} {dossierTransfer.student.firstName}</p>

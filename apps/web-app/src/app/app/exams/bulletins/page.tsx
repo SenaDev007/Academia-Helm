@@ -81,6 +81,160 @@ interface SubjectScore {
 }
 
 /**
+ * ⭐ V10h — GRILLE DES APPRECIATIONS /100 (modèle Report Book anglophone).
+ * 7 paliers → grades A+, A, B, C, D, F (F couvre WEAK + VERY WEAK).
+ * Chaque palier porte : Teacher's Appreciation + Teacher's Comments (4 lignes)
+ * + Principal's Comment ( Headmaster ). Tout est auto-rempli depuis la
+ * moyenne /100 de l'élève et reste éditable.
+ */
+interface EnAppreciationTier {
+  min: number;               // borne incluse (max = palier suivant)
+  label: string;             // OUTSTANDING / VERY GOOD / GOOD / FAIR / PASS / WEAK / VERY WEAK
+  grade: string;             // A+ / A / B / C / D / F
+  color: string;             // badge Tailwind
+  teacherAppreciation: string;
+  teacherComments: string[];
+  principalComment: string;
+}
+
+const EN_APPRECIATION_TIERS: EnAppreciationTier[] = [
+  {
+    min: 90, label: 'Outstanding', grade: 'A+', color: 'bg-emerald-100 text-emerald-700',
+    teacherAppreciation: 'Outstanding performance. Excellent mastery of concepts.',
+    teacherComments: [
+      'Demonstrates exceptional understanding and skills',
+      'Highly consistent and disciplined work',
+      'Shows leadership and strong participation',
+      'Keep up the excellent work',
+    ],
+    principalComment: 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.',
+  },
+  {
+    min: 80, label: 'Very Good', grade: 'A', color: 'bg-blue-100 text-blue-700',
+    teacherAppreciation: 'Very good performance. Strong academic achievement.',
+    teacherComments: [
+      'Very good comprehension of lessons',
+      'Regular and serious work habits',
+      'Participates actively in class',
+      'Aiming for excellence is encouraged',
+    ],
+    principalComment: 'Very good results. Consistent effort is encouraged to reach the highest standards.',
+  },
+  {
+    min: 70, label: 'Good', grade: 'B', color: 'bg-sky-100 text-sky-700',
+    teacherAppreciation: 'Good performance. Satisfactory results.',
+    teacherComments: [
+      'Understands most concepts taught',
+      'Shows good effort and engagement',
+      'Minor weaknesses need attention',
+      'Can perform better with more focus',
+    ],
+    principalComment: 'Good performance. Greater concentration and consistency will lead to better outcomes.',
+  },
+  {
+    min: 60, label: 'Fair', grade: 'C', color: 'bg-amber-100 text-amber-700',
+    teacherAppreciation: 'Fair performance. Needs improvement.',
+    teacherComments: [
+      'Basic understanding achieved',
+      'Effort is inconsistent',
+      'Needs to revise key concepts',
+      'Greater commitment is required',
+    ],
+    principalComment: 'Fair results. Student is advised to work harder and remain focused.',
+  },
+  {
+    min: 50, label: 'Pass', grade: 'D', color: 'bg-orange-100 text-orange-700',
+    teacherAppreciation: 'Passable performance. Results are just acceptable.',
+    teacherComments: [
+      'Learning objectives partially met',
+      'Weak academic foundations',
+      'Must improve study habits',
+      'Parental support is recommended',
+    ],
+    principalComment: 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.',
+  },
+  {
+    min: 40, label: 'Weak', grade: 'F', color: 'bg-red-100 text-red-700',
+    teacherAppreciation: 'Weak performance. Below expected standard.',
+    teacherComments: [
+      'Significant learning difficulties',
+      'Insufficient effort and practice',
+      'Requires close academic monitoring',
+      'Immediate corrective actions needed',
+    ],
+    principalComment: 'Performance below expectation. Immediate improvement is required with parental involvement.',
+  },
+  {
+    min: 0, label: 'Very Weak', grade: 'F', color: 'bg-slate-200 text-slate-800',
+    teacherAppreciation: 'Very weak performance. Unsatisfactory.',
+    teacherComments: [
+      'Very poor understanding of lessons',
+      'Lack of effort and motivation',
+      'Serious academic gaps',
+      'Intensive support is urgently required',
+    ],
+    principalComment: 'Very poor academic performance. Urgent remedial measures and close supervision are required.',
+  },
+];
+
+/** Palier de la grille pour un score /100 (null → null). */
+function enTierFor(score: number | null | undefined): EnAppreciationTier | null {
+  if (score === null || score === undefined || isNaN(score)) return null;
+  return EN_APPRECIATION_TIERS.find(t => score >= t.min) ?? EN_APPRECIATION_TIERS[EN_APPRECIATION_TIERS.length - 1];
+}
+
+/** Grade (A+, A, B, C, D, F) pour un score /100 — colonne Grade du bulletin EN. */
+function enGradeFor(score: number | null | undefined): string {
+  return enTierFor(score)?.grade ?? '—';
+}
+
+/** Ordinal anglais : 1 → 1st, 2 → 2nd, 3 → 3rd, 4 → 4th… */
+function enOrdinal(rank: number | null | undefined): string {
+  if (rank === null || rank === undefined) return '—';
+  const rem10 = rank % 10, rem100 = rank % 100;
+  if (rem10 === 1 && rem100 !== 11) return `${rank}st`;
+  if (rem10 === 2 && rem100 !== 12) return `${rank}nd`;
+  if (rem10 === 3 && rem100 !== 13) return `${rank}rd`;
+  return `${rank}th`;
+}
+
+/**
+ * ⭐ V10h — Stats par matière pour le bulletin EN (Highest / Lowest in class,
+ * Position de l'élève dans la matière) — calculées sur l'ensemble des élèves.
+ */
+function enSubjectClassStats(bulletinData: BulletinData, subjectId: string, studentId: string): {
+  highest: number | null; lowest: number | null; position: number | null;
+} {
+  const totals: Array<{ id: string; total: number }> = [];
+  for (const r of bulletinData.results) {
+    const s = r.subjectScores[subjectId];
+    if (!s || s.isAbsent) continue;
+    if (typeof s.total === 'number' && s.total !== null) totals.push({ id: r.id, total: s.total });
+  }
+  if (totals.length === 0) return { highest: null, lowest: null, position: null };
+  const values = totals.map(t => t.total).sort((a, b) => b - a);
+  const highest = values[0];
+  const lowest = values[values.length - 1];
+  const myTotal = totals.find(t => t.id === studentId)?.total ?? null;
+  const position = myTotal === null ? null : 1 + values.filter(v => v > myTotal).length;
+  return { highest, lowest, position };
+}
+
+/** Âge (en années) depuis une date de naissance. */
+function ageFromBirthDate(birthDate?: string | null, ref?: Date | null): number | null {
+  if (!birthDate) return null;
+  try {
+    const dob = new Date(birthDate);
+    if (isNaN(dob.getTime())) return null;
+    const end = ref || new Date();
+    let age = end.getFullYear() - dob.getFullYear();
+    const m = end.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && end.getDate() < dob.getDate())) age--;
+    return age >= 0 && age < 130 ? age : null;
+  } catch { return null; }
+}
+
+/**
  * ⭐ Formate un rang en ordinal français :
  *   1 → "1er", 2 → "2ème", 3 → "3ème", 4 → "4ème", etc.
  *   Pour le féminin (utilisé si l'élève est une fille), on peut passer
@@ -97,6 +251,8 @@ interface StudentResult {
   studentName: string;
   matricule?: string;
   gender?: string;
+  birthDate?: string | null;   // ⭐ V10h — pour l'âge du Report Book
+  age?: number | null;         // ⭐ V10h — calculé côté front
   subjectScores: Record<string, SubjectScore>;
   generalAverage: number | null;
   appreciationGlobale: string | null;
@@ -269,12 +425,14 @@ function BulletinsContent() {
       // ⭐ Filter by period + evaluationType
       //    For EN: load ALL 3 eval types (FCA + SCA + EXAM) for the selected period
       //            — the bulletin is consolidated (shows all 3 components per subject)
+      //            ⭐ V10h : les 2 familles de codes sont acceptées
+      //            (FCA/FIRST_CA, SCA/SECOND_CA, EXAM/EXAMINATION) via
+      //            enComponentForCode — même robustesse que le récapitulatif.
       //    For FR: filter by selected eval type ID (single eval per bulletin)
-      const enEvalTypeCodes = ['FCA', 'SCA', 'EXAM'];
       const filtered = scopeLang === 'EN'
         ? allEvals.filter((ev: any) =>
             ev.period?.id === selectedPeriodId &&
-            enEvalTypeCodes.includes(ev.evaluationType?.code)
+            enComponentForCode(ev.evaluationType?.code || '') !== null
           )
         : allEvals.filter((ev: any) =>
             ev.period?.id === selectedPeriodId &&
@@ -328,6 +486,8 @@ function BulletinsContent() {
               studentName: grade.studentName || 'Inconnu',
               matricule: grade.matricule,
               gender: grade.gender,
+              birthDate: grade.birthDate ?? null,   // ⭐ V10h — âge du Report Book
+              age: ageFromBirthDate(grade.birthDate ?? null),
               subjectScores: {},
               generalAverage: null,
               appreciationGlobale: null,
@@ -538,6 +698,10 @@ function BulletinsContent() {
         studentName: student.studentName,
         studentMatricule: student.matricule,
         studentGender: student.gender,
+        // ⭐ V10h — âge + date de naissance pour le formulaire Report Book
+        studentAge: student.age ?? null,
+        studentBirthDate: student.birthDate ?? null,
+        admissionNumber: student.matricule || null,
         isMaternelle,
         // ⭐ EN-specific fields
         scopeLang: scopeLang || null,
@@ -545,18 +709,29 @@ function BulletinsContent() {
         termEndingDate: periodEndDate,
         nextTermStartDate: nextTermStart,
         numberOfSubjects: bulletinData!.subjects.length,
-        subjects: bulletinData!.subjects.map(s => ({
-          name: s.name,
-          score: student.subjectScores[s.id]?.score ?? null,
-          qualitativeCode: student.subjectScores[s.id]?.qualitativeCode ?? null,
-          isAbsent: student.subjectScores[s.id]?.isAbsent ?? false,
-          appreciation: student.subjectScores[s.id]?.appreciation ?? '—',
-          // ⭐ EN: 3-component scores per subject
-          firstCA: isEn ? (student.subjectScores[s.id]?.firstCA ?? null) : undefined,
-          secondCA: isEn ? (student.subjectScores[s.id]?.secondCA ?? null) : undefined,
-          exam: isEn ? (student.subjectScores[s.id]?.exam ?? null) : undefined,
-          total: isEn ? (student.subjectScores[s.id]?.total ?? null) : undefined,
-        })),
+        subjects: bulletinData!.subjects.map(s => {
+          const sc = student.subjectScores[s.id];
+          // ⭐ V10h — stats par matière (Highest/Lowest in class + Position)
+          const stats = isEn ? enSubjectClassStats(bulletinData!, s.id, student.id) : null;
+          return {
+            name: s.name,
+            score: sc?.score ?? null,
+            qualitativeCode: sc?.qualitativeCode ?? null,
+            isAbsent: sc?.isAbsent ?? false,
+            appreciation: sc?.appreciation ?? '—',
+            // ⭐ EN: 3-component scores per subject
+            firstCA: isEn ? (sc?.firstCA ?? null) : undefined,
+            secondCA: isEn ? (sc?.secondCA ?? null) : undefined,
+            exam: isEn ? (sc?.exam ?? null) : undefined,
+            total: isEn ? (sc?.total ?? null) : undefined,
+            // ⭐ V10h — colonnes Report Book : Grade + Remark + stats classe
+            grade: isEn ? enGradeFor(sc?.total ?? null) : undefined,
+            remark: isEn ? (enTierFor(sc?.total ?? null)?.label ?? '—') : undefined,
+            highestInClass: isEn ? stats?.highest ?? null : undefined,
+            lowestInClass: isEn ? stats?.lowest ?? null : undefined,
+            subjectPosition: isEn ? stats?.position ?? null : undefined,
+          };
+        }),
         generalAverage: student.generalAverage,
         classRank: student.classRank,
         classAverage: bulletinData!.stats.classAverage,
@@ -627,6 +802,19 @@ function BulletinsContent() {
   const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
   const selectedEvalTypeName = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
   const selectedEvalTypeCode = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.code || '';
+
+  // ⭐ Calcul de la date de fin du trimestre (TERM ENDING — Report Book EN)
+  //    Format long anglais : "Friday, December 12, 2025"
+  const termEndingDateForCard = useMemo(() => {
+    const selectedPeriod = periods.find((p: any) => p.id === selectedPeriodId);
+    const end = selectedPeriod?.endDate || selectedPeriod?.end_date;
+    if (!end) return null;
+    try {
+      return format(new Date(end), 'EEEE, MMMM d, yyyy', { locale: enUSLocale });
+    } catch {
+      return null;
+    }
+  }, [periods, selectedPeriodId]);
 
   // ⭐ Calcul de la date de début du prochain trimestre (pour EN Page 2 teacher comment)
   //    On prend la prochaine période triée par date de début.
@@ -872,6 +1060,7 @@ function BulletinsContent() {
                       selectedPeriodId={selectedPeriodId}
                       scopeLang={scopeLang}
                       nextTermStartDate={nextTermStartDateForCard}
+                      termEndingDate={termEndingDateForCard}
                     />
                   </div>
                 )}
@@ -920,7 +1109,7 @@ function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
-  selectedPeriodId, scopeLang, nextTermStartDate,
+  selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -939,7 +1128,9 @@ function BulletinTwoPage({
   selectedPeriodId?: string;
   scopeLang?: string;
   nextTermStartDate?: string | null;
+  termEndingDate?: string | null;   // ⭐ V10h — TERM ENDING du Report Book
 }) {
+  const isEn = scopeLang === 'EN';
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   // ⭐ Signature state — initialized from workflow signatures (backend) if available
@@ -980,34 +1171,36 @@ function BulletinTwoPage({
 
   return (
     <div className="space-y-3" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      {/* Bulletin header (école) */}
+      {/* Bulletin header (école) — ⭐ V10h : libellés EN pour la piste anglophone */}
       <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
         <div className="flex items-center justify-center gap-3 mb-1">
           {school?.logoUrl && <img src={school.logoUrl} alt="logo" className="h-10 w-10 rounded object-cover" />}
           <div>
-            <h3 className="text-xs font-bold text-slate-900">{school?.schoolName || 'École'}</h3>
-            <p className="text-[10px] text-slate-500">{school?.address || ''} · Tél: {school?.phone || ''}</p>
+            <h3 className="text-xs font-bold text-slate-900">{school?.schoolName || (isEn ? 'School' : 'École')}</h3>
+            <p className="text-[10px] text-slate-500">{school?.address || ''} · {isEn ? 'Tel' : 'Tél'}: {school?.phone || ''}</p>
           </div>
         </div>
         <div className="text-[10px] text-slate-600">
-          Année: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong>
+          {isEn ? <>Session: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Class: <strong>{selectedClassName}</strong></>
+            : <>Année: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong></>}
         </div>
         <div className="text-[10px] text-slate-600 mt-0.5">
-          Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}
+          {isEn ? <>Pupil: <strong>{student.studentName}</strong> · Admission N°: {student.matricule || '—'} · Report Card (1st CA + 2nd CA + Exam)</>
+            : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}</>}
         </div>
       </div>
 
-      {/* Page navigation */}
+      {/* Page navigation — ⭐ V10h : libellés EN pour la piste anglophone */}
       <div className="flex items-center justify-between bg-slate-100 rounded-lg px-3 py-1.5">
         <button
           onClick={() => setPage(1)}
           className={cn('text-xs font-bold px-3 py-1 rounded transition-colors', page === 1 ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200')}
-        >← Page 1: Notes</button>
-        <span className="text-[10px] text-slate-400">Page {page}/2</span>
+        >{isEn ? '← Page 1: Grades' : '← Page 1: Notes'}</button>
+        <span className="text-[10px] text-slate-400">{isEn ? 'Page' : 'Page'} {page}/2</span>
         <button
           onClick={() => setPage(2)}
           className={cn('text-xs font-bold px-3 py-1 rounded transition-colors', page === 2 ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200')}
-        >Page 2: Appréciations →</button>
+        >{isEn ? 'Page 2: Comments & Signatures →' : 'Page 2: Appréciations →'}</button>
       </div>
 
       {/* Page content with flip animation */}
@@ -1017,7 +1210,7 @@ function BulletinTwoPage({
             isMaternelle ? (
               <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
             ) : scopeLang === 'EN' ? (
-              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} />
+              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} />
             ) : (
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
@@ -1033,7 +1226,7 @@ function BulletinTwoPage({
       {canDownload && (
       <div className="flex justify-end">
         <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
-          {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Download className="w-4 h-4 mr-2" />Générer PDF</>}
+          {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isEn ? 'Generating…' : 'Génération…'}</> : <><Download className="w-4 h-4 mr-2" />{isEn ? 'Generate PDF' : 'Générer PDF'}</>}
         </Button>
       </div>
       )}
@@ -1312,57 +1505,87 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
   );
 }
 
-// ─── Page 1: Bulletin Anglophone (3-component grades table) ──────────────────
+// ─── Page 1: Bulletin Anglophone — modèle Report Book (formulaire + tableau 10 colonnes) ──
+//    Structure exacte du Report Book fourni :
+//      TERM ENDING / NAME OF PUPIL / AGE + CLASS / POSITION + ADMISSION N° /
+//      SESSION / PUPIL'S AVERAGE, puis tableau :
+//      SUBJECTS | 1st CA /20 | 2nd CA /20 | Exam /60 | Total /100 |
+//      Highest in class | Lowest in class | Position | Grade | Remark
 
-function BulletinAnglophonePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
-  // Compute pupil's average on /100 (already stored in generalAverage for EN)
+function BulletinAnglophonePage1({
+  student, bulletinData, selectedClassName, termEndingDate, sessionYear,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  selectedClassName?: string;
+  termEndingDate?: string | null;
+  sessionYear?: string | null;
+}) {
+  // Moyenne de l'élève sur /100 (déjà calculée dans generalAverage pour EN)
   const pupilAvg = student.generalAverage ?? 0;
-  const nbSubjects = bulletinData.subjects.length;
-  const markObtainable = 100 * nbSubjects;
-  const markObtained = bulletinData.subjects.reduce((sum, subj) => {
-    const s = student.subjectScores[subj.id];
-    return sum + (s?.total ?? 0);
-  }, 0);
+  const tier = enTierFor(student.generalAverage);
+  const positionStr = enOrdinal(student.classRank);
+  const ageStr = student.age !== null && student.age !== undefined ? String(student.age) : '—';
+  const session = sessionYear || '—';
 
-  // Appreciation label based on /100
-  const appreciationLabel = pupilAvg >= 90 ? 'Outstanding'
-    : pupilAvg >= 80 ? 'Very Good'
-    : pupilAvg >= 70 ? 'Good'
-    : pupilAvg >= 60 ? 'Fair'
-    : pupilAvg >= 50 ? 'Pass'
-    : pupilAvg >= 40 ? 'Weak'
-    : 'Very Weak';
+  // Ligne de formulaire — libellé + valeur (bordures pointillées façon carnet)
+  const FormCell = ({ label, value, colSpan = 1, strong = true }: { label: string; value: React.ReactNode; colSpan?: number; strong?: boolean }) => (
+    <td colSpan={colSpan} className="border border-slate-400 px-2 py-1 whitespace-nowrap">
+      <span className="text-slate-700 uppercase font-bold text-[10px]">{label}</span>{' '}
+      <span className={cn('text-slate-900 border-b border-dotted border-slate-400', strong && 'font-bold')}>{value}</span>
+    </td>
+  );
 
   return (
     <div className="overflow-x-auto">
-      {/* Pupil info card */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3 text-[10px]">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          <div><span className="text-slate-500 uppercase font-bold">Name of Pupil:</span> <strong className="text-slate-900">{student.studentName}</strong></div>
-          <div><span className="text-slate-500 uppercase font-bold">Position:</span> <strong className="text-slate-900">{student.classRank === 1 ? '1st' : student.classRank === 2 ? '2nd' : student.classRank === 3 ? '3rd' : `${student.classRank}th`}</strong></div>
-          <div><span className="text-slate-500 uppercase font-bold">Admission No:</span> <strong className="text-slate-900">{student.matricule || '—'}</strong></div>
-          <div><span className="text-slate-500 uppercase font-bold">No in Class:</span> <strong className="text-slate-900">{bulletinData.results.length}</strong></div>
-          <div className="col-span-2"><span className="text-slate-500 uppercase font-bold">Pupil&apos;s Average:</span> <strong className="text-blue-700 text-base">{pupilAvg.toFixed(2)} / 100</strong></div>
-        </div>
-      </div>
+      {/* ── Formulaire d'information (page 2 du Report Book) ── */}
+      <table className="w-full border-collapse text-[10px] mb-3" style={{ border: '2px solid #0A2A5E' }}>
+        <tbody>
+          <tr><FormCell label="Term ending:" value={termEndingDate || '—'} colSpan={2} /></tr>
+          <tr><FormCell label="Name of pupil:" value={student.studentName} colSpan={2} /></tr>
+          <tr>
+            <FormCell label="Age:" value={ageStr} />
+            <FormCell label="Class:" value={selectedClassName || '—'} />
+          </tr>
+          <tr>
+            <FormCell label="Position:" value={positionStr} />
+            <FormCell label="Admission N°:" value={student.matricule || '—'} />
+          </tr>
+          <tr><FormCell label="Session:" value={session} colSpan={2} /></tr>
+          <tr>
+            <FormCell
+              label="Pupil's average:"
+              value={<span className="text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'} / 100</span>}
+              colSpan={2}
+            />
+          </tr>
+        </tbody>
+      </table>
 
-      {/* Grades table — 5 columns */}
+      {/* ── Tableau des notes — 10 colonnes ── */}
       <div className="text-center mb-2">
-        <h4 className="text-xs font-bold text-slate-900 uppercase">Grades Table</h4>
+        <h4 className="text-xs font-bold text-slate-900 uppercase">Report Card &mdash; 1st CA + 2nd CA + Exam = /100</h4>
       </div>
       <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
-            <th className="border px-2 py-1 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '120px' }}>Subject</th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>First CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Second CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Exam<br/><span className="font-normal text-[8px]">/60</span></th>
-            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '110px' }}>Subjects</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>1st<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>2nd<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Exam<br/><span className="font-normal text-[8px]">/60</span></th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Highest<br/>in class</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Lowest<br/>in class</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Posi-<br/>tion</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Grade</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>Remark</th>
           </tr>
         </thead>
         <tbody>
           {bulletinData.subjects.map((subject, idx) => {
             const score = student.subjectScores[subject.id];
+            const stats = enSubjectClassStats(bulletinData, subject.id, student.id);
+            const total = score?.total ?? null;
             return (
               <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
                 <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
@@ -1380,48 +1603,64 @@ function BulletinAnglophonePage1({ student, bulletinData }: { student: StudentRe
                 </td>
                 <td className="border border-slate-300 px-1 py-0.5 text-center font-bold bg-slate-50">
                   {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
-                    score?.total !== null && score?.total !== undefined ?
-                      <span className="text-blue-700">{score.total.toFixed(1)}</span> :
-                      <span className="text-slate-400">—</span>}
+                    total !== null ? <span className="text-blue-700">{total.toFixed(1)}</span> : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
+                  {stats.highest !== null ? stats.highest.toFixed(1) : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
+                  {stats.lowest !== null ? stats.lowest.toFixed(1) : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-slate-800">
+                  {enOrdinal(stats.position)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold">
+                  <span className={cn(
+                    (total ?? 0) >= 90 && 'text-emerald-700',
+                    (total ?? -1) >= 80 && (total ?? 0) < 90 && 'text-blue-700',
+                    (total ?? -1) >= 70 && (total ?? 0) < 80 && 'text-sky-700',
+                    (total ?? -1) >= 60 && (total ?? 0) < 70 && 'text-amber-700',
+                    (total ?? -1) >= 50 && (total ?? 0) < 60 && 'text-orange-700',
+                    (total ?? -1) >= 0 && (total ?? 0) < 50 && 'text-red-600',
+                  )}>{enGradeFor(total)}</span>
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-[9px] text-slate-600">
+                  {tier?.label && total !== null ? enTierFor(total)?.label : '—'}
                 </td>
               </tr>
             );
           })}
-          {/* Total row */}
+          {/* Ligne Pupil's Average */}
           <tr className="bg-slate-200 font-bold">
-            <td className="border border-slate-300 px-2 py-1 uppercase text-slate-900 text-right" colSpan={4}>Pupil&apos;s Average</td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700 text-sm">{pupilAvg.toFixed(2)}</td>
+            <td className="border border-slate-300 px-2 py-1 uppercase text-slate-900 text-right" colSpan={9}>Pupil&apos;s Average</td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'}</td>
           </tr>
         </tbody>
       </table>
 
-      {/* Summary */}
-      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-        <div className="bg-slate-50 rounded p-2 border border-slate-200">
-          <p className="text-slate-500 uppercase font-bold">Mark Obtainable</p>
-          <p className="text-blue-700 font-bold text-base">{markObtainable}</p>
+      {/* Appreciation badge (grille /100) */}
+      {tier && (
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <span className="text-[10px] font-bold text-slate-700 uppercase">Overall Appreciation</span>
+          <span className={cn('inline-block px-3 py-1 rounded text-xs font-bold', tier.color)}>
+            {tier.label} ({tier.grade})
+          </span>
         </div>
-        <div className="bg-slate-50 rounded p-2 border border-slate-200">
-          <p className="text-slate-500 uppercase font-bold">Mark Obtained</p>
-          <p className="text-blue-700 font-bold text-base">{markObtained.toFixed(2)}</p>
-        </div>
-      </div>
+      )}
 
-      {/* Appreciation badge */}
-      <div className="mt-2 text-center">
-        <p className="text-[10px] font-bold text-slate-700 uppercase">Overall Appreciation</p>
-        <span className={cn('inline-block mt-1 px-3 py-1 rounded text-xs font-bold',
-          pupilAvg >= 80 && 'bg-emerald-100 text-emerald-700',
-          pupilAvg >= 70 && pupilAvg < 80 && 'bg-blue-100 text-blue-700',
-          pupilAvg >= 50 && pupilAvg < 70 && 'bg-amber-100 text-amber-700',
-          pupilAvg < 50 && 'bg-red-100 text-red-700',
-        )}>{appreciationLabel}</span>
-      </div>
+      <p className="text-[9px] text-slate-400 mt-1 italic">
+        1st CA (/20) + 2nd CA (/20) + Exam (/60) = Total /100 per subject. Grade: A+ (90–100) · A (80–89) · B (70–79) · C (60–69) · D (50–59) · F (below 50).
+      </p>
     </div>
   );
 }
 
-// ─── Page 2: Anglophone Bulletin — Mark obtainable/obtained + Teacher comments + Affective + Psychomotor + Director comments + 3 signatures ─
+// ─── Page 2: Anglophone Bulletin — modèle Report Book ───────────────────────
+//    Mark obtainable / obtained / No in class · Teacher's Appreciation +
+//    Class Teacher's Comments (grille /100) · Next term begins ·
+//    Affective Assessment: Psychomotor Skills (2 colonnes côte à côte, A–E) ·
+//    Headmaster(mistress)'s Comment (grille) · 3 signatures (Teacher /
+//    Headmaster / Parent).
 
 function BulletinAnglophonePage2({
   student, bulletinData, signatures, periodId, nextTermStartDate,
@@ -1432,25 +1671,8 @@ function BulletinAnglophonePage2({
   periodId?: string;
   nextTermStartDate?: string | null;
 }) {
-  // ⭐ EN annotation state — auto-filled from /100 average, editable, auto-saved
-  const [teacherComment, setTeacherComment] = useState('');
-  const [directorComment, setDirectorComment] = useState('');
-  const [affectiveMap, setAffectiveMap] = useState<Record<string, string>>({});
-  const [psychomotorMap, setPsychomotorMap] = useState<Record<string, string>>({});
-  const [autoFillLoading, setAutoFillLoading] = useState(false);
-  const [savedAt, setSavedAt] = useState(false);
-
-  // Standardized skill lists (kept the same — not customizable)
-  const AFFECTIVE_SKILLS = [
-    'Punctuality', 'Politeness', 'Honesty', 'Self-control',
-    'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
-    'Care for property', 'Leadership',
-  ];
-  const PSYCHOMOTOR_SKILLS = [
-    'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
-    'Physical Education', 'Music', 'Games and Sports',
-  ];
-
+  // ⭐ Grille + stats de l'élève
+  const tier = enTierFor(student.generalAverage);
   const pupilAvg = student.generalAverage ?? 0;
   const nbSubjects = bulletinData.subjects.length;
   const markObtainable = 100 * nbSubjects;
@@ -1459,91 +1681,91 @@ function BulletinAnglophonePage2({
     return sum + (s?.total ?? 0);
   }, 0);
 
-  // ─── Auto-fill helper (frontend mirrors backend logic) ─────────────────────
-  const autoFillAffectiveMap = (avg: number): Record<string, string> => {
-    const softSkills = new Set(['Honesty', 'Self-control', 'Respect for others', 'Cooperation']);
+  // ⭐ Catégories du Report Book — colonne gauche (affective) / droite (psychomotor)
+  const AFFECTIVE_CATEGORIES = [
+    'Co-operativeness', 'Punctuality', 'Curiosity', 'Politeness', 'Honesty',
+    'Att. School', 'Writ. Express.', 'Oral Express.', 'Health Info',
+  ];
+  const PSYCHOMOTOR_CATEGORIES = [
+    'Handwriting', 'Games', 'Musical Skills', 'Handling of tool', 'Drawing & Painting',
+  ];
+  const SKILL_LEVELS = ['A', 'B', 'C', 'D', 'E'];
+
+  // ⭐ Annotations — auto-remplies depuis la grille /100, éditables, auto-save
+  const [teacherAppreciation, setTeacherAppreciation] = useState('');
+  const [teacherComments, setTeacherComments] = useState('');
+  const [headmasterComment, setHeadmasterComment] = useState('');
+  const [affectiveMap, setAffectiveMap] = useState<Record<string, string>>({});
+  const [psychomotorMap, setPsychomotorMap] = useState<Record<string, string>>({});
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
+  const [savedAt, setSavedAt] = useState(false);
+
+  // ─── Auto-fill A–E depuis la moyenne /100 ─────────────────────────────────
+  const baseLevel = (avg: number): string =>
+    avg >= 90 ? 'A' : avg >= 80 ? 'B' : avg >= 70 ? 'C' : avg >= 50 ? 'D' : 'E';
+  const bumpLevel = (lvl: string, steps: number): string => {
+    const idx = SKILL_LEVELS.indexOf(lvl);
+    if (idx < 0) return lvl;
+    return SKILL_LEVELS[Math.max(0, Math.min(SKILL_LEVELS.length - 1, idx - steps))];
+  };
+  const autoAffective = (avg: number): Record<string, string> => {
+    // Compétences comportementales légèrement au-dessus du niveau académique
+    const soft = new Set(['Co-operativeness', 'Politeness', 'Honesty', 'Punctuality', 'Health Info']);
+    const base = baseLevel(avg);
     const map: Record<string, string> = {};
-    AFFECTIVE_SKILLS.forEach((skill, i) => {
-      const isSoft = softSkills.has(skill);
-      let level: 'A' | 'B' | 'C';
-      if (avg >= 80) level = isSoft ? 'A' : (i % 4 === 0 ? 'B' : 'A');
-      else if (avg >= 70) level = isSoft ? 'A' : (i % 3 === 0 ? 'B' : 'A');
-      else if (avg >= 60) level = isSoft ? 'A' : (i % 2 === 0 ? 'B' : 'A');
-      else if (avg >= 50) level = isSoft ? 'B' : (i % 3 === 0 ? 'C' : 'B');
-      else if (avg >= 40) level = isSoft ? 'B' : (i % 2 === 0 ? 'C' : 'B');
-      else level = isSoft ? 'B' : 'C';
-      map[skill] = level;
+    AFFECTIVE_CATEGORIES.forEach((skill, i) => {
+      map[skill] = soft.has(skill) ? bumpLevel(base, 1) : (i % 3 === 0 ? bumpLevel(base, -1) : base);
     });
     return map;
   };
-  const autoFillPsychomotorMap = (avg: number): Record<string, string> => {
+  const autoPsychomotor = (avg: number): Record<string, string> => {
+    const base = baseLevel(avg);
     const map: Record<string, string> = {};
-    PSYCHOMOTOR_SKILLS.forEach((skill, i) => {
-      let level: 'A' | 'B' | 'C';
-      if (avg >= 80) level = i % 4 === 0 ? 'B' : 'A';
-      else if (avg >= 70) level = i % 3 === 0 ? 'B' : 'A';
-      else if (avg >= 60) level = i % 2 === 0 ? 'B' : 'A';
-      else if (avg >= 50) level = i % 3 === 0 ? 'C' : 'B';
-      else if (avg >= 40) level = i % 2 === 0 ? 'C' : 'B';
-      else level = 'C';
-      map[skill] = level;
+    PSYCHOMOTOR_CATEGORIES.forEach((skill, i) => {
+      map[skill] = i % 3 === 0 ? bumpLevel(base, -1) : base;
     });
     return map;
   };
 
-  // ─── Auto-generated teacher comment based on /100 average ──────────────────
-  const getAutoTeacherComment = (avg: number): string => {
-    const next = nextTermStartDate || '—';
-    if (avg >= 90) return `Outstanding performance! This pupil has demonstrated exceptional mastery across all subjects. Keep up the excellent work. Next term begins on ${next}.`;
-    if (avg >= 80) return `Very good results. The pupil shows strong academic achievement and consistent effort. Aim for the highest standards next term, which starts on ${next}.`;
-    if (avg >= 70) return `Good performance. The pupil understands most concepts taught. With greater concentration, results will improve further. Next term starts on ${next}.`;
-    if (avg >= 60) return `Fair results. The pupil is advised to work harder and remain focused. Greater commitment is required to improve. Next term begins on ${next}.`;
-    if (avg >= 50) return `Results are just satisfactory. Stronger effort and parental follow-up are necessary. Next term starts on ${next}.`;
-    if (avg >= 40) return `Performance below expectation. Immediate improvement is required with parental involvement. Next term begins on ${next}.`;
-    return `Very poor academic performance. Urgent remedial measures and close supervision are required. Next term starts on ${next}.`;
-  };
-  const getAutoDirectorComment = (avg: number): string => {
-    if (avg >= 90) return 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.';
-    if (avg >= 80) return 'Very good results. Consistent effort is encouraged to reach the highest standards.';
-    if (avg >= 70) return 'Good performance. Greater concentration and consistency will lead to better outcomes.';
-    if (avg >= 60) return 'Fair results. The pupil is advised to work harder and remain focused.';
-    if (avg >= 50) return 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.';
-    if (avg >= 40) return 'Performance below expectation. Immediate improvement is required with parental involvement.';
-    return 'Very poor academic performance. Urgent remedial measures and close supervision are required.';
-  };
-
-  // ─── Load existing annotations from backend ────────────────────────────────
+  // ─── Chargement des annotations backend ───────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!periodId || !student.id) return;
+      let ann: any = {};
       try {
         const annRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`);
-        if (cancelled) return;
-        const ann = annRes.data || {};
-        // Use stored values if present, otherwise auto-generate
-        setTeacherComment(ann.enTeacherComment || getAutoTeacherComment(pupilAvg));
-        setDirectorComment(ann.enDirectorComment || getAutoDirectorComment(pupilAvg));
-        try {
-          const aff = ann.enAffectiveAssessment ? JSON.parse(ann.enAffectiveAssessment) : null;
-          setAffectiveMap(aff && Object.keys(aff).length > 0 ? aff : autoFillAffectiveMap(pupilAvg));
-        } catch { setAffectiveMap(autoFillAffectiveMap(pupilAvg)); }
-        try {
-          const psy = ann.enPsychomotorAssessment ? JSON.parse(ann.enPsychomotorAssessment) : null;
-          setPsychomotorMap(psy && Object.keys(psy).length > 0 ? psy : autoFillPsychomotorMap(pupilAvg));
-        } catch { setPsychomotorMap(autoFillPsychomotorMap(pupilAvg)); }
-      } catch {
-        setTeacherComment(getAutoTeacherComment(pupilAvg));
-        setDirectorComment(getAutoDirectorComment(pupilAvg));
-        setAffectiveMap(autoFillAffectiveMap(pupilAvg));
-        setPsychomotorMap(autoFillPsychomotorMap(pupilAvg));
+        ann = annRes.data || {};
+      } catch { ann = {}; }
+      if (cancelled) return;
+      // enTeacherComment = "appreciation \n comments" (2 parties)
+      if (ann.enTeacherComment && String(ann.enTeacherComment).trim().length > 0) {
+        const lines = String(ann.enTeacherComment).split('\n');
+        setTeacherAppreciation(lines[0] || '');
+        setTeacherComments(lines.slice(1).join('\n').trim());
+      } else if (tier) {
+        setTeacherAppreciation(tier.teacherAppreciation);
+        setTeacherComments(tier.teacherComments.join('\n'));
       }
+      if (ann.enDirectorComment && String(ann.enDirectorComment).trim().length > 0) {
+        setHeadmasterComment(ann.enDirectorComment);
+      } else if (tier) {
+        setHeadmasterComment(tier.principalComment);
+      }
+      try {
+        const aff = ann.enAffectiveAssessment ? JSON.parse(ann.enAffectiveAssessment) : null;
+        setAffectiveMap(aff && Object.keys(aff).length > 0 ? aff : autoAffective(pupilAvg));
+      } catch { setAffectiveMap(autoAffective(pupilAvg)); }
+      try {
+        const psy = ann.enPsychomotorAssessment ? JSON.parse(ann.enPsychomotorAssessment) : null;
+        setPsychomotorMap(psy && Object.keys(psy).length > 0 ? psy : autoPsychomotor(pupilAvg));
+      } catch { setPsychomotorMap(autoPsychomotor(pupilAvg)); }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [student.id, periodId, pupilAvg, nextTermStartDate]);
+  }, [student.id, periodId, pupilAvg]);
 
-  // ─── Auto-save on blur (debounced via simple flag) ─────────────────────────
+  // ─── Auto-save (best-effort) ──────────────────────────────────────────────
   const saveAnnotations = async (fields: Record<string, any>) => {
     if (!periodId || !student.id) return;
     try {
@@ -1555,24 +1777,28 @@ function BulletinAnglophonePage2({
       setSavedAt(true);
       setTimeout(() => setSavedAt(false), 2000);
     } catch (e) {
-      // Silent fail — auto-save is best-effort
+      // Silent fail — auto-save best-effort
     }
   };
 
-  // ─── Auto-fill button (regenerate from /100 average) ──────────────────────
+  const saveTeacherParts = (appreciation: string, comments: string) => {
+    saveAnnotations({ enTeacherComment: `${appreciation}\n${comments}`.trim() });
+  };
+
+  // ─── Auto-fill depuis la grille (régénère tout) ───────────────────────────
   const handleAutoFill = async () => {
+    if (!tier) return;
     setAutoFillLoading(true);
-    const newAff = autoFillAffectiveMap(pupilAvg);
-    const newPsy = autoFillPsychomotorMap(pupilAvg);
-    const newTeacher = getAutoTeacherComment(pupilAvg);
-    const newDirector = getAutoDirectorComment(pupilAvg);
+    const newAff = autoAffective(pupilAvg);
+    const newPsy = autoPsychomotor(pupilAvg);
     setAffectiveMap(newAff);
     setPsychomotorMap(newPsy);
-    setTeacherComment(newTeacher);
-    setDirectorComment(newDirector);
+    setTeacherAppreciation(tier.teacherAppreciation);
+    setTeacherComments(tier.teacherComments.join('\n'));
+    setHeadmasterComment(tier.principalComment);
     await saveAnnotations({
-      enTeacherComment: newTeacher,
-      enDirectorComment: newDirector,
+      enTeacherComment: `${tier.teacherAppreciation}\n${tier.teacherComments.join('\n')}`,
+      enDirectorComment: tier.principalComment,
       enAffectiveAssessment: JSON.stringify(newAff),
       enPsychomotorAssessment: JSON.stringify(newPsy),
     });
@@ -1591,18 +1817,22 @@ function BulletinAnglophonePage2({
     }
   };
 
-  const SkillRow = ({ skill, value, onChange }: { skill: string; value: string; onChange: (v: string) => void }) => (
+  // ─── Rangée de catégorie avec radios A–E ──────────────────────────────────
+  const SkillRow = ({ skill, value, onChange, accentColor }: { skill: string; value: string; onChange: (v: string) => void; accentColor: string }) => (
     <tr>
-      <td className="border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-900">{skill}</td>
-      <td className="border border-slate-300 px-1 py-0.5 text-center">
-        <input type="radio" name={`${skill}`} value="A" checked={value === 'A'} onChange={() => onChange('A')} className="w-3 h-3 accent-emerald-600" />
-      </td>
-      <td className="border border-slate-300 px-1 py-0.5 text-center">
-        <input type="radio" name={`${skill}`} value="B" checked={value === 'B'} onChange={() => onChange('B')} className="w-3 h-3 accent-blue-600" />
-      </td>
-      <td className="border border-slate-300 px-1 py-0.5 text-center">
-        <input type="radio" name={`${skill}`} value="C" checked={value === 'C'} onChange={() => onChange('C')} className="w-3 h-3 accent-amber-600" />
-      </td>
+      <td className="border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-900 whitespace-nowrap">{skill}</td>
+      {SKILL_LEVELS.map(lvl => (
+        <td key={lvl} className="border border-slate-300 px-1 py-0.5 text-center">
+          <input
+            type="radio"
+            name={`en-skill-${skill.replace(/[^a-zA-Z0-9]/g, '-')}`}
+            value={lvl}
+            checked={value === lvl}
+            onChange={() => onChange(lvl)}
+            className={cn('w-3 h-3', accentColor)}
+          />
+        </td>
+      ))}
     </tr>
   );
 
@@ -1610,12 +1840,12 @@ function BulletinAnglophonePage2({
     <div className="space-y-3">
       {/* Header bar + actions */}
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-bold text-slate-700 uppercase">Page 2 — Comments &amp; Skills</div>
+        <div className="text-xs font-bold text-slate-700 uppercase">Page 2 — Comments, Skills &amp; Signatures</div>
         <div className="flex items-center gap-2">
           {savedAt && <span className="text-[10px] text-emerald-600 font-semibold">✓ Saved</span>}
           <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={autoFillLoading} className="text-[10px] h-7">
             {autoFillLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            Auto-fill
+            Auto-fill (grille)
           </Button>
         </div>
       </div>
@@ -1636,79 +1866,102 @@ function BulletinAnglophonePage2({
         </div>
       </div>
 
-      {/* Class teacher's comments */}
+      {/* Teacher's Appreciation (grille /100) */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <label className="block text-[10px] font-bold text-blue-900 uppercase mb-1">
+          Teacher&apos;s Appreciation
+          <span className="ml-2 text-slate-400 font-normal">(auto-generated from the /100 scale — editable)</span>
+        </label>
+        <textarea
+          value={teacherAppreciation}
+          onChange={(e) => setTeacherAppreciation(e.target.value)}
+          onBlur={() => saveTeacherParts(teacherAppreciation, teacherComments)}
+          rows={2}
+          className="w-full text-[10px] border border-slate-200 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y italic"
+          placeholder="e.g. Outstanding performance. Excellent mastery of concepts."
+        />
+      </div>
+
+      {/* Class Teacher's Comments (grille /100) */}
       <div className="border border-slate-300 rounded-lg p-2">
         <label className="block text-[10px] font-bold text-blue-900 uppercase mb-1">
           Class Teacher&apos;s Comments
-          <span className="ml-2 text-slate-400 font-normal">(auto-generated — editable)</span>
+          <span className="ml-2 text-slate-400 font-normal">(auto-generated from the /100 scale — editable)</span>
         </label>
         <textarea
-          value={teacherComment}
-          onChange={(e) => setTeacherComment(e.target.value)}
-          onBlur={() => saveAnnotations({ enTeacherComment: teacherComment })}
+          value={teacherComments}
+          onChange={(e) => setTeacherComments(e.target.value)}
+          onBlur={() => saveTeacherParts(teacherAppreciation, teacherComments)}
           rows={4}
           className="w-full text-[10px] border border-slate-200 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y"
-          placeholder="Auto-generated based on pupil's average..."
+          placeholder="One comment per line (4 lines from the appreciation scale)..."
         />
       </div>
 
-      {/* Affective assessment */}
-      <div className="border border-slate-300 rounded-lg p-2">
-        <p className="text-[10px] font-bold text-blue-900 uppercase mb-1">Affective Assessment</p>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-100">
-              <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Skill</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">A</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">B</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">C</th>
-            </tr>
-          </thead>
-          <tbody>
-            {AFFECTIVE_SKILLS.map(skill => (
-              <SkillRow key={skill} skill={skill} value={affectiveMap[skill] || ''} onChange={(v) => setSkill('affective', skill, v)} />
-            ))}
-          </tbody>
-        </table>
+      {/* Next term begins */}
+      <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center justify-between text-[10px]">
+        <span className="text-slate-500 uppercase font-bold">Next term begins</span>
+        <strong className="text-slate-900">{nextTermStartDate || '—'}</strong>
       </div>
 
-      {/* Psychomotor skills */}
+      {/* AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS — 2 colonnes côte à côte (A–E) */}
       <div className="border border-slate-300 rounded-lg p-2">
-        <p className="text-[10px] font-bold text-blue-900 uppercase mb-1">Psychomotor Skills</p>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="bg-slate-100">
-              <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Skill</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">A</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">B</th>
-              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">C</th>
-            </tr>
-          </thead>
-          <tbody>
-            {PSYCHOMOTOR_SKILLS.map(skill => (
-              <SkillRow key={skill} skill={skill} value={psychomotorMap[skill] || ''} onChange={(v) => setSkill('psychomotor', skill, v)} />
-            ))}
-          </tbody>
-        </table>
+        <p className="text-[10px] font-bold text-blue-900 uppercase mb-1 text-center">
+          Affective Assessment: Psychomotor Skills
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {/* Colonne gauche — Affective */}
+          <table className="w-full border-collapse" style={{ border: '1px solid #94a3b8' }}>
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Category</th>
+                {SKILL_LEVELS.map(lvl => (
+                  <th key={lvl} className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-8">{lvl}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {AFFECTIVE_CATEGORIES.map(skill => (
+                <SkillRow key={skill} skill={skill} value={affectiveMap[skill] || ''} onChange={(v) => setSkill('affective', skill, v)} accentColor="accent-emerald-600" />
+              ))}
+            </tbody>
+          </table>
+          {/* Colonne droite — Psychomotor */}
+          <table className="w-full border-collapse" style={{ border: '1px solid #94a3b8' }}>
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Category</th>
+                {SKILL_LEVELS.map(lvl => (
+                  <th key={lvl} className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-8">{lvl}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PSYCHOMOTOR_CATEGORIES.map(skill => (
+                <SkillRow key={skill} skill={skill} value={psychomotorMap[skill] || ''} onChange={(v) => setSkill('psychomotor', skill, v)} accentColor="accent-blue-600" />
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Director's comments */}
+      {/* Headmaster(mistress)'s Comment (grille /100) */}
       <div className="border border-slate-300 rounded-lg p-2">
         <label className="block text-[10px] font-bold text-blue-900 uppercase mb-1">
-          Director&apos;s / Principal&apos;s Comments
-          <span className="ml-2 text-slate-400 font-normal">(auto-generated — editable)</span>
+          Headmaster(mistress)&apos;s Comment
+          <span className="ml-2 text-slate-400 font-normal">(auto-generated from the /100 scale — editable)</span>
         </label>
         <textarea
-          value={directorComment}
-          onChange={(e) => setDirectorComment(e.target.value)}
-          onBlur={() => saveAnnotations({ enDirectorComment: directorComment })}
+          value={headmasterComment}
+          onChange={(e) => setHeadmasterComment(e.target.value)}
+          onBlur={() => saveAnnotations({ enDirectorComment: headmasterComment })}
           rows={3}
           className="w-full text-[10px] border border-slate-200 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y"
-          placeholder="Auto-generated based on pupil's average..."
+          placeholder="Principal's comment from the appreciation scale..."
         />
       </div>
 
-      {/* 3 signatures — Teacher + Parent + Director (same pattern as FR) */}
+      {/* 3 signatures — Teacher + Headmaster + Parent (même pattern que FR) */}
       <div className="border border-slate-300 rounded-lg p-2">
         <p className="text-[10px] font-bold text-blue-900 uppercase mb-2 text-center">Signatures</p>
         <div className="grid grid-cols-3 gap-2">
@@ -1730,6 +1983,23 @@ function BulletinAnglophonePage2({
             </div>
           </div>
           <div className="text-center">
+            {signatures.directorSig ? (
+              <img src={signatures.directorSig} alt="Headmaster signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
+            ) : (
+              <div className="h-10 flex items-end justify-center">
+                <SignatureCanvas
+                  height={40}
+                  penColor="#0A2A5E"
+                  onChange={(data) => signatures.setDirectorSig(data || null)}
+                />
+              </div>
+            )}
+            <div className="border-t border-black mt-1 pt-1">
+              <p className="text-[9px] font-bold text-blue-900">Headmaster(mistress)</p>
+              <p className="text-[8px] text-slate-500">Signature</p>
+            </div>
+          </div>
+          <div className="text-center">
             {signatures.parentSig ? (
               <img src={signatures.parentSig} alt="Parent signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
             ) : (
@@ -1746,32 +2016,16 @@ function BulletinAnglophonePage2({
               <p className="text-[8px] text-slate-500">Name &amp; Signature</p>
             </div>
           </div>
-          <div className="text-center">
-            {signatures.directorSig ? (
-              <img src={signatures.directorSig} alt="Director signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
-            ) : (
-              <div className="h-10 flex items-end justify-center">
-                <SignatureCanvas
-                  height={40}
-                  penColor="#0A2A5E"
-                  onChange={(data) => signatures.setDirectorSig(data || null)}
-                />
-              </div>
-            )}
-            <div className="border-t border-black mt-1 pt-1">
-              <p className="text-[9px] font-bold text-blue-900">Headmistress / Headmaster</p>
-              <p className="text-[8px] text-slate-500">Signature</p>
-            </div>
-          </div>
         </div>
       </div>
 
       <p className="text-[9px] text-slate-400 italic">
-        All comments and skills are auto-generated based on the pupil&apos;s average but remain fully editable. Changes are auto-saved on blur.
+        Appreciations, comments and skills are auto-generated from the pupil&apos;s average (/100 scale: Outstanding 90–100, Very Good 80–89, Good 70–79, Fair 60–69, Pass 50–59, Weak 40–49, Very Weak 0–39) and remain fully editable. Changes are auto-saved on blur.
       </p>
     </div>
   );
 }
+
 
 // ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
 

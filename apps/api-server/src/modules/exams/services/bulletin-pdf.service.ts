@@ -74,6 +74,14 @@ export interface BulletinPdfData {
     secondCA?: number | null;  // /20
     exam?: number | null;      // /60
     total?: number | null;     // /100 (FCA + SCA + Exam, somme brute)
+    // ⭐ V10h — modèle Report Book : colonnes Highest/Lowest in class, Position,
+    //    Grade (A+, A, B, C, D, F) et Remark — fournies par le frontend
+    //    (stats calculées sur toute la classe), avec fallback serveur.
+    highestInClass?: number | null;
+    lowestInClass?: number | null;
+    subjectPosition?: number | null;
+    grade?: string | null;
+    remark?: string | null;
   }>;
   // Stats
   generalAverage: number | null;
@@ -141,6 +149,8 @@ export class BulletinPdfService {
         : this.buildHtml(data, qrDataUrl, bulletinId);
 
       // 3. Generate PDF via Puppeteer
+      //    ⭐ V10h — le bulletin anglophone (Report Book, tableau 10 colonnes)
+      //    passe en A4 portrait ; le bulletin FR reste en A5 portrait.
       const { page } = await this.puppeteerPool.acquirePage();
       try {
         // ⭐ Use 'domcontentloaded' instead of 'networkidle0' — faster, doesn't wait
@@ -150,7 +160,7 @@ export class BulletinPdfService {
         // Small delay to let any inline images (base64 signatures, SVG flag) render
         await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
-          format: 'A5',
+          format: data.scopeLang === 'EN' ? 'A4' : 'A5',
           landscape: false,
           printBackground: true,
           margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
@@ -710,6 +720,23 @@ ${page2Content}
   // ║    - Psychomotor skills (A/B/C checkboxes per skill)                    ║
   // ║    - Director's comments + signature                                    ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
+  /**
+   * ============================================================================
+   * ⭐ V10h — BULLETIN ANGLOPHONE — MODÈLE « REPORT BOOK » (2 pages A4)
+   * ============================================================================
+   *
+   * Page 1 (exactement comme le Report Book fourni) :
+   *   TERM ENDING / NAME OF PUPIL / AGE + CLASS / POSITION + ADMISSION N° /
+   *   SESSION / PUPIL'S AVERAGE, puis le tableau :
+   *   SUBJECTS | 1st CA /20 | 2nd CA /20 | Exam /60 | Total /100 |
+   *   Highest in class | Lowest in class | Position | Grade | Remark
+   *
+   * Page 2 :
+   *   Mark obtainable / Mark obtained / No in class · Teacher's Appreciation +
+   *   Class Teacher's Comments (grille /100) · Next term begins ·
+   *   Affective Assessment: Psychomotor Skills (2 colonnes A–E) ·
+   *   Headmaster(mistress)'s Comment (grille) · 3 signatures.
+   */
   private buildHtmlAnglophone(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
     const ministry = data.isSecondary
       ? 'Ministry of Secondary, Technical and Vocational Education and Youth Insertion'
@@ -719,9 +746,7 @@ ${page2Content}
     const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
     const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
 
-    // ─── Compute derived values ───────────────────────────────────────────────
-    // For each subject, ensure firstCA/secondCA/exam/total are present.
-    // If absent (null), display "—".
+    // ─── Derived values ──────────────────────────────────────────────────────
     const subjects = data.subjects;
     const nbSubjects = subjects.length;
     const subjectTotals100 = subjects.map(s => {
@@ -729,7 +754,6 @@ ${page2Content}
       const sca = Number(s.secondCA ?? 0);
       const ex = Number(s.exam ?? 0);
       // ⭐ V10g — 20 + 20 + 60 = 100 : le total brut EST sur /100
-      // (plus aucune conversion par /140).
       return fca + sca + ex;
     });
     const markObtained = subjectTotals100.reduce((a, b) => a + b, 0);
@@ -743,106 +767,113 @@ ${page2Content}
     const nextTermStart = data.nextTermStartDate || '—';
     const ageStr = data.studentAge !== null && data.studentAge !== undefined
       ? String(data.studentAge) : '—';
-    const positionStr = data.classRank
-      ? (data.classRank === 1 ? '1st' : data.classRank === 2 ? '2nd' : data.classRank === 3 ? '3rd' : `${data.classRank}th`)
-      : '—';
+    const positionStr = data.classRank ? this.enOrdinal(data.classRank) : '—';
+    const noInClass = data.totalStudents || '—';
 
-    // ─── Class teacher's comments based on average ───────────────────────────
-    // ⭐ Si l'utilisateur a édité le commentaire, on l'utilise. Sinon, auto-gén.
-    const teacherComment = data.enTeacherComment && data.enTeacherComment.trim().length > 0
-      ? data.enTeacherComment
-      : this.getEnTeacherComment(pupilAverage, nextTermStart);
+    // ─── Grille /100 (tier courant de l'élève) ───────────────────────────────
+    const tier = this.enTierFor(pupilAverage);
 
-    // ─── Director's comments based on average ────────────────────────────────
-    // ⭐ Si l'utilisateur a édité le commentaire, on l'utilise. Sinon, auto-gén.
+    // ─── Class teacher's comment (2 parties : appreciation + comments) ───────
+    //     enTeacherComment = "appreciation\ncomments" (sauvegardé par le front)
+    let teacherAppreciation = tier.teacherAppreciation;
+    let teacherComments = tier.teacherComments.join('\n');
+    if (data.enTeacherComment && data.enTeacherComment.trim().length > 0) {
+      const lines = String(data.enTeacherComment).split('\n');
+      teacherAppreciation = lines[0] || tier.teacherAppreciation;
+      teacherComments = lines.slice(1).join('\n').trim() || tier.teacherComments.join('\n');
+    }
+
+    // ─── Headmaster's comment (grille /100) ──────────────────────────────────
     const directorComment = data.enDirectorComment && data.enDirectorComment.trim().length > 0
       ? data.enDirectorComment
-      : this.getEnDirectorComment(pupilAverage);
+      : tier.principalComment;
 
-    // ─── Parse user-provided Affective + Psychomotor assessments (JSON) ──────
-    //     Format attendu: {"Punctuality":"A","Politeness":"B",...}
-    //     Si null/invalid, on déclenche l'auto-génération basée sur la moyenne.
+    // ─── Affective + Psychomotor maps (JSON utilisateur ou auto) ─────────────
     let affectiveMap: Record<string, string> = {};
     try {
-      if (data.enAffectiveAssessment) {
-        affectiveMap = JSON.parse(data.enAffectiveAssessment);
-      }
+      if (data.enAffectiveAssessment) affectiveMap = JSON.parse(data.enAffectiveAssessment);
     } catch { affectiveMap = {}; }
-    if (Object.keys(affectiveMap).length === 0) {
-      affectiveMap = this.autoFillAffective(pupilAverage);
-    }
+    if (Object.keys(affectiveMap).length === 0) affectiveMap = this.autoFillAffective(pupilAverage);
     let psychomotorMap: Record<string, string> = {};
     try {
-      if (data.enPsychomotorAssessment) {
-        psychomotorMap = JSON.parse(data.enPsychomotorAssessment);
-      }
+      if (data.enPsychomotorAssessment) psychomotorMap = JSON.parse(data.enPsychomotorAssessment);
     } catch { psychomotorMap = {}; }
-    if (Object.keys(psychomotorMap).length === 0) {
-      psychomotorMap = this.autoFillPsychomotor(pupilAverage);
-    }
+    if (Object.keys(psychomotorMap).length === 0) psychomotorMap = this.autoFillPsychomotor(pupilAverage);
 
-    // ─── Build subject rows ──────────────────────────────────────────────────
+    // ─── Subject rows — 10 colonnes (Report Book) ────────────────────────────
     const subjectRows = subjects.map((s, i) => {
-      const fcaStr = s.firstCA === null || s.firstCA === undefined
-        ? '<span style="color:#94a3b8;">—</span>'
-        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.firstCA));
-      const scaStr = s.secondCA === null || s.secondCA === undefined
-        ? '<span style="color:#94a3b8;">—</span>'
-        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.secondCA));
-      const examStr = s.exam === null || s.exam === undefined
-        ? '<span style="color:#94a3b8;">—</span>'
-        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.exam));
       const total100 = subjectTotals100[i];
+      const hasScore = s.firstCA !== null && s.firstCA !== undefined
+        || s.secondCA !== null && s.secondCA !== undefined
+        || s.exam !== null && s.exam !== undefined;
+      const fcaStr = s.firstCA === null || s.firstCA === undefined || s.isAbsent
+        ? '<span style="color:#94a3b8;">—</span>' : String(s.firstCA);
+      const scaStr = s.secondCA === null || s.secondCA === undefined || s.isAbsent
+        ? '<span style="color:#94a3b8;">—</span>' : String(s.secondCA);
+      const examStr = s.exam === null || s.exam === undefined || s.isAbsent
+        ? '<span style="color:#94a3b8;">—</span>' : String(s.exam);
       const totalStr = s.isAbsent
         ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>'
-        : `<strong style="color:#0A2A5E;">${total100.toFixed(1)}</strong>`;
+        : hasScore ? `<strong style="color:#0A2A5E;">${total100.toFixed(1)}</strong>`
+          : '<span style="color:#94a3b8;">—</span>';
+      const highestStr = s.highestInClass !== null && s.highestInClass !== undefined
+        ? s.highestInClass.toFixed(1) : '—';
+      const lowestStr = s.lowestInClass !== null && s.lowestInClass !== undefined
+        ? s.lowestInClass.toFixed(1) : '—';
+      const posStr = s.subjectPosition ? this.enOrdinal(s.subjectPosition) : '—';
+      const gradeStr = s.grade || this.enGradeFor(total100);
+      const remarkStr = s.remark || (this.enTierFor(total100)?.label ?? '—');
       return `<tr>
         <td style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;text-align:left;">${s.name}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${fcaStr}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${scaStr}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${examStr}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;font-weight:600;background:#f8fafc;">${totalStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#475569;">${highestStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#475569;">${lowestStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;font-weight:600;">${posStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;font-weight:bold;color:#0A2A5E;">${gradeStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:8px;color:#475569;">${remarkStr}</td>
       </tr>`;
     }).join('');
 
-    // ─── Affective Assessment (A/B/C checkboxes) ──────────────────────────────
-    // ⭐ Auto-rempli depuis l'annotation utilisateur ou auto-généré depuis la moyenne
-    const affectiveSkills = [
-      'Punctuality', 'Politeness', 'Honesty', 'Self-control',
-      'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
-      'Care for property', 'Leadership',
+    // ─── Affective / Psychomotor — 2 colonnes A–E (Report Book) ──────────────
+    const affectiveCategories = [
+      'Co-operativeness', 'Punctuality', 'Curiosity', 'Politeness', 'Honesty',
+      'Att. School', 'Writ. Express.', 'Oral Express.', 'Health Info',
     ];
-    const affectiveRows = affectiveSkills.map(skill => {
-      const val = affectiveMap[skill] || '';
-      const aCheck = val === 'A' ? '<strong style="color:#059669;">&#9745;</strong>' : '&#9744;';
-      const bCheck = val === 'B' ? '<strong style="color:#2563eb;">&#9745;</strong>' : '&#9744;';
-      const cCheck = val === 'C' ? '<strong style="color:#d97706;">&#9745;</strong>' : '&#9744;';
-      return `<tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${aCheck}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${bCheck}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${cCheck}</td>
-      </tr>`;
-    }).join('');
+    const psychomotorCategories = [
+      'Handwriting', 'Games', 'Musical Skills', 'Handling of tool', 'Drawing &amp; Painting',
+    ];
+    const levelCell = (val: string, lvl: string): string =>
+      val === lvl ? '<strong style="color:#0A2A5E;">&#9745;</strong>' : '&#9744;';
+    const skillRow = (categories: string[], map: Record<string, string>): string =>
+      categories.map(cat => {
+        const val = map[cat] || '';
+        return `<tr>
+          <td style="border:1px solid #cbd5e1;padding:2px 5px;font-size:8px;text-align:left;">${cat}</td>
+          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'A')}</td>
+          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'B')}</td>
+          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'C')}</td>
+          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'D')}</td>
+          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'E')}</td>
+        </tr>`;
+      }).join('');
+    const affectiveRows = skillRow(affectiveCategories, affectiveMap);
+    const psychomotorRows = skillRow(psychomotorCategories, psychomotorMap);
+    const gridHeader = `<tr style="background:#f1f5f9;">
+      <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Category</th>
+      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">A</th>
+      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">B</th>
+      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">C</th>
+      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">D</th>
+      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">E</th>
+    </tr>`;
 
-    // ─── Psychomotor Skills (A/B/C checkboxes) ───────────────────────────────
-    // ⭐ Auto-rempli depuis l'annotation utilisateur ou auto-généré depuis la moyenne
-    const psychomotorSkills = [
-      'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
-      'Physical Education', 'Music', 'Games and Sports',
-    ];
-    const psychomotorRows = psychomotorSkills.map(skill => {
-      const val = psychomotorMap[skill] || '';
-      const aCheck = val === 'A' ? '<strong style="color:#059669;">&#9745;</strong>' : '&#9744;';
-      const bCheck = val === 'B' ? '<strong style="color:#2563eb;">&#9745;</strong>' : '&#9744;';
-      const cCheck = val === 'C' ? '<strong style="color:#d97706;">&#9745;</strong>' : '&#9744;';
-      return `<tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${aCheck}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${bCheck}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${cCheck}</td>
-      </tr>`;
-    }).join('');
+    // ─── Teacher's comments — lignes multiples (une par ligne de la grille) ──
+    const teacherCommentLines = teacherComments
+      .split('\n').filter(l => l.trim().length > 0)
+      .map(l => `<div style="font-size:9px;color:#1a1a1a;line-height:1.6;">&#8226; ${l.trim()}</div>`).join('');
 
     // ─── PAGE 1 ──────────────────────────────────────────────────────────────
     const page1Content = `
@@ -867,46 +898,51 @@ ${page2Content}
       <!-- REPORT CARD TITLE -->
       <div class="bulletin-title">Report Card &mdash; ${data.periodName} &mdash; ${data.academicYearName}</div>
 
-      <!-- TERM ENDING -->
-      <div style="text-align:center;font-size:9px;margin-bottom:5px;padding:3px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:2px;">
-        <strong style="color:#0A2A5E;">Term ends on:</strong> ${termEnding}
-      </div>
-
-      <!-- PUPIL INFO TABLE -->
-      <table class="pupil-info">
+      <!-- PUPIL INFO FORM (Report Book) -->
+      <table class="pupil-form">
         <tr>
-          <td style="width:50%;"><span class="label">Name of Pupil:</span> <strong>${data.studentName}</strong></td>
-          <td style="width:50%;"><span class="label">Age:</span> <strong>${ageStr}</strong></td>
+          <td colspan="2"><span class="form-label">Term ending:</span> <strong>${termEnding}</strong></td>
         </tr>
         <tr>
-          <td><span class="label">Class:</span> <strong>${data.className || '—'}</strong></td>
-          <td><span class="label">Position:</span> <strong>${positionStr}</strong></td>
+          <td colspan="2"><span class="form-label">Name of pupil:</span> <strong>${data.studentName}</strong></td>
         </tr>
         <tr>
-          <td><span class="label">Admission Number:</span> <strong>${admissionNo}</strong></td>
-          <td><span class="label">Session:</span> <strong>${session}</strong></td>
+          <td style="width:50%;"><span class="form-label">Age:</span> <strong>${ageStr}</strong></td>
+          <td style="width:50%;"><span class="form-label">Class:</span> <strong>${data.className || '—'}</strong></td>
         </tr>
         <tr>
-          <td colspan="2"><span class="label">Pupil's Average:</span> <strong style="color:#0A2A5E;font-size:11px;">${pupilAverage.toFixed(2)} / 100</strong></td>
+          <td><span class="form-label">Position:</span> <strong>${positionStr}</strong></td>
+          <td><span class="form-label">Admission N&deg;:</span> <strong>${admissionNo}</strong></td>
+        </tr>
+        <tr>
+          <td colspan="2"><span class="form-label">Session:</span> <strong>${session}</strong></td>
+        </tr>
+        <tr>
+          <td colspan="2"><span class="form-label">Pupil&rsquo;s average:</span> <strong style="color:#0A2A5E;font-size:11px;">${pupilAverage.toFixed(2)} / 100</strong></td>
         </tr>
       </table>
 
-      <!-- GRADES TABLE -->
+      <!-- GRADES TABLE — 10 COLUMNS (Report Book) -->
       <table class="grades-table">
         <thead>
           <tr style="background:#0A2A5E;color:white;">
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-align:left;text-transform:uppercase;">Subject</th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">First CA<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Second CA<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Exam<br/><span style="font-size:7px;font-weight:normal;">/60</span></th>
-            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Total<br/><span style="font-size:7px;font-weight:normal;">/100</span></th>
+            <th style="border:1px solid #0D3B85;padding:4px 2px;font-size:8px;text-align:left;text-transform:uppercase;">Subjects</th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">1st<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">2nd<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Exam<br/><span style="font-size:6px;font-weight:normal;">/60</span></th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Total<br/><span style="font-size:6px;font-weight:normal;">/100</span></th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:7px;text-transform:uppercase;line-height:1.2;">Highest in class</th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:7px;text-transform:uppercase;line-height:1.2;">Lowest in class</th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Position</th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Grade</th>
+            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Remark</th>
           </tr>
         </thead>
         <tbody>
           ${subjectRows}
           <tr style="background:#e2e8f0;font-weight:bold;">
-            <td colspan="4" style="border:1px solid #cbd5e1;padding:5px;font-size:9px;text-align:right;text-transform:uppercase;">Pupil's Average</td>
-            <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:11px;color:#0A2A5E;">${pupilAverage.toFixed(2)}</td>
+            <td colspan="9" style="border:1px solid #cbd5e1;padding:4px;font-size:8px;text-align:right;text-transform:uppercase;">Pupil&rsquo;s Average</td>
+            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${pupilAverage.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -932,55 +968,51 @@ ${page2Content}
         <tr>
           <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtainable.toFixed(0)}</td>
           <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtained.toFixed(2)}</td>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${data.totalStudents || '—'}</td>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${noInClass}</td>
         </tr>
       </table>
 
-      <!-- CLASS TEACHER'S COMMENTS -->
+      <!-- CLASS TEACHER'S COMMENT (Teacher's Appreciation + Comments — grille /100) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
-        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Class Teacher's Comments</div>
-        <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:50px;">${teacherComment}</div>
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Class Teacher&rsquo;s Comment</div>
+        <div style="font-size:9px;color:#1a1a1a;line-height:1.5;margin-bottom:4px;"><em>${teacherAppreciation}</em></div>
+        ${teacherCommentLines || '<div style="font-size:9px;color:#64748b;">&mdash;</div>'}
       </div>
 
-      <!-- AFFECTIVE ASSESSMENT -->
+      <!-- NEXT TERM BEGINS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px 6px;margin-bottom:6px;font-size:9px;">
+        <span style="font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Next term begins:</span>
+        <strong>${nextTermStart}</strong>
+      </div>
+
+      <!-- AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS (2 colonnes A–E — Report Book) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
-        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Affective Assessment</div>
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Affective Assessment: Psychomotor Skills</div>
         <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Skill</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">A</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">B</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">C</th>
-            </tr>
-          </thead>
-          <tbody>${affectiveRows}</tbody>
+          <tr>
+            <td style="width:50%;vertical-align:top;padding:0 2px 0 0;">
+              <table style="width:100%;border-collapse:collapse;">
+                <thead>${gridHeader}</thead>
+                <tbody>${affectiveRows}</tbody>
+              </table>
+            </td>
+            <td style="width:50%;vertical-align:top;padding:0 0 0 2px;">
+              <table style="width:100%;border-collapse:collapse;">
+                <thead>${gridHeader}</thead>
+                <tbody>${psychomotorRows}</tbody>
+              </table>
+            </td>
+          </tr>
         </table>
       </div>
 
-      <!-- PSYCHOMOTOR SKILLS -->
+      <!-- HEADMASTER(MISTRESS)'S COMMENT (grille /100) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
-        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Psychomotor Skills</div>
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Skill</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">A</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">B</th>
-              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">C</th>
-            </tr>
-          </thead>
-          <tbody>${psychomotorRows}</tbody>
-        </table>
-      </div>
-
-      <!-- DIRECTOR'S COMMENTS -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
-        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Director's / Principal's Comments</div>
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Headmaster(mistress)&rsquo;s Comment</div>
         <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:40px;">${directorComment}</div>
       </div>
 
-      <!-- SIGNATURES: Teacher + Parent + Director (3 signatures, same pattern as FR) -->
+      <!-- SIGNATURES: Class Teacher + Headmaster + Parent (3 signatures) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
@@ -990,14 +1022,14 @@ ${page2Content}
               ${data.teacherName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Signature</div>'}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 3px;">
+              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmaster(mistress)</div>
+              ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Signature</div>'}
+            </td>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Parent / Guardian</div>
               <div style="font-size:7px;color:#64748b;">Name &amp; Signature</div>
-            </td>
-            <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
-              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
-              <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmistress / Headmaster</div>
-              ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Signature</div>'}
             </td>
           </tr>
         </table>
@@ -1032,10 +1064,9 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
 .bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:5px 8px; border-radius:2px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; }
-.pupil-info { width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:2px; margin-bottom:6px; }
-.pupil-info td { padding:4px 6px; font-size:9px; border-bottom:1px solid #e2e8f0; }
-.pupil-info tr:last-child td { border-bottom:none; }
-.pupil-info .label { font-size:8px; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; }
+.pupil-form { width:100%; border-collapse:collapse; border:2px solid #0A2A5E; margin-bottom:6px; }
+.pupil-form td { padding:4px 8px; font-size:9px; border:1px solid #cbd5e1; }
+.pupil-form .form-label { font-size:8px; color:#475569; text-transform:uppercase; letter-spacing:0.3px; font-weight:bold; }
 .grades-table { width:100%; border-collapse:collapse; }
 .grades-table th { color:white; }
 .grades-table tbody tr:nth-child(even) { background:#f8fafc; }
@@ -1059,114 +1090,155 @@ ${page2Content}
   }
 
   /**
-   * ⭐ Auto-remplissage de l'Affective Assessment basé sur la moyenne /100.
-   * - >= 80 (Very Good+) : A pour la plupart des compétences (quelques B)
-   * - 70-79 (Good)       : A/B mix
-   * - 60-69 (Fair)       : B majoritaire, quelques A
-   * - 50-59 (Pass)       : B/C mix
-   * - 40-49 (Weak)       : C majoritaire
-   * - < 40 (Very Weak)   : C pour toutes
-   *
-   * Compétences "Critiques" (Honesty, Self-control, Respect, Cooperation)
-   * reçoivent toujours une note légèrement supérieure pour refléter le
-   * caractère non-académique.
+   * ⭐ V10h — Grille des appréciations /100 (modèle Report Book).
+   * 7 paliers → grades A+, A, B, C, D, F (F couvre WEAK + VERY WEAK).
+   */
+  private readonly EN_APPRECIATION_TIERS = [
+    {
+      min: 90, label: 'Outstanding', grade: 'A+',
+      teacherAppreciation: 'Outstanding performance. Excellent mastery of concepts.',
+      teacherComments: [
+        'Demonstrates exceptional understanding and skills',
+        'Highly consistent and disciplined work',
+        'Shows leadership and strong participation',
+        'Keep up the excellent work',
+      ],
+      principalComment: 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.',
+    },
+    {
+      min: 80, label: 'Very Good', grade: 'A',
+      teacherAppreciation: 'Very good performance. Strong academic achievement.',
+      teacherComments: [
+        'Very good comprehension of lessons',
+        'Regular and serious work habits',
+        'Participates actively in class',
+        'Aiming for excellence is encouraged',
+      ],
+      principalComment: 'Very good results. Consistent effort is encouraged to reach the highest standards.',
+    },
+    {
+      min: 70, label: 'Good', grade: 'B',
+      teacherAppreciation: 'Good performance. Satisfactory results.',
+      teacherComments: [
+        'Understands most concepts taught',
+        'Shows good effort and engagement',
+        'Minor weaknesses need attention',
+        'Can perform better with more focus',
+      ],
+      principalComment: 'Good performance. Greater concentration and consistency will lead to better outcomes.',
+    },
+    {
+      min: 60, label: 'Fair', grade: 'C',
+      teacherAppreciation: 'Fair performance. Needs improvement.',
+      teacherComments: [
+        'Basic understanding achieved',
+        'Effort is inconsistent',
+        'Needs to revise key concepts',
+        'Greater commitment is required',
+      ],
+      principalComment: 'Fair results. Student is advised to work harder and remain focused.',
+    },
+    {
+      min: 50, label: 'Pass', grade: 'D',
+      teacherAppreciation: 'Passable performance. Results are just acceptable.',
+      teacherComments: [
+        'Learning objectives partially met',
+        'Weak academic foundations',
+        'Must improve study habits',
+        'Parental support is recommended',
+      ],
+      principalComment: 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.',
+    },
+    {
+      min: 40, label: 'Weak', grade: 'F',
+      teacherAppreciation: 'Weak performance. Below expected standard.',
+      teacherComments: [
+        'Significant learning difficulties',
+        'Insufficient effort and practice',
+        'Requires close academic monitoring',
+        'Immediate corrective actions needed',
+      ],
+      principalComment: 'Performance below expectation. Immediate improvement is required with parental involvement.',
+    },
+    {
+      min: 0, label: 'Very Weak', grade: 'F',
+      teacherAppreciation: 'Very weak performance. Unsatisfactory.',
+      teacherComments: [
+        'Very poor understanding of lessons',
+        'Lack of effort and motivation',
+        'Serious academic gaps',
+        'Intensive support is urgently required',
+      ],
+      principalComment: 'Very poor academic performance. Urgent remedial measures and close supervision are required.',
+    },
+  ];
+
+  /** Palier de la grille pour un score /100. */
+  private enTierFor(score: number) {
+    return this.EN_APPRECIATION_TIERS.find(t => score >= t.min)
+      ?? this.EN_APPRECIATION_TIERS[this.EN_APPRECIATION_TIERS.length - 1];
+  }
+
+  /** Grade (A+, A, B, C, D, F) pour un score /100 — colonne Grade. */
+  private enGradeFor(score: number): string {
+    return this.enTierFor(score).grade;
+  }
+
+  /** Ordinal anglais : 1 → 1st, 2 → 2nd, 3 → 3rd, 4 → 4th… */
+  private enOrdinal(rank: number): string {
+    const rem10 = rank % 10, rem100 = rank % 100;
+    if (rem10 === 1 && rem100 !== 11) return `${rank}st`;
+    if (rem10 === 2 && rem100 !== 12) return `${rank}nd`;
+    if (rem10 === 3 && rem100 !== 13) return `${rank}rd`;
+    return `${rank}th`;
+  }
+
+  /**
+   * ⭐ V10h — Auto-remplissage Affective Assessment (colonne gauche du Report
+   * Book), niveaux A–E depuis la moyenne /100. Compétences comportementales
+   * (Co-operativeness, Politeness, Honesty, Punctuality, Health Info) relevées
+   * d'un niveau pour refléter le caractère non-académique.
    */
   private autoFillAffective(pupilAverage: number): Record<string, string> {
     const skills = [
-      'Punctuality', 'Politeness', 'Honesty', 'Self-control',
-      'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
-      'Care for property', 'Leadership',
+      'Co-operativeness', 'Punctuality', 'Curiosity', 'Politeness', 'Honesty',
+      'Att. School', 'Writ. Express.', 'Oral Express.', 'Health Info',
     ];
-    // Soft skills that should be rated slightly higher than academic performance
-    const softSkills = new Set(['Honesty', 'Self-control', 'Respect for others', 'Cooperation']);
+    const soft = new Set(['Co-operativeness', 'Politeness', 'Honesty', 'Punctuality', 'Health Info']);
+    const levels = ['A', 'B', 'C', 'D', 'E'];
+    const baseIdx = pupilAverage >= 90 ? 0
+      : pupilAverage >= 80 ? 1
+        : pupilAverage >= 70 ? 2
+          : pupilAverage >= 50 ? 3 : 4;
     const map: Record<string, string> = {};
     for (let i = 0; i < skills.length; i++) {
-      const skill = skills[i];
-      const isSoft = softSkills.has(skill);
-      // Bump level for soft skills (one level higher than academic baseline)
-      let level: 'A' | 'B' | 'C';
-      if (pupilAverage >= 80) level = isSoft ? 'A' : (i % 4 === 0 ? 'B' : 'A');
-      else if (pupilAverage >= 70) level = isSoft ? 'A' : (i % 3 === 0 ? 'B' : 'A');
-      else if (pupilAverage >= 60) level = isSoft ? 'A' : (i % 2 === 0 ? 'B' : 'A');
-      else if (pupilAverage >= 50) level = isSoft ? 'B' : (i % 3 === 0 ? 'C' : 'B');
-      else if (pupilAverage >= 40) level = isSoft ? 'B' : (i % 2 === 0 ? 'C' : 'B');
-      else level = isSoft ? 'B' : 'C';
-      map[skill] = level;
+      let idx = baseIdx;
+      if (soft.has(skills[i])) idx = Math.max(0, idx - 1);          // un niveau au-dessus
+      else if (i % 3 === 0) idx = Math.min(levels.length - 1, idx + 1); // un niveau en dessous
+      map[skills[i]] = levels[idx];
     }
     return map;
   }
 
   /**
-   * ⭐ Auto-remplissage des Psychomotor Skills basé sur la moyenne /100.
-   * Suit la même logique que l'Affective Assessment.
+   * ⭐ V10h — Auto-remplissage Psychomotor Skills (colonne droite du Report
+   * Book), niveaux A–E depuis la moyenne /100.
    */
   private autoFillPsychomotor(pupilAverage: number): Record<string, string> {
     const skills = [
-      'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
-      'Physical Education', 'Music', 'Games and Sports',
+      'Handwriting', 'Games', 'Musical Skills', 'Handling of tool', 'Drawing & Painting',
     ];
+    const levels = ['A', 'B', 'C', 'D', 'E'];
+    const baseIdx = pupilAverage >= 90 ? 0
+      : pupilAverage >= 80 ? 1
+        : pupilAverage >= 70 ? 2
+          : pupilAverage >= 50 ? 3 : 4;
     const map: Record<string, string> = {};
     for (let i = 0; i < skills.length; i++) {
-      let level: 'A' | 'B' | 'C';
-      if (pupilAverage >= 80) level = i % 4 === 0 ? 'B' : 'A';
-      else if (pupilAverage >= 70) level = i % 3 === 0 ? 'B' : 'A';
-      else if (pupilAverage >= 60) level = i % 2 === 0 ? 'B' : 'A';
-      else if (pupilAverage >= 50) level = i % 3 === 0 ? 'C' : 'B';
-      else if (pupilAverage >= 40) level = i % 2 === 0 ? 'C' : 'B';
-      else level = 'C';
-      map[skills[i]] = level;
+      const idx = i % 3 === 0 ? Math.min(levels.length - 1, baseIdx + 1) : baseIdx;
+      map[skills[i]] = levels[idx];
     }
     return map;
   }
-
-  /**
-   * ⭐ Commentaire de l'enseignant anglophone basé sur la moyenne /100.
-   * Inclut la date de début du prochain trimestre.
-   */
-  private getEnTeacherComment(pupilAverage: number, nextTermStart: string): string {
-    if (pupilAverage >= 90) {
-      return `Outstanding performance! This pupil has demonstrated exceptional mastery across all subjects. Keep up the excellent work. Next term begins on <strong>${nextTermStart}</strong>.`;
-    }
-    if (pupilAverage >= 80) {
-      return `Very good results. The pupil shows strong academic achievement and consistent effort. Aim for the highest standards next term, which starts on <strong>${nextTermStart}</strong>.`;
-    }
-    if (pupilAverage >= 70) {
-      return `Good performance. The pupil understands most concepts taught. With greater concentration, results will improve further. Next term starts on <strong>${nextTermStart}</strong>.`;
-    }
-    if (pupilAverage >= 60) {
-      return `Fair results. The pupil is advised to work harder and remain focused. Greater commitment is required to improve. Next term begins on <strong>${nextTermStart}</strong>.`;
-    }
-    if (pupilAverage >= 50) {
-      return `Results are just satisfactory. Stronger effort and parental follow-up are necessary. Next term starts on <strong>${nextTermStart}</strong>.`;
-    }
-    if (pupilAverage >= 40) {
-      return `Performance below expectation. Immediate improvement is required with parental involvement. Next term begins on <strong>${nextTermStart}</strong>.`;
-    }
-    return `Very poor academic performance. Urgent remedial measures and close supervision are required. Next term starts on <strong>${nextTermStart}</strong>.`;
-  }
-
-  /**
-   * ⭐ Commentaire du directeur/principal anglophone basé sur la moyenne /100.
-   */
-  private getEnDirectorComment(pupilAverage: number): string {
-    if (pupilAverage >= 90) {
-      return 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.';
-    }
-    if (pupilAverage >= 80) {
-      return 'Very good results. Consistent effort is encouraged to reach the highest standards.';
-    }
-    if (pupilAverage >= 70) {
-      return 'Good performance. Greater concentration and consistency will lead to better outcomes.';
-    }
-    if (pupilAverage >= 60) {
-      return 'Fair results. The pupil is advised to work harder and remain focused.';
-    }
-    if (pupilAverage >= 50) {
-      return 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.';
-    }
-    if (pupilAverage >= 40) {
-      return 'Performance below expectation. Immediate improvement is required with parental involvement.';
-    }
-    return 'Very poor academic performance. Urgent remedial measures and close supervision are required.';
-  }
 }
+

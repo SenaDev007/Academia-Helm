@@ -186,6 +186,7 @@ export class GradesService {
         studentName: `${student.lastName} ${student.firstName}`.trim(),
         matricule: student.matricule ?? null,
         gender: student.gender ?? null,
+        birthDate: student.dateOfBirth ?? null,   // ⭐ V10h — âge du Report Book EN
         score: grade?.score ?? null,
         cm,
         cp,

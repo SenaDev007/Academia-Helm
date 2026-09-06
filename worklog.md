@@ -9750,3 +9750,22 @@ Stage Summary:
 - ✅ Sous-onglet Encaissements + déduction auto (mécanique AccountBreakdown + event refresh)
 - ✅ Bonus : fix structurel recalculateAllAccounts (nouveaux frais → comptes existants)
 - Reste : nettoyage cosmétique des 4 lignes d'historique test (script prêt, accès Neon direct instable) ; P5 matrice E2E scope + D6 enforcement guards ( backlog)
+
+---
+Task ID: 20
+Agent: Super Z (principal)
+Task: Bug « modal de configuration des frais ne se ferme pas » (piste EN incluse) + bouton/modal DÉDIÉ pour l'encaissement des frais généraux (Encaissements → sous-onglet Frais généraux) avec déduction auto
+
+Work Log:
+- Diagnostic mesuré en prod : POST /finance/fee-structures = 21,8 s (recalcul séquentiel 93 comptes) → fonction Vercel BFF tuée (pas de maxDuration) → réponse jamais reçue → modal figé alors que Railway terminait (enregistrement visible au reload). Découverte annexe : fetchWithTimeout REJOUE les timeout/502-504 → interdit sur mutation (frais en double)
+- Fix 3 couches : (1) recalculateAllAccounts parallélisé (concurrence 5) → 7-8 s mesuré ; (2) BFF maxDuration=60 + timeout 55 s SANS retry + 504 explicite sur POST/PATCH fee-structures ; (3) FeeStructureModal : état saving (spinner, désactivé, anti double-clic)
+- Encaissement dédié : CreateTransactionDto.targetFeeType (imputation restreinte au type, FIFO ignoré, refus 400 si dépassement) + GeneralFeePaymentModal (flux séparé simple : élèves filtrés sur restant GENERAL > 0, détail Dû/Payé/Reste par frais, Payer tout, caisse + reliquat, reçu + renvois, FR/EN) + bouton indigo dans le sous-onglet + état vide guidant + handleGeneralSuccess (bascule auto sous-onglet + event déduction)
+- Bonus (c88f600b) : modal d'édition n'écrase plus le nom du frais par l'auto-nom (nameManuallyEdited initialisé en édition) — découvert en E2E (renommage involontaire « Tenue scolaire » → « Frais généraux »)
+- Validation E2E prod TOUT PASSÉ : timing 21,8→7,3 s (PATCH 8,8 s via BFF), refus 400 chiffré, allocation GENERAL seule, sous-onglet, déduction 200→50 (API) ; navigateur : 93 élèves filtrés, encaissement 500 → reçu, bascule auto, onglet Frais généraux solde 0 « Payé » ; nom préservé en édition
+- Cleanup : frais test supprimés, transactions test annulées, recalc 93/93 → compte ABOUBAKARY restauré exactement (38000/0/38000), listing general-fees vide
+- ⚠️ Reste cosmétique : ~6 lignes d'historique net 0 dans Encaissements (tests Task 19+20) — script cleanup_history_general_fees.js prêt, bloqué par l'accès direct Neon (mot de passe roté)
+
+Stage Summary:
+- ✅ Les 2 demandes livrées, déployées et validées E2E production (API + navigateur réel)
+- ✅ Aucun doublon de frais détecté (séquelle possible du bug double-clic) : base saine
+- Prochaine étape possible : purger l'historique cosmétique dès retour de l'accès Neon

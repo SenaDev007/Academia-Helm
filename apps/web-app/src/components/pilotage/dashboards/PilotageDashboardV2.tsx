@@ -247,6 +247,7 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
   icon: React.ComponentType<{ className?: string }>;
   accentColor: string;
 }) {
+  const L = useL();
   const maxValue = Math.max(...data.map((d) => d.value), 1);
   const [showAll, setShowAll] = useState(false);
   const visibleData = showAll ? data : data.slice(0, 6);
@@ -272,7 +273,7 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
         <div className="h-48 flex items-center justify-center">
           <div className="text-center">
             <BarChart3 className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Aucune donnée disponible</p>
+            <p className="text-sm text-gray-400">{L("Aucune donnée disponible", "No data available")}</p>
           </div>
         </div>
       ) : (
@@ -339,6 +340,7 @@ function DonutChartCard({ title, data, icon: Icon, accentColor }: {
   icon: React.ComponentType<{ className?: string }>;
   accentColor: string;
 }) {
+  const L = useL();
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   // Calcul des arcs
@@ -370,7 +372,7 @@ function DonutChartCard({ title, data, icon: Icon, accentColor }: {
         <div className="h-48 flex items-center justify-center">
           <div className="text-center">
             <PieChart className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Aucune donnée</p>
+            <p className="text-sm text-gray-400">{L("Aucune donnée", "No data")}</p>
           </div>
         </div>
       ) : (
@@ -432,6 +434,7 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
   accentColor: string;
   unit?: string;
 }) {
+  const L = useL();
   // ⭐ Échelle Y : si les valeurs sont des moyennes /20, on va de 0 à 20.
   //    Sinon, on prend le max + 10% de marge.
   const isOutOfTwenty = unit === '/ 20' || (data.length > 0 && data.every(d => d.value <= 20));
@@ -495,8 +498,8 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
         <div className="h-48 flex items-center justify-center">
           <div className="text-center">
             <TrendingUp className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Aucune donnée disponible</p>
-            <p className="text-xs text-gray-300 mt-1">Les données apparaîtront après la première période</p>
+            <p className="text-sm text-gray-400">{L("Aucune donnée disponible", "No data available")}</p>
+            <p className="text-xs text-gray-300 mt-1">{L("Les données apparaîtront après la première période", "Data will appear after the first period")}</p>
           </div>
         </div>
       ) : (
@@ -710,7 +713,7 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
           {L("Personnalisations de frais de scolarité", "Tuition fee customisations")}
         </h3>
         <p className="text-[11px] text-amber-100 mt-0.5">
-          Élèves bénéficiant d'un tarif personnalisé · {data.totalOverrides} élève(s) concerné(s)
+          {L("Élèves bénéficiant d'un tarif personnalisé", "Students with a customised fee")} · {L(`${data.totalOverrides} élève(s) concerné(s)`, `${data.totalOverrides} student(s) concerned`)}
         </p>
       </div>
 
@@ -719,17 +722,17 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
         <div>
           <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">{L("Montant standard", "Standard amount")}</p>
           <p className="text-lg font-bold text-slate-700 line-through">{formatCurrency(data.totalOriginalAmount)}</p>
-          <p className="text-[10px] text-slate-400">Ce qu'ils auraient dû payer</p>
+          <p className="text-[10px] text-slate-400">{L("Ce qu'ils auraient dû payer", "What they should have paid")}</p>
         </div>
         <div>
           <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">{L("Après personnalisation", "After customisation")}</p>
           <p className="text-lg font-bold text-emerald-700">{formatCurrency(data.totalCustomAmount)}</p>
-          <p className="text-[10px] text-slate-400">Ce qu'ils vont payer</p>
+          <p className="text-[10px] text-slate-400">{L("Ce qu'ils vont payer", "What they will pay")}</p>
         </div>
         <div>
           <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">{L("Réduction totale", "Total reduction")}</p>
           <p className="text-lg font-bold text-red-700">{formatCurrency(data.totalReductionAmount)}</p>
-          <p className="text-[10px] text-slate-400">Soit -{data.reductionPercentage}% en moyenne</p>
+          <p className="text-[10px] text-slate-400">{L(`Soit -${data.reductionPercentage}% en moyenne`, `i.e. -${data.reductionPercentage}% on average`)}</p>
         </div>
       </div>
 
@@ -739,11 +742,11 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="text-left px-4 py-2 font-semibold text-slate-700">Niveau</th>
-                <th className="text-right px-4 py-2 font-semibold text-slate-700">Élèves</th>
-                <th className="text-right px-4 py-2 font-semibold text-slate-500">Tarif standard</th>
-                <th className="text-right px-4 py-2 font-semibold text-emerald-700">Après perso.</th>
-                <th className="text-right px-4 py-2 font-semibold text-red-700">Réduction</th>
+                <th className="text-left px-4 py-2 font-semibold text-slate-700">{L("Niveau", "Level")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-700">{L("Élèves", "Students")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-500">{L("Tarif standard", "Standard fee")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-emerald-700">{L("Après perso.", "After custom.")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-red-700">{L("Réduction", "Reduction")}</th>
                 <th className="text-right px-4 py-2 font-semibold text-amber-700">%</th>
               </tr>
             </thead>
@@ -769,7 +772,7 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
 
       <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
         <p className="text-[10px] text-slate-500">
-          <span className="font-semibold">Note :</span> Les personnalisations sont des ajustements individuels du tarif de scolarité accordés à certains élèves (bourses, réductions familiales, etc.).
+          {L("Note :", "Note:")} {L("Les personnalisations sont des ajustements individuels du tarif de scolarité accordés à certains élèves (bourses, réductions familiales, etc.).", "Customisations are individual adjustments to the tuition fee granted to certain students (scholarships, family discounts, etc.).")}
         </p>
       </div>
     </div>
@@ -830,6 +833,7 @@ function getSeriesColor(levelCode: string, track: string): string {
 }
 
 function GradeEvolutionByLevelSection({ academicYearId }: { academicYearId?: string }) {
+  const L = useL();
   const { data, isLoading } = useGradeEvolution(academicYearId);
 
   if (isLoading && !data) {
@@ -853,8 +857,8 @@ function GradeEvolutionByLevelSection({ academicYearId }: { academicYearId?: str
         <div className="h-48 flex items-center justify-center">
           <div className="text-center">
             <TrendingUp className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-400">Aucune donnée disponible</p>
-            <p className="text-xs text-gray-300 mt-1">Les moyennes par période apparaîtront après la première évaluation</p>
+            <p className="text-sm text-gray-400">{L("Aucune donnée disponible", "No data available")}</p>
+            <p className="text-xs text-gray-300 mt-1">{L("Les moyennes par période apparaîtront après la première évaluation", "Period averages will appear after the first assessment")}</p>
           </div>
         </div>
       </div>
@@ -1096,7 +1100,7 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
               </div>
               <span className="text-[10px] uppercase tracking-wider font-bold text-rose-600">Administration</span>
             </div>
-            <p className="text-xs text-gray-600 mb-1">Personnel administratif</p>
+            <p className="text-xs text-gray-600 mb-1">{L("Personnel administratif", "Administrative staff")}</p>
             <p className="text-2xl font-bold text-rose-900">{formatNumber(data.adminStaffCount)}</p>
             <p className="text-[10px] text-rose-600 mt-1">
               {data.totalStaff > 0 ? `${Math.round((data.adminStaffCount / data.totalStaff) * 100)}% du personnel` : '—'}
@@ -1111,7 +1115,7 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
               </div>
               <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Enseignants</span>
             </div>
-            <p className="text-xs text-gray-600 mb-1">Corps enseignant</p>
+            <p className="text-xs text-gray-600 mb-1">{L("Corps enseignant", "Teaching staff")}</p>
             <p className="text-2xl font-bold text-blue-900">{formatNumber(data.teachersCount)}</p>
             <p className="text-[10px] text-blue-600 mt-1">
               {data.totalStaff > 0 ? `${Math.round((data.teachersCount / data.totalStaff) * 100)}% du personnel` : '—'}
@@ -1124,7 +1128,7 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
           <div>
             <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
               <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
-              Enseignants par niveau scolaire
+              {L("Enseignants par niveau scolaire", "Teachers by school level")}
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {data.teachersByLevel.map((lvl) => (
@@ -1201,12 +1205,12 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
             <Users className="w-4 h-4" />
             {L("Distribution des âges", "Age distribution")}
           </h3>
-          <p className="text-[11px] text-indigo-100 mt-0.5">Tranches d'âge par niveau scolaire</p>
+          <p className="text-[11px] text-indigo-100 mt-0.5">{L("Tranches d'âge par niveau scolaire", "Age brackets by school level")}</p>
         </div>
         <div className="p-8 text-center">
           <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">Aucune donnée disponible</p>
-          <p className="text-xs text-gray-300 mt-1">Les données apparaîtront après l'inscription des élèves</p>
+          <p className="text-sm text-gray-400">{L("Aucune donnée disponible", "No data available")}</p>
+          <p className="text-xs text-gray-300 mt-1">{L("Les données apparaîtront après l'inscription des élèves", "Data will appear after students are enrolled")}</p>
         </div>
       </div>
     );
@@ -1222,7 +1226,7 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
           {L("Distribution des âges", "Age distribution")}
         </h3>
         <p className="text-[11px] text-indigo-100 mt-0.5">
-          {data.totalStudents} élèves · Tranches d'âge par niveau scolaire
+          {L(`${data.totalStudents} élèves`, `${data.totalStudents} students`)} · {L("Tranches d'âge par niveau scolaire", "Age brackets by school level")}
         </p>
       </div>
 
@@ -1369,8 +1373,8 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
         </div>
         <div className="p-8 text-center">
           <Award className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">Aucune donnée disponible</p>
-          <p className="text-xs text-gray-300 mt-1">Les résultats apparaîtront après la première évaluation</p>
+          <p className="text-sm text-gray-400">{L("Aucune donnée disponible", "No data available")}</p>
+          <p className="text-xs text-gray-300 mt-1">{L("Les résultats apparaîtront après la première évaluation", "Results will appear after the first assessment")}</p>
         </div>
       </div>
     );
@@ -1848,9 +1852,11 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
     }
     const total = consolidated?.enrollment?.total || 0;
     if (total > 0) {
+      // ⭐ P4-final : libellés bilingues (fallback estimation 51/49)
+      const isEN = L('fr', 'en') === 'en';
       return [
-        { label: 'Garçons', value: Math.round(total * 0.51), color: '#3B82F6' },
-        { label: 'Filles', value: Math.round(total * 0.49), color: '#EC4899' },
+        { label: isEN ? 'Boys' : 'Garçons', value: Math.round(total * 0.51), color: '#3B82F6' },
+        { label: isEN ? 'Girls' : 'Filles', value: Math.round(total * 0.49), color: '#EC4899' },
       ];
     }
     return [];

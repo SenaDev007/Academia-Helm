@@ -9684,3 +9684,19 @@ Stage Summary:
 - Toutes les données de test supprimées de la prod (4 personnels, 38 lignes liées) — vérifié par re-requête post-commit
 - Sauvegardé : commit poussé sur main Academia-Helm (voir git log) ; Railway redéploie l'API (postinstall: prisma generate → modèle billingDocument actif) et Vercel le front
 - Vérification post-déploiement : Paramètres > Année scolaire > Créer les 3 trimestres (plus d'erreur JSON) ; RH > Paie > émettre FP/EP (Net à payer lisible) ; signup ou paramètres > groupe d'écoles : sous-domaine saisi, effectif + 2e école sur le contrat, corrections après retour, reçu REC-AH + facture FAC-AH dans l'email + numéros à l'écran
+
+---
+Task ID: 17 (suite — incident déploiement résolu)
+Agent: Super Z (agent principal)
+Task: Crash au boot Railway du commit 9d100740 (logs utilisateur : ReferenceError: Min is not defined, create-draft.dto.js:77, crash-loop du conteneur) — diagnostic et correction
+
+Work Log:
+- Logs fournis = build de 11:11 UTC du commit 9d100740 (AVANT correction) : le conteneur crashait en boucle au chargement du module create-draft.dto (décorateur @Min() au top-level)
+- Cause racine : 2 imports manquants dans le lot initial — Min/Max (create-draft.dto.ts, ajoutés avec estimatedStudentCount) et HttpCode/HttpStatus (contract.controller.ts, endpoint POST /receipts) ; le build Nest/SWC ne type-check pas (typeCheck:false, tsconfig ignoreBuildErrors) → compile OK puis ReferenceError au runtime
+- Correction poussée à 11:27 UTC : commit 39759812 (imports + JsonNull → [] pour compat Prisma 7) + 5d5eb923 (nettoyage pollution du commit : schema de test local + package-lock restauré)
+- Double filet de sécurité : tsc --noEmit complet sur le projet — plus AUCUN TS2304 « Cannot find name » dans les fichiers du lot (les 4 restants, finance-reports.controller / payroll-documents.service, sont préexistants et non touchés — vérifié par diff vide)
+- Validation production post-déploiement : Railway just-clarity = success (75 s), /health = 200, POST /onboarding/contract/receipts → 404 JSON propre (draft inexistant — route vivante), POST /onboarding/draft/:id/school → 404 JSON propre, GET /onboarding/contract/billing/:file → 404 (route vivante), front Vercel = 200
+
+Stage Summary:
+- Incident résolu : API redeployée et saine ; toutes les nouvelles routes (reçus/factures, mise à jour draft, download billing) répondent en JSON
+- Leçon consignée : avec SWC typeCheck:false, TOUJOURS vérifier les imports par tsc --noEmit (TS2304) avant push — un identifiant manquant dans un décorateur = crash au boot, invisible au build

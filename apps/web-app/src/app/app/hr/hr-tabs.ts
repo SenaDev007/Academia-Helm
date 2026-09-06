@@ -76,6 +76,7 @@ export const HR_SUBMODULE_TABS = [
   {
     id: 'internships',
     label: 'Stagiaires',
+    labelEn: 'Interns',
     path: '/app/hr/internships',
     icon: GraduationCap,
   },

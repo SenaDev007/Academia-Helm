@@ -9900,3 +9900,40 @@ Stage Summary:
 - ✅ Total des arriérés = 552 000 exactement (46 élèves), validé par l'API de production
 - ✅ Cohérence : classe 6e rattachée au niveau Secondaire + à la classe officielle « 6ème » du catalogue ; comptes élèves créés au pattern des 43 importés ; trace d'audit posée
 - Note : le niveau Secondaire reste inactif (prudent — aucun effet de bord sur les sélecteurs) ; les 3 élèves sont visibles dans la vue « tous niveaux » des arriérés et dans le module Élèves (96 élèves au total)
+
+---
+Task ID: 26
+Agent: Super Z (agent principal)
+Task: Import en masse des encaissements au format « POINT » des écoles (module Finance > Bilan des encaissements) — demande utilisateur : importer directement les fichiers Excel réels des écoles (une feuille par classe, colonne Scolarité avec tranches P1..P6), y compris pour les années antérieures lors de l'onboarding des nouvelles écoles
+
+Work Log:
+- Analyse du fichier réel fourni « POINT PRIMAIRE 2025-2026.xlsx » (15 feuilles = 14 classes + RECAP) : en-têtes fusionnés lignes 4-5 (N° | Noms et Prénoms | Arriéré | Tél | Inscript | Unif | Tenue de Sport | Total frais Généraux | Scolarité P1..P6 | Total Scolarité | Reste | Total des payements), ligne 3 ANNEE SCOLAIRE + frais de classe, données dès la ligne 6, ligne TOTAL en fin — l'import existant (format plat Academia) ne lisait pas ce format (col 1 = N° lu comme nom, en-tête ligne 4 non sautée, colonne Arriéré textuelle "ABD"/"FONDE"/école d'origine)
+- NOUVEAU fichier apps/api-server/src/finance/point-format.parser.ts (parser PUR, zéro dépendance NestJS) :
+  * détection auto du format par feuille (POINT vs SIMPLE vs UNKNOWN) via en-tête "Noms et Prénoms" + sous-ligne P1..P6
+  * résolution DYNAMIQUE des colonnes depuis les libellés (robuste aux variations : "ARRIERE", "ZOU" comme titre de scolarité, "Scolarite ")
+  * parsing STRICT des montants (texte non numérique → 0 + note : "ABD", "FONDE", "DAROU SALAM", "2025 - 2026")
+  * détection année scolaire + frais de classe dans la zone d'en-tête, arrêt à la ligne TOTAL, saut des lignes sans nom
+  * rétrocompatibilité intégrale du format SIMPLE (parseSimpleSheet, comportement historique)
+- Refonte de collection-summary-import.service.ts :
+  * previewImport multi-formats : auto-détection par feuille + feuilles inconnues ignorées avec warning
+  * ⭐ matching d'élèves restreint au bassin de la classe portée par le nom de feuille (resolveClassId : cascade nom exact → sans espaces → sans section "CP A"→"CP" → containment ; fallback global)
+  * ⭐ avertissement yearMismatch : année lue dans le fichier vs année cible sélectionnée (CM2 B et CE1 A du fichier réel sont marquées 2024-2025 !)
+  * total encaissé POINT = Inscript + Unif + Tenue + Σ(P1..P6) (colonne Arriéré = informative, non importée — relève de l'import des arriérés)
+  * downloadTemplate : le template généré adopte la structure POINT exacte des écoles (élèves pré-remplis, formules H/O/P/Q, ligne TOTAL, instructions)
+  * référence de transaction suffixée [POINT] pour traçabilité
+- ImportBilanModal.tsx (web-app) :
+  * ⭐ sélecteur d'année scolaire cible (année active par défaut, sélection d'une année antérieure pour l'onboarding)
+  * aide documentant les 2 formats acceptés (POINT détaillé colonne par colonne + SIMPLE)
+  * bandeau d'avertissement année divergente (années uniques + feuilles concernées)
+  * tableau preview enrichi : Frais généraux (Inscr+Unif+Tenue) / Scolarité (P1-P6) / Arriéré (info, non importé) / Total ; badge POINT par feuille ; notes ABD affichées
+- VALIDATION (3 jeux de tests, fichiers réels) :
+  * scripts/test-point-parser.ts : les 14 feuilles POINT reconnues, 508 lignes élèves, 22 185 000 FCFA, sommes E/O/P1-P6/Q = ligne TOTAL du fichier sur TOUTES les feuilles
+  * scripts/test-bilan-service.ts (service + Prisma mocké) : 508 lignes, matching des 9 élèves mockés (variantes initiales "BIO YIRO A", inversions), yearMismatch CM2 B + CE1 A en 2024-2025, cible 2024-2025 → 12 feuilles signalées, template SIMPLE toujours accepté
+  * scripts/test-template-roundtrip.ts : template généré → re-parse → élèves pré-remplis matchés, année lue, P1..P6 en place, saisie simulée (Inscript 5000 + P1 12000 + P2 10000 → total 27000) correcte ; exemple sauvegardé dans download/template-import-bilan-encaissements-POINT.xlsx
+- Typecheck : zéro nouvelle erreur (erreurs TS2339 prisma = artefact prisma generate non exécuté en local, 5 870 préexistantes ; Buffer TS2345 et toast TS2322 préexistantes à HEAD ; syntaxe validée via transpiler)
+
+Stage Summary:
+- ✅ Les écoles peuvent uploader DIRECTEMENT leurs fichiers POINT réels (feuille = classe, P1..P6) — plus besoin de retranscrire dans le template Academia
+- ✅ Support des années antérieures (sélecteur d'année + avertissement d'alignement fichier vs cible)
+- ✅ Rétrocompatibilité totale (anciens templates plats reconnus), endpoints inchangés (preview/run/template)
+- ⚠️ Sémantique : la colonne Arriéré des fichiers POINT (solde année antérieure) n'est PAS importée dans les encaissements — l'import dédié des arriérés la traite ; la preview l'affiche en clair

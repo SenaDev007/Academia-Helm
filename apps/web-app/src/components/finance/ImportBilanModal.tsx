@@ -3,39 +3,57 @@
  * IMPORT BILAN MODAL — Import en masse du bilan des encaissements
  * ============================================================================
  *
- * Modal permettant d'importer les paiements encaisses (bilan des encaissements)
- * depuis un fichier Excel (.xlsx), typiquement les fichiers "POINT" remplis
- * manuellement par les comptables des ecoles.
+ * Modal permettant d'importer les paiements encaissés (bilan des encaissements)
+ * depuis un fichier Excel (.xlsx).
  *
- * Le template est une feuille par classe, pre-remplie avec les eleves.
- * L'admin saisit les montants encaisses par eleve (Arriere, Inscription,
- * Tranches 1-6) puis confirme l'import.
+ * ⭐ DEUX FORMATS ACCEPTÉS (auto-détectés à l'upload) :
+ *   1. FORMAT « POINT » — le standard des fichiers tenus par les écoles :
+ *      une feuille par classe (nom de la feuille = classe), en-têtes sur les
+ *      lignes 4-5, tranches de scolarité P1..P6, ligne TOTAL en fin de
+ *      tableau. Le total encaissé par élève = Inscript + Unif + Tenue + P1..P6.
+ *   2. Format SIMPLE — le template plat généré par Academia Helm
+ *      (Noms | Arriéré | Inscription | Tranches 1-6 | Total).
  *
- * Pour chaque ligne valide : une FinanceTransaction (type=PAYMENT) est creee
- * et allouee FIFO sur les AccountBreakdowns de l'eleve.
+ * ⭐ SÉLECTEUR D'ANNÉE SCOLAIRE : permet de cibler l'année active OU une
+ *   année antérieure (utile pour l'onboarding des nouvelles écoles qui
+ *   réinjectent leur historique). Si l'année lue dans le fichier ne
+ *   correspond pas à l'année sélectionnée, un avertissement s'affiche.
+ *
+ * Pour chaque ligne valide : une FinanceTransaction (type=PAYMENT) est créée
+ * et allouée FIFO sur les AccountBreakdowns de l'élève.
  *
  * Accessible depuis le module Finance > Bilan des encaissements.
  * ============================================================================
  */
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   X, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle,
-  Loader2, ArrowRight, Receipt, UserCheck, UserX, HelpCircle,
+  Loader2, ArrowRight, Receipt, UserCheck, UserX, HelpCircle, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { useToast } from '@/components/ui/use-toast';
+import { getAcademicYears } from '@/services/settings.service';
 
 interface PreviewRow {
   rowIndex: number;
   sheetName: string;
   studentName: string;
   arrear: number;
+  arrearNote?: string;
   inscription: number;
   tranches: number[];
   total: number;
+  // ⭐ Enrichissement format POINT
+  format?: 'POINT' | 'SIMPLE';
+  unif?: number;
+  tenue?: number;
+  fraisGeneraux?: number;
+  scolaritePayee?: number;
+  reste?: number;
+  notes?: string[];
   matchStatus: 'MATCHED' | 'FUZZY' | 'NOT_FOUND';
   matchScore: number;
   resolvedStudentName?: string;
@@ -49,6 +67,11 @@ interface PreviewResult {
   invalidRows: number;
   rows: PreviewRow[];
   sheetsProcessed: string[];
+  sheetInfo?: Record<string, { format: 'POINT' | 'SIMPLE'; yearLabel?: string; classFee?: number }>;
+  yearMismatch?: {
+    targetYear: string;
+    sheets: Array<{ sheet: string; detected: string }>;
+  } | null;
   summary: {
     totalAmount: number;
     bySheet: Record<string, number>;
@@ -91,6 +114,27 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // ⭐ Sélecteur d'année scolaire cible (année active par défaut, ou une
+  // année antérieure pour l'onboarding des nouvelles écoles)
+  const [years, setYears] = useState<any[]>([]);
+  const [selectedYearId, setSelectedYearId] = useState<string>(academicYearId || '');
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedYearId((prev) => prev || academicYearId || '');
+    getAcademicYears()
+      .then((d: any) => {
+        const yrs = Array.isArray(d) ? d : (d?.data ?? []);
+        setYears(yrs);
+        if (!selectedYearId) {
+          const active = yrs.find((y: any) => y.isActive) || yrs[0];
+          if (active?.id) setSelectedYearId(active.id);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, academicYearId]);
+
   if (!open) return null;
 
   const reset = () => {
@@ -110,13 +154,13 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
   // ─── Télécharger le template ───
   const handleDownloadTemplate = async () => {
-    if (!academicYearId) {
-      toast({ title: 'Erreur', description: 'Aucune année scolaire active', variant: 'destructive' });
+    if (!selectedYearId) {
+      toast({ title: 'Erreur', description: 'Aucune année scolaire sélectionnée', variant: 'destructive' });
       return;
     }
     try {
       const res = await fetch(
-        `/api/finance/collection-summary/import/template?academicYearId=${encodeURIComponent(academicYearId)}`,
+        `/api/finance/collection-summary/import/template?academicYearId=${encodeURIComponent(selectedYearId)}`,
         { credentials: 'include' },
       );
       if (!res.ok) throw new Error('Erreur téléchargement template');
@@ -129,7 +173,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast({ title: '✅ Template téléchargé', description: 'Une feuille par classe, pré-remplie avec vos élèves.' });
+      toast({ title: '✅ Template téléchargé', description: 'Une feuille par classe (structure POINT standard), pré-remplie avec vos élèves.' });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
@@ -151,14 +195,14 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
   // ─── Preview ───
   const handlePreview = async () => {
-    if (!fileDataUrl || !academicYearId) return;
+    if (!fileDataUrl || !selectedYearId) return;
     setLoading(true);
     try {
       const res = await fetch('/api/finance/collection-summary/import/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ fileDataUrl, academicYearId }),
+        body: JSON.stringify({ fileDataUrl, academicYearId: selectedYearId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -180,7 +224,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
   // ─── Import réel ───
   const handleImport = async () => {
-    if (!fileDataUrl || !academicYearId) return;
+    if (!fileDataUrl || !selectedYearId) return;
     setStep('importing');
     setLoading(true);
     try {
@@ -188,7 +232,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ fileDataUrl, academicYearId }),
+        body: JSON.stringify({ fileDataUrl, academicYearId: selectedYearId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -258,13 +302,40 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
         <div className="flex-1 overflow-y-auto p-6">
           {step === 'upload' && (
             <div className="space-y-6">
+              {/* ⭐ Sélecteur d'année scolaire cible */}
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                    <Calendar className="w-5 h-5 text-indigo-700" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">Année scolaire cible</p>
+                    <p className="text-xs text-slate-500 mb-2">
+                      Choisissez l'année sur laquelle importer les encaissements — l'année active ou une année antérieure (onboarding d'une nouvelle école).
+                    </p>
+                    <select
+                      value={selectedYearId}
+                      onChange={(e) => setSelectedYearId(e.target.value)}
+                      className="w-full sm:w-72 border border-indigo-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                      {years.length === 0 && <option value="">Chargement des années…</option>}
+                      {years.map((y: any) => (
+                        <option key={y.id} value={y.id}>
+                          {y.name || y.label} {y.isActive ? '(active)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
                     <FileSpreadsheet className="w-5 h-5 text-blue-700" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">Template Excel bilan</p>
+                    <p className="text-sm font-semibold text-slate-800">Template Excel bilan (structure POINT)</p>
                     <p className="text-xs text-slate-500">Une feuille par classe, pré-remplie avec les élèves</p>
                   </div>
                 </div>
@@ -294,14 +365,24 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
               </div>
 
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">📋 Format du fichier</p>
-                <ul className="text-xs text-slate-600 space-y-1.5">
-                  <li><strong>Noms et Prénoms</strong> — format "NOM Prénom" (ex: "ADANDE Aïcha"). Matching insensible aux accents/casse.</li>
-                  <li><strong>Arriéré</strong> — montant encaissé sur les arriérés (FCFA)</li>
-                  <li><strong>Inscription</strong> — montant encaissé pour l'inscription (FCFA)</li>
-                  <li><strong>Tranches 1 à 6</strong> — montants encaissés pour chaque tranche de scolarité (FCFA)</li>
-                  <li><strong>Total</strong> — somme des colonnes (calculé automatiquement si vide)</li>
-                </ul>
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">📋 Formats acceptés (détection automatique)</p>
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                    <p className="text-xs font-bold text-blue-800 mb-1">Fichier « POINT » des écoles (reconnu automatiquement)</p>
+                    <ul className="text-xs text-slate-600 space-y-1">
+                      <li>• <strong>Une feuille par classe</strong> — le nom de la feuille doit être le nom de la classe (ex: "CP A", "Maternelle 1").</li>
+                      <li>• En-têtes sur les lignes 4-5 : <strong>N° | Noms et Prénoms | Arriéré | Tél | Inscript | Unif | Tenue de Sport | Total frais Généraux | Scolarité P1 P2 P3 P4 P5 P6 | Total Scolarité | Reste | Total des payements</strong>.</li>
+                      <li>• Les tranches de scolarité <strong>P1..P6</strong> sont importées comme montants encaissés.</li>
+                      <li>• Total encaissé importé = Inscript + Unif + Tenue de Sport + P1 + ... + P6.</li>
+                      <li>• La colonne « Arriéré » (année antérieure) est <strong>informative</strong> — utilisez l'import dédié des arriérés pour la solder.</li>
+                      <li>• Textes type "ABD", "FONDE" ou une école d'origine sont ignorés (non numériques).</li>
+                    </ul>
+                  </div>
+                  <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
+                    <p className="text-xs font-bold text-slate-700 mb-1">Template Academia Helm (simple)</p>
+                    <p className="text-xs text-slate-600">Noms et Prénoms | Arriéré | Inscription | Tranche 1..6 | Total — en-tête en ligne 1.</p>
+                  </div>
+                </div>
                 <p className="text-xs text-blue-700 mt-3 font-medium">🏦 Pour chaque ligne valide : une FinanceTransaction (type=PAYMENT) est créée et allouée FIFO sur les AccountBreakdowns. Reçu PDF généré automatiquement.</p>
               </div>
 
@@ -343,11 +424,24 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                 <div className="flex flex-wrap gap-2 mt-1">
                   {Object.entries(preview.summary.bySheet).map(([sheet, amount]) => (
                     <span key={sheet} className="text-xs bg-white px-2 py-1 rounded border border-blue-200 text-blue-800">
-                      {sheet}: {formatCurrency(amount)}
+                      {sheet}{preview.sheetInfo?.[sheet]?.format === 'POINT' ? ' · POINT' : ''}: {formatCurrency(amount)}
                     </span>
                   ))}
                 </div>
               </div>
+
+              {preview.yearMismatch && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-amber-800">
+                    <strong>Année scolaire différente détectée dans le fichier.</strong> Le fichier mentionne «&nbsp;
+                    {Array.from(new Set(preview.yearMismatch.sheets.map((s) => s.detected))).join(', ')}
+                    &nbsp;» alors que l'année cible sélectionnée est «&nbsp;{preview.yearMismatch.targetYear}&nbsp;»
+                    (feuilles concernées&nbsp;: {preview.yearMismatch.sheets.map((s) => s.sheet).join(', ')}).
+                    Vérifiez l'année cible avant d'importer, ou corrigez la ligne « ANNEE SCOLAIRE » du fichier.
+                  </p>
+                </div>
+              )}
 
               {preview.summary.studentsNotFound > 0 && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
@@ -361,7 +455,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
               {/* Tableau preview */}
               <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <ResponsiveTableWrapper minWidth="800px">
+                <ResponsiveTableWrapper minWidth="900px">
                 <div className="max-h-[320px] overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 sticky top-0">
@@ -370,15 +464,16 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Élève (Excel)</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Match</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Feuille</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Arriéré</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Inscription</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Tranches</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Frais gén. (Inscr+Unif+Tenue)</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Scolarité (P1-P6)</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Arriéré (info)</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {preview.rows.slice(0, 100).map((row) => {
-                        const tranchesSum = row.tranches.reduce((s, v) => s + v, 0);
+                        const tranchesSum = row.scolaritePayee ?? row.tranches.reduce((s, v) => s + v, 0);
+                        const fraisGen = row.fraisGeneraux ?? row.inscription;
                         return (
                           <tr key={`${row.sheetName}-${row.rowIndex}`} className={row.isValid ? '' : 'bg-rose-50/50'}>
                             <td className="px-3 py-2 text-xs text-slate-400">{row.rowIndex}</td>
@@ -387,12 +482,15 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                               {row.resolvedStudentName && row.resolvedStudentName !== row.studentName && (
                                 <span className="text-[10px] text-slate-500 ml-1 block">→ {row.resolvedStudentName}</span>
                               )}
+                              {row.arrearNote && (
+                                <span className="text-[10px] text-amber-600 ml-1 block">Arriéré : {row.arrearNote} (non importé)</span>
+                              )}
                             </td>
                             <td className="px-3 py-2"><MatchBadge status={row.matchStatus} /></td>
                             <td className="px-3 py-2 text-xs text-slate-600">{row.sheetName}</td>
-                            <td className="px-3 py-2 text-right text-xs font-mono">{row.arrear > 0 ? formatCurrency(row.arrear) : '—'}</td>
-                            <td className="px-3 py-2 text-right text-xs font-mono">{row.inscription > 0 ? formatCurrency(row.inscription) : '—'}</td>
+                            <td className="px-3 py-2 text-right text-xs font-mono">{fraisGen > 0 ? formatCurrency(fraisGen) : '—'}</td>
                             <td className="px-3 py-2 text-right text-xs font-mono">{tranchesSum > 0 ? formatCurrency(tranchesSum) : '—'}</td>
+                            <td className="px-3 py-2 text-right text-xs font-mono text-amber-700">{row.arrear > 0 ? formatCurrency(row.arrear) : '—'}</td>
                             <td className="px-3 py-2 text-right text-xs font-mono font-bold">{formatCurrency(row.total)}</td>
                           </tr>
                         );
@@ -407,6 +505,10 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                   </div>
                 )}
               </div>
+
+              <p className="text-xs text-slate-500">
+                💡 La colonne « Arriéré » est informative (année antérieure) : elle n'est pas incluse dans le total importé. Utilisez l'import des arriérés pour la prendre en compte.
+              </p>
 
               {preview.invalidRows > 0 && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">

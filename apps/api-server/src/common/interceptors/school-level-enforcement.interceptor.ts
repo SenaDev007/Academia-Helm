@@ -48,6 +48,10 @@ export class SchoolLevelEnforcementInterceptor implements NestInterceptor {
     }
 
     // ✅ Exclure explicitement les routes d'authentification et de portail
+    // ⭐ /context/bootstrap : fournit le contexte initial (tenant + scope
+    //    Rôles × Pistes × Niveaux) AVANT la sélection d'un niveau — exempté
+    //    (l'app l'appelle sans header de niveau au démarrage, sinon échec
+    //    circulaire en 400 : impossible de bootstrap un contexte inexistant).
     if (
       path.includes('/auth/login') ||
       path.includes('/auth/register') ||
@@ -55,6 +59,7 @@ export class SchoolLevelEnforcementInterceptor implements NestInterceptor {
       path.includes('/auth/dev-login') ||
       path.includes('/auth/dev-available-tenants') ||
       path.includes('/auth/available-tenants') ||
+      path.includes('/context/bootstrap') ||
       path.includes('/portal/auth') ||
       path.includes('/portal/search') ||
       path.includes('/portal/list') ||

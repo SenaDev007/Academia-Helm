@@ -1062,65 +1062,49 @@ export class FeeStructureService {
 
     const accounts = await this.prisma.studentAccount.findMany({
       where,
-      include: { breakdowns: { include: { feeStructure: { include: { overrides: true } } } } },
+      select: { id: true, studentId: true, academicYearId: true },
     });
 
     let updatedAccounts = 0;
     let updatedBreakdowns = 0;
 
+    // ⭐ FIX (sept. 2026 — frais généraux) : déléguer au recalcul COMPLET par
+    //    élève (StudentAccountService.recalculate) au lieu de la version
+    //    allégée qui ne mettait à jour que les breakdowns EXISTANTS.
+    //
+    //    Problème : quand un nouveau frais était configuré en cours d'année
+    //    (ex: « Frais généraux » pour toute l'école), les comptes élèves
+    //    EXISTANTS ne recevaient jamais le nouveau breakdown — seuls les
+    //    nouveaux comptes (inscriptions ultérieures) l'obtenaient via
+    //    getOrCreate(). L'onglet « Frais généraux » restait alors vide alors
+    //    que l'école vient de configurer le frais.
+    //
+    //    Le recalcul par élève (recalculate) est la source de vérité :
+    //    - met à jour les montants des breakdowns existants (overrides/régimes) ;
+    //    - CRÉE les breakdowns manquants (nouveaux frais applicables) ;
+    //    - supprime les breakdowns non payés obsolètes ;
+    //    - gère les breakdowns orphelins avec paiements ;
+    //    - recalcule totalDue / totalPaid / balance / statut.
     for (const account of accounts) {
-      let newTotalDue = 0;
-      let newTotalPaid = 0;
-
-      // 1. Mettre à jour chaque breakdown
-      for (const bd of account.breakdowns) {
-        const fs = bd.feeStructure;
-        const override = fs?.overrides?.find((o: any) => o.studentId === account.studentId);
-        const originalAmount = Number(fs?.totalAmount ?? 0);
-        const newInitialAmount = override ? Number(override.customAmount) : originalAmount;
-        const paidAmount = Number(bd.paidAmount);
-        const newRemainingAmount = Math.max(0, newInitialAmount - paidAmount);
-
-        if (Number(bd.initialAmount) !== newInitialAmount) {
-          await this.prisma.accountBreakdown.update({
-            where: { id: bd.id },
-            data: {
-              initialAmount: newInitialAmount,
-              adjustedAmount: newInitialAmount,
-              remainingAmount: newRemainingAmount,
-            },
-          });
-          updatedBreakdowns++;
+      try {
+        const updated = await this.studentAccountService.recalculate(
+          account.studentId,
+          tenantId,
+          account.academicYearId,
+        );
+        if (updated) {
+          updatedAccounts++;
+          updatedBreakdowns += (updated.breakdowns ?? []).length;
         }
-
-        newTotalDue += newInitialAmount;
-        newTotalPaid += paidAmount;
+      } catch (err: any) {
+        // Non bloquant : un élève en échec n'interrompt pas le recalcul global
+        this.logger.warn(
+          `recalculateAllAccounts: échec élève ${account.studentId}: ${err?.message}`,
+        );
       }
-
-      // 2. Recalculer le compte avec $transaction + SET LOCAL
-      const newBalance = newTotalDue - newTotalPaid;
-      let newStatus = 'ACTIVE';
-      if (newBalance <= 0) newStatus = 'PAID';
-      else if (newTotalPaid > 0) newStatus = 'PARTIAL';
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-        await tx.studentAccount.update({
-          where: { id: account.id },
-          data: {
-            totalDue: newTotalDue,
-            totalPaid: newTotalPaid,
-            balance: newBalance,
-            status: newStatus as any,
-            updatedAt: new Date(),
-          },
-        });
-      });
-
-      updatedAccounts++;
     }
 
-    console.log(`[FeeStructure] Recalcul global: ${updatedAccounts} comptes, ${updatedBreakdowns} breakdowns mis à jour (tenant=${tenantId})`);
+    console.log(`[FeeStructure] Recalcul global: ${updatedAccounts}/${accounts.length} comptes recalculés (tenant=${tenantId})`);
 
     return {
       success: true,

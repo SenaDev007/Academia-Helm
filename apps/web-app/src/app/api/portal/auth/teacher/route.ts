@@ -26,6 +26,9 @@ interface BackendResponse {
     id: string;
     matricule: string;
   };
+  /// ⭐ P4 (filtre Rôles × Pistes × Niveaux) : périmètre serveur résolu au
+  ///    login (niveaux, pistes, locale UI recommandée, classes de l'enseignant)
+  scope?: unknown;
   token: string;
   sessionId: string;
   portalType: string;
@@ -121,6 +124,12 @@ export async function POST(request: NextRequest) {
       user,
       tenant,
       portalType: data.portalType,
+      /// ⭐ P4 (filtre Rôles × Pistes × Niveaux) : relayer le périmètre serveur
+      ///    au client — le LoginPage le persiste (persistClientSession →
+      ///    user_scope) et la langue UI / piste / sélecteurs verrouillés en
+      ///    découlent. AVANT ce relais, le scope du backend était jeté ici et
+      ///    un enseignant anglophone voyait l'UI rester en français.
+      scope: data.scope ?? null,
       accessToken: data.token,
       portalSessionId: data.sessionId,
       expiresAt,

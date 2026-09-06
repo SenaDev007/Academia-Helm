@@ -1598,7 +1598,6 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                               <>
                                 <option value="CDI">CDI</option>
                                 <option value="CDD">CDD</option>
-                                <option value="Stage">Stage</option>
                               </>
                             )}
                           </select>

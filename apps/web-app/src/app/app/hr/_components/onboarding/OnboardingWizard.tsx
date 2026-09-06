@@ -43,14 +43,65 @@ async function loadFiscalHints(): Promise<any | null> {
   }
 }
 
+// ⭐ CDC §9 — paramétrage RH « embauche & contrats » de l'école (motifs CDD,
+// seuil durée cumulée, test de qualification) : cache 60 s, même pattern.
+let hrSettingsCache: { data: any; at: number } | null = null;
+async function loadHrContractSettings(tenantId: string): Promise<any | null> {
+  if (hrSettingsCache && Date.now() - hrSettingsCache.at < 60_000) return hrSettingsCache.data;
+  try {
+    const res = await fetch(`/api/hr/contracts/settings?tenantId=${encodeURIComponent(tenantId)}`, { credentials: 'include', cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    hrSettingsCache = { data, at: Date.now() };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: OnboardingWizardProps) {
   const [state, setState] = useState<OnboardingState>({ ...INITIAL_STATE });
   const [savingStep, setSavingStep] = useState(false);
   const [fiscalHints, setFiscalHints] = useState<any | null>(null);
+  const [hrSettings, setHrSettings] = useState<any | null>(null);
+  const [cddChain, setCddChain] = useState<any | null>(null);
 
   useEffect(() => {
-    if (isOpen) loadFiscalHints().then(setFiscalHints);
-  }, [isOpen]);
+    if (isOpen) {
+      loadFiscalHints().then(setFiscalHints);
+      loadHrContractSettings(tenantId).then((data) => {
+        setHrSettings(data);
+        // ⭐ CDC §5 — alimente l'état du test d'aide à la qualification (config école)
+        if (data) {
+          setState((prev) => ({
+            ...prev,
+            qualificationTest: {
+              ...prev.qualificationTest,
+              enabled: data.testQualificationEnabled !== false,
+              questions: Array.isArray(data.testQuestions) ? data.testQuestions : [],
+            },
+          }));
+        }
+      });
+    }
+  }, [isOpen, tenantId]);
+
+  // ⭐ CDC §4.3 — chaîne CDD du personnel (compteur + durée cumulée) chargée
+  //    à l'entrée à l'étape 4 pour un statut salarié
+  useEffect(() => {
+    if (
+      state.currentStep === 4 &&
+      state.staffId &&
+      state.employment.statutContractuel &&
+      state.employment.statutContractuel !== 'PRESTATAIRE_SERVICE'
+    ) {
+      hrFetch<any>(hrUrl(`contracts/staff/${state.staffId}/cdd-chain`, { tenantId }))
+        .then(setCddChain)
+        .catch(() => setCddChain(null));
+    } else {
+      setCddChain(null);
+    }
+  }, [state.currentStep, state.staffId, state.employment.statutContractuel, tenantId]);
 
   if (!isOpen) return null;
 
@@ -83,14 +134,23 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           );
         }
         // Salariés (déclarés ou non) : type + salaire ≥ SMIG + dates
+        // ⭐ CDC §4.3 — CDD : date de fin + motif OBLIGATOIRES ; CDI : pas de fin
         const smig = Number(fiscalHints?.smig) > 0 ? Number(fiscalHints.smig) : 52000;
         const salaire = parseFloat(state.contract.baseSalary);
         const cnssOk = statut !== 'SALARIE_DECLARE' || !!state.contract.cnssNumber.trim();
+        if (state.contract.contractType === 'CDD') {
+          return !!(
+            salaire >= smig &&
+            state.contract.startDate &&
+            state.contract.endDate &&
+            state.contract.cddMotif.trim().length >= 3 &&
+            cnssOk
+          );
+        }
+        // CDI : pas de date de fin exigée
         return !!(
-          state.contract.contractType &&
           salaire >= smig &&
           state.contract.startDate &&
-          (state.contract.contractType === 'CDI' || !!state.contract.endDate) &&
           cnssOk
         );
       }
@@ -323,10 +383,26 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
           },
         };
       } else {
-        // Salarié (déclaré ou non déclaré)
+        // Salarié (déclaré ou non déclaré) — CDC §4 : CDI/CDD uniquement
         contractBody.contractType = state.contract.contractType;
         contractBody.baseSalary = parseFloat(state.contract.baseSalary) || 0;
-        if (state.contract.endDate) contractBody.endDate = state.contract.endDate;
+        // ⭐ CDC §4.3 — CDD : date de fin + motif ; CDI : pas de date de fin
+        if (state.contract.contractType === 'CDD' && state.contract.endDate) {
+          contractBody.endDate = state.contract.endDate;
+        } else {
+          contractBody.endDate = null;
+        }
+        if (state.contract.contractType === 'CDD' && state.contract.cddMotif.trim()) {
+          contractBody.cddMotif = state.contract.cddMotif.trim();
+        }
+        if (state.contract.contractType === 'CDI' && state.contract.periodeEssaiMois !== '') {
+          contractBody.periodeEssaiMois = parseInt(state.contract.periodeEssaiMois, 10) || 0;
+        }
+      }
+
+      // ⭐ CDC §4.4 — traçabilité de la décision de statut (optionnel)
+      if (state.contract.justificationStatut.trim()) {
+        contractBody.justificationStatut = state.contract.justificationStatut.trim();
       }
 
       const contractResponse = await hrFetch<any>(hrUrl('contracts', { tenantId }), {
@@ -475,6 +551,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                   onUpdate={(field, value) =>
                     setState((prev) => ({ ...prev, employment: { ...prev.employment, [field]: value } }))
                   }
+                  qualificationTest={state.qualificationTest}
+                  onQualificationChange={(patch) =>
+                    setState((prev) => ({ ...prev, qualificationTest: { ...prev.qualificationTest, ...patch } }))
+                  }
                 />
               )}
               {state.currentStep === 3 && (
@@ -493,7 +573,10 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                 <StepContract
                   contract={state.contract}
                   statutContractuel={state.employment.statutContractuel}
+                  roleType={state.employment.roleType}
                   fiscalHints={fiscalHints}
+                  hrSettings={hrSettings}
+                  cddChain={cddChain}
                   onUpdate={(field, value) =>
                     setState((prev) => ({ ...prev, contract: { ...prev.contract, [field]: value } }))
                   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Briefcase, GraduationCap, Calendar, Plus, X, ShieldCheck, FileText, Handshake, Lock } from 'lucide-react';
+import { Briefcase, GraduationCap, Calendar, ShieldCheck, FileText, Handshake, Lock, HelpCircle, ChevronDown, ChevronUp, Lightbulb } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const inputClass =
@@ -8,6 +8,14 @@ const inputClass =
   'focus:outline-none focus:border-[#1d4fa5] focus:ring-2 focus:ring-[#1d4fa5]/10 transition';
 
 const labelClass = 'block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5';
+
+interface QualificationTestState {
+  enabled: boolean;
+  questions: Array<{ id: string; question: string; help?: string; options: [string, string]; firstOptionMeaning: 'subordination' | 'autonomie' }>;
+  answers: Record<string, 0 | 1>;
+  suggestion: string | null;
+  showTest: boolean;
+}
 
 interface StepEmploymentProps {
   employment: {
@@ -21,6 +29,9 @@ interface StepEmploymentProps {
     isAlsoTeacher: boolean;
   };
   onUpdate: (field: string, value: any) => void;
+  /** ⭐ Test d'aide à la qualification (CDC §5 — configurable, non bloquant) */
+  qualificationTest?: QualificationTestState;
+  onQualificationChange?: (patch: Partial<QualificationTestState>) => void;
 }
 
 const STATUT_OPTIONS = [
@@ -47,7 +58,7 @@ const STATUT_OPTIONS = [
   },
 ] as const;
 
-export function StepEmployment({ employment, onUpdate }: StepEmploymentProps) {
+export function StepEmployment({ employment, onUpdate, qualificationTest, onQualificationChange }: StepEmploymentProps) {
   const [departments, setDepartments] = useState<any[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
   const [loadingDepts, setLoadingDepts] = useState(true);
@@ -167,6 +178,100 @@ export function StepEmployment({ employment, onUpdate }: StepEmploymentProps) {
           et le calcul des retenues. Il est <strong>verrouillé après la création du profil</strong> : tout
           changement ultérieur passe par une procédure tracée (date d&apos;effet + justification).
         </p>
+
+        {/* ⭐ CDC §5 — Test d'aide à la qualification : SUGGÈRE, ne verrouille JAMAIS.
+            Configurable/désactivable par école (hr_contract_settings.testQualificationEnabled). */}
+        {qualificationTest?.enabled && qualificationTest.questions.length > 0 && onQualificationChange && (
+          <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/40 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => onQualificationChange({ showTest: !qualificationTest.showTest })}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 text-left hover:bg-blue-50/70 transition"
+            >
+              <span className="flex items-center gap-2 text-xs font-bold text-[#1d4fa5]">
+                <HelpCircle className="h-4 w-4" />
+                Aide à la qualification — 3 questions (2 min)
+              </span>
+              {qualificationTest.showTest ? (
+                <ChevronUp className="h-4 w-4 text-[#1d4fa5]" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-[#1d4fa5]" />
+              )}
+            </button>
+            {qualificationTest.showTest && (
+              <div className="px-3.5 pb-3.5 space-y-3">
+                <p className="text-[10.5px] text-slate-500 leading-relaxed">
+                  Le résultat <strong>suggère</strong> un statut (salarié vs prestataire) mais ne verrouille
+                  jamais votre choix : vous restez décisionnaire, l&apos;école reste responsable de sa
+                  qualification.
+                </p>
+                {qualificationTest.questions.map((q, idx) => (
+                  <div key={q.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-slate-700 leading-relaxed">
+                      {idx + 1}. {q.question}
+                    </p>
+                    {q.help && <p className="text-[10px] text-slate-400 mt-1 mb-2">{q.help}</p>}
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {q.options.map((opt, oi) => {
+                        const selected = qualificationTest.answers[q.id] === oi;
+                        return (
+                          <button
+                            key={oi}
+                            type="button"
+                            onClick={() => {
+                              const answers = { ...qualificationTest.answers, [q.id]: oi as 0 | 1 };
+                              // Évaluation locale (miroir de la règle serveur) : la suggestion s'affiche
+                              // dès la réponse — non bloquant, jamais soumise au validateur
+                              let sub = 0, auto = 0, answered = 0;
+                              for (const question of qualificationTest.questions) {
+                                const a = answers[question.id];
+                                if (a !== 0 && a !== 1) continue;
+                                answered++;
+                                const choseFirst = a === 0;
+                                const firstIsSub = question.firstOptionMeaning === 'subordination';
+                                if (choseFirst === firstIsSub) sub++;
+                                else auto++;
+                              }
+                              const suggestion =
+                                answered === 0 || sub === auto ? null : sub > auto ? 'SALARIE_DECLARE' : 'PRESTATAIRE_SERVICE';
+                              onQualificationChange({ answers, suggestion });
+                            }}
+                            className={
+                              'px-3 py-2 rounded-lg text-[11px] font-semibold border transition text-left leading-snug ' +
+                              (selected
+                                ? 'border-[#1d4fa5] bg-[#1d4fa5]/10 text-[#1d4fa5]'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')
+                            }
+                          >
+                            {opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+
+                {qualificationTest.suggestion && (
+                  <div className="rounded-lg bg-white border border-emerald-200 p-3 flex items-start gap-2">
+                    <Lightbulb className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="text-[11px] leading-relaxed text-slate-600">
+                      <strong className="text-emerald-700">
+                        Suggestion : {qualificationTest.suggestion === 'SALARIE_DECLARE' ? 'Salarié (contrat de travail)' : 'Prestataire de services (contrat de prestation)'}
+                      </strong>
+                      <br />
+                      {qualificationTest.suggestion === 'SALARIE_DECLARE'
+                        ? 'Les réponses indiquent un lien de subordination (horaires, instructions directes) : en droit béninois, ce profil relève d\u2019un contrat de travail. Un statut « prestataire » exposerait l\u2019école à un risque de requalification.'
+                        : 'Les réponses indiquent une autonomie d\u2019exécution (libre organisation, possibilité de refuser) : ce profil relève d\u2019un contrat de prestation de services.'}
+                      <br />
+                      <span className="text-slate-400">Vous choisissez librement le statut ci-dessous.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {STATUT_OPTIONS.map((opt) => {
             const selected = employment.statutContractuel === opt.value;

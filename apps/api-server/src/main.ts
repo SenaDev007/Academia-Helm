@@ -1170,6 +1170,99 @@ async function bootstrap() {
       logger.warn(`RH payroll documents bootstrap warning: ${payrollDocsErr.message}`);
     }
 
+    // ─── Ensure RH — Refonte CDC « étape Contrat » (migration 20260906180000) ──
+    // Champs CDD (motif/renouvellements/chaîne/essai CDI), justification du statut,
+    // paramétrage par école (hr_contract_settings), flux stage séparé (hr_internships)
+    // + migration §10 : badge « à requalifier » sur les dossiers VACATAIRE existants.
+    try {
+      for (const col of [
+        ['cddMotif', 'TEXT'], ['cddChainId', 'TEXT'], ['justificationStatut', 'TEXT'],
+        ['requalifieDepuis', 'TEXT'], ['periodeEssaiMois', 'INTEGER'],
+      ] as const) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "${col[0]}" ${col[1]}`);
+      }
+      await prisma.$executeRawUnsafe(`ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "cddRenouvellements" INTEGER NOT NULL DEFAULT 0`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "needsRequalification" BOOLEAN NOT NULL DEFAULT false`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "employment_contracts_cddChainId_idx" ON "employment_contracts"("cddChainId")`);
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "employment_contracts_needsRequalification_idx" ON "employment_contracts"("needsRequalification")`);
+
+      await prisma.$executeRawUnsafe(`ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "justificationStatut" TEXT`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "needsRequalification" BOOLEAN NOT NULL DEFAULT false`);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "hr_contract_settings" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "tenantId" TEXT NOT NULL,
+            "cddMotifs" JSONB,
+            "stageTypes" JSONB,
+            "cddDureeMaxMois" INTEGER NOT NULL DEFAULT 24,
+            "cddRenouvellementsMax" INTEGER NOT NULL DEFAULT 1,
+            "indemniteFinContratPct" DECIMAL(5,2) NOT NULL DEFAULT 6,
+            "testQualificationEnabled" BOOLEAN NOT NULL DEFAULT true,
+            "testQuestions" JSONB,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "hr_contract_settings_tenantId_key" UNIQUE ("tenantId"),
+            CONSTRAINT "fk_hcs_tenant" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "hr_internships" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "tenantId" TEXT NOT NULL,
+            "firstName" TEXT NOT NULL,
+            "lastName" TEXT NOT NULL,
+            "email" TEXT,
+            "phone" TEXT,
+            "nationalId" TEXT,
+            "birthDate" DATE,
+            "position" TEXT,
+            "typeStage" TEXT,
+            "startDate" DATE NOT NULL,
+            "endDate" DATE NOT NULL,
+            "gratificationAmount" DECIMAL(12,2),
+            "gratificationPeriodicite" TEXT,
+            "etablissementOrigine" TEXT,
+            "tuteurNom" TEXT,
+            "tuteurStaffId" TEXT,
+            "assuranceSouscrite" BOOLEAN NOT NULL DEFAULT false,
+            "assurancePoliceRef" TEXT,
+            "assuranceCompagnie" TEXT,
+            "status" TEXT NOT NULL DEFAULT 'DRAFT',
+            "terms" JSONB,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt" TIMESTAMP(3) NOT NULL,
+            CONSTRAINT "fk_hi_tenant" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT "fk_hi_tuteur" FOREIGN KEY ("tuteurStaffId") REFERENCES "staff"("id") ON DELETE SET NULL ON UPDATE CASCADE
+        )
+      `);
+      for (const idx of [
+        ['hr_internships_tenantId_idx', '"hr_internships"("tenantId")'],
+        ['hr_internships_status_idx', '"hr_internships"("status")'],
+        ['hr_internships_tenantId_status_idx', '"hr_internships"("tenantId", "status")'],
+      ] as const) {
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${idx[0]}" ON ${idx[1]}`);
+      }
+
+      // §10 — badge « à requalifier » sur les dossiers VACATAIRE existants
+      // (jamais de suppression/réécriture : requalification manuelle par l'école)
+      const markedContracts = await prisma.$executeRawUnsafe(
+        `UPDATE "employment_contracts" SET "needsRequalification" = true, "requalifieDepuis" = "contractType"
+          WHERE "contractType" = 'VACATAIRE' AND "needsRequalification" = false`,
+      );
+      const markedStaff = await prisma.$executeRawUnsafe(
+        `UPDATE "staff" SET "needsRequalification" = true
+          WHERE "contractType" = 'VACATAIRE' AND "needsRequalification" = false`,
+      );
+      if (markedContracts > 0 || markedStaff > 0) {
+        logger.log(`✅ CDC Contrat : ${markedContracts} contrat(s) + ${markedStaff} fiche(s) « Vacataire » marqués à requalifier`);
+      }
+      logger.log('✅ CDC Contrat : champs CDD/justification/requalification + hr_contract_settings + hr_internships ensured');
+    } catch (contratRefonteErr: any) {
+      logger.warn(`CDC Contrat bootstrap warning: ${contratRefonteErr.message}`);
+    }
+
     logger.log('HR tables & columns ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);

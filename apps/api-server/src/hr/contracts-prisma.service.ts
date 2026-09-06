@@ -15,6 +15,14 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 import { StorageService } from '../common/services/storage.service';
 import { deriveDocumentPaieType, isValidStatutContractuel } from './services/employment-contract-templates';
 import { PayrollEngineService } from './services/payroll-engine.service';
+import {
+  isValidTypeForStatut,
+  typesDisponiblesPourStatut,
+  computeCddChains,
+  computeIndemniteFinContrat,
+  CddLikeContract,
+} from './services/contract-rules';
+import { ContractSettingsService } from './services/contract-settings.service';
 
 @Injectable()
 export class ContractsPrismaService {
@@ -22,17 +30,25 @@ export class ContractsPrismaService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
     private readonly payrollEngine: PayrollEngineService,
+    private readonly contractSettings: ContractSettingsService,
   ) {}
 
   /**
-   * Crée un contrat de travail
+   * Crée un contrat
    *
-   * ⭐ Statut contractuel (RH Bénin) : SALARIE_DECLARE | SALARIE_NON_DECLARE |
-   * PRESTATAIRE_SERVICE. Validations backend (jamais seulement en UI) :
-   *   - SALARIE_*       → salaire brut ≥ SMIG (payroll_fiscal_rates)
-   *   - SALARIE_DECLARE → n° CNSS obligatoire sur la fiche du personnel
-   *   - PRESTATAIRE     → mode de rémunération (FORFAIT/HORAIRE) + montant requis,
-   *                       contractType forcé à PRESTATION, IFU facultatif (taux AIB)
+   * ⭐ Refonte CDC « étape Contrat » — structure à DEUX niveaux :
+   *   statutContractuel (déjà choisi à l'étape Emploi) → contractType FILTRÉ :
+   *     - SALARIE_DECLARE | SALARIE_NON_DECLARE → CDI ou CDD (exclusivement)
+   *     - PRESTATAIRE_SERVICE                     → PRESTATION (valeur unique)
+   *   « VACATAIRE » / « STAGE » ne sont PLUS acceptés à la création (le stage
+   *   vit dans le flux séparé hr_internships ; le vacataire n'est pas un statut
+   *   légal — requalification obligatoire des dossiers hérités §10).
+   * Validations backend (jamais seulement en UI) :
+   *   - CDD : date de fin + motif obligatoires ; compteur de renouvellements et
+   *     durée cumulée calculés sur la chaîne du personnel ;
+   *   - CDI : pas de date de fin ; période d'essai (mois) suggérée mais modifiable ;
+   *   - PRESTATION : mode + montant requis (FORFAIT/HORAIRE) ;
+   *   - SALARIE_* : salaire ≥ SMIG ; SALARIE_DECLARE : n° CNSS requis.
    */
   async createContract(data: {
     tenantId: string;
@@ -51,11 +67,31 @@ export class ContractsPrismaService {
     statutContractuel?: string;
     prestationPaymentMode?: string;
     prestationAmount?: number;
+    cddMotif?: string;
+    justificationStatut?: string;
+    periodeEssaiMois?: number;
   }) {
     // ── Validations conditionnelles par statut (backend) ──
     const statut = data.statutContractuel || null;
     if (statut && !isValidStatutContractuel(statut)) {
       throw new BadRequestException(`Statut contractuel invalide : ${statut}`);
+    }
+
+    // ⭐ CDC §4.2 — correspondance statut → type de contrat (refus explicite,
+    //    jamais une coercion silencieuse : le front filtre déjà dynamiquement)
+    if (statut && !isValidTypeForStatut(statut, data.contractType)) {
+      const allowed = typesDisponiblesPourStatut(statut).join(' / ');
+      if (data.contractType === 'VACATAIRE' || data.contractType === 'STAGE' || data.contractType === 'CONSULTANT') {
+        throw new BadRequestException(
+          `« ${data.contractType} » n’est plus un type de contrat accepté pour un ${statut === 'PRESTATAIRE_SERVICE' ? 'prestataire' : 'salarié'} : ` +
+          (data.contractType === 'STAGE'
+            ? 'le stage relève du flux dédié « Stagiaires » (convention de stage, Décret n°2018-196), pas du processus d’embauche salarié.'
+            : '« Vacataire » n’est pas une catégorie du Code du travail : qualifiez la situation en CDD (subordination) ou en prestation de services (autonomie).'),
+        );
+      }
+      throw new BadRequestException(
+        `Type de contrat « ${data.contractType} » incompatible avec le statut ${statut}. Types disponibles : ${allowed}.`,
+      );
     }
 
     const staff = await this.prisma.staff.findFirst({
@@ -67,6 +103,9 @@ export class ContractsPrismaService {
     let contractType = data.contractType;
     let prestationAmount = data.prestationAmount ?? null;
     let baseSalary = data.baseSalary ?? 0;
+    let endDate: Date | null = data.endDate ? new Date(data.endDate) : null;
+    let cddMotif: string | null = data.cddMotif ?? (data.terms?.cddMotif ?? null);
+    let periodeEssaiMois: number | null = data.periodeEssaiMois ?? (data.terms?.periodeEssaiMois ?? null);
 
     if (statut === 'PRESTATAIRE_SERVICE') {
       // Contrat de prestation de services — jamais un contrat de travail
@@ -90,6 +129,27 @@ export class ContractsPrismaService {
       // au relevé d'heures lors de la paie)
       baseSalary = data.prestationPaymentMode === 'FORFAIT' ? amount : 0;
     } else if (statut === 'SALARIE_DECLARE' || statut === 'SALARIE_NON_DECLARE') {
+      // ⭐ CDC §4.3 — champs conditionnels par type
+      if (contractType === 'CDD') {
+        if (!endDate) {
+          throw new BadRequestException(
+            'Un CDD exige une date de fin obligatoire (contrat à durée déterminée — art. 34 Code du travail).',
+          );
+        }
+        if (new Date(endDate).getTime() <= new Date(data.startDate).getTime()) {
+          throw new BadRequestException('La date de fin du CDD doit être postérieure à la date de début.');
+        }
+        if (!cddMotif || !String(cddMotif).trim()) {
+          throw new BadRequestException(
+            'Le motif du CDD est obligatoire (remplacement, surcroît d’activité temporaire, tâche déterminée… — texte libre).',
+          );
+        }
+      }
+      if (contractType === 'CDI') {
+        // CDI : pas de date de fin (§4.3) — on l'ignore volontairement
+        endDate = null;
+        cddMotif = null;
+      }
       // Contrat de travail : salaire plancher = SMIG (payroll_fiscal_rates — jamais en dur)
       const rates = await this.payrollEngine.getFiscalRates();
       const smig = rates?.smig ?? 0;
@@ -111,6 +171,36 @@ export class ContractsPrismaService {
     }
 
     const documentPaieType = deriveDocumentPaieType(statut);
+
+    // ⭐ CDC §4.3 — chaîne CDD du personnel : compteur de renouvellements et
+    //    durée cumulée détectés automatiquement (renouvellement = nouveau CDD
+    //    contigu/lié au précédent). Non stocké : recalculé depuis les données.
+    let cddChainId: string | null = null;
+    let cddRenouvellements = 0;
+    if (statut !== 'PRESTATAIRE_SERVICE' && contractType === 'CDD') {
+      const previousCdds = await this.prisma.contract.findMany({
+        where: {
+          staffId: data.staffId,
+          tenantId: data.tenantId,
+          contractType: 'CDD',
+          status: { not: 'DELETED' },
+        },
+        orderBy: { startDate: 'asc' },
+      });
+      const chains = computeCddChains(previousCdds as unknown as CddLikeContract[]);
+      const nowMs = new Date(data.startDate).getTime();
+      const contiguous = chains.find(
+        (ch) => ch.finDeChaine && nowMs - ch.finDeChaine.getTime() <= 60 * 24 * 60 * 60 * 1000 && nowMs >= ch.finDeChaine.getTime() - 30 * 24 * 60 * 60 * 1000,
+      );
+      if (contiguous && contiguous.chainId) {
+        cddChainId = contiguous.chainId;
+        cddRenouvellements = contiguous.contracts; // le nouveau contrat = contrat n° (contracts + 1) → renouvellements = contracts
+      } else {
+        // Nouvelle chaîne : le contrat devient sa propre racine
+        cddChainId = null; // sera = id du contrat créé
+        cddRenouvellements = 0;
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // Désactiver l'éventuel contrat actif existant
@@ -154,8 +244,13 @@ export class ContractsPrismaService {
           documentPaieType,
           prestationPaymentMode: statut === 'PRESTATAIRE_SERVICE' ? data.prestationPaymentMode : null,
           prestationAmount,
+          cddMotif: contractType === 'CDD' ? (cddMotif ? String(cddMotif).trim() : null) : null,
+          cddRenouvellements,
+          cddChainId: contractType === 'CDD' ? (cddChainId || 'PENDING_ROOT') : null,
+          periodeEssaiMois: contractType === 'CDI' ? periodeEssaiMois : null,
+          justificationStatut: data.justificationStatut?.trim() || null,
           startDate: data.startDate ? new Date(data.startDate) : new Date(),
-          endDate: data.endDate ? new Date(data.endDate) : null,
+          endDate,
           baseSalary: new Prisma.Decimal(baseSalary),
           paymentMode: data.paymentMode ?? 'BANK',
           status: contractStatus,
@@ -167,6 +262,15 @@ export class ContractsPrismaService {
         include: { staff: true },
       });
 
+      // Racine de chaîne : le contrat initial porte sa propre id de chaîne
+      if (newContract.cddChainId === 'PENDING_ROOT') {
+        await tx.contract.update({
+          where: { id: newContract.id },
+          data: { cddChainId: newContract.id },
+        });
+        (newContract as any).cddChainId = newContract.id;
+      }
+
       // ⭐ Miroir du statut sur la fiche du personnel (si pas encore défini)
       // + date de déclaration CNSS automatique quand le numéro CNSS est déjà connu
       if (statut) {
@@ -175,12 +279,21 @@ export class ContractsPrismaService {
           documentPaieType,
           statutContractuelLockedAt: new Date(),
         };
+        if (data.justificationStatut?.trim()) {
+          staffPatch.justificationStatut = data.justificationStatut.trim();
+        }
         if (statut === 'SALARIE_DECLARE' && (staff.cnssNumber || (staff as any).employeeCNSS?.cnssNumber) && !staff.cnssDeclarationDate) {
           staffPatch.cnssDeclarationDate = new Date();
         }
         if (statut === 'PRESTATAIRE_SERVICE' && data.prestationPaymentMode) {
           staffPatch.prestationPaymentMode = data.prestationPaymentMode;
           staffPatch.prestationAmount = prestationAmount;
+        }
+        // Miroir du type de contrat (cohérence fiche ↔ contrat)
+        if (contractType !== 'PRESTATION') {
+          staffPatch.contractType = contractType;
+        } else {
+          staffPatch.contractType = 'PRESTATION';
         }
         await tx.staff.update({ where: { id: data.staffId }, data: staffPatch }).catch(() => null);
       }
@@ -317,11 +430,30 @@ export class ContractsPrismaService {
       throw new BadRequestException('Contrat déjà signé : le statut contractuel est verrouillé.');
     }
 
+    // ⭐ CDC §4.2 — garde statut ↔ type sur l'édition (miroir de la création)
+    const targetType = data.contractType ?? current.contractType;
+    const statut = current.statutContractuel;
+    if (statut && data.contractType !== undefined && !isValidTypeForStatut(statut, targetType)) {
+      const allowed = typesDisponiblesPourStatut(statut).join(' / ');
+      throw new BadRequestException(
+        `Type de contrat « ${targetType} » incompatible avec le statut ${statut}. Types disponibles : ${allowed}.`,
+      );
+    }
+    // CDD : motif et date de fin restent exigés à l'édition
+    if (statut && targetType === 'CDD' && data.endDate === null) {
+      throw new BadRequestException('Un CDD ne peut pas être transformé en contrat sans date de fin : choisissez CDI (via un avenant) ou une date de terme.');
+    }
+    // CDI : pas de date de fin
+    if (statut && targetType === 'CDI' && data.endDate !== undefined && data.endDate !== null) {
+      throw new BadRequestException('Un CDI n\u2019a pas de date de fin (contrat à durée indéterminée).');
+    }
+
     const updateData: any = {};
     const allowedFields = [
       'contractType', 'startDate', 'endDate', 'baseSalary', 'paymentMode',
       'status', 'terms', 'templateId', 'academicYearId', 'schoolLevelId',
       'prestationPaymentMode', 'prestationAmount',
+      'cddMotif', 'periodeEssaiMois', 'justificationStatut',
     ];
 
     for (const field of allowedFields) {
@@ -339,6 +471,310 @@ export class ContractsPrismaService {
       where: { id },
       data: { ...prismaUpdateDefaults(), ...updateData },
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REFONTE CDC « étape Contrat » — renouvellement / clôture CDD / requalification
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Renouvelle un CDD (§4.3) : crée le contrat suivant de la MÊME chaîne,
+   * incrémente le compteur de renouvellements, recalcule la durée cumulée
+   * et ALERTe si le seuil paramétrable est dépassé (jamais bloquant).
+   */
+  async renewCdd(id: string, tenantId: string, data: {
+    startDate: string | Date;
+    endDate: string | Date;
+    cddMotif?: string;
+    baseSalary?: number;
+    paymentMode?: string;
+    performedBy?: string;
+  }) {
+    const current = await this.findContractById(id, tenantId);
+    if (current.contractType !== 'CDD') {
+      throw new BadRequestException('Seul un CDD peut être renouvelé.');
+    }
+    const statut = current.statutContractuel;
+    if (!statut || statut === 'PRESTATAIRE_SERVICE') {
+      throw new BadRequestException(
+        'Le renouvellement de CDD concerne un salarié (déclaré ou non déclaré). Un prestataire signe un contrat de prestation.',
+      );
+    }
+    if ((current.terms as any)?.indemniteFinContrat) {
+      throw new BadRequestException('Ce CDD est déjà clôturé (indemnité de fin de contrat enregistrée) : créez un nouveau contrat.');
+    }
+
+    const settings = await this.contractSettings.getSettings(tenantId);
+    const motif = (data.cddMotif || current.cddMotif || '').trim();
+    if (!motif) {
+      throw new BadRequestException('Le motif du CDD renouvelé est obligatoire (texte libre).');
+    }
+
+    const renewed = await this.createContract({
+      tenantId,
+      staffId: current.staffId,
+      academicYearId: current.academicYearId ?? undefined,
+      schoolLevelId: current.schoolLevelId ?? undefined,
+      contractType: 'CDD',
+      statutContractuel: statut,
+      startDate: new Date(data.startDate),
+      endDate: new Date(data.endDate),
+      baseSalary: data.baseSalary ?? Number(current.baseSalary),
+      paymentMode: data.paymentMode ?? current.paymentMode,
+      cddMotif: motif,
+      status: 'PENDING',
+      terms: {
+        ...((current.terms as any) || {}),
+        renouvellementDe: current.id,
+        renouvellementLe: new Date().toISOString(),
+        renouvellePar: data.performedBy ?? undefined,
+      },
+    });
+
+    // Chaîne explicite : le renouvellement hérite de la chaîne du parent
+    const chainId = current.cddChainId || current.id;
+    await this.prisma.contract.update({
+      where: { id: renewed.id },
+      data: {
+        cddChainId: chainId,
+        // compteur = nombre de contrats déjà présents dans la chaîne (parent inclus)
+        cddRenouvellements: Math.max(renewed.cddRenouvellements, current.cddRenouvellements + 1),
+      },
+    }).catch(() => null);
+
+    // Durée cumulée de la chaîne complète + alerte (§8.2) — non bloquant
+    const chainInfo = await this.contractSettings.getCddChainInfo(current.staffId, tenantId);
+    return {
+      contract: { ...renewed, cddChainId: chainId },
+      chain: chainInfo.activeChain,
+      seuilMois: chainInfo.seuilMois,
+      depasseSeuil: chainInfo.depasseSeuil,
+      renouvellementsDepasses: !!chainInfo.activeChain && chainInfo.activeChain.renouvellements > settings.cddRenouvellementsMax,
+      alerte: chainInfo.depasseSeuil
+        ? `Durée cumulée CDD : ${chainInfo.activeChain?.dureeCumuleeMois} mois — seuil paramétré : ${chainInfo.seuilMois} mois. Au-delà, la relation devient un CDI de plein droit.`
+        : null,
+    };
+  }
+
+  /**
+   * Clôture un CDD à son terme (§8.4) : calcule l'indemnité de fin de contrat
+   * (taux paramétrable — défaut 6 %) sur la rémunération brute totale versée
+   * pendant la durée du contrat, avec possibilité d'ajustement manuel AVANT
+   * validation. La clôture referme aussi la chaîne (le CDD ne génère plus
+   * d'alerte de requalification).
+   */
+  async closeCdd(id: string, tenantId: string, data: {
+    montantAjuste?: number | null;
+    remunerationBruteOverride?: number | null;
+    note?: string;
+    performedBy?: string;
+    performedByEmail?: string;
+  }) {
+    const current = await this.findContractById(id, tenantId);
+    if (current.contractType !== 'CDD') {
+      throw new BadRequestException('La clôture avec indemnité concerne un CDD.');
+    }
+    if ((current.terms as any)?.indemniteFinContrat) {
+      throw new BadRequestException('Ce CDD est déjà clôturé : indemnité de fin de contrat déjà enregistrée.');
+    }
+
+    const settings = await this.contractSettings.getSettings(tenantId);
+
+    // Base = rémunération totale brute versée pendant la durée du contrat :
+    // somme des payroll_items du personnel entre début et fin du contrat
+    // (tous statuts calculés/validés/payés — les PENDING non émis exclus).
+    let remunerationBrute = 0;
+    if (data.remunerationBruteOverride != null) {
+      remunerationBrute = Number(data.remunerationBruteOverride);
+    } else {
+      try {
+        const items = await this.prisma.payrollItem.aggregate({
+          where: {
+            staffId: current.staffId,
+            tenantId,
+            status: { in: ['CALCULATED', 'VALIDATED', 'PAID'] },
+          },
+          _sum: { grossSalary: true },
+        });
+        remunerationBrute = Number(items._sum.grossSalary ?? 0);
+      } catch {
+        remunerationBrute = 0;
+      }
+    }
+
+    const indemnite = computeIndemniteFinContrat(remunerationBrute, settings.indemniteFinContratPct, data.montantAjuste);
+
+    const terms = {
+      ...((current.terms as any) || {}),
+      indemniteFinContrat: {
+        ...indemnite,
+        baseSource: data.remunerationBruteOverride != null ? 'saisie manuelle' : 'payroll_items (somme des bruts)',
+        note: data.note || null,
+        dateCloture: new Date().toISOString(),
+        validePar: data.performedBy ?? null,
+        valideParEmail: data.performedByEmail ?? null,
+      },
+    };
+
+    const updated = await this.prisma.contract.update({
+      where: { id },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'EXPIRED',
+        terms,
+      },
+    });
+
+    // Miroir staff : plus de CDD actif → pas de changement de statut du personnel
+    // (la relation s'arrête au terme ; le personnel reste actif pour son dossier).
+    return {
+      contract: updated,
+      indemnite: terms.indemniteFinContrat,
+      baseCalculee: remunerationBrute,
+      tauxPct: settings.indemniteFinContratPct,
+    };
+  }
+
+  /**
+   * Requalifie un dossier hérité « Vacataire » (§10) : CDD (salarié) ou
+   * contrat de prestation (prestataire). Trace la décision, met à jour le
+   * contrat ET la fiche, efface le badge « à requalifier ». Le test d'aide
+   * à la décision est proposé côté interface — jamais imposé.
+   */
+  async requalifyContract(id: string, tenantId: string, data: {
+    newContractType: 'CDD' | 'CDI' | 'PRESTATION';
+    statutContractuel?: 'SALARIE_DECLARE' | 'SALARIE_NON_DECLARE' | 'PRESTATAIRE_SERVICE';
+    endDate?: string | Date | null;
+    cddMotif?: string;
+    baseSalary?: number;
+    prestationPaymentMode?: 'FORFAIT' | 'HORAIRE';
+    prestationAmount?: number;
+    prestationDescription?: string;
+    justification: string;
+    performedBy?: string;
+    performedByEmail?: string;
+  }) {
+    const current = await this.findContractById(id, tenantId);
+    if (!current.needsRequalification && current.contractType !== 'VACATAIRE') {
+      throw new BadRequestException(
+        'Ce contrat n\u2019est pas marqué « à requalifier » (réservé aux dossiers hérités Vacataire).',
+      );
+    }
+    const justification = (data.justification || '').trim();
+    if (justification.length < 10) {
+      throw new BadRequestException('Justification requise (10 caractères minimum) — traçabilité en cas de contrôle.');
+    }
+
+    const toPrestation = data.newContractType === 'PRESTATION';
+    const newStatut =
+      data.statutContractuel ||
+      (toPrestation ? 'PRESTATAIRE_SERVICE' : 'SALARIE_DECLARE');
+    if (toPrestation && newStatut !== 'PRESTATAIRE_SERVICE') {
+      throw new BadRequestException('Un contrat de prestation exige le statut PRESTATAIRE_SERVICE.');
+    }
+    if (!toPrestation && newStatut === 'PRESTATAIRE_SERVICE') {
+      throw new BadRequestException('Un contrat de travail (CDI/CDD) exige un statut salarié (déclaré ou non déclaré).');
+    }
+    if (!toPrestation && data.newContractType === 'CDD' && !data.endDate) {
+      throw new BadRequestException('La requalification en CDD exige une date de fin.');
+    }
+    if (!toPrestation && data.newContractType === 'CDD' && !(data.cddMotif || '').trim()) {
+      throw new BadRequestException('La requalification en CDD exige le motif du recours à la durée déterminée.');
+    }
+
+    const previousStatut = current.statutContractuel || null;
+    const documentPaieType = deriveDocumentPaieType(newStatut);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const terms: any = {
+        ...((current.terms as any) || {}),
+        requalification: {
+          depuis: current.contractType,
+          vers: data.newContractType,
+          statutAvant: previousStatut,
+          statutApres: newStatut,
+          justification,
+          date: new Date().toISOString(),
+          performedBy: data.performedBy ?? null,
+          performedByEmail: data.performedByEmail ?? null,
+        },
+      };
+      if (toPrestation && data.prestationDescription) {
+        terms.prestation = {
+          ...((terms.prestation as any) || {}),
+          description: data.prestationDescription.trim(),
+        };
+      }
+
+      const patch: any = {
+        ...prismaUpdateDefaults(),
+        contractType: data.newContractType,
+        statutContractuel: newStatut,
+        documentPaieType,
+        needsRequalification: false,
+        requalifieDepuis: current.contractType,
+        terms,
+        justificationStatut: justification,
+        cddMotif: data.newContractType === 'CDD' ? (data.cddMotif || '').trim() : null,
+        cddRenouvellements: data.newContractType === 'CDD' ? current.cddRenouvellements : 0,
+      };
+      if (data.newContractType === 'CDD' && data.endDate) patch.endDate = new Date(data.endDate);
+      if (data.newContractType === 'CDI') {
+        patch.endDate = null;
+        if (data.baseSalary !== undefined) patch.baseSalary = new Prisma.Decimal(data.baseSalary);
+      }
+      if (toPrestation) {
+        patch.prestationPaymentMode = data.prestationPaymentMode || 'FORFAIT';
+        if (data.prestationAmount != null) {
+          patch.prestationAmount = new Prisma.Decimal(data.prestationAmount);
+          patch.baseSalary = new Prisma.Decimal(data.prestationPaymentMode === 'HORAIRE' ? 0 : data.prestationAmount);
+        }
+        patch.cddMotif = null;
+        patch.cddRenouvellements = 0;
+        patch.cddChainId = null;
+      } else if (data.baseSalary !== undefined) {
+        patch.baseSalary = new Prisma.Decimal(data.baseSalary);
+      }
+
+      const contract = await tx.contract.update({ where: { id }, data: patch });
+
+      // Miroir fiche personnel + levée du badge « à requalifier »
+      const staffPatch: any = {
+        needsRequalification: false,
+        contractType: data.newContractType,
+        justificationStatut: justification,
+      };
+      if (previousStatut !== newStatut || !previousStatut) {
+        staffPatch.statutContractuel = newStatut;
+        staffPatch.documentPaieType = documentPaieType;
+        if (!previousStatut) staffPatch.statutContractuelLockedAt = new Date();
+      }
+      if (toPrestation) {
+        staffPatch.prestationPaymentMode = data.prestationPaymentMode || 'FORFAIT';
+        if (data.prestationAmount != null) staffPatch.prestationAmount = new Prisma.Decimal(data.prestationAmount);
+      }
+      await tx.staff.update({ where: { id: current.staffId }, data: staffPatch }).catch(() => null);
+
+      // Procédure tracée si le statut change réellement (§ Task 10 — staff_statut_changes)
+      if (previousStatut && previousStatut !== newStatut) {
+        await tx.staffStatutChange.create({
+          data: {
+            tenantId,
+            staffId: current.staffId,
+            previousStatut,
+            newStatut,
+            effectiveDate: new Date(),
+            justification: `[Requalification Vacataire] ${justification}`,
+            performedBy: data.performedBy ?? null,
+            performedByEmail: data.performedByEmail ?? null,
+          },
+        }).catch(() => null);
+      }
+
+      return contract;
+    });
+
+    return updated;
   }
 
   /**

@@ -21,7 +21,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import type { Response, Request } from 'express';
-import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CompleteOnboardingDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto } from './dto';
+import { CreateContractDto, UpdateContractDto, CreateAmendmentDto, SignContractDto, CompleteOnboardingDto, CreateContractTemplateDto, UpdateContractTemplateDto, TerminateContractDto, RenewCddDto, CloseCddDto, RequalifyContractDto, UpdateHrContractSettingsDto } from './dto';
+import { ContractSettingsService } from './services/contract-settings.service';
 
 @Controller('hr/contracts')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -32,6 +33,7 @@ export class ContractsPrismaController {
     private readonly signTokenService: ContractSignTokenService,
     private readonly notificationService: RecruitmentNotificationService,
     private readonly prisma: PrismaService,
+    private readonly contractSettings: ContractSettingsService,
   ) {}
 
   // ─── Contracts CRUD ─────────────────────────────────────────────────────────
@@ -74,6 +76,102 @@ export class ContractsPrismaController {
   ) {
     const tid = tenant?.id ?? tenantIdFallback;
     return this.contractsService.findActiveContract(staffId, tid);
+  }
+
+  // ─── Refonte CDC « étape Contrat » — settings / alertes / chaîne CDD ──────
+  // (MUST be before @Get(':id') — routes paramétrées nommées)
+
+  @Get('settings')
+  async getContractSettings(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractSettings.getSettings(tid);
+  }
+
+  @Put('settings')
+  async updateContractSettings(
+    @GetTenant() tenant: any,
+    @Body() patch: UpdateHrContractSettingsDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractSettings.updateSettings(tid, patch as any);
+  }
+
+  @Get('alerts')
+  async getConformiteAlertes(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractSettings.getConformiteAlertes(tid);
+  }
+
+  @Get('staff/:staffId/cdd-chain')
+  async getCddChain(
+    @GetTenant() tenant: any,
+    @Param('staffId') staffId: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractSettings.getCddChainInfo(staffId, tid);
+  }
+
+  @Post(':id/renew')
+  @HttpCode(HttpStatus.CREATED)
+  async renewCdd(
+    @Req() req: any,
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: RenewCddDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractsService.renewCdd(id, tid, {
+      ...data,
+      performedBy: (req as any)?.user?.id,
+    });
+  }
+
+  @Post(':id/close-cdd')
+  async closeCdd(
+    @Req() req: any,
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: CloseCddDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractsService.closeCdd(id, tid, {
+      ...data,
+      performedBy: (req as any)?.user?.id,
+      performedByEmail: (req as any)?.user?.email,
+    });
+  }
+
+  @Post(':id/requalify')
+  async requalifyContract(
+    @Req() req: any,
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() data: RequalifyContractDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    return this.contractsService.requalifyContract(id, tid, {
+      ...data,
+      performedBy: (req as any)?.user?.id,
+      performedByEmail: (req as any)?.user?.email,
+    });
   }
 
   // ─── Contract Templates (MUST be before @Get(':id')) ───────────────────────

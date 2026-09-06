@@ -33,6 +33,7 @@ import {
   BarChart3,
   Settings,
   Landmark,
+  GraduationCap,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -66,6 +67,12 @@ export const HR_SUBMODULE_TABS = [
     label: 'Collaborateurs',
     path: '/app/hr/collaborators',
     icon: Users,
+  },
+  {
+    id: 'internships',
+    label: 'Stagiaires',
+    path: '/app/hr/internships',
+    icon: GraduationCap,
   },
   {
     id: 'ia',

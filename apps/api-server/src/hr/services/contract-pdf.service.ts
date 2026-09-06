@@ -22,6 +22,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import {
   CONTRAT_TRAVAIL_TEMPLATE,
+  CONTRAT_TRAVAIL_TEMPLATE_V1,
   CONTRAT_PRESTATION_TEMPLATE,
   CONTRAT_TRAVAIL_VARIABLES,
   CONTRAT_PRESTATION_VARIABLES,
@@ -33,6 +34,20 @@ import {
   categoryKeyFromRoleType,
   TEMPLATE_TYPE_CONTRAT_TRAVAIL,
 } from './employment-contract-templates';
+import {
+  CONVENTION_STAGE_TEMPLATE,
+  CONVENTION_STAGE_VARIABLES,
+  TEMPLATE_TYPE_CONVENTION_STAGE,
+} from './internship-convention-template';
+import {
+  isValidTypeForStatut,
+  typesDisponiblesPourStatut,
+  deriveWatermarkText,
+  watermarkFontSize,
+  computeCddChains,
+  activeCddChain,
+  CddLikeContract,
+} from './contract-rules';
 import { PayrollEngineService } from './payroll-engine.service';
 
 // ─── Handlebars Helpers ───────────────────────────────────────────────────────
@@ -282,7 +297,8 @@ export class ContractPdfService {
       try {
         const articles = JSON.parse(templateSource);
         // La configuration visuelle des contrats a été supprimée — utilisation des valeurs par défaut.
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+        // Filigrane : acronyme de l'école (CDC — jamais « Academia Helm »)
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, undefined, deriveWatermarkText(schoolAbbreviation, schoolName));
       } catch (err) {
         this.logger.error('Failed to parse articles JSON template, falling back to legacy HTML template', err);
         templateSource = this.getDefaultTemplate(contract.contractType);
@@ -325,6 +341,8 @@ export class ContractPdfService {
       directorPosition: 'Directeur(rice)',
       schoolAuthorizationNumber,
       schoolAbbreviation,
+      // Filigrane = acronyme de l'école (CDC — jamais « Academia Helm »)
+      schoolWatermark: deriveWatermarkText(schoolAbbreviation, schoolName),
       // Employé
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
       staffFirstName: contract.staff?.firstName || '',
@@ -579,7 +597,7 @@ export class ContractPdfService {
       try {
         const articles = JSON.parse(templateSource);
         // La configuration visuelle des contrats a été supprimée — utilisation des valeurs par défaut.
-        templateSource = this.buildHtmlFromArticles(articles, contract.contractType);
+        templateSource = this.buildHtmlFromArticles(articles, contract.contractType, undefined, deriveWatermarkText(schoolAbbreviation, schoolName));
       } catch {
         templateSource = this.getDefaultTemplate(contract.contractType);
       }
@@ -600,6 +618,8 @@ export class ContractPdfService {
     const templateVars = {
       schoolName, schoolAddress, schoolPhone, schoolEmail, schoolCountry, schoolCity, schoolLogoUrl,
       directorName, directorPosition: 'Directeur(rice)', schoolAuthorizationNumber, schoolAbbreviation,
+      // Filigrane = acronyme de l'école (CDC — jamais « Academia Helm »)
+      schoolWatermark: deriveWatermarkText(schoolAbbreviation, schoolName),
       civilite: contract.staff?.gender === 'FEMALE' ? 'Madame' : 'Monsieur',
       staffFirstName: contract.staff?.firstName || '',
       staffLastName: contract.staff?.lastName || '',
@@ -1448,6 +1468,28 @@ export class ContractPdfService {
       } catch (err: any) {
         this.logger.warn(`Seed template ${templateType} échoué : ${err?.message}`);
       }
+    } else if (
+      templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL &&
+      typeof tmpl.template === 'string' &&
+      tmpl.template.trim() === CONTRAT_TRAVAIL_TEMPLATE_V1.trim()
+    ) {
+      // ⭐ Refonte CDC — mise à niveau V1 → V2 UNIQUEMENT si le gabarit en base
+      //    est STRICTEMENT identique au gabarit V1 d'origine (jamais personnalisé) :
+      //    clauses renouvellement/durée cumulée (art. 2) + indemnité de fin de
+      //    contrat (art. 9). Un template personnalisé par l'école reste intact.
+      try {
+        await this.prisma.contractTemplate.update({
+          where: { id: tmpl.id },
+          data: {
+            template: CONTRAT_TRAVAIL_TEMPLATE,
+            variables: CONTRAT_TRAVAIL_VARIABLES as any,
+          },
+        });
+        tmpl = { ...tmpl, template: CONTRAT_TRAVAIL_TEMPLATE, variables: CONTRAT_TRAVAIL_VARIABLES };
+        this.logger.log(`Template CONTRAT_TRAVAIL migré V1 → V2 (clauses CDD CDC) pour le tenant ${tenantId}`);
+      } catch (err: any) {
+        this.logger.warn(`Migration template V1 → V2 échouée : ${err?.message}`);
+      }
     }
     return {
       templateId: tmpl?.id ?? null,
@@ -1463,6 +1505,20 @@ export class ContractPdfService {
   ): Promise<{ html: string; templateVars: Record<string, any> }> {
     const statut: string = contract.statutContractuel;
     const isPrestation = statut === 'PRESTATAIRE_SERVICE';
+
+    // ⭐ CDC §7 — CONTRÔLE DE COHÉRENCE avant génération : il est techniquement
+    //    IMPOSSIBLE de générer un template de contrat de travail salarié pour un
+    //    profil prestataire, et inversement. La combinaison (statut × type) est
+    //    validée AVANT tout rendu — quelle que soit la source des données.
+    if (!isValidTypeForStatut(statut, contract.contractType)) {
+      const allowed = typesDisponiblesPourStatut(statut).join(' / ');
+      throw new BadRequestException(
+        `Incohérence statut/template : le contrat « ${contract.contractType} » ne peut pas être généré pour un ` +
+        `${statut === 'PRESTATAIRE_SERVICE' ? 'prestataire de services (gabarit attendu : contrat de prestation)' : 'salarié (gabarit attendu : contrat de travail)'}. ` +
+        `Combinaison attendue pour ce statut : ${allowed}.`,
+      );
+    }
+
     const terms = (contract.terms as any) || {};
     const staff = contract.staff || {};
     const BLANK = '________________';
@@ -1502,6 +1558,55 @@ export class ContractPdfService {
     // ── Barème fiscal en vigueur (payroll_fiscal_rates — jamais en dur) ──
     const rates = await this.payrollEngine.getFiscalRates();
     const categoryRule = this.payrollEngine.getCategoryRule(rates, staff.roleType);
+
+    // ── Paramétrage RH de l'école (hr_contract_settings — CDC §9) : seuil durée
+    //    cumulée CDD + taux de l'indemnité de fin de contrat, JAMAIS en dur ──
+    let hrSettings: any = null;
+    try {
+      hrSettings = await this.prisma.hrContractSettings.findUnique({ where: { tenantId } });
+    } catch { hrSettings = null; }
+    const cddDureeMaxMois = Number(hrSettings?.cddDureeMaxMois) > 0 ? Number(hrSettings.cddDureeMaxMois) : 24;
+    const indemniteFinContratPct = hrSettings?.indemniteFinContratPct != null ? Number(hrSettings.indemniteFinContratPct) : 6;
+
+    // ── Chaîne CDD du personnel (§4.3) : compteur + durée cumulée, CHAMPS
+    //    CALCULÉS depuis les contrats du personnel (jamais saisis) ──
+    let cddChain: { renouvellements: number; dureeCumuleeMois: number; dateInitial: Date | null } = {
+      renouvellements: Number(contract.cddRenouvellements) || 0,
+      dureeCumuleeMois: 0,
+      dateInitial: null,
+    };
+    if (!isPrestation && contract.contractType === 'CDD') {
+      try {
+        const siblings = await this.prisma.contract.findMany({
+          where: {
+            staffId: contract.staffId,
+            tenantId,
+            contractType: 'CDD',
+            status: { not: 'DELETED' },
+          },
+          orderBy: { startDate: 'asc' },
+        });
+        const chains = computeCddChains(siblings as unknown as CddLikeContract[]);
+        const ownChain = chains.find((ch) => ch.chainId && ch.chainId === (contract.cddChainId || contract.id));
+        const chain = ownChain || activeCddChain(siblings as unknown as CddLikeContract[]);
+        if (chain) {
+          const chainContracts = siblings.filter(
+            (c: any) => (c.cddChainId || c.id) === (contract.cddChainId || contract.id),
+          );
+          cddChain = {
+            renouvellements: Math.max(Number(contract.cddRenouvellements) || 0, chain.renouvellements),
+            dureeCumuleeMois: chain.dureeCumuleeMois,
+            dateInitial: chainContracts[0]?.startDate ? new Date(chainContracts[0].startDate) : null,
+          };
+        }
+      } catch { /* chaîne indisponible → valeurs du contrat seul */ }
+    }
+
+    // ── Filigrane : ACRONYME DE L'ÉCOLE (CDC §7 NB — jamais « Academia Helm ») ──
+    const watermarkText = deriveWatermarkText(
+      schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation,
+      schoolName,
+    );
 
     // ── Template en base ──
     const { source: templateSource } = await this.getStatutTemplate(tenantId, statut);
@@ -1620,6 +1725,13 @@ export class ContractPdfService {
         STAGE: 'stage académique',
         CDD: 'surcroît d\u2019activité',
       };
+      // ⭐ CDC §4.3 — vars chaîne CDD (champs calculés) + taux paramétrables
+      const cddRenouvellements = cddChain.renouvellements || 0;
+      const cddDureeCumulee = cddChain.dureeCumuleeMois
+        ? `${Math.round(cddChain.dureeCumuleeMois)} mois`
+        : (cddDuree !== BLANK ? cddDuree : BLANK);
+      const cddDateInitial = cddChain.dateInitial ? fmtDate(cddChain.dateInitial) : fmtDate(contract.startDate);
+      const essaiMois = contract.periodeEssaiMois != null ? `${contract.periodeEssaiMois} mois` : periodeEssai;
       templateVars = {
         // Employeur
         employeur_raison_sociale: employeur.raison_sociale,
@@ -1650,11 +1762,19 @@ export class ContractPdfService {
         if_cdi: isCDI,
         if_cdd: !isCDI,
         cdd_duree: cddDuree,
-        cdd_motif: terms.cddMotif || cddMotifDefault[contract.contractType] || 'surcroît d\u2019activité',
+        cdd_motif: terms.cddMotif || contract.cddMotif || cddMotifDefault[contract.contractType] || 'surcroît d\u2019activité',
+        // ⭐ CDC §4.3 — chaîne de renouvellements (champs calculés automatiquement)
+        if_cdd_renouvele: !isCDI && cddRenouvellements > 0,
+        cdd_renouvellements: String(cddRenouvellements),
+        cdd_date_initial: cddDateInitial,
+        cdd_duree_cumulee: cddDureeCumulee,
+        cdd_duree_max: `${cddDureeMaxMois} mois (renouvellement compris)`,
+        indemnite_fin_contrat_pct: indemniteFinContratPct,
         date_debut: fmtDate(contract.startDate),
         date_fin: fmtDate(contract.endDate),
         // Essai / préavis — dérivés de payroll_fiscal_rates.categoryRules
-        periode_essai_duree: periodeEssai,
+        // (période d'essai CDI : valeur saisie à l'étape 4 §4.3 si fournie)
+        periode_essai_duree: isCDI ? essaiMois : periodeEssai,
         periode_essai_renouvelable: periodeEssaiRenouv,
         duree_preavis: dureePreavis,
         // Travail
@@ -1687,6 +1807,7 @@ export class ContractPdfService {
       schoolName,
       ministry: null,
       schoolLogoUrl,
+      watermarkText,
       schoolAddress,
       schoolCity,
       schoolCountry,
@@ -1753,10 +1874,255 @@ export class ContractPdfService {
     return { pdfBuffer, pdfUrl, contract: updated || contract };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONVENTION DE STAGE (CDC §6) — flux séparé, MÊME moteur de documents
+  // (template juridique DISTINCT : Décret n°2018-196, pas un contrat de travail)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Génère la convention de stage : gabarit CONVENTION_STAGE (seedé dans
+   * contract_templates par tenant), rendu du texte, shell commun (en-tête
+   * école, filigrane ACRONYME, signatures, QR), PDF Puppeteer + SHA-256.
+   * Un stagiaire n'est pas un salarié : aucune génération de fiche de paie,
+   * le flux ne touche jamais le moteur de paie.
+   */
+  async generateInternshipConvention(internshipId: string, tenantId: string): Promise<{
+    pdfBuffer: Buffer;
+    conventionUrl: string;
+    contentHash: string;
+    internship: any;
+  }> {
+    const internship: any = await this.prisma.hrInternship.findFirst({
+      where: { id: internshipId, tenantId },
+      include: { tuteur: { select: { firstName: true, lastName: true, position: true } } },
+    });
+    if (!internship) throw new NotFoundException(`Stage ${internshipId} introuvable`);
+    if (internship.status === 'DRAFT') {
+      throw new BadRequestException(
+        'Validez le stage (assurance accident du travail obligatoire — Décret n°2018-196) avant de générer la convention.',
+      );
+    }
+
+    // ── Identité école (même chaîne de repli que les contrats) ──
+    const schoolSettings: any = await this.prisma.schoolSettings.findFirst({ where: { tenantId } }).catch(() => null);
+    const identityProfile: any = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId, isActive: true }, orderBy: { version: 'desc' },
+    }).catch(() => null);
+    let school: any = await this.prisma.school.findFirst({ where: { tenantId } }).catch(() => null);
+    const recruiter: any = await this.prisma.recruiterProfile.findFirst({ where: { tenantId } }).catch(() => null);
+
+    const schoolName = schoolSettings?.schoolName || identityProfile?.schoolName || school?.name || "L'École";
+    const schoolAddress = schoolSettings?.address || identityProfile?.address || school?.address || '________________';
+    const schoolCity = schoolSettings?.city || identityProfile?.city || '';
+    const rawSchoolCountry = schoolSettings?.country || identityProfile?.country || '';
+    const schoolCountry = (rawSchoolCountry && rawSchoolCountry.length === 2) ? (rawSchoolCountry || 'Bénin') : (rawSchoolCountry || 'Bénin');
+    const schoolPhone = schoolSettings?.phone || identityProfile?.phonePrimary || school?.primaryPhone || '';
+    const schoolEmail = schoolSettings?.email || identityProfile?.email || school?.primaryEmail || '';
+    const directorName = recruiter?.fullName || school?.directorPrimary || 'Le Directeur';
+    const directorQualite = recruiter?.functionLabel || 'Directeur(trice)';
+
+    let schoolLogoUrl = '';
+    const rawLogo = schoolSettings?.logoUrl || identityProfile?.logoUrl || school?.logo || '';
+    const logoStr = typeof rawLogo === 'string' ? rawLogo : (rawLogo as any)?.url || '';
+    if (logoStr) {
+      try { schoolLogoUrl = await this.storageService.resolveFileUrl(logoStr); } catch { schoolLogoUrl = logoStr; }
+    }
+
+    // ── Filigrane : ACRONYME de l'école (CDC — jamais « Academia Helm ») ──
+    const watermarkText = deriveWatermarkText(
+      schoolSettings?.abbreviation || identityProfile?.schoolAcronym || school?.abbreviation,
+      schoolName,
+    );
+
+    // ── Gabarit CONVENTION_STAGE en base (bootstrap-on-demand) ──
+    const { source: templateSource } = await this.getConventionStageTemplate(tenantId);
+
+    // ── QR de vérification ──
+    const verificationUrl = `${process.env.APP_URL || 'https://academia-helm.app'}/verify/internship/${internship.id}`;
+    let qrCodeDataUrl = '';
+    if (this.qrcode) {
+      try {
+        qrCodeDataUrl = await this.qrcode.toDataURL(verificationUrl, {
+          width: 100, margin: 1, color: { dark: '#1A2BA6', light: '#ffffff' },
+        });
+      } catch { /* QR indisponible */ }
+    }
+
+    const fmtDate = (d: any) => d
+      ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+      : '________________';
+    const fmtMoney = (n: any) => (n == null ? '0' : Number(n).toLocaleString('fr-FR'));
+    const BLANK = '________________';
+
+    // Durée du stage en libellé lisible (mois)
+    const mois = Math.max(
+      1,
+      Math.round((new Date(internship.endDate).getTime() - new Date(internship.startDate).getTime()) / (1000 * 60 * 60 * 24 * 30.44)),
+    );
+    const stageDuree = `${mois} mois`;
+
+    const tuteurNom = internship.tuteurNom
+      || (internship.tuteur ? `${internship.tuteur.firstName} ${internship.tuteur.lastName}` : '');
+
+    const templateVars: Record<string, any> = {
+      etablissement_accueil: schoolName,
+      etablissement_adresse: schoolAddress + (schoolCity ? `, ${schoolCity}` : '') + (schoolCountry ? `, ${schoolCountry}` : ''),
+      representant_nom: directorName,
+      representant_qualite: directorQualite,
+      stagiaire_civilite: 'Le/La stagiaire',
+      stagiaire_nom: internship.lastName || BLANK,
+      stagiaire_prenoms: internship.firstName || BLANK,
+      stagiaire_date_naissance: internship.birthDate ? fmtDate(internship.birthDate) : BLANK,
+      stagiaire_nationalite: 'béninoise',
+      stagiaire_type_piece: internship.nationalId ? 'CNI / Passeport' : BLANK,
+      stagiaire_numero_piece: internship.nationalId || BLANK,
+      stagiaire_adresse: BLANK,
+      stagiaire_telephone: internship.phone || BLANK,
+      stagiaire_email: internship.email || BLANK,
+      if_etablissement_origine: !!internship.etablissementOrigine,
+      etablissement_origine: internship.etablissementOrigine || BLANK,
+      type_stage: internship.typeStage || 'stage professionnel',
+      stage_duree: stageDuree,
+      date_debut: fmtDate(internship.startDate),
+      date_fin: fmtDate(internship.endDate),
+      mission: internship.position || 'mission de stage définie par la convention pédagogique',
+      if_gratification: internship.gratificationAmount != null && Number(internship.gratificationAmount) > 0,
+      gratification_montant: fmtMoney(internship.gratificationAmount),
+      periodicite_gratification: internship.gratificationPeriodicite || 'mensuellement',
+      assurance_compagnie: internship.assuranceCompagnie || 'la compagnie d\u2019assurance déclarée par l\u2019établissement',
+      assurance_police: internship.assurancePoliceRef || BLANK,
+      if_tuteur: !!tuteurNom,
+      tuteur_nom: tuteurNom || BLANK,
+      nombre_exemplaires: 'trois (3)',
+      lieu_signature: schoolCity || schoolCountry || BLANK,
+      date_signature: fmtDate(new Date()),
+    };
+
+    const bodyText = renderStatutTemplate(templateSource, templateVars);
+
+    const html = this.buildStatutDocumentHtml({
+      bodyText,
+      schoolName,
+      ministry: null,
+      schoolLogoUrl,
+      watermarkText,
+      schoolAddress,
+      schoolCity,
+      schoolCountry,
+      schoolPhone,
+      schoolEmail,
+      contractReference: `STG-${internship.id.slice(0, 8).toUpperCase()}`,
+      statutLabel: 'Convention de stage (Décret n°2018-196)',
+      documentPaieLabel: 'Sans document de paie — gratification',
+      isPrestation: false,
+      employerLabel: 'Pour l\u2019Établissement d\u2019accueil',
+      employeeLabel: 'Le/La Stagiaire',
+      employerSignerName: directorName,
+      employerSignatureData: null,
+      employerSignedAt: null,
+      employeeSignerName: `${internship.firstName || ''} ${internship.lastName || ''}`.trim(),
+      employeeSignatureData: null,
+      employeeSignedAt: null,
+      qrCodeDataUrl,
+      verificationUrl,
+      documentTitle: 'CONVENTION DE STAGE PROFESSIONNEL',
+    });
+
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await this.renderPdf(html);
+    } catch (renderError: any) {
+      throw new BadRequestException(
+        `Impossible de générer le PDF de la convention. Détail : ${renderError?.message || 'Erreur inconnue'}`,
+      );
+    }
+
+    const conventionUrl = await this.savePdf(tenantId, internship.id, pdfBuffer);
+    const contentHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+    const updated = await this.prisma.hrInternship.update({
+      where: { id: internship.id },
+      data: {
+        terms: {
+          ...((internship.terms as any) || {}),
+          conventionUrl,
+          conventionHash: contentHash,
+          conventionGeneratedAt: new Date().toISOString(),
+          generator: 'CONVENTION_STAGE_V1',
+        },
+      },
+    });
+
+    this.logger.log(
+      `Convention de stage générée : ${conventionUrl} — hash ${contentHash.slice(0, 12)}…`,
+    );
+    return { pdfBuffer, conventionUrl, contentHash, internship: updated };
+  }
+
+  /** Récupère (seed si absent) le gabarit CONVENTION_STAGE pour le tenant. */
+  private async getConventionStageTemplate(tenantId: string): Promise<{ templateId: string | null; source: string }> {
+    let tmpl: any = await this.prisma.contractTemplate.findFirst({
+      where: { tenantId, contractType: TEMPLATE_TYPE_CONVENTION_STAGE, isActive: true },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => null);
+
+    if (!tmpl) {
+      try {
+        tmpl = await this.prisma.contractTemplate.create({
+          data: {
+            tenantId,
+            name: 'Convention de stage professionnel (Décret n°2018-196)',
+            contractType: TEMPLATE_TYPE_CONVENTION_STAGE,
+            template: CONVENTION_STAGE_TEMPLATE,
+            variables: CONVENTION_STAGE_VARIABLES as any,
+            isActive: true,
+          },
+        });
+        this.logger.log(`Template CONVENTION_STAGE seedé pour le tenant ${tenantId}`);
+      } catch (err: any) {
+        this.logger.warn(`Seed CONVENTION_STAGE échoué : ${err?.message}`);
+      }
+    }
+    return { templateId: tmpl?.id ?? null, source: tmpl?.template || CONVENTION_STAGE_TEMPLATE };
+  }
+
+  /** Téléchargement du PDF de convention TEL QUE GÉNÉRÉ + contrôle SHA-256. */
+  async downloadConventionFile(
+    conventionUrl: string,
+    expectedHash: string,
+    internshipId: string,
+    tenantId: string,
+  ): Promise<Buffer> {
+    let buffer: Buffer | null = null;
+    try {
+      buffer = await this.storageService.downloadFile(conventionUrl);
+    } catch {
+      buffer = null;
+    }
+    if (!buffer) {
+      // Repli local /uploads (même logique que les contrats)
+      try {
+        const localPath = path.join(process.cwd(), 'uploads', conventionUrl.replace(/^\/+/, ''));
+        if (fs.existsSync(localPath)) buffer = fs.readFileSync(localPath);
+      } catch { buffer = null; }
+    }
+    if (!buffer) throw new NotFoundException(`Convention du stage ${internshipId} introuvable (fichier archivé)`);
+
+    const actualHash = crypto.createHash('sha256').update(buffer).digest('hex');
+    if (expectedHash && actualHash !== expectedHash) {
+      throw new BadRequestException(
+        'Empreinte SHA-256 du fichier de convention non conforme — le document a pu être altéré. Contactez l\u2019administrateur.',
+      );
+    }
+    return buffer;
+  }
+
   /** Shell HTML du contrat statutaire (même langage visuel que les autres documents). */
   private buildStatutDocumentHtml(o: {
     bodyText: string;
     schoolName: string; ministry?: string | null; schoolLogoUrl: string;
+    /** Filigrane = ACRONYME de l'école (CDC — jamais « Academia Helm ») */
+    watermarkText: string;
     schoolAddress: string; schoolCity: string; schoolCountry: string;
     schoolPhone: string; schoolEmail: string;
     contractReference: string; statutLabel: string; documentPaieLabel: string;
@@ -1765,6 +2131,7 @@ export class ContractPdfService {
     employerSignerName?: string; employerSignatureData?: string | null; employerSignedAt?: string | null;
     employeeSignerName?: string; employeeSignatureData?: string | null; employeeSignedAt?: string | null;
     qrCodeDataUrl: string; verificationUrl: string;
+    documentTitle?: string;
   }): string {
     const esc = (s: string) => String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1772,6 +2139,7 @@ export class ContractPdfService {
     // Texte rendu → paragraphes ; 1re ligne « CONTRAT … » détectée comme titre
     const rawParagraphs = o.bodyText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
     let title = o.isPrestation ? 'CONTRAT DE PRESTATION DE SERVICES' : 'CONTRAT DE TRAVAIL';
+    if (o.documentTitle) title = o.documentTitle;
     const paragraphs: string[] = [];
     for (const p of rawParagraphs) {
       if (/^CONTRAT\b/i.test(p) && paragraphs.length === 0) {
@@ -1807,6 +2175,8 @@ export class ContractPdfService {
 
     const generatedAt = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
     const generatedTime = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const wmText = (o.watermarkText || 'ÉCOLE').toUpperCase();
+    const wmFontSize = watermarkFontSize(wmText);
 
     return `<!DOCTYPE html>
 <html lang="fr">
@@ -1818,7 +2188,7 @@ export class ContractPdfService {
     .watermark {
       position: fixed; top: 50%; left: 50%;
       transform: translate(-50%, -50%) rotate(-45deg);
-      font-size: 68pt; color: #1A2BA6; opacity: 0.04; font-weight: bold;
+      font-size: ${wmFontSize}pt; color: #1A2BA6; opacity: 0.04; font-weight: bold;
       z-index: 0; white-space: nowrap; pointer-events: none;
     }
     .page { position: relative; z-index: 1; }
@@ -1872,7 +2242,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-  <div class="watermark">ACADEMIA HELM</div>
+  <div class="watermark">${esc(wmText)}</div>
   <div class="page">
     <div class="header">
       <table class="header-table">
@@ -2338,7 +2708,7 @@ export class ContractPdfService {
   </style>
 </head>
 <body>
-<div class="watermark">ACADEMIA HELM</div>
+<div class="watermark">{{schoolWatermark}}</div>
 <div class="page">
 
   <!-- Header with logo -->
@@ -2707,13 +3077,14 @@ export class ContractPdfService {
       .replace(/javascript\s*:/gi, ''); // Remove javascript: URLs
   }
 
-  buildHtmlFromArticles(articles: any[], contractType: string, docConfig?: any): string {
+  buildHtmlFromArticles(articles: any[], contractType: string, docConfig?: any, fallbackWatermark?: string): string {
     // Valeurs par défaut si pas de config (backward compatible)
     const cfg = docConfig || {};
     const headerBg = cfg.header_background_color || '#0D1F6E';
     const accentColor = cfg.header_decorative_line_color || '#F5A623';
     const primaryColor = cfg.style_primary_color || '#1A2BA6';
-    const watermarkText = cfg.watermark_text || 'ACADEMIA HELM';
+    // Filigrane : acronyme de l'école transmis par l'appelant (CDC — jamais « Academia Helm »)
+    const watermarkText = cfg.watermark_text || fallbackWatermark || 'ÉCOLE';
     const watermarkType = cfg.watermark_type || 'text';
     const watermarkImageUrl = cfg.watermark_image_url || '';
     const watermarkOpacity = cfg.watermark_opacity != null ? Number(cfg.watermark_opacity) : 0.04;

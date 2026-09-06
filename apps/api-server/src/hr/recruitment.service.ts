@@ -1055,7 +1055,10 @@ export class RecruitmentPrismaService {
               department: application.job.dept || null,
               roleType,
               hireDate: new Date(),
-              contractType: application.job.contractType || 'CDI',
+              // ⭐ CDC §4.2 — les salariés ne reçoivent QUE CDI/CDD ; le stage vit
+              //    dans le flux séparé « Stagiaires » (hr_internships) et « Vacataire »
+              //    n'est pas un statut légal. Coercition défensive des offres héritées.
+              contractType: this.coerceSalarieContractType(application.job.statutContractuel, application.job.contractType),
               // ⭐ Statut contractuel RH Bénin — hérité de l'offre d'emploi
               //    (SALARIE_DECLARE | SALARIE_NON_DECLARE | PRESTATAIRE_SERVICE)
               statutContractuel: jobStatut,
@@ -1092,7 +1095,7 @@ export class RecruitmentPrismaService {
               || staffRecord.statutContractuel) as string | null;
             const contractType = statutContrat === 'PRESTATAIRE_SERVICE'
               ? 'PRESTATION'
-              : (application.job.contractType || 'CDI');
+              : this.coerceSalarieContractType(statutContrat, application.job.contractType);
             let baseSalary = new Prisma.Decimal(0);
             if (application.job.salary) {
               const allDigits = application.job.salary.replace(/[^0-9]/g, '');
@@ -3946,6 +3949,19 @@ Réponds UNIQUEMENT en JSON valide.`,
         fileName: d.fileName,
       })) || [],
     };
+  }
+
+  /**
+   * ⭐ CDC §4.2 — coercition défensive du type de contrat d'une offre pour un
+   * salarié : seuls CDI/CDD sont admis. Les offres héritées « Stage » /
+   * « Vacataire » / « Consultant » basculent en CDI (défaut de l'offre), le
+   * stage étant géré par le flux séparé hr_internships. Prestataire → PRESTATION.
+   */
+  private coerceSalarieContractType(statut: string | null | undefined, jobContractType: string | null | undefined): string {
+    if (statut === 'PRESTATAIRE_SERVICE') return 'PRESTATION';
+    const t = (jobContractType || 'CDI').toUpperCase();
+    if (t === 'CDD' || t === 'CDI') return t;
+    return 'CDI';
   }
 }
 

@@ -27,6 +27,8 @@ import {
   Max,
   MaxLength,
   MinLength,
+  ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -136,12 +138,19 @@ export class CreateContractDto {
   @IsUUID() staffId: string;
   @IsIn(['CDI', 'CDD', 'VACATAIRE', 'STAGE', 'CONSULTANT', 'PRESTATION']) contractType: string;
   /** Statut contractuel RH Bénin — détermine le gabarit (contrat_travail / contrat_prestation),
-   *  le document de paie (fiche_de_paie / etat_de_paiement) et la branche du moteur de calcul. */
+   *  le document de paie (fiche_de_paie / etat_de_paiement) et la branche du moteur de calcul.
+   *  CDC §4.2 : salariés → CDI/CDD exclusivement ; prestataire → PRESTATION. */
   @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
   /** Mode de rémunération du prestataire : FORFAIT | HORAIRE */
   @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
   /** Montant du forfait ou taux horaire (prestataire) */
   @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
+  /** Motif du CDD (CDC §4.3 — obligatoire pour un CDD, suggestions paramétrables par école) */
+  @IsOptional() @IsString() cddMotif?: string;
+  /** Période d'essai CDI en mois (CDC §4.3 — suggérée selon catégorie, modifiable) */
+  @IsOptional() @IsInt() @Min(0) @Max(12) periodeEssaiMois?: number;
+  /** Traçabilité de la décision de statut (CDC §4.4 — optionnel, recommandé) */
+  @IsOptional() @IsString() justificationStatut?: string;
   @IsDateString() startDate: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsNumber() @Type(() => Number) baseSalary: number;
@@ -163,6 +172,9 @@ export class UpdateContractDto {
   @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
   @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
   @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
+  @IsOptional() @IsString() cddMotif?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(12) periodeEssaiMois?: number;
+  @IsOptional() @IsString() justificationStatut?: string;
   @IsOptional() @IsDateString() startDate?: string;
   @IsOptional() @IsDateString() endDate?: string;
   @IsOptional() @IsNumber() @Type(() => Number) baseSalary?: number;
@@ -182,6 +194,110 @@ export class ChangeStatutContractuelDto {
   @IsDateString() effectiveDate: string;
   /** Justification obligatoire (min. 10 caractères) — implications légales CNSS/ITS/AIB */
   @IsString() @MinLength(10) justification: string;
+}
+
+// ─── Refonte CDC « étape Contrat » — DTOs renouvellement / clôture / requalification ──
+
+/** Renouvellement d'un CDD (même chaîne, compteur incrémenté, durée cumulée recalculée). */
+export class RenewCddDto {
+  @IsDateString() startDate: string;
+  @IsDateString() endDate: string;
+  @IsOptional() @IsString() cddMotif?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) baseSalary?: number;
+  @IsOptional() @IsIn(['BANK', 'CASH', 'MOBILE_MONEY']) paymentMode?: string;
+}
+
+/** Clôture d'un CDD à son terme avec calcul d'indemnité de fin de contrat (§8.4). */
+export class CloseCddDto {
+  /** Ajustement manuel du montant proposé (§8.4 — possibilité d'ajustement avant validation) */
+  @IsOptional() @IsNumber() @Type(() => Number) montantAjuste?: number;
+  /** Base de calcul manuelle si la paie n'est pas encore saisie (sinon somme des bruts) */
+  @IsOptional() @IsNumber() @Type(() => Number) remunerationBruteOverride?: number;
+  @IsOptional() @IsString() note?: string;
+}
+
+/** Requalification d'un dossier hérité « Vacataire » (§10) — CDD/CDI ou prestation. */
+export class RequalifyContractDto {
+  @IsIn(['CDD', 'CDI', 'PRESTATION']) newContractType: string;
+  @IsOptional() @IsIn(['SALARIE_DECLARE', 'SALARIE_NON_DECLARE', 'PRESTATAIRE_SERVICE']) statutContractuel?: string;
+  @IsOptional() @IsDateString() endDate?: string;
+  @IsOptional() @IsString() cddMotif?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) baseSalary?: number;
+  @IsOptional() @IsIn(['FORFAIT', 'HORAIRE']) prestationPaymentMode?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) prestationAmount?: number;
+  @IsOptional() @IsString() prestationDescription?: string;
+  /** Justification obligatoire (min. 10 caractères) — traçabilité en cas de contrôle */
+  @IsString() @MinLength(10) justification: string;
+}
+
+// ─── Paramétrage RH par école (CDC §9) ──────────────────────────────────────
+
+/** Question binaire du test d'aide à la qualification (§5 — texte configurable). */
+export class QualificationQuestionDto {
+  @IsString() @IsNotEmpty() id: string;
+  @IsString() @IsNotEmpty() question: string;
+  @IsOptional() @IsString() help?: string;
+  @IsArray() @ArrayMinSize(2) @ArrayMaxSize(2) @IsString({ each: true }) options: [string, string];
+  @IsIn(['subordination', 'autonomie']) firstOptionMeaning: 'subordination' | 'autonomie';
+}
+
+export class UpdateHrContractSettingsDto {
+  @IsOptional() @IsArray() @IsString({ each: true }) cddMotifs?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) stageTypes?: string[];
+  @IsOptional() @IsInt() @Min(1) @Max(600) cddDureeMaxMois?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10) cddRenouvellementsMax?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(100) indemniteFinContratPct?: number;
+  @IsOptional() @IsBoolean() testQualificationEnabled?: boolean;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => QualificationQuestionDto) testQuestions?: QualificationQuestionDto[];
+}
+
+// ─── Flux Stagiaires (CDC §6 — Décret n°2018-196) ──────────────────────
+
+export class CreateInternshipDto {
+  @IsString() @IsNotEmpty() firstName: string;
+  @IsString() @IsNotEmpty() lastName: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() nationalId?: string;
+  @IsOptional() @IsDateString() birthDate?: string;
+  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsString() typeStage?: string;
+  @IsDateString() startDate: string;
+  @IsDateString() endDate: string;
+  @IsOptional() @IsNumber() @Type(() => Number) gratificationAmount?: number;
+  @IsOptional() @IsString() gratificationPeriodicite?: string;
+  @IsOptional() @IsString() etablissementOrigine?: string;
+  @IsOptional() @IsString() tuteurNom?: string;
+  @IsOptional() @IsUUID() tuteurStaffId?: string;
+  @IsOptional() @IsBoolean() assuranceSouscrite?: boolean;
+  @IsOptional() @IsString() assurancePoliceRef?: string;
+  @IsOptional() @IsString() assuranceCompagnie?: string;
+  @IsOptional() @IsIn(['DRAFT', 'ACTIVE']) status?: string;
+}
+
+export class UpdateInternshipDto {
+  @IsOptional() @IsString() @IsNotEmpty() firstName?: string;
+  @IsOptional() @IsString() @IsNotEmpty() lastName?: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() nationalId?: string;
+  @IsOptional() @IsDateString() birthDate?: string;
+  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsString() typeStage?: string;
+  @IsOptional() @IsDateString() startDate?: string;
+  @IsOptional() @IsDateString() endDate?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) gratificationAmount?: number;
+  @IsOptional() @IsString() gratificationPeriodicite?: string;
+  @IsOptional() @IsString() etablissementOrigine?: string;
+  @IsOptional() @IsString() tuteurNom?: string;
+  @IsOptional() @IsUUID() tuteurStaffId?: string;
+  @IsOptional() @IsBoolean() assuranceSouscrite?: boolean;
+  @IsOptional() @IsString() assurancePoliceRef?: string;
+  @IsOptional() @IsString() assuranceCompagnie?: string;
+}
+
+export class InternshipStatusDto {
+  @IsIn(['DRAFT', 'ACTIVE', 'ENDED', 'CANCELLED']) status: string;
 }
 
 export class CreateAmendmentDto {

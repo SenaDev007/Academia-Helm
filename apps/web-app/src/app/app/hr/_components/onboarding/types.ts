@@ -75,6 +75,22 @@ export interface OnboardingState {
     prestationRenouvelable: boolean;
     prestationConfidentialite: boolean;
     prestationPropriete: boolean;
+    // ⭐ Refonte CDC « étape Contrat » — structure 2 niveaux + champs conditionnels
+    /** Motif du CDD (obligatoire si CDD — suggestions paramétrables par école) */
+    cddMotif: string;
+    /** Période d'essai CDI en mois (défaut suggéré selon catégorie, modifiable) */
+    periodeEssaiMois: string;
+    /** Traçabilité de la décision de statut (§4.4 — optionnel, recommandé) */
+    justificationStatut: string;
+  };
+
+  // ⭐ Test d'aide à la qualification (CDC §5 — non bloquant, configurable)
+  qualificationTest: {
+    enabled: boolean;
+    questions: Array<{ id: string; question: string; help?: string; options: [string, string]; firstOptionMeaning: 'subordination' | 'autonomie' }>;
+    answers: Record<string, 0 | 1>;
+    suggestion: string | null;
+    showTest: boolean;
   };
 
   // Step 5: Preview
@@ -165,6 +181,17 @@ export const INITIAL_STATE: OnboardingState = {
     prestationRenouvelable: false,
     prestationConfidentialite: true,
     prestationPropriete: true,
+    cddMotif: '',
+    periodeEssaiMois: '',
+    justificationStatut: '',
+  },
+
+  qualificationTest: {
+    enabled: true,
+    questions: [],
+    answers: {},
+    suggestion: null,
+    showTest: false,
   },
 
   articles: [],
@@ -215,6 +242,7 @@ export type OnboardingAction =
   | { type: 'SET_DOCUMENT'; documentType: string; file: File | null }
   | { type: 'MARK_DOCUMENT_UPLOADED'; documentType: string }
   | { type: 'UPDATE_CONTRACT'; field: string; value: any }
+  | { type: 'UPDATE_QUALIFICATION'; patch: Partial<OnboardingState['qualificationTest']> }
   | { type: 'SET_ARTICLES'; articles: Array<{ title: string; content: string }> }
   | { type: 'SET_ARTICLES_SAVED'; saved: boolean }
   | { type: 'SET_PREVIEW_HTML'; html: string | null }

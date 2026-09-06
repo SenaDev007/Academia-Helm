@@ -377,6 +377,8 @@ model Tenant {
   staffStatutChanges               StaffStatutChange[]
   payrollDocuments                 PayrollDocument[]
   payrollDocumentSequences         PayrollDocumentSequence[]
+  hrContractSettings               HrContractSettings?
+  hrInternships                    HrInternship[]
   staffPhotos                      StaffPhoto[]
   staffNumberSequence              StaffNumberSequence?
   jobNumberSequence                JobNumberSequence?
@@ -5474,6 +5476,12 @@ model Staff {
   prestationAmount          Decimal?                   @db.Decimal(12, 2)
   /// Date de verrouillage du statut contractuel (après création du profil)
   statutContractuelLockedAt DateTime?
+  /// Traçabilité de la décision (CDC §4.4) : pourquoi ce statut plutôt qu'un autre pour ce poste.
+  /// Optionnel mais fortement recommandé — affiché à la création du dossier et en cas de contrôle.
+  justificationStatut         String?
+  /// Dossier hérité « Vacataire » à requalifier (CDC §10) — badge visible, accès NON bloqué.
+  /// Requalifié via PUT /hr/contracts/:id/requalify (test d'aide + justification).
+  needsRequalification        Boolean                    @default(false)
   /// Type de départ: RESIGNATION, DISMISSAL, MUTUAL_AGREEMENT, END_OF_CONTRACT, RETIREMENT, DEATH, ABANDONMENT, OTHER
   terminationType           String?
   /// Détails de la résiliation/débauche (motif, préavis, entretien de sortie, etc.)
@@ -5512,6 +5520,7 @@ model Staff {
   photo                     StaffPhoto?
   statutChanges             StaffStatutChange[]
   payrollDocuments          PayrollDocument[]
+  internshipsTutored        HrInternship[]            @relation("HrInternshipTutor")
   globalResourceUsages      TenantResourceUsage[]      @relation("StaffResourceUsages")
   globalResourceAnnotations TenantResourceAnnotation[] @relation("StaffResourceAnnotations")
   organigramNodes           OrganigramNode[]           @relation("StaffOrganigramNodes")
@@ -5702,6 +5711,20 @@ model Contract {
   prestationPaymentMode String?
   /// Montant du forfait ou taux horaire (prestataire de services)
   prestationAmount  Decimal? @db.Decimal(12, 2)
+  /// Motif du CDD (CDC §4.3 — suggestions paramétrables par école, texte libre accepté)
+  cddMotif           String?
+  /// N° de renouvellement dans la chaîne CDD (0 = contrat initial) — incrémenté automatiquement
+  cddRenouvellements Int       @default(0)
+  /// Identifiant de la chaîne CDD (contrat initial + renouvellements) — pour la durée cumulée
+  cddChainId         String?
+  /// Période d'essai CDI en mois (CDC §4.3 — défaut suggéré selon catégorie, modifiable)
+  periodeEssaiMois   Int?
+  /// Traçabilité de la décision de statut (CDC §4.4 — optionnel, recommandé)
+  justificationStatut String?
+  /// Dossier hérité « Vacataire » à requalifier (CDC §10) — badge « à requalifier », accès non bloqué
+  needsRequalification Boolean @default(false)
+  /// Type d'origine avant requalification (ex : VACATAIRE) — traçabilité de la migration
+  requalifieDepuis   String?
   startDate         DateTime            @db.Date
   endDate           DateTime?           @db.Date
   baseSalary        Decimal             @db.Decimal(10, 2)
@@ -5728,6 +5751,8 @@ model Contract {
   @@index([contractType])
   @@index([tenantId, status])
   @@index([staffId, tenantId, status])
+  @@index([cddChainId])
+  @@index([needsRequalification])
   @@map("employment_contracts")
 }
 
@@ -5804,6 +5829,84 @@ model StaffStatutChange {
   @@index([tenantId, staffId])
   @@index([tenantId, effectiveDate])
   @@map("staff_statut_changes")
+}
+
+/// Paramétrage RH « embauche & contrats » PAR ÉCOLE (CDC §9 — multi-tenant).
+/// Aucune liste figée dans le code : motifs de CDD, types de stage, seuils
+/// d'alerte et activation du test d'aide à la qualification sont modifiables
+/// ici, école par école, sans intervention sur le code.
+model HrContractSettings {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @unique
+  /// Suggestions de motifs de CDD proposées à la saisie (texte libre toujours accepté)
+  cddMotifs                Json?
+  /// Types de stage proposés dans le flux Stagiaires (texte libre toujours accepté)
+  stageTypes               Json?
+  /// Seuil d'alerte de durée cumulée CDD en mois (défaut loi béninoise : 24)
+  cddDureeMaxMois          Int      @default(24)
+  /// Nombre maximal de renouvellements d'une même chaîne CDD (défaut loi : 1)
+  cddRenouvellementsMax    Int      @default(1)
+  /// Taux de l'indemnité de fin de contrat CDD en % (défaut loi : 6)
+  indemniteFinContratPct   Decimal  @default(6) @db.Decimal(5, 2)
+  /// Activation du test d'aide à la qualification (§5) — désactivable par école
+  testQualificationEnabled Boolean  @default(true)
+  /// Questions du test d'aide (texte configurable — adaptation réglementaire / export UEMOA)
+  testQuestions            Json?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("hr_contract_settings")
+}
+
+/// Convention de stage (CDC §6 — flux SÉPARÉ de l'embauche salariée).
+/// Le stage relève du Décret n°2018-196 (texte distinct du Code du travail) :
+/// un stagiaire n'est pas un salarié — pas de bulletin de paie, une gratification,
+/// et une obligation d'assurance accident du travail à la charge de l'établissement
+/// d'accueil (référence de police obligatoire avant validation ACTIVE).
+model HrInternship {
+  id                   String    @id @default(uuid())
+  tenantId             String
+  /// Identité du stagiaire (pas de fiche Staff : ce n'est pas un personnel salarié)
+  firstName            String
+  lastName             String
+  email                String?
+  phone                String?
+  nationalId           String?
+  birthDate            DateTime? @db.Date
+  /// Poste / mission confiée au stagiaire
+  position             String?
+  /// Type de stage — suggestions paramétrables par école (hr_contract_settings.stageTypes)
+  typeStage            String?
+  startDate            DateTime  @db.Date
+  endDate              DateTime  @db.Date
+  /// Gratification (si applicable selon la durée — Décret n°2018-196)
+  gratificationAmount  Decimal?  @db.Decimal(12, 2)
+  /// Périodicité de la gratification (libellé libre : mensuelle, forfait…)
+  gratificationPeriodicite String?
+  /// Établissement d'origine (école, université, centre de formation)
+  etablissementOrigine String?
+  /// Tuteur / référent au sein de l'école (nom libre + lien optionnel au Staff)
+  tuteurNom            String?
+  tuteurStaffId        String?
+  /// Assurance accident du travail — OBLIGATOIRE avant validation (case + police)
+  assuranceSouscrite   Boolean   @default(false)
+  assurancePoliceRef   String?
+  /// Compagnie d'assurance (informatif, apparaît dans la convention)
+  assuranceCompagnie   String?
+  /// DRAFT (brouillon) → ACTIVE (assurance vérifiée) → ENDED / CANCELLED
+  status               String    @default("DRAFT")
+  /// Convention générée : url, hash, date (moteur de documents commun aux contrats)
+  terms                Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tuteur               Staff?    @relation("HrInternshipTutor", fields: [tuteurStaffId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([tenantId, status])
+  @@map("hr_internships")
 }
 
 /// Barème fiscal & social du Bénin versionné par année fiscale — SOURCE UNIQUE des taux du

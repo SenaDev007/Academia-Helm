@@ -350,6 +350,22 @@ function StaffCard({
             <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase', status.className)}>
               {status.label}
             </span>
+            {member.needsRequalification && (
+              <span
+                className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                title="Dossier hérité « Vacataire » — à requalifier en CDD ou prestation (CDC §10)"
+              >
+                À requalifier
+              </span>
+            )}
+            {member.statutContractuel === 'SALARIE_NON_DECLARE' && (
+              <span
+                className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                title="Non déclaré à la CNSS — régularisation due (bandeau visible, usage non bloqué)"
+              >
+                Non déclaré CNSS
+              </span>
+            )}
             {isInactive && terminationLabel && (
               <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
                 {terminationLabel}

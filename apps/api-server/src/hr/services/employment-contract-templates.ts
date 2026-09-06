@@ -95,7 +95,14 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 // ─── Template CONTRAT DE TRAVAIL (salariés, avec ou sans CNSS) ───────────────
 
-export const CONTRAT_TRAVAIL_TEMPLATE = `CONTRAT DE TRAVAIL {{type_contrat_libelle}}
+/**
+ * V1 = gabarit d’origine (avant refonte CDC « étape Contrat »). Conservé
+ * uniquement pour la DÉTECTION de mise à niveau : un template en base IDENTIQUE
+ * à V1 (jamais personnalisé par l’école) est migré automatiquement vers V2
+ * (clauses renouvellement/durée cumulée + indemnité de fin de contrat CDD).
+ * Un template personnalisé n’est JAMAIS écrasé.
+ */
+export const CONTRAT_TRAVAIL_TEMPLATE_V1 = `CONTRAT DE TRAVAIL {{type_contrat_libelle}}
 
 Entre les soussignés :
 
@@ -174,8 +181,7 @@ par mois de service effectif.
 
 ARTICLE 8 — OBLIGATIONS DES PARTIES
 Le Salarié s'engage à exécuter personnellement les tâches qui lui sont confiées, à
-respecter le règlement intérieur de l'Employeur et à observer la discipline de
-l'établissement. L'Employeur s'engage à fournir au Salarié les moyens nécessaires à
+respecter le règlement intérieur de l'Employeur et à observer la discipline de l'établissement. L'Employeur s'engage à fournir au Salarié les moyens nécessaires à
 l'exécution de sa prestation et à lui verser la rémunération convenue aux échéances prévues.
 
 ARTICLE 9 — RUPTURE DU CONTRAT
@@ -186,6 +192,132 @@ de {{duree_preavis}}, sauf faute grave ou lourde privative de préavis et d'inde
 {{#if_cdd}}
 Le présent contrat prend fin de plein droit à son terme, sans indemnité, sauf dispositions
 contraires du Code du Travail en cas de rupture anticipée.
+{{/if_cdd}}
+
+ARTICLE 10 — LITIGES
+Tout différend né de l'exécution ou de l'interprétation du présent contrat sera soumis,
+préalablement à toute action judiciaire, à l'Inspection du Travail territorialement
+compétente, puis, à défaut de conciliation, au Tribunal du Travail compétent.
+
+ARTICLE 11 — DISPOSITIONS FINALES
+Le présent contrat est établi en {{nombre_exemplaires}} exemplaires originaux, dont un
+remis à chacune des parties.
+
+Fait à {{lieu_signature}}, le {{date_signature}}.
+
+Pour l'Employeur                          Le Salarié
+{{employeur_representant_nom}}            {{salarie_nom}} {{salarie_prenoms}}`;
+
+/**
+ * V2 = gabarit courant (refonte CDC « étape Contrat »). Enrichissements :
+ *   - Article 2 (CDD) : clause de renouvellement + durée cumulée + seuil légal,
+ *     transformation de plein droit en CDI au-delà (art. 32/34 Code du travail) ;
+ *   - Article 9 (CDD) : indemnité de fin de contrat au taux légal (défaut 6 %,
+ *     art. 49-3 — taux paramétrable par école, injecté en variable).
+ */
+export const CONTRAT_TRAVAIL_TEMPLATE = `CONTRAT DE TRAVAIL {{type_contrat_libelle}}
+
+Entre les soussignés :
+
+{{employeur_raison_sociale}}, {{employeur_forme_juridique}} au capital de {{employeur_capital}},
+immatriculée au RCCM sous le numéro {{employeur_rccm}}, IFU {{employeur_ifu}},
+dont le siège social est situé à {{employeur_adresse}},
+représentée par {{employeur_representant_nom}}, agissant en qualité de {{employeur_representant_qualite}},
+ci-après désignée « l'Employeur »,
+
+D'une part,
+
+Et
+
+{{salarie_civilite}} {{salarie_nom}} {{salarie_prenoms}},
+né(e) le {{salarie_date_naissance}} à {{salarie_lieu_naissance}},
+de nationalité {{salarie_nationalite}},
+titulaire de la pièce d'identité {{salarie_type_piece}} n° {{salarie_numero_piece}},
+demeurant à {{salarie_adresse}},
+ci-après désigné(e) « le Salarié »,
+
+D'autre part,
+
+Il a été convenu ce qui suit :
+
+ARTICLE 1 — OBJET
+Le présent contrat a pour objet l'engagement du Salarié par l'Employeur en qualité de
+{{poste_intitule}}, catégorie professionnelle {{poste_categorie}}, échelon {{poste_echelon}}.
+Le Salarié exercera ses fonctions au sein de {{lieu_affectation}}, sous l'autorité et la
+direction de l'Employeur.
+
+ARTICLE 2 — NATURE ET DURÉE DU CONTRAT
+{{#if_cdd}}
+Le présent contrat est conclu à durée déterminée, pour une durée de {{cdd_duree}},
+prenant effet le {{date_debut}} et prenant fin le {{date_fin}}.
+Motif du recours à la durée déterminée : {{cdd_motif}}.
+{{#if_cdd_renouvele}}
+Le présent contrat constitue le renouvellement n° {{cdd_renouvellements}} de la relation
+contractuelle à durée déterminée initiée le {{cdd_date_initial}} ; la durée cumulée de
+ladite relation s'établit à {{cdd_duree_cumulee}}.
+{{/if_cdd_renouvele}}
+Conformément au Code du travail, la durée totale de la relation à durée déterminée,
+renouvellements inclus, ne peut excéder {{cdd_duree_max}} ; au-delà de ce terme, la
+relation est réputée conclue à durée indéterminée de plein droit.
+{{/if_cdd}}
+{{#if_cdi}}
+Le présent contrat est conclu à durée indéterminée à compter du {{date_debut}}.
+{{/if_cdi}}
+
+ARTICLE 3 — PÉRIODE D'ESSAI
+Le présent contrat comporte une période d'essai de {{periode_essai_duree}},
+renouvelable {{periode_essai_renouvelable}}, conformément à la catégorie professionnelle
+du Salarié. Pendant cette période, chacune des parties peut mettre fin au contrat sans
+préavis ni indemnité.
+
+ARTICLE 4 — DURÉE ET ORGANISATION DU TRAVAIL
+Le Salarié est engagé pour une durée hebdomadaire de travail de {{duree_hebdomadaire}} heures,
+réparties comme suit : {{repartition_horaires}}.
+
+ARTICLE 5 — RÉMUNÉRATION
+En contrepartie de ses fonctions, le Salarié percevra un salaire mensuel brut de
+{{salaire_brut}} FCFA, payable {{periodicite_paiement}} par {{mode_paiement}}.
+{{#if_primes}}
+S'ajoutent à ce salaire les primes et avantages suivants : {{liste_primes}}.
+{{/if_primes}}
+Ce salaire ne peut être inférieur au Salaire Minimum Interprofessionnel Garanti (SMIG)
+en vigueur en République du Bénin.
+
+ARTICLE 6 — PROTECTION SOCIALE
+{{#if_cnss_declare}}
+Le Salarié est affilié à la Caisse Nationale de Sécurité Sociale (CNSS) sous le numéro
+{{cnss_numero}}. Les cotisations sociales, part salariale et part patronale, sont
+précomptées et reversées conformément à la réglementation en vigueur.
+{{/if_cnss_declare}}
+{{#unless_cnss_declare}}
+Les modalités de couverture sociale du Salarié font l'objet d'une régularisation
+progressive conformément aux dispositions légales applicables.
+{{/unless_cnss_declare}}
+
+ARTICLE 7 — CONGÉS PAYÉS
+Le Salarié bénéficie d'un congé payé annuel calculé conformément aux dispositions du
+Code du Travail en République du Bénin et de la convention collective applicable au
+secteur de l'enseignement privé, à raison de {{jours_conges_par_mois}} jour(s) ouvrable(s)
+par mois de service effectif.
+
+ARTICLE 8 — OBLIGATIONS DES PARTIES
+Le Salarié s'engage à exécuter personnellement les tâches qui lui sont confiées, à
+respecter le règlement intérieur de l'Employeur et à observer la discipline de
+l'établissement. L'Employeur s'engage à fournir au Salarié les moyens nécessaires à
+l'exécution de sa prestation et à lui verser la rémunération convenue aux échéances prévues.
+
+ARTICLE 9 — RUPTURE DU CONTRAT
+{{#if_cdi}}
+Le présent contrat peut être rompu par l'une ou l'autre des parties moyennant un préavis
+de {{duree_preavis}}, sauf faute grave ou lourde privative de préavis et d'indemnités.
+{{/if_cdi}}
+{{#if_cdd}}
+Le présent contrat prend fin de plein droit à son terme. À l'expiration du présent
+contrat, et sauf conclusion immédiate d'un contrat à durée indéterminée, le Salarié a
+droit à une indemnité de fin de contrat égale à {{indemnite_fin_contrat_pct}} % de la
+rémunération totale brute perçue pendant la durée du contrat, calculée et versée lors
+de la clôture du contrat. En cas de rupture anticipée, les dispositions du Code du
+Travail relatives à la rupture anticipée d'un contrat à durée déterminée s'appliquent.
 {{/if_cdd}}
 
 ARTICLE 10 — LITIGES
@@ -345,7 +477,13 @@ export const CONTRAT_TRAVAIL_VARIABLES: Record<string, string> = {
   if_cdd: 'Bloc CDD (dérivé duration)',
   if_cdi: 'Bloc CDI (dérivé duration)',
   cdd_duree: 'Durée du CDD',
-  cdd_motif: 'Motif du CDD',
+  cdd_motif: 'Motif du CDD (paramétrable par école — hr_contract_settings.cddMotifs)',
+  if_cdd_renouvele: 'Bloc renouvellement (cddRenouvellements > 0)',
+  cdd_renouvellements: 'N° de renouvellement dans la chaîne (compteur automatique)',
+  cdd_date_initial: 'Date de début du contrat initial de la chaîne',
+  cdd_duree_cumulee: 'Durée cumulée CDD (contrat initial + renouvellements — champ calculé)',
+  cdd_duree_max: 'Seuil légal de durée totale (paramétrable par école, défaut 24 mois)',
+  indemnite_fin_contrat_pct: 'Taux indemnité de fin de contrat CDD (paramétrable, défaut 6 %)',
   date_debut: 'Date d\u2019effet',
   date_fin: 'Date de fin (CDD)',
   periode_essai_duree: 'Période d\u2019essai (payroll_fiscal_rates.categoryRules)',

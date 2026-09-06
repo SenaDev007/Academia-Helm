@@ -63,6 +63,9 @@ import { SchoolDirectorsController } from './school-directors.controller';
 import { SchoolDirectorsService } from './school-directors.service';
 import { TaxesModule } from './taxes/taxes.module';
 import { BillingModule } from '../billing/billing.module';
+import { ContractSettingsService } from './services/contract-settings.service';
+import { InternshipsService } from './internships.service';
+import { InternshipsController } from './internships.controller';
 
 @Module({
   imports: [PrismaModule, OrionModule, CommunicationModule, TaxesModule, BillingModule],
@@ -71,7 +74,9 @@ import { BillingModule } from '../billing/billing.module';
     StaffPrismaService,
     StaffMatriculeService,
     // StorageService fourni par CommonModule (singleton global)
+    ContractSettingsService,
     ContractsPrismaService,
+    InternshipsService,
     AttendancePrismaService,
     GeolocationService,
     LeavesPrismaService,
@@ -104,6 +109,7 @@ import { BillingModule } from '../billing/billing.module';
   controllers: [
     StaffPrismaController,
     ContractsPrismaController,
+    InternshipsController,
     ContractPublicSignController,
     CleanupController,
     AttendancePrismaController,

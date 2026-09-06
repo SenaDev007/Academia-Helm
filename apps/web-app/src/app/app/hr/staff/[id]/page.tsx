@@ -47,6 +47,8 @@ import {
   Phone,
   Smartphone,
   Wallet,
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -660,6 +662,41 @@ export default function StaffDetailPage() {
         onChange={handlePhotoUpload}
       />
 
+      {/* ⭐ CDC §8.3 — bandeau de non-conformité déclarative : VISIBLE en
+          permanence sur le dossier (pas seulement à la création), sans bloquer
+          l'usage — l'objectif est de ne jamais masquer le risque. */}
+      {member?.statutContractuel === 'SALARIE_NON_DECLARE' && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
+          <ShieldAlert className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-[11.5px] text-amber-800 leading-relaxed">
+            <strong>Salarié non déclaré à la CNSS.</strong> Ce personnel perçoit une fiche de paie avec ITS,
+            sans cotisations CNSS — la déclaration et la régularisation restent dues à la CNSS. Ce bandeau
+            restera visible tant que le statut n&apos;aura pas été régularisé (procédure tracée de changement
+            de statut). Certaines écoles fonctionnent ainsi : l&apos;usage reste possible, le risque reste affiché.
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ CDC §10 — dossier hérité « Vacataire » à requalifier (badge non bloquant) */}
+      {member?.needsRequalification && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/60 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-[11.5px] text-amber-800 leading-relaxed">
+              <strong>Dossier « Vacataire » à requalifier.</strong> « Vacataire » n&apos;est pas une catégorie du
+              Code du travail béninois : requalifiez ce dossier en CDD ou en contrat de prestation de services
+              (onglet Collaborateurs → Contrats, avec le test d&apos;aide à la décision).
+            </div>
+          </div>
+          <Link
+            href="/app/hr/collaborators"
+            className="shrink-0 text-[11px] font-bold px-3 py-2 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition whitespace-nowrap"
+          >
+            Requalifier →
+          </Link>
+        </div>
+      )}
+
       {/* ─── Edit Modal ──────────────────────────────────────────────────── */}
       {editOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -821,6 +858,15 @@ export default function StaffDetailPage() {
                       {member?.documentPaieType && (
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           Document de paie : {member.documentPaieType === 'ETAT_DE_PAIEMENT' ? 'État de paiement (AIB)' : `Fiche de paie (ITS${member.statutContractuel === 'SALARIE_DECLARE' ? ' + CNSS' : ''})`}
+                        </p>
+                      )}
+                      {(member as any)?.justificationStatut && (
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          <span className="font-semibold">Justification du statut :</span>{' '}
+                          {(member as any).justificationStatut}
+                          <span className="block text-[10px] text-slate-400 mt-0.5">
+                            Note interne de traçabilité (CDC §4.4) — jamais imprimée sur le contrat.
+                          </span>
                         </p>
                       )}
                     </div>

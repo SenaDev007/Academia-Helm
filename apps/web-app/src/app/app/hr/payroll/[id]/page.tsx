@@ -459,6 +459,21 @@ export default function PayrollDetailPage() {
         ]}
       />
 
+      {/* ⭐ CDC §8.3 — bandeau de non-conformité déclarative visible à CHAQUE
+          étape ultérieure du dossier (ici : la paie), sans bloquer l'usage. */}
+      {period.payrolls?.some((p: any) => p.staff?.statutContractuel === 'SALARIE_NON_DECLARE') && (
+        <div className="mx-4 sm:mx-6 rounded-xl border border-amber-300 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
+          <ShieldCheck className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-[11.5px] text-amber-800 leading-relaxed">
+            <strong>Salariés non déclarés à la CNSS dans cette période</strong> (
+            {period.payrolls.filter((p: any) => p.staff?.statutContractuel === 'SALARIE_NON_DECLARE').length}) :
+            fiches de paie avec ITS uniquement, sans cotisations CNSS — la régularisation reste due. Ce bandeau
+            est affiché en permanence (le risque n&apos;est jamais masqué) ; la régularisation passe par la
+            procédure tracée de changement de statut sur la fiche du personnel.
+          </div>
+        </div>
+      )}
+
       <div className="px-4 sm:px-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-50">
           <div className="flex items-center gap-3">

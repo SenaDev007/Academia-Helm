@@ -13,6 +13,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
   Inject,
 } from '@nestjs/common';
 import { PaymentsPrismaService } from './payments-prisma.service';
@@ -86,6 +87,28 @@ export class PaymentsPrismaController {
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
   ) {
+    // ⭐ FIX 2026-09-06 (D6 — matrice P5) : la liste des paiements est réservée
+    //    aux profils staff (finance/direction). Avant : un ENSEIGNANT ou un
+    //    PARENT authentifié pouvait lister les paiements du tenant avec le
+    //    simple header de niveau. (Les parents utilisent les endpoints dédiés
+    //    de leur portail + initiate Fedapay/FeexPay, jamais cette liste.)
+    const role = (user?.role || '').toUpperCase();
+    const ROLE_LEVEL_SUFFIX = /_(MAT|PRI|SEC|MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE)$/;
+    const baseRole = role.replace(ROLE_LEVEL_SUFFIX, '');
+    const STAFF = [
+      'DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL',
+      'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER', 'PROMOTEUR', 'DIRECTEUR', 'SCHOOL_DIRECTOR',
+      'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTOR_GENERAL', 'DIRECTEUR_GENERAL',
+      'DIRECTEUR_ETABLISSEMENT', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'SECRETARY', 'ECONOME',
+      'INTENDANT', 'CFO', 'FINANCE_MANAGER', 'CASHIER', 'CAISSIER', 'RECOVERY_MANAGER',
+      'RESP_SCOLARITE', 'ADMIN_AGENT', 'INTERNAL_AUDITOR', 'SUPER_ADMIN',
+      'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN',
+    ];
+    if (!STAFF.includes(role) && !STAFF.includes(baseRole)) {
+      throw new ForbiddenException(
+        "Accès refusé : la liste des paiements est réservée aux profils de direction et de finance.",
+      );
+    }
     return this.paymentsService.findAllPayments(tenantId, {
       academicYearId,
       schoolLevelId,

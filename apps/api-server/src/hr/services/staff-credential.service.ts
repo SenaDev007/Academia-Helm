@@ -118,7 +118,7 @@ function refineUserRole(roleType: string, position?: string): UserRole {
     //    - role-portal-map (front) classe PEDAGOGIC_COORDINATOR dans
     //      DIRECTION_ROLES → modules direction + pédagogie + examens —
     //      exactement le profil module de DIRECTEUR (SANS finance/RH/paramètres) ;
-    //    - CENSEUR serait verrouillé SECONDAIRE par le LevelScopeGuard —
+    //    - CENSEUR serait verrouillé SECONDAIRE par son scope serveur —
     //      faux pour un coordinateur maternelle/primaire ;
     //    - le rôle étendu 'PEDAGOGIC_COORDINATOR' n'est pas admis par la regex
     //      adminRolePattern de portal-auth.service (login portail école) —

@@ -175,7 +175,12 @@ export class ExamsPrismaService {
       if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
         where.language = 'EN';
       } else {
-        where.language = { in: ['FR', null] };
+        // ⭐ FIX 2026-09-06 (D6) : `{ in: ['FR', null] }` est refusé par Prisma
+        //    (null interdit dans une liste `in`) → forme OR valide.
+        where.AND = [
+          ...(where.AND || []),
+          { OR: [{ language: 'FR' }, { language: null }] },
+        ];
       }
     }
 

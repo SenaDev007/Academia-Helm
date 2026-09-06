@@ -46,11 +46,15 @@ export function classTrackWhere(scope: AccessScope) {
     };
   }
   // Piste FR : marquées FR + non marquées (NULL = héritage FR)
+  // ⭐ FIX 2026-09-06 (D6) : `{ language: { in: ['FR', null] } }` est REFUSÉ par
+  //    Prisma (null interdit dans une liste `in`) → 400 PrismaClientValidationError
+  //    sur TOUTES les listes FR. Forme valide : OR de deux égalités.
   return {
     AND: [
       {
         OR: [
-          { language: { in: ['FR', null] } },
+          { language: 'FR' },
+          { language: null },
           ...(scope.trackIds.length > 0
             ? [{ academicTrackId: { in: scope.trackIds } }, { academicTrackId: null, language: null }]
             : [{ academicTrackId: null, language: null }]),
@@ -149,7 +153,8 @@ export function languageColumnTrackWhere(scope: AccessScope) {
   if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
     return { language: 'EN' };
   }
-  return { language: { in: ['FR', null] } };
+  // ⭐ FIX 2026-09-06 (D6) : forme OR valide (null interdit dans une liste `in`)
+  return { OR: [{ language: 'FR' }, { language: null }] };
 }
 
 /**

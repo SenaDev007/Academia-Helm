@@ -14,6 +14,7 @@ import { TransactionType, PaymentMethod } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
+import { AccessScope } from '../common/context/access-scope.service';
 
 // ⭐ Ordre de priorité d'imputation des paiements. GENERAL (frais généraux)
 //    est imputé APRÈS les frais pédagogiques classiques — cohérent avec le
@@ -581,11 +582,36 @@ export class FinanceTransactionService {
       page?: number;
       limit?: number;
     },
+    scope?: AccessScope | null,
   ) {
     const where: any = { tenantId };
     if (filters.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters.studentAccountId) where.studentAccountId = filters.studentAccountId;
     if (filters.type) where.type = filters.type;
+
+    // ⭐ FIX 2026-09-06 (D6 — matrice P5) : périmètre IMPOSÉ par le scope serveur.
+    //    Avant : la liste renvoyait TOUTES les transactions du tenant, y compris
+    //    pour les comptes restreints à un niveau/piste (ex: SECRETAIRE_COMPTABLE_SEC
+    //    voyait les encaissements de la Maternelle).
+    //    - Niveau : via le compte élève (studentAccount → student.schoolLevelId)
+    //    - Piste  : colonne dénormalisée academicTrackId (null = héritage FR)
+    if (scope?.resolved && !scope.allLevels) {
+      where.studentAccount = {
+        student: { schoolLevelId: { in: scope.levelIds } },
+      };
+    }
+    if (scope?.resolved && !scope.allTracks) {
+      const enOnly = scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR');
+      if (enOnly) {
+        where.academicTrackId = { in: scope.trackIds };
+      } else {
+        // Piste FR : transactions marquées FR + non marquées (null = héritage FR)
+        where.OR = [
+          { academicTrackId: { in: scope.trackIds } },
+          { academicTrackId: null },
+        ];
+      }
+    }
     if (filters.feeType) {
       where.allocations = {
         some: { accountBreakdown: { feeStructure: { feeType: filters.feeType } } },

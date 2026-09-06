@@ -42,7 +42,7 @@ import { AccessScopeService } from './context/access-scope.service';
     DomainManagementService,
     CredentialEncryptionService,
     StorageService, // ✅ Singleton global — évite 4 instances de S3Client
-    AdminStructureService, // Pour LevelScopeGuard
+    AdminStructureService, // Structure admin (exports/modules)
     MatriculeGeneratorService,
     ModelEnsembleService, // ⭐ Multi-modèle IA (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
     AccessScopeService, // ⭐ Filtre Rôles × Pistes × Niveaux — résolution du périmètre serveur
@@ -58,7 +58,7 @@ import { AccessScopeService } from './context/access-scope.service';
     CredentialEncryptionService,
     StorageService, // ✅ Exporté pour tous les feature modules
     OpenRouterModule,
-    AdminStructureService, // Pour LevelScopeGuard dans autres modules
+    AdminStructureService, // Structure admin (exports/modules) dans autres modules
     MatriculeGeneratorService,
     ModelEnsembleService, // ⭐ Exporté pour que tous les agents puissent l'utiliser
     AccessScopeService, // ⭐ Exporté pour JwtStrategy + guards + services métier

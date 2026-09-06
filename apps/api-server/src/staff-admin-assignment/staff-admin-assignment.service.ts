@@ -256,7 +256,7 @@ export class StaffAdminAssignmentService {
     //    ⭐⭐ On utilise resolveUserRoleWithLevel qui prend en compte le
     //        schoolLevelCode pour produire un UserRole niveau-spécifique
     //        (ex: SECRETAIRE_COMPTABLE_MAT_PRI au lieu de SECRETAIRE_COMPTABLE).
-    //        Cela garantit que le LevelScopeGuard filtre les données par niveau.
+    //        Cela garantit que l'AccessScopeGuard (P2) impose le périmètre serveur par niveau.
     try {
       const staffWithEmail = await this.prisma.staff.findFirst({
         where: { id: data.staffId, tenantId },

@@ -82,6 +82,50 @@ export class SchoolLevelIsolationGuard implements CanActivate {
     // RÈGLE 1 : school_level_id est OBLIGATOIRE pour toutes les opérations métier
     const schoolLevelId = this.extractSchoolLevelId(request);
 
+    // ⭐ FIX 2026-09-06 (D6 — Phase 2 §3 du plan) : le niveau demandé est désormais
+    //    confronté au SCOPE SERVEUR de l'utilisateur (résolu par AccessScopeService
+    //    via JwtStrategy), plus seulement à la cohérence header/body/query.
+    //    Avant : ce guard validait la COHÉRENCE des valeurs client entre elles —
+    //    un header falsifié mais cohérent passait. Defense-in-depth avec
+    //    AccessScopeGuard (global) : ce guard ne s'active que sur les routes
+    //    @RequireTenant() ; le bootstrap est exempté plus haut.
+    const scope = (user as any)?.scope;
+    if (schoolLevelId && scope?.resolved && !scope.allLevels) {
+      if (!scope.levelIds.includes(schoolLevelId)) {
+        if (tenantId && userId) {
+          console.warn('SCHOOL_LEVEL_SCOPE_VIOLATION', {
+            tenantId,
+            userId,
+            endpoint: request.url,
+            method: request.method,
+            providedLevel: schoolLevelId,
+            scopeLevels: scope.levelCodes,
+            reason: 'Requested level outside server-resolved scope',
+          });
+        }
+        throw new ForbiddenException(
+          'SCHOOL LEVEL ISOLATION RULE VIOLATION: ' +
+          `The requested school level (${schoolLevelId}) is outside your perimeter ` +
+          `(${(scope.levelCodes || []).join(', ')}).`,
+        );
+      }
+    }
+    // Sentinelle 'ALL' : réservée aux comptes transverses (promoteur, plateforme)
+    if (schoolLevelId && typeof schoolLevelId === 'string' && schoolLevelId.toUpperCase() === 'ALL') {
+      if (!scope?.allLevels) {
+        if (tenantId && userId) {
+          console.warn('SCHOOL_LEVEL_ALL_BYPASS_ATTEMPT', {
+            tenantId, userId, endpoint: request.url, method: request.method,
+            reason: 'ALL sentinel requested by non-transverse account',
+          });
+        }
+        throw new ForbiddenException(
+          'SCHOOL LEVEL ISOLATION RULE VIOLATION: ' +
+          'The all-levels sentinel is reserved to transverse profiles (promoter, platform).',
+        );
+      }
+    }
+
     if (!schoolLevelId && !allowCrossLevel) {
       // Journaliser la tentative de violation (via console pour éviter dépendance circulaire)
       if (tenantId && userId) {

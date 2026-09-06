@@ -156,6 +156,7 @@ export class FinanceTransactionController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('studentAccountId') studentAccountId?: string,
     @Query('type') type?: string,
@@ -166,6 +167,22 @@ export class FinanceTransactionController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    // ⭐ FIX 2026-09-06 (D6 — matrice P5) : le module Encaissements est réservé
+    //    aux profils staff (finance/direction). Avant : tout utilisateur
+    //    authentifié — y compris un ENSEIGNANT ou un PARENT — listait TOUTES
+    //    les transactions du tenant (montants, élèves, méthodes de paiement).
+    //    Les parents conservent l'accès à LEURS reçus (:id/receipt.pdf —
+    //    ownership vérifiée par assertParentCanAccessTransaction).
+    const role = (user?.role || '').toUpperCase();
+    if (!isStaffRole(role)) {
+      this.logger.warn(
+        `FINANCE_TX_LIST_DENIED — user ${user?.id} (role=${role}) a tenté de lister les encaissements`,
+      );
+      throw new ForbiddenException(
+        "Accès refusé : le module Encaissements est réservé aux profils de direction et de finance.",
+      );
+    }
+
     // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé { data, total, page, totalPages }
     // Sinon → retour array (rétro-compatibilité avec les autres callers qui attendent un array)
     const pageNum = page ? parseInt(page, 10) : undefined;
@@ -177,7 +194,7 @@ export class FinanceTransactionController {
       feeType,
       page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
       limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
-    });
+    }, user?.scope ?? null);
   }
 
   /**

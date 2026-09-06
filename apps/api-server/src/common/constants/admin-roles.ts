@@ -179,7 +179,7 @@ export const DIRECTOR_ROLES: AdminRole[] = [
  *    prend en paramètre l'adminRole ET le schoolLevelCode de l'affectation
  *    pour produire le UserRole niveau-spécifique correspondant (ex:
  *    SECRETAIRE_COMPTABLE + MAT_PRI → SECRETAIRE_COMPTABLE_MAT_PRI).
- *    Cela garantit que le LevelScopeGuard filtre correctement les données
+ *    Cela garantit que l'AccessScopeGuard (P2) impose correctement les données
  *    par niveau (un SECRETAIRE_COMPTABLE_PRIMAIRE ne voit que le Primaire).
  */
 export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
@@ -205,7 +205,7 @@ export const ADMIN_ROLE_TO_USER_ROLE: Record<string, string> = {
 /**
  * ⭐ Résout le UserRole final en tenant compte du niveau scolaire de l'affectation.
  *    Si l'adminRole a une version niveau-spécifique dans ROLE_LEVEL_SCOPES
- *    (ex: SECRETAIRE_COMPTABLE_MAT_PRI), on l'utilise pour que le LevelScopeGuard
+ *    (ex: SECRETAIRE_COMPTABLE_MAT_PRI), on l'utilise pour que l'AccessScopeGuard (P2)
  *    filtre les données par niveau.
  *
  * @param adminRole L'adminRole de l'affectation (ex: SECRETAIRE_COMPTABLE)
@@ -219,7 +219,7 @@ export function resolveUserRoleWithLevel(adminRole: string, schoolLevelCode: str
   const levelSpecificRole = `${baseRole}_${schoolLevelCode}`;
 
   // Vérifier si ce rôle niveau-spécifique existe dans ROLE_LEVEL_SCOPES
-  // (défini dans level-scope.guard.ts — on importe la liste des rôles valides)
+  // (rôles valides — la liste scope est portée par AccessScopeService, P1)
   // ⭐ FIX 2026-09-06 : les codes courts MAT / PRI / SEC sont documentés sur
   //    StaffAdminAssignment (« Code du niveau administré : MAT, PRI, SEC, MAT_PRI, ALL »)
   //    et utilisés en production. AVANT ce fix, une affectation « SECRETAIRE_COMPTABLE @ SEC »

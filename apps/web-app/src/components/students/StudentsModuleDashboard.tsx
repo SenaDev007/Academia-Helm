@@ -33,6 +33,8 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 import { useStudentStatistics } from '@/lib/query/student-queries';
+// ⭐ P4-final : dashboard du module Élèves bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 export interface StudentsModuleDashboardProps {
   /** Callback pour naviguer vers un sous-module (changer l’onglet actif) */
@@ -44,12 +46,12 @@ export interface StudentsModuleDashboardProps {
 }
 
 const SUB_MODULES = [
-  { id: 'admissions', label: 'Admissions & cycle de vie', description: 'Pré-inscription, admission, réinscription, affectation classe, transfert', icon: UserPlus, color: 'blue' },
-  { id: 'dossiers', label: 'Identité & Dossiers', description: 'Tableau des élèves, dossier, parents, contacts', icon: User, color: 'indigo' },
-  { id: 'movements', label: 'Historique & Mouvements', description: 'Traçabilité, dossier académique consolidé', icon: History, color: 'slate' },
-  { id: 'compliance', label: 'Documents & Conformité', description: 'Carte scolaire, QR, certificats, conformité', icon: CreditCard, color: 'violet' },
-  { id: 'educmaster', label: 'Interopérabilité nationale', description: 'Export EDUCMASTER, format officiel, logs', icon: Share2, color: 'amber' },
-  { id: 'analytics', label: 'Analyse ORION & Stats', description: 'Statistiques avancées, détection d\'anomalies', icon: BookOpen, color: 'emerald' },
+  { id: 'admissions', label: 'Admissions & cycle de vie', labelEn: 'Admissions & lifecycle', description: 'Pré-inscription, admission, réinscription, affectation classe, transfert', descriptionEn: 'Pre-registration, admission, re-enrolment, class assignment, transfer', icon: UserPlus, color: 'blue' },
+  { id: 'dossiers', label: 'Identité & Dossiers', labelEn: 'Identity & Files', description: 'Tableau des élèves, dossier, parents, contacts', descriptionEn: 'Student table, file, parents, contacts', icon: User, color: 'indigo' },
+  { id: 'movements', label: 'Historique & Mouvements', labelEn: 'History & Movements', description: 'Traçabilité, dossier académique consolidé', descriptionEn: 'Traceability, consolidated academic record', icon: History, color: 'slate' },
+  { id: 'compliance', label: 'Documents & Conformité', labelEn: 'Documents & Compliance', description: 'Carte scolaire, QR, certificats, conformité', descriptionEn: 'School ID card, QR, certificates, compliance', icon: CreditCard, color: 'violet' },
+  { id: 'educmaster', label: 'Interopérabilité nationale', labelEn: 'National interoperability', description: 'Export EDUCMASTER, format officiel, logs', descriptionEn: 'EDUCMASTER export, official format, logs', icon: Share2, color: 'amber' },
+  { id: 'analytics', label: 'Analyse ORION & Stats', labelEn: 'ORION Analytics & Stats', description: 'Statistiques avancées, détection d\'anomalies', descriptionEn: 'Advanced statistics, anomaly detection', icon: BookOpen, color: 'emerald' },
 ];
 
 const COLOR_MAP: Record<string, string> = {
@@ -67,6 +69,8 @@ export default function StudentsModuleDashboard({
   onImport,
 }: StudentsModuleDashboardProps) {
   const { academicYear, schoolLevel } = useModuleContext();
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   const [statistics, setStatistics] = useState<{
     total?: number;
     active?: number;
@@ -117,7 +121,7 @@ export default function StudentsModuleDashboard({
         <div>
           <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             <LayoutDashboard className="w-6 h-6 text-blue-600" />
-            Vue d’ensemble
+            {L("Vue d'ensemble", "Overview")}
           </h2>
           <p className="text-sm text-gray-500 mt-1">
             {academicYear?.name} • {levelLabel}
@@ -131,7 +135,7 @@ export default function StudentsModuleDashboard({
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs sm:text-sm font-medium text-gray-500">Élèves inscrits</p>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">{L("Élèves inscrits", "Enrolled students")}</p>
               <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1">
                 {loading ? '—' : (statistics?.active ?? 0).toLocaleString('fr-FR')}
               </p>
@@ -146,7 +150,7 @@ export default function StudentsModuleDashboard({
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs sm:text-sm font-medium text-gray-500">Pré-inscrits</p>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">{L("Pré-inscrits", "Pre-registered")}</p>
               <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
                 {loading ? '—' : (statistics?.preRegistered ?? 0).toLocaleString('fr-FR')}
               </p>
@@ -218,7 +222,7 @@ export default function StudentsModuleDashboard({
             TRANSFERRED  → Transféré   */}
       {statistics?.byStatus && statistics.byStatus.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Répartition par statut</h3>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">{L("Répartition par statut", "Breakdown by status")}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {statistics.byStatus.map((s) => {
               // ⭐ Mapping statut technique → libellé français + couleur
@@ -257,7 +261,7 @@ export default function StudentsModuleDashboard({
 
       {/* Actions rapides */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Actions rapides</h3>
+        <h3 className="text-sm font-semibold text-gray-900 mb-4">{L("Actions rapides", "Quick actions")}</h3>
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -265,7 +269,7 @@ export default function StudentsModuleDashboard({
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Créer un nouvel élève
+            {L("Créer un nouvel élève", "Create a new student")}
           </button>
           <button
             type="button"
@@ -273,7 +277,7 @@ export default function StudentsModuleDashboard({
             className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             <Upload className="w-4 h-4" />
-            Import
+            {L("Import", "Import")}
           </button>
           <button
             type="button"
@@ -281,7 +285,7 @@ export default function StudentsModuleDashboard({
             className="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             <Download className="w-4 h-4" />
-            Export EDUCMASTER
+            {L("Export EDUCMASTER", "EDUCMASTER Export")}
           </button>
         </div>
       </div>
@@ -291,10 +295,10 @@ export default function StudentsModuleDashboard({
         <div className="px-5 py-4 border-b border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-blue-600" />
-            Sous-modules
+            {L("Sous-modules", "Sub-modules")}
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Cliquez pour accéder à chaque domaine du module Élèves & Scolarité
+            {L("Cliquez pour accéder à chaque domaine du module Élèves & Scolarité", "Click to access each area of the Students & Enrollment module")}
           </p>
         </div>
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -312,9 +316,9 @@ export default function StudentsModuleDashboard({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 group-hover:text-blue-700">
-                    {mod.label}
+                    {L(mod.label, mod.labelEn || mod.label)}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{mod.description}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{L(mod.description, mod.descriptionEn || mod.description)}</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 flex-shrink-0" />
               </button>

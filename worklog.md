@@ -9630,3 +9630,35 @@ Work Log:
 
 Stage Summary:
 - Refonte CDC « étape Contrat » EN LIGNE de bout en bout : API Railway (routes + DDL bootstrap) + web-app Vercel ; reste la vérification fonctionnelle depuis l'UI par l'utilisateur (RH → Embauche / Collaborateurs → Contrats / Stagiaires / Paramètres RH)
+
+---
+Task ID: 16
+Agent: main (Super Z)
+Task: « L'interface UI quand il s'agit de la piste anglophone doit être en anglais. Rassure-toi que tout est en anglais pour ceux-là qui sont dans le système anglophone. » — i18n complet de la couche visible de l'application pour les profils anglophones
+
+Work Log:
+- HELPER PARTAGÉ : lib/i18n/bilingual.ts — useL() (hook L(fr,en) basé sur la locale UI I18nContext, elle-même pilotée par scope.locale du profil serveur) + pickLabel() pour les data-maps
+- COQUILLES (47 fichiers, 8 commits 90213b7f→da4eb277) :
+  * Portail enseignant : layout (10 modules + descriptions), dashboard (bienvenue/stats/modules), timetable, annual-planning, LogoutModal — 100% EN en piste EN
+  * Portails admin ×6 : admin-portal-map.ts (labelEn/descEn/roleLabelEn par portail + module), AdminPortalShell, AdminPortalHome
+  * Modules : Élèves (en-tête + 13 onglets + dashboard interne), Pédagogie (en-tête + 10 onglets), Finance (en-tête + 13 onglets + dashboard V2 complet : KPIs, tableau, 4 graphiques), RH (14 onglets + 18 sous-pages titleEn/descriptionEn), dashboard directeur (KPI cards, mini-KPIs, vue d'ensemble effectifs, QUICK_ACCESS, ORION, âges, personnalisation frais, analytics notes, RH overview, états vides, notes, légendes)
+  * Portail parent : sidebar (10 modules) + coquille
+  * Sélecteurs : année (état vide), niveau (Nursery/Primary/Secondary en EN), piste (French/English Track)
+  * Widgets : PortalSwitchButton, NotificationDropdown, MyAttendanceCard
+- NIVEAUX EN ANGLAIS : MATERNELLE→Nursery, PRIMAIRE→Primary, SECONDAIRE→Secondary (SchoolLevelSelector + levelLabel dashboard + cartes classes enseignant) — cohérent avec les sections EN créées côté données (Nursery 1, Primary 1)
+- COMPTE DE TEST DIRECTEUR EN (3e de la matrice, scripts/create_director_en_test_account.js) : recette.directeur-en@cspeb.test / EnDirecteur2026! — Chinedu OYELARAN, DIRECTEUR_MAT_PI + piste EN (symétrique au directeur FR de la Task 14)
+- REBASE : 2 commits d'une autre session (84b25b4f CDC Contrat + internships) intégrés sans conflit ; labelEn ajouté au nouvel onglet Stagiaires/Interns
+- VALIDATION PRODUCTION (agent-browser, portail CSPEB cspeb-eveildafriqueeducation.academiahelm.com) :
+  * Grace OKONKWO (enseignante EN) : htmlLang=en, sidebar EN (Dashboard/Timetable/Pedagogy Space/Exams & Grades…), « Welcome, Grace OKONKWO », BOYS/GIRLS/TOTAL STUDENTS, My Timetable, modal Log out/Cancel — 0 FR (hors nom de l'école = propre)
+  * Directeur EN (Chinedu OYELARAN) : htmlLang=en, sidebar EN, « Steering dashboard », All levels, KPI Enrolment/Attendance/Revenue/Active alerts, Detailed headcount by school level (Boys/Girls/Tuition paid/Tuition due), Age distribution, Enrolment by class, Gender split (Boys:/Girls:), Tuition fee customisations, Grade analytics, ORION Analytics, School staff, Quick access to modules (cartes EN) — notes explicatives EN
+  * Modules : Élèves (13 onglets EN + Overview/Quick actions/Sous-modules EN), Finance (13 onglets EN), RH (14 onglets EN + Interns)
+  * NON-RÉGRESSION FR : directeur FR (recette.directeur-fr) → sidebar et dashboard 100% français, htmlLang=fr ✅
+  * Captures : download/p4f-teacher-en-{dashboard,timetable}.png, p4f-director-en-{dashboard,dashboard-final,dashboard-v2,dashboard-v3,FINANCE?,finance,hr,students}.png, p4f-director-fr-regression.png
+  * Contrôles VLM sur captures : itérations jusqu'à élimination des FR visibles (restent uniquement le nom d'école, les noms de classes/données CM2/CE1 et F CFA — unité monétaire standard dans les deux langues)
+- Vérifications : check_syntax.mjs OK sur les 47 fichiers modifiés (transpile TS) ; captures VLM vérifiées ; scripts de patch persistés (patch_hr_titles.mjs, patch_hr_dynamic_pages.mjs)
+
+Stage Summary:
+- ✅ EXIGENCE SATISFAITE : un profil anglophone (enseignant OU admin) voit TOUTE la couche visible de son portail en anglais — coquilles, navigations, dashboards, sélecteurs, modals — piloté par la piste de son profil serveur
+- ✅ Non-régression française vérifiée en production (directeur FR inchangé)
+- ⚠️ Limitation résiduelle (couche PROFONDE des modules) : formulaires et tableaux internes des pages métier (ex: filtres « Tous les niveaux », en-têtes de tableaux de données, forms élève/finance/RH profonds) restent FR — travail incrémental à poursuivre au même pattern L(fr, en)
+- Comptes de test : matrice complète disponible (teacher-en / directeur-fr / directeur-en @cspeb.test)

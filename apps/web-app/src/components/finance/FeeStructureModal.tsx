@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -71,7 +71,7 @@ const DUE_DATE_TYPE_LABELS: Record<Installment['dueDateType'], string> = {
 };
 
 export default function FeeStructureModal({
-  academicYearId, levels, classes, eduToSchoolLevelMap, onClose, onSubmit, feeId, initialData,
+  academicYearId, levels, classes, eduToSchoolLevelMap, onClose, onSubmit, feeId, initialData, saving = false,
 }: {
   academicYearId: string;
   levels: any[];
@@ -81,6 +81,11 @@ export default function FeeStructureModal({
   onSubmit: (body: any) => void;
   feeId?: string;
   initialData?: any;
+  /** ⭐ Vrai pendant l'appel API (recalcul des comptes élèves = plusieurs secondes)
+   *  → bouton avec spinner + désactivé : l'utilisateur VOIT que l'enregistrement
+   *  est en cours au lieu de croire que « le clic ne fait rien » (bug sept. 2026,
+   *  qui poussait aussi au re-clic → frais en double). */
+  saving?: boolean;
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
@@ -400,15 +405,25 @@ export default function FeeStructureModal({
             </div>
           )}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" disabled={isInstallment && !installmentsValid}>
-              {isEdit
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
+            <Button type="submit" disabled={(isInstallment && !installmentsValid) || saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {isEdit ? 'Enregistrement en cours…' : 'Création en cours…'}
+                </>
+              ) : isEdit
                 ? 'Enregistrer'
                 : (applyTo === 'class' && classIds.length > 1
                     ? `Créer ${classIds.length} frais`
                     : 'Créer')}
             </Button>
           </div>
+          {saving && (
+            <p className="text-xs text-blue-600 text-right mt-1">
+              💡 Recalcul des comptes élèves en cours — cela peut prendre quelques secondes, ne fermez pas la page.
+            </p>
+          )}
         </form>
       </motion.div>
     </div>

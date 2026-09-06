@@ -21,6 +21,18 @@ import { ArrearAccumulationService } from './arrear-accumulation.service';
 const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
 
+// ⭐ Libellés des types de frais pour les messages d'erreur de l'encaissement
+//    dédié (targetFeeType) — compréhensibles par l'utilisateur final.
+const FEE_TYPE_LABELS: Record<string, string> = {
+  INSCRIPTION: 'Inscription',
+  REINSCRIPTION: 'Réinscription',
+  TUITION: 'Scolarité',
+  CANTEEN: 'Cantine',
+  EXAMEN: "Frais d'examen",
+  GENERAL: 'Frais généraux',
+  OTHER: 'Autre',
+};
+
 @Injectable()
 export class FinanceTransactionService {
   private readonly logger = new Logger(FinanceTransactionService.name);
@@ -198,6 +210,9 @@ export class FinanceTransactionService {
       // ⭐ Espèces : montant remis par le client + reliquat rendu (pour traçabilité reçu)
       tenderedAmount?: number;  // Montant remis (ex: 50000 pour un paiement de 45000)
       changeGiven?: number;     // Reliquat rendu (ex: 5000)
+      // ⭐ Encaissement DÉDIÉ (sept. 2026 — frais généraux) : imputer UNIQUEMENT
+      //    aux AccountBreakdown de ce type (ex: 'GENERAL'). Voir CreateTransactionDto.
+      targetFeeType?: string;
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
@@ -289,7 +304,11 @@ export class FinanceTransactionService {
     // Avant d'allouer le paiement aux AccountBreakdown de l'année en cours,
     // on solde d'abord les FeeArrear des années antérieures (FIFO).
     // Le montant restant après cette étape sera alloué aux frais de l'année.
-    if (remaining > 0) {
+    //
+    // ⭐ Encaissement DÉDIÉ (targetFeeType) : on SAUTE cette phase — le
+    //    paiement cible explicitement les frais de l'année en cours pour ce
+    //    type (ex: frais généraux), pas les arriérés de scolarité.
+    if (remaining > 0 && !data.targetFeeType) {
       try {
         const fifoResult = await this.arrearAccumulationService.allocatePaymentFIFO(
           tenantId,
@@ -313,7 +332,24 @@ export class FinanceTransactionService {
       }
     }
 
-    const sortedBreakdowns = [...account.breakdowns].sort((a, b) => {
+    // ⭐ Encaissement DÉDIÉ : restreindre l'allocation aux breakdowns du type
+    //    cible uniquement (ex: GENERAL pour l'encaissement dédié des frais
+    //    généraux). Le reste de la mécanique (allocations, caisse, reçu,
+    //    déduction du solde) est IDENTIQUE au paiement standard.
+    const allocatableBreakdowns = data.targetFeeType
+      ? account.breakdowns.filter((b) => b.feeStructure.feeType === data.targetFeeType)
+      : account.breakdowns;
+
+    // Sécurité : l'encaissement dédié exige qu'il y ait des frais de ce type
+    // sur le compte (sinon le paiement flotterait sans allocation).
+    if (data.targetFeeType && (allocatableBreakdowns.length === 0 || remaining <= 0)) {
+      const label = FEE_TYPE_LABELS[data.targetFeeType] ?? data.targetFeeType;
+      throw new BadRequestException(
+        `Aucun frais du type « ${label} » à payer pour cet élève sur l'année en cours.`,
+      );
+    }
+
+    const sortedBreakdowns = [...allocatableBreakdowns].sort((a, b) => {
       const ia = PRIORITY_ORDER.indexOf(a.feeStructure.feeType);
       const ib = PRIORITY_ORDER.indexOf(b.feeStructure.feeType);
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
@@ -331,6 +367,19 @@ export class FinanceTransactionService {
         feeType: b.feeStructure.feeType,
       });
       remaining -= pay;
+    }
+
+    // ⭐ Encaissement DÉDIÉ : refuser un montant supérieur au restant dû pour
+    //    ce type de frais (on ne crée jamais de transaction partiellement
+    //    non allouée via ce flux — l'utilisateur voit un message clair).
+    if (data.targetFeeType && remaining > 0) {
+      const label = FEE_TYPE_LABELS[data.targetFeeType] ?? data.targetFeeType;
+      const alreadyPlanned = updates.reduce((s, u) => s + u.paidDelta, 0);
+      throw new BadRequestException(
+        `Le montant (${data.amount.toLocaleString('fr-FR')} FCFA) dépasse le restant dû pour les frais « ${label} » ` +
+        `de cet élève (${alreadyPlanned.toLocaleString('fr-FR')} FCFA). ` +
+        `Encaissez au plus ${alreadyPlanned.toLocaleString('fr-FR')} FCFA, ou utilisez « Nouveau paiement » pour un paiement global.`,
+      );
     }
 
     // Génération du numéro de reçu avec vérification d'unicité + retry

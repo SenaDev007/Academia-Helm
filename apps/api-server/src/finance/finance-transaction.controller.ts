@@ -148,6 +148,8 @@ export class FinanceTransactionController {
       cashRegisterId: body.cashRegisterId,
       tenderedAmount: body.tenderedAmount != null ? Number(body.tenderedAmount) : undefined,
       changeGiven: body.changeGiven != null ? Number(body.changeGiven) : undefined,
+      // ⭐ Encaissement DÉDIÉ (ex: frais généraux) — imputation restreinte à ce type
+      targetFeeType: body.targetFeeType,
     });
   }
 

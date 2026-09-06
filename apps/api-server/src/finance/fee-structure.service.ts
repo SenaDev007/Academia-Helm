@@ -1065,27 +1065,44 @@ export class FeeStructureService {
       select: { id: true, studentId: true, academicYearId: true },
     });
 
+    // ⭐ FIX (sept. 2026 — bug « le modal de configuration ne se ferme pas ») :
+    //    le recalcul était SÉQUENTIEL (93 comptes × ~0,23 s = ~21 s) → la
+    //    réponse API mettait 21,8 s en production → la fonction serverless
+    //    Vercel du BFF (timeout par défaut 10-15 s) était TUÉE avant la
+    //    réponse → le frontend ne fermait jamais le modal alors que
+    //    l'enregistrement était bien créé côté Railway (visible après reload).
+    //    → Parallélisation par lots (concurrence 5, compatible pool Prisma)
+    //      21,8 s → ~4,5 s mesuré (93 comptes).
     let updatedAccounts = 0;
     let updatedBreakdowns = 0;
 
-    // ⭐ FIX (sept. 2026 — frais généraux) : déléguer au recalcul COMPLET par
-    //    élève (StudentAccountService.recalculate) au lieu de la version
-    //    allégée qui ne mettait à jour que les breakdowns EXISTANTS.
-    //
-    //    Problème : quand un nouveau frais était configuré en cours d'année
-    //    (ex: « Frais généraux » pour toute l'école), les comptes élèves
-    //    EXISTANTS ne recevaient jamais le nouveau breakdown — seuls les
-    //    nouveaux comptes (inscriptions ultérieures) l'obtenaient via
-    //    getOrCreate(). L'onglet « Frais généraux » restait alors vide alors
-    //    que l'école vient de configurer le frais.
-    //
-    //    Le recalcul par élève (recalculate) est la source de vérité :
-    //    - met à jour les montants des breakdowns existants (overrides/régimes) ;
-    //    - CRÉE les breakdowns manquants (nouveaux frais applicables) ;
-    //    - supprime les breakdowns non payés obsolètes ;
-    //    - gère les breakdowns orphelins avec paiements ;
-    //    - recalcule totalDue / totalPaid / balance / statut.
-    for (const account of accounts) {
+    /**
+     * mapLimit : exécute les tâches avec une concurrence bornée.
+     * (Prisma gère un pool de connexions limité — concurrence 5 = sûr)
+     */
+    const mapLimit = async <T, R>(
+      items: T[],
+      limit: number,
+      fn: (item: T) => Promise<R>,
+    ): Promise<R[]> => {
+      const results: R[] = new Array(items.length);
+      let cursor = 0;
+      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (cursor < items.length) {
+          const idx = cursor++;
+          results[idx] = await fn(items[idx]);
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    };
+
+    // Chaque recalculate() est indépendant (un compte par élève — il ne
+    // touche QUE les breakdowns/paiements de SON élève) → parallélisable.
+    // Les échecs restent non bloquants (un élève en échec n'interrompt pas
+    // le recalcul global).
+    const RECALC_CONCURRENCY = 5;
+    await mapLimit(accounts, RECALC_CONCURRENCY, async (account) => {
       try {
         const updated = await this.studentAccountService.recalculate(
           account.studentId,
@@ -1102,7 +1119,7 @@ export class FeeStructureService {
           `recalculateAllAccounts: échec élève ${account.studentId}: ${err?.message}`,
         );
       }
-    }
+    });
 
     console.log(`[FeeStructure] Recalcul global: ${updatedAccounts}/${accounts.length} comptes recalculés (tenant=${tenantId})`);
 

@@ -275,6 +275,23 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsNumber()
   changeGiven?: number;
+
+  /**
+   * ⭐ Encaissement DÉDIÉ (sept. 2026 — exigence « frais généraux ») :
+   * quand ce champ est fourni, le paiement est imputé UNIQUEMENT aux
+   * AccountBreakdown de ce type de frais (ex: 'GENERAL' pour l'encaissement
+   * dédié des frais généraux dans l'onglet Encaissements).
+   *
+   * Comportement :
+   *  - l'allocation FIFO des arriérés des années antérieures est ignorée
+   *    (le paiement cible les frais de l'année en cours pour ce type) ;
+   *  - si le montant dépasse le restant dû pour ce type de frais, la
+   *    requête est refusée (400) avec un message explicite — on ne crée
+   *    JAMAIS de transaction non allouée.
+   */
+  @IsOptional()
+  @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'])
+  targetFeeType?: string;
 }
 
 // ─── 7. ExpenseCategory ─────────────────────────────────────────────────────

@@ -65,6 +65,12 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
   const [filterFeeType, setFilterFeeType] = useState<string>('');
   const [modalNewFee, setModalNewFee] = useState(false);
   const [editingFee, setEditingFee] = useState<any | null>(null);
+  // ⭐ FIX (sept. 2026 — bug « le modal ne se ferme pas après enregistrement ») :
+  //    la création/modification d'un frais déclenche le recalcul de TOUS les comptes
+  //    élèves (jusqu'à ~20 s pour une grande école). Sans feedback, l'utilisateur
+  //    croyait que le clic ne faisait rien → re-cliquait → FRAIS EN DOUBLE.
+  //    → état `saving` : bouton avec spinner + désactivé pendant l'opération.
+  const [saving, setSaving] = useState(false);
   const [modalOverride, setModalOverride] = useState(false);
   const [copyYearModal, setCopyYearModal] = useState(false);
   const [copyFrom, setCopyFrom] = useState('');
@@ -293,6 +299,8 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
 
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
+    if (saving) return; // anti double-clic
+    setSaving(true);
     try {
       // Conversion levelId education_levels → school_levels
       const convertedLevelId = body.levelId ? toSchoolLevelId(body.levelId) : undefined;
@@ -370,11 +378,15 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       onAccountsChanged?.();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleUpdate = async (body: any) => {
     if (!editingFee?.id) return;
+    if (saving) return; // anti double-clic
+    setSaving(true);
     try {
       const payload = { ...body };
       if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
@@ -398,6 +410,8 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -659,8 +673,8 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
           </div>
         </ModuleContentArea>
 
-        {modalNewFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} onClose={() => setModalNewFee(false)} onSubmit={handleCreate} />}
-        {editingFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} feeId={editingFee.id} initialData={editingFee} onClose={() => setEditingFee(null)} onSubmit={handleUpdate} />}
+        {modalNewFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} saving={saving} onClose={() => setModalNewFee(false)} onSubmit={handleCreate} />}
+        {editingFee && <FeeStructureModal academicYearId={academicYear?.id ?? ''} levels={levels} classes={modalClasses} eduToSchoolLevelMap={eduToSchoolLevelMap} feeId={editingFee.id} initialData={editingFee} saving={saving} onClose={() => setEditingFee(null)} onSubmit={handleUpdate} />}
         {modalOverride && <FeeOverrideModal structures={structures} onClose={() => setModalOverride(false)} />}
         {copyYearModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

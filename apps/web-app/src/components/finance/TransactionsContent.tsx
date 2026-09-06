@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import NewPaymentModal from './NewPaymentModal';
+import GeneralFeePaymentModal from './GeneralFeePaymentModal';
 import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
@@ -48,6 +49,11 @@ export default function TransactionsContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  // ⭐ Modal DÉDIÉ d'encaissement des frais généraux (exigence sept. 2026 :
+  //    « un bouton pour ouvrir un modèle spécifique pour l'encaissement des
+  //    frais généraux pour que les choses soient bien proprement séparées »).
+  //    Le paiement est imputé uniquement aux frais GENERA (targetFeeType).
+  const [generalModalOpen, setGeneralModalOpen] = useState(false);
   // ⭐ Incrémenté après chaque paiement réussi pour forcer le refresh des
   //    caisses ouvertes dans NewPaymentModal (qui ne rechargeait pas sinon).
   const [modalRefreshTrigger, setModalRefreshTrigger] = useState(0);
@@ -137,6 +143,15 @@ export default function TransactionsContent() {
     reloadAccounts();
     setModalRefreshTrigger((n) => n + 1);
     window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+  };
+
+  // ⭐ Succès d'un encaissement DÉDIÉ frais généraux : même rafraîchissement,
+  //    + bascule automatique sur le sous-onglet « Frais généraux » (exigence
+  //    utilisateur : « lorsqu'on encaisse, ça va au niveau du sous-onglet
+  //    frais généraux avec une déduction automatique »).
+  const handleGeneralSuccess = () => {
+    setSubTab('general');
+    handleSuccess();
   };
 
   // ⭐ Reset page à 1 quand on change de sous-onglet
@@ -277,10 +292,20 @@ export default function TransactionsContent() {
                 PDF
               </Button>
             </div>
-            <Button onClick={() => setModalOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Nouveau paiement
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* ⭐ Sous-onglet Frais généraux : bouton DÉDIÉ en premier (flux
+                  séparé du paiement standard — imputation GENERAL uniquement) */}
+              {subTab === 'general' && (
+                <Button onClick={() => setGeneralModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700">
+                  <Layers className="w-4 h-4 mr-2" />
+                  {L('Encaisser des frais généraux', 'Collect general fees')}
+                </Button>
+              )}
+              <Button onClick={() => setModalOpen(true)} variant={subTab === 'general' ? 'outline' : 'default'}>
+                <Plus className="w-4 h-4 mr-2" />
+                {L('Nouveau paiement', 'New payment')}
+              </Button>
+            </div>
           </div>
         }
       >
@@ -357,10 +382,18 @@ export default function TransactionsContent() {
                       <div className="flex flex-col items-center gap-2">
                         <Layers className="w-10 h-10 text-slate-300" />
                         <p>{L("Aucun encaissement de frais généraux pour l'instant.", 'No general fees collection yet.')}</p>
+                        <Button
+                          size="sm"
+                          onClick={() => setGeneralModalOpen(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                          <Layers className="w-4 h-4 mr-2" />
+                          {L('Encaisser des frais généraux', 'Collect general fees')}
+                        </Button>
                         <p className="text-xs text-slate-400 max-w-md">
                           {L(
-                            "Les paiements imputés aux frais généraux apparaîtront ici automatiquement. Utilisez « Nouveau paiement » puis encaissez : la part frais généraux sera déduite du solde de l'élève dans l'onglet « Frais généraux ».",
-                            'Payments allocated to general fees will appear here automatically. Use "New payment": the general fees share will be deducted from the student\'s balance in the "General fees" tab.',
+                            "Utilisez le bouton dédié ci-dessus : l'encaissement sera imputé uniquement aux frais généraux de l'élève, apparaîtra dans ce sous-onglet et se déduira automatiquement dans l'onglet « Frais généraux ».",
+                            'Use the dedicated button above: the collection will be allocated to the student\'s general fees only, appear in this sub-tab, and be deducted automatically in the "General fees" tab.',
                           )}
                         </p>
                       </div>
@@ -583,6 +616,19 @@ export default function TransactionsContent() {
           accounts={accounts}
           onClose={() => setModalOpen(false)}
           onSuccess={handleSuccess}
+          refreshTrigger={modalRefreshTrigger}
+        />
+      )}
+
+      {/* ⭐ Modal DÉDIÉ — encaissement des frais généraux uniquement (flux
+          séparé du paiement standard, exigence sept. 2026). Après succès :
+          bascule sur le sous-onglet « Frais généraux » + déduction auto. */}
+      {generalModalOpen && (
+        <GeneralFeePaymentModal
+          academicYearId={academicYear?.id ?? ''}
+          accounts={accounts}
+          onClose={() => setGeneralModalOpen(false)}
+          onSuccess={handleGeneralSuccess}
           refreshTrigger={modalRefreshTrigger}
         />
       )}

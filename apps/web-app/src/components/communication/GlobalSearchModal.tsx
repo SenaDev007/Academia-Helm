@@ -128,7 +128,7 @@ export default function GlobalSearchModal({
 }) {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<SearchType | 'all'>('all');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
 
   const search = useCallback(async () => {

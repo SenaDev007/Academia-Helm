@@ -32,7 +32,7 @@ interface ContractEditModalProps {
 
 export function ContractEditModal({ isOpen, onClose, onSuccess, contract }: ContractEditModalProps) {
   const { tenant } = useModuleContext();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     contractType: '',

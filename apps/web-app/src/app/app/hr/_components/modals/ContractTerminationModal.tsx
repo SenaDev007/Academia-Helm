@@ -62,7 +62,7 @@ export function ContractTerminationModal({
   contract,
   tenantId,
 }: ContractTerminationModalProps) {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'form' | 'confirm'>('form');
 
   const [form, setForm] = useState({

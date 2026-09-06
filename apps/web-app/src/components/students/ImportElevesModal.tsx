@@ -84,7 +84,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
   const [fileDataUrl, setFileDataUrl] = useState<string>('');
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportRunResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   if (!open) return null;
 
@@ -144,12 +144,21 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
     reader.readAsDataURL(selectedFile);
   };
 
+  // ─── Timeout de requête (60 s) — évite un spinner infini si le serveur ne répond pas ───
+  const fetchWithTimeout = (url: string, options: RequestInit & { timeoutMs?: number } = {}) => {
+    const { timeoutMs = 60000, ...rest } = options;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { ...rest, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
+  };
+
   // ─── Preview (valider le fichier) ───
   const handlePreview = async () => {
     if (!fileDataUrl || !academicYear?.id) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/students/import/preview', {
+      const res = await fetchWithTimeout('/api/students/import/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -174,7 +183,10 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
         });
       }
     } catch (e: any) {
-      toast({ title: 'Erreur validation', description: e.message, variant: 'destructive' });
+      const msg = e?.name === 'AbortError'
+        ? 'La validation prend trop de temps (60 s). Vérifiez la taille du fichier et réessayez.'
+        : e.message;
+      toast({ title: 'Erreur validation', description: msg, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -186,11 +198,12 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
     setStep('importing');
     setLoading(true);
     try {
-      const res = await fetch('/api/students/import/run', {
+      const res = await fetchWithTimeout('/api/students/import/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ fileDataUrl, academicYearId: academicYear.id }),
+        timeoutMs: 180000, // 3 min pour l'import réel (création élèves + comptes)
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -210,7 +223,10 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
       }
       onSuccess();
     } catch (e: any) {
-      toast({ title: 'Erreur import', description: e.message, variant: 'destructive' });
+      const msg = e?.name === 'AbortError'
+        ? 'L\'import prend trop de temps (3 min). Vérifiez le fichier et réessayez.'
+        : e.message;
+      toast({ title: 'Erreur import', description: msg, variant: 'destructive' });
       setStep('preview');
     } finally {
       setLoading(false);

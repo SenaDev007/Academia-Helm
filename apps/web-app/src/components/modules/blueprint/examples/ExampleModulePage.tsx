@@ -46,7 +46,7 @@ export default function ExampleModulePage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ExampleItem | null>(null);
   const [items, setItems] = useState<ExampleItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   // ============================================================================
   // HANDLERS

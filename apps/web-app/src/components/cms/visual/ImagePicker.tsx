@@ -56,7 +56,7 @@ export function ImagePicker({
   hint,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleFile = async (file: File) => {

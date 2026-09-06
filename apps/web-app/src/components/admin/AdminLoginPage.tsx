@@ -58,7 +58,7 @@ export default function AdminLoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
   // UI
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleConfigured, setGoogleConfigured] = useState(true);
 

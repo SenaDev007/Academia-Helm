@@ -113,7 +113,7 @@ export default function InAppSaraGuide({
     return saved.length > 0 ? saved : [];
   });
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 

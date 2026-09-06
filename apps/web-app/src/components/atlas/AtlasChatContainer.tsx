@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 export default function AtlasChatContainer() {
   const [messages, setMessages] = useState<AtlasMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

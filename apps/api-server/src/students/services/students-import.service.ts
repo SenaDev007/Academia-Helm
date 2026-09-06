@@ -562,7 +562,7 @@ export class StudentsImportService {
       return String(val).trim();
     };
 
-    // Parse date de naissance (format JJ/MM/AAAA ou objet Date Excel)
+    // Parse date de naissance (JJ/MM/AAAA, AAAA-MM-JJ, ou objet Date Excel)
     const dobCell = row.getCell(3).value;
     let dateOfBirth: Date | null = null;
     if (dobCell instanceof Date) {
@@ -570,8 +570,27 @@ export class StudentsImportService {
     } else if (typeof dobCell === 'string' && dobCell.trim()) {
       const parts = dobCell.trim().split(/[\/\-.]/);
       if (parts.length === 3) {
-        const [d, m, y] = parts.map(Number);
-        if (d && m && y) {
+        let d = Number(parts[0]);
+        let m = Number(parts[1]);
+        let y = Number(parts[2]);
+        // ⭐ FIX: détection du format — si le 1er segment a 4 chiffres, c'est
+        // de l'ISO AAAA-MM-JJ (ex: 2015-03-10). Sinon JJ/MM/AAAA (ex: 15/03/2015).
+        // Avant ce fix, une date ISO était lue à l'envers (d=2015, y=10) et
+        // produisait des dates aberrantes (ex: 1915-09-05) stockées en silence.
+        if (parts[0].length === 4) {
+          [y, m, d] = [d, m, y];
+        }
+        // Année à 2 chiffres (ex: 15/03/15) → 2000+yy
+        if (y < 100) {
+          y = y > 50 ? 1900 + y : 2000 + y;
+        }
+        // Tolère le format US MM/JJ/AAAA (ex: 03/15/2015 → swap)
+        if (m > 12 && d <= 12) {
+          [d, m] = [m, d];
+        }
+        // ⭐ Plausibilité — évite de stocker une date aberrante : si le format
+        // est incohérent, la date est considérée absente (champ optionnel).
+        if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 1900 && y <= 2100) {
           dateOfBirth = new Date(y, m - 1, d);
         }
       }

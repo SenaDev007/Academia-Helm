@@ -60,7 +60,7 @@ export function FeexPayOnboardingWizard({ isOpen, onClose, onConfigured }: FeexP
   const [config, setConfig] = useState<FeexPayConfig | null>(null);
   const [shopId, setShopId] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<FeexPayTestResult | null>(null);
 

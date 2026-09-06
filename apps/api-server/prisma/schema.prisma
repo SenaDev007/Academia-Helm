@@ -1752,6 +1752,9 @@ model AcademicTrack {
   subjects              Subject[]
   staffAdminAssignments  StaffAdminAssignment[]  @relation("StaffAdminAssignmentTrack")
   paymentsTrack          Payment[]               @relation("PaymentTrack")
+  feeConfigurationsTrack FeeConfiguration[]      @relation("FeeConfigurationTrack")
+  expensesTrack          Expense[]               @relation("ExpenseTrack")
+  financeTransactionsTrack FinanceTransaction[]  @relation("FinanceTransactionTrack")
 
   @@unique([tenantId, code])
   @@index([tenantId, isActive])
@@ -2934,10 +2937,14 @@ model FeeConfiguration {
   createdBy      String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  /// ⭐ Piste (D6 — consolidation track scope) : colonne présente en base
+  /// depuis 20260906110000, dénormalisée à l'écriture depuis la classe visée.
+  academicTrackId String?
   academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id])
   class          Class?        @relation(fields: [classId], references: [id])
   creator        User?         @relation(fields: [createdBy], references: [id])
   schoolLevel    SchoolLevel   @relation(fields: [schoolLevelId], references: [id])
+  academicTrack  AcademicTrack? @relation("FeeConfigurationTrack", fields: [academicTrackId], references: [id], onDelete: SetNull)
   tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   payments       Payment[]
 
@@ -2970,6 +2977,10 @@ model Expense {
   creator         User?            @relation(fields: [createdBy], references: [id])
   schoolLevel     SchoolLevel      @relation("ExpenseSchoolLevel", fields: [schoolLevelId], references: [id])
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// ⭐ Piste (D6 — consolidation track scope) : colonne présente en base
+  /// depuis 20260906110000, dénormalisée à l'écriture depuis la classe visée.
+  academicTrackId String?
+  academicTrack   AcademicTrack?   @relation("ExpenseTrack", fields: [academicTrackId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, schoolLevelId])
   @@index([categoryId])
@@ -11087,7 +11098,12 @@ model FinanceTransaction {
   /// Re-vérifié côté backend par sécurité.
   changeGiven      Decimal?                       @db.Decimal(10, 2)
   allocations      FinanceTransactionAllocation[]
+  /// ⭐ Piste (D6 — consolidation track scope) : colonne présente en base
+  /// depuis 20260906110000. Dénormalisée à l'écriture (piste de l'élève via sa
+  /// classe) ; utilisée par le filtre piste d'Encaissements (scope serveur).
+  academicTrackId  String?
   academicYear     AcademicYear                   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  academicTrack    AcademicTrack?                 @relation("FinanceTransactionTrack", fields: [academicTrackId], references: [id], onDelete: SetNull)
   cashRegister     CashRegister?                  @relation(fields: [cashRegisterId], references: [id])
   reversedFrom     FinanceTransaction?            @relation("FinanceTransactionReversal", fields: [reversedFromId], references: [id])
   reversals        FinanceTransaction[]           @relation("FinanceTransactionReversal")

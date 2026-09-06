@@ -558,7 +558,7 @@ export default function ParentFinancePanel({
 // ─── Sous-composant : Aperçu allocation FIFO ────────────────────────────────
 
 function FifoPreview({ amount, breakdowns, arrears }: { amount: number; breakdowns: any[]; arrears: any[] }) {
-  const priorityOrder = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+  const priorityOrder = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
   const sortedBreakdowns = [...breakdowns].sort((a, b) =>
     priorityOrder.indexOf(a.feeType) - priorityOrder.indexOf(b.feeType),
   );

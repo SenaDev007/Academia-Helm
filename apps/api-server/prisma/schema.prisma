@@ -14958,6 +14958,9 @@ enum FeeType {
   TUITION
   CANTEEN
   EXAMEN
+  /// ⭐ Frais généraux — frais transversal de l'école (tenue, carte ID,
+  /// activités…) suivi séparément dans un onglet dédié du module Finance.
+  GENERAL
   OTHER
 }
 

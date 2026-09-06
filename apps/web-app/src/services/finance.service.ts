@@ -89,6 +89,35 @@ class FinanceService {
     return financeFetch(`/api/finance/fee-structures/overrides/${encodeURIComponent(id)}`, { method: 'PATCH', body: data });
   }
 
+  /**
+   * ⭐ PERSONNALISATION EN MASSE POUR TOUTE UNE CLASSE (exigence sept. 2026).
+   * Applique une réduction (%) ou un montant (XOF) à TOUS les élèves actifs
+   * d'une classe pour le frais concerné — upsert par élève + recalcul synchrone.
+   * @returns { totalStudents, applied, failed, customAmount, originalAmount, details[] }
+   */
+  async bulkClassOverride(data: {
+    classId: string;
+    feeStructureId: string;
+    reductionPercent?: number;
+    reductionAmount?: number;
+    reason: string;
+  }): Promise<any> {
+    return financeFetch('/api/finance/fee-structures/overrides/bulk-class', {
+      method: 'POST',
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ ONGLET « FRAIS GÉNÉRAUX » — listing par élève (dus / payé / solde).
+   * Structure identique à Comptes élèves : pagination serveur + KPIs globaux.
+   * @returns { data: rows[], total, page, limit, totalPages, sums: { due, paid, remaining, studentsWithGeneralFees } }
+   */
+  async getGeneralFeeAccounts(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/student-accounts/general-fees${qs ? `?${qs}` : ''}`);
+  }
+
   // --- Student Accounts ---
   async getStudentAccounts(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

@@ -95,7 +95,7 @@ export interface FeeOverrideImportRunResult {
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
-const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
 
 const FEE_TYPE_LABELS: Record<string, string> = {
   INSCRIPTION: 'Inscription',

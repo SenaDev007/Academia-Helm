@@ -7,7 +7,24 @@ import { PrismaService } from '../database/prisma.service';
 import { FeeType } from '@prisma/client';
 import { StudentAccountService } from './student-account.service';
 
-const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
+
+/**
+ * ⭐ Clé de déduplication des FeeStructure applicables à un élève.
+ *
+ * RÈGLE MÉTIER (priorité Classe > Niveau > Global) : pour un même type de
+ * frais, une seule structure s'applique — SAUF pour les FRAIS GÉNÉRAUX
+ * (feeType = GENERAL) qui sont transversaux : l'école peut en créer PLUSIEURS
+ * (tenue scolaire, carte ID, activités…). On déduplique donc les GENERAL
+ * par NOM (même nom = la structure la plus spécifique gagne), ce qui permet
+ * à plusieurs frais généraux distincts de s'appliquer simultanément.
+ */
+function structureDedupKey(fs: { feeType: string; name: string }): string {
+  if (fs.feeType === 'GENERAL') {
+    return `GENERAL::${(fs.name ?? '').trim().toLowerCase()}`;
+  }
+  return fs.feeType;
+}
 
 @Injectable()
 export class FeeStructureService {
@@ -490,6 +507,158 @@ export class FeeStructureService {
     return override;
   }
 
+  /**
+   * ⭐ PERSONNALISATION EN MASSE POUR TOUTE UNE CLASSE.
+   *
+   * Demande utilisateur (sept. 2026) : permettre d'appliquer une
+   * personnalisation (réduction) à TOUS les élèves d'une classe d'un coup,
+   * « par exemple pour des raisons spécifiques » (cas sociaux, remise
+   * collective, exonération d'une classe pilote, etc.).
+   *
+   * Fonctionnement :
+   *   1. Charge le frais concerné (feeStructureId) → année académique dérivée.
+   *   2. Trouve TOUS les élèves ACTIFS inscrits dans la classe (classId) pour
+   *      cette année (via StudentEnrollment — status != WITHDRAWN).
+   *   3. Pour chaque élève : calcule le montant personnalisé depuis le mode
+   *      de réduction choisi — reductionPercent OU reductionAmount (XOF) —
+   *      puis crée OU MET À JOUR l'override (upsert, pas de doublon).
+   *   4. Recalcule le compte élève de chaque élève modifié (synchrone).
+   *
+   * Le compte des élèves sans compte StudentAccount existant est créé au
+   * passage par recalculate() (getOrCreate interne).
+   *
+   * @returns { applied, skipped, failed, totalStudents, details[] }
+   */
+  async createBulkClassOverride(
+    tenantId: string,
+    data: {
+      classId: string;
+      feeStructureId: string;
+      reductionPercent?: number;
+      reductionAmount?: number;
+      reason: string;
+      createdById?: string;
+    },
+    userId?: string,
+  ) {
+    // 1) Le frais concerné (vérifie aussi le tenant + l'année non clôturée)
+    const fs = await this.findOne(data.feeStructureId, tenantId);
+    await this.ensureAcademicYearNotClosed(fs.academicYearId, tenantId);
+    const originalAmount = Number(fs.totalAmount);
+    if (originalAmount < 0) {
+      throw new BadRequestException('Le frais concerné a un montant invalide.');
+    }
+
+    // 2) Validation du mode de réduction
+    const hasPercent = data.reductionPercent != null && Number(data.reductionPercent) > 0;
+    const hasAmount = data.reductionAmount != null && Number(data.reductionAmount) > 0;
+    if (!hasPercent && !hasAmount) {
+      throw new BadRequestException('Indiquez une réduction en pourcentage (%) OU en montant (XOF).');
+    }
+    if (hasPercent && Number(data.reductionPercent) > 100) {
+      throw new BadRequestException('La réduction en pourcentage ne peut pas dépasser 100%.');
+    }
+    if (hasAmount && Number(data.reductionAmount) > originalAmount) {
+      throw new BadRequestException(
+        `La réduction (${Number(data.reductionAmount)} XOF) ne peut pas dépasser le montant du frais (${originalAmount} XOF).`,
+      );
+    }
+    if (!data.reason || !data.reason.trim()) {
+      throw new BadRequestException('Le motif est obligatoire.');
+    }
+
+    // 3) Montant personnalisé appliqué à TOUS les élèves de la classe
+    let customAmount: number;
+    if (hasPercent) {
+      customAmount = Math.max(0, Math.round(originalAmount * (1 - Number(data.reductionPercent) / 100)));
+    } else {
+      customAmount = Math.max(0, Math.round(originalAmount - Number(data.reductionAmount)));
+    }
+
+    // 4) Tous les élèves ACTIFS de la classe pour l'année du frais
+    //    (status WITHDRAWN exclu ; classe PHYSIQUE classId)
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        classId: data.classId,
+        academicYearId: fs.academicYearId,
+        tenantId,
+        student: { status: { not: 'WITHDRAWN' } },
+      },
+      select: { studentId: true, status: true },
+    });
+
+    const studentIds = Array.from(new Set(enrollments.map((e) => e.studentId)));
+    if (studentIds.length === 0) {
+      throw new BadRequestException("Aucun élève actif trouvé dans cette classe pour l'année du frais.");
+    }
+
+    this.logger.log(
+      `createBulkClassOverride: classe=${data.classId}, frais=${data.feeStructureId} (${fs.name}), ` +
+      `${studentIds.length} élève(s), montant personnalisé=${customAmount} (initial=${originalAmount})`,
+    );
+
+    // 5) Upsert override par élève + recalcul du compte
+    let applied = 0;
+    let failed = 0;
+    const details: { studentId: string; status: 'created' | 'updated' | 'failed'; error?: string }[] = [];
+
+    for (const studentId of studentIds) {
+      try {
+        const existing = await this.prisma.feeOverride.findFirst({
+          where: { feeStructureId: data.feeStructureId, studentId },
+          select: { id: true },
+        });
+        const override = existing
+          ? await this.prisma.feeOverride.update({
+              where: { id: existing.id },
+              data: {
+                customAmount,
+                reason: data.reason.trim(),
+                updatedById: data.createdById ?? userId ?? null,
+              },
+            })
+          : await this.prisma.feeOverride.create({
+              data: {
+                feeStructureId: data.feeStructureId,
+                studentId,
+                customAmount,
+                reason: data.reason.trim(),
+                createdById: data.createdById ?? userId ?? null,
+              },
+            });
+
+        details.push({ studentId, status: existing ? 'updated' : 'created' });
+        applied++;
+
+        // Recalcul synchrone du compte (crée le compte s'il n'existe pas)
+        await this.studentAccountService.recalculate(studentId, tenantId, fs.academicYearId);
+
+        await this.audit(
+          tenantId,
+          userId,
+          existing ? 'FEE_OVERRIDE_BULK_UPDATE' : 'FEE_OVERRIDE_BULK_CREATE',
+          'FeeOverride',
+          override.id,
+          undefined,
+          { feeStructureId: data.feeStructureId, studentId, customAmount, reason: data.reason.trim(), classId: data.classId },
+        );
+      } catch (err: any) {
+        failed++;
+        details.push({ studentId, status: 'failed', error: err?.message ?? String(err) });
+        this.logger.warn(`createBulkClassOverride: échec élève ${studentId}: ${err?.message}`);
+      }
+    }
+
+    return {
+      totalStudents: studentIds.length,
+      applied,
+      failed,
+      customAmount,
+      originalAmount,
+      details,
+    };
+  }
+
   async getOverridesForStudent(tenantId: string, studentId: string, academicYearId?: string) {
     // FeeOverride n'a pas de tenantId directement — on filtre via feeStructure.tenantId
     const where: any = { studentId, feeStructure: { tenantId } };
@@ -784,20 +953,23 @@ export class FeeStructureService {
       });
 
       // Priorité Classe > Niveau > Global
+      // ⭐ GENERAL (frais généraux) : déduplication par nom — plusieurs frais
+      //    généraux distincts peuvent s'appliquer simultanément (voir structureDedupKey).
       const structuresByType = new Map<string, any>();
       allStructures.forEach((fs) => {
         const isClassMatch = fs.classId && fs.classId === classId;
         const isLevelMatch = fs.levelId === levelId && !fs.classId;
         const isGlobalMatch = !fs.levelId && !fs.classId;
         if (isClassMatch || isLevelMatch || isGlobalMatch) {
-          const existing = structuresByType.get(fs.feeType);
+          const key = structureDedupKey(fs);
+          const existing = structuresByType.get(key);
           if (!existing) {
-            structuresByType.set(fs.feeType, fs);
+            structuresByType.set(key, fs);
           } else {
             const existingIsClass = existing.classId;
             const existingIsLevel = existing.levelId && !existing.classId;
             if (isClassMatch || (isLevelMatch && !existingIsClass)) {
-              structuresByType.set(fs.feeType, fs);
+              structuresByType.set(key, fs);
             }
           }
         }

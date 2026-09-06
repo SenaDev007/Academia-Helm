@@ -15,7 +15,10 @@ import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
 
-const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+// ⭐ Ordre de priorité d'imputation des paiements. GENERAL (frais généraux)
+//    est imputé APRÈS les frais pédagogiques classiques — cohérent avec le
+//    NewPaymentModal (front) et ParentFinancePanel.
+const PRIORITY_ORDER = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
 const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'MOBILE_MONEY', 'WIRE', 'FEDAPAY'];
 
 @Injectable()
@@ -522,6 +525,10 @@ export class FinanceTransactionService {
       academicYearId?: string;
       studentAccountId?: string;
       type?: string;
+      // ⭐ Filtre par type de frais (ex: GENERAL pour le sous-onglet « Frais
+      //    généraux ») : ne renvoie que les transactions ayant au moins une
+      //    allocation vers un AccountBreakdown de ce type.
+      feeType?: string;
       page?: number;
       limit?: number;
     },
@@ -530,6 +537,29 @@ export class FinanceTransactionService {
     if (filters.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters.studentAccountId) where.studentAccountId = filters.studentAccountId;
     if (filters.type) where.type = filters.type;
+    if (filters.feeType) {
+      where.allocations = {
+        some: { accountBreakdown: { feeStructure: { feeType: filters.feeType } } },
+      };
+    }
+
+    // ⭐ Inclure les allocations + breakdowns quand un feeType est demandé :
+    //    le frontend (sous-onglet « Frais généraux ») affiche la part imputée
+    //    à ce type de frais pour chaque transaction.
+    const include: any = {
+      studentAccount: { include: { student: true } },
+    };
+    if (filters.feeType) {
+      include.allocations = {
+        include: {
+          accountBreakdown: {
+            include: {
+              feeStructure: { select: { id: true, name: true, feeType: true, totalAmount: true } },
+            },
+          },
+        },
+      };
+    }
 
     // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé
     // { data, total, page, limit, totalPages }.
@@ -540,7 +570,7 @@ export class FinanceTransactionService {
       const [data, total] = await Promise.all([
         this.prisma.financeTransaction.findMany({
           where,
-          include: { studentAccount: { include: { student: true } } },
+          include,
           orderBy: { createdAt: 'desc' },
           skip: (page - 1) * limit,
           take: limit,
@@ -558,7 +588,7 @@ export class FinanceTransactionService {
 
     return this.prisma.financeTransaction.findMany({
       where,
-      include: { studentAccount: { include: { student: true } } },
+      include,
       orderBy: { createdAt: 'desc' },
     });
   }

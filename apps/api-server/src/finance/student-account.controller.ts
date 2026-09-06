@@ -58,6 +58,41 @@ export class StudentAccountController {
     return this.service.getOrCreate(tenantId, studentId, academicYearId);
   }
 
+  /**
+   * ⭐ ONGLET « FRAIS GÉNÉRAUX » — listing par élève (structure identique à
+   * Comptes élèves : pagination serveur + KPIs globaux + filtres).
+   *
+   * GET /finance/accounts/general-fees?academicYearId=&classId=&schoolLevelId=&search=&page=&limit=&feeType=
+   * (feeType optionnel — défaut GENERAL)
+   *
+   * Retourne { data: rows[], total, page, limit, totalPages, sums: { due, paid, remaining, studentsWithGeneralFees } }
+   * Chaque row : { accountId, student, className, generalDue, generalPaid, generalBalance, status, breakdowns[] }
+   */
+  @Get('general-fees')
+  async findGeneralFeeAccounts(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('feeType') feeType?: string,
+    @Query('classId') classId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId required');
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.service.findGeneralFeeAccounts(tenantId, {
+      academicYearId,
+      feeType,
+      classId,
+      schoolLevelId,
+      search,
+      page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
+      limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
+    });
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @TenantId() tenantId: string) {
     return this.service.findOne(id, tenantId);

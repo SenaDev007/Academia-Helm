@@ -1,0 +1,21 @@
+-- ============================================================================
+-- FRAIS GÉNÉRAUX — nouveau type de frais transversal « GENERAL »
+-- ============================================================================
+--
+-- Demande utilisateur (sept. 2026) : introduire les « frais généraux » — des
+-- frais transversaux de l'école (tenue scolaire, carte ID, activités, etc.)
+-- suivis SÉPARÉMENT des frais annuels classiques (inscription, scolarité…).
+--
+-- Ils sont :
+--   1. configurables depuis « Configuration des frais → Nouveau frais » ;
+--   2. personnalisables par élève ET EN MASSE pour toute une classe ;
+--   3. listés dans un onglet dédié « Frais généraux » (juste après Comptes
+--      élèves) — dus / payé / solde par élève pour l'année scolaire ;
+--   4. encaissables via un sous-onglet dédié dans Encaissements, avec
+--      déduction automatique dans l'onglet « Frais généraux » (même mécanique
+--      que Comptes élèves × Encaissements via les AccountBreakdown).
+--
+-- ⭐ Idempotent (IF NOT EXISTS) — sans risque si re-jouée.
+-- ============================================================================
+
+ALTER TYPE "FeeType" ADD VALUE IF NOT EXISTS 'GENERAL';

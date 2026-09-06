@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Layers, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useL } from '@/lib/i18n/bilingual';
 import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -32,6 +33,14 @@ const METHOD_LABELS: Record<string, string> = {
 export default function TransactionsContent() {
   const { academicYear, schoolLevel } = useModuleContext();
   const { tenant } = useAppSession();
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
+  // ⭐ SOUS-ONGLETS : « Tous les encaissements » | « Frais généraux »
+  //    (exigence sept. 2026 : récupérer le paiement des frais généraux à part
+  //    afin de savoir qui a payé). Le sous-onglet GENERAL filtre côté backend
+  //    sur les transactions ayant au moins une allocation vers un frais
+  //    général (feeType=GENERAL) et affiche la part imputée.
+  const [subTab, setSubTab] = useState<'all' | 'general'>('all');
   // ⭐ whatsappMenuId state removed — WhatsApp dropdown is no longer rendered (button is grayed out)
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
@@ -61,6 +70,9 @@ export default function TransactionsContent() {
         academicYearId: academicYear.id,
         page: String(currentPage),
         limit: String(PAGE_SIZE),
+        // ⭐ Sous-onglet Frais généraux : filtrer côté backend sur les
+        //    transactions imputées à des frais généraux (feeType=GENERAL).
+        ...(subTab === 'general' ? { feeType: 'GENERAL' } : {}),
       });
       // ⭐ Gérer la réponse paginée { data, total, page, totalPages } ou l'ancien format array
       const allItems = Array.isArray(data) ? data : (data?.data ?? []);
@@ -86,7 +98,7 @@ export default function TransactionsContent() {
   useEffect(() => {
     loadTransactions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicYear?.id, currentPage]);
+  }, [academicYear?.id, currentPage, subTab]);
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -118,10 +130,17 @@ export default function TransactionsContent() {
     //    permettre un second paiement sans devoir fermer/rouvrir le modal.
     // ⭐ setModalRefreshTrigger() force le rechargement des caisses ouvertes
     //    dans le modal (qui sinon ne rechargeait qu'au montage).
+    // ⭐ 'finance-accounts-changed' → l'onglet « Frais généraux » (s'il est
+    //    ouvert dans un autre onglet navigateur ou via navigation) recharge
+    //    ses soldes automatiquement (déduction auto après encaissement).
     loadTransactions();
     reloadAccounts();
     setModalRefreshTrigger((n) => n + 1);
+    window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
   };
+
+  // ⭐ Reset page à 1 quand on change de sous-onglet
+  useEffect(() => { setCurrentPage(1); }, [subTab]);
 
   // Filtrage par période (date de création de la transaction)
   const filteredTransactions = useMemo(() => {
@@ -265,6 +284,49 @@ export default function TransactionsContent() {
           </div>
         }
       >
+        {/* ⭐ SOUS-ONGLETS : Tous les encaissements | Frais généraux */}
+        <div className="mb-4 flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 w-fit">
+          <button
+            type="button"
+            onClick={() => setSubTab('all')}
+            className={cn(
+              'flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-lg transition',
+              subTab === 'all'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            <Coins className="w-4 h-4" />
+            {L('Tous les encaissements', 'All collections')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab('general')}
+            className={cn(
+              'flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold rounded-lg transition',
+              subTab === 'general'
+                ? 'bg-white text-indigo-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700',
+            )}
+          >
+            <Layers className="w-4 h-4" />
+            {L('Frais généraux', 'General fees')}
+          </button>
+        </div>
+
+        {/* Bandeau explicatif du sous-onglet Frais généraux */}
+        {subTab === 'general' && (
+          <p className="mb-3 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
+            <Layers className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+            <span>
+              {L(
+                'Encaissements imputés aux frais généraux uniquement. "Part frais généraux" = montant alloué à ces frais dans chaque encaissement ; le reste du reçu est imputé aux autres frais. Les soldes par élève se déduisent automatiquement dans l\u2019onglet « Frais généraux ».',
+                'Collections allocated to general fees only. "General fees share" = the amount allocated to these fees in each receipt; the remainder is allocated to other fees. Per-student balances update automatically in the "General fees" tab.',
+              )}
+            </span>
+          </p>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
           <Table>
@@ -273,6 +335,10 @@ export default function TransactionsContent() {
                 <TableHead>Reçu</TableHead>
                 <TableHead>Élève</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
+                {/* ⭐ Sous-onglet Frais généraux : part imputée aux frais généraux */}
+                {subTab === 'general' && (
+                  <TableHead className="text-right">{L('Part frais généraux', 'General fees share')}</TableHead>
+                )}
                 <TableHead>Méthode</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Date</TableHead>
@@ -282,16 +348,40 @@ export default function TransactionsContent() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                  <TableCell colSpan={subTab === 'general' ? 8 : 7} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                 </TableRow>
               ) : transactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500 py-12">
-                    Aucune transaction enregistrée.
+                  <TableCell colSpan={subTab === 'general' ? 8 : 7} className="text-center text-gray-500 py-12">
+                    {subTab === 'general' ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Layers className="w-10 h-10 text-slate-300" />
+                        <p>{L("Aucun encaissement de frais généraux pour l'instant.", 'No general fees collection yet.')}</p>
+                        <p className="text-xs text-slate-400 max-w-md">
+                          {L(
+                            "Les paiements imputés aux frais généraux apparaîtront ici automatiquement. Utilisez « Nouveau paiement » puis encaissez : la part frais généraux sera déduite du solde de l'élève dans l'onglet « Frais généraux ».",
+                            'Payments allocated to general fees will appear here automatically. Use "New payment": the general fees share will be deducted from the student\'s balance in the "General fees" tab.',
+                          )}
+                        </p>
+                      </div>
+                    ) : (
+                      L('Aucune transaction enregistrée.', 'No transaction recorded.')
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredTransactions.map((t) => (
+                filteredTransactions.map((t) => {
+                  // ⭐ Sous-onglet Frais généraux : somme des allocations vers
+                  //    les breakdowns GENERAL de la transaction (le backend
+                  //    inclut `allocations` quand feeType=GENERAL est demandé).
+                  const generalAllocations = subTab === 'general'
+                    ? (t.allocations ?? []).filter((a: any) => a.accountBreakdown?.feeStructure?.feeType === 'GENERAL')
+                    : [];
+                  const generalShare = generalAllocations.reduce((s: number, a: any) => s + Number(a.amount ?? 0), 0);
+                  const generalFeeNames = Array.from(new Set(
+                    generalAllocations.map((a: any) => a.accountBreakdown?.feeStructure?.name).filter(Boolean)
+                  ));
+                  return (
                   <TableRow key={t.id} className="hover:bg-slate-50">
                     <TableCell className="font-mono text-xs">{t.receiptNumber}</TableCell>
                     <TableCell className="font-medium">
@@ -300,6 +390,16 @@ export default function TransactionsContent() {
                         : '—'}
                     </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(t.amount)}</TableCell>
+                    {subTab === 'general' && (
+                      <TableCell className="text-right">
+                        <span className="font-semibold text-indigo-700">{formatCurrency(generalShare)}</span>
+                        {generalFeeNames.length > 0 && (
+                          <div className="text-[10px] text-slate-500 font-normal">
+                            {generalFeeNames.map((n: string) => (<div key={n}>{n}</div>))}
+                          </div>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <PaymentMethodBadge method={t.paymentMethod} methodLabel={METHOD_LABELS[t.paymentMethod]} />
                     </TableCell>
@@ -390,7 +490,8 @@ export default function TransactionsContent() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

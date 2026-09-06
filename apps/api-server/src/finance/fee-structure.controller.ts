@@ -134,6 +134,48 @@ export class FeeStructureController {
     }, user?.id);
   }
 
+  /**
+   * ⭐ PERSONNALISATION EN MASSE POUR TOUTE UNE CLASSE.
+   * POST /finance/fee-structures/overrides/bulk-class
+   * Body : { classId, feeStructureId, reductionPercent?, reductionAmount?, reason }
+   *   - reductionPercent (ex: 10 = -10%) OU reductionAmount (XOF) — au choix ;
+   *   - reason obligatoire (motif partagé par tous les overrides créés).
+   * Retourne { totalStudents, applied, failed, customAmount, originalAmount, details[] }
+   *
+   * Comportement : upsert par élève (aucun doublon), recalcul synchrone des
+   * comptes élèves de toute la classe. Les élèves abandonnés (WITHDRAWN) sont
+   * exclus.
+   */
+  @Post('overrides/bulk-class')
+  async createBulkClassOverride(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      classId: string;
+      feeStructureId: string;
+      reductionPercent?: number;
+      reductionAmount?: number;
+      reason: string;
+    },
+  ) {
+    this.logger.log(
+      `Bulk class override: tenant=${tenantId}, class=${body.classId}, fee=${body.feeStructureId}, ` +
+      `percent=${body.reductionPercent}, amount=${body.reductionAmount}`,
+    );
+    return this.service.createBulkClassOverride(
+      tenantId,
+      {
+        classId: body.classId,
+        feeStructureId: body.feeStructureId,
+        reductionPercent: body.reductionPercent != null ? Number(body.reductionPercent) : undefined,
+        reductionAmount: body.reductionAmount != null ? Number(body.reductionAmount) : undefined,
+        reason: body.reason,
+        createdById: user?.id,
+      },
+      user?.id,
+    );
+  }
+
   @Get('overrides')
   async getOverrides(
     @TenantId() tenantId: string,

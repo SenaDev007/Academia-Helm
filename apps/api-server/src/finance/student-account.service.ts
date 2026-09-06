@@ -205,18 +205,19 @@ export class StudentAccountService {
       const isGlobalMatch = !fs.levelId && !fs.classId;
 
       if (isClassMatch || isLevelMatch || isGlobalMatch) {
-        const existing = structuresByType.get(fs.feeType);
+        const dedupKey = fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
+        const existing = structuresByType.get(dedupKey);
         if (!existing) {
-          structuresByType.set(fs.feeType, fs);
+          structuresByType.set(dedupKey, fs);
         } else {
           // Remplacement si plus spécifique
           const existingIsClass = existing.classId;
           const existingIsLevel = existing.levelId && !existing.classId;
           
           if (isClassMatch) {
-            structuresByType.set(fs.feeType, fs); // La classe gagne toujours
+            structuresByType.set(dedupKey, fs); // La classe gagne toujours
           } else if (isLevelMatch && !existingIsClass) {
-            structuresByType.set(fs.feeType, fs); // Le niveau gagne contre le global
+            structuresByType.set(dedupKey, fs); // Le niveau gagne contre le global
           }
         }
       }
@@ -330,16 +331,17 @@ export class StudentAccountService {
       const isGlobalMatch = !fs.levelId && !fs.classId;
 
       if (isClassMatch || isLevelMatch || isGlobalMatch) {
-        const existing = structuresByType.get(fs.feeType);
+        const dedupKey = fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
+        const existing = structuresByType.get(dedupKey);
         if (!existing) {
-          structuresByType.set(fs.feeType, fs);
+          structuresByType.set(dedupKey, fs);
         } else {
           const existingIsClass = existing.classId;
           const existingIsLevel = existing.levelId && !existing.classId;
           if (isClassMatch) {
-            structuresByType.set(fs.feeType, fs);
+            structuresByType.set(dedupKey, fs);
           } else if (isLevelMatch && !existingIsClass) {
-            structuresByType.set(fs.feeType, fs);
+            structuresByType.set(dedupKey, fs);
           }
         }
       }
@@ -961,5 +963,223 @@ export class StudentAccountService {
       },
       include: { student: true, breakdowns: true },
     });
+  }
+
+  /**
+   * ⭐ ONGLET « FRAIS GÉNÉRAUX » — listing par élève pour un type de frais
+   * transversal (feeType = GENERAL par défaut).
+   *
+   * Demande utilisateur (sept. 2026) : « créer l'onglet frais généraux afin de
+   * pouvoir lister exactement comme on l'a fait pour l'onglet compte élèves…
+   * un seul tableau pour récupérer les frais généraux des élèves pour que
+   * l'école puisse savoir ce qui doit être récupéré pour cette année scolaire. »
+   *
+   * Structure identique à Comptes élèves (pagination serveur + KPIs globaux) :
+   *   { data: rows[], total, page, limit, totalPages, sums: { due, paid, remaining } }
+   *
+   * Chaque row = {
+   *   accountId, student {…}, className,
+   *   generalDue, generalPaid, generalBalance,   ← agrégats sur les breakdowns GENERAL
+   *   status: 'PAID' | 'PARTIAL' | 'UNPAID' | 'NONE',
+   *   breakdowns: [ { feeStructure {name, totalAmount}, initialAmount, paidAmount, remainingAmount, hasOverride } ]
+   * }
+   *
+   * Les montants utilisent `adjustedAmount` (montant personnalisé après
+   * override/régime) → cohérent avec le décompte réel des paiements.
+   */
+  async findGeneralFeeAccounts(
+    tenantId: string,
+    filters: {
+      academicYearId: string;
+      feeType?: string; // défaut 'GENERAL'
+      classId?: string;
+      schoolLevelId?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const feeType = filters.feeType || 'GENERAL';
+
+    // ── Filtres de base (élèves actifs, année, tenant) ──
+    const studentFilter: any = { status: { not: 'WITHDRAWN' } };
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      studentFilter.AND = [
+        {
+          OR: [
+            { firstName: { contains: q, mode: 'insensitive' } },
+            { lastName: { contains: q, mode: 'insensitive' } },
+            { matricule: { contains: q, mode: 'insensitive' } },
+            { studentCode: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+    if (filters.classId) {
+      studentFilter.studentEnrollments = {
+        some: {
+          academicYearId: filters.academicYearId,
+          classId: filters.classId,
+          ...(filters.schoolLevelId ? { class: { schoolLevelId: filters.schoolLevelId } } : {}),
+        },
+      };
+    } else if (filters.schoolLevelId) {
+      studentFilter.studentEnrollments = {
+        some: { academicYearId: filters.academicYearId, class: { schoolLevelId: filters.schoolLevelId } },
+      };
+    }
+
+    const where: any = {
+      tenantId,
+      academicYearId: filters.academicYearId,
+      student: studentFilter,
+      // Uniquement les comptes qui ont AU MOINS un breakdown du type demandé
+      breakdowns: {
+        some: { feeStructure: { feeType } },
+      },
+    };
+
+    // ── Pagination (pattern Task 9-a / identique à findAll) ──
+    const isPaginated = !!(filters.page && filters.limit);
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(500, Math.max(1, filters.limit ?? 50));
+
+    // ── Requête principale : comptes + breakdowns filtrés sur le type ──
+    const findManyArgs: any = {
+      where,
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            studentCode: true,
+            matricule: true,
+            schoolLevel: { select: { id: true, name: true, code: true } },
+            studentEnrollments: {
+              where: { academicYearId: filters.academicYearId },
+              select: {
+                classId: true,
+                class: { select: { id: true, name: true } },
+                enrollmentType: true,
+              },
+            },
+          },
+        },
+        // ⭐ Seuls les breakdowns du type demandé (frais généraux)
+        breakdowns: {
+          where: { feeStructure: { feeType } },
+          include: {
+            feeStructure: {
+              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
+      ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : { take: 500 }),
+    };
+
+    const accounts = await this.prisma.studentAccount.findMany(findManyArgs);
+
+    // ── Overrides par élève (hasOverride par breakdown — pattern Task 31) ──
+    const studentIds = accounts.map((a) => a.studentId);
+    const overridesForStudents = studentIds.length > 0
+      ? await this.prisma.feeOverride.findMany({
+          where: {
+            studentId: { in: studentIds },
+            feeStructure: { tenantId, academicYearId: filters.academicYearId, feeType },
+          },
+          select: { id: true, studentId: true, feeStructureId: true, customAmount: true, reason: true },
+        })
+      : [];
+    const overrideMap = new Map<string, any>();
+    for (const o of overridesForStudents) {
+      overrideMap.set(`${o.studentId}|${o.feeStructureId}`, o);
+    }
+
+    // ── Mise en forme des rows ──
+    const rows = accounts.map((account) => {
+      const enroll = account.student?.studentEnrollments?.[0];
+      const className = enroll?.class?.name || null;
+
+      let generalDue = 0;
+      let generalPaid = 0;
+      const breakdowns = (account.breakdowns ?? []).map((b: any) => {
+        const due = Number(b.adjustedAmount ?? b.initialAmount ?? 0);
+        const paid = Number(b.paidAmount ?? 0);
+        generalDue += due;
+        generalPaid += paid;
+        return {
+          id: b.id,
+          feeStructure: b.feeStructure,
+          initialAmount: Number(b.initialAmount ?? 0),
+          adjustedAmount: due,
+          paidAmount: paid,
+          remainingAmount: Number(b.remainingAmount ?? Math.max(0, due - paid)),
+          hasOverride: overrideMap.has(`${account.studentId}|${b.feeStructureId}`),
+        };
+      });
+      const generalBalance = Math.max(0, generalDue - generalPaid);
+
+      let rowStatus: string;
+      if (generalDue <= 0 && generalPaid <= 0) rowStatus = 'NONE';
+      else if (generalBalance <= 0) rowStatus = 'PAID';
+      else if (generalPaid > 0) rowStatus = 'PARTIAL';
+      else rowStatus = 'UNPAID';
+
+      return {
+        accountId: account.id,
+        studentId: account.studentId,
+        student: account.student,
+        className,
+        generalDue,
+        generalPaid,
+        generalBalance,
+        status: rowStatus,
+        breakdowns,
+      };
+    });
+
+    // ── Non paginé : retour simple (rétro-compat) ──
+    if (!isPaginated) {
+      return rows;
+    }
+
+    // ── KPIs globaux : agrégats sur TOUS les comptes matchés (pas la page) ──
+    const [total, sumsAgg] = await Promise.all([
+      this.prisma.studentAccount.count({ where }),
+      this.prisma.accountBreakdown.aggregate({
+        where: {
+          feeStructure: { feeType },
+          studentAccount: where,
+        },
+        _sum: {
+          adjustedAmount: true,
+          paidAmount: true,
+          remainingAmount: true,
+        },
+      }),
+    ]);
+
+    const due = Number(sumsAgg._sum.adjustedAmount ?? 0);
+    const paid = Number(sumsAgg._sum.paidAmount ?? 0);
+    const remaining = Number(sumsAgg._sum.remainingAmount ?? 0);
+
+    return {
+      data: rows,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      sums: {
+        due,
+        paid,
+        remaining,
+        studentsWithGeneralFees: total,
+      },
+    };
   }
 }

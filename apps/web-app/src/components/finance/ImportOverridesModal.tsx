@@ -82,6 +82,7 @@ const FEE_TYPE_LABELS: Record<string, string> = {
   TUITION: 'Scolarité',
   CANTEEN: 'Cantine',
   EXAMEN: "Frais d'examen",
+  GENERAL: 'Frais généraux',
   OTHER: 'Autre',
 };
 
@@ -282,7 +283,7 @@ export default function ImportOverridesModal({ open, onClose, onSuccess }: Impor
                 <ul className="text-xs text-slate-600 space-y-1.5">
                   <li><strong>Matricule</strong> — recommandé pour identifier précisément l'élève (optionnel si nom fourni)</li>
                   <li><strong>Nom élève</strong> — format "NOM Prénom" ou "Prénom NOM" (résolution insensible aux accents/casse)</li>
-                  <li><strong>Type de frais</strong> — INSCRIPTION, REINSCRIPTION, TUITION, CANTEEN, EXAMEN, OTHER</li>
+                  <li><strong>Type de frais</strong> — INSCRIPTION, REINSCRIPTION, TUITION, CANTEEN, EXAMEN, GENERAL, OTHER</li>
                   <li><strong>Montant personnalisé</strong> — en FCFA, doit être &gt; 0</li>
                   <li><strong>Motif</strong> — obligatoire (ex: "Bourse excellence", "Cas social", "Réduction direction")</li>
                 </ul>

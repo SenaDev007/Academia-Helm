@@ -51,6 +51,7 @@ const FEE_TYPE_LABELS: Record<string, string> = {
   TUITION: 'Scolarité',
   CANTEEN: 'Cantine',
   EXAMEN: "Frais d'examen",
+  GENERAL: 'Frais généraux',
   OTHER: 'Autre',
 };
 
@@ -248,7 +249,7 @@ export default function NewPaymentModal({
     const breakdowns = selectedAccount.breakdowns ?? [];
     let remaining = pay;
     const lines: { name: string; pay: number; feeType: string; personalized: boolean; originalAmount?: number }[] = [];
-    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'];
+    const order = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
     const sorted = [...breakdowns].sort((a, b) => order.indexOf(a.feeStructure?.feeType ?? '') - order.indexOf(b.feeStructure?.feeType ?? ''));
     for (const b of sorted) {
       if (remaining <= 0) break;

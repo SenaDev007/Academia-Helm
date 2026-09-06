@@ -317,6 +317,7 @@ export class ReceiptFinanceService {
       TUITION: 'Scolarité',
       CANTEEN: 'Cantine',
       EXAMEN: 'Frais d\'examen',
+      GENERAL: 'Frais généraux',
       OTHER: 'Autre',
     };
 

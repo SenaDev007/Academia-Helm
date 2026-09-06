@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal, CheckSquare, Square, Upload } from 'lucide-react';
+import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal, CheckSquare, Square, Upload, Users } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { formatCurrency, cn } from '@/lib/utils';
 import FeeOverrideModal from './FeeOverrideModal';
 import ImportOverridesModal from './ImportOverridesModal';
+import BulkClassOverrideModal from './BulkClassOverrideModal';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -24,6 +25,8 @@ const FEE_TYPES = [
   { value: 'TUITION', label: 'Scolarité' },
   { value: 'CANTEEN', label: 'Cantine' },
   { value: 'EXAMEN', label: "Frais d'examen" },
+  // ⭐ Frais généraux (type transversal — suivis dans l'onglet dédié)
+  { value: 'GENERAL', label: 'Frais généraux' },
   { value: 'OTHER', label: 'Autre' },
 ];
 
@@ -75,6 +78,8 @@ export default function FeeOverridesContent() {
   const [modalOverride, setModalOverride] = useState(false);
   const [editingOverride, setEditingOverride] = useState<any | null>(null);
   const [modalImport, setModalImport] = useState(false);
+  // ⭐ Personnalisation EN MASSE pour toute une classe (exigence sept. 2026)
+  const [modalBulk, setModalBulk] = useState(false);
 
   // ⭐ Bulk delete — sélection multiple d'overrides (pattern FeeStructuresContent Task 24)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -313,6 +318,10 @@ export default function FeeOverridesContent() {
           <div className="flex items-center justify-end flex-wrap gap-3">
             <Button variant="outline" onClick={() => setModalImport(true)}>
               <Upload className="w-4 h-4 mr-2" />Importer
+            </Button>
+            {/* ⭐ Personnalisation en masse pour toute une classe */}
+            <Button variant="outline" onClick={() => setModalBulk(true)}>
+              <Users className="w-4 h-4 mr-2" />Personnalisation en masse
             </Button>
             <Button onClick={() => setModalOverride(true)}>
               <Plus className="w-4 h-4 mr-2" />Nouvelle personnalisation
@@ -656,6 +665,20 @@ export default function FeeOverridesContent() {
         onClose={() => setModalImport(false)}
         onSuccess={() => { loadOverrides(); window.dispatchEvent(new CustomEvent('finance-accounts-changed')); }}
       />
+
+      {/* ⭐ Modal de personnalisation EN MASSE pour toute une classe */}
+      {modalBulk && (
+        <BulkClassOverrideModal
+          structures={structures}
+          classes={classes}
+          levels={levels}
+          onClose={() => setModalBulk(false)}
+          onSuccess={() => {
+            loadOverrides();
+            window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+          }}
+        />
+      )}
     </>
   );
 }

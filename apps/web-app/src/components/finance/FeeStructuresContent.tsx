@@ -26,6 +26,8 @@ const FEE_TYPES = [
   { value: 'TUITION', label: 'Scolarité' },
   { value: 'CANTEEN', label: 'Cantine' },
   { value: 'EXAMEN', label: "Frais d'examen" },
+  // ⭐ Frais généraux — suivi dans l'onglet dédié du module Finance
+  { value: 'GENERAL', label: 'Frais généraux' },
   { value: 'OTHER', label: 'Autre' },
 ];
 

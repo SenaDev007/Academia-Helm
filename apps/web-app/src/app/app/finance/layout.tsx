@@ -38,6 +38,7 @@ import {
   Settings,
   UserCog,
   ClipboardList,
+  Layers,
 } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 // ⭐ P4-final : onglets et en-tête bilingues (piste EN → anglais)
@@ -48,6 +49,9 @@ const FINANCE_TABS = [
   { id: 'fees', label: 'Configuration des frais', labelEn: 'Fee Configuration', path: '/app/finance/fees', icon: DollarSign },
   { id: 'overrides', label: 'Personnalisations', labelEn: 'Overrides', path: '/app/finance/overrides', icon: UserCog },
   { id: 'accounts', label: 'Comptes élèves', labelEn: 'Student Accounts', path: '/app/finance/accounts', icon: Users },
+  // ⭐ Frais généraux — listing par élève (dus / payé / solde) + déduction auto
+  //    après encaissement. Positionné JUSTE APRÈS Comptes élèves (exigence sept. 2026).
+  { id: 'general-fees', label: 'Frais généraux', labelEn: 'General Fees', path: '/app/finance/general-fees', icon: Layers },
   { id: 'cash-registers', label: 'Multi-caisses', labelEn: 'Cash Registers', path: '/app/finance/cash-registers', icon: Coins },
   { id: 'payments', label: 'Encaissements', labelEn: 'Collections', path: '/app/finance/payments', icon: CreditCard },
   { id: 'collection-summary', label: 'Bilan des encaissements', labelEn: 'Collection Summary', path: '/app/finance/collection-summary', icon: ClipboardList },

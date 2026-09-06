@@ -14,6 +14,10 @@ const FEE_TYPES = [
   { value: 'TUITION', label: 'Scolarité' },
   { value: 'CANTEEN', label: 'Cantine' },
   { value: 'EXAMEN', label: "Frais d'examen" },
+  // ⭐ Frais généraux — frais transversal de l'école (tenue, carte ID,
+  // activités…) suivi séparément dans l'onglet dédié « Frais généraux »
+  // du module Finance (exigence utilisateur sept. 2026).
+  { value: 'GENERAL', label: 'Frais généraux' },
   { value: 'OTHER', label: 'Autre' },
 ];
 
@@ -25,6 +29,7 @@ function feeTypePrefix(feeType: string, customLabel: string): string {
     case 'TUITION': return 'Frais de scolarité';
     case 'CANTEEN': return 'Frais de cantine';
     case 'EXAMEN': return "Frais d'examen";
+    case 'GENERAL': return 'Frais généraux';
     case 'OTHER': return customLabel.trim() ? `Frais de ${customLabel.trim()}` : 'Frais personnalisé';
     default: return 'Frais';
   }
@@ -236,6 +241,14 @@ export default function FeeStructureModal({
           <div><Label>Type de frais</Label>
             <Select value={feeType} onValueChange={setFeeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}</SelectContent></Select>
           </div>
+          {feeType === 'GENERAL' && (
+            <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded p-2">
+              💡 <strong>Frais généraux</strong> : frais transversal de l'école (tenue scolaire, carte ID,
+              activités…). Il sera suivi séparément dans l'onglet « Frais généraux » du module Finance
+              (montants dus / payés / soldes par élève, encaissements dédiés). Sans niveau ni classe
+              sélectionnés, il s'applique à <strong>tous les élèves de l'école</strong>.
+            </p>
+          )}
           {feeType === 'OTHER' && (
             <div><Label>Précisez le type de frais</Label>
               <Input

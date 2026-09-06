@@ -157,6 +157,10 @@ export class FinanceTransactionController {
     @Query('academicYearId') academicYearId?: string,
     @Query('studentAccountId') studentAccountId?: string,
     @Query('type') type?: string,
+    // ⭐ Filtre par type de frais (sous-onglet « Frais généraux » du module
+    //    Encaissements) : ne renvoie que les transactions dont au moins une
+    //    allocation vise un AccountBreakdown de ce type (ex: feeType=GENERAL).
+    @Query('feeType') feeType?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -168,6 +172,7 @@ export class FinanceTransactionController {
       academicYearId,
       studentAccountId,
       type,
+      feeType,
       page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
       limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
     });

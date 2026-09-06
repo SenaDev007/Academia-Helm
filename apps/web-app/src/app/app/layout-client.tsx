@@ -15,6 +15,8 @@ import { AppSessionProvider } from '@/contexts/AppSessionContext';
 import { AcademicYearProvider } from '@/contexts/AcademicYearContext';
 import { SchoolLevelProvider } from '@/contexts/SchoolLevelContext';
 import { BilingualProvider } from '@/contexts/BilingualContext';
+// ⭐ P4-bis (filtre Rôles × Pistes × Niveaux) : chargement du périmètre serveur
+import { persistUserScope } from '@/lib/auth/user-scope';
 import { I18nProvider } from '@/contexts/I18nContext';
 import { SessionManagerProvider } from '@/contexts/SessionManagerContext';
 import SessionInactivityModal from '@/components/auth/SessionInactivityModal';
@@ -114,6 +116,37 @@ export default function AppLayoutClient({
       }
     })();
   }, [tenant?.id]);
+
+  // ⭐ P4-bis (filtre Rôles × Pistes × Niveaux) : charger le périmètre serveur
+  //    au montage de l'app (tous portails). Le login enseignant le livre
+  //    directement dans sa réponse, mais les comptes du portail ÉCOLE
+  //    (directeurs, secrétaires…) ne l'obtiennent QUE via /context/bootstrap.
+  //    On le récupère ici (1 fetch par chargement de page) → persistUserScope
+  //    → événement user-scope-loaded → I18nContext/BilingualContext appliquent
+  //    la langue du profil + verrouillent la piste (mono-piste).
+  //    NB : silencieux en cas d'échec (offline, token expiré) — l'UI retombe
+  //    sur la locale mémorisée.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+        const res = await fetch('/api/context/bootstrap', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.scope) {
+          persistUserScope(data.scope);
+        }
+      } catch {
+        /* non-bloquant */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // ⛔ OFFLINE-FIRST DÉSACTIVÉ — Mode offline temporairement suspendu pour
   //    perfectionner l'application en ligne d'abord. Pour réactiver :

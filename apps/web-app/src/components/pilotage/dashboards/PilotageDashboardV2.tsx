@@ -2029,7 +2029,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
                 <div key={lvl.level} className="border border-slate-100 rounded-lg p-2">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-slate-700">{lvl.level}</span>
-                    <span className="text-[10px] text-slate-400">{lvl.total} élèves</span>
+                    <span className="text-[10px] text-slate-400">{L(`${lvl.total} élèves`, `${lvl.total} students`)}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     {/* Barre Garçons */}
@@ -2038,7 +2038,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
                       style={{ width: `${lvl.total > 0 ? (lvl.boys / lvl.total * 100) : 0}%`, backgroundColor: '#3B82F6', minWidth: lvl.boys > 0 ? '28px' : '0' }}
                     >
                       {/* ⭐ Espace entre le nombre et la lettre : "43 G" au lieu de "43G" */}
-                      {lvl.boys > 0 ? `${lvl.boys} G` : ''}
+                      {lvl.boys > 0 ? L(`${lvl.boys} G`, `${lvl.boys} B`) : ''}
                     </div>
                     {/* Barre Filles */}
                     <div
@@ -2046,13 +2046,13 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
                       style={{ width: `${lvl.total > 0 ? (lvl.girls / lvl.total * 100) : 0}%`, backgroundColor: '#EC4899', minWidth: lvl.girls > 0 ? '28px' : '0' }}
                     >
                       {/* ⭐ Espace entre le nombre et la lettre : "42 F" au lieu de "42F" */}
-                      {lvl.girls > 0 ? `${lvl.girls} F` : ''}
+                      {lvl.girls > 0 ? L(`${lvl.girls} F`, `${lvl.girls} G`) : ''}
                     </div>
                   </div>
                   {/* ⭐ Détail G/F en bas — avec espace aussi */}
                   <div className="flex justify-between mt-0.5 text-[9px] text-slate-400">
-                    <span>Garçons : {lvl.boys}</span>
-                    <span>Filles : {lvl.girls}</span>
+                    <span>{L(`Garçons : ${lvl.boys}`, `Boys: ${lvl.boys}`)}</span>
+                    <span>{L(`Filles : ${lvl.girls}`, `Girls: ${lvl.girls}`)}</span>
                   </div>
                 </div>
               ))}
@@ -2060,11 +2060,11 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
               <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded bg-blue-500" />
-                  <span className="text-[9px] text-slate-500">Garçons</span>
+                  <span className="text-[9px] text-slate-500">{L("Garçons", "Boys")}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded bg-pink-500" />
-                  <span className="text-[9px] text-slate-500">Filles</span>
+                  <span className="text-[9px] text-slate-500">{L("Filles", "Girls")}</span>
                 </div>
               </div>
             </div>

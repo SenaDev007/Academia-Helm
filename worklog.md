@@ -9873,3 +9873,30 @@ Work Log:
 Stage Summary:
 - ✅ Anti-double-comptage des soldes reportés livré (skip des élèves déjà reportés + totalPaid plafonné à 0)
 - ✅ Cohérence rétablie : un solde reporté n'est plus recompté comme « Solde impayé » sur l'année source — l'agrégation actualArrears ne compte chaque franc qu'une fois
+
+---
+Task ID: 25
+Agent: Super Z (principal)
+Task: Vérification finale demandée par l'utilisateur — total des arriérés CSPEB : 520 500 constaté vs 552 000 attendu (fichier Excel original « point financier CSPEB EAE 2026-2027 Dawese.xlsx », feuille 2026-2027, colonne C « Arrièré »)
+
+Work Log:
+- Extraction Excel (feuille 2026-2027, colonne C) : 46 élèves avec arriéré > 0, total = 552 000 (la ligne Total R137 du fichier confirme 552 000) — sections Maternelle/CI/CP/CE1/CE2/CM1/CM2/6e
+- Diagnostic base : 43 FeeArrear ouverts = 520 500 (année 2026-2027) — tous les 43 matchent l'Excel à l'identique (les variantes d'orthographe FANDOHAN/FADOHAN, ACLINON/ACLINOU, BOUAGUI/BOUYAGUI, MAMAH Gérode/Géraud, FONTECLOUNON Albérick/Albéric, ETEKA Cécile/Christian sont bien présents)
+- CAUSE RACINE de l'écart exact de 31 500 : la section « 6e » du fichier Excel (MOUSTAPHA Abdoul Chakour 10 750 + MOUSTAPHA Yasmine 10 750 + SOURADJOU Ouzérou 10 000) — ces 3 élèves N'EXISTAIENT PAS dans la table students (l'école n'avait ni élèves 6e ni classe 6e), donc l'import d'arriérés ne pouvait pas les résoudre (« Élève introuvable »)
+- Fix transactionnel idempotent (scripts/fix_arrieres_6e.js, HORS repo — identifiants) :
+  1. Classe physique « 6e » créée (classes : niveau Secondaire 4aa299e5, classe officielle « 6ème » 0c6d14cb existante au catalogue, FR, capacité 30)
+  2. 3 élèves créés (students : CSPEBE-E-26-099/100/101, AH-STU-26-095/096/097, matricule=studentCode, nationality Béninoise, ACTIVE, année 2026-2027)
+  3. 3 inscriptions (student_enrollments : NEW, ACTIVE, classId=6e, academicClassId=6ème)
+  4. 3 comptes élèves (student_accounts : 0/0/0/0 — pattern des 43 existants où FeeArrear est la source de vérité, ex. AKPATA due=0 avec arriéré 15000)
+  5. 3 FeeArrear (année 2026-2027, LOW, OPEN, notes « import fichier Excel original, section 6e »)
+  6. Trace d'audit financial_audit_logs ARREAR_IMPORT_6E (promoteur, old/new totals)
+  - Sécurité : DRY-RUN d'abord (vérification 552 000 dans la transaction avant COMMIT, ROLLBACK automatique sinon), collisions studentCode/matricule/globalStudentId vérifiées, triggers analysés (prevent_balance_update = UPDATE only, année non close = INSERT FeeArrear OK)
+- VALIDATION API PRODUCTION : GET /finance/collection/arrears → 46 arriérés, total = 552 000 ; les 3 élèves 6e présents avec classe « 6e » ; GET statistics → totalArrears=46, balanceDue=552000, studentsWithArrears=46
+- Répartition finale par classe physique : CP 172 750 (13) + CE1 119 500 (10) + Mat2+CI 56 750 (6) + CE2 44 500 (5) + CM1 58 000 (4) + CM2 69 000 (5) + 6e 31 500 (3) = 552 000
+- Scripts persistés (HORS repo — identifiants) : analyze_arrieres_excel.py, extract_arrieres_excel.py, show_6e_section.py, diag_arrieres_final.js, investigate_6e_students.js, template_student_6e.js, check_account_pattern.js, fix_arrieres_6e.js (dry-run/apply), verify_arrieres_api.js
+
+Stage Summary:
+- ✅ Écart de 31 500 expliqué et corrigé : les 3 élèves de la section 6e du fichier Excel n'existaient pas en base (ni élèves, ni classe) — créés avec leurs arriérés
+- ✅ Total des arriérés = 552 000 exactement (46 élèves), validé par l'API de production
+- ✅ Cohérence : classe 6e rattachée au niveau Secondaire + à la classe officielle « 6ème » du catalogue ; comptes élèves créés au pattern des 43 importés ; trace d'audit posée
+- Note : le niveau Secondaire reste inactif (prudent — aucun effet de bord sur les sélecteurs) ; les 3 élèves sont visibles dans la vue « tous niveaux » des arriérés et dans le module Élèves (96 élèves au total)

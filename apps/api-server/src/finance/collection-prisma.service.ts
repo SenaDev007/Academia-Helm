@@ -49,7 +49,7 @@ export class CollectionPrismaService {
     // Vérifier l'année passée en paramètre
     const academicYear = await this.prisma.academicYear.findFirst({
       where: { id: academicYearId, tenantId },
-      select: { id: true, name: true, isActive: true, isClosed: true, endDate: true },
+      select: { id: true, name: true, isActive: true, isClosed: true, startDate: true, endDate: true },
     });
 
     if (!academicYear) {
@@ -134,9 +134,35 @@ export class CollectionPrismaService {
         },
       });
 
+      // ⭐ Anti-double-comptage (bug constaté sur CSP Mon Avenir Plus N'Dali) :
+      // le contrôleur détecte l'année active ET toutes les années antérieures.
+      // Un solde 2025-2026 déjà REPORTÉ sur 2026-2027 (Source 1 → « Arriéré
+      // reporté » sur le compte actif via carriedArrears) ne doit PAS être
+      // re-créé ici en « Solde impayé » : l'agrégation actualArrears (somme de
+      // TOUS les FeeArrear ouverts, toutes années) compterait le même solde
+      // DEUX FOIS dans les KPIs et le « dont arriérés » des comptes élèves.
+      const carriedForwardStudentIds = new Set(
+        (
+          await this.prisma.studentAccount.findMany({
+            where: {
+              tenantId,
+              carriedArrears: { gt: 0 },
+              academicYear: { startDate: { gt: academicYear.startDate } },
+            },
+            select: { studentId: true },
+          })
+        ).map((a) => a.studentId),
+      );
+
       for (const account of accountsWithBalance) {
         const balance = Number(account.balance ?? 0);
         if (balance <= 0) continue;
+
+        // Solde déjà matérialisé comme « Arriéré reporté » sur une année
+        // postérieure → ne pas dupliquer côté année source.
+        if (carriedForwardStudentIds.has(account.studentId)) {
+          continue;
+        }
 
         // Vérifier si un FeeArrear GLOBAL existe déjà
         const existing = await this.prisma.feeArrear.findFirst({
@@ -156,7 +182,11 @@ export class CollectionPrismaService {
             where: { id: existing.id },
             data: {
               totalDue: balance,
-              totalPaid: Number(account.totalPaid ?? 0),
+              // ⚠️ totalPaid = 0 : l'arriéré EST le solde restant (net des
+              // paiements déjà reçus). Copier account.totalPaid (souvent >
+              // totalDue, non plafonné) produisait des lignes incohérentes
+              // (N'Dali : paid=60 000 pour un arriéré de 10 000).
+              totalPaid: 0,
               balanceDue: balance,
               arrearsLevel,
               lastPaymentDate,
@@ -171,7 +201,7 @@ export class CollectionPrismaService {
               studentId: account.studentId,
               studentFeeId: null,
               totalDue: balance,
-              totalPaid: Number(account.totalPaid ?? 0),
+              totalPaid: 0,
               balanceDue: balance,
               arrearsLevel,
               lastPaymentDate,

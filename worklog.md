@@ -9789,3 +9789,40 @@ Stage Summary:
 - ✅ Onglet Affectations débloqué pour le promoteur (fix RBAC PROMOTEUR/PROMOTER)
 - ✅ Trigger : l'affectation initiale reste possible même avec des notes (le changement entre 2 classes reste protégé)
 - Scripts persistés (sandbox) : diag_cpeb_liste_eleves.mjs, inspect_cp_db*.mjs, backfill_cp_via_api.mjs, fix_trigger_and_backfill_cp.mjs
+
+---
+Task ID: 22
+Agent: Super Z (principal)
+Task: « Purge des ~6 lignes d'historique de test (nettes à 0) visibles dans Encaissements » + P5 matrice de sécurité + D6 enforcement des guards
+
+Work Log:
+- PURGE (accès Neon direct RETROUVÉ — le script précédent avait un mot de passe typo : npg_Nio3WadxL0qb et non npg_Nio3WdxL0qb) :
+  * Périmètre vérifié avant purge : 8 transactions (CSPEBE-REC-26-005/006/007/008 + AH-2026-000001→004), toutes sur Bilane ABOUBAKARY, net réel = 0, 0 allocation, 0 reçu PDF stocké (URLs générées à la volée), 0 cash_register_transaction, 0 audit_logs sur les ids
+  * Anomalie découverte : le compte Bilane était désynchronisé (totalDue 38100 vs breakdowns 38000 — résidu +100 du test Task 19)
+  * Obstacle : trigger d'immutabilité prevent_finance_transaction_delete (×2) bloque tout DELETE + prevent_balance_update protège student_accounts
+  * Purge transactionnelle (scripts/cleanup_history_general_fees.js) : BEGIN → disable des 2 triggers (DDL transactionnel) → DELETE 8 lignes → re-enable → resync compte via app.allow_balance_update (variable de session légitime, même mécanisme que le trigger interne) → trace financial_audit_logs PURGE_TEST_DATA (performedBy = cashierId des transactions) → vérifications (net=0, compte 38000/0/38000/ACTIVE) → COMMIT ; ROLLBACK total aux 2 échecs intermédiaires (performedById NOT NULL, puis transaction aborted)
+  * Vérification API prod : Encaissements = 4 transactions légitimes (26-001→004), 0 trace de test, compte Bilane exact ; audit_logs des frais de test conservés (trace interne invisible dans l'UI)
+- P5 — MATRICE DE SÉCURITÉ E2E (scripts/verify_scope_matrix.mjs, HORS repo — identifiants) :
+  * 8 comptes de test du plan complétés (scripts/create_scope_test_accounts.js étendu, idempotent) : teacher-fr (Fatou ALAO, CI×Math FR), teacher-en (Grace OKONKWO), teacher-admin cumul (Kossi ADJOVI = Teacher + SAA DIRECTEUR@MAT+FR), directeur-fr (Jean-Baptiste ADJOVI recréé — disparu de la base, purge Task 17 ?), directeur-en (Chinedu OYELARAN), comptable-sec (Rachelle HOUNGBEDJI, SAA SECRETAIRE_COMPTABLE@SEC), promoteur test, + Dawes bi-piste
+  * Matrice : 1) bootstrap scope par profil ; 2) 4 modules × profils avec assertions de CONTENU (témoins présence/absence, IDOR par ID, impersonation teacherId) ; 3) 10 intrusions API (header falsifié, ALL, query niveau, language/trackId hors piste) → 403 attendus
+  * 1re exécution : 54/73 → vraies failles révélées (voir D6) + 3 artefacts de test corrigés (mdp directeur-en, staff comptable rattaché à PRIMAIRE au lieu de SECONDAIRE, header x-school-level-id requis sur payments)
+- D6 — ENFORCEMENT DES GUARDS (failles fermées, commit 44a99071) :
+  1. Prisma invalide `in: [x, null]` → 400 PrismaClientValidationError sur TOUTES les listes piste FR (examens + fiches pédagogiques des profils FR) : scope-where.ts classTrackWhere + languageColumnTrackWhere + exams service → forme OR valide ({language:'FR'} OR {language:null}) ; test unitaire bun des 4 formes
+  2. GET /finance/transactions : AUCUNE garde — un enseignant/parent listait TOUTES les transactions du tenant (montants, élèves, méthodes) → gate staff (isStaffRole, suffixes normalisés) + scope serveur imposé dans le service (niveau via studentAccount→student.schoolLevelId, piste via academicTrackId dénormalisée, null = héritage FR)
+  3. GET /finance/payments : même gate staff (parents vérifiés : portail dédié + initiate Fedapay/FeexPay, jamais cette liste)
+  4. SchoolLevelIsolationGuard (Phase 2 §3 du plan) : le header de niveau est confronté au SCOPE SERVEUR (avant : simple cohérence header/body/query — un header falsifié cohérent passait) + sentinelle 'ALL' réservée aux transverses ; routes @RequireTenant uniquement (bootstrap exempté) → zéro régression
+  5. level-scope.guard.ts SUPPRIMÉ : code mort jamais branché, fail-open ×3, mapping bugué — remplacé par AccessScopeGuard depuis P2 ; commentaires obsolètes alignés (4 fichiers)
+- DRIFT PRISMA découvert par la matrice (commit 5929ce12) : la migration 20260906110000_consolidate_track_scope (academicTrackId sur expenses/fee_configurations/finance_transactions) avait été appliquée DIRECTEMENT sur Neon (Task 14) mais son dossier était perdu (reset sandbox) ET le schéma Prisma ne déclarait pas les champs → 400 « Champ academicTrackId » en prod pour tout profil mono-piste. Réparé : champs + relations + back-relations sur les 3 modèles (miroir exact de la base, vérifié par inspection), dossier de migration reconstitué idempotent (déjà marquée appliquée dans _prisma_migrations, ne sera pas rejouée — l'entrypoint Docker saute migrate deploy), prisma validate OK
+- D3 APPLIQUÉ INTÉGRALEMENT (commits 267a44c8 + 6696a28f) — non-régression détectée par le smoke Dawes : le directeur MAT+PI (compte principal) recevait 403 sur /finance/reports/kpi depuis P0-P4 → dashboard finance silencieusement vide ; le plan D3 prévoit « les level-scoped voient le consolidé de leur périmètre » :
+  * assertReportsAccess : gate RÔLE seule ; scope transmis au service
+  * 11 rapports filtrés par niveau (kpi, today, monthly/class-encaissements, expense-by-category, comparative-year, top-10-impayes, projection-tresorerie, journal-caisse, bilan-periodique, suspicious-transactions) via les chemins EXISTANTS (student_accounts/finance_transactions→student.schoolLevelId ; FeeStructure via classe ; finance_expenses SANS dimension niveau = global, documenté)
+  * FIX au passage : @CurrentUser() manquant sur suspicious-transactions / missed-closures / top-accountants → 403 SYSTÉMATIQUE pour tout le monde depuis P0-P4 (user indéfini)
+- VALIDATION FINALE PROD : matrice 79/79 PASS (bootstrap scopes, contenus élèves/paiements/transactions/pédagogie/examens, 10 intrusions, kpi SEC vide + kpi MAT+PI rempli) ; smoke Dawes 8/8 (dashboard KPI 200)
+- Scripts persistés (HORS repo — identifiants) : verify_scope_matrix.mjs (régression P5 rejouable), create_scope_test_accounts.js, cleanup_history_general_fees.js, probe_d6/d3_deploy.mjs, smoke_dawes.mjs, check_syntax (10 fichiers)
+
+Stage Summary:
+- ✅ Encaissements purgés des 8 lignes de test (net 0) — compte Bilane resynchronisé à l'exact (38000/0/38000), trace d'audit PURGE_TEST_DATA
+- ✅ P5 livrée : matrice de sécurité E2E 79/79 (8 profils × 4 modules + 10 intrusions), rejouable en régression
+- ✅ D6 livrée : 5 failles fermées (Prisma null-in ×3 fichiers, transactions non gardées, payments non gardés, guard cohérence-only, code mort fail-open) + drift Prisma réparé + D3 appliqué intégralement
+- ✅ Non-régression prouvée : Dawes 8/8 (y compris le KPI finance qui était cassé silencieusement depuis le 05/09)
+- Comptes de test recette.*@cspeb.test conservés comme fixtures de la matrice de régression

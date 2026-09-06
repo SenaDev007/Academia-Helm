@@ -42,13 +42,18 @@ export class FinanceReportsController {
   constructor(private readonly service: FinanceReportsService) {}
 
   /**
-   * ⭐ Filtre Rôles × Pistes × Niveaux — gate d'accès aux rapports consolidés :
+   * ⭐ Filtre Rôles × Pistes × Niveaux — gate d'accès aux rapports financiers :
    *    1. Rôle dans la liste finance/direction (les suffixes _MAT/_PRI/_SEC/
    *       _MAT_PRI sont normalisés avant comparaison).
-   *    2. Comptes restreints à un périmètre niveau (ex: SECRETAIRE_COMPTABLE_MAT_PRI)
-   *       → accès aux rapportS SCOPÉS uniquement (paiements, /finances/summary),
-   *       PAS aux consolidés multi-niveaux (403 explicite).
-   *    3. TEACHER/PARENT/STUDENT → 403 (ferme le fail-open F6).
+   *    2. TEACHER/PARENT/STUDENT → 403 (ferme le fail-open F6).
+   *    3. ⭐ FIX 2026-09-06 (D3 — matrice P5) : les comptes level-scoped
+   *       (ex: SECRETAIRE_COMPTABLE_SEC, DIRECTEUR_MAT_PI) voient désormais le
+   *       consolidé DE LEUR PÉRIMÈTRE — les données sont filtrées par niveau dans
+   *       le service (scope passé en argument), conformément à la décision D3 :
+   *       « les level-scoped voient le consolidé de leur périmètre ».
+   *       AVANT : 403 global pour tout compte non-transverse → le dashboard
+   *       finance du directeur MAT+PI était silencieusement vide (kpi=[]) depuis
+   *       le déploiement P0-P4.
    */
   private assertReportsAccess(user: any) {
     const role = (user?.role || '').toUpperCase();
@@ -56,13 +61,6 @@ export class FinanceReportsController {
     if (!REPORT_ROLES.has(role) && !REPORT_ROLES.has(baseRole)) {
       throw new ForbiddenException(
         'Accès refusé : les rapports financiers consolidés sont réservés aux profils de direction et de finance.',
-      );
-    }
-    const scope = user?.scope;
-    if (scope?.resolved && !scope.allLevels) {
-      throw new ForbiddenException(
-        'Accès refusé : les rapports consolidés multi-niveaux sont réservés aux profils transverses. ' +
-        `Votre périmètre (${scope.levelCodes.join(', ')}) dispose des vues financières dédiées (paiements, frais, dépenses de votre niveau).`,
       );
     }
   }
@@ -75,7 +73,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return {};
-    return this.service.getKpi(tenantId, academicYearId);
+    return this.service.getKpi(tenantId, academicYearId, user?.scope ?? null);
   }
 
   /**
@@ -86,7 +84,7 @@ export class FinanceReportsController {
   @Get('today')
   async getTodayStats(@TenantId() tenantId: string, @CurrentUser() user: any) {
     this.assertReportsAccess(user);
-    return this.service.getTodayStats(tenantId);
+    return this.service.getTodayStats(tenantId, user?.scope ?? null);
   }
 
   @Get('monthly-encaissements')
@@ -97,7 +95,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return [];
-    return this.service.getMonthlyEncaissements(tenantId, academicYearId);
+    return this.service.getMonthlyEncaissements(tenantId, academicYearId, user?.scope ?? null);
   }
 
   @Get('class-encaissements')
@@ -108,7 +106,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return [];
-    return this.service.getClassEncaissements(tenantId, academicYearId);
+    return this.service.getClassEncaissements(tenantId, academicYearId, user?.scope ?? null);
   }
 
   @Get('expense-by-category')
@@ -119,7 +117,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return [];
-    return this.service.getExpenseByCategory(tenantId, academicYearId);
+    return this.service.getExpenseByCategory(tenantId, academicYearId, user?.scope ?? null);
   }
 
   /**
@@ -134,7 +132,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return { current: null, previous: null, deltas: null };
-    return this.service.getComparativeYear(tenantId, academicYearId);
+    return this.service.getComparativeYear(tenantId, academicYearId, user?.scope ?? null);
   }
 
   /**
@@ -149,7 +147,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return [];
-    return this.service.getTop10Impayes(tenantId, academicYearId);
+    return this.service.getTop10Impayes(tenantId, academicYearId, user?.scope ?? null);
   }
 
   /**
@@ -164,7 +162,7 @@ export class FinanceReportsController {
   ) {
     this.assertReportsAccess(user);
     if (!academicYearId) return null;
-    return this.service.getProjectionTresorerie(tenantId, academicYearId);
+    return this.service.getProjectionTresorerie(tenantId, academicYearId, user?.scope ?? null);
   }
 
   /**
@@ -205,7 +203,7 @@ export class FinanceReportsController {
       dateTo: dateTo || undefined,
       classId: classId || undefined,
       cashRegisterId: cashRegisterId || undefined,
-    });
+    }, user?.scope ?? null);
   }
 
   /**
@@ -231,7 +229,7 @@ export class FinanceReportsController {
       dateTo: dateTo || undefined,
       cashRegisterId: cashRegisterId || undefined,
       type: type || undefined,
-    });
+    }, user?.scope ?? null);
   }
 
   /**
@@ -241,10 +239,13 @@ export class FinanceReportsController {
   @Get('suspicious-transactions')
   async getSuspiciousTransactions(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
     @Query('minAmount') minAmount?: string,
   ) {
+    // ⭐ FIX 2026-09-06 (D6) : @CurrentUser manquant — `user` était indéfini →
+    //    assertReportsAccess(undefined) → 403 pour TOUT le monde (y compris promoteur)
     this.assertReportsAccess(user);
     if (!academicYearId) {
       return { reversals: [], nocturnal: [], highValue: [], stats: { reversalCount: 0, reversalTotal: 0, nocturnalCount: 0, highValueCount: 0, highValueTotal: 0 } };
@@ -252,7 +253,7 @@ export class FinanceReportsController {
     return this.service.getSuspiciousTransactions(tenantId, academicYearId, {
       days: days ? parseInt(days, 10) : 30,
       minAmount: minAmount ? parseInt(minAmount, 10) : 100000,
-    });
+    }, user?.scope ?? null);
   }
 
   /**
@@ -277,9 +278,11 @@ export class FinanceReportsController {
   @Get('missed-closures')
   async getMissedClosures(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
   ) {
+    // ⭐ FIX 2026-09-06 (D6) : @CurrentUser manquant (403 systématique)
     this.assertReportsAccess(user);
     if (!academicYearId) return { missed: [], stats: { totalExpected: 0, totalMissed: 0, totalDone: 0, missRate: 0 } };
     return this.service.getMissedClosures(tenantId, academicYearId, days ? parseInt(days, 10) : 30);
@@ -292,9 +295,11 @@ export class FinanceReportsController {
   @Get('top-accountants')
   async getTopAccountants(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('days') days?: string,
   ) {
+    // ⭐ FIX 2026-09-06 (D6) : @CurrentUser manquant (403 systématique)
     this.assertReportsAccess(user);
     if (!academicYearId) return [];
     return this.service.getTopAccountants(tenantId, academicYearId, days ? parseInt(days, 10) : 30);

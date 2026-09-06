@@ -14,6 +14,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { AccessScope } from '../common/context/access-scope.service';
 
 @Injectable()
 export class FinanceReportsService {
@@ -21,21 +22,28 @@ export class FinanceReportsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async getKpi(tenantId: string, academicYearId: string) {
+  async getKpi(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    // ⭐ D3 (matrice P5) : consolidé DU PÉRIMÈTRE du compte level-scoped
+    const lvlStudent = scope?.resolved && !scope.allLevels
+      ? { student: { schoolLevelId: { in: scope.levelIds } } } : undefined;
+    const lvlTx = scope?.resolved && !scope.allLevels
+      ? { studentAccount: { student: { schoolLevelId: { in: scope.levelIds } } } } : undefined;
+    const lvlExp = scope?.resolved && !scope.allLevels
+      ? { schoolLevelId: { in: scope.levelIds } } : undefined;
     const totalDue = await this.prisma.studentAccount.aggregate({
-      where: { tenantId, academicYearId },
+      where: { tenantId, academicYearId, ...(lvlStudent ?? {}) },
       _sum: { totalDue: true },
     });
     const totalPaid = await this.prisma.studentAccount.aggregate({
-      where: { tenantId, academicYearId },
+      where: { tenantId, academicYearId, ...(lvlStudent ?? {}) },
       _sum: { totalPaid: true },
     });
     const transactionsSum = await this.prisma.financeTransaction.aggregate({
-      where: { tenantId, academicYearId, type: 'PAYMENT' },
+      where: { tenantId, academicYearId, type: 'PAYMENT', ...(lvlTx ?? {}) },
       _sum: { amount: true },
     });
     const expensesSum = await this.prisma.financeExpense.aggregate({
-      where: { tenantId, academicYearId, status: 'APPROVED' },
+      where: { tenantId, academicYearId, status: 'APPROVED', ...(lvlExp ?? {}) },
       _sum: { amount: true },
     });
     const due = Number(totalDue._sum.totalDue ?? 0);
@@ -50,7 +58,7 @@ export class FinanceReportsService {
     // Pour chaque fee_override : réduction = feeStructure.totalAmount - override.customAmount
     const overrides = await this.prisma.feeOverride.findMany({
       where: {
-        feeStructure: { tenantId, academicYearId },
+        feeStructure: { tenantId, academicYearId, ...(lvlExp ? { schoolLevelId: { in: scope!.levelIds } } : {}) },
       },
       include: {
         feeStructure: { select: { totalAmount: true } },
@@ -83,7 +91,11 @@ export class FinanceReportsService {
    * ⭐ Statistiques du jour : encaissements et dépenses pour aujourd'hui.
    * Utilisé par le tableau de bord ("Recette du jour").
    */
-  async getTodayStats(tenantId: string) {
+  async getTodayStats(tenantId: string, scope?: AccessScope | null) {
+    const lvlTx = scope?.resolved && !scope.allLevels
+      ? { studentAccount: { student: { schoolLevelId: { in: scope.levelIds } } } } : undefined;
+    const lvlExp = scope?.resolved && !scope.allLevels
+      ? { schoolLevelId: { in: scope.levelIds } } : undefined;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -95,6 +107,7 @@ export class FinanceReportsService {
           tenantId,
           type: 'PAYMENT',
           createdAt: { gte: today, lt: tomorrow },
+          ...(lvlTx ?? {}),
         },
         _sum: { amount: true },
       }).catch(() => ({ _sum: { amount: 0 } })),
@@ -103,6 +116,7 @@ export class FinanceReportsService {
           tenantId,
           type: 'PAYMENT',
           createdAt: { gte: today, lt: tomorrow },
+          ...(lvlTx ?? {}),
         },
       }).catch(() => 0),
       this.prisma.financeExpense.aggregate({
@@ -110,6 +124,7 @@ export class FinanceReportsService {
           tenantId,
           status: 'APPROVED',
           createdAt: { gte: today, lt: tomorrow },
+          ...(lvlExp ?? {}),
         },
         _sum: { amount: true },
       }).catch(() => ({ _sum: { amount: 0 } })),
@@ -128,21 +143,27 @@ export class FinanceReportsService {
   }
 
   /** Encaissements groupés par mois pour l'année scolaire. */
-  async getMonthlyEncaissements(tenantId: string, academicYearId: string) {
+  async getMonthlyEncaissements(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    // ⭐ D3 : consolidé du périmètre (niveau étudiant) pour les level-scoped
+    const lvl = scope?.resolved && !scope.allLevels;
     const data = await this.prisma.$queryRawUnsafe(`
       SELECT
-        TO_CHAR("createdAt", 'YYYY-MM') as month,
-        SUM(amount)::FLOAT as total
-      FROM "finance_transactions"
-      WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "type" = 'PAYMENT'
+        TO_CHAR(t."createdAt", 'YYYY-MM') as month,
+        SUM(t.amount)::FLOAT as total
+      FROM "finance_transactions" t
+      JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+      JOIN "students" s ON sa."studentId" = s.id
+      WHERE t."tenantId" = $1 AND t."academicYearId" = $2 AND t."type" = 'PAYMENT'
+        ${lvl ? 'AND s."schoolLevelId" = ANY($3)' : ''}
       GROUP BY 1
       ORDER BY 1 ASC
-    `, tenantId, academicYearId);
+    `, ...(lvl ? [tenantId, academicYearId, scope!.levelIds] : [tenantId, academicYearId]));
     return data;
   }
 
   /** Encaissements groupés par classe. */
-  async getClassEncaissements(tenantId: string, academicYearId: string) {
+  async getClassEncaissements(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    const lvl = scope?.resolved && !scope.allLevels;
     const data = await this.prisma.$queryRawUnsafe(`
       SELECT
         c.name as "className",
@@ -153,14 +174,16 @@ export class FinanceReportsService {
       JOIN "student_enrollments" se ON s.id = se."studentId" AND se."academicYearId" = t."academicYearId"
       JOIN "classes" c ON se."classId" = c.id
       WHERE t."tenantId" = $1 AND t."academicYearId" = $2 AND t."type" = 'PAYMENT'
+        ${lvl ? 'AND s."schoolLevelId" = ANY($3)' : ''}
       GROUP BY 1
       ORDER BY 2 DESC
-    `, tenantId, academicYearId);
+    `, ...(lvl ? [tenantId, academicYearId, scope!.levelIds] : [tenantId, academicYearId]));
     return data;
   }
 
   /** Dépenses par catégorie. */
-  async getExpenseByCategory(tenantId: string, academicYearId: string) {
+  async getExpenseByCategory(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    const lvl = scope?.resolved && !scope.allLevels;
     const data = await this.prisma.$queryRawUnsafe(`
       SELECT
         ec.name as category,
@@ -168,9 +191,10 @@ export class FinanceReportsService {
       FROM "finance_expenses" fe
       JOIN "expense_categories" ec ON fe."categoryId" = ec.id
       WHERE fe."tenantId" = $1 AND fe."academicYearId" = $2 AND fe."status" = 'APPROVED'
+        ${lvl ? 'AND fe."schoolLevelId" = ANY($3)' : ''}
       GROUP BY 1
       ORDER BY 2 DESC
-    `, tenantId, academicYearId);
+    `, ...(lvl ? [tenantId, academicYearId, scope!.levelIds] : [tenantId, academicYearId]));
     return data;
   }
 
@@ -178,7 +202,7 @@ export class FinanceReportsService {
    * Comparatif année N vs N-1.
    * Compare les KPI principaux entre l'année en cours et l'année précédente.
    */
-  async getComparativeYear(tenantId: string, currentAcademicYearId: string) {
+  async getComparativeYear(tenantId: string, currentAcademicYearId: string, scope?: AccessScope | null) {
     // Récupère l'année précédente (par startDate DESC, en excluant l'année courante)
     const currentYear = await this.prisma.academicYear.findUnique({
       where: { id: currentAcademicYearId },
@@ -198,15 +222,15 @@ export class FinanceReportsService {
 
     if (!previousYear) {
       return {
-        current: await this.getKpi(tenantId, currentAcademicYearId),
+        current: await this.getKpi(tenantId, currentAcademicYearId, scope),
         previous: null,
         deltas: null,
         message: 'Aucune année précédente trouvée pour comparaison',
       };
     }
 
-    const current = await this.getKpi(tenantId, currentAcademicYearId);
-    const previous = await this.getKpi(tenantId, previousYear.id);
+    const current = await this.getKpi(tenantId, currentAcademicYearId, scope);
+    const previous = await this.getKpi(tenantId, previousYear.id, scope);
 
     const deltas = {
       totalDue: current.totalDue - previous.totalDue,
@@ -229,7 +253,8 @@ export class FinanceReportsService {
   /**
    * Top 10 élèves avec le plus gros solde impayé.
    */
-  async getTop10Impayes(tenantId: string, academicYearId: string) {
+  async getTop10Impayes(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    const lvl = scope?.resolved && !scope.allLevels;
     const data = await this.prisma.$queryRawUnsafe(`
       SELECT
         sa.id as "accountId",
@@ -249,9 +274,10 @@ export class FinanceReportsService {
       LEFT JOIN "student_enrollments" se ON s.id = se."studentId" AND se."academicYearId" = sa."academicYearId"
       LEFT JOIN "classes" c ON se."classId" = c.id
       WHERE sa."tenantId" = $1 AND sa."academicYearId" = $2 AND sa."balance" > 0
+        ${lvl ? 'AND s."schoolLevelId" = ANY($3)' : ''}
       ORDER BY sa."balance" DESC
       LIMIT 10
-    `, tenantId, academicYearId);
+    `, ...(lvl ? [tenantId, academicYearId, scope!.levelIds] : [tenantId, academicYearId]));
     return data;
   }
 
@@ -259,8 +285,10 @@ export class FinanceReportsService {
    * Projection de trésorerie fin trimestre et fin année.
    * Basée sur la moyenne mensuelle des 3 derniers mois d'encaissements et dépenses.
    */
-  async getProjectionTresorerie(tenantId: string, academicYearId: string) {
+  async getProjectionTresorerie(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
+    const lvl = scope?.resolved && !scope.allLevels;
     // Solde actuel = cumul netBalance des clôtures journalières
+    // (⭐ pas de dimension niveau sur les clôtures — vision caisse globale)
     const closuresSum = await this.prisma.financeDailyClosure.aggregate({
       where: { tenantId, academicYearId },
       _sum: { netBalance: true },
@@ -276,13 +304,16 @@ export class FinanceReportsService {
         AVG(monthly_total)::FLOAT as avg_monthly
       FROM (
         SELECT
-          TO_CHAR("createdAt", 'YYYY-MM') as month,
-          SUM(amount) as monthly_total
-        FROM "finance_transactions"
-        WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "type" = 'PAYMENT' AND "createdAt" >= $3
+          TO_CHAR(t."createdAt", 'YYYY-MM') as month,
+          SUM(t.amount) as monthly_total
+        FROM "finance_transactions" t
+        JOIN "student_accounts" sa ON t."studentAccountId" = sa.id
+        JOIN "students" s ON sa."studentId" = s.id
+        WHERE t."tenantId" = $1 AND t."academicYearId" = $2 AND t."type" = 'PAYMENT' AND t."createdAt" >= $3
+          ${lvl ? 'AND s."schoolLevelId" = ANY($4)' : ''}
         GROUP BY 1
       ) sub
-    `, tenantId, academicYearId, threeMonthsAgo);
+    `, ...(lvl ? [tenantId, academicYearId, threeMonthsAgo, scope!.levelIds] : [tenantId, academicYearId, threeMonthsAgo]));
 
     const avgEncaissement = Number((monthlyEncaissement as any[])[0]?.avg_monthly ?? 0);
 
@@ -296,9 +327,10 @@ export class FinanceReportsService {
           SUM(amount) as monthly_total
         FROM "finance_expenses"
         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'APPROVED' AND "createdAt" >= $3
+          ${lvl ? 'AND "schoolLevelId" = ANY($4)' : ''}
         GROUP BY 1
       ) sub
-    `, tenantId, academicYearId, threeMonthsAgo);
+    `, ...(lvl ? [tenantId, academicYearId, threeMonthsAgo, scope!.levelIds] : [tenantId, academicYearId, threeMonthsAgo]));
 
     const avgDepense = Number((monthlyDepense as any[])[0]?.avg_monthly ?? 0);
 
@@ -368,13 +400,22 @@ export class FinanceReportsService {
     tenantId: string,
     academicYearId: string,
     filters: { dateFrom?: string; dateTo?: string; cashRegisterId?: string; type?: string },
+    scope?: AccessScope | null,
   ) {
+    const lvl = scope?.resolved && !scope.allLevels;
     const where: string[] = [
       `t."tenantId" = $1`,
       `t."academicYearId" = $2`,
     ];
     const params: any[] = [tenantId, academicYearId];
     let paramIdx = 3;
+
+    // ⭐ D3 : périmètre niveau du compte (la jointure s existe déjà dans le SQL)
+    if (lvl) {
+      where.push(`s."schoolLevelId" = ANY($${paramIdx})`);
+      params.push(scope!.levelIds);
+      paramIdx++;
+    }
 
     if (filters.dateFrom) {
       where.push(`t."createdAt" >= $${paramIdx}`);
@@ -460,7 +501,9 @@ export class FinanceReportsService {
     tenantId: string,
     academicYearId: string,
     filters: { dateFrom?: string; dateTo?: string; classId?: string; cashRegisterId?: string },
+    scope?: AccessScope | null,
   ) {
+    const lvl = scope?.resolved && !scope.allLevels;
     // Construction des conditions dynamiques pour les transactions
     const txWhere: string[] = [
       `t."tenantId" = $1`,
@@ -469,6 +512,13 @@ export class FinanceReportsService {
     ];
     const txParams: any[] = [tenantId, academicYearId];
     let txIdx = 3;
+
+    // ⭐ D3 : périmètre niveau du compte (jointures s/fe déjà présentes)
+    if (lvl) {
+      txWhere.push(`s."schoolLevelId" = ANY($${txIdx})`);
+      txParams.push(scope!.levelIds);
+      txIdx++;
+    }
 
     if (filters.dateFrom) {
       txWhere.push(`t."createdAt" >= $${txIdx}`);
@@ -511,6 +561,13 @@ export class FinanceReportsService {
     ];
     const exParams: any[] = [tenantId, academicYearId];
     let exIdx = 3;
+
+    // ⭐ D3 : périmètre niveau du compte
+    if (lvl) {
+      exWhere.push(`fe."schoolLevelId" = ANY($${exIdx})`);
+      exParams.push(scope!.levelIds);
+      exIdx++;
+    }
 
     if (filters.dateFrom) {
       exWhere.push(`fe."expenseDate" >= $${exIdx}`);
@@ -592,7 +649,10 @@ export class FinanceReportsService {
     tenantId: string,
     academicYearId: string,
     options: { days?: number; minAmount?: number } = {},
+    scope?: AccessScope | null,
   ) {
+    const lvlTx = scope?.resolved && !scope.allLevels
+      ? { studentAccount: { student: { schoolLevelId: { in: scope.levelIds } } } } : undefined;
     const days = options.days ?? 30;
     const minAmount = options.minAmount ?? 100000;
     const since = new Date();
@@ -605,6 +665,7 @@ export class FinanceReportsService {
         academicYearId,
         type: 'REVERSAL',
         createdAt: { gte: since },
+        ...(lvlTx ?? {}),
       },
       include: {
         studentAccount: { include: { student: { select: { firstName: true, lastName: true, studentCode: true } } } },
@@ -634,10 +695,11 @@ export class FinanceReportsService {
       WHERE t."tenantId" = $1
         AND t."academicYearId" = $2
         AND t."createdAt" >= $3
+        ${lvlTx ? 'AND s."schoolLevelId" = ANY($4)' : ''}
         AND (EXTRACT(HOUR FROM t."createdAt") >= 21 OR EXTRACT(HOUR FROM t."createdAt") < 6)
       ORDER BY t."createdAt" DESC
       LIMIT 50
-    `, tenantId, academicYearId, since);
+    `, ...(lvlTx ? [tenantId, academicYearId, since, scope!.levelIds] : [tenantId, academicYearId, since]));
 
     // 3. Transactions au-dessus du seuil
     const highValue = await this.prisma.financeTransaction.findMany({
@@ -647,6 +709,7 @@ export class FinanceReportsService {
         type: 'PAYMENT',
         amount: { gte: minAmount },
         createdAt: { gte: since },
+        ...(lvlTx ?? {}),
       },
       include: {
         studentAccount: { include: { student: { select: { firstName: true, lastName: true, studentCode: true } } } },

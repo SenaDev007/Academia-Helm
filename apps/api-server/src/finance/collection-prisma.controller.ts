@@ -381,6 +381,27 @@ export class CollectionPrismaController {
   }
 
   /**
+   * POST /finance/collection/arrears/bulk-delete
+   * ⭐ Suppression MULTIPLE d'arriérés (correction d'erreurs de saisie en masse).
+   *
+   * Même sémantique que la suppression unitaire, mais :
+   *   - une seule transaction (tout ou rien)
+   *   - ajustement de compte adaptatif (voir service)
+   *   - trace d'audit groupée
+   *
+   * Body: { ids: string[] }
+   */
+  @Post('arrears/bulk-delete')
+  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async bulkDeleteArrears(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { ids: string[] },
+  ) {
+    return this.collectionService.bulkDeleteArrears(tenantId, body?.ids, user?.id);
+  }
+
+  /**
    * DELETE /finance/collection/arrears/:id
    * Supprime un arriéré (pour correction d'erreurs de saisie).
    * Ajuste le StudentAccount si nécessaire.

@@ -545,13 +545,36 @@ export class ArrearsImportService {
       }
     }
     if (!row.resolvedStudentId && row.firstName && row.lastName) {
-      const student = students.find(
+      // 1. Match exact (insensible à la casse) — comportement historique
+      const exact = students.find(
         (s) =>
           s.firstName?.toLowerCase() === row.firstName.toLowerCase() &&
           s.lastName?.toLowerCase() === row.lastName.toLowerCase(),
       );
-      if (student) {
-        row.resolvedStudentId = student.id;
+      if (exact) {
+        row.resolvedStudentId = exact.id;
+      } else {
+        // 2. ⭐ Match NORMALISÉ (accents, ponctuation, espaces multiples/finaux)
+        //    Les fiches élèves contiennent souvent des variantes de saisie
+        //    (« Sèfiou » vs « Séfiou », « Christian  ETEKA » avec double espace,
+        //    espaces de fin) qui faisaient échouer l'import avec « Élève
+        //    introuvable » alors que l'élève existe. On normalise des deux côtés.
+        const normalize = (v: string): string =>
+          (v || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // supprime les diacritiques
+            .replace(/[^a-zA-Z ]/g, ' ') // ponctuation → espace
+            .replace(/\s+/g, ' ') // espaces multiples → un seul
+            .trim()
+            .toLowerCase();
+        const normalized = students.find(
+          (s) =>
+            normalize(s.firstName) === normalize(row.firstName) &&
+            normalize(s.lastName) === normalize(row.lastName),
+        );
+        if (normalized) {
+          row.resolvedStudentId = normalized.id;
+        }
       }
     }
     if (!row.resolvedStudentId) {

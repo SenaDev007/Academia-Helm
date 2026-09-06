@@ -759,6 +759,183 @@ export class CollectionPrismaService {
   }
 
   /**
+   * ⭐ Suppression MULTIPLE d'arriérés (correction d'erreurs de saisie en masse).
+   *
+   * Même sémantique que la suppression unitaire (DELETE /arrears/:id), avec
+   * une cohérence renforcée :
+   *   - Tout est exécuté dans UNE transaction (tout ou rien)
+   *   - L'ajustement du StudentAccount est ADAPTATIF : il n'est appliqué que
+   *     si le compte reflète réellement l'arriéré dans son champ arrearsAmount
+   *     (écoles qui comptabilisent les arriérés dans le compte). Si le compte
+   *     ne reflète pas l'arriéré (arrearsAmount=0 — affichage par agrégation
+   *     FeeArrear), AUCUNE écriture sur le compte : l'affichage « dont
+   *     arriérés » se recalcule automatiquement à partir des FeeArrear restants.
+   *     → évite le bug de la suppression unitaire qui décrémentait totalDue
+   *     d'un montant qui n'y avait jamais été ajouté (silencieusement bloqué
+   *     par le trigger prevent_balance_update).
+   *   - previousArrears de l'inscription décrémenté uniquement s'il est > 0.
+   *   - Trace d'audit groupée dans financial_audit_logs.
+   */
+  async bulkDeleteArrears(tenantId: string, ids: string[], userId?: string) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('La liste des arriérés à supprimer est vide.');
+    }
+    if (ids.length > 500) {
+      throw new BadRequestException('Maximum 500 arriérés par lot de suppression.');
+    }
+    // Dédupliquer les ids
+    const uniqueIds = Array.from(new Set(ids));
+
+    // Charger les arriérés du tenant (périmètre strict)
+    const arrears = await this.prisma.feeArrear.findMany({
+      where: { id: { in: uniqueIds }, tenantId },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+    });
+    const foundIds = new Set(arrears.map((a) => a.id));
+    const notFoundIds = uniqueIds.filter((id) => !foundIds.has(id));
+
+    const results: Array<{
+      arrearId: string;
+      studentName: string;
+      academicYear: string;
+      balanceDue: number;
+      success: boolean;
+      error?: string;
+    }> = [];
+
+    const deleted: any[] = [];
+    let totalDeletedAmount = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const arrear of arrears) {
+        try {
+          const balanceDue = Number(arrear.balanceDue);
+          const studentName = arrear.student
+            ? `${arrear.student.lastName} ${arrear.student.firstName}`.trim()
+            : 'Élève';
+
+          // ── 1. Ajustement ADAPTATIF du StudentAccount ──
+          // Uniquement si le compte reflète l'arriéré (arrearsAmount >= balanceDue).
+          // Sinon (comptes pilotés par agrégation FeeArrear) : aucune écriture.
+          const account = await tx.studentAccount.findUnique({
+            where: {
+              studentId_academicYearId: {
+                studentId: arrear.studentId,
+                academicYearId: arrear.academicYearId,
+              },
+            },
+            select: { id: true, arrearsAmount: true, totalDue: true, balance: true },
+          });
+          if (account && Number(account.arrearsAmount) >= balanceDue && balanceDue > 0) {
+            // Bypass documenté du trigger d'immutabilité (même mécanisme que
+            // l'import Excel) — dans CETTE transaction, SET LOCAL s'applique.
+            await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+            await tx.studentAccount.update({
+              where: { id: account.id },
+              data: {
+                arrearsAmount: { decrement: balanceDue },
+                totalDue: { decrement: balanceDue },
+                balance: { decrement: balanceDue },
+              },
+            });
+          }
+
+          // ── 2. Ajustement previousArrears de l'inscription (si > 0) ──
+          const enrollment = await tx.studentEnrollment.findFirst({
+            where: {
+              studentId: arrear.studentId,
+              tenantId,
+              academicYearId: arrear.academicYearId,
+            },
+            select: { id: true, previousArrears: true },
+          });
+          if (enrollment && Number(enrollment.previousArrears) > 0) {
+            await tx.studentEnrollment.update({
+              where: { id: enrollment.id },
+              data: {
+                previousArrears: {
+                  decrement: Math.min(Number(enrollment.previousArrears), balanceDue),
+                },
+              },
+            });
+          }
+
+          // ── 3. Supprimer les dépendances (relances, promesses, actions) ──
+          await tx.collectionReminder.deleteMany({ where: { feeArrearId: arrear.id } });
+          await tx.paymentPromise.deleteMany({ where: { feeArrearId: arrear.id } });
+          await tx.collectionAction.deleteMany({ where: { feeArrearId: arrear.id } });
+
+          // ── 4. Supprimer l'arriéré ──
+          await tx.feeArrear.delete({ where: { id: arrear.id } });
+
+          deleted.push({
+            arrearId: arrear.id,
+            studentName,
+            matricule: arrear.student?.matricule,
+            academicYear: arrear.academicYear?.name || arrear.academicYearId,
+            balanceDue,
+          });
+          totalDeletedAmount += balanceDue;
+          results.push({
+            arrearId: arrear.id,
+            studentName,
+            academicYear: arrear.academicYear?.name || arrear.academicYearId,
+            balanceDue,
+            success: true,
+          });
+        } catch (e: any) {
+          results.push({
+            arrearId: arrear.id,
+            studentName: arrear.student
+              ? `${arrear.student.lastName} ${arrear.student.firstName}`.trim()
+              : arrear.id,
+            academicYear: arrear.academicYear?.name || arrear.academicYearId,
+            balanceDue: Number(arrear.balanceDue),
+            success: false,
+            error: e?.message || 'Erreur inconnue',
+          });
+          // Une erreur sur un arriéré fait échouer TOUTE la transaction :
+          // cohérence "tout ou rien" — on remonte l'erreur.
+          throw e;
+        }
+      }
+
+      // ── 5. Trace d'audit groupée ──
+      // performedById a une FK vers User — on ne trace que si l'utilisateur est connu.
+      if (deleted.length > 0 && userId) {
+        await tx.financialAuditLog.create({
+          data: {
+            tenantId,
+            entityType: 'FeeArrear',
+            entityId: `bulk-delete-${deleted.length}`,
+            action: 'ARREAR_BULK_DELETE',
+            oldValue: { deletedCount: deleted.length, deletedAmount: totalDeletedAmount },
+            newValue: {
+              items: deleted,
+              requestedCount: uniqueIds.length,
+              notFoundIds,
+              performedVia: 'POST /finance/collection/arrears/bulk-delete',
+            },
+            performedById: userId || '',
+          },
+        });
+      }
+    });
+
+    return {
+      success: true,
+      requested: uniqueIds.length,
+      deleted: deleted.length,
+      deletedAmount: totalDeletedAmount,
+      notFound: notFoundIds,
+      results,
+    };
+  }
+
+  /**
    * Saisie manuelle d'un arriéré pour un élève (onboarding nouveaux clients).
    *
    * Permet aux écoles qui débutent avec Academia Helm en cours d'année de

@@ -276,6 +276,60 @@ export default function RecoveryContent() {
     }
   };
 
+  // ⭐ Modal suppression MULTIPLE d'arriérés (sous-onglet Arriérés)
+  // items = les arriérés cochés dans le tableau — un seul appel API, lot transactionnel.
+  const [bulkDeleteModal, setBulkDeleteModal] = useState<{
+    items: Array<{
+      arrearId: string;
+      studentName: string;
+      className: string;
+      academicYearName: string;
+      balanceDue: number;
+    }>;
+  } | null>(null);
+  const [deletingBulkArrears, setDeletingBulkArrears] = useState(false);
+
+  /**
+   * Confirme la suppression multiple via le modal dédié.
+   * Appelle le BFF POST /api/finance/collection/arrears/bulk-delete qui proxy
+   * vers le backend POST /finance/collection/arrears/bulk-delete (transaction
+   * unique côté backend — tout ou rien).
+   */
+  const handleConfirmBulkDeleteArrears = async () => {
+    if (!bulkDeleteModal) return;
+    const ids = bulkDeleteModal.items.map((i) => i.arrearId);
+    setDeletingBulkArrears(true);
+    try {
+      const r = await fetch('/api/finance/collection/arrears/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data?.error || data?.message || `Échec de la suppression (HTTP ${r.status})`);
+      }
+      toast({
+        title: '✅ Arriérés supprimés',
+        description: `${data?.deleted ?? ids.length} arriéré(s) supprimé(s) — ${formatCurrency(Number(data?.deletedAmount) || 0)} retiré(s) du recouvrement.`,
+      });
+      setBulkDeleteModal(null);
+      window.dispatchEvent(new CustomEvent('recovery-reload'));
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+      invalidateRecoveryData();
+    } catch (e: any) {
+      toast({
+        title: 'Erreur de suppression',
+        description: e?.message || 'Erreur lors de la suppression',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingBulkArrears(false);
+    }
+  };
+
   // Modal suppression de promesse (personnalisé)
   const [deletePromiseModal, setDeletePromiseModal] = useState<{
     promiseId: string;
@@ -847,6 +901,15 @@ export default function RecoveryContent() {
             })}
             onSendChannel={(arrearId, channel) => handleSendChannelReminder(arrearId, channel, 'PREMIERE_RELANCE')}
             schoolInfo={schoolInfo}
+            onBulkDelete={(selected) => setBulkDeleteModal({
+              items: selected.map((a: any) => ({
+                arrearId: a.id,
+                studentName: a.student ? `${a.student.lastName} ${a.student.firstName}` : 'Élève',
+                className: a.student?.schoolLevel?.name || a.student?.studentEnrollments?.[0]?.class?.name || '—',
+                academicYearName: a.academicYear?.name || '—',
+                balanceDue: Number(a.balanceDue) || 0,
+              })),
+            })}
             onDelete={(a) => setDeleteArrearModal({
               arrearId: a.id,
               studentName: a.student ? `${a.student.lastName} ${a.student.firstName}` : 'Élève',
@@ -992,6 +1055,16 @@ export default function RecoveryContent() {
           loading={deletingArrear}
           onClose={() => setDeleteArrearModal(null)}
           onConfirm={handleConfirmDeleteArrear}
+        />
+      )}
+
+      {/* ⭐ Modal suppression MULTIPLE d'arriérés (personnalisé) */}
+      {bulkDeleteModal && (
+        <BulkDeleteArrearModal
+          items={bulkDeleteModal.items}
+          loading={deletingBulkArrears}
+          onClose={() => setBulkDeleteModal(null)}
+          onConfirm={handleConfirmBulkDeleteArrears}
         />
       )}
 
@@ -1460,6 +1533,7 @@ function ArrearsTab({
   allYears,
   onSendChannel,
   schoolInfo,
+  onBulkDelete,
   onDelete,
 }: {
   arrears: any[];
@@ -1477,11 +1551,50 @@ function ArrearsTab({
   allYears: { id: string; name: string }[];
   onSendChannel: (arrearId: string, channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => void;
   schoolInfo: any;
+  onBulkDelete: (selectedArrears: any[]) => void;
   onDelete: (arrear: any) => void;
 }) {
   const { toast } = useToast();
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
+
+  // ⭐ Suppression multiple — sélection des lignes du tableau
+  // (cases à cocher + « tout sélectionner » sur la liste filtrée affichée)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Élaguer automatiquement la sélection quand la liste change
+  // (lignes supprimées / données rafraîchies) — évite un compte affiché obsolète.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(arrears.map((a: any) => a.id));
+      const next = new Set(Array.from(prev).filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [arrears]);
+
+  const selectedArrears = useMemo(
+    () => arrears.filter((a: any) => selectedIds.has(a.id)),
+    [arrears, selectedIds],
+  );
+  const selectedTotal = useMemo(
+    () => selectedArrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0),
+    [selectedArrears],
+  );
+  const allVisibleSelected = arrears.length > 0 && selectedArrears.length === arrears.length;
+  const someVisibleSelected = selectedArrears.length > 0 && !allVisibleSelected;
+
+  const toggleAll = () => {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(arrears.map((a: any) => a.id)));
+  };
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
 
   // Charger les niveaux scolaires
   useEffect(() => {
@@ -1628,11 +1741,54 @@ function ArrearsTab({
         </Button>
       </div>
 
+      {/* ⭐ Barre d'action de suppression multiple (visible quand ≥1 ligne cochée) */}
+      {selectedArrears.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
+            <CheckCircle2 className="w-4 h-4 text-rose-600 flex-shrink-0" />
+            <span className="font-semibold text-rose-700">
+              {selectedArrears.length} arriéré{selectedArrears.length > 1 ? 's' : ''} sélectionné{selectedArrears.length > 1 ? 's' : ''}
+            </span>
+            <span className="text-rose-600 font-mono font-medium">· {formatCurrency(selectedTotal)}</span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-slate-500 underline hover:text-slate-700 ml-1"
+            >
+              Tout désélectionner
+            </button>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onBulkDelete(selectedArrears)}
+            className="border-rose-300 text-rose-700 hover:bg-rose-100 font-semibold"
+          >
+            <Trash2 className="w-4 h-4 mr-1.5" />
+            Supprimer la sélection ({selectedArrears.length})
+          </Button>
+        </div>
+      )}
+
       {/* Tableau */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someVisibleSelected;
+                  }}
+                  onChange={toggleAll}
+                  disabled={arrears.length === 0}
+                  className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:opacity-40"
+                  title="Tout sélectionner / tout désélectionner"
+                  aria-label="Tout sélectionner"
+                />
+              </TableHead>
               <TableHead className="whitespace-nowrap">Élève</TableHead>
               <TableHead className="whitespace-nowrap">Classe</TableHead>
               <TableHead className="whitespace-nowrap">Frais</TableHead>
@@ -1647,7 +1803,7 @@ function ArrearsTab({
           <TableBody>
             {arrears.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                <TableCell colSpan={10} className="text-center text-gray-500 py-12">
                   Aucun arriéré trouvé. Lancez la détection pour identifier les impayés.
                 </TableCell>
               </TableRow>
@@ -1655,7 +1811,16 @@ function ArrearsTab({
               arrears.map((a) => {
                 const config = ARREARS_LEVEL_CONFIG[a.arrearsLevel || 'LOW'] || ARREARS_LEVEL_CONFIG.LOW;
                 return (
-                  <TableRow key={a.id} className="hover:bg-slate-50">
+                  <TableRow key={a.id} className={selectedIds.has(a.id) ? 'bg-rose-50/60 hover:bg-rose-50' : 'hover:bg-slate-50'}>
+                    <TableCell className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(a.id)}
+                        onChange={(e) => toggleOne(a.id, e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                        aria-label={`Sélectionner l'arriéré de ${a.student ? a.student.lastName + ' ' + a.student.firstName : 'cet élève'}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium whitespace-nowrap">
                       {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                     </TableCell>
@@ -1757,7 +1922,7 @@ function ArrearsTab({
           {arrears.length > 0 && (
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold">
-                <td colSpan={3} className="px-3 py-2 text-right text-slate-700 text-sm whitespace-nowrap">
+                <td colSpan={4} className="px-3 py-2 text-right text-slate-700 text-sm whitespace-nowrap">
                   TOTAUX ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''})
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-sm whitespace-nowrap">
@@ -3857,6 +4022,142 @@ function DeleteArrearModal({
               <>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Supprimer définitivement
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Suppression MULTIPLE d'arriérés                            */
+/* ------------------------------------------------------------------ */
+
+function BulkDeleteArrearModal({
+  items,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  items: Array<{
+    arrearId: string;
+    studentName: string;
+    className: string;
+    academicYearName: string;
+    balanceDue: number;
+  }>;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const totalBalance = items.reduce((s, i) => s + (i.balanceDue || 0), 0);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      onClick={loading ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête rouge */}
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">
+                Supprimer {items.length} arriéré{items.length > 1 ? 's' : ''}
+              </h3>
+              <p className="text-xs text-rose-100 mt-0.5">Action irréversible — suppression en lot</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div className="p-6 space-y-4 overflow-y-auto">
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-rose-700 leading-relaxed">
+              Vous êtes sur le point de supprimer définitivement{' '}
+              <strong>{items.length} arriéré{items.length > 1 ? 's' : ''}</strong>{' '}
+              ({formatCurrency(totalBalance)} au total). Cette action{' '}
+              <strong>ne peut pas être annulée</strong> et supprimera également toutes les
+              relances, promesses et actions de recouvrement rattachées. Le lot est traité en
+              une seule opération : en cas d'erreur sur un seul arriéré, rien n'est supprimé.
+            </p>
+          </div>
+
+          {/* Liste des arriérés sélectionnés */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                Arriérés sélectionnés
+              </div>
+              <div className="text-xs text-slate-500">{items.length} élève(s)</div>
+            </div>
+            <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+              {items.map((i) => (
+                <div key={i.arrearId} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-900 truncate">{i.studentName}</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      {i.className !== '—' ? `${i.className} · ` : ''}{i.academicYearName}
+                    </div>
+                  </div>
+                  <div className="text-sm font-bold text-rose-700 font-mono whitespace-nowrap">
+                    {formatCurrency(i.balanceDue)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="bg-rose-50 px-4 py-2 border-t border-rose-200 flex items-center justify-between">
+              <span className="text-xs font-semibold text-rose-700 uppercase tracking-wide">
+                Total à retirer
+              </span>
+              <span className="text-sm font-bold text-rose-700 font-mono">
+                {formatCurrency(totalBalance)}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Les comptes élèves seront ajustés uniquement si les arriérés y sont comptabilisés
+            (arriérés intégrés au compte). Les inscriptions avec{' '}
+            <code className="bg-slate-100 px-1 rounded">previousArrears</code> seront
+            également ajustées. Une trace d'audit groupée est enregistrée.
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Suppression…
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer {items.length} arriéré{items.length > 1 ? 's' : ''}
               </>
             )}
           </Button>

@@ -54,6 +54,13 @@ RETURNS TRIGGER AS $$
 DECLARE grade_count INT;
 BEGIN
   IF OLD."classId" IS NOT DISTINCT FROM NEW."classId" THEN RETURN NEW; END IF;
+  -- ⭐ FIX 2026-09-06 : l'AFFECTATION INITIALE (classId NULL → classe) est
+  -- toujours autorisée. Le blocage ne concerne que le CHANGEMENT entre deux
+  -- classes déjà assignées (pour garder les notes rattachées à la bonne
+  -- classe). Avant ce correctif, les élèves inscrits sans section physique
+  -- (ex : 22 élèves CP de CSPEB) ne pouvaient plus être affectés dès qu'ils
+  -- avaient des notes — verrouillage injustifié.
+  IF OLD."classId" IS NULL THEN RETURN NEW; END IF;
   SELECT COUNT(*)::INT INTO grade_count FROM "grades"
   WHERE "studentId" = OLD."studentId" AND "academicYearId" = OLD."academicYearId";
   IF grade_count > 0 THEN RAISE EXCEPTION 'Impossible de changer de classe : notes existantes'; END IF;

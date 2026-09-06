@@ -32,6 +32,8 @@ FOR EACH ROW
 EXECUTE FUNCTION prevent_academic_year_update();
 
 -- 3. Empêcher le changement de classe si des notes existent déjà
+-- ⭐ FIX 2026-09-06 : l'AFFECTATION INITIALE (classId NULL → classe) est toujours
+-- autorisée — seuls les changements entre deux classes déjà assignées sont bloqués.
 CREATE OR REPLACE FUNCTION prevent_class_change_if_grades()
 RETURNS trigger AS $$
 DECLARE
@@ -39,6 +41,11 @@ DECLARE
 BEGIN
   -- Si la classe n'a pas changé, on laisse passer
   IF OLD."classId" = NEW."classId" THEN
+    RETURN NEW;
+  END IF;
+
+  -- Affectation initiale (NULL → classe) : toujours autorisée
+  IF OLD."classId" IS NULL AND NEW."classId" IS NOT NULL THEN
     RETURN NEW;
   END IF;
 

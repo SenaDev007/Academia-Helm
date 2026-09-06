@@ -50,6 +50,9 @@ interface Enrollment {
     photoUrl?: string | null;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
+  /** ⭐ Classe officielle (AcademicClass) — fournie par GET /students/enrollments.
+   *  Utilisée pour afficher la classe officielle des élèves non affectés. */
+  academicClass?: { id: string; name: string } | null;
   enrollmentType: string;
   enrollmentDate: string;
   status: string;
@@ -140,6 +143,9 @@ export default function StudentClassListsContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
+  // ⭐ Section « Non affectés » (élèves sans classe physique) — ouverte par défaut
+  // pour attirer l'attention de l'admin sur les affectations manquantes.
+  const [isUnassignedExpanded, setIsUnassignedExpanded] = useState(true);
 
   // Tracking de la génération PDF par classe
   const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
@@ -278,6 +284,33 @@ export default function StudentClassListsContent() {
       })),
     }));
   }, [treeData, searchQuery]);
+
+  // ⭐ FIX 2026-09-06 — Anomalie « élèves CP absents de la Liste des élèves » :
+  // les inscriptions créées avec une classe OFFICIELLE (academicClassId) mais sans
+  // classe PHYSIQUE (classId null) ne peuvent pas être rattachées à une section
+  // ci-dessus. Avant ce correctif, elles étaient silencieusement INVISIBLES dans
+  // cet onglet (cas des 22 élèves CP de CSPEB). On les regroupe désormais dans une
+  // section dédiée « Non affectés » afin que l'école puisse les affecter via
+  // l'onglet Affectations & Mouvements.
+  const unassignedStudents = useMemo(() => {
+    const knownClassIds = new Set(classes.map(c => c.id));
+    const list = enrollments.filter(e =>
+      (!e.class?.id || !knownClassIds.has(e.class.id)) &&
+      e.status !== 'WITHDRAWN' && e.status !== 'TRANSFERRED',
+    );
+    list.sort((a, b) => `${a.student.lastName} ${a.student.firstName}`.localeCompare(
+      `${b.student.lastName} ${b.student.firstName}`));
+    return list;
+  }, [classes, enrollments]);
+
+  const filteredUnassigned = useMemo(() => {
+    if (!searchQuery.trim()) return unassignedStudents;
+    const q = searchQuery.toLowerCase();
+    return unassignedStudents.filter(s =>
+      `${s.student.lastName} ${s.student.firstName}`.toLowerCase().includes(q) ||
+      (s.student.matricule || '').toLowerCase().includes(q)
+    );
+  }, [unassignedStudents, searchQuery]);
 
   const toggleLevel = (id: string) => {
     setExpandedLevels(prev => {
@@ -635,6 +668,72 @@ export default function StudentClassListsContent() {
           })
         )}
       </div>
+
+      {/* ⭐ FIX 2026-09-06 — Section « Non affectés à une classe physique » : */}
+      {/* inscrits avec une classe officielle (ex : CP) mais sans section physique. */}
+      {filteredUnassigned.length > 0 && (
+        <div className="mt-4 bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setIsUnassignedExpanded(prev => !prev)}
+            className="w-full flex items-center gap-3 px-5 py-4 transition-colors text-left group hover:bg-amber-50"
+          >
+            <div className="shrink-0">
+              {isUnassignedExpanded
+                ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-amber-600" />
+                : <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-amber-600" />}
+            </div>
+            <div className="p-2.5 rounded-lg shrink-0 bg-amber-50">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-base font-bold text-slate-800">Non affectés à une classe physique</p>
+              <p className="text-xs text-slate-500">
+                {filteredUnassigned.length} élève{filteredUnassigned.length > 1 ? 's' : ''} inscrit{filteredUnassigned.length > 1 ? 's' : ''} en classe officielle mais sans section physique — affectez-le{filteredUnassigned.length > 1 ? 's' : ''} via l'onglet « Affectations &amp; Mouvements »
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-amber-50 rounded-full text-sm font-bold text-amber-600 shrink-0">{filteredUnassigned.length}</span>
+          </button>
+
+          <AnimatePresence>
+            {isUnassignedExpanded && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                <ResponsiveTableWrapper>
+                  <table className="w-full text-xs">
+                    <thead className="bg-amber-50/60">
+                      <tr>
+                        <th className="px-14 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">N°</th>
+                        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Nom et Prénom(s)</th>
+                        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Matricule</th>
+                        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Classe officielle</th>
+                        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Sexe</th>
+                        <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filteredUnassigned.map((s, i) => (
+                        <tr key={s.id} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="px-14 py-2 text-slate-400">{i + 1}</td>
+                          <td className="px-2 py-2 font-semibold text-slate-700">
+                            {s.student.lastName.toUpperCase()} {s.student.firstName}
+                          </td>
+                          <td className="px-2 py-2 font-mono text-slate-500">{s.student.matricule || s.student.studentCode || '—'}</td>
+                          <td className="px-2 py-2 text-slate-500">{s.academicClass?.name || '—'}</td>
+                          <td className="px-2 py-2 text-slate-500">{s.student.gender === 'M' ? 'M' : s.student.gender === 'F' ? 'F' : '—'}</td>
+                          <td className="px-2 py-2">
+                            <span className={cn('inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border', STATUS_COLORS[s.status] || 'bg-slate-50 text-slate-600 border-slate-200')}>
+                              {s.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </ResponsiveTableWrapper>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Modal de visualisation PDF */}
       {previewClassPdf && (

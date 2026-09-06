@@ -43,12 +43,18 @@ CREATE TRIGGER trg_prevent_year_change
 
 -- ---------------------------------------------------------------------------
 -- D. Empêcher changement de classe si des notes existent pour cet élève dans cette année
+-- ⭐ FIX 2026-09-06 : l'AFFECTATION INITIALE (classId NULL → classe) est toujours
+-- autorisée — seuls les changements entre deux classes déjà assignées sont bloqués.
 CREATE OR REPLACE FUNCTION prevent_class_change_if_grades()
 RETURNS TRIGGER AS $$
 DECLARE
   grade_count INT;
 BEGIN
   IF OLD."classId" IS NOT DISTINCT FROM NEW."classId" THEN
+    RETURN NEW;
+  END IF;
+  -- Affectation initiale (NULL → classe) : toujours autorisée
+  IF OLD."classId" IS NULL AND NEW."classId" IS NOT NULL THEN
     RETURN NEW;
   END IF;
   SELECT COUNT(*)::INT INTO grade_count

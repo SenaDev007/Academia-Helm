@@ -177,6 +177,31 @@ export class StudentsLifecycleService {
       }
     }
 
+    // ⭐ FIX 2026-09-06 — Anomalie « élèves CP absents de la Liste des élèves » :
+    //    le formulaire « Nouvelle inscription » (onglet Inscriptions) envoie
+    //    UNIQUEMENT academicClassId (classe officielle), sans classId (classe
+    //    physique). L'élève apparaissait dans l'onglet Inscriptions mais restait
+    //    INVISIBLE dans l'onglet « Liste des élèves » (groupé par classe physique).
+    //    → Résolution inverse : si une seule section physique correspond à cette
+    //    classe officielle pour l'année, on l'assigne automatiquement (classId).
+    //    Si plusieurs sections existent (CP-A, CP-B…), on n'en choisit AUCUNE :
+    //    l'affectation reste manuelle via l'onglet Affectations (changeClass),
+    //    et l'onglet « Liste des élèves » affiche désormais un groupe « Non affectés ».
+    let resolvedClassId = data.classId ?? null;
+    if (!resolvedClassId && resolvedAcademicClassId) {
+      const physicalSections = await this.prisma.class.findMany({
+        where: {
+          tenantId,
+          academicYearId: data.academicYearId,
+          officialClassId: resolvedAcademicClassId,
+        },
+        select: { id: true, name: true },
+      });
+      if (physicalSections.length === 1) {
+        resolvedClassId = physicalSections[0].id;
+      }
+    }
+
     const student = await this.prisma.student.create({
       data: {
         tenantId,
@@ -202,7 +227,7 @@ export class StudentsLifecycleService {
         academicYearId: data.academicYearId,
         schoolLevelId: data.schoolLevelId,
         studentId: student.id,
-        classId: data.classId ?? null,
+        classId: resolvedClassId,
         // ⭐ Classe officielle (AcademicClass) — résolue depuis le paramètre
         // ou depuis Class.officialClassId si seul classId est fourni.
         academicClassId: resolvedAcademicClassId ?? null,
@@ -231,7 +256,7 @@ export class StudentsLifecycleService {
       enrollmentId: enrollment.id,
       academicYearId: data.academicYearId,
       schoolLevelId: data.schoolLevelId,
-      classId: data.classId ?? null,
+      classId: resolvedClassId,
     });
 
     // Vérifier le nombre d'élèves vs plan d'abonnement (notification si dépassement)

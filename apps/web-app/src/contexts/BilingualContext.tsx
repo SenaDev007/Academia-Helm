@@ -62,7 +62,7 @@ interface BilingualContextType {
   separateSubjects: boolean;
   /** Track courante sélectionnée par l'utilisateur (FR ou EN) */
   currentTrack: LanguageTrack;
-  /** Change la track courante */
+  /** Change la track courante (no-op si hors périmètre serveur — mono-piste) */
   setCurrentTrack: (track: LanguageTrack) => void;
   /** Indique si les paramètres sont en cours de chargement */
   isLoading: boolean;
@@ -152,6 +152,20 @@ export function BilingualProvider({ children }: { children: ReactNode }) {
 
   // ── setCurrentTrack : persiste en localStorage ────────────────────────────
   const setCurrentTrack = useCallback((track: LanguageTrack) => {
+    // ⭐ P4 : garde anti-élargissement — un utilisateur mono-piste (piste
+    //    imposée par son profil serveur, D5) ne peut PAS basculer sur l'autre
+    //    piste depuis l'UI (le serveur bloquerait de toute façon — défense en
+    //    profondeur).
+    const userScope = getUserScope();
+    if (
+      userScope &&
+      !userScope.allTracks &&
+      Array.isArray(userScope.trackCodes) &&
+      userScope.trackCodes.length === 1
+    ) {
+      const only = userScope.trackCodes[0] === 'EN' ? 'EN' : 'FR';
+      if (track !== only) return; // hors périmètre : refus silencieux
+    }
     setCurrentTrackState(track);
     if (typeof window !== 'undefined') {
       try {
@@ -210,6 +224,9 @@ export function useBilingual(): BilingualContextType {
 /**
  * Sélecteur FR/EN réutilisable.
  * Ne s'affiche que si l'option bilingue est activée.
+ * ⭐ P4 : MASQUÉ pour les comptes mono-piste — la piste de données est
+ *    imposée par le profil serveur (décision D5) ; seul un compte bi-piste
+ *    voit le toggle. (La garde dans setCurrentTrack reste en défense secondaire.)
  */
 export function BilingualTrackSelector({
   className = '',
@@ -218,6 +235,16 @@ export function BilingualTrackSelector({
 }) {
   const { isEnabled, currentTrack, setCurrentTrack } = useBilingual();
   if (!isEnabled) return null;
+  // Mono-piste → pas de toggle : la piste du profil est imposée
+  const userScope = getUserScope();
+  if (
+    userScope &&
+    !userScope.allTracks &&
+    Array.isArray(userScope.trackCodes) &&
+    userScope.trackCodes.length === 1
+  ) {
+    return null;
+  }
   return (
     <div
       className={`flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4 ${className}`}

@@ -9539,3 +9539,34 @@ Stage Summary:
 - Un coordinateur embauché (interne ou externe) reçoit un compte User rôle DIRECTEUR : portail école, modules direction/pédagogie/examens, sans finance/RH/paramètres
 - Déploiement : Railway redéploie automatiquement au push (le backfill s'exécute au premier GET /positions) ; aucune modif front → rien d'attendu côté Vercel
 - Vérification utilisateur après le redéploiement Railway : RH → Embauche → étape Emploi → le sélecteur « Poste occupé » contient « Coordinateur » (groupe Direction) ; l'entrée apparaît aussi dans la gestion des postes (Paramètres → Départements/Postes)
+
+---
+Task ID: 14
+Agent: main (Super Z)
+Task: Filtre Rôles × Pistes × Niveaux — comptes de test dédiés (enseignant EN pur, directeur FR), rétroqualification des affectations directeurs mono-piste via le module RH, et réparation de la chaîne langue=profil (le scope serveur n'atteignait jamais le frontend)
+
+Work Log:
+- CONSTAT : le sandbox avait perdu les fichiers locaux de P0-P4, mais TOUT était sur GitHub (16ade731 + 3 correctifs jusqu'à fc3aaedc) — reset local sur origin/main, mon doublon P0 local abandonné (branche backup-p0-local), la migration DB « consolidation » a néanmoins été appliquée proprement sur Neon (20260906110000 : academicTrackId garanti sur staff_admin_assignments + payments + expenses + fee_configurations + finance_transactions, FK + index)
+- Migration 20260906100000_add_track_scope_foundation (session précédente, appliquée sur Neon le 05/09) : trouvée ENREGISTRÉE dans _prisma_migrations avec son fichier dans le repo — cohérente
+- 0ef92cb4 : CRUD piste du module RH — POST/PUT /staff-admin-assignments acceptent academicTrackId (UUID) OU academicTrackCode ('FR'/'EN' résolu serveur, null = bi-piste D1) ; validation appartenance tenant ; list() inclut academicTrack ; UI UnifiedAdministrationWorkspace : sélecteur « Piste linguistique » alimente le VRAI périmètre (avant : simple suffixe de libellé), édition = piste réelle, badge FR/EN/FR+EN par affectation
+- COMPTES DE TEST (scripts/create_scope_test_accounts.js, DB direct, idempotent) :
+  * Enseignante EN pure : Grace OKONKWO, matricule CSPEBE-26-00015, recette.teacher-en@cspeb.test / EnTeacher2026! — Teacher assignedLanguages ["EN"] niveau PRIMAIRE + TeacherClassAssignment → Primary 1 (EN) × Mathematics
+  * Directeur FR mono-piste : Jean-Baptiste ADJOVI, recette.directeur-fr@cspeb.test / FrDirecteur2026! — Staff + StaffAdminAssignment DIRECTEUR@MAT_PI avec academicTrackId = piste FR
+  * Vérifié par login : enseignante EN → scope {trackCodes ["EN"], allTracks false, locale "en", classIds [Primary 1]} ; directeur FR → bootstrap {trackCodes ["FR"], allTracks false, locale "fr"}
+- RÉTROQUALIFICATION (via l'API RH en production, PUT academicTrackCode "EN") : Queen EZE (directrice, langs ["EN"] des deux profils) → affectation DIRECTEUR@MAT_PRI désormais piste EN ; Saliou AKPAKI/Dawes laissée NULL (bi-piste, décision D1)
+- RÉPARATION de la chaîne langue=profil (3 bugs en production, tous corrigés + déployés) :
+  1. a7fd260d + 058bb80c : /context/bootstrap 400 « School Level ID required » par 4 couches (ContextInterceptor, ContextValidationGuard, SchoolLevelIsolationGuard, SchoolLevelEnforcementInterceptor) — exemption du chemin bootstrap (l'exiger AVANT la sélection du niveau est circulaire)
+  2. a7fd260d : persistUserScope émet user-scope-loaded ; I18nContext + BilingualContext écoutent (le scope arrive APRÈS leur montage — bootstrap async)
+  3. c96239eb : le proxy Next /api/portal/auth/teacher JETAIT le scope de la réponse backend (reconstruisait sa réponse sans lui) → relayé tel quel
+  4. 9ea42443 : TenantContextProvider (véhicule prévu du scope côté portail école) n'était monté NULLE PART — AppLayoutClient charge le scope au montage (1 fetch bootstrap, silencieux si échec)
+- VALIDATION NAVIGATEUR (production) :
+  * Grace OKONKWO (EN) : login → user_scope persisté (trackCodes ["EN"], locale "en"), htmlLang=en, pédagogie ENTIÈREMENT en anglais (My Classes / Scheme of Work / Weekly Record of Work…, Primary 1 × Mathematics), examens filtrés « Piste anglophone »
+  * Captures : download/scope-teacher-en-{avant,dashboard,pedagogy,exams}.png
+- Scripts persistés (HORS repo — identifiants) : inspect_scope_data.js, create_scope_test_accounts.js, apply_migration_scope_p0.js, apply_migration_scope_consolidate.js, check_syntax.mjs
+
+Stage Summary:
+- ✅ 2 comptes de test dédiés créés et fonctionnels : enseignante EN pure (UI bascule en anglais, piste verrouillée EN, sa classe Primary 1 visible) + directeur FR (piste verrouillée FR via academicTrackId)
+- ✅ Rétroqualification : Queen EZE → piste EN sur son affectation (Dawes reste bi-piste D1)
+- ✅ La piste est désormais renseignable dans le module RH (API + UI, code ou UUID)
+- ✅ 4 bugs de la chaîne scope→UI réparés et déployés (bootstrap débloqué, relais proxy, événement de chargement, montage du chargement de scope)
+- Reste : validation navigateur finale du directeur FR (après déploiement Vercel 9ea42443), tests d'intrusion cross-piste (P5), et le worklog

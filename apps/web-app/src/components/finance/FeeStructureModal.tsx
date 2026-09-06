@@ -89,7 +89,11 @@ export default function FeeStructureModal({
 }) {
   const isEdit = Boolean(feeId);
   const [name, setName] = useState(initialData?.name ?? '');
-  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+  // ⭐ FIX (sept. 2026 — découvert pendant la validation E2E Task 20) : en mode
+  //    ÉDITION, initialiser nameManuallyEdited=true pour que l'effet autoName
+  //    n'ÉCRASE PAS le nom existant du frais (le modal renommait silencieusement
+  //    « Tenue scolaire » → « Frais généraux » dès l'ouverture + enregistrement).
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(Boolean(initialData?.name));
   const [feeType, setFeeType] = useState(initialData?.feeType ?? 'TUITION');
   const [customFeeTypeLabel, setCustomFeeTypeLabel] = useState(initialData?.customFeeTypeLabel ?? '');
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');

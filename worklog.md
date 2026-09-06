@@ -9518,3 +9518,24 @@ Stage Summary:
 - Identité git corrigée durablement : tous les futurs commits (sandbox et clone monorepo) porteront l'email valide
 - Push de relance sur main → Vercel redéploie la web-app : émission FP/EP, registre des documents et flux mensuel par période deviennent visibles en production
 - Vérification à faire après le build (< 2 min selon le pattern Task 9) : onglet RH → Paie → période → « Émettre FP/EP » + registre des documents émis
+
+---
+Task ID: 13
+Agent: Super Z (agent principal)
+Task: RH — poste « Coordinateur » disponible dans les DEUX flux de recrutement/embauche (interne wizard + externe offres), avec backfill automatique pour les écoles existantes
+
+Contexte: demande utilisateur — certaines écoles ont un poste « coordinateur » ; il doit pouvoir être choisi comme poste dans le processus de recrutement et d'embauche, flux interne comme externe. Session reprise après réinitialisation du sandbox : re-clone sur main fc3aaedc (4 commits d'une autre session depuis bdd8fe61 : filtre sécurité Rôles × Pistes × Niveaux, fix boot Railway, fix SaisieMaster, perf cache de périmètre) ; branche sandbox fiches-de-paie SUPPRIMÉE du remote (option A validée par l'utilisateur — son contenu utile est déjà dans main).
+
+Work Log:
+- Diagnostic : le sélecteur « Poste occupé » du wizard d'embauche interne (StepEmployment) est alimenté par GET /positions (table positions, seed = DEFAULT_POSITIONS : 30 postes, AUCUN coordinateur) et le seed initial ne s'exécute que si le tenant n'a AUCUN poste → les écoles existantes n'auraient JAMAIS reçu le nouveau poste par un simple ajout à la liste ; côté flux externe, l'intitulé de l'offre est déjà libre, MAIS à l'embauche (markEligible) staff.position = job.title avec roleType dérivé ADMIN → le compte créé par staff-credential.service tombait sur refineUserRole('ADMIN', 'Coordinateur…') → SECRETAIRE (rôle faux pour un coordinateur)
+- positions.service.ts : « Coordinateur » (catégorie DIRECTOR, même famille que Censeur / direction pédagogique) ajouté à DEFAULT_POSITIONS pour les NOUVEAUX tenants + nouveau mécanisme LATE_DEFAULT_POSITIONS + ensureLatePositions() : backfill idempotent par (tenantId, name) exécuté à chaque findAll() → les écoles EXISTANTES (CSPEB inclus) reçoivent le poste automatiquement au premier appel (ouverture du wizard, gestion des postes)
+- staff-credential.service.ts (refineUserRole) : reconnaissance des variantes « coordinat / coordonnat (orthographe fréquente au Bénin) / coordinator / coordination » → UserRole.DIRECTEUR. Choix documenté dans le code : role-portal-map classe PEDAGOGIC_COORDINATOR dans DIRECTION_ROLES — profil modules IDENTIQUE à DIRECTEUR (direction + pédagogie + examens, SANS finance/RH/paramètres) ; CENSEUR serait verrouillé SECONDAIRE par le LevelScopeGuard (faux pour un coordinateur maternelle/primaire) ; le rôle étendu PEDAGOGIC_COORDINATOR n'est pas admis par la regex adminRolePattern du login portail école ; l'ancien fallback SECRETAIRE était manifestement faux
+- Flux interne : le sélecteur affichera « Coordinateur » dans le groupe « Direction » (aucune modif front nécessaire — la liste est dynamique) ; flux externe : intitulé libre déjà possible + le compte du coordinateur embauché est désormais DIRECTEUR (portail école, login par email) au lieu de SECRETAIRE
+- Aucune migration / DDL : la table positions existait déjà (ensureTableExists idempotent), aucune colonne modifiée
+- Vérifications : bun scripts/_test_coordinateur.mjs → 52/52 OK (transpile TS des 2 fichiers via Bun.Transpiler, assertions structurelles sur la source, miroir logique de détection — 12 variantes détectées / 14 non-détectées, non-collision avec les branches antérieures de refineUserRole) ; diff = +68 lignes, 100 % additif, aucun comportement changé pour les postes existants
+
+Stage Summary:
+- Le poste « Coordinateur » est disponible dans les deux flux : sélectionnable dans le wizard d'embauche interne (groupe Direction, pour TOUTES les écoles grâce au backfill automatique) et pleinement fonctionnel dans le flux externe (intitulé libre + compte portail école correct à l'embauche)
+- Un coordinateur embauché (interne ou externe) reçoit un compte User rôle DIRECTEUR : portail école, modules direction/pédagogie/examens, sans finance/RH/paramètres
+- Déploiement : Railway redéploie automatiquement au push (le backfill s'exécute au premier GET /positions) ; aucune modif front → rien d'attendu côté Vercel
+- Vérification utilisateur après le redéploiement Railway : RH → Embauche → étape Emploi → le sélecteur « Poste occupé » contient « Coordinateur » (groupe Direction) ; l'entrée apparaît aussi dans la gestion des postes (Paramètres → Départements/Postes)

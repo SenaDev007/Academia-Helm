@@ -156,7 +156,15 @@ export default function TeacherDashboardPage() {
                 className="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-md transition-all"
               >
                 <h4 className="font-bold text-slate-900 text-sm">{cls.className}</h4>
-                <p className="text-xs text-slate-500 mb-2">{cls.schoolLevelName}</p>
+                <p className="text-xs text-slate-500 mb-2">{L(
+                  cls.schoolLevelName,
+                  // ⭐ P4-final : nom de niveau traduit en piste EN (donnée brute FR de la DB)
+                  String(cls.schoolLevelName || '')
+                    .replace(/^Maternelle.*/i, (m: string) => (m.includes('+') ? 'Nursery + Primary' : 'Nursery'))
+                    .replace(/^Primaire.*/i, 'Primary')
+                    .replace(/^Secondaire.*/i, 'Secondary')
+                    .replace(/^Primary$/i, 'Primary'),
+                )}</p>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="font-semibold text-slate-700">{cls.totalStudents} {L("élèves", "students")}</span>
                   <span className="text-cyan-600">{L(cls.boys + "G", cls.boys + "B")}</span>

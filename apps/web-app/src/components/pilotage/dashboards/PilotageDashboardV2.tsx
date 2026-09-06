@@ -572,7 +572,10 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
 
 interface QuickAccessItem {
   label: string;
+  /** ⭐ P4-final : libellé anglais (piste EN) */
+  labelEn?: string;
   description: string;
+  descriptionEn?: string;
   icon: React.ComponentType<{ className?: string }>;
   href: string;
   color: string;
@@ -581,42 +584,54 @@ interface QuickAccessItem {
 const QUICK_ACCESS: QuickAccessItem[] = [
   {
     label: 'Organisation Pédagogique',
+    labelEn: 'Pedagogical Organisation',
     description: 'Classes, matières, emplois du temps',
+    descriptionEn: 'Classes, subjects, timetables',
     icon: School,
     href: '/app/pedagogy',
     color: 'bg-purple-50 text-purple-600 border-purple-100',
   },
   {
     label: 'Élèves & Scolarité',
+    labelEn: 'Students & Enrollment',
     description: 'Inscriptions, effectifs, transferts',
+    descriptionEn: 'Admissions, headcount, transfers',
     icon: Users,
     href: '/app/students',
     color: 'bg-blue-50 text-blue-600 border-blue-100',
   },
   {
     label: 'Finances & Économat',
+    labelEn: 'Finance & Store',
     description: 'Recettes, dépenses, trésorerie',
+    descriptionEn: 'Revenue, expenses, treasury',
     icon: Wallet,
     href: '/app/finance',
     color: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   },
   {
     label: 'Examens & Notes',
+    labelEn: 'Exams & Grades',
     description: 'Évaluations, bulletins, moyennes',
+    descriptionEn: 'Assessments, report cards, averages',
     icon: GraduationCap,
     href: '/app/exams',
     color: 'bg-amber-50 text-amber-600 border-amber-100',
   },
   {
     label: 'Personnel, RH & Paie',
+    labelEn: 'Staff, HR & Payroll',
     description: 'Effectifs, salaires, congés',
+    descriptionEn: 'Staff, salaries, leaves',
     icon: UserCog,
     href: '/app/hr',
     color: 'bg-rose-50 text-rose-600 border-rose-100',
   },
   {
     label: 'Communication',
+    labelEn: 'Communication',
     description: 'SMS, emails, notifications',
+    descriptionEn: 'SMS, emails, notifications',
     icon: MessageSquare,
     href: '/app/communication',
     color: 'bg-cyan-50 text-cyan-600 border-cyan-100',
@@ -666,6 +681,7 @@ function useTuitionPersonalizations(academicYearId?: string) {
 }
 
 function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: string }) {
+  const L = useL();
   const { data, isLoading } = useTuitionPersonalizations(academicYearId);
 
   if (isLoading && !data) {
@@ -691,7 +707,7 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
       <div className="bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-3">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <Coins className="w-4 h-4" />
-          Personnalisations de frais de scolarité
+          {L("Personnalisations de frais de scolarité", "Tuition fee customisations")}
         </h3>
         <p className="text-[11px] text-amber-100 mt-0.5">
           Élèves bénéficiant d'un tarif personnalisé · {data.totalOverrides} élève(s) concerné(s)
@@ -701,17 +717,17 @@ function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: s
       {/* Bandeau résumé */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-amber-50/50 border-b border-amber-100">
         <div>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Montant standard</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">{L("Montant standard", "Standard amount")}</p>
           <p className="text-lg font-bold text-slate-700 line-through">{formatCurrency(data.totalOriginalAmount)}</p>
           <p className="text-[10px] text-slate-400">Ce qu'ils auraient dû payer</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Après personnalisation</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">{L("Après personnalisation", "After customisation")}</p>
           <p className="text-lg font-bold text-emerald-700">{formatCurrency(data.totalCustomAmount)}</p>
           <p className="text-[10px] text-slate-400">Ce qu'ils vont payer</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">Réduction totale</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">{L("Réduction totale", "Total reduction")}</p>
           <p className="text-lg font-bold text-red-700">{formatCurrency(data.totalReductionAmount)}</p>
           <p className="text-[10px] text-slate-400">Soit -{data.reductionPercentage}% en moyenne</p>
         </div>
@@ -1037,6 +1053,7 @@ function useHROverview(tenantId?: string, academicYearId?: string) {
 }
 
 function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const L = useL();
   const { data, isLoading } = useHROverview(tenantId, academicYearId);
 
   if (isLoading && !data) {
@@ -1061,10 +1078,10 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
       <div className="bg-gradient-to-r from-rose-900 to-rose-800 px-5 py-3">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <UserCog className="w-4 h-4" />
-          Personnel de l'établissement
+          {L("Personnel de l'établissement", "School staff")}
         </h3>
         <p className="text-[11px] text-rose-100 mt-0.5">
-          {data.totalStaff} personne(s) au total · Administration + Corps enseignant
+          {L(`${data.totalStaff} personne(s) au total`, `${data.totalStaff} staff member(s) in total`)} · {L("Administration + Corps enseignant", "Administration + Teaching staff")}
         </p>
       </div>
 
@@ -1164,6 +1181,7 @@ function useAgeDistribution(tenantId?: string, academicYearId?: string) {
 const AGE_CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
 
 function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const L = useL();
   const { data, isLoading } = useAgeDistribution(tenantId, academicYearId);
 
   if (isLoading && !data) {
@@ -1181,7 +1199,7 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
         <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 px-5 py-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <Users className="w-4 h-4" />
-            Distribution des âges
+            {L("Distribution des âges", "Age distribution")}
           </h3>
           <p className="text-[11px] text-indigo-100 mt-0.5">Tranches d'âge par niveau scolaire</p>
         </div>
@@ -1201,7 +1219,7 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
       <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 px-5 py-3">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <Users className="w-4 h-4" />
-          Distribution des âges
+          {L("Distribution des âges", "Age distribution")}
         </h3>
         <p className="text-[11px] text-indigo-100 mt-0.5">
           {data.totalStudents} élèves · Tranches d'âge par niveau scolaire
@@ -1210,7 +1228,7 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
 
       <div className="p-5">
         {/* Graphique global (histogramme SVG professionnel) */}
-        <p className="text-xs font-semibold text-slate-700 mb-3">Vue globale de l'école</p>
+        <p className="text-xs font-semibold text-slate-700 mb-3">{L("Vue globale de l'école", "Whole school overview")}</p>
         <div className="flex items-end justify-between gap-2 h-40 mb-6">
           {data.global.map((item, i) => {
             const heightPercent = (item.count / maxValue) * 100;
@@ -1236,7 +1254,7 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
         {/* Distribution par niveau scolaire */}
         {data.byLevel.length > 0 && (
           <div className="border-t border-slate-100 pt-4">
-            <p className="text-xs font-semibold text-slate-700 mb-3">Par niveau scolaire</p>
+            <p className="text-xs font-semibold text-slate-700 mb-3">{L("Par niveau scolaire", "By school level")}</p>
             <div className="space-y-3">
               {data.byLevel.map((level, idx) => {
                 const levelMax = Math.max(...level.distribution.map(d => d.count), 1);
@@ -1323,6 +1341,7 @@ function useGradeAnalytics(tenantId?: string, academicYearId?: string) {
 }
 
 function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const L = useL();
   const { data, isLoading } = useGradeAnalytics(tenantId, academicYearId);
 
   if (isLoading && !data) {
@@ -1344,9 +1363,9 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
         <div className="bg-gradient-to-r from-purple-900 to-purple-700 px-5 py-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <Award className="w-4 h-4" />
-            Analytics des notes
+            {L("Analytics des notes", "Grade analytics")}
           </h3>
-          <p className="text-[11px] text-purple-100 mt-0.5">Par niveau scolaire</p>
+          <p className="text-[11px] text-purple-100 mt-0.5">{L("Par niveau scolaire", "By school level")}</p>
         </div>
         <div className="p-8 text-center">
           <Award className="w-10 h-10 text-gray-300 mx-auto mb-2" />
@@ -1362,7 +1381,7 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
       <div className="bg-gradient-to-r from-purple-900 to-purple-700 px-5 py-3">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <Award className="w-4 h-4" />
-          Analytics des notes
+          {L("Analytics des notes", "Grade analytics")}
         </h3>
         <p className="text-[11px] text-purple-100 mt-0.5">
           Période : {data.currentPeriod} · {data.totalStudents} élèves évalués
@@ -2137,8 +2156,8 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-navy-900 mb-1">{item.label}</p>
-                      <p className="text-xs text-gray-500">{item.description}</p>
+                      <p className="text-sm font-semibold text-navy-900 mb-1">{L(item.label, item.labelEn || item.label)}</p>
+                      <p className="text-xs text-gray-500">{L(item.description, item.descriptionEn || item.description)}</p>
                     </div>
                     <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                   </div>

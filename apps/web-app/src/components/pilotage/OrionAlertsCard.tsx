@@ -17,6 +17,7 @@
 
 'use client';
 
+import { useL } from '@/lib/i18n/bilingual';
 import { AlertTriangle, ChevronRight, Brain, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
@@ -42,6 +43,8 @@ async function fetchOrionAlerts({ queryKey }: { queryKey: any }): Promise<any[]>
 }
 
 export default function OrionAlertsCard({ academicYearId, schoolLevelId }: OrionAlertsCardProps) {
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   const { data: alerts = [], isLoading } = useQuery<any[]>({
     queryKey: ['orion-alerts', academicYearId, schoolLevelId],
     queryFn: fetchOrionAlerts,
@@ -60,7 +63,7 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex items-center space-x-2 mb-4">
           <Brain className="w-5 h-5 text-navy-900" />
-          <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
+          <h3 className="text-lg font-semibold text-navy-900">{L("Analyse ORION", "ORION Analytics")}</h3>
         </div>
         <div className="text-center py-6">
           <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2 animate-pulse" />
@@ -78,13 +81,13 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Brain className="w-5 h-5 text-navy-900" />
-            <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
+            <h3 className="text-lg font-semibold text-navy-900">{L("Analyse ORION", "ORION Analytics")}</h3>
           </div>
           <Link
             href="/app#orion-alerts"
             className="text-sm text-navy-600 hover:text-navy-900 font-medium flex items-center space-x-1"
           >
-            <span>Voir l'analyse</span>
+            <span>{L("Voir l'analyse", "View analysis")}</span>
             <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
@@ -115,13 +118,13 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Brain className="w-5 h-5 text-navy-900" />
-          <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
+          <h3 className="text-lg font-semibold text-navy-900">{L("Analyse ORION", "ORION Analytics")}</h3>
         </div>
         <Link
           href="/app#orion-alerts"
           className="text-sm text-navy-600 hover:text-navy-900 font-medium flex items-center space-x-1"
         >
-          <span>Voir l'analyse complète</span>
+          <span>{L("Voir l'analyse complète", "View full analysis")}</span>
           <ChevronRight className="w-4 h-4" />
         </Link>
       </div>

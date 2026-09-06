@@ -60,6 +60,15 @@ export class SchoolLevelIsolationGuard implements CanActivate {
       return true; // Route authentifiée mais sans tenant requis
     }
 
+    // ⭐ /context/bootstrap : fournit le contexte initial (tenant + scope
+    //    Rôles × Pistes × Niveaux) AVANT que le client n'ait sélectionné un
+    //    niveau — exempté de l'isolation par niveau (l'app l'appelle sans
+    //    header de niveau au démarrage, sinon échec circulaire en 400).
+    const path = request.url || request.route?.path || '';
+    if (path.includes('/context/bootstrap')) {
+      return true;
+    }
+
     // Vérifier si cross-level est explicitement autorisé (Module Général uniquement)
     const allowCrossLevel = this.reflector.getAllAndOverride<boolean>(ALLOW_CROSS_LEVEL_KEY, [
       context.getHandler(),

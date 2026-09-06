@@ -131,6 +131,25 @@ export function BilingualProvider({ children }: { children: ReactNode }) {
     }
   }, [settings]);
 
+  // ── ⭐ P4-bis : le scope peut arriver APRÈS les settings (bootstrap async
+  //    du TenantContext) — on écoute l'événement pour imposer la piste du
+  //    profil dès qu'il est connu (mono-piste directeurs notamment).
+  useEffect(() => {
+    const onScopeLoaded = () => {
+      const userScope = getUserScope();
+      if (
+        userScope &&
+        !userScope.allTracks &&
+        Array.isArray(userScope.trackCodes) &&
+        userScope.trackCodes.length === 1
+      ) {
+        setCurrentTrackState(userScope.trackCodes[0] === 'EN' ? 'EN' : 'FR');
+      }
+    };
+    window.addEventListener('user-scope-loaded', onScopeLoaded);
+    return () => window.removeEventListener('user-scope-loaded', onScopeLoaded);
+  }, []);
+
   // ── setCurrentTrack : persiste en localStorage ────────────────────────────
   const setCurrentTrack = useCallback((track: LanguageTrack) => {
     setCurrentTrackState(track);

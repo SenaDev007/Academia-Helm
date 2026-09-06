@@ -98,15 +98,19 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     // 0. ⭐ P4 — LOCALE DU PROFIL (source de vérité serveur) :
     //    un utilisateur mono-piste EN a l'UI en anglais, mono-piste FR en
     //    français. La priorité : profil > localStorage > cookie > navigateur.
-    const scope = getUserScope();
-    if (scope?.locale === 'en' || scope?.locale === 'fr') {
-      setLocaleState(scope.locale);
-      // Mono-piste → UI verrouillée sur la langue du profil
-      if (isMonoTrack(scope)) {
-        setCanSwitchLocale(false);
+    const applyScopeLocale = () => {
+      const scope = getUserScope();
+      if (scope?.locale === 'en' || scope?.locale === 'fr') {
+        setLocaleState(scope.locale);
+        // Mono-piste → UI verrouillée sur la langue du profil
+        if (isMonoTrack(scope)) {
+          setCanSwitchLocale(false);
+        }
+        return true;
       }
-      return;
-    }
+      return false;
+    };
+    if (applyScopeLocale()) return;
     // 1. Check localStorage
     const stored = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (stored === 'fr' || stored === 'en' || stored === 'ar') {
@@ -130,6 +134,28 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocaleState('ar');
       }
     }
+  }, []);
+
+  // ⭐ P4-bis — LE SCOPE ARRIVE APRÈS LE MONTAGE : pour les comptes du portail
+  //    école (directeurs…), le périmètre serveur est résolu par le bootstrap
+  //    TenantContext (asynchrone) APRÈS le montage de ce provider. On écoute
+  //    l'événement `user-scope-loaded` pour appliquer la locale du profil en
+  //    cours de session (sinon un directeur piste EN gardait l'UI en français).
+  useEffect(() => {
+    const onScopeLoaded = () => {
+      const scope = getUserScope();
+      if (scope?.locale === 'en' || scope?.locale === 'fr') {
+        setLocaleState(scope.locale);
+        if (isMonoTrack(scope)) setCanSwitchLocale(false);
+        // Persister la langue du profil (les prochains chargements partent
+        // directement sur la bonne locale, sans attendre le bootstrap)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, scope.locale);
+        }
+      }
+    };
+    window.addEventListener('user-scope-loaded', onScopeLoaded);
+    return () => window.removeEventListener('user-scope-loaded', onScopeLoaded);
   }, []);
 
   // ⭐ RTL support: apply the `dir` attribute to <html> so the entire page

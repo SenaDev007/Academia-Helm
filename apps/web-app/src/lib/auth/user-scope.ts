@@ -62,6 +62,12 @@ export function persistUserScope(scope: UserScope | null | undefined): void {
   if (typeof window === 'undefined' || !scope) return;
   try {
     localStorage.setItem(SCOPE_KEY, JSON.stringify(scope));
+    // ⭐ P4-bis : notifier les contexts montés (I18nContext, BilingualContext…)
+    //    Le scope arrive de façon ASYNCHRONE (login → redirection → bootstrap
+    //    TenantContext) — les providers ont souvent déjà été montés avec la
+    //    locale de repli. Sans cet événement, la langue du profil n'était
+    //    jamais appliquée pour les comptes du portail école (directeurs).
+    window.dispatchEvent(new CustomEvent('user-scope-loaded', { detail: scope }));
   } catch {
     /* ignore quota errors */
   }

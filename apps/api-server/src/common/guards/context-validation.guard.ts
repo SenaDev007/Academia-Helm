@@ -57,12 +57,16 @@ export class ContextValidationGuard implements CanActivate {
 
     // ✅ Exclure explicitement les routes d'authentification et de portail
     // Ces routes ne nécessitent PAS de tenant avant l'authentification
+    // ⭐ /context/bootstrap : fournit le contexte initial (dont le scope
+    //    Rôles × Pistes × Niveaux) AVANT la sélection d'un niveau — l'exiger
+    //    ici serait circulaire (l'app l'appelle sans header de niveau au boot).
     if (
       path.includes('/auth/login') ||
       path.includes('/auth/register') ||
       path.includes('/auth/select-tenant') ||
       path.includes('/auth/dev-login') ||
       path.includes('/auth/dev-available-tenants') ||
+      path.includes('/context/bootstrap') ||
       path.includes('/portal/auth') ||
       path.includes('/portal/search') ||
       path.includes('/portal/list') ||

@@ -4,6 +4,8 @@
  * utilisent localStorage ; la table `sessions` côté API aligne la vérité serveur.
  */
 
+import { persistUserScope } from './user-scope';
+
 export type PersistClientSessionInput = {
   accessToken?: string | null;
   refreshToken?: string | null;
@@ -135,11 +137,9 @@ function persistUserScopeFromLogin(data: { scope?: unknown; user?: { scope?: unk
   if (typeof window === 'undefined') return;
   const scope = (data?.scope ?? data?.user?.scope) as Record<string, unknown> | null | undefined;
   if (scope && typeof scope === 'object') {
-    try {
-      localStorage.setItem('user_scope', JSON.stringify(scope));
-    } catch {
-      /* ignore */
-    }
+    // ⭐ P4-bis : passe par persistUserScope → notifie les contexts montés
+    //    (événement user-scope-loaded) au lieu d'écrire silencieusement.
+    persistUserScope(scope as any);
   }
 }
 

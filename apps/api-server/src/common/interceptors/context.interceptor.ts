@@ -50,6 +50,11 @@ export class ContextInterceptor implements NestInterceptor {
 
     // ✅ Exclure explicitement les routes d'authentification et de portail
     // Ces routes ne nécessitent PAS de contexte complet avant l'authentification
+    // ⭐ /context/bootstrap est AUSSI exempté : c'est JUSTEMENT l'endpoint qui
+    //    fournit le contexte initial (tenant, scope, niveaux disponibles) AVANT
+    //    que le client n'ait sélectionné un niveau — l'exiger ici serait
+    //    circulaire (le bootstrap échouait en 400 "School Level ID is required"
+    //    alors que l'app l'appelle sans header de niveau au démarrage).
     if (
       path.includes('/auth/login') ||
       path.includes('/auth/register') ||
@@ -57,6 +62,7 @@ export class ContextInterceptor implements NestInterceptor {
       path.includes('/auth/dev-login') ||
       path.includes('/auth/dev-available-tenants') ||
       path.includes('/auth/available-tenants') ||
+      path.includes('/context/bootstrap') ||
       path.includes('/portal/auth') ||
       path.includes('/portal/search') ||
       path.includes('/portal/list') ||

@@ -15,6 +15,8 @@
 'use client';
 
 import { Users, TrendingUp, AlertTriangle, DollarSign } from 'lucide-react';
+// ⭐ P4-final : KPIs bilingues (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 interface KPICardsProps {
   data?: any;
@@ -27,9 +29,11 @@ interface KPICardsProps {
 }
 
 export default function KPICards({ data }: KPICardsProps) {
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   const kpis = [
     {
-      label: 'Effectifs',
+      label: L('Enrolment', 'Enrolment'),
       value: data?.enrollment?.total || 0,
       icon: Users,
       color: 'text-blue-600',
@@ -38,7 +42,7 @@ export default function KPICards({ data }: KPICardsProps) {
       format: 'number' as const,
     },
     {
-      label: 'Assiduité',
+      label: L('Assiduité', 'Attendance'),
       value: data?.attendance?.rate || 0,
       suffix: '%',
       icon: TrendingUp,
@@ -48,7 +52,7 @@ export default function KPICards({ data }: KPICardsProps) {
       format: 'percent' as const,
     },
     {
-      label: 'Recettes',
+      label: L('Recettes', 'Revenue'),
       value: data?.revenue?.total || 0,
       prefix: 'F CFA',
       icon: DollarSign,
@@ -58,7 +62,7 @@ export default function KPICards({ data }: KPICardsProps) {
       format: 'currency' as const,
     },
     {
-      label: 'Alertes actives',
+      label: L('Alertes actives', 'Active alerts'),
       value: data?.alerts?.count || 0,
       icon: AlertTriangle,
       color: 'text-red-600',
@@ -87,13 +91,14 @@ export default function KPICards({ data }: KPICardsProps) {
   }
 
   const formatValue = (value: number, prefix?: string, suffix?: string) => {
+    const locale = L('fr-FR', 'en-GB');
     if (prefix) {
-      return `${value.toLocaleString('fr-FR')} ${prefix}`;
+      return `${value.toLocaleString(locale)} ${prefix}`;
     }
     if (suffix) {
-      return `${value.toLocaleString('fr-FR')} ${suffix}`;
+      return `${value.toLocaleString(locale)} ${suffix}`;
     }
-    return value.toLocaleString('fr-FR');
+    return value.toLocaleString(locale);
   };
 
   return (
@@ -112,7 +117,7 @@ export default function KPICards({ data }: KPICardsProps) {
               </div>
               {hasData && kpi.format !== 'currency' && (
                 <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
-                  Actif
+                  {L('Actif', 'Live')}
                 </span>
               )}
             </div>

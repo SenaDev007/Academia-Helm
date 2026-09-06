@@ -1771,14 +1771,16 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   const weightedAvg = weightedAvgQuery.data;
 
   // ─── Niveau scolaire affiché ───
+  // ⭐ P4-final : libellés du niveau dans la langue du profil (EN → Nursery/Primary/Secondary)
   const levelLabel = useMemo(() => {
-    if (!currentLevel?.code) return 'Tous les niveaux';
-    if (currentLevel.code === 'ALL') return 'Tous les niveaux';
-    if (currentLevel.code === 'MATERNELLE') return 'Maternelle';
-    if (currentLevel.code === 'PRIMAIRE') return 'Primaire';
-    if (currentLevel.code === 'SECONDAIRE') return 'Secondaire';
+    const isEN = L('fr', 'en') === 'en';
+    if (!currentLevel?.code) return isEN ? 'All levels' : 'Tous les niveaux';
+    if (currentLevel.code === 'ALL') return isEN ? 'All levels' : 'Tous les niveaux';
+    if (currentLevel.code === 'MATERNELLE') return isEN ? 'Nursery' : 'Maternelle';
+    if (currentLevel.code === 'PRIMAIRE') return isEN ? 'Primary' : 'Primaire';
+    if (currentLevel.code === 'SECONDAIRE') return isEN ? 'Secondary' : 'Secondaire';
     return currentLevel.code;
-  }, [currentLevel?.code]);
+  }, [currentLevel?.code, L]);
 
   // ─── Préparation des données pour les graphiques ───
 

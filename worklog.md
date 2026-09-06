@@ -9769,3 +9769,23 @@ Stage Summary:
 - ✅ Les 2 demandes livrées, déployées et validées E2E production (API + navigateur réel)
 - ✅ Aucun doublon de frais détecté (séquelle possible du bug double-clic) : base saine
 - Prochaine étape possible : purger l'historique cosmétique dès retour de l'accès Neon
+
+---
+Task ID: 21
+Agent: Super Z (agent principal)
+Task: Anomalie CSPEB — élèves CP invisibles dans l'onglet « Liste des élèves » (module Élèves) alors qu'ils apparaissent dans Inscriptions et Admissions
+
+Work Log:
+- Diagnostic API prod : 22/22 enrollments CP 2026-2027 avec academicClassId=CP mais classId NULL ; toutes les autres classes ont leur classId ; toutes créées début juillet depuis admissions PORTAL_PUBLIC converties
+- Cause racine (3 bugs en cascade) : (1) le formulaire « Nouvelle inscription » (EnrollmentsContent) n'envoie QUE academicClassId (UUID AcademicClass), jamais classId → l'élève est inscrit en classe officielle sans section physique et l'onglet « Liste des élèves » (groupé par classe physique) ne peut pas l'afficher ; (2) le trigger prevent_class_change_if_grades bloquait même l'affectation INITIALE (NULL→classe) dès que l'élève avait des notes → les 22 CP (avec notes SaisieMaster) étaient verrouillés, même via l'onglet Affectations ; (3) RolesGuard : le compte promoteur CSPEB porte role=PROMOTEUR (libellé officiel de l'enum UserRole) mais @Roles liste 'PROMOTER' (anglais) → 403 systématique sur assign-physical-class
+- Fix 1ac93f5b : preRegister auto-affecte la classe physique quand une seule section correspond à la classe officielle de l'année (multi-sections → manuel) + StudentClassListsContent : section ambre « Non affectés à une classe physique » (ouverte par défaut, classe officielle affichée) + trigger corrigé dans les 3 sources (bootstrap TS, module_1_triggers.sql, module1_students_security_triggers.sql) : affectation initiale NULL→classe toujours autorisée
+- Fix 0b8067d4 : RolesGuard canonicalise les synonymes EN→FR (PROMOTER/DIRECTOR/SECRETARY/ACCOUNTANT → PROMOTEUR/DIRECTEUR/SECRETAIRE/COMPTABLE) après désuffixation — le promoteur retrouve l'accès aux endpoints @Roles anglais (dont l'onglet Affectations)
+- Rattrapage données prod : accès Neon direct instable (auth refusée par intermittence, IP limitée) → rattrapage via API POST /students/assign-physical-class (IP Railway) après déploiement : 22/22 OK (ClassTransfer INITIAL_ASSIGNMENT + audit + recalcul comptes), 0 échec
+- Vérification finale API : répartition par classe physique = CP:22, CE1:21, CE2:12, CI:9, CM1:12, CM2:10, Mat1:1, Mat2:6 ; 0 enrollment sans classe physique ; 92 ACTIVE + 1 WITHDRAWN cohérent
+
+Stage Summary:
+- ✅ Onglet « Liste des élèves » : le CP affiche ses 22 élèves en production
+- ✅ Futures inscriptions : auto-affectation physique (si section unique) + plus jamais d'élève invisible (section « Non affectés »)
+- ✅ Onglet Affectations débloqué pour le promoteur (fix RBAC PROMOTEUR/PROMOTER)
+- ✅ Trigger : l'affectation initiale reste possible même avec des notes (le changement entre 2 classes reste protégé)
+- Scripts persistés (sandbox) : diag_cpeb_liste_eleves.mjs, inspect_cp_db*.mjs, backfill_cp_via_api.mjs, fix_trigger_and_backfill_cp.mjs

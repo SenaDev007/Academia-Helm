@@ -51,6 +51,10 @@ interface SignResult {
   message?: string;
   // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
   domainStatus?: string;
+  // ⭐ Reçus + facture émis automatiquement à la signature (numéros) —
+  //    PDF joints à l'email du promoteur.
+  receiptNumbers?: string[];
+  invoiceNumber?: string | null;
 }
 
 export function ContractSignClient({ draftId }: { draftId: string }) {
@@ -205,6 +209,21 @@ export function ContractSignClient({ draftId }: { draftId: string }) {
             >
               <FileText className="w-4 h-4" /> Voir le contrat signé
             </a>
+          )}
+
+          {/* ⭐ Reçus + facture émis automatiquement (numéros) */}
+          {(result.receiptNumbers?.length || result.invoiceNumber) && (
+            <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900">
+              <strong>Documents financiers émis</strong> — joints à votre email avec le contrat :
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                {(result.receiptNumbers || []).map((n) => (
+                  <li key={n}><strong>{n}</strong> — reçu d&apos;encaissement</li>
+                ))}
+                {result.invoiceNumber && (
+                  <li><strong>{result.invoiceNumber}</strong> — facture de souscription</li>
+                )}
+              </ul>
+            </div>
           )}
         </div>
       </div>

@@ -878,7 +878,11 @@ export async function getAcademicYearPeriods(academicYearId: string, tenantId?: 
 /** Crée les 3 trimestres par défaut pour une année qui n'a pas encore de périodes. */
 export async function createDefaultAcademicPeriods(academicYearId: string, tenantId?: string | null): Promise<AcademicPeriod[]> {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
-  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/create-default${qs}`, { method: 'POST' });
+  // ⚠️ La route BFF Next s'appelle « bootstrap » (le dossier create-default provoquait
+  // PageNotFoundError avec le routeur Next) et proxifie vers Nest .../periods/create-default.
+  // Appeler « create-default » ici renvoyait la page HTML 404 de Next →
+  // « Unexpected token '<', "<!DOCTYPE "... is not valid JSON ».
+  const res = await fetchWithAuth(`${BASE_URL}/academic-years/${academicYearId}/periods/bootstrap${qs}`, { method: 'POST' });
   return Array.isArray(res) ? res : [];
 }
 

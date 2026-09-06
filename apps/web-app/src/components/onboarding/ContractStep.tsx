@@ -80,6 +80,12 @@ interface ContractStepProps {
   subscriptionPaid?: boolean;
   bilingualPaid?: boolean;
   receivedBy?: string;
+  // ⭐ Nom lisible de l'agent encaisseur (affiché en 4.3 + sur les reçus) —
+  //    l'email (receivedBy) reste la trace de traçabilité.
+  receivedByName?: string;
+  // ⭐ Date(s) de règlement réelles (ISO) — reportée(s) en 4.3 au lieu du
+  //    jour de la signature (encaissement souvent antérieur).
+  paymentDates?: string[];
   // ⭐ Paiement échelonné par tranches — échéancier saisi à l'étape 3
   paymentPlan?: 'full' | 'installments';
   installments?: ContractInstallmentItem[];
@@ -93,6 +99,10 @@ interface ContractStepProps {
     // ⭐ État réel du sous-domaine renvoyé par le backend
     //    (created / partial / failed / not_configured)
     domainStatus?: string;
+    // ⭐ Reçus + facture émis automatiquement à la signature (numéros) —
+    //    PDF joints à l'email du promoteur.
+    receiptNumbers?: string[];
+    invoiceNumber?: string | null;
   }) => void;
   onBack: () => void;
   /**
@@ -186,7 +196,8 @@ export default function ContractStep({
   annexRank, activationBaseFee, activationDiscountPercent,
   schoolsCount = 1, annexes = [],
   subscriptionPaid = true, bilingualPaid = false,
-  receivedBy, paymentPlan = 'full', installments, downPaymentReceived,
+  receivedBy, receivedByName, paymentDates,
+  paymentPlan = 'full', installments, downPaymentReceived,
   onComplete, onBack, overlayTop = 64,
 }: ContractStepProps) {
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
@@ -266,6 +277,10 @@ export default function ContractStep({
         subscriptionPaid: isInstallments ? downPaymentReceived !== false : subscriptionPaid,
         bilingualPaid: isInstallments ? bilingual : (bilingual ? bilingualPaid : false),
         receivedBy,
+        // ⭐ Nom lisible de l'agent encaisseur + dates de règlement réelles —
+        //    repris dans la certification 4.3 et sur les reçus émis.
+        ...(receivedByName ? { receivedByName } : {}),
+        ...(paymentDates && paymentDates.length > 0 ? { paymentDates } : {}),
         // ⭐ Trace « signé manuellement » dans le draft (traçabilité + contrat)
         ...(signedManually ? { signedManually: true as const } : {}),
         ...(isInstallments
@@ -352,6 +367,10 @@ export default function ContractStep({
         hostname: signData.hostname,
         portalUrl: signData.portalUrl,
         domainStatus: signData.domainStatus,
+        // ⭐ Reçus + facture émis automatiquement (numéros) — PDF joints à
+        //    l'email du promoteur, à l'écran de succès.
+        receiptNumbers: Array.isArray(signData.receiptNumbers) ? signData.receiptNumbers : [],
+        invoiceNumber: signData.invoiceNumber || null,
       });
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });

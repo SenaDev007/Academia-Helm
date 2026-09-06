@@ -92,6 +92,14 @@ export class CreateAnnexDraftDto {
   @IsString()
   @MaxLength(63)
   preferredSubdomain?: string;
+
+  /** ⭐ Draft périmé à annuler AVANT création : quand le promoteur revient du
+   *    contrat vers le formulaire pour corriger (bilingue, effectif, plan…),
+   *    le formulaire corrigé REMPLACE l'ancien draft — les corrections ne
+   *    sont plus perdues par « Continuer avec ce brouillon ». */
+  @IsOptional()
+  @IsString()
+  cancelDraftId?: string;
 }
 
 @Controller('onboarding/annex')
@@ -145,6 +153,7 @@ export class AnnexOnboardingController {
           estimatedStudentCount: dto.estimatedStudentCount,
           bilingual: dto.bilingual || false,
           preferredSubdomain: dto.preferredSubdomain,
+          cancelDraftId: dto.cancelDraftId,
         },
       );
     }

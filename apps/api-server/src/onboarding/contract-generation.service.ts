@@ -91,6 +91,19 @@ export interface ContractData {
   subscriptionPaid?: boolean;
   bilingualPaid?: boolean;
   receivedBy?: string; // Email de l'agent YEHI OR Tech qui a encaissé
+  // ⭐ Nom lisible de l'agent encaisseur (ex : « Sènakpon AKPOVI ») — affiché
+  //    dans la certification d'encaissement (4.3) et sur le reçu ; l'email
+  //    reste la trace de traçabilité.
+  receivedByName?: string;
+  // ⭐ Date(s) de règlement en espèces (ISO) — reportée(s) en 4.3/4.4 au lieu
+  //    de la date du jour de génération (règlement antérieur à la signature).
+  paymentDates?: string[];
+  // ⭐ Numéros des reçus d'encaissement générés automatiquement (Article 4.3 —
+  //    « N° du ou des reçus ») — injectés AVANT le rendu du contrat.
+  receiptNumbers?: string[];
+  // ⭐ Reçus par tranche (Article 4.4) : receiptNumber rattaché à chaque
+  //    tranche déjà encaissée (acompte à la signature, tranches réglées).
+  installmentReceipts?: { index: number; receiptNumber: string; paidAt?: string }[];
 
   // ⭐ Paiement échelonné par tranches (espèces) — échéancier saisi dans
   //    le wizard (étape 3). Le contrat reprend l'échéancier tel quel.
@@ -339,6 +352,7 @@ export class ContractGenerationService {
       'à partir de la 5e école, tarification négociée entre les Parties.';
 
     const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+    const nowIso = new Date().toISOString();
     const contractRef = `CT-AH-${new Date().getFullYear()}-${data.subdomain.toUpperCase().substring(0, 12)}`;
     const isInstallments = data.paymentPlan === 'installments' && !!data.installments && data.installments.length > 0;
     const schedule = (data.installments || []).map((inst, i) => ({
@@ -347,6 +361,39 @@ export class ContractGenerationService {
       dueDate: inst.dueDate,
     }));
     const scheduleTotal = schedule.reduce((s, t) => s + t.amount, 0);
+
+    // ⭐ Agent encaisseur — nom lisible prioritaire (receivedByName), email en
+    //    trace entre parenthèses ; fallback ligne à compléter.
+    const receivedByDisplay = data.receivedByName
+      ? `${this.esc(data.receivedByName)}${data.receivedBy ? ` <small style="color:#666">(${this.esc(data.receivedBy)})</small>` : ''}`
+      : data.receivedBy
+        ? this.esc(data.receivedBy)
+        : '_________________________________';
+    // ⭐ Dates de règlement réelles (paymentDates) — sinon le jour de la
+    //    certification (signature), sinon ligne à compléter.
+    const paymentDatesDisplay = !isInstallments && data.subscriptionPaid
+      ? (data.paymentDates && data.paymentDates.length > 0
+          ? data.paymentDates.map((d) => this.fmtDate(d)).join(' et ')
+          : today)
+      : '____ / ____ / ________';
+    // ⭐ Numéros de reçus générés automatiquement (4.3) — reçus d'encaissement
+    //    REC-AH-AAAA-NNNNN émis par la plateforme pour les sommes réglées.
+    const receiptNumbersDisplay = data.receiptNumbers && data.receiptNumbers.length > 0
+      ? data.receiptNumbers.map((n) => `<strong>${this.esc(n)}</strong>`).join(' ; ')
+      : '____________________';
+    // ⭐ Reçus rattachés aux tranches (4.4) — index → numéro de reçu
+    const installmentReceipts = new Map(
+      (data.installmentReceipts || []).map((r) => [Number(r.index), r]),
+    );
+    // ⭐ Horodatage des signatures (auto-détecté à l'apposition) — date ET heure
+    const fmtSignedAt = (iso?: string) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return `Signé électroniquement le ${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    };
+    const promoterSignedAtLabel = fmtSignedAt(data.promoterSignedAt);
+    const providerSignedAtLabel = fmtSignedAt(data.providerSignedAt);
 
     // Grille tarifaire : ligne du plan souscrit cochée
     const planRows = PLAN_GRID.map((p) => {
@@ -404,15 +451,19 @@ export class ContractGenerationService {
           <tr><th>Tranche</th><th>Libellé</th><th class="r">Montant (FCFA)</th><th>Échéance</th><th>Réglé le</th><th>N° de reçu</th><th>Paraphe</th></tr>
         </thead>
         <tbody>
-          ${schedule.map((t, i) => `<tr${i === 0 && data.downPaymentReceived ? ' class="selected"' : ''}>
+          ${schedule.map((t, i) => {
+            const receipt = installmentReceipts.get(i);
+            const isTranchePaid = !!receipt || (i === 0 && data.downPaymentReceived);
+            return `<tr${isTranchePaid ? ' class="selected"' : ''}>
             <td class="c">${i + 1}</td>
             <td>${this.esc(t.label)}</td>
             <td class="r">${this.fmt(t.amount)}</td>
             <td>${t.dueDate ? this.fmtDate(t.dueDate) : 'à la signature'}</td>
-            <td>${i === 0 && data.downPaymentReceived ? today : ''}</td>
+            <td>${receipt?.paidAt ? this.fmtDate(receipt.paidAt) : (i === 0 && data.downPaymentReceived ? today : '')}</td>
+            <td>${receipt ? `<strong>${this.esc(receipt.receiptNumber)}</strong>` : ''}</td>
             <td></td>
-            <td></td>
-          </tr>`).join('')}
+          </tr>`;
+          }).join('')}
           <tr class="total-row"><td colspan="2">TOTAL À RÉGLER (en chiffres)</td><td class="r">${this.fmt(scheduleTotal)}</td><td colspan="4"></td></tr>
         </tbody>
       </table>` : '';
@@ -527,6 +578,11 @@ export class ContractGenerationService {
     </thead>
     <tbody>
       <tr><td><strong>Établissement</strong></td><td>${this.esc(data.schoolName)}</td></tr>
+      ${(annexRank != null && annexRank >= 2)
+        ? `<tr><td><strong>Nature de la souscription</strong></td><td><strong>École annexe — ${annexRank}<sup>e</sup> établissement du groupe</strong> du Promoteur (espace isolé sur la plateforme ; coût d’activation au barème progressif des écoles annexes, cf. Article 4.1)</td></tr>`
+        : (schoolsCount > 1
+          ? `<tr><td><strong>Nature de la souscription</strong></td><td>Souscription multi-écoles — ${schoolsCount} établissements du même groupe (cf. Article 3)</td></tr>`
+          : '')}
       ${annexes.length > 0 ? `<tr><td><strong>Écoles annexes (${annexes.length})</strong></td><td>${annexes.map((a) => this.esc(a.name) + (a.city ? ` — ${this.esc(a.city)}` : '')).join(' ; ')}</td></tr>` : ''}
       <tr><td><strong>Nombre d'établissements souscrits</strong></td><td>${schoolsCount}</td></tr>
       <tr><td><strong>Promoteur (nom et prénom)</strong></td><td>${this.esc(data.promoterName)}</td></tr>
@@ -572,8 +628,9 @@ export class ContractGenerationService {
     <p class="p tight">La présente section certifie l'encaissement des sommes réglées en espèces par le Client ; elle est complétée et signée par le Prestataire :</p>
     <p class="p tight checkbox-line">${!isInstallments && data.subscriptionPaid ? '<span class="check">☑</span>' : '☐'} La souscription — ${activationCertification} et frais annuels du plan souscrit — a été intégralement réglée en espèces.</p>
     <p class="p tight checkbox-line">${data.bilingual && !isInstallments && data.bilingualPaid ? '<span class="check">☑</span>' : '☐'} Option bilingue FR/EN souscrite : les frais de la première année, à facturation annuelle, ont été réglés en espèces.</p>
-    <p class="p tight">Encaissé par (nom et prénom de l'agent YEHI OR Tech) : <strong>${this.esc(data.receivedBy || '_________________________________')}</strong></p>
-    <p class="p tight">N° du ou des reçus : ____________________ — Date(s) de règlement : ${!isInstallments && data.subscriptionPaid ? this.esc(today) : '____ / ____ / ________'}</p>
+    <p class="p tight">Encaissé par (nom et prénom de l'agent YEHI OR Tech) : <strong>${receivedByDisplay}</strong></p>
+    <p class="p tight">N° du ou des reçus : ${receiptNumbersDisplay} — Date(s) de règlement : ${paymentDatesDisplay}</p>
+    <p class="p tight note">Chaque encaissement en espèces donne lieu à un reçu d'encaissement numéroté (format REC-AH-année-N°), généré et archivé automatiquement par la plateforme, dont copie est délivrée au Client par courrier électronique.</p>
   </div>
 
   <h4 class="sub">4.4 — Paiement échelonné par tranches</h4>
@@ -635,6 +692,7 @@ export class ContractGenerationService {
         <p class="field"><strong>Qualité :</strong> Promoteur</p>
         <p class="field">Signature, précédée de la mention manuscrite <strong>« Lu et approuvé »</strong> :</p>
         ${promoterSig}
+        ${promoterSignedAtLabel ? `<p class="field" style="margin-top:1.5mm;color:#1a7a4a;font-weight:600">${promoterSignedAtLabel}</p>` : ''}
         <p class="field" style="margin-top:2mm"><strong>Cachet de l'établissement :</strong></p>
       </td>
       <td>
@@ -645,6 +703,7 @@ export class ContractGenerationService {
         <p class="field"><strong>Qualité :</strong> Directeur Technique et fondateur</p>
         <p class="field">Signature et cachet de la société :</p>
         ${providerSig}
+        ${providerSignedAtLabel ? `<p class="field" style="margin-top:1.5mm;color:#1a7a4a;font-weight:600">${providerSignedAtLabel}</p>` : ''}
       </td>
     </tr>
   </table>

@@ -13287,6 +13287,9 @@ model OnboardingDraft {
   phone                String
   email                String
   bilingual            Boolean             @default(false)
+  /// ⭐ Effectif estimé (élèves) déclaré par le Client (fiche de souscription
+  ///    Article 1) — persisté pour le contrat, l'email et la signature différée.
+  estimatedStudentCount Int               @default(0) @map("estimated_student_count")
   schoolsCount         Int                 @default(1) @map("schools_count")
   /// ⭐ Multi-écoles dès l'onboarding : écoles annexes déclarées par le promoteur
   /// [{ name, city? }] — le tenant i (i > 0) prend le nom/ville de l'annexe i-1.
@@ -13306,11 +13309,58 @@ model OnboardingDraft {
   updatedAt            DateTime            @updatedAt @map("updated_at")
   otps                 OnboardingOTP[]
   payments             OnboardingPayment[]
+  billingDocuments     BillingDocument[]
 
   @@index([email])
   @@index([status])
   @@index([createdAt])
   @@map("onboarding_drafts")
+}
+
+/// ⭐ Reçus et factures automatiques (onboarding / contrat d'abonnement).
+///    Un document par encaissement (RECEIPT) ou par souscription (INVOICE) :
+///    numéro séquentiel par année, snapshot figé des montants, PDF généré
+///    (HTML → Puppeteer), joint à l'email du promoteur.
+model BillingDocument {
+  id               String          @id @default(uuid())
+  /// Kind : RECEIPT (reçu d'encaissement) | INVOICE (facture de souscription)
+  kind             String          @default("RECEIPT")
+  /// Numéro lisible : REC-AH-2026-00001 / FAC-AH-2026-00001
+  documentNumber   String          @unique @map("document_number")
+  /// Année de séquence (pour la numérotation annuelle)
+  sequenceYear     Int             @map("sequence_year")
+  /// Type de transaction couvert : ACTIVATION | ANNUAL | BILINGUAL |
+  /// FULL_SUBSCRIPTION | DOWN_PAYMENT | INSTALLMENT
+  transactionType  String          @default("FULL_SUBSCRIPTION") @map("transaction_type")
+  draftId          String?         @map("draft_id")
+  draft            OnboardingDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  tenantId         String?         @map("tenant_id")
+  /// Émetteur : YEHI OR Tech — agent encaisseur (nom) + email traçabilité
+  issuedByName     String?         @map("issued_by_name")
+  issuedByEmail    String?         @map("issued_by_email")
+  /// Client : nom du payeur (promoteur / établissement)
+  payerName        String?         @map("payer_name")
+  payerEmail       String?         @map("payer_email")
+  /// Modalité : CASH | BANK_TRANSFER | MOBILE_MONEY | ONLINE
+  paymentMethod    String          @default("CASH") @map("payment_method")
+  /// Date d'encaissement effective (ISO)
+  paidAt           DateTime?       @map("paid_at")
+  /// Montant total encaissé/couverte (FCFA)
+  amount           Int             @default(0)
+  /// Détail figé : lignes {label, amount}, échéancier, remise barème, etc.
+  snapshot         Json?
+  /// Chemin du HTML/PDF généré (uploads/billing/...)
+  filePath         String?         @map("file_path")
+  fileName         String?         @map("file_name")
+  /// Statut : EMITTED (émis) | VOID (annulé)
+  status           String          @default("EMITTED")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@index([draftId])
+  @@index([kind, sequenceYear])
+  @@index([tenantId])
+  @@map("billing_documents")
 }
 
 model OnboardingPayment {

@@ -39,6 +39,13 @@ export class CreateDraftDto {
   @IsBoolean()
   bilingual?: boolean;
 
+  /** ⭐ Effectif estimé (élèves) — fiche de souscription (Article 1 du contrat). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  estimatedStudentCount?: number;
+
   @IsOptional()
   @IsInt()
   schoolsCount?: number;

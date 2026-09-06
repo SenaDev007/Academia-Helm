@@ -316,9 +316,9 @@ const BASE_CSS = `
   th.r, td.r { text-align: right; }
   td { padding: 4.5px 10px; border-bottom: 1px solid #e5e7eb; }
   tr.total td { font-weight: 800; background: #f3f4f6; border-top: 1.5px solid #9ca3af; }
-  .net-box { margin-top: 14px; border-radius: 4px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
-  .net-box .lbl { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-  .net-box .val { font-size: 19px; font-weight: 900; }
+  .net-box { margin-top: 14px; border-radius: 4px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; color: #fff; }
+  .net-box .lbl { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #fff; opacity: .92; }
+  .net-box .val { font-size: 19px; font-weight: 900; color: #fff; }
   .note { font-size: 8.5px; color: #6b7280; margin-top: 6px; font-style: italic; }
   .two-col { display: flex; gap: 12px; margin-top: 12px; }
   .two-col > div { flex: 1; }

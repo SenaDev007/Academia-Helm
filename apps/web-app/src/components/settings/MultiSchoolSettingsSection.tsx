@@ -85,6 +85,9 @@ interface AnnexFormState {
   planCode: string;
   estimatedStudentCount: number;
   bilingual: boolean;
+  /** ⭐ Sous-domaine souhaité (SAISI par le promoteur — plus jamais imposé :
+   *    vide = auto-généré depuis le nom). Vérifié disponibilité en direct. */
+  preferredSubdomain: string;
 }
 
 /** Modalités de paiement en espèces (contrat Article 4) — intégral ou échéancier. */
@@ -164,6 +167,8 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
       bilingualPaid: boolean;
       downPaymentReceived?: boolean;
       receivedBy?: string;
+      receivedByName?: string;
+      paymentDates?: string[];
     };
   } | null>(null);
 
@@ -180,6 +185,17 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
   // Annulation + relance du draft existant (modal « onboarding déjà en cours »)
   const [discardingDraft, setDiscardingDraft] = useState(false);
 
+  // ⭐ Sous-domaine : disponibilité vérifiée en direct (comme le wizard)
+  const [subdomainStatus, setSubdomainStatus] = useState<
+    'idle' | 'checking' | 'available' | 'taken' | 'invalid'
+  >('idle');
+
+  // ␐ Draft PÉRIMÉ à remplacer : mémorisé quand le promoteur REVIENT du
+  //    contrat vers le formulaire (« Retour ») pour corriger — au re-submit,
+  //    l'ancien draft est ANNULÉ puis recréé avec les corrections (sinon
+  //    « Continuer avec ce brouillon » écrasait les corrections).
+  const [staleDraftId, setStaleDraftId] = useState<string | null>(null);
+
   const isPromoter = PROMOTER_ROLES.includes(user?.role || '');
 
   const [form, setForm] = useState<AnnexFormState>({
@@ -191,7 +207,32 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
     planCode: 'SEED',
     estimatedStudentCount: 0,
     bilingual: false,
+    preferredSubdomain: '',
   });
+
+  // ⭐ Vérification de la disponibilité du sous-domaine souhaité (debounce)
+  useEffect(() => {
+    const raw = (form.preferredSubdomain || '').trim().toLowerCase();
+    if (raw.length < 3) {
+      setSubdomainStatus('idle');
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(raw)) {
+      setSubdomainStatus('invalid');
+      return;
+    }
+    setSubdomainStatus('checking');
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/onboarding/subdomain/check/${encodeURIComponent(raw)}`, { cache: 'no-store' });
+        const data = await res.json();
+        setSubdomainStatus(data.available === true ? 'available' : 'taken');
+      } catch {
+        setSubdomainStatus('idle');
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.preferredSubdomain]);
 
   const loadEligibility = useCallback(async () => {
     setLoading(true);
@@ -285,6 +326,18 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
     setCreating(true);
     try {
       const token = localStorage.getItem('accessToken')?.trim() ?? '';
+      // ⭐ Sous-domaine souhaité : bloquer la soumission s'il est indisponible
+      const wantedSubdomain = (form.preferredSubdomain || '').trim().toLowerCase();
+      if (wantedSubdomain && subdomainStatus === 'taken') {
+        setError('Ce sous-domaine est déjà utilisé — choisissez-en un autre.');
+        setCreating(false);
+        return;
+      }
+      if (wantedSubdomain && subdomainStatus === 'invalid') {
+        setError('Sous-domaine invalide (min. 3 caractères, lettres minuscules, chiffres, tirets).');
+        setCreating(false);
+        return;
+      }
       const response = await fetch('/api/onboarding/annex', {
         method: 'POST',
         headers: {
@@ -300,6 +353,11 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
           planCode: form.planCode,
           estimatedStudentCount: form.estimatedStudentCount,
           bilingual: form.bilingual,
+          // ⭐ Sous-domaine SAISI par le promoteur (vide = auto-généré)
+          preferredSubdomain: wantedSubdomain || undefined,
+          // ⭐ Remplacer le draft périmé mémorisé (retour depuis le contrat
+          //    après corrections) — les corrections ne sont plus perdues.
+          cancelDraftId: staleDraftId || undefined,
         }),
       });
       const data = await response.json();
@@ -377,8 +435,16 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
               : paymentMarked.bilingualPaid,
           downPaymentReceived: paymentMarked.downPaymentReceived,
           receivedBy: paymentMarked.receivedBy.trim() || undefined,
+          // ⭐ Nom lisible de l'agent encaisseur (4.3 + reçus) — l'email reste
+          //    la trace de traçabilité quand il est fourni.
+          receivedByName: paymentMarked.receivedBy.trim() || undefined,
+          // ⭐ Date de règlement réelle (aujourd'hui par défaut — l'encaissement
+          //    espèces précède généralement la signature)
+          paymentDates: [new Date().toISOString()],
         },
       });
+      // ⭐ Nouveau draft créé : plus besoin de remplacer l'ancien
+      setStaleDraftId(null);
       setShowForm(false);
       toast({
         title: 'Annexe prête à contractualiser',
@@ -395,17 +461,24 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
     signed: boolean;
     subdomain?: string;
     domainStatus?: string;
+    receiptNumbers?: string[];
+    invoiceNumber?: string | null;
   }) => {
     setAnnexDraft(null);
     setPaymentMarked(defaultPaymentMarked());
+    setStaleDraftId(null);
     if (result.signed) {
       // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
       const domainOk = result.domainStatus === 'created';
       toast({
         title: domainOk ? 'École annexe créée 🎉' : 'École annexe créée — sous-domaine en attente',
-        description: domainOk
-          ? "L'établissement a rejoint votre groupe. Retrouvez-le dans « Vue Groupe » et dans le sélecteur d'écoles au prochain rechargement."
-          : `L'établissement a rejoint votre groupe, mais ${result.subdomain ? `${result.subdomain}.academiahelm.com` : 'son sous-domaine'} n'a pas pu être activé automatiquement (configuration des domaines à vérifier côté serveur API). L'école reste accessible via le domaine principal.`,
+        description:
+          (domainOk
+            ? "L'établissement a rejoint votre groupe. Retrouvez-le dans « Vue Groupe » et dans le sélecteur d'écoles au prochain rechargement."
+            : `L'établissement a rejoint votre groupe, mais ${result.subdomain ? `${result.subdomain}.academiahelm.com` : 'son sous-domaine'} n'a pas pu être activé automatiquement (configuration des domaines à vérifier côté serveur API). L'école reste accessible via le domaine principal.`) +
+          (result.receiptNumbers && result.receiptNumbers.length > 0
+            ? ` Reçu(s) émis : ${result.receiptNumbers.join(', ')}${result.invoiceNumber ? ` — facture ${result.invoiceNumber}` : ''} — PDF envoyé(s) par email au promoteur.`
+            : ''),
         ...(!domainOk ? { variant: 'destructive' as const } : {}),
       });
       // Rafraîchir la liste des écoles + notifier le parent (ex. recharger la session)
@@ -442,8 +515,10 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         phone: d.phone || form.phone,
         email: d.email || form.email,
         planCode: restoredPlanCode,
-        estimatedStudentCount: Number(d.estimatedStudentCount ?? 0) || 0,
+        estimatedStudentCount: Number((d as any).estimatedStudentCount ?? 0) || 0,
         bilingual: d.bilingual ?? false,
+        // ⭐ Sous-domaine souhaité du draft repris (mémorisé à la création)
+        preferredSubdomain: (d as any).preferredSubdomain || '',
       },
       promoterName: `${d.promoterFirstName || user?.firstName || ''} ${d.promoterLastName || user?.lastName || ''}`.trim(),
       resumed: true,
@@ -467,6 +542,8 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         bilingualPaid: marked.bilingualPaid === true,
         downPaymentReceived: marked.downPaymentReceived === true,
         receivedBy: marked.receivedBy || undefined,
+        receivedByName: marked.receivedByName || undefined,
+        paymentDates: Array.isArray(marked.paymentDates) ? marked.paymentDates : undefined,
       },
     });
     setExistingDraftChoice(null);
@@ -511,6 +588,7 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         bilingual={annexDraft.form.bilingual}
         subdomain={
           annexDraft.subdomain
+          || (annexDraft.form as AnnexFormState).preferredSubdomain?.trim()
           || annexDraft.form.annexName
             .toLowerCase()
             .replace(/[^a-z0-9]/g, '')
@@ -532,9 +610,17 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
         subscriptionPaid={pay?.subscriptionPaid ?? false}
         bilingualPaid={pay?.bilingualPaid ?? false}
         receivedBy={pay?.receivedBy}
+        receivedByName={pay?.receivedByName}
+        paymentDates={pay?.paymentDates}
         overlayTop={58}
         onComplete={handleAnnexContractDone}
-        onBack={() => setAnnexDraft(null)}
+        // ⭐ « Retour » vers le formulaire : mémoriser le draft courant comme
+        //    PÉRIMÉ — au re-submit il sera ANNULÉ puis recréé avec les
+        //    corrections (l'utilisateur est revenu PRÉCISÉMENT pour corriger).
+        onBack={() => {
+          setStaleDraftId(annexDraft.draftId);
+          setAnnexDraft(null);
+        }}
       />
     );
   }
@@ -774,6 +860,44 @@ export function MultiSchoolSettingsSection({ user, onSchoolCreated }: MultiSchoo
                 onChange={(e) => setForm({ ...form, estimatedStudentCount: Number(e.target.value) || 0 })}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-700 focus:border-slate-700"
               />
+            </div>
+            {/* ⭐ Sous-domaine SOUHAITÉ (saisi libre — plus imposé) */}
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Sous-domaine souhaité <span className="text-slate-400">(optionnel — sinon généré depuis le nom)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={form.preferredSubdomain}
+                  onChange={(e) => setForm({ ...form, preferredSubdomain: e.target.value.toLowerCase() })}
+                  className={`flex-1 px-3 py-2 text-sm border rounded-md focus:ring-2 focus:ring-slate-700 focus:border-slate-700 ${
+                    subdomainStatus === 'available'
+                      ? 'border-emerald-400'
+                      : subdomainStatus === 'taken' || subdomainStatus === 'invalid'
+                        ? 'border-red-400'
+                        : 'border-slate-300'
+                  }`}
+                  placeholder="ex : mon-ecole → mon-ecole.academiahelm.com"
+                />
+                <span className="text-xs text-slate-500 whitespace-nowrap">.academiahelm.com</span>
+              </div>
+              {subdomainStatus === 'checking' && (
+                <p className="mt-1 text-[11px] text-slate-500">Vérification de la disponibilité…</p>
+              )}
+              {subdomainStatus === 'available' && (form.preferredSubdomain || '').trim().length >= 3 && (
+                <p className="mt-1 text-[11px] text-emerald-600 font-medium">
+                  ✓ « {form.preferredSubdomain.trim()} » est disponible — il figurera sur le contrat (Article 1).
+                </p>
+              )}
+              {subdomainStatus === 'taken' && (
+                <p className="mt-1 text-[11px] text-red-600">✗ Ce sous-domaine est déjà utilisé — choisissez-en un autre.</p>
+              )}
+              {subdomainStatus === 'invalid' && (form.preferredSubdomain || '').trim().length > 0 && (
+                <p className="mt-1 text-[11px] text-red-600">
+                  ✗ Invalide : min. 3 caractères, lettres minuscules, chiffres et tirets uniquement.
+                </p>
+              )}
             </div>
           </div>
 

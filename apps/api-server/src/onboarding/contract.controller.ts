@@ -27,10 +27,13 @@ import * as fs from 'fs';
 import { Public } from '../auth/decorators/public.decorator';
 import { ContractGenerationService } from './contract-generation.service';
 import type { ContractData, ContractInstallment } from './contract-generation.service';
+import { BillingReceiptService } from './billing-receipt.service';
+import type { EmittedBillingDocument, ReceiptLine, ReceiptInstallment } from './billing-receipt.service';
 import { OnboardingService } from './services/onboarding.service';
 import type { CashPaymentMarking } from './services/onboarding.service';
 import { EmailService } from '../communication/services/email.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
+import { PrismaService } from '../database/prisma.service';
 
 /**
  * ⭐ Les endpoints contrat sont PUBLICS : ils sont appelés pendant le flux
@@ -48,8 +51,10 @@ export class ContractController {
   constructor(
     private readonly contractService: ContractGenerationService,
     private readonly onboardingService: OnboardingService,
+    private readonly billingReceiptService: BillingReceiptService,
     private readonly emailService: EmailService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -208,6 +213,31 @@ export class ContractController {
       throw err;
     }
 
+    // 3bis. ⭐ REÇUS + FACTURE AUTOMATIQUES — générés AVANT le contrat pour
+    //       que leurs numéros figurent dans les sections 4.3 (paiement intégral)
+    //       et 4.4 (échéancier) du contrat. Chaque encaissement en espèces
+    //       (paiement intégral OU acompte à la signature) donne lieu à un reçu
+    //       REC-AH-AAAA-NNNNN ; une facture FAC-AH-AAAA-NNNNN couvre la
+    //       souscription (échéancier complet en paiement échelonné).
+    //       ⚠️ Non-bloquant : un échec de reçu ne doit pas empêcher le contrat.
+    let billingDocs: {
+      receiptNumbers: string[];
+      installmentReceipts: { index: number; receiptNumber: string; paidAt?: string }[];
+      documents: EmittedBillingDocument[];
+    } = { receiptNumbers: [], installmentReceipts: [], documents: [] };
+    try {
+      billingDocs = await this.emitBillingDocumentsForSign(body.draftId, contractData, tenantInfo?.tenantId || null);
+      // Injecter les numéros de reçus dans le contrat AVANT son rendu
+      if (billingDocs.receiptNumbers.length > 0) {
+        contractData.receiptNumbers = billingDocs.receiptNumbers;
+      }
+      if (billingDocs.installmentReceipts.length > 0) {
+        contractData.installmentReceipts = billingDocs.installmentReceipts;
+      }
+    } catch (billingErr: any) {
+      this.logger.error(`⚠️  Billing documents emission failed (non-bloquant): ${billingErr.message}`, billingErr.stack);
+    }
+
     // 4. Générer le contrat PDF — NON BLOQUANT : l'école est déjà créée.
     //    Avec signatures intégrées OU avec la mention « déjà signé
     //    manuellement » (aucune signature numérique recueillie).
@@ -253,6 +283,7 @@ export class ContractController {
     // 5. Envoyer l'email avec le contrat PDF signé + credentials
     //    (mention « déjà signé manuellement » si applicable) — uniquement
     //    si le PDF a pu être généré (l'école, elle, est déjà créée).
+    //    ⭐ Reçus + facture générés (3bis) joints au même email.
     if (contractResult) {
       try {
         await this.sendSignedContractEmail(
@@ -264,13 +295,23 @@ export class ContractController {
           tenantInfo?.portalUrl,
           signedManually,
           contractPdf,
+          billingDocs.documents,
         );
-        this.logger.log(`✅ Signed contract email sent to promoter`);
+        this.logger.log(`✅ Signed contract email sent to promoter (avec reçus/facture)`);
       } catch (err: any) {
         this.logger.error(`⚠️  Failed to send signed contract email: ${err.message}`, err.stack);
         // Non-bloquant : le contrat est signé et le tenant créé
       }
     } else {
+      // ⭐ Contrat PDF en échec MAIS reçus émis → les envoyer quand même :
+      //    chaque encaissement doit être attesté au promoteur.
+      if (billingDocs.documents.length > 0) {
+        try {
+          await this.sendBillingDocumentsEmail(body.draftId, billingDocs.documents);
+        } catch (err: any) {
+          this.logger.error(`⚠️  Failed to send billing documents email: ${err.message}`, err.stack);
+        }
+      }
       this.logger.warn(
         `⚠️  Email contrat non envoyé (PDF non généré) pour le draft ${body.draftId} — ` +
         `l'école est créée et les identifiants ont été envoyés par l'email de bienvenue`,
@@ -301,7 +342,465 @@ export class ContractController {
       //    si {subdomain}.academiahelm.com existe réellement.
       domainStatus: tenantInfo?.domainStatus ?? null,
       domainReports: tenantInfo?.domainReports ?? null,
+      // ⭐ Reçus + facture émis automatiquement (numéros) — l'écran de succès
+      //    du wizard les affiche et les PDF sont joints à l'email promoteur.
+      receiptNumbers: billingDocs.documents
+        .filter((d) => d.kind === 'RECEIPT')
+        .map((d) => d.documentNumber),
+      invoiceNumber: billingDocs.documents.find((d) => d.kind === 'INVOICE')?.documentNumber || null,
+      billingDocuments: billingDocs.documents.map((d) => ({
+        kind: d.kind,
+        documentNumber: d.documentNumber,
+        amount: d.amount,
+        fileUrl: d.fileUrl,
+      })),
     };
+  }
+
+  /**
+   * ⭐ Émet les REÇUS + FACTURE automatiques pour un encaissement espèces
+   *    (appelé à la signature du contrat — immédiate OU différée) :
+   *
+   *    - Paiement intégral (4.3) marqué payé → 1 reçu FULL_SUBSCRIPTION
+   *      couvrant le détail exact (activation au barème, frais annuels,
+   *      option bilingue) + 1 facture de la souscription.
+   *    - Paiement échelonné (4.4) avec acompte encaissé → 1 reçu
+   *      DOWN_PAYMENT pour l'acompte + 1 facture avec l'échéancier complet
+   *      (reçus émis + solde restant) — les tranches ultérieures reçoivent
+   *    leur reçu via POST /receipts (endpoint dédié aux encaissements).
+   *
+   *    ⚠️ NON-BLOQUANT et IDEMPOTENT (par draft + type de transaction).
+   */
+  private async emitBillingDocumentsForSign(
+    draftId: string,
+    contractData: ContractData,
+    tenantId: string | null,
+  ): Promise<{
+    receiptNumbers: string[];
+    installmentReceipts: { index: number; receiptNumber: string; paidAt?: string }[];
+    documents: EmittedBillingDocument[];
+  }> {
+    const draft: any = await this.onboardingService.getDraft(draftId);
+    if (!draft) return { receiptNumbers: [], installmentReceipts: [], documents: [] };
+
+    const priceSnap = (draft.priceSnapshot as any) || {};
+    const marked: any = (priceSnap.paymentMarked as any) || {};
+    const payerName = `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim()
+      || draft.promoterEmail || draft.email || 'Client';
+    const payerEmail = draft.promoterEmail || draft.email || undefined;
+    const subdomain = (draft as any).preferredSubdomain
+      || String(draft.schoolName || 'ecole').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+    const contractRef = `CT-AH-${new Date().getFullYear()}-${subdomain.toUpperCase().substring(0, 12)}`;
+
+    // ⭐ Agent encaisseur : nom lisible — sinon résolu depuis l'email (user)
+    let issuedByName: string | undefined = marked.receivedByName || (contractData as any).receivedByName;
+    const issuedByEmail: string | undefined = marked.receivedBy || (contractData as any).receivedBy;
+    if (!issuedByName && issuedByEmail && String(issuedByEmail).includes('@')) {
+      try {
+        const agent = await this.prisma.user.findUnique({
+          where: { email: String(issuedByEmail).toLowerCase() },
+          select: { firstName: true, lastName: true },
+        });
+        if (agent && (agent.firstName || agent.lastName)) {
+          issuedByName = `${agent.firstName || ''} ${agent.lastName || ''}`.trim();
+        }
+      } catch { /* résolution best-effort */ }
+    }
+    // Propager le nom résolu au contrat (4.3 — « Encaissé par »)
+    if (issuedByName && !contractData.receivedByName) {
+      contractData.receivedByName = issuedByName;
+    }
+
+    // Montants — même logique que buildContractDataFromDraft (source : snapshot)
+    const schoolsCount = Math.max(1, draft.schoolsCount || 1);
+    const activationFee = Number(priceSnap.initialFee ?? priceSnap.initialPayment ?? contractData.activationFee ?? 500000) || 500000;
+    const annualFee = Number(priceSnap.yearlyPrice ?? contractData.annualFee ?? 50000) || 50000;
+    const bilingualFee = (draft.bilingual || contractData.bilingual)
+      ? Number(priceSnap.bilingualFee ?? (contractData as any).bilingualFee ?? 100000) || 100000
+      : 0;
+    const annexRank = priceSnap.annexRank != null ? Number(priceSnap.annexRank) : contractData.annexRank;
+    const annexDiscount = Number(priceSnap.activationDiscountPercent ?? contractData.activationDiscountPercent ?? 0) || 0;
+    const bilingual = !!(draft.bilingual ?? contractData.bilingual);
+    const isInstallments = marked.paymentPlan === 'installments'
+      || (contractData.paymentPlan === 'installments' && !!contractData.installments);
+    const installments: any[] = Array.isArray(marked.installments)
+      ? marked.installments
+      : (contractData.installments || []);
+
+    // ⭐ Détail d'activation : barème multi-écoles OU remise annexe mono-école
+    const activationLines: ReceiptLine[] = [];
+    if (schoolsCount > 1) {
+      const activationTiers = Array.isArray(priceSnap.activationTiers) ? priceSnap.activationTiers : null;
+      const activationTotal = Number(priceSnap.activationTotal ?? 0) || 0;
+      if (activationTiers && activationTiers.length === schoolsCount) {
+        activationTiers.forEach((t: any, i: number) => {
+          activationLines.push({
+            label: `Frais d'activation — ${i + 1}${i === 0 ? 're' : 'e'} école${t.discountPercent ? ` (barème −${Number(t.discountPercent)} %)` : ''}`,
+            amount: Number(t.fee) || 0,
+          });
+        });
+      } else if (activationTotal > 0) {
+        activationLines.push({
+          label: `Frais d'activation du groupe (${schoolsCount} écoles — barème progressif)`,
+          amount: activationTotal,
+        });
+      } else {
+        activationLines.push({ label: 'Frais d\'activation', amount: activationFee * schoolsCount });
+      }
+    } else {
+      activationLines.push({
+        label: annexDiscount > 0 && annexRank != null && annexRank >= 2
+          ? `Frais d'activation (${annexRank}e école du groupe — barème annexe −${annexDiscount} %)`
+          : 'Frais d\'activation',
+        amount: activationFee,
+      });
+    }
+
+    const documents: EmittedBillingDocument[] = [];
+    const receiptNumbers: string[] = [];
+    const installmentReceipts: { index: number; receiptNumber: string; paidAt?: string }[] = [];
+
+    if (!isInstallments && (marked.subscriptionPaid !== false)) {
+      // ── Paiement intégral : 1 reçu couvrant le détail exact ──
+      const lines: ReceiptLine[] = [
+        ...activationLines,
+        { label: `Frais annuels — plan ${priceSnap.planName || contractData.planName || 'souscrit'}${schoolsCount > 1 ? ` × ${schoolsCount} écoles` : ''}`, amount: annualFee * schoolsCount },
+      ];
+      if (bilingual && marked.bilingualPaid !== false) {
+        lines.push({ label: `Option bilingue FR/EN (1re année)${schoolsCount > 1 ? ` × ${schoolsCount} écoles` : ''}`, amount: bilingualFee * schoolsCount });
+      }
+      const amount = lines.reduce((s, l) => s + l.amount, 0);
+      if (amount > 0) {
+        const receipt = await this.billingReceiptService.emit(
+          {
+            kind: 'RECEIPT',
+            transactionType: 'FULL_SUBSCRIPTION',
+            draftId,
+            tenantId: tenantId || undefined,
+            payerName,
+            payerEmail,
+            issuedByName,
+            issuedByEmail,
+            paymentMethod: 'CASH',
+            paidAt: marked.markedAt ? new Date(marked.markedAt) : new Date(),
+            lines,
+            amount,
+            contractRef,
+            schoolName: draft.schoolName,
+          },
+          `full-${draftId}`,
+        );
+        if (receipt) {
+          documents.push(receipt);
+          receiptNumbers.push(receipt.documentNumber);
+        }
+      }
+    } else if (isInstallments && installments.length > 0 && marked.downPaymentReceived !== false) {
+      // ── Acompte (tranche 1) encaissé à la signature → reçu dédié ──
+      const downPayment = Math.max(0, Math.round(Number(installments[0]?.amount) || 0));
+      if (downPayment > 0) {
+        const receipt = await this.billingReceiptService.emit(
+          {
+            kind: 'RECEIPT',
+            transactionType: 'DOWN_PAYMENT',
+            draftId,
+            tenantId: tenantId || undefined,
+            payerName,
+            payerEmail,
+            issuedByName,
+            issuedByEmail,
+            paymentMethod: 'CASH',
+            paidAt: marked.markedAt ? new Date(marked.markedAt) : new Date(),
+            lines: [
+              {
+                label: installments[0]?.label || 'Acompte à la signature',
+                amount: downPayment,
+              },
+            ],
+            amount: downPayment,
+            contractRef,
+            schoolName: draft.schoolName,
+            note: 'Acompte sur la souscription (Article 4.4 — paiement échelonné).',
+            installments: installments.map((t: any, i: number) => ({
+              label: String(t.label || (i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`)),
+              amount: Math.max(0, Math.round(Number(t.amount) || 0)),
+              dueDate: t.dueDate,
+            })),
+          },
+          `downpayment-${draftId}`,
+        );
+        if (receipt) {
+          documents.push(receipt);
+          installmentReceipts.push({
+            index: 0,
+            receiptNumber: receipt.documentNumber,
+            paidAt: new Date().toISOString(),
+          });
+          // Persister le n° de reçu de l'acompte dans l'échéancier du draft
+          await this.persistInstallmentReceipt(draftId, 0, receipt.documentNumber);
+        }
+      }
+    }
+
+    // ── Facture de souscription (toujours émise) ──
+    if (!isInstallments || installments.length > 0) {
+      const invoiceLines: ReceiptLine[] = [
+        ...activationLines,
+        { label: `Frais annuels — plan ${priceSnap.planName || contractData.planName || 'souscrit'}${schoolsCount > 1 ? ` × ${schoolsCount} écoles` : ''}`, amount: annualFee * schoolsCount },
+      ];
+      if (bilingual) {
+        invoiceLines.push({ label: `Option bilingue FR/EN (1re année)${schoolsCount > 1 ? ` × ${schoolsCount} écoles` : ''}`, amount: bilingualFee * schoolsCount });
+      }
+      const invoiceAmount = invoiceLines.reduce((s, l) => s + l.amount, 0);
+      const invoiceInstallments: ReceiptInstallment[] | undefined = isInstallments
+        ? installments.map((t: any, i: number) => {
+            const already = installmentReceipts.find((r) => r.index === i);
+            const persisted = (marked.installments?.[i] as any)?.receiptNumber;
+            return {
+              label: String(t.label || (i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`)),
+              amount: Math.max(0, Math.round(Number(t.amount) || 0)),
+              dueDate: t.dueDate,
+              receiptNumber: already?.receiptNumber || persisted || undefined,
+            };
+          })
+        : undefined;
+      if (invoiceAmount > 0) {
+        const invoice = await this.billingReceiptService.emit(
+          {
+            kind: 'INVOICE',
+            transactionType: 'FULL_SUBSCRIPTION',
+            draftId,
+            tenantId: tenantId || undefined,
+            payerName,
+            payerEmail,
+            issuedByName,
+            issuedByEmail,
+            paymentMethod: 'CASH',
+            paidAt: new Date(),
+            lines: invoiceLines,
+            amount: invoiceAmount,
+            contractRef,
+            schoolName: draft.schoolName,
+            note: isInstallments
+              ? 'Paiement échelonné convenu (Article 4.4) — le détail des encaissements figure sur les reçus numérotés.'
+              : undefined,
+            installments: invoiceInstallments,
+          },
+          `invoice-${draftId}`,
+        );
+        if (invoice) documents.push(invoice);
+      }
+    }
+
+    return { receiptNumbers, installmentReceipts, documents };
+  }
+
+  /**
+   * ⭐ Encaissement d'une TRANCHE ultérieure (Article 4.4) : émet le reçu
+   *    de la tranche, le reporte dans l'échéancier du draft (numéro + date),
+   *    et l'email au promoteur. Idempotent par index de tranche.
+   *
+   *    Body : { draftId, installmentIndex, receivedBy?, receivedByName?, paidAt? }
+   */
+  @Post('receipts')
+  @HttpCode(HttpStatus.OK)
+  async emitInstallmentReceipt(
+    @Body() body: {
+      draftId: string;
+      installmentIndex: number;
+      receivedBy?: string;
+      receivedByName?: string;
+      paidAt?: string;
+    },
+  ) {
+    const draft: any = await this.onboardingService.getDraft(body.draftId);
+    if (!draft) {
+      return { success: false, message: 'Draft introuvable.' };
+    }
+    const priceSnap = (draft.priceSnapshot as any) || {};
+    const marked: any = (priceSnap.paymentMarked as any) || {};
+    const installments: any[] = Array.isArray(marked.installments) ? marked.installments : [];
+    const idx = Number(body.installmentIndex);
+    if (!(idx >= 0) || idx >= installments.length) {
+      return { success: false, message: `Tranche ${idx} introuvable dans l'échéancier de ce draft.` };
+    }
+
+    // Déjà un reçu pour cette tranche ? → renvoyer le document existant
+    const existingNumber = installments[idx]?.receiptNumber;
+    if (existingNumber) {
+      const existing = await this.billingReceiptService.emit(
+        {
+          kind: 'RECEIPT',
+          transactionType: 'INSTALLMENT',
+          draftId: body.draftId,
+          payerName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || 'Client',
+          lines: [{ label: installments[idx].label, amount: Number(installments[idx].amount) || 0 }],
+          amount: Number(installments[idx].amount) || 0,
+        },
+        `installment-${idx}-${body.draftId}`,
+      );
+      if (existing) {
+        return { success: true, receipt: { number: existingNumber, fileUrl: existing.fileUrl }, alreadyEmitted: true };
+      }
+    }
+
+    const amount = Math.max(0, Math.round(Number(installments[idx].amount) || 0));
+    if (amount <= 0) {
+      return { success: false, message: 'Montant de la tranche invalide (0 FCFA).' };
+    }
+
+    const subdomain = (draft as any).preferredSubdomain
+      || String(draft.schoolName || 'ecole').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20);
+    const receipt = await this.billingReceiptService.emit(
+      {
+        kind: 'RECEIPT',
+        transactionType: 'INSTALLMENT',
+        draftId: body.draftId,
+        payerName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || 'Client',
+        payerEmail: draft.promoterEmail || draft.email || undefined,
+        issuedByName: body.receivedByName || marked.receivedByName,
+        issuedByEmail: body.receivedBy || marked.receivedBy,
+        paymentMethod: 'CASH',
+        paidAt: body.paidAt ? new Date(body.paidAt) : new Date(),
+        lines: [{ label: installments[idx].label || `Tranche ${idx + 1}`, amount }],
+        amount,
+        contractRef: `CT-AH-${new Date().getFullYear()}-${subdomain.toUpperCase().substring(0, 12)}`,
+        schoolName: draft.schoolName,
+        note: `Tranche ${idx + 1} de l'échéancier convenu (Article 4.4 du contrat).`,
+        installments: installments.map((t: any, i: number) => ({
+          label: String(t.label || (i === 0 ? 'Acompte à la signature' : `Tranche ${i + 1}`)),
+          amount: Math.max(0, Math.round(Number(t.amount) || 0)),
+          dueDate: t.dueDate,
+          receiptNumber: i === idx ? undefined : t.receiptNumber,
+        })),
+      },
+      `installment-${idx}-${body.draftId}`,
+    );
+    if (!receipt) {
+      return { success: false, message: 'Impossible d\u2019émettre le reçu (erreur technique — consulter les logs).' };
+    }
+
+    // Reporter le numéro + date dans l'échéancier du draft
+    await this.persistInstallmentReceipt(body.draftId, idx, receipt.documentNumber, body.paidAt);
+
+    // Email au promoteur avec le reçu en pièce jointe
+    try {
+      await this.sendBillingDocumentsEmail(body.draftId, [receipt]);
+    } catch (err: any) {
+      this.logger.warn(`Reçu émis mais email non envoyé : ${err.message}`);
+    }
+
+    return {
+      success: true,
+      receipt: { number: receipt.documentNumber, fileUrl: receipt.fileUrl, amount },
+    };
+  }
+
+  /** Reporte le n° de reçu + date d'encaissement d'une tranche dans le draft. */
+  private async persistInstallmentReceipt(
+    draftId: string,
+    index: number,
+    receiptNumber: string,
+    paidAt?: string,
+  ): Promise<void> {
+    try {
+      const draft: any = await this.onboardingService.getDraft(draftId);
+      if (!draft) return;
+      const marked: any = ((draft.priceSnapshot as any) || {}).paymentMarked || {};
+      const installments: any[] = Array.isArray(marked.installments) ? [...marked.installments] : [];
+      if (index < 0 || index >= installments.length) return;
+      installments[index] = {
+        ...installments[index],
+        receiptNumber,
+        paidAt: paidAt || new Date().toISOString(),
+      };
+      // markCashPayment fusionne (spread) : l'échéancier enrichi survit aux
+      // rechargements du draft (signature différée, reprise, tranches suivantes).
+      await this.onboardingService.markCashPayment(draftId, { installments });
+      this.logger.log(`🧾 Reçu ${receiptNumber} rattaché à la tranche ${index + 1} du draft ${draftId}`);
+    } catch (err: any) {
+      this.logger.warn(`persistInstallmentReceipt failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Envoie les reçus/factures PDF au promoteur (cas : contrat PDF en échec OU
+   * encaissement d'une tranche ultérieure — reçu individuel).
+   */
+  private async sendBillingDocumentsEmail(
+    draftId: string,
+    documents: EmittedBillingDocument[],
+  ): Promise<void> {
+    const draft: any = await this.onboardingService.getDraft(draftId);
+    if (!draft) return;
+    const to = (draft.promoterEmail || draft.email || '').trim();
+    if (!to || documents.length === 0) return;
+
+    const promoterName = `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || 'Promoteur';
+    const attachments = documents
+      .filter((d) => d.pdf?.buffer?.length)
+      .map((d) => ({ filename: d.pdf!.filename, content: d.pdf!.buffer }));
+
+    const docRows = documents
+      .map(
+        (d) =>
+          `<tr><td style="padding:4px 8px;color:#6b7280;">${d.kind === 'RECEIPT' ? '🧾 Reçu' : '📄 Facture'}</td><td style="padding:4px 8px;"><strong>${d.documentNumber}</strong></td><td style="padding:4px 8px;text-align:right;"><strong>${d.amount.toLocaleString('fr-FR')} FCFA</strong></td></tr>`,
+      )
+      .join('');
+
+    const html = `
+<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1f2937;">
+  <div style="background:linear-gradient(135deg,#0a1d3f 0%,#0b2f73 100%);padding:24px;border-radius:8px 8px 0 0;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;">Academia <span style="color:#f5b335;">Helm</span></h1>
+    <p style="color:#bfdbfe;margin:4px 0 0;font-size:13px;">Documents financiers — ${documents[0]?.kind === 'INVOICE' ? 'facture de souscription' : 'reçu d\u2019encaissement'}</p>
+  </div>
+  <div style="background:#fff;padding:24px;border:1px solid #e5e7eb;border-top:none;">
+    <p style="font-size:16px;">Bonjour <strong>${promoterName}</strong>,</p>
+    <p style="font-size:14px;line-height:1.6;">Vous trouverez ci-joint${documents.length > 1 ? 's' : ''} le${documents.length > 1 ? 's' : ''} document${documents.length > 1 ? 's' : ''} financier${documents.length > 1 ? 's' : ''} suivant${documents.length > 1 ? 's' : ''} :</p>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px;margin:12px 0;">
+      <tr style="background:#f9fafb;"><td style="padding:4px 8px;font-weight:600;">Type</td><td style="padding:4px 8px;font-weight:600;">Numéro</td><td style="padding:4px 8px;font-weight:600;text-align:right;">Montant</td></tr>
+      ${docRows}
+    </table>
+    <p style="font-size:13px;color:#6b7280;line-height:1.6;">Conservez ces documents : ils attestent des règlements effectués auprès de YEHI OR Tech au titre de votre abonnement Academia Helm.</p>
+    <p style="font-size:13px;">Cordialement,<br/><strong>L'équipe YEHI OR Tech</strong></p>
+  </div>
+  <div style="background:#0a1d3f;padding:16px;border-radius:0 0 8px 8px;text-align:center;">
+    <p style="color:#bfdbfe;font-size:11px;margin:0;">YEHI OR Tech — Academia Helm · support@academiahelm.com · www.academiahelm.com</p>
+  </div>
+</body></html>`;
+
+    await this.emailService.sendEmail({
+      to,
+      from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
+      fromName: 'Academia Helm',
+      subject: `🧾 ${documents.length > 1 ? 'Documents financiers' : documents[0]?.kind === 'RECEIPT' ? 'Reçu d\u2019encaissement' : 'Facture'} — ${draft.schoolName} | Academia Helm`,
+      html,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    });
+  }
+
+  /**
+   * ⭐ Télécharge un REÇU / FACTURE générés (uploads/billing) — les fichiers
+   *    HTML/PDF des documents financiers (REC-AH-…, FAC-AH-…).
+   */
+  @Get('billing/:fileName')
+  async downloadBillingDocument(
+    @Param('fileName') fileName: string,
+    @Res() res: Response,
+  ) {
+    const safeFileName = path.basename(fileName);
+    const filePath = path.join(process.cwd(), 'uploads', 'billing', safeFileName);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
   }
 
   /**
@@ -428,7 +927,7 @@ export class ContractController {
       schoolCity: draft.city || '',
       schoolPhone: draft.promoterPhone || draft.phone || '',
       schoolEmail: draft.promoterEmail || draft.email || '',
-      studentCount: draft.estimatedStudentCount || 0,
+      studentCount: (draft as any).estimatedStudentCount || 0,
       planCode: priceSnap.planCode || 'SEED',
       planName: priceSnap.planName || 'Helm Essentiel',
       bilingual: draft.bilingual || false,
@@ -452,6 +951,11 @@ export class ContractController {
       subscriptionPaid: marked.subscriptionPaid ?? true,
       bilingualPaid: marked.bilingualPaid ?? draft.bilingual ?? false,
       receivedBy: marked.receivedBy || undefined,
+      // ⭐ Nom lisible de l'agent encaisseur + dates de règlement réelles
+      ...(marked.receivedByName ? { receivedByName: marked.receivedByName } : {}),
+      ...(Array.isArray(marked.paymentDates) && marked.paymentDates.length > 0
+        ? { paymentDates: marked.paymentDates }
+        : {}),
       // ⭐ Paiement par tranches : échéancier persisté à l'étape 3 du wizard
       paymentPlan: marked.paymentPlan === 'installments' ? 'installments' : 'full',
       installments: Array.isArray(marked.installments) ? marked.installments : undefined,
@@ -475,6 +979,7 @@ export class ContractController {
     portalUrl?: string,
     signedManually?: boolean,
     contractPdf?: { buffer: Buffer; filename: string } | null,
+    billingDocs: EmittedBillingDocument[] = [],
   ): Promise<void> {
     const draft = await this.onboardingService.getDraft(draftId);
     if (!draft) {
@@ -628,7 +1133,23 @@ export class ContractController {
     <p style="font-size: 13px; line-height: 1.6; color: #6b7280;">
       📎 ${signedManually ? 'Le contrat (mention « déjà signé manuellement ») est joint à cet email au format PDF' : 'Le contrat signé est joint à cet email au format PDF'}. Conservez-le précieusement,
       il constitue la preuve de votre abonnement et fait foi entre les parties.
+      ${billingDocs.length > 0 ? 'Les documents financiers ci-dessous sont également joints à cet email.' : ''}
     </p>
+
+    ${billingDocs.length > 0 ? `
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 16px; margin: 20px 0;">
+      <h3 style="color: #047857; margin: 0 0 8px; font-size: 14px;">🧾 Documents financiers joints</h3>
+      <table style="width: 100%; font-size: 13px; color: #1f2937; border-collapse: collapse;">
+        <tr style="background: #dcfce7;"><td style="padding: 3px 6px; color: #6b7280;">Type</td><td style="padding: 3px 6px; color: #6b7280;">Numéro</td><td style="padding: 3px 6px; color: #6b7280; text-align: right;">Montant</td></tr>
+        ${billingDocs.map((d) => `
+        <tr>
+          <td style="padding: 3px 6px;">${d.kind === 'RECEIPT' ? '🧾 Reçu d&rsquo;encaissement' : '📄 Facture de souscription'}</td>
+          <td style="padding: 3px 6px;"><strong>${d.documentNumber}</strong></td>
+          <td style="padding: 3px 6px; text-align: right;"><strong>${d.amount.toLocaleString('fr-FR')} FCFA</strong></td>
+        </tr>`).join('')}
+      </table>
+    </div>
+    ` : ''}
 
     <p style="font-size: 13px; line-height: 1.6;">
       Pour toute question, notre équipe support est disponible à
@@ -651,22 +1172,26 @@ export class ContractController {
 </body>
 </html>`;
 
-    // ⭐ Pièce jointe : VRAI PDF (rendu via Puppeteer) ; fallback : fichier HTML
+    // ⭐ Pièces jointes : contrat (VRAI PDF via Puppeteer ; fallback HTML) +
+    //    REÇUS/FACTURE émis automatiquement (PDF A5).
     //    ⚠️ Resend n'accepte PAS `path` — le contenu doit être passé en Buffer
     //    (l'email service l'encode en base64). Sans cela, la pièce jointe était
     //    silencieusement ignorée.
-    let attachment: { filename: string; content: Buffer } | undefined;
+    const attachments: { filename: string; content: Buffer }[] = [];
     if (contractPdf?.buffer?.length) {
-      attachment = { filename: contractPdf.filename, content: contractPdf.buffer };
-      this.logger.log(`📎 Attaching real PDF: ${attachment.filename} (${attachment.content.length} bytes)`);
+      attachments.push({ filename: contractPdf.filename, content: contractPdf.buffer });
+      this.logger.log(`📎 Attaching real PDF: ${contractPdf.filename} (${contractPdf.buffer.length} bytes)`);
     } else if (fs.existsSync(contractFilePath)) {
-      attachment = {
-        filename: contractFileName,
-        content: fs.readFileSync(contractFilePath),
-      };
+      attachments.push({ filename: contractFileName, content: fs.readFileSync(contractFilePath) });
       this.logger.warn(`Attaching HTML file as fallback: ${contractFileName}`);
     } else {
-      this.logger.warn(`Contract file not found at ${contractFilePath} — email will be sent without attachment`);
+      this.logger.warn(`Contract file not found at ${contractFilePath} — email will be sent without contract attachment`);
+    }
+    for (const d of billingDocs) {
+      if (d.pdf?.buffer?.length) {
+        attachments.push({ filename: d.pdf.filename, content: d.pdf.buffer });
+        this.logger.log(`📎 Attaching billing PDF: ${d.pdf.filename} (${d.pdf.buffer.length} bytes)`);
+      }
     }
 
     await this.emailService.sendEmail({
@@ -677,7 +1202,7 @@ export class ContractController {
         ? `✅ Contrat déjà signé manuellement — ${draft.schoolName} | Academia Helm`
         : `✅ Contrat signé — ${draft.schoolName} | Academia Helm`,
       html,
-      attachments: attachment ? [attachment] : undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
   }
 

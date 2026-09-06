@@ -1263,6 +1263,66 @@ async function bootstrap() {
       logger.warn(`CDC Contrat bootstrap warning: ${contratRefonteErr.message}`);
     }
 
+    // ============================================================================
+    // ⭐ REÇUS / FACTURES AUTOMATIQUES + EFFECTIF ESTIMÉ (onboarding — 20260906200000)
+    // ============================================================================
+    // - onboarding_drafts.estimated_student_count : effectif estimé (élèves)
+    //   persisté pour le contrat (Article 1), l'email et la signature différée.
+    // - billing_documents : reçus (REC-AH-AAAA-NNNNN) et factures
+    //   (FAC-AH-AAAA-NNNNN) générés automatiquement à l'encaissement /
+    //   signature — snapshot figé, PDF Puppeteer, pièce jointe email promoteur.
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE "onboarding_drafts" ADD COLUMN IF NOT EXISTS "estimated_student_count" INTEGER NOT NULL DEFAULT 0`,
+      );
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "billing_documents" (
+            "id" TEXT NOT NULL,
+            "kind" TEXT NOT NULL DEFAULT 'RECEIPT',
+            "document_number" TEXT NOT NULL,
+            "sequence_year" INTEGER NOT NULL,
+            "transaction_type" TEXT NOT NULL DEFAULT 'FULL_SUBSCRIPTION',
+            "draft_id" TEXT,
+            "tenant_id" TEXT,
+            "issued_by_name" TEXT,
+            "issued_by_email" TEXT,
+            "payer_name" TEXT,
+            "payer_email" TEXT,
+            "payment_method" TEXT NOT NULL DEFAULT 'CASH',
+            "paid_at" TIMESTAMPTZ,
+            "amount" INTEGER NOT NULL DEFAULT 0,
+            "snapshot" JSONB,
+            "file_path" TEXT,
+            "file_name" TEXT,
+            "status" TEXT NOT NULL DEFAULT 'EMITTED',
+            "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "billing_documents_pkey" PRIMARY KEY ("id")
+        )
+      `);
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "billing_documents_document_number_key" ON "billing_documents"("document_number")`,
+      );
+      for (const idx of [
+        ['billing_documents_draft_id_idx', '"billing_documents"("draft_id")'],
+        ['billing_documents_kind_year_idx', '"billing_documents"("kind", "sequence_year")'],
+        ['billing_documents_tenant_id_idx', '"billing_documents"("tenant_id")'],
+      ] as const) {
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "${idx[0]}" ON ${idx[1]}`);
+      }
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'billing_documents_draft_id_fkey') THEN
+                ALTER TABLE "billing_documents" ADD CONSTRAINT "billing_documents_draft_id_fkey"
+                FOREIGN KEY ("draft_id") REFERENCES "onboarding_drafts"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+            END IF;
+        END $$;
+      `);
+      logger.log('✅ Onboarding : estimated_student_count + billing_documents (reçus/factures) ensured');
+    } catch (billingDdlErr: any) {
+      logger.warn(`Onboarding receipts bootstrap warning: ${billingDdlErr.message}`);
+    }
+
     logger.log('HR tables & columns ensured successfully');
   } catch (fallbackErr: any) {
     logger.error(`Recruitment tables fallback failed: ${fallbackErr.message}`);

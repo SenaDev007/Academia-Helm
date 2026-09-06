@@ -49,6 +49,43 @@ export class OnboardingController {
   }
 
   /**
+   * ⭐ PHASE 1 (bis) : Mettre à jour les informations ÉTABLISSEMENT d'un draft.
+   *
+   * Appelé par le wizard quand l'utilisateur REVIENT à l'étape 1 pour corriger
+   * (option bilingue, nom, ville, sous-domaine, effectif estimé…) : les
+   * corrections sont propagées au DRAFT — donc au tenant créé à l'activation,
+   * aux emails, à la signature différée et au contrat généré depuis le draft.
+   * Sans cela, « Continuer » repassait à l'étape 2 sans rien enregistrer et
+   * les corrections étaient perdues pour tout le backend.
+   */
+  @Post('draft/:draftId/school')
+  @HttpCode(HttpStatus.OK)
+  async updateDraftSchool(
+    @Param('draftId') draftId: string,
+    @Body() body: {
+      schoolName?: string;
+      schoolType?: string;
+      city?: string;
+      country?: string;
+      phone?: string;
+      email?: string;
+      bilingual?: boolean;
+      estimatedStudentCount?: number;
+      schoolsCount?: number;
+      annexes?: { name: string; city?: string }[];
+      preferredSubdomain?: string | null;
+      logoUrl?: string;
+    },
+  ) {
+    try {
+      return await this.onboardingService.updateDraftSchool(draftId, body);
+    } catch (err) {
+      this.logger.error(`updateDraftSchool failed: ${err?.message}`, err?.stack);
+      throw err;
+    }
+  }
+
+  /**
    * Annule un draft (après paiement refusé ou abandon) pour pouvoir recommencer avec le même email.
    */
   @Post('draft/:draftId/cancel')

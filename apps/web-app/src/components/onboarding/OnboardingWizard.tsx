@@ -189,6 +189,10 @@ export default function OnboardingWizard() {
     contractUrl?: string;
     // ⭐ État réel du sous-domaine (created / partial / failed / not_configured)
     domainStatus?: string;
+    // ⭐ Reçus d'encaissement + facture émis automatiquement à la signature
+    //    (numéros REC-AH / FAC-AH — PDF joints à l'email du promoteur).
+    receiptNumbers?: string[];
+    invoiceNumber?: string | null;
   } | null>(null);
   const [passwordStrength, setPasswordStrength] = useState<{
     score: number; // 0-4
@@ -888,9 +892,45 @@ export default function OnboardingWizard() {
     };
 
     if (step === 1) {
-      // Si un draft existe déjà, passer directement à l'étape suivante
+      // ⭐ Un draft existe déjà (retour à l'étape 1 pour CORRIGER) : propager
+      //    les corrections au DRAFT avant de continuer — sinon le backend
+      //    (activation du tenant, emails, signature différée, contrat généré
+      //    du draft) gardait les ANCIENNES valeurs (ex : option bilingue non
+      //    corrigée) alors que le contrat affiché montrait les corrections.
       if (data.draftId) {
-        goToStep(2);
+        setIsSubmitting(true);
+        try {
+          const normalizedPhone = normalizePhoneNumber(data.phone, data.country);
+          const annexCount = annexCleanList.length;
+          const res = await fetch(`/api/onboarding/draft/${data.draftId}/school`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              schoolName: data.schoolName,
+              schoolType: data.schoolType,
+              city: data.city,
+              country: data.country,
+              phone: normalizedPhone,
+              email: data.email,
+              bilingual: data.bilingual,
+              estimatedStudentCount: data.estimatedStudentCount,
+              ...(annexCount > 0
+                ? { schoolsCount: 1 + annexCount, annexes: annexCleanList }
+                : { schoolsCount: 1, annexes: [] }),
+              preferredSubdomain: (data.preferredSubdomain || '').trim() || null,
+              ...(data.logoUrl ? { logoUrl: data.logoUrl } : {}),
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            throw new Error(err?.message || err?.error?.message || `Erreur HTTP ${res.status}`);
+          }
+          goToStep(2);
+        } catch (error: any) {
+          setErrors({ submit: `Corrections non enregistrées : ${error.message}` });
+        } finally {
+          setIsSubmitting(false);
+        }
         return;
       }
 
@@ -914,6 +954,9 @@ export default function OnboardingWizard() {
             phone: normalizedPhone,
             email: data.email,
             bilingual: data.bilingual,
+            // ⭐ Effectif estimé (élèves) — fiche de souscription (Article 1) :
+            //    envoyé dès la création ET mis à jour au choix du plan (étape 3).
+            estimatedStudentCount: data.estimatedStudentCount || 0,
             // ⭐ MULTI-ÉCOLES : 1 école principale + N annexes déclarées
             //    (cohérence vérifiée côté backend — schoolsCount = 1 + N).
             ...(annexCount > 0
@@ -1043,6 +1086,10 @@ export default function OnboardingWizard() {
             draftId: data.draftId,
             planCode: data.planCode,
             billingPeriod: data.billingPeriod, // Ajouté pour conversion planCode -> planId
+            // ⭐ Effectif estimé (élèves) — fixé au moment du choix du plan
+            //    (l'étape 3 remplit planCode ET estimatedStudentCount ensemble) :
+            //    persisté pour le contrat (Article 1) et la signature différée.
+            estimatedStudentCount: data.estimatedStudentCount || 0,
           }),
         });
 
@@ -3403,6 +3450,12 @@ export default function OnboardingWizard() {
               subscriptionPaid={paymentMarked.paymentPlan === 'installments' ? paymentMarked.downPaymentReceived : paymentMarked.subscriptionPaid}
               bilingualPaid={paymentMarked.paymentPlan === 'installments' ? data.bilingual : paymentMarked.bilingualPaid}
               receivedBy={adminEmail || undefined}
+              // ⭐ Nom lisible de l'agent encaisseur (4.3 « Encaissé par » +
+              //    reçus REC-AH) — résolu depuis le compte admin validé.
+              receivedByName={adminDisplayName || undefined}
+              // ⭐ Date de règlement réelle (aujourd'hui — l'encaissement
+              //    espèces précède généralement la signature).
+              paymentDates={[new Date().toISOString()]}
               paymentPlan={paymentMarked.paymentPlan}
               installments={
                 paymentMarked.paymentPlan === 'installments'
@@ -3425,6 +3478,10 @@ export default function OnboardingWizard() {
                     portalUrl: r.portalUrl || undefined,
                     contractUrl: result.contractUrl,
                     domainStatus: r.domainStatus || undefined,
+                    // ⭐ Reçus + facture émis automatiquement (numéros) —
+                    //    PDF joints à l'email du promoteur.
+                    receiptNumbers: Array.isArray(r.receiptNumbers) ? r.receiptNumbers : [],
+                    invoiceNumber: r.invoiceNumber || null,
                   });
                   setStep(5);
                   requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
@@ -3720,6 +3777,42 @@ export default function OnboardingWizard() {
                     </a>
                   )}
                 </div>
+
+                {/* ⭐ Reçus + facture émis automatiquement (chaque encaissement
+                    espèces → reçu REC-AH numéroté, PDF joint à l'email) */}
+                {(creationResult?.receiptNumbers?.length || creationResult?.invoiceNumber) && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-emerald-100 rounded-lg flex-shrink-0">
+                        <DollarSign className="w-4 h-4 text-emerald-700" />
+                      </div>
+                      <div className="text-sm text-emerald-900 space-y-1">
+                        <p>
+                          <strong>Documents financiers émis automatiquement</strong> — joints à
+                          l&apos;email du promoteur avec le contrat signé :
+                        </p>
+                        <ul className="list-disc list-inside text-xs text-emerald-800 space-y-0.5 mt-1">
+                          {(creationResult?.receiptNumbers || []).map((n) => (
+                            <li key={n}>
+                              <strong>{n}</strong> — reçu d&apos;encaissement (détail exact des
+                              sommes réglées, montant en toutes lettres, agent encaisseur, date/heure)
+                            </li>
+                          ))}
+                          {creationResult?.invoiceNumber && (
+                            <li>
+                              <strong>{creationResult.invoiceNumber}</strong> — facture de la
+                              souscription Année 1 (échéancier complet le cas échéant)
+                            </li>
+                          )}
+                        </ul>
+                        <p className="text-xs text-emerald-700 mt-1">
+                          Les numéros figurent dans le contrat (sections 4.3/4.4). Chaque tranche
+                          ultérieure de l&apos;échéancier recevra son propre reçu numéroté.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}

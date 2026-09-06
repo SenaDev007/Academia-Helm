@@ -5,6 +5,7 @@ import { OnboardingService } from './services/onboarding.service';
 import { OtpService } from './services/otp.service';
 import { DraftCleanupService } from './services/draft-cleanup.service';
 import { ContractGenerationService } from './contract-generation.service';
+import { BillingReceiptService } from './billing-receipt.service';
 import { ContractController } from './contract.controller';
 import { BillingModule } from '../billing/billing.module';
 import { OrionModule } from '../orion/orion.module';
@@ -19,7 +20,7 @@ import { CommunicationModule } from '../communication/communication.module';
     CommunicationModule, // Pour WhatsAppService et SmsService
   ],
   controllers: [OnboardingController, ContractController, AnnexOnboardingController],
-  providers: [OnboardingService, OtpService, DraftCleanupService, ContractGenerationService],
-  exports: [OnboardingService, OtpService, ContractGenerationService],
+  providers: [OnboardingService, OtpService, DraftCleanupService, ContractGenerationService, BillingReceiptService],
+  exports: [OnboardingService, OtpService, ContractGenerationService, BillingReceiptService],
 })
 export class OnboardingModule {}

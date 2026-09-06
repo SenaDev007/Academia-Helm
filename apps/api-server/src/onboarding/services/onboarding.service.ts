@@ -58,6 +58,12 @@ export interface CashPaymentMarking {
   subscriptionPaid?: boolean;
   bilingualPaid?: boolean;
   receivedBy?: string;
+  // ⭐ Nom lisible de l'agent encaisseur (affiché en 4.3 + sur les reçus) —
+  //    l'email (receivedBy) reste la trace de traçabilité.
+  receivedByName?: string;
+  // ⭐ Date(s) de règlement réelles (ISO) — reportées dans le contrat 4.3
+  //    quand l'encaissement est antérieur à la signature.
+  paymentDates?: string[];
   paymentPlan?: 'full' | 'installments';
   installments?: OnboardingInstallment[];
   downPaymentReceived?: boolean;
@@ -129,6 +135,8 @@ export class OnboardingService {
     phone: string;
     email: string;
     bilingual?: boolean;
+    /** ⭐ Effectif estimé (élèves) — fiche de souscription (Article 1). */
+    estimatedStudentCount?: number;
     schoolsCount?: number;
     /** ⭐ Écoles annexes déclarées dès l'onboarding (multi-écoles). */
     annexes?: { name: string; city?: string }[];
@@ -195,6 +203,8 @@ export class OnboardingService {
           phone: data.phone,
           email: data.email,
           bilingual: data.bilingual || false,
+          // ⭐ Effectif estimé (élèves) — fiche Article 1, contrat, emails.
+          estimatedStudentCount: Math.max(0, Math.round(Number(data.estimatedStudentCount) || 0)),
           schoolsCount: annexList.length > 0 ? annexList.length + 1 : effectiveSchoolsCount,
           ...(annexList.length > 0 ? { annexes: annexList as unknown as Prisma.InputJsonValue } : {}),
           preferredSubdomain,
@@ -218,6 +228,145 @@ export class OnboardingService {
       this.logger.error(`createDraft Prisma error: ${err?.message}`, err?.stack);
       throw err;
     }
+  }
+
+  /**
+   * ⭐ MISE À JOUR des informations ÉTABLISSEMENT d'un draft EXISTANT.
+   *
+   * Corrige le défaut « retour en arrière non pris en compte » : quand le
+   * promoteur revient à l'étape 1 du wizard (ou depuis le contrat) pour
+   * corriger (option bilingue, nom, ville, sous-domaine, effectif estimé…),
+   * les corrections étaient perdues pour tout ce qui lit le DRAFT :
+   * activation du tenant, email de confirmation, signature différée, contrat
+   * généré depuis le draft. Cette méthode propage les corrections au draft.
+   *
+   * - Rejette les changements de sous-domaine vers une valeur déjà prise.
+   * - Annexe/multi-écoles : cohérence schoolsCount = 1 + annexes vérifiée.
+   * - Idempotent et non destructif (champs omis = inchangés).
+   */
+  async updateDraftSchool(
+    draftId: string,
+    data: {
+      schoolName?: string;
+      schoolType?: string;
+      city?: string;
+      country?: string;
+      phone?: string;
+      email?: string;
+      bilingual?: boolean;
+      estimatedStudentCount?: number;
+      schoolsCount?: number;
+      annexes?: { name: string; city?: string }[];
+      preferredSubdomain?: string | null;
+      logoUrl?: string;
+    },
+  ) {
+    const draft = await this.prisma.onboardingDraft.findUnique({
+      where: { id: draftId },
+    });
+    if (!draft) {
+      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    }
+    if (!['DRAFT', 'PENDING_PAYMENT'].includes(draft.status)) {
+      throw new BadRequestException(
+        `Ce draft est déjà finalisé (statut ${draft.status}) — les informations ne peuvent plus être modifiées.`,
+      );
+    }
+
+    // ⭐ Changement d'email : vérifier qu'aucun autre draft actif ne le porte
+    const newEmail = data.email?.trim().toLowerCase();
+    if (newEmail && newEmail !== draft.email.toLowerCase()) {
+      const conflict = await this.prisma.onboardingDraft.findFirst({
+        where: {
+          email: { equals: newEmail, mode: 'insensitive' as any },
+          status: { in: ['DRAFT', 'PENDING_PAYMENT'] },
+          id: { not: draftId },
+        },
+      });
+      if (conflict) {
+        throw new BadRequestException('Cet email est déjà utilisé par un onboarding en cours.');
+      }
+    }
+
+    // ⭐ Sous-domaine souhaité : valider le format + l'unicité si changé
+    let preferredSubdomain: string | null | undefined;
+    if (data.preferredSubdomain !== undefined) {
+      const raw = String(data.preferredSubdomain || '').trim().toLowerCase();
+      if (raw === '') {
+        preferredSubdomain = null;
+      } else {
+        if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(raw)) {
+          throw new BadRequestException(
+            'Sous-domaine invalide (min. 3 caractères, lettres minuscules, chiffres, tirets).',
+          );
+        }
+        if (raw !== draft.preferredSubdomain) {
+          const taken = await this.prisma.tenant.findFirst({
+            where: { subdomain: raw, id: { not: 'impossible' } },
+            select: { id: true },
+          });
+          if (taken) {
+            throw new BadRequestException('Ce sous-domaine est déjà utilisé par un autre établissement.');
+          }
+        }
+        preferredSubdomain = raw;
+      }
+    }
+
+    // ⭐ Multi-écoles : cohérence annexes ↔ schoolsCount
+    const annexList = (data.annexes || [])
+      .map((a) => ({
+        name: String(a?.name || '').trim(),
+        city: a?.city ? String(a.city).trim() : undefined,
+      }))
+      .filter((a) => a.name.length >= 2);
+    if (annexList.length > 9) {
+      throw new BadRequestException('Au maximum 9 écoles annexes par onboarding.');
+    }
+    const effectiveSchoolsCount = annexList.length > 0
+      ? annexList.length + 1
+      : Math.max(1, data.schoolsCount ?? draft.schoolsCount);
+    if (annexList.length > 0 && effectiveSchoolsCount !== annexList.length + 1) {
+      throw new BadRequestException(
+        `Incohérence multi-écoles : ${annexList.length} annexe(s) déclarée(s) mais schoolsCount=${effectiveSchoolsCount}.`,
+      );
+    }
+
+    const updated = await this.prisma.onboardingDraft.update({
+      where: { id: draftId },
+      data: {
+        ...(data.schoolName != null ? { schoolName: data.schoolName.trim() } : {}),
+        ...(data.schoolType != null ? { schoolType: data.schoolType } : {}),
+        ...(data.city != null ? { city: data.city.trim() } : {}),
+        ...(data.country != null ? { country: data.country } : {}),
+        ...(data.phone != null ? { phone: data.phone } : {}),
+        ...(newEmail ? { email: newEmail } : {}),
+        ...(data.bilingual !== undefined ? { bilingual: data.bilingual } : {}),
+        ...(data.estimatedStudentCount !== undefined
+          ? { estimatedStudentCount: Math.max(0, Math.round(Number(data.estimatedStudentCount) || 0)) }
+          : {}),
+        ...(data.annexes !== undefined || data.schoolsCount !== undefined
+          ? {
+              schoolsCount: effectiveSchoolsCount,
+              ...(annexList.length > 0
+                ? { annexes: annexList as unknown as Prisma.InputJsonValue }
+                : { annexes: data.annexes !== undefined ? Prisma.JsonNull : undefined }),
+            }
+          : {}),
+        ...(preferredSubdomain !== undefined ? { preferredSubdomain } : {}),
+        ...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl || null } : {}),
+      },
+    });
+
+    this.logger.log(
+      `📝 Draft ${draftId} mis à jour (corrections étape 1) : ${JSON.stringify({
+        bilingual: data.bilingual,
+        schoolName: data.schoolName,
+        preferredSubdomain: preferredSubdomain ?? '(inchangé)',
+        estimatedStudentCount: data.estimatedStudentCount,
+      })}`,
+    );
+    return updated;
   }
 
   /**
@@ -524,6 +673,10 @@ export class OnboardingService {
     data: {
       planId: string;
       periodType: 'MONTHLY' | 'YEARLY';
+      /** ⭐ Effectif estimé (élèves) — renseigné au choix du plan (wizard étape 3 :
+       *    cliquer un plan fixe planCode ET estimatedStudentCount ensemble) ;
+       *    persisté pour le contrat (Article 1), l'email et la signature différée. */
+      estimatedStudentCount?: number;
     },
   ) {
     const draft = await this.prisma.onboardingDraft.findUnique({
@@ -607,6 +760,10 @@ export class OnboardingService {
         selectedPlanId: data.planId,
         priceSnapshot: priceSnapshot as unknown as Prisma.InputJsonValue,
         status: 'PENDING_PAYMENT',
+        // ⭐ Effectif estimé (élèves) — fiche de souscription (Article 1)
+        ...(data.estimatedStudentCount !== undefined
+          ? { estimatedStudentCount: Math.max(0, Math.round(Number(data.estimatedStudentCount) || 0)) }
+          : {}),
       },
     });
 
@@ -2284,8 +2441,22 @@ export class OnboardingService {
       estimatedStudentCount: number;
       bilingual?: boolean;
       preferredSubdomain?: string;
+      /** ⭐ Draft périmé à annuler AVANT création (corrections après « Retour »
+       *    depuis le contrat : le formulaire corrigé remplace l'ancien draft,
+       *    sinon « Continuer avec ce brouillon » écraserait les corrections). */
+      cancelDraftId?: string;
     },
   ) {
+    // 0. ⭐ Annuler le draft périmé désigné (retour depuis le contrat après
+    //    corrections du formulaire) — silencieux si introuvable/déjà finalisé.
+    if (data.cancelDraftId) {
+      try {
+        await this.cancelDraft(data.cancelDraftId);
+        this.logger.log(`♻️ Draft périmé annulé avant re-création : ${data.cancelDraftId}`);
+      } catch {
+        // déjà annulé/finalisé → on continue normalement
+      }
+    }
     // 1. Profil complet du promoteur (le JWT ne porte pas les noms)
     const promoter = await this.prisma.user.findUnique({
       where: { id: identity.userId },
@@ -2351,6 +2522,8 @@ export class OnboardingService {
       phone: data.phone,
       email: data.email,
       bilingual: data.bilingual || false,
+      // ⭐ Effectif estimé de l'annexe — fiche de souscription (Article 1)
+      estimatedStudentCount: Math.max(0, Math.round(Number(data.estimatedStudentCount) || 0)),
       schoolsCount: 1,
       preferredSubdomain: data.preferredSubdomain,
     });

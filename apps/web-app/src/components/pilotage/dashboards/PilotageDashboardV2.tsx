@@ -1514,6 +1514,8 @@ function useDashboardOverview(academicYearId?: string, schoolLevelId?: string) {
 
 function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicYearId?: string; schoolLevelId?: string }) {
   const { data, isLoading } = useDashboardOverview(academicYearId, schoolLevelId);
+  // ⭐ P4-final : section bilingue (piste EN → anglais)
+  const L = useL();
 
   if (isLoading && !data) {
     return (
@@ -1545,11 +1547,11 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
             <div className="p-2 rounded-lg bg-blue-100">
               <Users className="w-5 h-5 text-blue-700" />
             </div>
-            <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Tous statuts</span>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">{L("Tous statuts", "All statuses")}</span>
           </div>
-          <p className="text-xs text-gray-600 mb-1">Effectif total</p>
+          <p className="text-xs text-gray-600 mb-1">{L("Effectif total", "Total headcount")}</p>
           <p className="text-2xl font-bold text-blue-900">{formatNumber(totalStudents)}</p>
-          <p className="text-[10px] text-blue-600 mt-1">Y compris les abandons de l'année</p>
+          <p className="text-[10px] text-blue-600 mt-1">{L("Y compris les abandons de l'année", "Including this year's dropouts")}</p>
         </div>
 
         {/* Élèves actifs */}
@@ -1558,12 +1560,12 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
             <div className="p-2 rounded-lg bg-emerald-100">
               <UserCheck className="w-5 h-5 text-emerald-700" />
             </div>
-            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600">Actuellement scolarisés</span>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600">{L("Actuellement scolarisés", "Currently enrolled")}</span>
           </div>
-          <p className="text-xs text-gray-600 mb-1">Élèves actifs</p>
+          <p className="text-xs text-gray-600 mb-1">{L("Élèves actifs", "Active students")}</p>
           <p className="text-2xl font-bold text-emerald-900">{formatNumber(activeStudents)}</p>
           <p className="text-[10px] text-emerald-600 mt-1">
-            {totalStudents > 0 ? `${Math.round((activeStudents / totalStudents) * 100)}% de l'effectif` : '—'}
+            {totalStudents > 0 ? L(`${Math.round((activeStudents / totalStudents) * 100)}% de l'effectif`, `${Math.round((activeStudents / totalStudents) * 100)}% of headcount`) : '—'}
           </p>
         </div>
 
@@ -1573,12 +1575,12 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
             <div className="p-2 rounded-lg bg-red-100">
               <UserX className="w-5 h-5 text-red-700" />
             </div>
-            <span className="text-[10px] uppercase tracking-wider font-bold text-red-600">Année en cours</span>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-red-600">{L("Année en cours", "Current year")}</span>
           </div>
-          <p className="text-xs text-gray-600 mb-1">Abandons</p>
+          <p className="text-xs text-gray-600 mb-1">{L("Abandons", "Dropouts")}</p>
           <p className="text-2xl font-bold text-red-900">{formatNumber(totalAbandons)}</p>
           <p className="text-[10px] text-red-600 mt-1">
-            {totalStudents > 0 ? `${Math.round((totalAbandons / totalStudents) * 100)}% de l'effectif total` : '—'}
+            {totalStudents > 0 ? L(`${Math.round((totalAbandons / totalStudents) * 100)}% de l'effectif total`, `${Math.round((totalAbandons / totalStudents) * 100)}% of total headcount`) : '—'}
           </p>
         </div>
       </div>
@@ -1589,10 +1591,10 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
           <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-5 py-3">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <School className="w-4 h-4 text-gold-400" />
-              Effectifs détaillés par niveau scolaire
+              {L("Effectifs détaillés par niveau scolaire", "Detailed headcount by school level")}
             </h3>
             <p className="text-[11px] text-blue-200 mt-0.5">
-              Répartition par sexe, abandons et situation des scolarités
+              {L("Répartition par sexe, abandons et situation des scolarités", "Gender split, dropouts and tuition status")}
             </p>
           </div>
 
@@ -1601,17 +1603,17 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="text-left px-4 py-2 font-semibold text-slate-700">Niveau</th>
-                  <th className="text-right px-4 py-2 font-semibold text-slate-700">Total</th>
-                  <th className="text-right px-4 py-2 font-semibold text-blue-700">Garçons</th>
-                  <th className="text-right px-4 py-2 font-semibold text-pink-700">Filles</th>
-                  <th className="text-right px-4 py-2 font-semibold text-emerald-700">Actifs</th>
-                  <th className="text-right px-4 py-2 font-semibold text-red-700">Abandons</th>
+                  <th className="text-left px-4 py-2 font-semibold text-slate-700">{L("Niveau", "Level")}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-slate-700">{L("Total", "Total")}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-blue-700">{L("Garçons", "Boys")}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-pink-700">{L("Filles", "Girls")}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-emerald-700">{L("Actifs", "Active")}</th>
+                  <th className="text-right px-4 py-2 font-semibold text-red-700">{L("Abandons", "Dropouts")}</th>
                   <th className="text-right px-4 py-2 font-semibold text-amber-700">
-                    Scolarités payées<br /><span className="text-[9px] font-normal text-amber-500">(par abandons)</span>
+                    {L("Scolarités payées", "Tuition paid")}<br /><span className="text-[9px] font-normal text-amber-500">{L("(par abandons)", "(by dropouts)")}</span>
                   </th>
                   <th className="text-right px-4 py-2 font-semibold text-orange-700">
-                    Scolarités dues<br /><span className="text-[9px] font-normal text-orange-500">(par abandons)</span>
+                    {L("Scolarités dues", "Tuition due")}<br /><span className="text-[9px] font-normal text-orange-500">{L("(par abandons)", "(by dropouts)")}</span>
                   </th>
                 </tr>
               </thead>
@@ -1677,21 +1679,21 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-bold text-slate-900">{lvl.level}</h4>
                   <span className="text-xs font-medium text-slate-500">
-                    {formatNumber(lvl.total)} élèves • {formatNumber(lvl.active)} actifs
+                    {L(`${formatNumber(lvl.total)} élèves`, `${formatNumber(lvl.total)} students`)} • {L(`${formatNumber(lvl.active)} actifs`, `${formatNumber(lvl.active)} active`)}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs mb-3">
                   <div className="bg-blue-50 rounded p-2 text-center">
                     <div className="text-blue-700 font-bold">{formatNumber(lvl.boys)}</div>
-                    <div className="text-[9px] text-blue-500">Garçons</div>
+                    <div className="text-[9px] text-blue-500">{L("Garçons", "Boys")}</div>
                   </div>
                   <div className="bg-pink-50 rounded p-2 text-center">
                     <div className="text-pink-700 font-bold">{formatNumber(lvl.girls)}</div>
-                    <div className="text-[9px] text-pink-500">Filles</div>
+                    <div className="text-[9px] text-pink-500">{L("Filles", "Girls")}</div>
                   </div>
                   <div className="bg-red-50 rounded p-2 text-center">
                     <div className="text-red-700 font-bold">{formatNumber(lvl.abandons)}</div>
-                    <div className="text-[9px] text-red-500">Abandons</div>
+                    <div className="text-[9px] text-red-500">{L("Abandons", "Dropouts")}</div>
                   </div>
                 </div>
                 {lvl.abandons > 0 && (

@@ -29,6 +29,7 @@ const DEFAULT_POSITIONS = [
   { name: 'Directeur', category: 'DIRECTOR' },
   { name: 'Directeur Adjoint', category: 'DIRECTOR' },
   { name: 'Censeur', category: 'DIRECTOR' },
+  { name: 'Coordinateur', category: 'DIRECTOR' },
   { name: 'Secrétaire', category: 'ADMIN' },
   { name: 'Secrétaire Comptable', category: 'ADMIN' },
   { name: 'Comptable', category: 'ADMIN' },
@@ -58,6 +59,22 @@ const DEFAULT_POSITIONS = [
   { name: 'Responsable communication', category: 'ADMIN' },
 ];
 
+// ⭐ Postes ajoutés APRÈS la première mise en production (backfill).
+//    Le seed initial (ensureDefaultPositions) ne s'exécute que si le tenant
+//    n'a AUCUN poste — un simple ajout à DEFAULT_POSITIONS ne donnerait donc
+//    JAMAIS le nouveau poste aux tenants existants. Chaque entrée ci-dessous
+//    est vérifiée par nom puis insérée si manquante, à chaque findAll()
+//    (idempotent : 1 SELECT par poste, INSERT uniquement la première fois).
+const LATE_DEFAULT_POSITIONS = [
+  // 2026-09-06 — demande utilisateur : certaines écoles ont un poste
+  // « Coordinateur » (coordinateur pédagogique/académique). Catégorie
+  // DIRECTOR : classé avec la direction pédagogique (même famille que
+  // Censeur), cohérent avec l'organigramme par défaut (« Coordinateur
+  // Pédagogique Maternelle/Primaire » sous « Direction Pédagogique ») et
+  // avec role-portal-map (PEDAGOGIC_COORDINATOR ∈ DIRECTION_ROLES).
+  { name: 'Coordinateur', category: 'DIRECTOR' },
+];
+
 @Injectable()
 export class PositionsService {
   private readonly logger = new Logger(PositionsService.name);
@@ -67,6 +84,7 @@ export class PositionsService {
   async findAll(tenantId: string): Promise<Position[]> {
     await this.ensureTableExists();
     await this.ensureDefaultPositions(tenantId);
+    await this.ensureLatePositions(tenantId);
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM "positions" WHERE "tenantId" = $1 ORDER BY "category" ASC, "name" ASC`,
       tenantId,
@@ -157,5 +175,32 @@ export class PositionsService {
       );
     }
     this.logger.log(`Initialized ${DEFAULT_POSITIONS.length} default positions for tenant ${tenantId}`);
+  }
+
+  /**
+   * ⭐ Backfill des postes ajoutés après coup (LATE_DEFAULT_POSITIONS).
+   *    Contrairement au seed initial (qui ne tourne que si le tenant n'a AUCUN
+   *    poste), cette méthode garantit que les tenants EXISTANTS reçoivent
+   *    aussi les nouveaux postes — vérification par (tenantId, name), insertion
+   *    seulement si manquant. Idempotent : coût = 1 SELECT par poste par appel.
+   */
+  private async ensureLatePositions(tenantId: string): Promise<void> {
+    for (const pos of LATE_DEFAULT_POSITIONS) {
+      try {
+        const existing = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT "id" FROM "positions" WHERE "tenantId" = $1 AND "name" = $2 LIMIT 1`,
+          tenantId, pos.name,
+        );
+        if (existing.length > 0) continue;
+        const id = uuidv4();
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO "positions" ("id", "tenantId", "name", "description", "category", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+          id, tenantId, pos.name, null, pos.category,
+        );
+        this.logger.log(`Backfill du poste « ${pos.name} » pour le tenant ${tenantId}`);
+      } catch (e: any) {
+        this.logger.warn(`ensureLatePositions « ${pos.name} » : ${e.message}`);
+      }
+    }
   }
 }

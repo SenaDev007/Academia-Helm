@@ -108,6 +108,29 @@ function refineUserRole(roleType: string, position?: string): UserRole {
     if (posLower.includes('censeur')) {
       return UserRole.CENSEUR;
     }
+    // ⭐ Coordinateur / Coordonnateur / Coordinator — poste présent dans
+    //    certaines écoles (coordinateur pédagogique, académique, de niveau...).
+    //    Variantes couvertes : « coordinateur », « coordinatrice »,
+    //    « coordonnateur » (orthographe fréquente au Bénin), « coordinator »
+    //    et « coordination » (ex. « Responsable de la coordination »).
+    //    → DIRECTEUR, car c'est le seul UserRole existant qui donne au
+    //    coordinateur le bon profil de bout en bout :
+    //    - role-portal-map (front) classe PEDAGOGIC_COORDINATOR dans
+    //      DIRECTION_ROLES → modules direction + pédagogie + examens —
+    //      exactement le profil module de DIRECTEUR (SANS finance/RH/paramètres) ;
+    //    - CENSEUR serait verrouillé SECONDAIRE par le LevelScopeGuard —
+    //      faux pour un coordinateur maternelle/primaire ;
+    //    - le rôle étendu 'PEDAGOGIC_COORDINATOR' n'est pas admis par la regex
+    //      adminRolePattern de portal-auth.service (login portail école) —
+    //      inutilisable comme rôle de compte sans refonte de l'auth ;
+    //    - le fallback actuel (SECRETAIRE) est manifestement faux.
+    if (
+      posLower.includes('coordinat') ||
+      posLower.includes('coordonnat') ||
+      posLower.includes('coordinator')
+    ) {
+      return UserRole.DIRECTEUR;
+    }
     if (posLower.includes('économe') || posLower.includes('econome') || posLower.includes('intendant')) {
       return UserRole.COMPTABLE; // Économe/Intendant → COMPTABLE (gestion financière)
     }

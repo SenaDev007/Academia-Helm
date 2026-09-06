@@ -206,6 +206,10 @@ export class StaffAdminAssignmentController {
       staffId: string;
       schoolLevelCode: string;
       adminRole: string;
+      /// ⭐ Piste du poste : UUID AcademicTrack ('FR' ou 'EN') | null/omis = les deux pistes (D1).
+      ///    Alternative : academicTrackCode 'FR' | 'EN' (résolu serveur).
+      academicTrackId?: string | null;
+      academicTrackCode?: string | null;
       academicYearId?: string;
       startDate?: string;
       endDate?: string;
@@ -219,6 +223,8 @@ export class StaffAdminAssignmentController {
       staffId: body.staffId,
       schoolLevelCode: body.schoolLevelCode,
       adminRole: body.adminRole,
+      academicTrackId: body.academicTrackId ?? null,
+      academicTrackCode: body.academicTrackCode ?? null,
       academicYearId: body.academicYearId,
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,
@@ -234,6 +240,10 @@ export class StaffAdminAssignmentController {
     @Body() body: {
       schoolLevelCode?: string;
       adminRole?: string;
+      /// ⭐ Piste : UUID AcademicTrack | null (= retour bi-piste) | omis (= inchangé).
+      ///    Alternative : academicTrackCode 'FR' | 'EN' | null (résolu serveur).
+      academicTrackId?: string | null;
+      academicTrackCode?: string | null;
       academicYearId?: string | null;
       startDate?: string;
       endDate?: string | null;
@@ -244,6 +254,8 @@ export class StaffAdminAssignmentController {
     return this.service.update(tid, id, {
       schoolLevelCode: body.schoolLevelCode,
       adminRole: body.adminRole,
+      academicTrackId: body.academicTrackId,
+      academicTrackCode: body.academicTrackCode,
       academicYearId: body.academicYearId,
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,

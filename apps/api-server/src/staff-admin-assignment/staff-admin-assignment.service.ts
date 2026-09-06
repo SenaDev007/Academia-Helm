@@ -25,6 +25,7 @@ import { ADMIN_ROLES, isValidAdminRole, ADMIN_ROLE_TO_USER_ROLE, resolveUserRole
  */
 
 const VALID_LEVEL_CODES = ['MAT', 'PRI', 'SEC', 'MAT_PRI', 'ALL'];
+const VALID_TRACK_CODES = ['FR', 'EN'];
 
 export interface StaffAdminAssignment {
   id: string;
@@ -32,6 +33,9 @@ export interface StaffAdminAssignment {
   staffId: string;
   schoolLevelCode: string;
   adminRole: string;
+  /// ⭐ Piste linguistique administrée (Filtre Rôles × Pistes × Niveaux) :
+  ///    UUID de l'AcademicTrack ('FR' ou 'EN') ou null = les deux pistes (D1)
+  academicTrackId: string | null;
   academicYearId: string | null;
   startDate: string;
   endDate: string | null;
@@ -40,6 +44,8 @@ export interface StaffAdminAssignment {
   updatedAt: string;
   // Relations (optionnel selon includeStaff)
   staff?: any;
+  /// Piste incluse (list/my-context) : { id, code, name }
+  academicTrack?: any;
 }
 
 function rowToAssignment(r: any): StaffAdminAssignment {
@@ -49,6 +55,7 @@ function rowToAssignment(r: any): StaffAdminAssignment {
     staffId: r.staffId || r.staff_id,
     schoolLevelCode: r.schoolLevelCode || r.school_level_code,
     adminRole: r.adminRole || r.admin_role,
+    academicTrackId: r.academicTrackId ?? null,
     academicYearId: r.academicYearId || r.academic_year_id || null,
     startDate: r.startDate?.toISOString?.() || r.start_date?.toISOString?.() || r.startDate || r.start_date,
     endDate: r.endDate?.toISOString?.() || r.end_date?.toISOString?.() || r.endDate || r.end_date || null,
@@ -56,6 +63,7 @@ function rowToAssignment(r: any): StaffAdminAssignment {
     createdAt: r.createdAt?.toISOString?.() || r.created_at?.toISOString?.() || r.createdAt || r.created_at,
     updatedAt: r.updatedAt?.toISOString?.() || r.updated_at?.toISOString?.() || r.updatedAt || r.updated_at,
     staff: r.staff,
+    academicTrack: r.academicTrack,
   };
 }
 
@@ -75,7 +83,7 @@ export class StaffAdminAssignmentService {
 
   async list(
     tenantId: string,
-    filters?: { staffId?: string; schoolLevelCode?: string; adminRole?: string; isActive?: boolean },
+    filters?: { staffId?: string; schoolLevelCode?: string; adminRole?: string; isActive?: boolean; academicTrackId?: string | null },
   ): Promise<StaffAdminAssignment[]> {
     await this.ensureTableExists();
 
@@ -84,11 +92,14 @@ export class StaffAdminAssignmentService {
     if (filters?.schoolLevelCode) where.schoolLevelCode = filters.schoolLevelCode;
     if (filters?.adminRole) where.adminRole = filters.adminRole;
     if (filters?.isActive !== undefined) where.isActive = filters.isActive;
+    // ⭐ Filtre piste : UUID AcademicTrack → affectations de cette piste ; null → bi-piste
+    if (filters?.academicTrackId !== undefined) where.academicTrackId = filters.academicTrackId;
 
     const rows = await this.prisma.staffAdminAssignment.findMany({
       where,
       orderBy: { startDate: 'desc' },
       include: {
+        academicTrack: { select: { id: true, code: true, name: true } },
         staff: {
           select: {
             id: true,
@@ -132,6 +143,11 @@ export class StaffAdminAssignmentService {
       staffId: string;
       schoolLevelCode: string;
       adminRole: string;
+      /// ⭐ Piste du poste : UUID AcademicTrack ('FR' ou 'EN') | null/omis = les deux pistes (D1)
+      academicTrackId?: string | null;
+      /// ⭐ Alternative pratique : code de piste 'FR' | 'EN' (résolu en UUID côté serveur).
+      ///    Ignoré si academicTrackId est fourni. Null = les deux pistes.
+      academicTrackCode?: string | null;
       academicYearId?: string;
       startDate?: Date;
       endDate?: Date;
@@ -145,6 +161,30 @@ export class StaffAdminAssignmentService {
     }
     if (!isValidAdminRole(data.adminRole)) {
       throw new BadRequestException(`adminRole invalide : ${data.adminRole}. Valeurs acceptées : ${ADMIN_ROLES.join(', ')}`);
+    }
+    // ⭐ Validation piste : UUID direct OU code ('FR'/'EN') résolu vers l'UUID du tenant
+    let academicTrackId = data.academicTrackId ?? null;
+    if (!academicTrackId && data.academicTrackCode) {
+      if (!VALID_TRACK_CODES.includes(data.academicTrackCode)) {
+        throw new BadRequestException(`academicTrackCode invalide : ${data.academicTrackCode}. Valeurs acceptées : FR, EN, ou null`);
+      }
+      const track = await this.prisma.academicTrack.findFirst({
+        where: { tenantId, code: data.academicTrackCode },
+        select: { id: true, code: true },
+      });
+      if (!track) {
+        throw new BadRequestException(`Piste ${data.academicTrackCode} introuvable pour cet établissement`);
+      }
+      academicTrackId = track.id;
+    }
+    if (academicTrackId) {
+      const track = await this.prisma.academicTrack.findFirst({
+        where: { id: academicTrackId, tenantId },
+        select: { id: true, code: true },
+      });
+      if (!track) {
+        throw new BadRequestException('academicTrackId invalide : piste introuvable dans cet établissement');
+      }
     }
 
     // Vérifier que le staff existe et appartient au tenant
@@ -190,15 +230,19 @@ export class StaffAdminAssignmentService {
         staffId: data.staffId,
         schoolLevelCode: data.schoolLevelCode,
         adminRole: data.adminRole,
+        academicTrackId: academicTrackId ?? null,
         academicYearId: data.academicYearId || null,
         startDate: data.startDate || new Date(),
         endDate: data.endDate || null,
         isActive: true,
       },
-      include: { staff: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, employeeNumber: true } } },
+      include: {
+        academicTrack: { select: { id: true, code: true, name: true } },
+        staff: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, employeeNumber: true } },
+      },
     });
 
-    this.logger.log(`Admin assignment created: staff=${staff.firstName} ${staff.lastName}, role=${data.adminRole}, level=${data.schoolLevelCode}`);
+    this.logger.log(`Admin assignment created: staff=${staff.firstName} ${staff.lastName}, role=${data.adminRole}, level=${data.schoolLevelCode}, track=${(row as any).academicTrack?.code || 'BI-PISTE'}`);
 
     // ⭐ Filtre Rôles × Pistes × Niveaux : invalider le cache de scope du user
     //    lié (résolu par email) pour que la nouvelle affectation prenne effet
@@ -260,6 +304,10 @@ export class StaffAdminAssignmentService {
     data: {
       schoolLevelCode?: string;
       adminRole?: string;
+      /// ⭐ Piste : UUID AcademicTrack | null (= retour bi-piste, D1) | omis (= inchangé)
+      academicTrackId?: string | null;
+      /// ⭐ Alternative : code 'FR' | 'EN' résolu côté serveur (null = bi-piste)
+      academicTrackCode?: string | null;
       academicYearId?: string | null;
       startDate?: Date;
       endDate?: Date | null;
@@ -286,6 +334,34 @@ export class StaffAdminAssignmentService {
       }
       updateData.adminRole = data.adminRole;
     }
+    // ⭐ Piste : null explicite = retour au bi-piste (les deux pistes — D1).
+    //    Accepte l'UUID direct OU le code 'FR'/'EN' (résolu serveur).
+    if (data.academicTrackId !== undefined || data.academicTrackCode !== undefined) {
+      let trackId = data.academicTrackId ?? null;
+      if (!trackId && data.academicTrackCode) {
+        if (!VALID_TRACK_CODES.includes(data.academicTrackCode)) {
+          throw new BadRequestException(`academicTrackCode invalide : ${data.academicTrackCode}. Valeurs acceptées : FR, EN, ou null`);
+        }
+        const track = await this.prisma.academicTrack.findFirst({
+          where: { tenantId, code: data.academicTrackCode },
+          select: { id: true },
+        });
+        if (!track) {
+          throw new BadRequestException(`Piste ${data.academicTrackCode} introuvable pour cet établissement`);
+        }
+        trackId = track.id;
+      }
+      if (trackId) {
+        const track = await this.prisma.academicTrack.findFirst({
+          where: { id: trackId, tenantId },
+          select: { id: true },
+        });
+        if (!track) {
+          throw new BadRequestException('academicTrackId invalide : piste introuvable dans cet établissement');
+        }
+      }
+      updateData.academicTrackId = trackId;
+    }
     if (data.academicYearId !== undefined) updateData.academicYearId = data.academicYearId;
     if (data.startDate !== undefined) updateData.startDate = data.startDate;
     if (data.endDate !== undefined) updateData.endDate = data.endDate;
@@ -294,7 +370,10 @@ export class StaffAdminAssignmentService {
     const row = await this.prisma.staffAdminAssignment.update({
       where: { id },
       data: updateData,
-      include: { staff: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, employeeNumber: true } } },
+      include: {
+        academicTrack: { select: { id: true, code: true, name: true } },
+        staff: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, employeeNumber: true } },
+      },
     });
 
     // ⭐ Re-sync User.role si adminRole ou schoolLevelCode a changé

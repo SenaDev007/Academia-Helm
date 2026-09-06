@@ -115,6 +115,10 @@ interface AdminAssignment {
   staffId: string;
   schoolLevelCode: string;
   adminRole: AdminRole | string;
+  /// ⭐ Piste linguistique du poste (Filtre Rôles × Pistes × Niveaux) :
+  ///    UUID AcademicTrack | null = les deux pistes (D1)
+  academicTrackId?: string | null;
+  academicTrack?: { id: string; code: string; name?: string } | null;
   academicYearId: string | null;
   startDate: string;
   endDate: string | null;
@@ -534,10 +538,15 @@ export default function UnifiedAdministrationWorkspace() {
       }
 
       // 2. Créer l'affectation
+      //    ⭐ Piste linguistique (Filtre Rôles × Pistes × Niveaux) : la piste du
+      //    poste est envoyée au backend (code 'FR'/'EN', null = les deux pistes).
+      //    Un directeur piste FR ne verra que la piste francophone (UI FR),
+      //    piste EN → données anglophones + UI EN (décision D1).
       const payload: any = {
         staffId: form.staffId,
         schoolLevelCode: modalUnit,
         adminRole: form.adminRole,
+        academicTrackCode: isBilingual && form.language !== 'NONE' ? form.language : null,
         academicYearId: academicYearId || undefined,
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined,
@@ -669,6 +678,8 @@ export default function UnifiedAdministrationWorkspace() {
         method: 'PUT',
         body: {
           adminRole: form.adminRole,
+          // ⭐ Piste : code 'FR'/'EN' résolu serveur ; null = les deux pistes (D1)
+          academicTrackCode: isBilingual && form.language !== 'NONE' ? form.language : null,
           startDate: form.startDate || undefined,
           endDate: form.endDate || undefined,
         },
@@ -691,19 +702,21 @@ export default function UnifiedAdministrationWorkspace() {
   const openEditModal = useCallback((assignment: AdminAssignment) => {
     setEditingAssignment(assignment);
     setModalUnit(assignment.schoolLevelCode);
+    // ⭐ Édition : la piste affichée = piste RÉELLE de l'affectation
+    //    (null = les deux pistes), pas la piste courante de l'utilisateur.
     setForm({
       ...EMPTY_FORM,
       adminRole: assignment.adminRole,
       staffId: assignment.staffId,
       startDate: assignment.startDate ? assignment.startDate.slice(0, 10) : '',
       endDate: assignment.endDate ? assignment.endDate.slice(0, 10) : '',
-      language: isBilingual ? currentTrack : 'NONE',
+      language: (assignment.academicTrack?.code as 'FR' | 'EN') || 'NONE',
     });
     setSignatureMode('none');
     setModalOpen(true);
     setError(null);
     setSuccess(null);
-  }, [isBilingual, currentTrack]);
+  }, []);
 
   // ── Affecter un poste enseignant à un staff ───────────────────────────────
   //    Permet d'affecter un rôle d'enseignant à n'importe quel staff, même
@@ -1426,13 +1439,31 @@ export default function UnifiedAdministrationWorkspace() {
                                       <span className="font-semibold text-gray-900 text-xs md:text-sm">
                                         {roleLabel}
                                       </span>
-                                      <span
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold w-fit mt-0.5"
-                                        style={{ background: colors.bg, color: colors.text }}
-                                      >
-                                        <ShieldCheck className="w-2.5 h-2.5" />
-                                        {ADMIN_UNIT_LABELS[group.unit] || group.unit}
-                                      </span>
+                                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                        <span
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold w-fit"
+                                          style={{ background: colors.bg, color: colors.text }}
+                                        >
+                                          <ShieldCheck className="w-2.5 h-2.5" />
+                                          {ADMIN_UNIT_LABELS[group.unit] || group.unit}
+                                        </span>
+                                        {isBilingual && (
+                                          <span
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold w-fit border"
+                                            style={
+                                              a.academicTrack?.code === 'EN'
+                                                ? { background: '#EDE9FE', color: '#5B21B6', borderColor: '#C4B5FD' }
+                                                : a.academicTrack?.code === 'FR'
+                                                  ? { background: '#FEF9C3', color: '#854D0E', borderColor: '#FDE047' }
+                                                  : { background: '#F1F5F9', color: '#475569', borderColor: '#CBD5E1' }
+                                            }
+                                            title="Piste linguistique du poste (null = les deux pistes)"
+                                          >
+                                            <Globe className="w-2.5 h-2.5" />
+                                            {a.academicTrack?.code === 'EN' ? 'EN' : a.academicTrack?.code === 'FR' ? 'FR' : 'FR+EN'}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </TableCell>
                                   <TableCell>
@@ -2102,10 +2133,14 @@ export default function UnifiedAdministrationWorkspace() {
                     onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value as any }))}
                     className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                   >
-                    <option value="NONE">Indifférent</option>
+                    <option value="NONE">Les deux pistes (bi-piste)</option>
                     <option value="FR">Francophone (FR)</option>
                     <option value="EN">Anglophone (EN)</option>
                   </select>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                    Verrouille le périmètre du poste : un titulaire piste FR ne voit que les
+                    données francophones (UI en français), piste EN que l'anglophone (UI en anglais).
+                  </p>
                 </div>
               )}
             </div>

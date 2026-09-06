@@ -23,13 +23,17 @@ export class FinanceReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getKpi(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
-    // ⭐ D3 (matrice P5) : consolidé DU PÉRIMÈTRE du compte level-scoped
+    // ⭐ D3 (matrice P5) : consolidé DU PÉRIMÈTRE du compte level-scoped.
+    // NOTE dimension niveau : student_accounts/finance_transactions portent le
+    // niveau de l'ÉLÈVE ; finance_expenses et FeeStructure n'ont PAS de colonne
+    // niveau (frais globaux sans classe = tous niveaux) → filtrage via les
+    // chemins disponibles uniquement.
     const lvlStudent = scope?.resolved && !scope.allLevels
       ? { student: { schoolLevelId: { in: scope.levelIds } } } : undefined;
     const lvlTx = scope?.resolved && !scope.allLevels
       ? { studentAccount: { student: { schoolLevelId: { in: scope.levelIds } } } } : undefined;
-    const lvlExp = scope?.resolved && !scope.allLevels
-      ? { schoolLevelId: { in: scope.levelIds } } : undefined;
+    const lvlFee = scope?.resolved && !scope.allLevels
+      ? { OR: [{ classId: null }, { class: { schoolLevelId: { in: scope.levelIds } } }] } : undefined;
     const totalDue = await this.prisma.studentAccount.aggregate({
       where: { tenantId, academicYearId, ...(lvlStudent ?? {}) },
       _sum: { totalDue: true },
@@ -42,8 +46,10 @@ export class FinanceReportsService {
       where: { tenantId, academicYearId, type: 'PAYMENT', ...(lvlTx ?? {}) },
       _sum: { amount: true },
     });
+    // finance_expenses : AUCUNE dimension niveau (modèle sans schoolLevelId) —
+    // dépenses consolidées globales, documenté D3.
     const expensesSum = await this.prisma.financeExpense.aggregate({
-      where: { tenantId, academicYearId, status: 'APPROVED', ...(lvlExp ?? {}) },
+      where: { tenantId, academicYearId, status: 'APPROVED' },
       _sum: { amount: true },
     });
     const due = Number(totalDue._sum.totalDue ?? 0);
@@ -58,7 +64,9 @@ export class FinanceReportsService {
     // Pour chaque fee_override : réduction = feeStructure.totalAmount - override.customAmount
     const overrides = await this.prisma.feeOverride.findMany({
       where: {
-        feeStructure: { tenantId, academicYearId, ...(lvlExp ? { schoolLevelId: { in: scope!.levelIds } } : {}) },
+        // ⭐ D3 : frais globaux (sans classe = tous niveaux) OU frais de classe
+        //    du périmètre — FeeStructure n'a pas de schoolLevelId direct.
+        feeStructure: { tenantId, academicYearId, ...(lvlFee ?? {}) },
       },
       include: {
         feeStructure: { select: { totalAmount: true } },
@@ -94,8 +102,6 @@ export class FinanceReportsService {
   async getTodayStats(tenantId: string, scope?: AccessScope | null) {
     const lvlTx = scope?.resolved && !scope.allLevels
       ? { studentAccount: { student: { schoolLevelId: { in: scope.levelIds } } } } : undefined;
-    const lvlExp = scope?.resolved && !scope.allLevels
-      ? { schoolLevelId: { in: scope.levelIds } } : undefined;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
@@ -124,7 +130,6 @@ export class FinanceReportsService {
           tenantId,
           status: 'APPROVED',
           createdAt: { gte: today, lt: tomorrow },
-          ...(lvlExp ?? {}),
         },
         _sum: { amount: true },
       }).catch(() => ({ _sum: { amount: 0 } })),
@@ -182,8 +187,8 @@ export class FinanceReportsService {
   }
 
   /** Dépenses par catégorie. */
-  async getExpenseByCategory(tenantId: string, academicYearId: string, scope?: AccessScope | null) {
-    const lvl = scope?.resolved && !scope.allLevels;
+  async getExpenseByCategory(tenantId: string, academicYearId: string, _scope?: AccessScope | null) {
+    // ⭐ finance_expenses : aucune dimension niveau (documenté D3) — pas de filtre
     const data = await this.prisma.$queryRawUnsafe(`
       SELECT
         ec.name as category,
@@ -191,10 +196,9 @@ export class FinanceReportsService {
       FROM "finance_expenses" fe
       JOIN "expense_categories" ec ON fe."categoryId" = ec.id
       WHERE fe."tenantId" = $1 AND fe."academicYearId" = $2 AND fe."status" = 'APPROVED'
-        ${lvl ? 'AND fe."schoolLevelId" = ANY($3)' : ''}
       GROUP BY 1
       ORDER BY 2 DESC
-    `, ...(lvl ? [tenantId, academicYearId, scope!.levelIds] : [tenantId, academicYearId]));
+    `, tenantId, academicYearId);
     return data;
   }
 
@@ -327,10 +331,9 @@ export class FinanceReportsService {
           SUM(amount) as monthly_total
         FROM "finance_expenses"
         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'APPROVED' AND "createdAt" >= $3
-          ${lvl ? 'AND "schoolLevelId" = ANY($4)' : ''}
         GROUP BY 1
       ) sub
-    `, ...(lvl ? [tenantId, academicYearId, threeMonthsAgo, scope!.levelIds] : [tenantId, academicYearId, threeMonthsAgo]));
+    `, tenantId, academicYearId, threeMonthsAgo);
 
     const avgDepense = Number((monthlyDepense as any[])[0]?.avg_monthly ?? 0);
 
@@ -562,12 +565,6 @@ export class FinanceReportsService {
     const exParams: any[] = [tenantId, academicYearId];
     let exIdx = 3;
 
-    // ⭐ D3 : périmètre niveau du compte
-    if (lvl) {
-      exWhere.push(`fe."schoolLevelId" = ANY($${exIdx})`);
-      exParams.push(scope!.levelIds);
-      exIdx++;
-    }
 
     if (filters.dateFrom) {
       exWhere.push(`fe."expenseDate" >= $${exIdx}`);

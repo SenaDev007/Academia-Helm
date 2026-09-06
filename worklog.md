@@ -9826,3 +9826,50 @@ Stage Summary:
 - ✅ D6 livrée : 5 failles fermées (Prisma null-in ×3 fichiers, transactions non gardées, payments non gardés, guard cohérence-only, code mort fail-open) + drift Prisma réparé + D3 appliqué intégralement
 - ✅ Non-régression prouvée : Dawes 8/8 (y compris le KPI finance qui était cassé silencieusement depuis le 05/09)
 - Comptes de test recette.*@cspeb.test conservés comme fixtures de la matrice de régression
+
+---
+Task ID: 23
+Agent: Super Z (principal)
+Task: École CSPEB — (1) suppression multiple dans le sous-onglet Arriérés du module Finance ; (2) import des arriérés tolérant aux variantes de noms (16-17 élèves CSPEB absents de la liste d'arriérés)
+
+Work Log:
+- Demande utilisateur : implémenter la suppression multiple des arriérés (module Finance > Recouvrement & Arriérés > Arriérés) + intégrer les élèves CSPEB manquants de la liste (Albérick, Géraud, Sanni, Christian, Mathias, Judicaël, Dimon Raman, Bankole Sèfiou, Alexandrine, Afizou, Moudjana, Sylvestre, Olivia, Kinsley, Basil, Olatoundji) via le fichier Excel d'arriérés
+- Backend (collection-prisma.controller.ts + collection-prisma.service.ts, +198 lignes) :
+  * POST /finance/collection/arrears/bulk-delete (rôles finance) : lot transactionnel TOUT-OU-RIEN (rollback complet au premier échec), périmètre tenant strict, plafond 500 ids par lot
+  * Ajustement de StudentAccount ADAPTATIF : appliqué uniquement si le compte reflète l'arriéré (arrearsAmount >= balanceDue) — sinon aucune écriture (l'affichage passe par l'agrégation FeeArrear) ; corrige le bug latent de la suppression unitaire qui décrémentait totalDue d'un montant qui n'y avait jamais été ajouté (silencieusement bloqué par le trigger de protection des soldes)
+  * previousArrears décrémenté seulement s'il est > 0
+  * Trace d'audit groupée financial_audit_logs (action ARREAR_BULK_DELETE, performedBy, ids, montant total)
+- BFF (web-app/api/finance/collection/arrears/bulk-delete/route.ts) : proxy maxDuration 60 + AbortSignal 55 s, PAS de retry automatique (mutation — anti-doublon), conformément au pattern établi en Task 20
+- Frontend (RecoveryContent.tsx, +307 lignes) :
+  * Cases à cocher par ligne + « tout sélectionner » avec état indéterminé
+  * Barre d'action de sélection flottante : compte de lignes, montant total sélectionné, bouton Supprimer (rouge)
+  * Modal de confirmation en lot : liste des élèves, total, avertissement dépendances (relances/promesses/actions de recouvrement supprimées en cascade), tout-ou-rien
+  * Rafraîchissement croisé après suppression : events recovery-reload + finance-accounts-changed (KPIs et comptes élèves à jour)
+- Import arriérés — prévention racine (arrears-import.service.ts, +29 lignes) :
+  * Résolution de noms en 2e passe NORMALISÉE : 1er match exact insensible à la casse (comportement historique), puis 2e passe avec normalisation des deux côtés (diacritiques, ponctuation, espaces multiples/finaux)
+  * Diagnostic : les 17 lignes CSPEB rejetées à l'import initial (« Élève introuvable ») étaient dues aux variantes de saisie entre le fichier Excel et les fiches élèves (« Sèfiou » vs « Séfiou », doubles espaces type « Christian  ETEKA », espaces de fin) — l'élève existait bien mais le match exact échouait
+- Commits poussés : 0868f5d3 (feat) — Railway (API) + Vercel (frontend) auto-déployés
+
+Stage Summary:
+- ✅ Suppression multiple des arriérés livrée (backend transactionnel + BFF + UI complète : sélection, barre d'action, modal de confirmation, audit, rafraîchissement croisé)
+- ✅ Import tolérant aux variantes de noms — les 17 lignes CSPEB rejetées (16 élèves listés par l'utilisateur + 1 variation orthographique) se résolvent désormais par normalisation
+- ✅ Fix au passage : la suppression unitaire ne peut plus désynchroniser totalDue (ajustement adaptatif)
+
+---
+Task ID: 24
+Agent: Super Z (principal)
+Task: École CSP Mon Avenir Plus N'Dali — comptes incohérents (arriérés comptés deux fois) : correction de la détection d'arriérés
+
+Work Log:
+- Demande utilisateur : examiner CSP Mon Avenir Plus N'Dali où 699 comptes incohérents ont été détectés
+- Diagnostic (collection-prisma.service.ts, detectArrears) : le contrôleur détecte l'année active ET toutes les années antérieures. Un solde 2025-2026 déjà reporté sur 2026-2027 (Source 1 : « Arriéré reporté » créé pour carriedArrears > 0 sur le compte actif) était AUSSI recréé en « Solde impayé » sur l'année source (Source 2) — l'agrégation actualArrears (tous FeeArrear ouverts, toutes années) comptait le même solde DEUX FOIS dans les KPIs finance et le « dont arriérés » des comptes élèves
+- Constat chiffré : 144 élèves N'Dali avec arriérés comptés deux fois (incohérences amplifiées dans les KPIs consolidés)
+- Anomalie associée : totalPaid non plafonné dans la Source 2 (N'Dali : paid=60000 pour un arriéré de 10000)
+- Fix Source 2 (commit 6e5e3e4a, +33/-3) :
+  * skip des élèves dont le solde est déjà reporté (carriedArrears > 0 sur un compte d'année postérieure) — plus de double recréation
+  * totalPaid = 0 (l'arriéré EST le solde net restant) au lieu du account.totalPaid non plafonné
+- Les KPIs finance et le « dont arriérés » des comptes élèves reflètent désormais chaque solde une seule fois
+
+Stage Summary:
+- ✅ Anti-double-comptage des soldes reportés livré (skip des élèves déjà reportés + totalPaid plafonné à 0)
+- ✅ Cohérence rétablie : un solde reporté n'est plus recompté comme « Solde impayé » sur l'année source — l'agrégation actualArrears ne compte chaque franc qu'une fois

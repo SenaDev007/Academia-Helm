@@ -9570,3 +9570,26 @@ Stage Summary:
 - ✅ La piste est désormais renseignable dans le module RH (API + UI, code ou UUID)
 - ✅ 4 bugs de la chaîne scope→UI réparés et déployés (bootstrap débloqué, relais proxy, événement de chargement, montage du chargement de scope)
 - Reste : validation navigateur finale du directeur FR (après déploiement Vercel 9ea42443), tests d'intrusion cross-piste (P5), et le worklog
+
+---
+Task ID: 14 (suite — validation finale)
+Agent: main (Super Z)
+
+Work Log:
+- Attente déploiements Railway/Vercel (4 pushes : 0ef92cb4, a7fd260d+058bb80c, c96239eb, 9ea42443, 2e4a9a8f) — sondes API : PUT academicTrackCode (400 validé), bootstrap sans header niveau (200)
+- VALIDATION NAVIGATEUR FINALE (production, storage nettoyé avant chaque login) :
+  * Grace OKONKWO (enseignante EN pure, matricule CSPEBE-26-00015) : scope ["EN"] persisté, locale en, htmlLang=en, pédagogie 100 % anglaise (My Classes / Scheme of Work / Weekly Record of Work, Primary 1 × Mathematics), examens filtrés « Piste anglophone », 0 bouton FR/EN (LanguageSwitcher + BilingualTrackSelector masqués — verrou D5)
+  * Jean-Baptiste ADJOVI (directeur FR mono-piste) : scope ["FR"] via bootstrap AppLayoutClient, locale fr, htmlLang=fr, interface entièrement française, 0 bouton FR/EN
+- MATRICE D'ISOLATION (API, recherches élèves) :
+  * Directeur FR → ADITTI (élève EN) : 0 résultat (bloqué) / ABOUBAKARY (élève FR) : visible
+  * Grace (EN) → ABOUBAKARY (élève FR) : 0 résultat (bloqué)
+  * Dawes (bi-piste D1) → ADITTI : 1 trouvé (les deux pistes)
+- Contrôle VLM des captures : contenu pédagogie EN confirmé, directeur FR confirmé, aucun défaut de mise en page (un onglet « Weekly Log » légèrement rogné — cosmétique préexistante, hors périmètre)
+- 2e4a9a8f : verrou D5 complet — BilingualTrackSelector masqué pour mono-piste + garde anti-élargissement dans setCurrentTrack
+
+Stage Summary:
+- ✅ Validation multi-profils LIVRÉE : les 2 comptes dédiés démontrent le basculement langue=profil AVEC verrouillage (impossible avec Dawes bi-piste)
+- ✅ Isolation des données pistes vérifiée par tests d'intrusion API dans les 2 sens + contre-contrôle bi-piste
+- ✅ Comptes de test (recette.*@cspeb.test) disponibles pour toute démonstration future ; mots de passe transmis à l'utilisateur
+- ⚠️ Limitation connue : la sidebar du portail enseignant garde des libellés FR codés en dur (le cœur pédagogique bascule en EN) — i18n complet de la coquille = travail restant
+- Reste suggéré : P5 (script matrice E2E verify_scope_matrix.mjs pour la régression), i18n de la sidebar enseignant, évaluation du verrou sur le portail parent

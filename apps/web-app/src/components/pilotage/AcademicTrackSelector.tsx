@@ -20,6 +20,8 @@ import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { getUserScope } from '@/lib/auth/user-scope';
+// ⭐ P4-final : sélecteur bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 // ⭐ Rôles directeur niveau-spécifiques qui peuvent être language-locked
 const LEVEL_SPECIFIC_DIRECTOR_ROLES = [
@@ -50,6 +52,8 @@ export default function AcademicTrackSelector({
   const [selectedTrack, setSelectedTrack] = useState<'FR' | 'EN'>(currentTrack);
   const session = useAppSessionOptional();
   const user = session?.user;
+  // ⭐ Libellés dans la langue du profil
+  const L = useL();
 
   // ⭐ Déterminer la langue lockée du directeur (si applicable)
   //    ⭐ P4 (2026-09-06) : SOURCE DE VÉRITÉ = le périmètre serveur résolu à la
@@ -138,7 +142,7 @@ export default function AcademicTrackSelector({
 
   return (
     <div className={cn('flex items-center gap-3', className)}>
-      <span className="text-sm font-medium text-gray-700">Academic Track:</span>
+      <span className="text-sm font-medium text-gray-700">{L("Piste académique :", "Academic Track:")}</span>
       <div className="flex gap-2">
         <button
           onClick={() => handleTrackChange('FR')}
@@ -151,7 +155,7 @@ export default function AcademicTrackSelector({
         >
           <span className="flex items-center gap-2">
             <AppIcon name="globe" size="action" />
-            Francophone
+            {L("Francophone", "French Track")}
           </span>
         </button>
         <button
@@ -165,7 +169,7 @@ export default function AcademicTrackSelector({
         >
           <span className="flex items-center gap-2">
             <AppIcon name="globe" size="action" />
-            Anglophone
+            {L("Anglophone", "English Track")}
           </span>
         </button>
       </div>

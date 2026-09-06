@@ -31,6 +31,8 @@ import { Building2, GraduationCap, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { persistClientSession } from '@/lib/auth/client-access-token';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
+// ⭐ P4-final : bouton bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 type TargetPortal = 'SCHOOL' | 'TEACHER';
 
@@ -81,6 +83,8 @@ export default function PortalSwitchButton({
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   useEffect(() => {
     mounted.current = true;
@@ -157,7 +161,9 @@ export default function PortalSwitchButton({
 
   const isTeacherTarget = target === 'TEACHER';
   const Icon = isTeacherTarget ? GraduationCap : Building2;
-  const label = isTeacherTarget ? 'Basculer vers l\'UI Enseignant' : 'Basculer vers l\'UI École';
+  const label = isTeacherTarget
+    ? L("Basculer vers l'UI Enseignant", 'Switch to Teacher UI')
+    : L("Basculer vers l'UI École", 'Switch to School UI');
 
   if (variant === 'dropdown') {
     return (
@@ -190,7 +196,7 @@ export default function PortalSwitchButton({
       <button
         onClick={handleSwitch}
         disabled={switching}
-        title="Changer de portail sans se déconnecter (double casquette)"
+        title={L("Changer de portail sans se déconnecter (double casquette)", "Switch portal without logging out (dual role)")}
         className={cn(
           'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-blue-700 hover:bg-blue-50 hover:text-blue-800 transition-colors disabled:opacity-60',
           className,

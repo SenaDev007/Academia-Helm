@@ -619,7 +619,7 @@ export default function StaffDetailPage() {
 
   if (loading) {
     return (
-      <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
+      <HRShell activeId="staff" title="Personnel" titleEn="Staff" description="Fiches détaillées des collaborateurs, contrats et documents." descriptionEn="Detailed staff records, contracts and documents.">
         <div className="p-8 animate-pulse text-center">Chargement de la fiche...</div>
       </HRShell>
     );
@@ -627,7 +627,7 @@ export default function StaffDetailPage() {
 
   if (!member) {
     return (
-      <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
+      <HRShell activeId="staff" title="Personnel" titleEn="Staff" description="Fiches détaillées des collaborateurs, contrats et documents." descriptionEn="Detailed staff records, contracts and documents.">
         <div className="p-8 text-center">
           <h3 className="text-xl font-bold">Collaborateur non trouvé</h3>
           <button onClick={() => router.push('/app/hr/staff')} className="mt-4 text-blue-600 font-bold flex items-center gap-2 mx-auto">
@@ -651,7 +651,7 @@ export default function StaffDetailPage() {
   const totalDocs = Object.values(documentsGrouped).reduce((acc: number, docs: any[]) => acc + docs.length, 0);
 
   return (
-    <HRShell activeId="staff" title="Personnel" description="Fiches détaillées des collaborateurs, contrats et documents.">
+    <HRShell activeId="staff" title="Personnel" titleEn="Staff" description="Fiches détaillées des collaborateurs, contrats et documents." descriptionEn="Detailed staff records, contracts and documents.">
     <div className="space-y-6 pb-20">
       {/* Hidden photo input */}
       <input

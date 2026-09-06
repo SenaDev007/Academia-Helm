@@ -8,7 +8,9 @@ export default function SettingsPage() {
     <HRShell
       activeId="settings"
       title="Paramètres RH"
+      titleEn="HR Settings"
       description="Définition globale des taux de cotisation et taux de fiscalité."
+      descriptionEn="Global definition of contribution rates and tax rates."
     >
       <SettingsWorkspace />
     </HRShell>

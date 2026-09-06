@@ -40,21 +40,23 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
+// ⭐ P4-final : onglets et en-tête bilingues (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 const FINANCE_TABS = [
-  { id: 'dashboard', label: 'Tableau de Bord', path: '/app/finance', icon: LayoutDashboard },
-  { id: 'fees', label: 'Configuration des frais', path: '/app/finance/fees', icon: DollarSign },
-  { id: 'overrides', label: 'Personnalisations', path: '/app/finance/overrides', icon: UserCog },
-  { id: 'accounts', label: 'Comptes élèves', path: '/app/finance/accounts', icon: Users },
-  { id: 'cash-registers', label: 'Multi-caisses', path: '/app/finance/cash-registers', icon: Coins },
-  { id: 'payments', label: 'Encaissements', path: '/app/finance/payments', icon: CreditCard },
-  { id: 'collection-summary', label: 'Bilan des encaissements', path: '/app/finance/collection-summary', icon: ClipboardList },
-  { id: 'collection', label: 'Recouvrement & Arriérés', path: '/app/finance/collection', icon: AlertCircle },
-  { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses', icon: TrendingDown },
-  { id: 'treasury', label: 'Clôture & Trésorerie', path: '/app/finance/treasury', icon: Wallet },
-  { id: 'reports', label: 'Rapports financiers', path: '/app/finance/reports', icon: BarChart3 },
-  { id: 'audit', label: "Contrôle & Audit", path: '/app/finance/audit', icon: ShieldCheck },
-  { id: 'settings', label: 'Paramétrage', path: '/app/finance/settings', icon: Settings },
+  { id: 'dashboard', label: 'Tableau de Bord', labelEn: 'Dashboard', path: '/app/finance', icon: LayoutDashboard },
+  { id: 'fees', label: 'Configuration des frais', labelEn: 'Fee Configuration', path: '/app/finance/fees', icon: DollarSign },
+  { id: 'overrides', label: 'Personnalisations', labelEn: 'Overrides', path: '/app/finance/overrides', icon: UserCog },
+  { id: 'accounts', label: 'Comptes élèves', labelEn: 'Student Accounts', path: '/app/finance/accounts', icon: Users },
+  { id: 'cash-registers', label: 'Multi-caisses', labelEn: 'Cash Registers', path: '/app/finance/cash-registers', icon: Coins },
+  { id: 'payments', label: 'Encaissements', labelEn: 'Collections', path: '/app/finance/payments', icon: CreditCard },
+  { id: 'collection-summary', label: 'Bilan des encaissements', labelEn: 'Collection Summary', path: '/app/finance/collection-summary', icon: ClipboardList },
+  { id: 'collection', label: 'Recouvrement & Arriérés', labelEn: 'Recovery & Arrears', path: '/app/finance/collection', icon: AlertCircle },
+  { id: 'expenses', label: 'Dépenses', labelEn: 'Expenses', path: '/app/finance/expenses', icon: TrendingDown },
+  { id: 'treasury', label: 'Clôture & Trésorerie', labelEn: 'Closing & Treasury', path: '/app/finance/treasury', icon: Wallet },
+  { id: 'reports', label: 'Rapports financiers', labelEn: 'Financial Reports', path: '/app/finance/reports', icon: BarChart3 },
+  { id: 'audit', label: "Contrôle & Audit", labelEn: 'Control & Audit', path: '/app/finance/audit', icon: ShieldCheck },
+  { id: 'settings', label: 'Paramétrage', labelEn: 'Settings', path: '/app/finance/settings', icon: Settings },
 ];
 
 export default function FinanceLayout({
@@ -63,16 +65,22 @@ export default function FinanceLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
+  const tabs = FINANCE_TABS.map((tab) => ({ ...tab, label: L(tab.label, tab.labelEn) }));
 
   return (
     <div className="space-y-6">
       <ModuleHeader
-        title="Finances & Économat"
-        description="Pilotage financier : frais, comptes élèves, encaissements, recouvrement, dépenses, clôture, rapports et paramétrage."
+        title={L("Finances & Économat", "Finance & Store")}
+        description={L(
+          "Pilotage financier : frais, comptes élèves, encaissements, recouvrement, dépenses, clôture, rapports et paramétrage.",
+          "Financial steering: fees, student accounts, collections, recovery, expenses, closing, reports and settings.",
+        )}
         icon="finance"
         // Pas de KPIs codés en dur ici — le dashboard affiche ses propres stats réelles
       />
-      <SubModuleNavigation tabs={FINANCE_TABS} currentPath={pathname} />
+      <SubModuleNavigation tabs={tabs} currentPath={pathname} />
       <div className="min-h-[600px]">{children}</div>
     </div>
   );

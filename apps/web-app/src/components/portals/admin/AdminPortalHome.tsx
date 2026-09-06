@@ -30,6 +30,8 @@ import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { ICON_REGISTRY } from './AdminPortalShell';
 import { ADMIN_PORTALS, type AdminPortalAccent } from '@/lib/auth/admin-portal-map';
+// ⭐ P4-final : home bilingue — piste EN → cartes et bannière 100% EN
+import { useL } from '@/lib/i18n/bilingual';
 
 // ─── Dégradés de bannière par accent (un métier = une couleur) ───────────────
 
@@ -58,8 +60,10 @@ export default function AdminPortalHome({ portalKey }: AdminPortalHomeProps) {
   const { identity: school } = useSchoolIdentity();
   const { availableLevels } = useSchoolLevel();
   const { enabledSet, loading: featuresLoading } = useEnabledFeatureCodes();
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
-  const userName = user ? `${user.firstName} ${user.lastName}`.trim() : config.roleLabel;
+  const userName = user ? `${user.firstName} ${user.lastName}`.trim() : L(config.roleLabel, config.roleLabelEn);
   // Photo de profil si le payload de session la transporte (sinon initiales).
   // ⚠️ Cast étroit : le type User de session ne déclare pas photoUrl.
   const userPhoto = (user as { photoUrl?: string } | null | undefined)?.photoUrl;
@@ -92,30 +96,30 @@ export default function AdminPortalHome({ portalKey }: AdminPortalHomeProps) {
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-white/80 text-sm">Bienvenue,</p>
+            <p className="text-white/80 text-sm">{L("Bienvenue,", "Welcome,")}</p>
             <h1 className="text-xl sm:text-2xl font-bold truncate">{userName}</h1>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-3 text-sm text-white/90">
           <span className="inline-flex items-center gap-1.5">
             <Building2 className="h-4 w-4" />
-            <span className="truncate">{school?.schoolName || tenant?.name || 'École'}</span>
+            <span className="truncate">{school?.schoolName || tenant?.name || L("École", "School")}</span>
           </span>
           <span className="inline-flex items-center gap-1.5">
             <CalendarDays className="h-4 w-4" />
-            {academicYear?.label || 'Année scolaire'}
+            {academicYear?.label || L("Année scolaire", "School year")}
           </span>
           <span className="inline-flex items-center gap-1.5 font-semibold">
-            {config.roleLabel}
+            {L(config.roleLabel, config.roleLabelEn)}
           </span>
         </div>
       </div>
 
       {/* Accès rapide — modules du métier */}
       <div>
-        <h2 className="text-base font-bold text-slate-900 mb-3">Vos modules</h2>
+        <h2 className="text-base font-bold text-slate-900 mb-3">{L("Vos modules", "Your modules")}</h2>
         {modules.length === 0 ? (
-          <p className="text-sm text-slate-500">Aucun module activé pour le moment.</p>
+          <p className="text-sm text-slate-500">{L("Aucun module activé pour le moment.", "No module enabled yet.")}</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {modules.map((mod) => {
@@ -137,9 +141,9 @@ export default function AdminPortalHome({ portalKey }: AdminPortalHomeProps) {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 group-hover:underline">
-                        {mod.label}
+                        {L(mod.label, mod.labelEn || mod.label)}
                       </p>
-                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{mod.desc}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{L(mod.desc, mod.descEn || mod.desc)}</p>
                     </div>
                   </div>
                 </Link>

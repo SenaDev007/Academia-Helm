@@ -16,6 +16,8 @@
  */
 
 import { Loader2, LogOut, X, AlertTriangle } from "lucide-react";
+// ⭐ P4-final : modal bilingue (piste EN → anglais)
+import { useL } from "@/lib/i18n/bilingual";
 
 interface LogoutModalProps {
   open: boolean;
@@ -26,6 +28,7 @@ interface LogoutModalProps {
 }
 
 export function LogoutModal({ open, onClose, onConfirm, loading, userName }: LogoutModalProps) {
+  const L = useL();
   if (!open) return null;
 
   return (
@@ -44,15 +47,15 @@ export function LogoutModal({ open, onClose, onConfirm, loading, userName }: Log
               <AlertTriangle className="h-5 w-5 text-amber-600" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Déconnexion</h3>
-              <p className="text-xs text-slate-500">Confirmation requise</p>
+              <h3 className="text-base font-bold text-slate-900">{L("Déconnexion", "Log out")}</h3>
+              <p className="text-xs text-slate-500">{L("Confirmation requise", "Confirmation required")}</p>
             </div>
           </div>
           {!loading && (
             <button
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors"
-              aria-label="Fermer"
+              aria-label={L("Fermer", "Close")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -64,22 +67,22 @@ export function LogoutModal({ open, onClose, onConfirm, loading, userName }: Log
           <p className="text-sm text-slate-600 leading-relaxed">
             {userName ? (
               <>
-                Êtes-vous sûr de vouloir vous déconnecter de votre session ?
+                {L("Êtes-vous sûr de vouloir vous déconnecter de votre session ?", "Are you sure you want to log out of your session?")}
                 <br />
-                <span className="font-semibold text-slate-900">{userName}</span>, vous devrez vous reconnecter pour accéder à nouveau à votre espace.
+                <span className="font-semibold text-slate-900">{userName}</span>{L(", vous devrez vous reconnecter pour accéder à nouveau à votre espace.", ", you will need to log in again to access your workspace.")}
               </>
             ) : (
               <>
-                Êtes-vous sûr de vouloir vous déconnecter ?
+                {L("Êtes-vous sûr de vouloir vous déconnecter ?", "Are you sure you want to log out?")}
                 <br />
-                Vous devrez vous reconnecter pour accéder à nouveau à votre espace.
+                {L("Vous devrez vous reconnecter pour accéder à nouveau à votre espace.", "You will need to log in again to access your workspace.")}
               </>
             )}
           </p>
 
           <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
             <p className="text-xs text-blue-800">
-              💡 Toutes vos modifications non enregistrées seront perdues. Pensez à sauvegarder avant de quitter.
+              {L("💡 Toutes vos modifications non enregistrées seront perdues. Pensez à sauvegarder avant de quitter.", "💡 All your unsaved changes will be lost. Remember to save before leaving.")}
             </p>
           </div>
         </div>
@@ -91,7 +94,7 @@ export function LogoutModal({ open, onClose, onConfirm, loading, userName }: Log
             disabled={loading}
             className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50"
           >
-            Annuler
+            {L("Annuler", "Cancel")}
           </button>
           <button
             onClick={onConfirm}
@@ -101,12 +104,12 @@ export function LogoutModal({ open, onClose, onConfirm, loading, userName }: Log
             {loading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Déconnexion…
+                {L("Déconnexion…", "Logging out…")}
               </>
             ) : (
               <>
                 <LogOut className="h-4 w-4" />
-                Se déconnecter
+                {L("Se déconnecter", "Log out")}
               </>
             )}
           </button>

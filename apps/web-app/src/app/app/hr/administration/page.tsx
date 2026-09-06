@@ -8,7 +8,9 @@ export default function AdministrationPage() {
     <HRShell
       activeId="administration"
       title="Administration"
+      titleEn="Administration"
       description="Centralisez l'équipe administrative et enseignante par niveau scolaire et par piste linguistique (FR/EN) si bilingue. Affectez directeurs, secrétaires, comptables, censeurs, surveillants et enseignants."
+      descriptionEn="Centralise the administrative and teaching team by school level and by language track (FR/EN) if bilingual. Assign directors, secretaries, accountants, censors, monitors and teachers."
     >
       <UnifiedAdministrationWorkspace />
     </HRShell>

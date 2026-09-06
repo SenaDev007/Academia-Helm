@@ -85,8 +85,12 @@ export interface AdminPortalModule {
   /** Route cible (routes métier partagées ou home du portail) */
   path: string;
   label: string;
+  /** ⭐ P4-final : libellé anglais (piste anglophone → UI 100% EN) */
+  labelEn?: string;
   icon: AdminPortalIcon;
   desc: string;
+  /** ⭐ P4-final : description anglaise */
+  descEn?: string;
   /** Feature flag du tenant (module activé ?) — filtrage tenant, pas par rôle */
   featureCode?: string;
   /** Module spécifique au niveau Secondaire (ex: Vie Scolaire) */
@@ -101,8 +105,12 @@ export interface AdminPortalConfig {
   path: string;
   /** Libellé du portail (header + fallback titre) */
   label: string;
+  /** ⭐ P4-final : libellé anglais du portail */
+  labelEn: string;
   /** Libellé du métier (badge profil dans la sidebar) */
   roleLabel: string;
+  /** ⭐ P4-final : libellé anglais du métier */
+  roleLabelEn: string;
   accent: AdminPortalAccent;
   /** Onglet de login à rouvrir après déconnexion */
   loginPortal: string;
@@ -173,21 +181,23 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'director',
     path: '/app/director',
     label: 'Portail Directeur',
+    labelEn: 'Director Portal',
     roleLabel: 'Directeur',
+    roleLabelEn: 'Director',
     accent: 'indigo',
     loginPortal: 'school',
     active: true,
     roles: DIRECTOR_ROLES,
     modules: [
-      { path: '/app/director', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: "Pilotage global de l'établissement" },
-      { path: '/app/director/oversight', label: 'Espace Directeur', icon: 'Brain', desc: 'Score de risque croisé + décrochage (Secondaire)', requiresSecondary: true },
-      { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: 'School', desc: 'Planification, cahiers, validation des documents', featureCode: 'PEDAGOGY' },
-      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', featureCode: 'STUDENTS' },
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Évaluations, saisie, validation, bulletins', featureCode: 'EXAMS' },
-      { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', requiresSecondary: true },
-      { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie', featureCode: 'FINANCE' },
-      { path: '/app/hr', label: 'Personnel, RH & Paie', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', featureCode: 'HR_PAYROLL' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/director', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Pilotage global de l'établissement", descEn: "School-wide overview and steering" },
+      { path: '/app/director/oversight', label: 'Espace Directeur', labelEn: 'Director Space', icon: 'Brain', desc: 'Score de risque croisé + décrochage (Secondaire)', descEn: 'Cross risk score + dropout (Secondary)', requiresSecondary: true },
+      { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, validation des documents', descEn: 'Planning, notebooks, document approval', featureCode: 'PEDAGOGY' },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Évaluations, saisie, validation, bulletins', descEn: 'Assessments, grading, validation, report cards', featureCode: 'EXAMS' },
+      { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', descEn: 'Sanctions, conduct, attendance (Secondary)', requiresSecondary: true },
+      { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie', descEn: 'Fees, collections, treasury', featureCode: 'FINANCE' },
+      { path: '/app/hr', label: 'Personnel, RH & Paie', labelEn: 'Staff, HR & Payroll', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', descEn: 'Staff, contracts, payroll, CNSS', featureCode: 'HR_PAYROLL' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 
@@ -195,7 +205,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'secretaire',
     path: '/app/secretaire',
     label: 'Portail Secrétaire',
+    labelEn: 'Secretary Portal',
     roleLabel: 'Secrétaire',
+    roleLabelEn: 'Secretary',
     accent: 'sky',
     loginPortal: 'school',
     active: true,
@@ -203,9 +215,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     modules: [
       // ⭐ Le quotidien du secrétariat est la scolarité : la home du portail
       //    est l'outil Élèves & Scolarité (composant partagé StudentsModulePage).
-      { path: '/app/secretaire', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', featureCode: 'STUDENTS' },
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/secretaire', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 
@@ -213,7 +225,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'secretaire-comptable',
     path: '/app/secretaire-comptable',
     label: 'Portail Secrétaire-Comptable',
+    labelEn: 'Secretary-Accountant Portal',
     roleLabel: 'Secrétaire-Comptable',
+    roleLabelEn: 'Secretary-Accountant',
     accent: 'emerald',
     loginPortal: 'school',
     active: true,
@@ -223,22 +237,22 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       //    comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
       //    a. Home = son quotidien : l'outil Encaissements (TransactionsContent
       //    partagé — le même que /app/finance/payments).
-      { path: '/app/secretaire-comptable', label: 'Encaissements', icon: 'Receipt', desc: 'Saisie des encaissements de frais' },
+      { path: '/app/secretaire-comptable', label: 'Encaissements', labelEn: 'Collections', icon: 'Receipt', desc: 'Saisie des encaissements de frais', descEn: 'Fee collection entry' },
       // Côté COMPTABLE : tableau de bord financier (page du portail comptable,
       // rendue dans SON shell — zéro duplication).
-      { path: '/app/comptable', label: 'Tableau de bord financier', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement" },
+      { path: '/app/comptable', label: 'Tableau de bord financier', labelEn: 'Financial Dashboard', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement", descEn: "School's financial view" },
       // Côté SECRÉTAIRE : l'outil Élèves & Scolarité (même composant que la
       // home du portail secrétaire — /app/secretaire et /app/students rendent
       // StudentsModulePage).
-      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', featureCode: 'STUDENTS' },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
       // Côté COMPTABLE : module Finances & Économat complet.
-      { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, recouvrement, trésorerie', featureCode: 'FINANCE' },
+      { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, recouvrement, trésorerie', descEn: 'Fees, recovery, treasury', featureCode: 'FINANCE' },
       // Côté SECRÉTAIRE + COMPTABLE : examens (saisie des notes, bulletins).
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
       // Paie : le secrétaire-comptable gère la paie dans l'UI partagée
       //    actuelle (HR_ROLES inclut SECRETAIRE_COMPTABLE) — parité conservée.
-      { path: '/app/hr', label: 'Personnel, RH & Paie', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', featureCode: 'HR_PAYROLL' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/hr', label: 'Personnel, RH & Paie', labelEn: 'Staff, HR & Payroll', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', descEn: 'Staff, contracts, payroll, CNSS', featureCode: 'HR_PAYROLL' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 
@@ -246,17 +260,19 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'comptable',
     path: '/app/comptable',
     label: 'Portail Comptable',
+    labelEn: 'Accountant Portal',
     roleLabel: 'Comptable',
+    roleLabelEn: 'Accountant',
     accent: 'teal',
     loginPortal: 'school',
     active: true,
     roles: COMPTABLE_ROLES,
     modules: [
-      { path: '/app/comptable', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement" },
-      { path: '/app/finance', label: 'Finances & Économat', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie, audit', featureCode: 'FINANCE' },
-      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Bulletins, impressions', featureCode: 'EXAMS' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement", descEn: "School's financial view" },
+      { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie, audit', descEn: 'Fees, collections, treasury, audit', featureCode: 'FINANCE' },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 
@@ -264,20 +280,22 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'surveillant',
     path: '/app/surveillant',
     label: 'Portail Surveillant',
+    labelEn: 'Head Monitor Portal',
     roleLabel: 'Surveillant',
+    roleLabelEn: 'Head Monitor',
     accent: 'amber',
     loginPortal: 'school',
     active: true,
     roles: SURVEILLANT_ROLES,
     modules: [
-      { path: '/app/surveillant', label: 'Tableau de bord', icon: 'LayoutDashboard', desc: 'Vue vie scolaire' },
-      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
-      { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', requiresSecondary: true },
+      { path: '/app/surveillant', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'Vue vie scolaire', descEn: 'School life overview' },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
+      { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Sanctions, conduite, assiduité (Secondaire)', descEn: 'Sanctions, conduct, attendance (Secondary)', requiresSecondary: true },
       // ⭐ Parité d'accès : le surveillant général accède à l'Espace Censeur
       //    (visites de classes, conseils de classe) dans l'UI partagée.
-      { path: '/app/censeur', label: 'Espace Censeur', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe (Secondaire)', requiresSecondary: true },
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Surveillance des examens', featureCode: 'EXAMS' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/censeur', label: 'Espace Censeur', labelEn: 'Censor Space', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe (Secondaire)', descEn: 'Class visits, class councils (Secondary)', requiresSecondary: true },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Surveillance des examens', descEn: 'Exam invigilation', featureCode: 'EXAMS' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 
@@ -285,7 +303,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     key: 'censeur',
     path: '/app/censeur',
     label: 'Portail Censeur',
+    labelEn: 'Censor Portal',
     roleLabel: 'Censeur',
+    roleLabelEn: 'Censor',
     accent: 'violet',
     loginPortal: 'school',
     active: true,
@@ -293,12 +313,12 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     modules: [
       // ⭐ La home du portail est l'Espace Censeur (workspace dédié existant :
       //    visites de classes, conseils de classe, fraudes aux examens).
-      { path: '/app/censeur', label: 'Espace Censeur', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe, fraudes' },
-      { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: 'School', desc: 'Planification, cahiers, contrôle', featureCode: 'PEDAGOGY' },
-      { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: 'GraduationCap', desc: 'Évaluations, fraudes, validation', featureCode: 'EXAMS' },
-      { path: '/app/discipline', label: 'Vie Scolaire', icon: 'Shield', desc: 'Conduite, sanctions (Secondaire)', requiresSecondary: true },
-      { path: '/app/students', label: 'Élèves & Scolarité', icon: 'Users', desc: 'Effectifs, dossiers', featureCode: 'STUDENTS' },
-      { path: '/app/communication', label: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      { path: '/app/censeur', label: 'Espace Censeur', labelEn: 'Censor Space', icon: 'ClipboardCheck', desc: 'Visites de classes, conseils de classe, fraudes', descEn: 'Class visits, class councils, exam fraud' },
+      { path: '/app/pedagogy', label: 'Organisation Pédagogique', labelEn: 'Pedagogical Organisation', icon: 'School', desc: 'Planification, cahiers, contrôle', descEn: 'Planning, notebooks, oversight', featureCode: 'PEDAGOGY' },
+      { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Évaluations, fraudes, validation', descEn: 'Assessments, fraud, validation', featureCode: 'EXAMS' },
+      { path: '/app/discipline', label: 'Vie Scolaire', labelEn: 'School Life', icon: 'Shield', desc: 'Conduite, sanctions (Secondaire)', descEn: 'Conduct, sanctions (Secondary)', requiresSecondary: true },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Effectifs, dossiers', descEn: 'Headcount, records', featureCode: 'STUDENTS' },
+      { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
   },
 };

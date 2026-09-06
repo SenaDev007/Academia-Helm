@@ -8,7 +8,9 @@ export default function CollaboratorsPage() {
     <HRShell
       activeId="collaborators"
       title="Collaborateurs"
+      titleEn="Staff Members"
       description="Gestion des fiches de personnel, contrats, affectations et organigramme."
+      descriptionEn="Staff records, contracts, assignments and organisation chart management."
     >
       <CollaboratorsWorkspace />
     </HRShell>

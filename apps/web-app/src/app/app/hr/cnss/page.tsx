@@ -90,7 +90,9 @@ export default function CnssPage() {
     <HRShell
       activeId="cnss"
       title="Impôts & États financiers"
+      titleEn="Taxes & Financial Statements"
       description="Gestion fiscale complète : états financiers SYSCOHADA, déclarations IST/IRPP/VPS/AIB/CNSS, paie et fiches de renseignements."
+      descriptionEn="Complete fiscal management: SYSCOHADA financial statements, IST/IRPP/VPS/AIB/CNSS declarations, payroll and information sheets."
     >
       {/* ─── Sous-onglets principaux ─── */}
       <div className="mb-6 flex items-center gap-1 border-b border-slate-200 overflow-x-auto">

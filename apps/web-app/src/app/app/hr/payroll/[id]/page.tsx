@@ -423,14 +423,14 @@ export default function PayrollDetailPage() {
 
   if (loading) {
     return (
-      <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
+      <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
         <div className="p-8 text-center animate-pulse">Chargement de la période de paie...</div>
       </HRShell>
     );
   }
   if (!period) {
     return (
-      <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
+      <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
         <div className="p-8 text-center text-red-500">Période introuvable.</div>
       </HRShell>
     );
@@ -439,7 +439,7 @@ export default function PayrollDetailPage() {
   const totalNet = period.payrolls?.reduce((acc: number, p: any) => acc + Number(p.netSalary), 0) || 0;
 
   return (
-    <HRShell activeId="payroll" title="Paie" description="Périodes de paie, calculs fiscaux et bulletins.">
+    <HRShell activeId="payroll" title="Paie" titleEn="Payroll" description="Périodes de paie, calculs fiscaux et bulletins." descriptionEn="Payroll periods, tax calculations and payslips.">
     <div className="space-y-6 pb-20">
       <div className="px-4 sm:px-6 pt-4">
         <Link href="/app/hr/payroll" className="flex items-center gap-2 text-gray-500 hover:text-blue-600 font-bold transition-all group">

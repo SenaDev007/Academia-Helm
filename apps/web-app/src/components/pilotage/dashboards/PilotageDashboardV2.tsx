@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+// ⭐ P4-final : dashboard de pilotage bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 import KPICards from '@/components/pilotage/KPICards';
 import OrionAlertsCard from '@/components/pilotage/OrionAlertsCard';
 
@@ -1731,6 +1733,8 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
 export default function PilotageDashboardV2({ showQuickAccess = true }: PilotageDashboardV2Props) {
   const { currentYear } = useAcademicYear();
   const { currentLevel } = useSchoolLevel();
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   const academicYearId = currentYear?.id;
   const schoolLevelId = currentLevel?.id;
@@ -1849,14 +1853,14 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
     return (
       <div className="space-y-6 p-4 md:p-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-navy-900 mb-1">Tableau de pilotage</h1>
-          <p className="text-sm text-gray-600">Vue d'ensemble de votre établissement</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-navy-900 mb-1">{L("Tableau de pilotage", "Steering dashboard")}</h1>
+          <p className="text-sm text-gray-600">{L("Vue d'ensemble de votre établissement", "Overview of your school")}</p>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">
           <Clock className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-amber-900 mb-2">Année scolaire non sélectionnée</h3>
+          <h3 className="text-lg font-semibold text-amber-900 mb-2">{L("Année scolaire non sélectionnée", "No school year selected")}</h3>
           <p className="text-sm text-amber-700">
-            Sélectionnez une année scolaire pour visualiser les données de pilotage.
+            {L("Sélectionnez une année scolaire pour visualiser les données de pilotage.", "Select a school year to view the steering data.")}
           </p>
         </div>
       </div>
@@ -1900,9 +1904,9 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
       {/* ── En-tête ── */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-navy-900 mb-1">Tableau de pilotage</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-navy-900 mb-1">{L("Tableau de pilotage", "Steering dashboard")}</h1>
           <p className="text-sm text-gray-600">
-            {currentYear?.name || 'Année en cours'} • {levelLabel}
+            {currentYear?.name || L("Année en cours", "Current year")} • {levelLabel}
           </p>
         </div>
         <div className="flex items-center space-x-2 mt-3 md:mt-0">
@@ -1917,7 +1921,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
             className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
           >
             <Activity className="w-3.5 h-3.5 mr-1.5" />
-            Actualiser
+            {L("Actualiser", "Refresh")}
           </button>
         </div>
       </div>
@@ -1930,30 +1934,30 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           GradeAnalyticsSection plus bas (plus complète et professionnelle) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MiniKpiCard
-          label="Recette du jour"
+          label={L("Recette du jour", "Today's revenue")}
           value={formatCurrency(todayRevenueQuery.data || 0)}
           icon={DollarSign}
           iconColor="text-green-600"
           iconBg="bg-green-50"
-          subtitle="Paiements encaissés aujourd'hui"
+          subtitle={L("Paiements encaissés aujourd'hui", "Payments collected today")}
           loading={todayRevenueQuery.isLoading}
         />
         <MiniKpiCard
-          label="Impayés / Arriérés"
+          label={L("Impayés / Arriérés", "Unpaid / Arrears")}
           value={formatCurrency(unpaidAmount)}
           icon={AlertCircle}
           iconColor="text-red-600"
           iconBg="bg-red-50"
-          subtitle="Scolarités à recouvrer"
+          subtitle={L("Scolarités à recouvrer", "Tuition to recover")}
           loading={financeKpisQuery.isLoading}
         />
         <MiniKpiCard
-          label="Recettes encaissées"
+          label={L("Recettes encaissées", "Collected revenue")}
           value={formatCurrency(totalRevenue)}
           icon={Banknote}
           iconColor="text-amber-600"
           iconBg="bg-amber-50"
-          subtitle="Total des paiements reçus (année en cours)"
+          subtitle={L("Total des paiements reçus (année en cours)", "Total payments received (current year)")}
           loading={consolidatedQuery.isLoading}
         />
       </div>
@@ -1969,7 +1973,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         {/* Effectifs par classe (barres) + bouton "Voir tout" */}
         <div className="lg:col-span-2">
           <BarChartCard
-            title="Effectifs par classe"
+            title={L("Effectifs par classe", "Enrolment by class")}
             data={enrollmentByClass}
             icon={Users}
             accentColor="text-blue-600"
@@ -1980,7 +1984,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
               onClick={() => setShowAllClasses(prev => !prev)}
               className="mt-2 w-full flex items-center justify-center gap-1 py-2 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
             >
-              {showAllClasses ? 'Voir moins' : `Voir tout (${studentsStats?.byClass?.length || 0} classes)`}
+              {showAllClasses ? L("Voir moins", "Show less") : L(`Voir tout (${studentsStats?.byClass?.length || 0} classes)`, `Show all (${studentsStats?.byClass?.length || 0} classes)`)}
             </button>
           )}
         </div>
@@ -1988,7 +1992,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center gap-2 mb-3">
             <Users className="h-4 w-4 text-pink-600" />
-            <h3 className="text-sm font-bold text-slate-800">Répartition par sexe</h3>
+            <h3 className="text-sm font-bold text-slate-800">{L("Répartition par sexe", "Gender split")}</h3>
           </div>
           {genderByLevel.length > 0 ? (
             <div className="space-y-2">
@@ -2114,7 +2118,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
       {/* ── Accès rapide aux modules ── */}
       {showQuickAccess && (
         <div>
-          <h2 className="text-lg font-semibold text-navy-900 mb-4">Accès rapide aux modules</h2>
+          <h2 className="text-lg font-semibold text-navy-900 mb-4">{L("Accès rapide aux modules", "Quick access to modules")}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {QUICK_ACCESS.map((item) => {
               const Icon = item.icon;

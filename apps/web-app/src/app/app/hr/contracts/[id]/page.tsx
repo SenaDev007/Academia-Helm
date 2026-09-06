@@ -244,7 +244,7 @@ export default function ContractDetailPage() {
 
   if (loading) {
     return (
-      <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+      <HRShell activeId="contracts" title="Contrats" titleEn="Contracts" description="Suivi des contrats, avenants, échéances et historique contractuel." descriptionEn="Contract tracking, amendments, deadlines and contractual history.">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center space-y-3">
             <Loader2 className="h-10 w-10 animate-spin mx-auto" style={{ color: PRIMARY }} />
@@ -257,7 +257,7 @@ export default function ContractDetailPage() {
 
   if (!contract) {
     return (
-      <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+      <HRShell activeId="contracts" title="Contrats" titleEn="Contracts" description="Suivi des contrats, avenants, échéances et historique contractuel." descriptionEn="Contract tracking, amendments, deadlines and contractual history.">
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
           <AlertCircle className="h-12 w-12 text-rose-400" />
           <p className="text-slate-600 font-medium">Contrat introuvable.</p>
@@ -286,7 +286,7 @@ export default function ContractDetailPage() {
     : null;
 
   return (
-    <HRShell activeId="contracts" title="Contrats" description="Suivi des contrats, avenants, échéances et historique contractuel.">
+    <HRShell activeId="contracts" title="Contrats" titleEn="Contracts" description="Suivi des contrats, avenants, échéances et historique contractuel." descriptionEn="Contract tracking, amendments, deadlines and contractual history.">
       <div className="max-w-4xl mx-auto space-y-6 pb-16">
         <ContractSignModal
           isOpen={signModalOpen}

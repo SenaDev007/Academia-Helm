@@ -50,6 +50,8 @@ import { LogoutModal } from '@/components/auth/LogoutModal';
 import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
 import { LanguageSwitcher } from '@/contexts/I18nContext';
+// ⭐ P4-final : coquille bilingue — un directeur anglophone voit son portail 100% EN
+import { useL } from '@/lib/i18n/bilingual';
 import AcademicYearSelector from '@/components/pilotage/AcademicYearSelector';
 import SchoolLevelSelector from '@/components/pilotage/SchoolLevelSelector';
 import AcademicTrackSelector from '@/components/pilotage/AcademicTrackSelector';
@@ -148,6 +150,8 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   const { enabledSet, loading: featuresLoading } = useEnabledFeatureCodes();
   const pathname = usePathname();
   const router = useRouter();
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -199,9 +203,12 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center p-8">
           <Lock className={cn('w-12 h-12 mx-auto mb-3', theme.iconText)} />
-          <h2 className="text-lg font-bold text-slate-900 mb-2">Accès réservé</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">{L("Accès réservé", "Restricted access")}</h2>
           <p className="text-sm text-slate-500 max-w-sm mx-auto">
-            {config.label} est réservé au métier « {config.roleLabel} ». Redirection…
+            {L(
+              `${config.label} est réservé au métier « ${config.roleLabel} ». Redirection…`,
+              `${L(config.label, config.labelEn)} is reserved for the "${L(config.roleLabel, config.roleLabelEn)}" role. Redirecting…`,
+            )}
           </p>
         </div>
       </div>
@@ -217,14 +224,16 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
     );
   }
 
-  const userName = user ? `${user.firstName} ${user.lastName}`.trim() : config.roleLabel;
+  const userName = user ? `${user.firstName} ${user.lastName}`.trim() : L(config.roleLabel, config.roleLabelEn);
   // Photo de profil si le payload de session la transporte (sinon initiales).
   // ⚠️ Cast étroit : le type User de session ne déclare pas photoUrl.
   const userPhoto = (user as { photoUrl?: string } | null | undefined)?.photoUrl;
-  const currentModuleLabel =
-    modules.find(
-      (m) => pathname === m.path || (m.path !== config.path && pathname.startsWith(m.path))
-    )?.label || config.label;
+  const activeModule = modules.find(
+    (m) => pathname === m.path || (m.path !== config.path && pathname.startsWith(m.path))
+  );
+  const currentModuleLabel = activeModule
+    ? L(activeModule.label, activeModule.labelEn || activeModule.label)
+    : L(config.label, config.labelEn);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -256,7 +265,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
           )}
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-slate-900 truncate">
-              {school?.schoolName || tenant?.name || 'École'}
+              {school?.schoolName || tenant?.name || L('École', 'School')}
             </p>
             <p className="text-[10px] text-slate-400">{academicYear?.label || ''}</p>
           </div>
@@ -264,7 +273,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="lg:hidden flex h-11 w-11 items-center justify-center text-slate-400 hover:bg-slate-100 rounded-lg"
-            aria-label="Fermer le menu"
+            aria-label={L("Fermer le menu", "Close menu")}
           >
             <X className="h-5 w-5" />
           </button>
@@ -293,7 +302,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{userName}</p>
-              <p className={cn('text-[10px] font-semibold', theme.iconText)}>{config.roleLabel}</p>
+              <p className={cn('text-[10px] font-semibold', theme.iconText)}>{L(config.roleLabel, config.roleLabelEn)}</p>
             </div>
           </div>
         </div>
@@ -315,10 +324,10 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
                     ? theme.active
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent'
                 )}
-                title={mod.desc}
+                title={L(mod.desc, mod.descEn || mod.desc)}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
-                <span className="truncate">{mod.label}</span>
+                <span className="truncate">{L(mod.label, mod.labelEn || mod.label)}</span>
               </Link>
             );
           })}
@@ -335,7 +344,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <LogOut className="h-4 w-4" />
-            <span>Se déconnecter</span>
+            <span>{L("Se déconnecter", "Log out")}</span>
           </button>
         </div>
       </aside>
@@ -360,7 +369,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             <button
               onClick={() => setMobileSidebarOpen(true)}
               className="lg:hidden flex h-11 w-11 items-center justify-center text-slate-600 hover:bg-slate-100 rounded-lg"
-              aria-label="Ouvrir le menu"
+              aria-label={L("Ouvrir le menu", "Open menu")}
             >
               <Menu className="h-5 w-5" />
             </button>

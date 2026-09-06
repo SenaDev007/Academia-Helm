@@ -38,22 +38,25 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 import PortalSwitchButton from "@/components/auth/PortalSwitchButton";
 // ⭐ P4 : bascule FR/EN (masquée si mono-piste — langue du profil)
 import { LanguageSwitcher } from "@/contexts/I18nContext";
+// ⭐ P4-final : libellés bilingues — un enseignant anglophone voit TOUT
+//    son portail en anglais (exigence : UI = langue de la piste)
+import { useL } from "@/lib/i18n/bilingual";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 // ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
 
 const TEACHER_MODULES = [
-  { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
-  { path: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Mon emploi du temps" },
-  { path: "/app/teacher/annual-planning", label: "Planification annuelle", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)" },
-  { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs" },
-  { path: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées et suivi" },
-  { path: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations et saisie de notes" },
-  { path: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources et documents" },
-  { path: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques" },
-  { path: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques" },
-  { path: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés." },
+  { path: "/app/teacher", label: "Dashboard", labelEn: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées", descEn: "Today's lessons, assigned classes" },
+  { path: "/app/teacher/timetable", label: "Emploi du Temps", labelEn: "Timetable", icon: CalendarDays, desc: "Mon emploi du temps", descEn: "My timetable" },
+  { path: "/app/teacher/annual-planning", label: "Planification annuelle", labelEn: "Annual Planning", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)", descEn: "Official pedagogical planning (CI to CM2 + Maternelle)" },
+  { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", labelEn: "Pedagogy Space", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs", descEn: "Daily log, lesson sheets, attendance register, textbook, homework" },
+  { path: "/app/teacher/tasks", label: "Travaux & Suivi", labelEn: "Tasks & Tracking", icon: ClipboardList, desc: "Tâches assignées et suivi", descEn: "Assigned tasks and follow-up" },
+  { path: "/app/teacher/exams", label: "Examens & Notes", labelEn: "Exams & Grades", icon: FileEdit, desc: "Mes évaluations et saisie de notes", descEn: "My assessments and grade entry" },
+  { path: "/app/teacher/library", label: "Bibliothèque", labelEn: "Library", icon: Library, desc: "Ressources et documents", descEn: "Resources and documents" },
+  { path: "/app/teacher/educast", label: "EduCast", labelEn: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques", descEn: "Educational videos and content" },
+  { path: "/app/teacher/orion", label: "ORION", labelEn: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques", descEn: "Pedagogical alerts and analytics" },
+  { path: "/app/teacher/communication", label: "Helm Connect", labelEn: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", descEn: "Communicate. Collaborate. Stay connected." },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
@@ -64,6 +67,8 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -90,8 +95,9 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     );
   }
 
-  const teacherName = user ? `${user.firstName} ${user.lastName}`.trim() : "Enseignant";
-  const currentModuleLabel = TEACHER_MODULES.find((m) => pathname === m.path || (m.path !== "/app/teacher" && pathname.startsWith(m.path)))?.label || "Portail Enseignant";
+  const teacherName = user ? `${user.firstName} ${user.lastName}`.trim() : L("Enseignant", "Teacher");
+  const activeModule = TEACHER_MODULES.find((m) => pathname === m.path || (m.path !== "/app/teacher" && pathname.startsWith(m.path)));
+  const currentModuleLabel = activeModule ? L(activeModule.label, activeModule.labelEn) : L("Portail Enseignant", "Teacher Portal");
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -123,14 +129,14 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || "École"}</p>
+            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || L("École", "School")}</p>
             <p className="text-[10px] text-slate-400">{academicYear?.label || ""}</p>
           </div>
           {/* Bouton fermer (mobile only) */}
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="lg:hidden p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"
-            aria-label="Fermer le menu"
+            aria-label={L("Fermer le menu", "Close menu")}
           >
             <X className="h-5 w-5" />
           </button>
@@ -153,7 +159,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{teacherName}</p>
-              <p className="text-[10px] text-slate-400">Enseignant</p>
+              <p className="text-[10px] text-slate-400">{L("Enseignant", "Teacher")}</p>
             </div>
           </div>
         </div>
@@ -174,10 +180,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                     ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent"
                 )}
-                title={mod.desc}
+                title={L(mod.desc, mod.descEn)}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
-                <span className="truncate">{mod.label}</span>
+                <span className="truncate">{L(mod.label, mod.labelEn)}</span>
               </Link>
             );
           })}
@@ -194,7 +200,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <LogOut className="h-4 w-4" />
-            <span>Se déconnecter</span>
+            <span>{L("Se déconnecter", "Log out")}</span>
           </button>
         </div>
       </aside>
@@ -219,7 +225,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             <button
               onClick={() => setMobileSidebarOpen(true)}
               className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-              aria-label="Ouvrir le menu"
+              aria-label={L("Ouvrir le menu", "Open menu")}
             >
               <Menu className="h-5 w-5" />
             </button>

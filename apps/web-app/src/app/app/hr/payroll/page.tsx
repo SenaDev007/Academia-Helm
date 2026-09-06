@@ -8,7 +8,9 @@ export default function PayrollPage() {
     <HRShell
       activeId="payroll"
       title="Paie"
+      titleEn="Payroll"
       description="Gestion des bulletins de paie, périodes salariales et virements."
+      descriptionEn="Payslips, salary periods and transfers management."
     >
       <PayrollWorkspace />
     </HRShell>

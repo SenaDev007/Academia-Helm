@@ -8,7 +8,9 @@ export default function PlanningPage() {
     <HRShell
       activeId="planning"
       title="Plannings & Horaires"
+      titleEn="Plannings & Schedules"
       description="Gestion des tours de garde, permanences et plannings du personnel."
+      descriptionEn="Management of duty rosters, on-call shifts and staff plannings."
     >
       <PlanningWorkspace />
     </HRShell>

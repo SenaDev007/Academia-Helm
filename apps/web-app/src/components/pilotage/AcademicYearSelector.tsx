@@ -15,17 +15,21 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, Calendar, AlertCircle } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
+// ⭐ P4-final : sélecteur bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 export default function AcademicYearSelector() {
   const { currentYear, setCurrentYear, availableYears, isLoading } = useAcademicYear();
   const [isOpen, setIsOpen] = useState(false);
+  // ⭐ Libellés dans la langue du profil
+  const L = useL();
 
   // État de chargement
   if (isLoading) {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <Calendar className="w-4 h-4 text-gray-400 animate-pulse" />
-        <span className="text-sm text-gray-500">Chargement...</span>
+        <span className="text-sm text-gray-500">{L("Chargement...", "Loading...")}</span>
       </div>
     );
   }
@@ -35,11 +39,14 @@ export default function AcademicYearSelector() {
     return (
       <div
         className="flex items-center space-x-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md"
-        title="Aucune année scolaire n'est configurée pour ce tenant. Contactez un administrateur pour en créer une."
+        title={L(
+          "Aucune année scolaire n'est configurée pour ce tenant. Contactez un administrateur pour en créer une.",
+          "No school year is configured for this tenant. Contact an administrator to create one.",
+        )}
       >
         <AlertCircle className="w-4 h-4 text-red-600" />
         <span className="text-sm text-red-700 font-medium">
-          Aucune année scolaire
+          {L("Aucune année scolaire", "No school year")}
         </span>
       </div>
     );
@@ -68,9 +75,9 @@ export default function AcademicYearSelector() {
             <div className="p-2">
               {availableYears.length === 0 ? (
                 <div className="px-3 py-4 text-center text-sm text-gray-500">
-                  Aucune année scolaire disponible.
+                  {L("Aucune année scolaire disponible.", "No school year available.")}
                   <br />
-                  Contactez un administrateur.
+                  {L("Contactez un administrateur.", "Contact an administrator.")}
                 </div>
               ) : (
                 availableYears.map((year) => (
@@ -89,7 +96,7 @@ export default function AcademicYearSelector() {
                     <div className="flex items-center justify-between">
                       <span>{year.name}</span>
                       {year.isCurrent && (
-                        <span className="text-xs text-green-600 font-medium">Active</span>
+                        <span className="text-xs text-green-600 font-medium">{L("Active", "Current")}</span>
                       )}
                     </div>
                   </button>

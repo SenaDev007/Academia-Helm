@@ -28,6 +28,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { financeService } from '@/services/finance.service';
+// ⭐ P4-final : dashboard bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 interface LevelData {
   levelCode: string;
@@ -112,6 +114,8 @@ function formatNumber(n: number): string {
 }
 
 export default function FinanceDashboardV2() {
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   const { currentYear } = useAcademicYear();
   const { tenant } = useAppSession();
   const academicYearId = currentYear?.id;
@@ -301,19 +305,19 @@ export default function FinanceDashboardV2() {
     <div className="space-y-6 pb-8">
       <div className="bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl px-5 py-4">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <Wallet className="w-5 h-5" /> Tableau de bord financier
+          <Wallet className="w-5 h-5" /> {L("Tableau de bord financier", "Financial dashboard")}
         </h2>
         <p className="text-xs text-blue-100 mt-1">
-          {currentYear?.name || 'Année en cours'} · Vue d'ensemble par niveau scolaire et par classe
+          {currentYear?.name || L("Année en cours", "Current year")} · {L("Vue d'ensemble par niveau scolaire et par classe", "Overview by school level and class")}
         </p>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Montant dû (standard)" value={formatCurrency(totals.montantTotalDu)} subtitle={`${formatNumber(totals.nombreEleves)} élèves`} icon={DollarSign} color="indigo" />
-        <KpiCard label="Après personnalisations" value={formatCurrency(totals.montantPersonnalise)} subtitle={`${formatNumber(totals.nombrePersonnalisations)} personnalisations · -${formatCurrency(totals.totalReduction)}`} icon={TrendingDown} color="purple" />
-        <KpiCard label="Montant perçu" value={formatCurrency(totals.montantPercu)} subtitle={`Taux de recouvrement : ${totals.tauxRecouvrement}%`} icon={TrendingUp} color="emerald" />
-        <KpiCard label="Reste à recouvrer" value={formatCurrency(totals.montantRestant)} subtitle={`${100 - totals.tauxRecouvrement}% du montant dû`} icon={AlertCircle} color="red" />
+        <KpiCard label={L("Montant dû (standard)", "Amount due (standard)")} value={formatCurrency(totals.montantTotalDu)} subtitle={L(`${formatNumber(totals.nombreEleves)} élèves`, `${formatNumber(totals.nombreEleves)} students`)} icon={DollarSign} color="indigo" />
+        <KpiCard label={L("Après personnalisations", "After customisations")} value={formatCurrency(totals.montantPersonnalise)} subtitle={L(`${formatNumber(totals.nombrePersonnalisations)} personnalisations · -${formatCurrency(totals.totalReduction)}`, `${formatNumber(totals.nombrePersonnalisations)} customisations · -${formatCurrency(totals.totalReduction)}`)} icon={TrendingDown} color="purple" />
+        <KpiCard label={L("Montant perçu", "Amount collected")} value={formatCurrency(totals.montantPercu)} subtitle={L(`Taux de recouvrement : ${totals.tauxRecouvrement}%`, `Recovery rate: ${totals.tauxRecouvrement}%`)} icon={TrendingUp} color="emerald" />
+        <KpiCard label={L("Reste à recouvrer", "Outstanding balance")} value={formatCurrency(totals.montantRestant)} subtitle={L(`${100 - totals.tauxRecouvrement}% du montant dû`, `${100 - totals.tauxRecouvrement}% of amount due`)} icon={AlertCircle} color="red" />
       </div>
 
       {/* Graphiques */}
@@ -327,21 +331,21 @@ export default function FinanceDashboardV2() {
       {/* Tableau par niveau */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="bg-gradient-to-r from-slate-800 to-slate-600 px-5 py-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><School className="w-4 h-4" />Récapitulatif par niveau scolaire</h3>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><School className="w-4 h-4" />{L("Récapitulatif par niveau scolaire", "Summary by school level")}</h3>
         </div>
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="text-left px-4 py-2 font-semibold text-slate-700">Niveau</th>
-                <th className="text-right px-4 py-2 font-semibold text-slate-700">Élèves</th>
-                <th className="text-right px-4 py-2 font-semibold text-indigo-700">Dû (standard)</th>
-                <th className="text-right px-4 py-2 font-semibold text-purple-700">Personnalisé</th>
-                <th className="text-right px-4 py-2 font-semibold text-red-700">Réduction</th>
-                <th className="text-right px-4 py-2 font-semibold text-emerald-700">Perçu</th>
-                <th className="text-right px-4 py-2 font-semibold text-orange-700">Restant</th>
-                <th className="text-right px-4 py-2 font-semibold text-slate-700">Taux</th>
-                <th className="text-center px-4 py-2 font-semibold text-slate-700">Classes</th>
+                <th className="text-left px-4 py-2 font-semibold text-slate-700">{L("Niveau", "Level")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-700">{L("Élèves", "Students")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-indigo-700">{L("Dû (standard)", "Due (standard)")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-purple-700">{L("Personnalisé", "Customised")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-red-700">{L("Réduction", "Reduction")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-emerald-700">{L("Perçu", "Collected")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-orange-700">{L("Restant", "Outstanding")}</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-700">{L("Taux", "Rate")}</th>
+                <th className="text-center px-4 py-2 font-semibold text-slate-700">{L("Classes", "Classes")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -412,24 +416,24 @@ export default function FinanceDashboardV2() {
                   <span className="w-3 h-3 rounded-full" style={{ backgroundColor: LEVEL_COLORS[lvl.levelCode] || '#64748b' }} />
                   {lvl.levelLabel}
                 </h4>
-                <span className="text-xs text-slate-500">{lvl.nombreEleves} élèves</span>
+                <span className="text-xs text-slate-500">{L(`${lvl.nombreEleves} élèves`, `${lvl.nombreEleves} students`)}</span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-indigo-50 rounded p-2"><p className="text-indigo-500">Dû standard</p><p className="font-bold text-indigo-700">{formatCurrency(lvl.montantTotalDu)}</p></div>
-                <div className="bg-purple-50 rounded p-2"><p className="text-purple-500">Personnalisé</p><p className="font-bold text-purple-700">{formatCurrency(lvl.montantPersonnalise)}</p></div>
-                <div className="bg-emerald-50 rounded p-2"><p className="text-emerald-500">Perçu</p><p className="font-bold text-emerald-700">{formatCurrency(lvl.montantPercu)}</p></div>
-                <div className="bg-orange-50 rounded p-2"><p className="text-orange-500">Restant</p><p className="font-bold text-orange-700">{formatCurrency(lvl.montantRestant)}</p></div>
+                <div className="bg-indigo-50 rounded p-2"><p className="text-indigo-500">{L("Dû standard", "Standard due")}</p><p className="font-bold text-indigo-700">{formatCurrency(lvl.montantTotalDu)}</p></div>
+                <div className="bg-purple-50 rounded p-2"><p className="text-purple-500">{L("Personnalisé", "Customised")}</p><p className="font-bold text-purple-700">{formatCurrency(lvl.montantPersonnalise)}</p></div>
+                <div className="bg-emerald-50 rounded p-2"><p className="text-emerald-500">{L("Perçu", "Collected")}</p><p className="font-bold text-emerald-700">{formatCurrency(lvl.montantPercu)}</p></div>
+                <div className="bg-orange-50 rounded p-2"><p className="text-orange-500">{L("Restant", "Outstanding")}</p><p className="font-bold text-orange-700">{formatCurrency(lvl.montantRestant)}</p></div>
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${lvl.tauxRecouvrement >= 80 ? 'bg-emerald-100 text-emerald-700' : lvl.tauxRecouvrement >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>Recouvrement : {lvl.tauxRecouvrement}%</span>
-                {lvl.classes.length > 0 && <button onClick={() => setExpandedLevel(expandedLevel === lvl.levelCode ? null : lvl.levelCode)} className="text-[10px] text-blue-600 font-bold">{expandedLevel === lvl.levelCode ? 'Masquer' : 'Détail'} ({lvl.classes.length})</button>}
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${lvl.tauxRecouvrement >= 80 ? 'bg-emerald-100 text-emerald-700' : lvl.tauxRecouvrement >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>{L(`Recouvrement : ${lvl.tauxRecouvrement}%`, `Recovery: ${lvl.tauxRecouvrement}%`)}</span>
+                {lvl.classes.length > 0 && <button onClick={() => setExpandedLevel(expandedLevel === lvl.levelCode ? null : lvl.levelCode)} className="text-[10px] text-blue-600 font-bold">{expandedLevel === lvl.levelCode ? L("Masquer", "Hide") : L("Détail", "Detail")} ({lvl.classes.length})</button>}
               </div>
               {expandedLevel === lvl.levelCode && (
                 <div className="mt-2 space-y-1">
                   {lvl.classes.map((cls: ClassData) => (
                     <div key={cls.classId} className="bg-slate-50 rounded p-2 text-xs">
-                      <div className="flex justify-between"><span className="font-medium text-slate-700">{cls.className}</span><span className="text-slate-500">{cls.effectif} él.</span></div>
-                      <div className="flex justify-between mt-1"><span className="text-emerald-600">Perçu: {formatCurrency(cls.montantPercu)}</span><span className="text-orange-600">Restant: {formatCurrency(cls.montantRestant)}</span></div>
+                      <div className="flex justify-between"><span className="font-medium text-slate-700">{cls.className}</span><span className="text-slate-500">{L(`${cls.effectif} él.`, `${cls.effectif} st.`)}</span></div>
+                      <div className="flex justify-between mt-1"><span className="text-emerald-600">{L("Perçu:", "Collected:")} {formatCurrency(cls.montantPercu)}</span><span className="text-orange-600">{L("Restant:", "Outstanding:")} {formatCurrency(cls.montantRestant)}</span></div>
                     </div>
                   ))}
                 </div>
@@ -455,10 +459,11 @@ function KpiCard({ label, value, subtitle, icon: Icon, color }: any) {
 }
 
 function EvolutionChart({ data }: { data: Array<{ month: string; amount: number; count: number }> }) {
+  const L = useL();
   const maxValue = Math.max(...data.map(d => d.amount), 1);
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-emerald-600" />Évolution mensuelle des recettes</h3>
+      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-emerald-600" />{L("Évolution mensuelle des recettes", "Monthly revenue trend")}</h3>
       <div className="flex items-end justify-between gap-1 h-40">
         {data.map((item, i) => {
           const heightPercent = (item.amount / maxValue) * 100;
@@ -478,10 +483,11 @@ function EvolutionChart({ data }: { data: Array<{ month: string; amount: number;
 }
 
 function ComparisonChart({ data }: { data: Array<{ label: string; du: number; personnalise: number; percu: number; restant: number }> }) {
+  const L = useL();
   const maxValue = Math.max(...data.map(d => Math.max(d.du, d.personnalise, d.percu)), 1);
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><School className="w-4 h-4 text-blue-600" />Comparaison par niveau</h3>
+      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><School className="w-4 h-4 text-blue-600" />{L("Comparaison par niveau", "Comparison by level")}</h3>
       <div className="space-y-3">
         {data.map((item, i) => (
           <div key={i} className="space-y-1">
@@ -499,21 +505,22 @@ function ComparisonChart({ data }: { data: Array<{ label: string; du: number; pe
         ))}
       </div>
       <div className="flex items-center gap-3 mt-3 text-[9px]">
-        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-indigo-400 rounded" />Dû</span>
-        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-purple-400 rounded" />Personnalisé</span>
-        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-400 rounded" />Perçu</span>
-        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-orange-400 rounded" />Restant</span>
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-indigo-400 rounded" />{L("Dû", "Due")}</span>
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-purple-400 rounded" />{L("Personnalisé", "Customised")}</span>
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-emerald-400 rounded" />{L("Perçu", "Collected")}</span>
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-orange-400 rounded" />{L("Restant", "Outstanding")}</span>
       </div>
     </div>
   );
 }
 
 function RecoveryChart({ data }: { data: Array<{ className: string; taux: number; restant: number }> }) {
+  const L = useL();
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-orange-600" />Recouvrement par classe (top 10 à risque)</h3>
+      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><AlertCircle className="w-4 h-4 text-orange-600" />{L("Recouvrement par classe (top 10 à risque)", "Recovery by class (top 10 at risk)")}</h3>
       <div className="space-y-2">
-        {data.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">Aucune donnée disponible</p> : data.map((item, i) => (
+        {data.length === 0 ? <p className="text-xs text-slate-400 text-center py-4">{L("Aucune donnée disponible", "No data available")}</p> : data.map((item, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className="text-[10px] text-slate-600 w-20 truncate">{item.className}</span>
             <div className="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
@@ -528,6 +535,7 @@ function RecoveryChart({ data }: { data: Array<{ className: string; taux: number
 }
 
 function DistributionDonut({ totals }: { totals: any }) {
+  const L = useL();
   const percu = totals.montantPercu || 0;
   const restant = totals.montantRestant || 0;
   const total = percu + restant;
@@ -537,17 +545,17 @@ function DistributionDonut({ totals }: { totals: any }) {
   const percuArc = (percuPercent / 100) * circumference;
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" />Répartition Perçu / Restant</h3>
+      <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><Wallet className="w-4 h-4 text-indigo-600" />{L("Répartition Perçu / Restant", "Collected / Outstanding split")}</h3>
       <div className="flex items-center justify-center gap-6">
         <svg viewBox="0 0 160 160" className="w-40 h-40">
           <circle cx={cx} cy={cy} r={r} fill="none" stroke="#fb923c" strokeWidth={strokeWidth} />
           {percuPercent > 0 && <circle cx={cx} cy={cy} r={r} fill="none" stroke="#10b981" strokeWidth={strokeWidth} strokeDasharray={`${percuArc} ${circumference}`} strokeDashoffset={circumference / 4} strokeLinecap="round" transform={`rotate(-90 ${cx} ${cy})`} />}
           <text x={cx} y={cy - 5} textAnchor="middle" className="text-[16px] font-bold fill-emerald-600">{totals.tauxRecouvrement}%</text>
-          <text x={cx} y={cy + 12} textAnchor="middle" className="text-[8px] fill-slate-400 uppercase">Recouvrement</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" className="text-[8px] fill-slate-400 uppercase">{L("Recouvrement", "Recovery")}</text>
         </svg>
         <div className="space-y-2 text-xs">
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-emerald-500" /><div><p className="text-slate-500">Perçu</p><p className="font-bold text-emerald-700">{formatCurrency(percu)}</p></div></div>
-          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-orange-400" /><div><p className="text-slate-500">Restant</p><p className="font-bold text-orange-700">{formatCurrency(restant)}</p></div></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-emerald-500" /><div><p className="text-slate-500">{L("Perçu", "Collected")}</p><p className="font-bold text-emerald-700">{formatCurrency(percu)}</p></div></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-orange-400" /><div><p className="text-slate-500">{L("Restant", "Outstanding")}</p><p className="font-bold text-orange-700">{formatCurrency(restant)}</p></div></div>
         </div>
       </div>
     </div>

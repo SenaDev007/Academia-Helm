@@ -24,6 +24,8 @@ import {
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+// ⭐ P4-final : dropdown bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 /** Formate la date en "il y a X". */
 function timeAgo(dateStr: string): string {
@@ -84,6 +86,8 @@ export default function NotificationDropdown() {
   } = useNotifications();
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // ⭐ Libellés dans la langue du profil
+  const L = useL();
 
   // Fermer le dropdown au clic extérieur
   useEffect(() => {
@@ -119,8 +123,8 @@ export default function NotificationDropdown() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-all"
-        title="Notifications"
-        aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} non lues)` : ''}`}
+        title={L("Notifications", "Notifications")}
+        aria-label={L(`Notifications${unreadCount > 0 ? ` (${unreadCount} non lues)` : ''}`, `Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`)}
       >
         <Bell className="w-[18px] h-[18px]" />
         {unreadCount > 0 && (
@@ -136,10 +140,10 @@ export default function NotificationDropdown() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
+              <h3 className="text-sm font-bold text-slate-800">{L("Notifications", "Notifications")}</h3>
               {unreadCount > 0 && (
                 <span className="text-[10px] font-bold text-white bg-red-500 rounded-full px-2 py-0.5">
-                  {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
+                  {L(`${unreadCount} non lue${unreadCount > 1 ? 's' : ''}`, `${unreadCount} unread${unreadCount > 1 ? '' : ''}`)}
                 </span>
               )}
             </div>
@@ -148,7 +152,7 @@ export default function NotificationDropdown() {
                 <button
                   onClick={markAllAsRead}
                   className="p-1.5 hover:bg-emerald-100 rounded-lg text-emerald-700 transition"
-                  title="Tout marquer comme lu"
+                  title={L("Tout marquer comme lu", "Mark all as read")}
                 >
                   <CheckCheck className="w-4 h-4" />
                 </button>
@@ -156,12 +160,12 @@ export default function NotificationDropdown() {
               {notifications.length > 0 && (
                 <button
                   onClick={() => {
-                    if (window.confirm('Vider toutes les notifications ? Cette action est irréversible.')) {
+                    if (window.confirm(L("Vider toutes les notifications ? Cette action est irréversible.", "Clear all notifications? This action cannot be undone."))) {
                       clearAllNotifications();
                     }
                   }}
                   className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-600 transition"
-                  title="Vider toutes les notifications"
+                  title={L("Vider toutes les notifications", "Clear all notifications")}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -169,7 +173,7 @@ export default function NotificationDropdown() {
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-500 transition"
-                title="Fermer"
+                title={L("Fermer", "Close")}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -185,8 +189,8 @@ export default function NotificationDropdown() {
             ) : notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
                 <Bell className="w-10 h-10 text-slate-300 mb-2" />
-                <p className="text-sm font-medium text-slate-500">Aucune notification</p>
-                <p className="text-xs text-slate-400 mt-1">Vous êtes à jour !</p>
+                <p className="text-sm font-medium text-slate-500">{L("Aucune notification", "No notifications")}</p>
+                <p className="text-xs text-slate-400 mt-1">{L("Vous êtes à jour !", "You're all caught up!")}</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-50">

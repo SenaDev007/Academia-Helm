@@ -8,7 +8,9 @@ export default function RecruiterSettingsPage() {
     <HRShell
       activeId="recruiter-settings"
       title="Paramètres du Recruteur"
+      titleEn="Recruiter Settings"
       description="Configurez l'identité du recruteur (promoteur, RH dédié ou délégué), ses coordonnées et sa signature pour personnaliser les emails envoyés aux candidats."
+      descriptionEn="Configure the recruiter identity (promoter, dedicated HR or delegate), contact details and signature to personalise the emails sent to candidates."
     >
       <RecruiterSettingsWorkspace />
     </HRShell>

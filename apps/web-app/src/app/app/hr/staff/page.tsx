@@ -16,7 +16,9 @@ import { Users, FileText } from 'lucide-react';
 export default function StaffPage() {
   const [subTab, setSubTab] = useState<'staff' | 'list'>('staff');
   return (
-    <HRShell activeId="staff" title="Personnel" description="Gestion des collaborateurs et liste du personnel.">
+    <HRShell activeId="staff" title="Personnel"
+      titleEn="Staff" description="Gestion des collaborateurs et liste du personnel."
+      descriptionEn="Staff records management and personnel list.">
       <div className="flex items-center gap-1 mb-6 border-b border-slate-200 overflow-x-auto">
         <button onClick={() => setSubTab('staff')} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition whitespace-nowrap ${subTab === 'staff' ? 'border-[#1A2BA6] text-[#1A2BA6]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
           <Users className="h-4 w-4" /> Personnel

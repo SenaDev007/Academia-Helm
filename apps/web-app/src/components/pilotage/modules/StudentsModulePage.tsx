@@ -48,6 +48,8 @@ import {
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
+// ⭐ P4-final : module bilingue (piste EN → onglets et en-tête 100% EN)
+import { useL } from '@/lib/i18n/bilingual';
 import EnrollmentsContent from '@/components/students/EnrollmentsContent';
 import AdmissionsContent from '@/components/students/AdmissionsContent';
 import StudentIdCardsSection from '@/components/students/StudentIdCardsSection';
@@ -117,6 +119,9 @@ interface Student {
 
 export default function StudentsModulePage() {
   const { academicYear, schoolLevel, tenantId, isLoading: contextLoading } = useModuleContext();
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
+  const isEN = L('fr', 'en') === 'en';
   const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -391,13 +396,21 @@ export default function StudentsModulePage() {
   };
 
   const getStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      ACTIVE: 'Actif',
-      INACTIVE: 'Inactif',
-      GRADUATED: 'Diplômé',
-      TRANSFERRED: 'Transféré',
-      ARCHIVED: 'Archivé',
-    };
+    const labels: Record<string, string> = isEN
+      ? {
+          ACTIVE: 'Active',
+          INACTIVE: 'Inactive',
+          GRADUATED: 'Graduated',
+          TRANSFERRED: 'Transferred',
+          ARCHIVED: 'Archived',
+        }
+      : {
+          ACTIVE: 'Actif',
+          INACTIVE: 'Inactif',
+          GRADUATED: 'Diplômé',
+          TRANSFERRED: 'Transféré',
+          ARCHIVED: 'Archivé',
+        };
     return labels[status] || status;
   };
 
@@ -405,7 +418,7 @@ export default function StudentsModulePage() {
     const activeEnrollment = student.studentEnrollments?.find(
       (e) => e.status === 'ACTIVE' || e.status === 'VALIDATED'
     );
-    return formatGradeLabel(activeEnrollment?.class?.name) || 'Non affecté';
+    return formatGradeLabel(activeEnrollment?.class?.name) || L("Non affecté", "Unassigned");
   };
 
   // ============================================================================
@@ -417,7 +430,7 @@ export default function StudentsModulePage() {
       <div className="flex items-center justify-center py-12">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-gray-600">Chargement...</p>
+          <p className="text-sm text-gray-600">{L("Chargement...", "Loading...")}</p>
         </div>
       </div>
     );
@@ -427,8 +440,11 @@ export default function StudentsModulePage() {
     <>
       <ModuleContainer
         header={{
-          title: 'Gestion des Élèves & Scolarité',
-          description: 'Admission, inscription, dossiers élèves et organisation des classes',
+          title: L("Gestion des Élèves & Scolarité", "Students & Enrollment Management"),
+          description: L(
+            "Admission, inscription, dossiers élèves et organisation des classes",
+            "Admission, enrollment, student records and class organisation",
+          ),
           icon: 'users',
           kpis: [], // Statistiques supprimées — affichage direct du contenu
           actions: null,
@@ -437,19 +453,19 @@ export default function StudentsModulePage() {
           activeModuleId: activeSubModuleId,
           onModuleChange: setActiveSubModuleId,
           modules: [
-            { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
-            { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
-            { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
-            { id: 'assignments', label: 'Affectations & Mouvements', icon: <Share2 className="w-4 h-4" /> },
-            { id: 'class-lists', label: 'Liste des Élèves', icon: <Users className="w-4 h-4" /> },
-            { id: 'movements', label: 'Sorties & Abandons', icon: <History className="w-4 h-4" /> },
-            { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
-            { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
-            { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
-            { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
-            { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
-            { id: 'educmaster', label: 'Educmaster', icon: <Globe className="w-4 h-4" /> },
-            { id: 'analytics', label: 'ORION, Stats & Audit', icon: <Activity className="w-4 h-4" /> },
+            { id: 'dashboard', label: L("Tableau de Bord", "Dashboard"), icon: <LayoutDashboard className="w-4 h-4" /> },
+            { id: 'admissions', label: L("Admissions", "Admissions"), icon: <UserPlus className="w-4 h-4" /> },
+            { id: 'enrollments', label: L("Inscriptions", "Enrollments"), icon: <GraduationCap className="w-4 h-4" /> },
+            { id: 'assignments', label: L("Affectations & Mouvements", "Assignments & Movements"), icon: <Share2 className="w-4 h-4" /> },
+            { id: 'class-lists', label: L("Liste des Élèves", "Class Lists"), icon: <Users className="w-4 h-4" /> },
+            { id: 'movements', label: L("Sorties & Abandons", "Exits & Dropouts"), icon: <History className="w-4 h-4" /> },
+            { id: 'cards', label: L("Cartes Scolaires", "School ID Cards"), icon: <IdCard className="w-4 h-4" /> },
+            { id: 'dossiers', label: L("Dossiers Élèves", "Student Files"), icon: <FileText className="w-4 h-4" /> },
+            { id: 'families', label: L("Familles", "Families"), icon: <User className="w-4 h-4" /> },
+            { id: 'transfers', label: L("Transferts & Mobilité", "Transfers & Mobility"), icon: <ArrowRightLeft className="w-4 h-4" /> },
+            { id: 'history', label: L("Historique Scolaire", "Academic History"), icon: <Archive className="w-4 h-4" /> },
+            { id: 'educmaster', label: "Educmaster", icon: <Globe className="w-4 h-4" /> },
+            { id: 'analytics', label: L("ORION, Stats & Audit", "ORION, Stats & Audit"), icon: <Activity className="w-4 h-4" /> },
           ],
         }}
         content={

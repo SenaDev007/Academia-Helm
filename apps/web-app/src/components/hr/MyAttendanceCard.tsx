@@ -30,6 +30,8 @@ import {
 import { toast } from "sonner";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useAppSession } from "@/contexts/AppSessionContext";
+// ⭐ P4-final : carte bilingue (piste EN → anglais)
+import { useL } from "@/lib/i18n/bilingual";
 
 const cn = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -41,6 +43,8 @@ interface MyAttendanceCardProps {
 export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
   const { user } = useAppSession();
   const targetDate = date || new Date().toISOString().split('T')[0];
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   const [attendance, setAttendance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -158,7 +162,7 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <div className="flex items-center gap-2 text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" /> Chargement de ma présence...
+          <Loader2 className="h-4 w-4 animate-spin" /> {L("Chargement de ma présence...", "Loading my attendance...")}
         </div>
       </div>
     );
@@ -178,10 +182,10 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
         <div>
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <MapPin className="h-4 w-4 text-blue-600" />
-            Ma présence du jour
+            {L("Ma présence du jour", "My attendance today")}
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            {new Date(targetDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {new Date(targetDate).toLocaleDateString(L("fr-FR", "en-GB"), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
 
@@ -193,9 +197,9 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
             isMarkedBySemainier ? "bg-purple-100 text-purple-700" :
             "bg-slate-100 text-slate-700"
           )}>
-            {isMarkedBySelf ? "AUTO-POINTÉ" :
-             isMarkedBySemainier ? "PAR SEMAINIER" :
-             "MARQUÉ"}
+            {isMarkedBySelf ? L("AUTO-POINTÉ", "SELF CHECK-IN") :
+             isMarkedBySemainier ? L("PAR SEMAINIER", "BY WEEKLY MONITOR") :
+             L("MARQUÉ", "MARKED")}
           </span>
         )}
       </div>
@@ -204,8 +208,8 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
       {!attendance && (
         <div className="space-y-3">
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
-            <p className="font-semibold mb-0.5">Vous n'avez pas encore pointé votre présence aujourd'hui.</p>
-            <p className="text-xs">Cliquez sur le bouton ci-dessous en arrivant à l'école. La vérification GPS est automatique.</p>
+            <p className="font-semibold mb-0.5">{L("Vous n'avez pas encore pointé votre présence aujourd'hui.", "You haven't checked in yet today.")}</p>
+            <p className="text-xs">{L("Cliquez sur le bouton ci-dessous en arrivant à l'école. La vérification GPS est automatique.", "Tap the button below when you arrive at school. GPS verification is automatic.")}</p>
           </div>
           <button
             onClick={handleCheckIn}
@@ -213,9 +217,9 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition"
           >
             {saving || geoLoading ? (
-              <><Loader2 className="h-5 w-5 animate-spin" /> Vérification GPS en cours...</>
+              <><Loader2 className="h-5 w-5 animate-spin" /> {L("Vérification GPS en cours...", "GPS verification in progress...")}</>
             ) : (
-              <><MapPin className="h-5 w-5" /> 🎯 Pointer ma présence</>
+              <><MapPin className="h-5 w-5" /> 🎯 {L("Pointer ma présence", "Check in my attendance")}</>
             )}
           </button>
           {geoError && (
@@ -225,7 +229,7 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
             </div>
           )}
           <p className="text-xs text-slate-400 text-center">
-            ℹ️ Vous devez activer la localisation sur votre appareil et être dans l'enceinte de l'école.
+            {L("ℹ️ Vous devez activer la localisation sur votre appareil et être dans l'enceinte de l'école.", "ℹ️ You need to enable location on your device and be within the school premises.")}
           </p>
         </div>
       )}
@@ -236,21 +240,21 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm mb-1">
               <CheckCircle2 className="h-4 w-4" />
-              Présence pointée à {attendance.checkIn ? new Date(attendance.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}
+              {L("Présence pointée à", "Attendance checked in at")} {attendance.checkIn ? new Date(attendance.checkIn).toLocaleTimeString(L("fr-FR", "en-GB"), { hour: '2-digit', minute: '2-digit' }) : '—'}
             </div>
             {attendance.geoDistance != null && (
               <p className="text-xs text-emerald-600">
-                📍 Distance de l'école: {attendance.geoDistance.toFixed(0)}m (vérifié GPS)
+                {L("📍 Distance de l'école:", "📍 Distance from school:")} {attendance.geoDistance.toFixed(0)}m {L("(vérifié GPS)", "(GPS verified)")}
               </p>
             )}
             {hasCheckOut && (
               <div className="mt-2 pt-2 border-t border-emerald-200 text-xs text-emerald-700">
                 <div className="flex items-center gap-1.5">
                   <LogOut className="h-3 w-3" />
-                  Fin de journée: {new Date(attendance.checkOut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  {L("Fin de journée:", "End of day:")} {new Date(attendance.checkOut).toLocaleTimeString(L("fr-FR", "en-GB"), { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 <div className="mt-0.5 font-bold">
-                  ⏱️ Heures travaillées: {attendance.hoursWorked}h
+                  {L("⏱️ Heures travaillées:", "⏱️ Hours worked:")} {attendance.hoursWorked}h
                 </div>
               </div>
             )}
@@ -263,7 +267,7 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-              🏁 Fin de journée
+              🏁 {L("Fin de journée", "End of day")}
             </button>
           )}
         </div>
@@ -274,17 +278,17 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
           <div className="flex items-center gap-2 text-purple-700 font-bold text-sm mb-1">
             <UserCheck className="h-4 w-4" />
-            Présence marquée par le semainier
+            {L("Présence marquée par le semainier", "Attendance marked by the weekly monitor")}
           </div>
           <p className="text-xs text-purple-600">
-            Statut: <strong>{attendance.status}</strong>
-            {attendance.checkIn && ` • Arrivée: ${new Date(attendance.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+            {L("Statut:", "Status:")} <strong>{attendance.status}</strong>
+            {attendance.checkIn && ` • ${L("Arrivée:", "Arrival:")} ${new Date(attendance.checkIn).toLocaleTimeString(L("fr-FR", "en-GB"), { hour: '2-digit', minute: '2-digit' })}`}
           </p>
           {attendance.notes && (
-            <p className="text-xs text-purple-600 mt-1 italic">Note: {attendance.notes}</p>
+            <p className="text-xs text-purple-600 mt-1 italic">{L("Note:", "Note:")} {attendance.notes}</p>
           )}
           <p className="text-xs text-purple-500 mt-2">
-            ℹ️ Vous ne pouvez pas modifier une présence marquée par le semainier.
+            {L("ℹ️ Vous ne pouvez pas modifier une présence marquée par le semainier.", "ℹ️ You cannot modify an attendance marked by the weekly monitor.")}
           </p>
         </div>
       )}

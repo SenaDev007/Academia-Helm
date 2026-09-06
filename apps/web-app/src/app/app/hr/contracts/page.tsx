@@ -8,7 +8,9 @@ export default function ContractsPage() {
     <HRShell
       activeId="contracts"
       title="Contrats"
+      titleEn="Contracts"
       description="Suivi des contrats, avenants, échéances et historique contractuel."
+      descriptionEn="Contract tracking, amendments, deadlines and contractual history."
     >
       <ContractsWorkspace />
     </HRShell>

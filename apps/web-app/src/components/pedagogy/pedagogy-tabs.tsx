@@ -146,6 +146,8 @@ const ALL_KNOWN_ROLES = new Set<string>([
 export interface PedagogySubmoduleTab {
   id: string;
   label: string;
+  /** ⭐ P4-final : libellé anglais (piste EN → onglets 100% EN) */
+  labelEn?: string;
   path: string;
   icon: any;
   /** Roles explicitly allowed to see this tab. If undefined, visible to all. */
@@ -156,6 +158,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
+    labelEn: 'Dashboard',
     path: '/app/pedagogy',
     icon: LayoutDashboard,
     roles: [
@@ -170,6 +173,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'academic-structure',
     label: 'Structure académique',
+    labelEn: 'Academic Structure',
     path: '/app/pedagogy/academic-structure',
     icon: Layers,
     roles: [
@@ -184,6 +188,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'subjects',
     label: 'Matières & programmes',
+    labelEn: 'Subjects & Programs',
     path: '/app/pedagogy/subjects',
     icon: BookOpen,
     roles: [
@@ -198,6 +203,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'teachers-academic',
     label: 'Enseignants & Affectations',
+    labelEn: 'Teachers & Assignments',
     path: '/app/pedagogy/teachers',
     icon: Users,
     roles: [
@@ -212,6 +218,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'timetables',
     label: 'Emploi du temps',
+    labelEn: 'Timetable',
     path: '/app/pedagogy/timetables',
     icon: CalendarDays,
     roles: [
@@ -226,6 +233,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'annual-planning',
     label: 'Planification annuelle',
+    labelEn: 'Annual Planning',
     path: '/app/pedagogy/annual-planning',
     icon: ClipboardList,
     roles: [
@@ -240,6 +248,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'pedagogical-materials',
     label: 'Matériel Pédagogique',
+    labelEn: 'Teaching Materials',
     path: '/app/pedagogy/pedagogical-materials',
     icon: Package,
     roles: [
@@ -254,6 +263,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'teacher-space',
     label: 'Espace Pédagogie',
+    labelEn: 'Pedagogy Space',
     path: '/app/pedagogy/production',
     icon: NotebookPen,
     roles: [
@@ -268,6 +278,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'director-space',
     label: 'Validation Direction',
+    labelEn: 'Director Validation',
     path: '/app/pedagogy/control',
     icon: ShieldCheck,
     roles: [
@@ -282,6 +293,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'teacher-space-en',
     label: 'Pedagogical Space',
+    labelEn: 'Pedagogical Space',
     path: '/app/pedagogy/production-en',
     icon: NotebookPen,
     roles: [
@@ -296,6 +308,7 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
   {
     id: 'director-space-en',
     label: 'Director Validation',
+    labelEn: 'Director Validation',
     path: '/app/pedagogy/control-en',
     icon: ShieldCheck,
     roles: [

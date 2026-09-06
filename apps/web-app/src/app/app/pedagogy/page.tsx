@@ -10,10 +10,13 @@ import { ModuleContainer } from '@/components/modules/blueprint';
 import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import PedagogyModuleDashboard from '@/components/pedagogy/PedagogyModuleDashboard';
 import { useAppSession } from '@/contexts/AppSessionContext';
+// ⭐ P4-final : en-tête et onglets bilingues (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 export default function PedagogyPage() {
   const { user } = useAppSession();
   const userRole = user?.role || '';
+  const L = useL();
 
   // Filtrage permissif (fail-open) : voir tabMatchesRole dans pedagogy-tabs.tsx
   const visibleTabs = getVisiblePedagogyTabs(userRole);
@@ -22,7 +25,7 @@ export default function PedagogyPage() {
     const Icon = tab.icon;
     return {
       id: tab.id,
-      label: tab.label,
+      label: L(tab.label, tab.labelEn || tab.label),
       href: tab.path,
       icon: <Icon className="h-4 w-4" />,
     };
@@ -31,9 +34,11 @@ export default function PedagogyPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Organisation Pédagogique & Études',
-        description:
-          'Vue consolidée : complétion, affectations, structure, workflow documents et veille ORION',
+        title: L("Organisation Pédagogique & Études", "Pedagogical Organisation & Studies"),
+        description: L(
+          "Vue consolidée : complétion, affectations, structure, workflow documents et veille ORION",
+          "Consolidated view: completion, assignments, structure, document workflow and ORION monitoring",
+        ),
         icon: 'bookOpen',
       }}
       subModules={{

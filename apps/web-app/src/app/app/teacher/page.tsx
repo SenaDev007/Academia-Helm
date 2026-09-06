@@ -19,11 +19,14 @@ import {
 } from "lucide-react";
 import { MyAttendanceCard } from "@/components/hr/MyAttendanceCard";
 import { SemainierNotificationBanner } from "@/components/pedagogy/production/SemainierNotificationBanner";
+// ⭐ P4-final : dashboard bilingue — piste EN → interface 100% anglaise
+import { useL } from "@/lib/i18n/bilingual";
 
 export default function TeacherDashboardPage() {
   const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
   const { identity: school } = useSchoolIdentity();
+  const L = useL();
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -58,16 +61,17 @@ export default function TeacherDashboardPage() {
   const totalBoys = classes.reduce((sum, c) => sum + (c.boys || 0), 0);
   const totalGirls = classes.reduce((sum, c) => sum + (c.girls || 0), 0);
 
+  // ⭐ Libellés bilingues — modules du dashboard enseignant
   const modules = [
-    { href: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Consulter votre emploi du temps", color: "bg-purple-50 text-purple-700 border-purple-200" },
-    { href: "/app/teacher/annual-planning", label: "Planification annuelle", icon: ClipboardList, desc: "Planification pédagogique officielle de chaque niveau (CI à CM2 + Maternelle)", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
-    { href: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", color: "bg-blue-50 text-blue-700 border-blue-200" },
-    { href: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées, suivi pédagogique", color: "bg-amber-50 text-amber-700 border-amber-200" },
-    { href: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations, saisie des notes, bulletins", color: "bg-rose-50 text-rose-700 border-rose-200" },
-    { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos pédagogiques, podcasts", color: "bg-pink-50 text-pink-700 border-pink-200" },
-    { href: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources pédagogiques", color: "bg-slate-50 text-slate-700 border-slate-200" },
-    { href: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes pédagogiques", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-    { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", color: "bg-teal-50 text-teal-700 border-teal-200" },
+    { href: "/app/teacher/timetable", label: L("Emploi du Temps", "Timetable"), icon: CalendarDays, desc: L("Consulter votre emploi du temps", "View your timetable"), color: "bg-purple-50 text-purple-700 border-purple-200" },
+    { href: "/app/teacher/annual-planning", label: L("Planification annuelle", "Annual Planning"), icon: ClipboardList, desc: L("Planification pédagogique officielle de chaque niveau (CI à CM2 + Maternelle)", "Official pedagogical planning for each level (CI to CM2 + Maternelle)"), color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
+    { href: "/app/teacher/pedagogy", label: L("Espace Pédagogique", "Pedagogy Space"), icon: BookOpen, desc: L("Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", "Daily log, lesson sheets, attendance register, textbook, homework"), color: "bg-blue-50 text-blue-700 border-blue-200" },
+    { href: "/app/teacher/tasks", label: L("Travaux & Suivi", "Tasks & Tracking"), icon: ClipboardList, desc: L("Tâches assignées, suivi pédagogique", "Assigned tasks, pedagogical follow-up"), color: "bg-amber-50 text-amber-700 border-amber-200" },
+    { href: "/app/teacher/exams", label: L("Examens & Notes", "Exams & Grades"), icon: FileEdit, desc: L("Mes évaluations, saisie des notes, bulletins", "My assessments, grade entry, report cards"), color: "bg-rose-50 text-rose-700 border-rose-200" },
+    { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: L("Vidéos pédagogiques, podcasts", "Educational videos, podcasts"), color: "bg-pink-50 text-pink-700 border-pink-200" },
+    { href: "/app/teacher/library", label: L("Bibliothèque", "Library"), icon: Library, desc: L("Ressources pédagogiques", "Teaching resources"), color: "bg-slate-50 text-slate-700 border-slate-200" },
+    { href: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: L("Alertes pédagogiques", "Pedagogical alerts"), color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+    { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: L("Communiquez. Collaborez. Restez connectés.", "Communicate. Collaborate. Stay connected."), color: "bg-teal-50 text-teal-700 border-teal-200" },
   ];
 
   return (
@@ -88,9 +92,9 @@ export default function TeacherDashboardPage() {
             </div>
           )}
           <div>
-            <h2 className="text-2xl font-bold">Bienvenue, {teacherName}</h2>
+            <h2 className="text-2xl font-bold">{L("Bienvenue", "Welcome")}, {teacherName}</h2>
             <p className="text-blue-100 text-sm">
-              {school?.schoolName || tenant?.name || "École"} · {academicYear?.label || ""}
+              {school?.schoolName || tenant?.name || L("École", "School")} · {academicYear?.label || ""}
             </p>
           </div>
         </div>
@@ -110,28 +114,28 @@ export default function TeacherDashboardPage() {
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-5 w-5 text-blue-600" />
-            <span className="text-xs font-semibold text-slate-500 uppercase">Mes Classes</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">{L("Mes Classes", "My Classes")}</span>
           </div>
           <p className="text-2xl font-bold text-slate-900">{loading ? "…" : classes.length}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-5 w-5 text-cyan-600" />
-            <span className="text-xs font-semibold text-slate-500 uppercase">Garçons</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">{L("Garçons", "Boys")}</span>
           </div>
           <p className="text-2xl font-bold text-cyan-600">{loading ? "…" : totalBoys}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-5 w-5 text-pink-600" />
-            <span className="text-xs font-semibold text-slate-500 uppercase">Filles</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">{L("Filles", "Girls")}</span>
           </div>
           <p className="text-2xl font-bold text-pink-600">{loading ? "…" : totalGirls}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-5 w-5 text-emerald-600" />
-            <span className="text-xs font-semibold text-slate-500 uppercase">Total élèves</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">{L("Total élèves", "Total students")}</span>
           </div>
           <p className="text-2xl font-bold text-emerald-600">{loading ? "…" : totalStudents}</p>
         </div>
@@ -143,7 +147,7 @@ export default function TeacherDashboardPage() {
       {/* Liste des classes */}
       {!loading && classes.length > 0 && (
         <div>
-          <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">Mes classes assignées</h3>
+          <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">{L("Mes classes assignées", "My assigned classes")}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {classes.map((cls) => (
               <Link
@@ -154,9 +158,9 @@ export default function TeacherDashboardPage() {
                 <h4 className="font-bold text-slate-900 text-sm">{cls.className}</h4>
                 <p className="text-xs text-slate-500 mb-2">{cls.schoolLevelName}</p>
                 <div className="flex items-center gap-3 text-xs">
-                  <span className="font-semibold text-slate-700">{cls.totalStudents} élèves</span>
-                  <span className="text-cyan-600">{cls.boys}G</span>
-                  <span className="text-pink-600">{cls.girls}F</span>
+                  <span className="font-semibold text-slate-700">{cls.totalStudents} {L("élèves", "students")}</span>
+                  <span className="text-cyan-600">{L(cls.boys + "G", cls.boys + "B")}</span>
+                  <span className="text-pink-600">{L(cls.girls + "F", cls.girls + "G")}</span>
                 </div>
               </Link>
             ))}
@@ -166,7 +170,7 @@ export default function TeacherDashboardPage() {
 
       {/* Modules */}
       <div>
-        <h3 className="text-lg font-bold text-slate-900 mb-4">Mes modules</h3>
+        <h3 className="text-lg font-bold text-slate-900 mb-4">{L("Mes modules", "My modules")}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {modules.map((mod) => {
             const Icon = mod.icon;

@@ -8,7 +8,9 @@ export default function AttendancePage() {
     <HRShell
       activeId="attendance"
       title="Suivi des Présences"
+      titleEn="Attendance Tracking"
       description="Suivi journalier des présences, absences et heures supplémentaires du personnel."
+      descriptionEn="Daily tracking of staff attendance, absences and overtime."
     >
       <AttendanceWorkspace />
     </HRShell>

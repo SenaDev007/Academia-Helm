@@ -38,18 +38,20 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
 // ⭐ V3-4: notifications Helm Connect pour parents (Examens/Absences/Discipline → cloche)
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
+// ⭐ P4-final : portail parent bilingue (piste EN → anglais)
+import { useL } from "@/lib/i18n/bilingual";
 
 const PARENT_MODULES = [
-  { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
-  { path: "/app/parent/children", label: "Mes Enfants", icon: Users },
-  { path: "/app/parent/timetable", label: "Emploi du Temps", icon: CalendarDays },
-  { path: "/app/parent/tasks", label: "Travaux & Suivi", icon: ClipboardList },
-  { path: "/app/parent/cahier-journal", label: "Cahier journal", icon: BookOpen },
-  { path: "/app/parent/attendance", label: "Présences", icon: CalendarCheck },
-  { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
-  { path: "/app/parent/results", label: "Notes et Bulletins", icon: FileText },
-  { path: "/app/parent/messages", label: "Messages", icon: MessageSquare },
-  { path: "/app/parent/documents", label: "Documents", icon: Folder },
+  { path: "/app/parent", label: "Tableau de bord", labelEn: "Dashboard", icon: LayoutDashboard },
+  { path: "/app/parent/children", label: "Mes Enfants", labelEn: "My Children", icon: Users },
+  { path: "/app/parent/timetable", label: "Emploi du Temps", labelEn: "Timetable", icon: CalendarDays },
+  { path: "/app/parent/tasks", label: "Travaux & Suivi", labelEn: "Tasks & Tracking", icon: ClipboardList },
+  { path: "/app/parent/cahier-journal", label: "Cahier journal", labelEn: "Daily Log", icon: BookOpen },
+  { path: "/app/parent/attendance", label: "Présences", labelEn: "Attendance", icon: CalendarCheck },
+  { path: "/app/parent/payments", label: "Paiements", labelEn: "Payments", icon: CreditCard },
+  { path: "/app/parent/results", label: "Notes et Bulletins", labelEn: "Grades & Report Cards", icon: FileText },
+  { path: "/app/parent/messages", label: "Messages", labelEn: "Messages", icon: MessageSquare },
+  { path: "/app/parent/documents", label: "Documents", labelEn: "Documents", icon: Folder },
 ];
 
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +62,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -86,8 +90,9 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
     );
   }
 
-  const parentName = user ? `${user.firstName} ${user.lastName}`.trim() : "Parent";
-  const currentModuleLabel = PARENT_MODULES.find((m) => pathname === m.path || (m.path !== "/app/parent" && pathname.startsWith(m.path)))?.label || "Portail Parent";
+  const parentName = user ? `${user.firstName} ${user.lastName}`.trim() : L("Parent", "Parent");
+  const activeModule = PARENT_MODULES.find((m) => pathname === m.path || (m.path !== "/app/parent" && pathname.startsWith(m.path)));
+  const currentModuleLabel = activeModule ? L(activeModule.label, activeModule.labelEn) : L("Portail Parent", "Parent Portal");
 
   return (
     <div className="min-h-screen bg-emerald-50/30">
@@ -116,13 +121,13 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || "École"}</p>
+            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || L("École", "School")}</p>
             <p className="text-[10px] text-slate-400">{academicYear?.label || ""}</p>
           </div>
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="lg:hidden p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"
-            aria-label="Fermer le menu"
+            aria-label={L("Fermer le menu", "Close menu")}
           >
             <X className="h-5 w-5" />
           </button>
@@ -136,7 +141,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{parentName}</p>
-              <p className="text-[10px] text-slate-400">Parent / Tuteur</p>
+              <p className="text-[10px] text-slate-400">{L("Parent / Tuteur", "Parent / Guardian")}</p>
             </div>
           </div>
         </div>
@@ -183,7 +188,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
                 )}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
-                <span className="truncate">{mod.label}</span>
+                <span className="truncate">{L(mod.label, mod.labelEn)}</span>
               </Link>
             );
           })}
@@ -196,7 +201,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
           >
             <LogOut className="h-4 w-4" />
-            <span>Se déconnecter</span>
+            <span>{L("Se déconnecter", "Log out")}</span>
           </button>
         </div>
       </aside>
@@ -219,7 +224,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             <button
               onClick={() => setMobileSidebarOpen(true)}
               className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-              aria-label="Ouvrir le menu"
+              aria-label={L("Ouvrir le menu", "Open menu")}
             >
               <Menu className="h-5 w-5" />
             </button>

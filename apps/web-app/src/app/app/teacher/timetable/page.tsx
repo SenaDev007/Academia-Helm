@@ -16,6 +16,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
+// ⭐ P4-final : page bilingue (piste EN → anglais)
+import { useL } from "@/lib/i18n/bilingual";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import {
   CalendarDays, Loader2, RefreshCw, AlertCircle,
@@ -46,6 +48,8 @@ interface TimetableEntry {
 export default function TeacherTimetablePage() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -246,11 +250,11 @@ export default function TeacherTimetablePage() {
             <CalendarDays className="h-5 w-5 text-purple-600" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Mon Emploi du Temps</h2>
+            <h2 className="text-sm font-bold text-slate-900">{L("Mon Emploi du Temps", "My Timetable")}</h2>
             <p className="text-xs text-slate-500">
               {entries.length > 0
-                ? `${entries.length} créneau(x) cette semaine`
-                : "Aucun emploi du temps configuré pour le moment"}
+                ? L(`${entries.length} créneau(x) cette semaine`, `${entries.length} slot(s) this week`)
+                : L("Aucun emploi du temps configuré pour le moment", "No timetable configured yet")}
             </p>
           </div>
         </div>
@@ -261,9 +265,9 @@ export default function TeacherTimetablePage() {
             value={selectedClassId || ''}
             onChange={(e) => setSelectedClassId(e.target.value || null)}
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium bg-white"
-            title="Changer de classe"
+            title={L("Changer de classe", "Change class")}
           >
-            <option value="">Toutes mes classes</option>
+            <option value="">{L("Toutes mes classes", "All my classes")}</option>
             {teacherClasses.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -272,7 +276,7 @@ export default function TeacherTimetablePage() {
         <button
           onClick={loadTimetable}
           className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
-          title="Rafraîchir"
+          title={L("Rafraîchir", "Refresh")}
         >
           <RefreshCw className="h-4 w-4" />
         </button>
@@ -288,9 +292,9 @@ export default function TeacherTimetablePage() {
       {entries.length === 0 && !error ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <CalendarDays className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Aucun emploi du temps disponible</p>
+          <p className="text-sm text-slate-500">{L("Aucun emploi du temps disponible", "No timetable available")}</p>
           <p className="text-xs text-slate-400 mt-1">
-            La direction n'a pas encore configuré votre emploi du temps.
+            {L("La direction n'a pas encore configuré votre emploi du temps.", "The school management has not configured your timetable yet.")}
           </p>
         </div>
       ) : (
@@ -327,8 +331,7 @@ export default function TeacherTimetablePage() {
           })()}
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
-            <strong>Note :</strong> L'emploi du temps est configuré par la direction de l'école.
-            Pour toute modification ou question, contactez l'administration.
+            <strong>{L("Note :", "Note:")}</strong> {L("L'emploi du temps est configuré par la direction de l'école. Pour toute modification ou question, contactez l'administration.", "The timetable is configured by the school management. For any change or question, contact the administration.")}
           </div>
         </>
       )}

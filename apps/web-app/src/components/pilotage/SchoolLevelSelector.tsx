@@ -24,6 +24,8 @@ import { ChevronDown, GraduationCap, AlertCircle, GitMerge, Lock } from 'lucide-
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useAdminStructureMode } from '@/hooks/useAdminStructureMode';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
+// ⭐ P4-final : sélecteur bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 
 // ⭐ Rôles qui ont accès à TOUS les niveaux (pas de filtrage par accreditation)
 const FULL_ACCESS_ROLES = [
@@ -77,6 +79,9 @@ export default function SchoolLevelSelector() {
   const session = useAppSessionOptional();
   const user = session?.user;
   const [isOpen, setIsOpen] = useState(false);
+  // ⭐ Libellés dans la langue du profil (piste EN → Nursery/Primary/Secondary)
+  const L = useL();
+  const isEN = L('fr', 'en') === 'en';
 
   // En mode FUSED, on groupe les niveaux par unité administrative
   const isFused = mode === 'FUSED_MATERNELLE_PRIMAIRE';
@@ -138,7 +143,7 @@ export default function SchoolLevelSelector() {
       // Mode SEPARATE : chaque niveau individuellement
       return allowedLevels.map((level) => ({
         id: level.id,
-        label: getLevelLabel(level.code),
+        label: getLevelLabel(level.code, isEN),
         code: level.code,
         color: getLevelColor(level.code),
         isGroup: false,
@@ -160,7 +165,7 @@ export default function SchoolLevelSelector() {
         if (matLevel || priLevel) {
           opts.push({
             id: (matLevel || priLevel)!.id,
-            label: 'Maternelle + Primaire',
+            label: isEN ? 'Nursery + Primary' : 'Maternelle + Primaire',
             code: 'MAT_PRI',
             color: 'text-amber-600',
             isGroup: true,
@@ -172,7 +177,7 @@ export default function SchoolLevelSelector() {
         if (secLevel) {
           opts.push({
             id: secLevel.id,
-            label: getLevelLabel(secLevel.code),
+            label: getLevelLabel(secLevel.code, isEN),
             code: secLevel.code,
             color: getLevelColor(secLevel.code),
             isGroup: false,
@@ -181,16 +186,16 @@ export default function SchoolLevelSelector() {
       }
     }
     return opts;
-  }, [isFused, groups, allowedLevels]);
+  }, [isFused, groups, allowedLevels, isEN]);
 
   // Déterminer le label actuel
   const currentLabel = useMemo(() => {
     if (!currentLevel) return '';
     if (isFused && (currentLevel.code === 'MATERNELLE' || currentLevel.code === 'PRIMARY')) {
-      return 'Maternelle + Primaire';
+      return isEN ? 'Nursery + Primary' : 'Maternelle + Primaire';
     }
-    return getLevelLabel(currentLevel.code);
-  }, [currentLevel, isFused]);
+    return getLevelLabel(currentLevel.code, isEN);
+  }, [currentLevel, isFused, isEN]);
 
   const currentColor = useMemo(() => {
     if (!currentLevel) return 'text-gray-600';
@@ -204,7 +209,7 @@ export default function SchoolLevelSelector() {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <GraduationCap className="w-4 h-4 text-gray-400 animate-pulse" />
-        <span className="text-sm text-gray-500">Chargement...</span>
+        <span className="text-sm text-gray-500">{L("Chargement...", "Loading...")}</span>
       </div>
     );
   }
@@ -213,10 +218,13 @@ export default function SchoolLevelSelector() {
     return (
       <div
         className="flex items-center space-x-2 px-3 py-2 bg-red-50 border border-red-200 rounded-md"
-        title="Aucun niveau scolaire n'est activé pour ce tenant. Activez au moins un niveau dans Paramètres → Structure."
+        title={L(
+          "Aucun niveau scolaire n'est activé pour ce tenant. Activez au moins un niveau dans Paramètres → Structure.",
+          "No school level is enabled for this tenant. Enable at least one level in Settings → Structure.",
+        )}
       >
         <AlertCircle className="w-4 h-4 text-red-600" />
-        <span className="text-sm text-red-700 font-medium">Aucun niveau scolaire</span>
+        <span className="text-sm text-red-700 font-medium">{L("Aucun niveau scolaire", "No school level")}</span>
       </div>
     );
   }
@@ -227,7 +235,10 @@ export default function SchoolLevelSelector() {
     return (
       <div
         className="flex items-center space-x-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-md"
-        title={`Niveau fixé : ${currentLabel}. Votre compte directeur n'a accès qu'à ce niveau.`}
+        title={L(
+          `Niveau fixé : ${currentLabel}. Votre compte n'a accès qu'à ce niveau.`,
+          `Fixed level: ${currentLabel}. Your account only has access to this level.`,
+        )}
       >
         {isFused && (currentLevel.code === 'MATERNELLE' || currentLevel.code === 'PRIMARY') ? (
           <GitMerge className={`w-4 h-4 ${currentColor}`} />
@@ -245,7 +256,7 @@ export default function SchoolLevelSelector() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-        title={isFused ? 'Mode fusionné : Maternelle + Primaire partagent la même administration' : undefined}
+        title={isFused ? L("Mode fusionné : Maternelle + Primaire partagent la même administration", "Fused mode: Nursery + Primary share the same administration") : undefined}
       >
         {isFused && (currentLevel.code === 'MATERNELLE' || currentLevel.code === 'PRIMARY') ? (
           <GitMerge className={`w-4 h-4 ${currentColor}`} />
@@ -264,7 +275,7 @@ export default function SchoolLevelSelector() {
               {isFused && (
                 <div className="px-3 py-1.5 mb-1 bg-amber-50 rounded text-[10px] font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1">
                   <GitMerge className="w-3 h-3" />
-                  Mode fusionné
+                  {L("Mode fusionné", "Fused mode")}
                 </div>
               )}
               {options.map((opt) => {
@@ -301,13 +312,22 @@ export default function SchoolLevelSelector() {
   );
 }
 
-function getLevelLabel(code: string): string {
-  const labels: Record<string, string> = {
-    MATERNELLE: 'Maternelle',
-    PRIMARY: 'Primaire',
-    SECONDAIRE: 'Secondaire',
-    ALL: 'Tous les niveaux',
-  };
+function getLevelLabel(code: string, isEN = false): string {
+  const labels: Record<string, string> = isEN
+    ? {
+        // ⭐ Piste anglophone : les niveaux s'appellent Nursery / Primary / Secondary
+        //    (cohérent avec les sections EN créées côté données — Nursery 1, Primary 1…)
+        MATERNELLE: 'Nursery',
+        PRIMARY: 'Primary',
+        SECONDAIRE: 'Secondary',
+        ALL: 'All levels',
+      }
+    : {
+        MATERNELLE: 'Maternelle',
+        PRIMARY: 'Primaire',
+        SECONDAIRE: 'Secondaire',
+        ALL: 'Tous les niveaux',
+      };
   return labels[code] || code;
 }
 

@@ -5,6 +5,8 @@ import {
   Loader2, RefreshCw, Calendar, BookOpen, FileDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+// ⭐ P4-final : page bilingue (piste EN → anglais)
+import { useL } from '@/lib/i18n/bilingual';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 
@@ -93,6 +95,8 @@ interface AnnualPlan {
 }
 
 export default function TeacherAnnualPlanningPage() {
+  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
+  const L = useL();
   // ⭐ FIX ANOMALIE 1 : cette page est dans l'UI ENSEIGNANT — elle ne doit PAS
   //    afficher la navigation du module Pédagogie (direction/promoteur).
   //    Seule la planification annuelle (lecture seule) est affichée ici.
@@ -171,9 +175,9 @@ function TeacherAnnualPlanningContent() {
             <BookOpen className="h-5 w-5 text-emerald-600" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Planification pédagogique annuelle</h2>
+            <h2 className="text-sm font-bold text-slate-900">{L("Planification pédagogique annuelle", "Annual pedagogical planning")}</h2>
             <p className="text-xs text-slate-500">
-              {CLASS_LEVELS.find(c => c.value === selectedClass)?.label} — {academicYear?.label || ''} (lecture seule)
+              {CLASS_LEVELS.find(c => c.value === selectedClass)?.label} — {academicYear?.label || ''} {L("(lecture seule)", "(read only)")}
             </p>
           </div>
         </div>
@@ -197,7 +201,7 @@ function TeacherAnnualPlanningContent() {
           }} className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">
             {exportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} PDF
           </button>
-          <button onClick={loadPlans} className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title="Rafraîchir">
+          <button onClick={loadPlans} className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100" title={L("Rafraîchir", "Refresh")}>
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
@@ -207,8 +211,8 @@ function TeacherAnnualPlanningContent() {
       {plans.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Aucune planification disponible pour {CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.</p>
-          <p className="text-xs text-slate-400 mt-1">La direction n'a pas encore initialisé la planification.</p>
+          <p className="text-sm text-slate-500">{L(`Aucune planification disponible pour ${CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.`, `No planning available for ${CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.`)}</p>
+          <p className="text-xs text-slate-400 mt-1">{L("La direction n'a pas encore initialisé la planification.", "The school management has not initialised the planning yet.")}</p>
         </div>
       ) : isMaternelle ? (
         // ═══ TABLEAU MATERNELLE AVEC PAGINATION (un mois par page) ═══
@@ -227,7 +231,7 @@ function TeacherAnnualPlanningContent() {
                 {TRIMESTER_LABELS[currentMonthData.trimester]}
               </span>
               <span className="ml-2 text-sm font-bold text-slate-700">{currentMonthData.month}</span>
-              <span className="ml-2 text-xs text-slate-400">Page {maternellePage + 1}/{MATERNELLE_MONTHS.length}</span>
+              <span className="ml-2 text-xs text-slate-400">{L("Page", "Page")} {maternellePage + 1}/{MATERNELLE_MONTHS.length}</span>
             </div>
             <button
               onClick={() => setMaternellePage(p => Math.min(MATERNELLE_MONTHS.length - 1, p + 1))}

@@ -93,8 +93,8 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
         </div>
         <div className="text-center py-8">
           <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-gray-600">Aucune alerte active</p>
-          <p className="text-xs text-gray-400 mt-1">Tout est sous contrôle</p>
+          <p className="text-sm font-medium text-gray-600">{L("Aucune alerte active", "No active alerts")}</p>
+          <p className="text-xs text-gray-400 mt-1">{L("Tout est sous contrôle", "Everything is under control")}</p>
         </div>
       </div>
     );

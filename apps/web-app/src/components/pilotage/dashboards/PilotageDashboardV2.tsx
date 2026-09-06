@@ -1098,12 +1098,12 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
               <div className="p-2 rounded-lg bg-rose-100">
                 <UserCog className="w-5 h-5 text-rose-700" />
               </div>
-              <span className="text-[10px] uppercase tracking-wider font-bold text-rose-600">Administration</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-rose-600">{L("Administration", "Administration")}</span>
             </div>
             <p className="text-xs text-gray-600 mb-1">{L("Personnel administratif", "Administrative staff")}</p>
             <p className="text-2xl font-bold text-rose-900">{formatNumber(data.adminStaffCount)}</p>
             <p className="text-[10px] text-rose-600 mt-1">
-              {data.totalStaff > 0 ? `${Math.round((data.adminStaffCount / data.totalStaff) * 100)}% du personnel` : '—'}
+              {data.totalStaff > 0 ? L(`${Math.round((data.adminStaffCount / data.totalStaff) * 100)}% du personnel`, `${Math.round((data.adminStaffCount / data.totalStaff) * 100)}% of staff`) : '—'}
             </p>
           </div>
 
@@ -1113,12 +1113,12 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
               <div className="p-2 rounded-lg bg-blue-100">
                 <GraduationCap className="w-5 h-5 text-blue-700" />
               </div>
-              <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Enseignants</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">{L("Enseignants", "Teachers")}</span>
             </div>
             <p className="text-xs text-gray-600 mb-1">{L("Corps enseignant", "Teaching staff")}</p>
             <p className="text-2xl font-bold text-blue-900">{formatNumber(data.teachersCount)}</p>
             <p className="text-[10px] text-blue-600 mt-1">
-              {data.totalStaff > 0 ? `${Math.round((data.teachersCount / data.totalStaff) * 100)}% du personnel` : '—'}
+              {data.totalStaff > 0 ? L(`${Math.round((data.teachersCount / data.totalStaff) * 100)}% du personnel`, `${Math.round((data.teachersCount / data.totalStaff) * 100)}% of staff`) : '—'}
             </p>
           </div>
         </div>
@@ -1136,7 +1136,7 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
                   <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{lvl.levelLabel}</p>
                   <p className="text-xl font-bold text-slate-900 mt-1">{formatNumber(lvl.count)}</p>
                   <p className="text-[9px] text-slate-400">
-                    {data.teachersCount > 0 ? `${Math.round((lvl.count / data.teachersCount) * 100)}% des enseignants` : '—'}
+                    {data.teachersCount > 0 ? L(`${Math.round((lvl.count / data.teachersCount) * 100)}% des enseignants`, `${Math.round((lvl.count / data.teachersCount) * 100)}% of teachers`) : '—'}
                   </p>
                 </div>
               ))}
@@ -1465,7 +1465,7 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
 
         {/* Note explicative */}
         <div className="mt-3 px-3 py-2 bg-slate-50 rounded text-[10px] text-slate-500">
-          <span className="font-semibold">Note :</span> Ces résultats reflètent la période courante ({data.currentPeriod}).
+          {L("Note :", "Note:")} {L(`Ces résultats reflètent la période courante (${data.currentPeriod}).`, `These results reflect the current period (${data.currentPeriod}).`)}
           Pour la maternelle, les notes sont qualitatives (TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant).
           Les moyennes du primaire et secondaire sont sur 20.
         </div>
@@ -1746,7 +1746,7 @@ function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicY
           {/* Note explicative */}
           <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
             <p className="text-[10px] text-slate-500">
-              <span className="font-semibold">Note :</span> Les « scolarités payées par abandons » correspondent au montant total déjà réglé par les élèves qui ont ensuite abandonné. Les « scolarités dues » représentent ce que ces élèves auraient encore dû payer.
+              {L("Note :", "Note:")} {L("Les « scolarités payées par abandons » correspondent au montant total déjà réglé par les élèves qui ont ensuite abandonné. Les « scolarités dues » représentent ce que ces élèves auraient encore dû payer.", "'Tuition paid by dropouts' is the total amount already settled by students who later dropped out. 'Tuition due' is what those students would still have had to pay.")}
             </p>
           </div>
         </div>

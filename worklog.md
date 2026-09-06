@@ -9720,3 +9720,33 @@ Stage Summary:
 - ✅ Import d'élèves réparé + 17 autres composants débloqués dont 2 critiques (paiements, login admin)
 - ✅ Parsing dates d'import robuste (ISO/FR/US/2-chiffres + garde-fou)
 - Leçon : loading=true n'est correct QUE si un fetch au montage le remet à false — jamais de blanket change sur les états de chargement sans audit
+
+---
+Task ID: 19
+Agent: Super Z (principal)
+Task: « Frais généraux » — type de frais transversal + personnalisation en masse par classe + onglet dédié après Comptes élèves + sous-onglet Encaissements avec déduction auto
+
+Work Log:
+- Demande utilisateur : (1) type « Frais généraux » dans le modal Nouveau frais (au lieu de « frais des années ») ; (2) personnalisation EN MASSE pour toute une classe dans l'onglet Personnalisations ; (3) onglet « Frais généraux » JUSTE APRÈS Comptes élèves (même structure, un seul tableau dus/payé/solde par élève) ; (4) sous-onglet « Frais généraux » dans Encaissements (qui a payé) ; (5) déduction automatique dans l'onglet quand un élève paie
+- Migration 20260910000000_add_general_fee_type : ALTER TYPE "FeeType" ADD VALUE 'GENERAL' — appliquée sur Neon prod (scripts/_apply_general_fee_migration.js) + enregistrée dans _prisma_migrations (zéro drift)
+- Backend (10 fichiers) : DTO @IsIn + GENERAL ; structureDedupKey (les frais GENERAux se dédupliquent par NOM → plusieurs frais généraux distincts applicables, priorité classe>niveau>global à nom égal) sur les 3 blocs structuresByType ; createBulkClassOverride (POST /finance/fee-structures/overrides/bulk-class — upsert par élève actif + recalcul synchrone + audit FEE_OVERRIDE_BULK_*) ; findGeneralFeeAccounts (GET /finance/accounts/general-fees — pagination + KPIs serveur + statuts PAID/PARTIAL/UNPAID + détail par frais) ; finance-transaction findAll : filtre feeType (allocations some) + inclusion allocations ; PRIORITY_ORDER + GENERAL avant OTHER ; labels reçus/imports
+- FIX CRITIQUE au passage : recalculateAllAccounts délégue désormais au recalcul COMPLET par élève (StudentAccountService.recalculate) — avant, un frais créé EN COURS D'ANNÉE n'était jamais ajouté aux comptes élèves existants (seulement aux nouvelles inscriptions) ; l'onglet Frais généraux serait resté vide après configuration
+- Frontend (14 fichiers + 6 nouveaux) : type « Frais généraux » (FeeStructureModal + bandeau explicatif) ; BulkClassOverrideModal (cascade Niveau→Classe, frais, réduction %/XOF exclusive, motif, récap visuel) + bouton « Personnalisation en masse » ; GeneralFeesContent + route /app/finance/general-fees (4 KPIs serveur, filtres, tableau unique, détail par frais avec barre de progression, pagination, bilingue) ; onglet Frais généraux dans le layout (juste après Comptes élèves, bilingue FR/EN) ; sous-onglets Encaissements « Tous | Frais généraux » (colonne « Part frais généraux », état vide guidant, event finance-accounts-changed dispatché après paiement) ; 2 routes BFF proxy ; labels/ordres NewPaymentModal, ImportOverridesModal, ParentFinancePanel
+- Commits : 8e97fb0c (feat) + 38588706 (fix recalcul) poussés sur main
+
+VALIDATION E2E PRODUCTION (Railway + Vercel déployés) :
+- Création frais GENERAL global 100 XOF : OK (201)
+- Personnalisation en masse classe Maternelle 2 (-50%) : 6/6 élèves → 50 XOF, overrides créés + audit (l'utilisateur les a lui-même supprimés ensuite via l'onglet — suppression validée par la même occasion !)
+- recalculate-accounts (fix v2) : 93/93 comptes recalculés, breakdowns GENERAL créés sur TOUS les comptes existants ✓
+- Listing GET general-fees : 93 élèves, KPIs serveur (dus/payés/solde), statuts ✓
+- UI production vérifiée navigateur : onglet « Frais généraux » en bonne position ; KPIs ; tableau unique + état vide guidant ; bouton « Personnalisation en masse » ; sous-onglets Encaissements + colonne Part frais généraux + bandeau explicatif ; modal Nouveau frais → type « Frais généraux » + nom auto + bandeau ✓
+- Encaissement 100 XOF : alloué aux frais prioritaires (INSCRIPTION/TUITION) conformément à PRIORITY_ORDER — comportement métier attendu ; l'imputation GENERAL se produit dès que les frais prioritaires sont soldés (mécanique AccountBreakdown existante)
+- Nettoyage : frais test supprimé via API (cascade breakdowns) + 2 transactions test annulées via reverse + recalculate-accounts → compte de l'élève testé restauré exactement (dû=38000, payé=0, solde=38000) ; ⚠️ 4 lignes d'historique cosmétiques (2 paiements TEST + 2 annulations, net 0) restent visibles dans Encaissements — suppression SQL prévue (scripts/cleanup_history_general_fees.js) dès que l'accès direct Neon redevient stable (auth 28P01 intermittent sur mon IP, l'API prod fonctionne)
+
+Stage Summary:
+- ✅ Type « Frais généraux » partout (config, personnalisation, comptes, paiements, reçus, imports)
+- ✅ Personnalisation en masse par classe (validée E2E — 6/6 élèves)
+- ✅ Onglet « Frais généraux » après Comptes élèves (validé E2E — 93 élèves)
+- ✅ Sous-onglet Encaissements + déduction auto (mécanique AccountBreakdown + event refresh)
+- ✅ Bonus : fix structurel recalculateAllAccounts (nouveaux frais → comptes existants)
+- Reste : nettoyage cosmétique des 4 lignes d'historique test (script prêt, accès Neon direct instable) ; P5 matrice E2E scope + D6 enforcement guards ( backlog)

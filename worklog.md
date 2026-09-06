@@ -9616,3 +9616,17 @@ Stage Summary:
 - Aucune règle codée en dur : motifs, types de stage, seuil 24 mois, taux 6 %, renouvellements max, activation du test = hr_contract_settings par école (extensible pays UEMOA)
 - Déploiement : bootstrap DDL idempotent au boot Railway (tables + colonnes + marquage VACATAIRE) ; migration template V1→V2 automatique pour les gabarits non personnalisés ; Vercel redéploie le front au push
 - Vérification utilisateur post-déploiement : RH → Embauche (étape 2 : test d'aide ; étape 4 : CDI/CDD, motif, chaîne CDD) ; Collaborateurs → Contrats (alertes + requalifier/renouveler/clôturer) ; Stagiaires (nouvel onglet) ; Paramètres RH → Embauche & Contrats
+
+---
+Task ID: 15 (suite — validation production)
+Agent: Super Z (agent principal)
+Task: Validation post-déploiement de la refonte CDC « étape Contrat » (commit 84b25b4f)
+
+Work Log:
+- Vercel : 84b25b4f = SUCCESS (front avec étape 4 refondue + onglet Stagiaires + paramétrage Embauche & Contrats en ligne)
+- API api.academiahelm.com : nouvelles routes VIVANTES et gardées (GET /api/hr/contracts/settings, /alerts, /hr/internships → 401 JWT — le build Railway est déployé)
+- Validation DB Neon (scripts/_verify_contrat_refonte_db.cjs) : 12/12 ✓ — tables hr_contract_settings + hr_internships créées par le bootstrap ; 7 colonnes employment_contracts + 2 colonnes staff présentes ; §10 UPDATE VACATAIRE exécuté (0 dossier Vacataire en prod — 12 contrats CDI existants, 11 legacy sans statut, 1 SALARIE_NON_DECLARE) ; gabarit CONTRAT_TRAVAIL en base = V1 → migrera automatiquement en V2 à la première génération (comportement prévu)
+- Note : les credentials de login des anciens scripts sont périmés (401) — la validation s'est faite par DB directe + routes gardées ; le premier login réel de l'utilisateur déclenchera le bootstrap-on-demand de hr_contract_settings (valeurs par défaut) et la migration du gabarit
+
+Stage Summary:
+- Refonte CDC « étape Contrat » EN LIGNE de bout en bout : API Railway (routes + DDL bootstrap) + web-app Vercel ; reste la vérification fonctionnelle depuis l'UI par l'utilisateur (RH → Embauche / Collaborateurs → Contrats / Stagiaires / Paramètres RH)

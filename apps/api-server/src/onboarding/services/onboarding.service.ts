@@ -348,9 +348,11 @@ export class OnboardingService {
         ...(data.annexes !== undefined || data.schoolsCount !== undefined
           ? {
               schoolsCount: effectiveSchoolsCount,
+              // ⚠️ Pas de Prisma.JsonNull (compatibilité Prisma 7) : un
+              // tableau vide est un JSON valide et signifie « aucune annexe ».
               ...(annexList.length > 0
                 ? { annexes: annexList as unknown as Prisma.InputJsonValue }
-                : { annexes: data.annexes !== undefined ? Prisma.JsonNull : undefined }),
+                : { annexes: [] as unknown as Prisma.InputJsonValue }),
             }
           : {}),
         ...(preferredSubdomain !== undefined ? { preferredSubdomain } : {}),

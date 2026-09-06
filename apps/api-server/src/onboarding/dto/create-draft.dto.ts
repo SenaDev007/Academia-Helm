@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsBoolean, IsInt, IsOptional, MinLength, IsArray, ValidateNested, MaxLength } from 'class-validator';
+import { IsString, IsEmail, IsBoolean, IsInt, IsOptional, MinLength, IsArray, ValidateNested, MaxLength, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /** École annexe déclarée dès l'onboarding (multi-écoles). */

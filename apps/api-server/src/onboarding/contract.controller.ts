@@ -19,7 +19,7 @@
  */
 
 import {
-  Controller, Get, Post, Body, Param, Res, Logger,
+  Controller, Get, Post, Body, Param, Res, Logger, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
 import * as path from 'path';

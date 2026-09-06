@@ -69,6 +69,26 @@ export class RolesGuard implements CanActivate {
       }
     }
 
+    // ⭐ FIX 2026-09-06 — synonymes français/anglais de rôles :
+    //    l'enum officiel UserRole (common/enums/user-role.enum.ts) utilise les
+    //    libellés FRANÇAIS (PROMOTEUR, DIRECTEUR, SECRETAIRE, COMPTABLE…),
+    //    mais plusieurs listes @Roles utilisent les libellés ANGLAIS
+    //    (PROMOTER, DIRECTOR, SECRETARY, ACCOUNTANT…). Un compte PROMOTEUR
+    //    (libellé officiel) était rejeté 403 sur les endpoints
+    //    @Roles('PROMOTER') — y compris POST /students/assign-physical-class,
+    //    bloquant de fait le promoteur d'école sur l'onglet Affectations
+    //    (constaté en prod CSPEB lors du rattrapage des élèves CP).
+    const EN2FR: Record<string, string> = {
+      PROMOTER: 'PROMOTEUR',
+      DIRECTOR: 'DIRECTEUR',
+      SECRETARY: 'SECRETAIRE',
+      ACCOUNTANT: 'COMPTABLE',
+    };
+    const canon = (r: string) => EN2FR[stripSuffix(r)] ?? stripSuffix(r);
+    if (requiredRoles.some((r) => canon(r) === canon(userRole))) {
+      return true;
+    }
+
     return false;
   }
 }

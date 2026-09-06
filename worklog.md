@@ -9700,3 +9700,23 @@ Work Log:
 Stage Summary:
 - Incident résolu : API redeployée et saine ; toutes les nouvelles routes (reçus/factures, mise à jour draft, download billing) répondent en JSON
 - Leçon consignée : avec SWC typeCheck:false, TOUJOURS vérifier les imports par tsc --noEmit (TS2304) avant push — un identifiant manquant dans un décorateur = crash au boot, invisible au build
+
+---
+Task ID: 18
+Agent: main (Super Z)
+Task: Bug bloquant — importation massive d'élèves : bouton « Valider le fichier » tourne indéfiniment (rapport utilisateur)
+
+Work Log:
+- Symptôme : spinner infini > 2 min sur « Valider le fichier » (ImportElevesModal), import d'élèves inutilisable
+- Diagnostic : régression du commit 392a9f6f (04/09, « fix: loading state — final remaining files ») — blanket change useState(false)→useState(true) sur 26 fichiers sans vérifier lesquels chargent des données au montage ; ImportElevesModal = wizard SANS fetch au montage → loading jamais réinitialisé → bouton disabled + spinner infini
+- Audit exhaustif des 25 fichiers du commit : 18 composants cassés (bouton d'action mort) — imports élèves+arriérés+bilan+overrides, NewPaymentModal (encaissement impossible), FeeOverrideModal, ContractEditModal, ContractTerminationModal, FeexPayOnboardingWizard, 4 chats IA (ORION/ATLAS/AIChatPanel/InAppSaraGuide), AdminLoginPage (login admin impossible), ImagePicker, GlobalSearchModal, WhatsAppChat, ExampleModulePage ; 7 composants OK (vrai fetch au montage)
+- Fix 1 : revert useState(true)→useState(false) sur les 18 fichiers (script scripts/fix-loading-regression.sh, sed ligne-ciblé)
+- Fix 2 : fetchWithTimeout (AbortController) sur ImportElevesModal — preview 60 s / run 180 s + message d'erreur explicite
+- Fix 3 (découvert au passage) : parseRow dates — parser supposait JJ/MM/AAAA ; date ISO lue à l'envers → 1915-09-05 stockée silencieusement. Nouveau : détection ISO (1er segment 4 chiffres), année 2 chiffres, tolérance US, garde-fou plausibilité (sinon null)
+- Validation : E2E backend prod (login → template 200/540 ms → preview 201/451 ms, 2 lignes valides) = backend sain, spinner 100 % frontend ; unitaire dates 11/11 cas ; bloc exact du fichier source 5/5
+- Rebase sur les 4 commits de la session onboarding (9d100740→e250d8fb), aucun conflit ; renumérotation Task 18 (17 pris par l'incident Railway)
+
+Stage Summary:
+- ✅ Import d'élèves réparé + 17 autres composants débloqués dont 2 critiques (paiements, login admin)
+- ✅ Parsing dates d'import robuste (ISO/FR/US/2-chiffres + garde-fou)
+- Leçon : loading=true n'est correct QUE si un fetch au montage le remet à false — jamais de blanket change sur les états de chargement sans audit

@@ -16,27 +16,18 @@ import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
   UseGuards, HttpCode, HttpStatus, Req,
 } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 import { CommunityAuthGuard, CommunityRoles } from './community.guard';
 import { CommunityAdminService } from './community-admin.service';
+import {
+  CommunityUpdateMemberDto, CommunityCreateChannelDto, CommunityUpdateChannelDto,
+  CommunitySchedulePostDto, CommunityUpdateScheduledDto, CommunityBroadcastDto,
+  CommunityCreateInviteDto,
+} from './community.dto';
 
-class UpdateMemberDto { role?: string; memberType?: string; status?: string; }
-class CreateChannelDto {
-  slug: string; name: string; description?: string;
-  icon?: string; type?: string; position?: number;
-}
-class UpdateChannelDto {
-  name?: string; description?: string; icon?: string;
-  type?: string; position?: number; isActive?: boolean;
-}
-class SchedulePostDto { channelId: string; content: string; type?: string; scheduledAt: string; }
-class UpdateScheduledDto { content?: string; scheduledAt?: string; status?: string; }
-class BroadcastDto { channelIds: string[]; content: string; type?: string; }
-class CreateInviteDto {
-  channelId?: string; memberType?: string; note?: string;
-  maxUses?: number; expiresInDays?: number;
-}
 
 @Controller('community/admin')
+@Public() // ⭐ contourne le JwtAuthGuard global (tokens applicatifs) — l'authentification est portée par CommunityAuthGuard ci-dessous
 @UseGuards(CommunityAuthGuard)
 export class CommunityAdminController {
   constructor(private readonly admin: CommunityAdminService) {}
@@ -49,20 +40,20 @@ export class CommunityAdminController {
 
   @Patch('members/:id')
   @CommunityRoles('MODERATOR')
-  async updateMember(@Param('id') id: string, @Body() dto: UpdateMemberDto, @Req() req: any) {
+  async updateMember(@Param('id') id: string, @Body() dto: CommunityUpdateMemberDto, @Req() req: any) {
     return this.admin.updateMember(req.communityMember, id, dto);
   }
 
   @Post('channels')
   @CommunityRoles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
-  async createChannel(@Body() dto: CreateChannelDto, @Req() req: any) {
+  async createChannel(@Body() dto: CommunityCreateChannelDto, @Req() req: any) {
     return this.admin.createChannel(req.communityMember, dto);
   }
 
   @Patch('channels/:id')
   @CommunityRoles('ADMIN')
-  async updateChannel(@Param('id') id: string, @Body() dto: UpdateChannelDto, @Req() req: any) {
+  async updateChannel(@Param('id') id: string, @Body() dto: CommunityUpdateChannelDto, @Req() req: any) {
     return this.admin.updateChannel(req.communityMember, id, dto);
   }
 
@@ -75,27 +66,27 @@ export class CommunityAdminController {
   @Post('scheduled-posts')
   @CommunityRoles('MODERATOR')
   @HttpCode(HttpStatus.CREATED)
-  async schedulePost(@Body() dto: SchedulePostDto, @Req() req: any) {
+  async schedulePost(@Body() dto: CommunitySchedulePostDto, @Req() req: any) {
     return this.admin.schedulePost(req.communityMember, dto);
   }
 
   @Patch('scheduled-posts/:id')
   @CommunityRoles('MODERATOR')
-  async updateScheduled(@Param('id') id: string, @Body() dto: UpdateScheduledDto, @Req() req: any) {
+  async updateScheduled(@Param('id') id: string, @Body() dto: CommunityUpdateScheduledDto, @Req() req: any) {
     return this.admin.updateScheduled(req.communityMember, id, dto);
   }
 
   @Post('broadcast')
   @CommunityRoles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
-  async broadcast(@Body() dto: BroadcastDto, @Req() req: any) {
+  async broadcast(@Body() dto: CommunityBroadcastDto, @Req() req: any) {
     return this.admin.broadcast(req.communityMember, dto);
   }
 
   @Post('invites')
   @CommunityRoles('MODERATOR')
   @HttpCode(HttpStatus.CREATED)
-  async createInvite(@Body() dto: CreateInviteDto, @Req() req: any) {
+  async createInvite(@Body() dto: CommunityCreateInviteDto, @Req() req: any) {
     return this.admin.createInvite(req.communityMember, dto);
   }
 

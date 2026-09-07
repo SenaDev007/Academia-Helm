@@ -21,6 +21,20 @@ import { Public } from '../auth/decorators/public.decorator';
 import { CommunityAuthGuard } from './community.guard';
 import { CommunityAuthService } from './community-auth.service';
 import { CommunityService } from './community.service';
+import {
+  CommunityRegisterDto, CommunityLoginDto, CommunityPostMessageDto,
+  CommunityEditMessageDto, CommunityReactionDto, CommunityVoteDto, CommunityPinDto,
+} from './community.dto';
+
+/**
+ * ⭐ @Public() au niveau CLASSE : le JwtAuthGuard GLOBAL (auth applicative,
+ * table `users`) ne doit PAS valider les tokens communauté (claim typ:
+ * 'community', table `community_members`) — sinon 401 avant même que le
+ * CommunityAuthGuard (authentification communautaire, appliquée route par
+ * route) ne puisse agir. Les routes protégées portent toutes
+ * @UseGuards(CommunityAuthGuard) ; les routes auth/login-register-public
+ * sont volontairement sans garde.
+ */
 
 // ─── Contexte membre injecté par le guard ───
 interface MemberCtx {
@@ -33,42 +47,27 @@ function memberOf(req: any): MemberCtx {
   return req.communityMember;
 }
 
-// ─── DTOs (validation dans les services, formes simples) ───
-class RegisterDto {
-  email: string; password: string; displayName: string;
-  firstName?: string; lastName?: string; organization?: string;
-  country?: string; phone?: string; inviteToken?: string;
-}
-class LoginDto { email: string; password: string; }
-class PostMessageDto {
-  content?: string; type?: string; replyToId?: string;
-  attachmentUrl?: string; attachmentName?: string;
-  attachmentSize?: number; attachmentMime?: string;
-  poll?: { question: string; isMulti?: boolean; options: string[]; expiresAt?: string };
-}
-class ReactionDto { emoji: string; }
-class VoteDto { optionIds: string[]; }
+// ═════════════════════ AUTH (public) ═════════════════════
 
 @Controller('community')
+@Public()
 export class CommunityController {
   constructor(
     private readonly authService: CommunityAuthService,
     private readonly service: CommunityService,
   ) {}
 
-  // ═════════════════════ AUTH (public) ═════════════════════
-
   @Public()
   @Post('auth/register')
   @HttpCode(HttpStatus.CREATED)
-  async register(@Body() dto: RegisterDto) {
+  async register(@Body() dto: CommunityRegisterDto) {
     return this.authService.register(dto);
   }
 
   @Public()
   @Post('auth/login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto) {
+  async login(@Body() dto: CommunityLoginDto) {
     return this.authService.login(dto.email, dto.password);
   }
 
@@ -140,7 +139,7 @@ export class CommunityController {
   @UseGuards(CommunityAuthGuard)
   @Post('channels/:slug/messages')
   @HttpCode(HttpStatus.CREATED)
-  async postMessage(@Param('slug') slug: string, @Body() dto: PostMessageDto, @Req() req: any) {
+  async postMessage(@Param('slug') slug: string, @Body() dto: CommunityPostMessageDto, @Req() req: any) {
     return this.service.postMessage(slug, memberOf(req), dto);
   }
 
@@ -153,8 +152,8 @@ export class CommunityController {
 
   @UseGuards(CommunityAuthGuard)
   @Patch('messages/:id')
-  async editMessage(@Param('id') id: string, @Body('content') content: string, @Req() req: any) {
-    return this.service.editMessage(id, memberOf(req), content);
+  async editMessage(@Param('id') id: string, @Body() dto: CommunityEditMessageDto, @Req() req: any) {
+    return this.service.editMessage(id, memberOf(req), dto.content);
   }
 
   @UseGuards(CommunityAuthGuard)
@@ -166,21 +165,21 @@ export class CommunityController {
   @UseGuards(CommunityAuthGuard)
   @Post('messages/:id/pin')
   @HttpCode(HttpStatus.OK)
-  async pin(@Param('id') id: string, @Body('pinned') pinned: boolean, @Req() req: any) {
-    return this.service.setPinned(id, memberOf(req), pinned !== false);
+  async pin(@Param('id') id: string, @Body() dto: CommunityPinDto, @Req() req: any) {
+    return this.service.setPinned(id, memberOf(req), dto.pinned !== false);
   }
 
   @UseGuards(CommunityAuthGuard)
   @Post('messages/:id/reactions')
   @HttpCode(HttpStatus.OK)
-  async react(@Param('id') id: string, @Body() dto: ReactionDto, @Req() req: any) {
+  async react(@Param('id') id: string, @Body() dto: CommunityReactionDto, @Req() req: any) {
     return this.service.toggleReaction(id, memberOf(req), dto.emoji);
   }
 
   @UseGuards(CommunityAuthGuard)
   @Post('messages/:id/poll/vote')
   @HttpCode(HttpStatus.OK)
-  async vote(@Param('id') id: string, @Body() dto: VoteDto, @Req() req: any) {
+  async vote(@Param('id') id: string, @Body() dto: CommunityVoteDto, @Req() req: any) {
     return this.service.vote(id, memberOf(req), dto.optionIds ?? []);
   }
 

@@ -368,26 +368,34 @@ export class FinanceTransactionService {
               `dépasse le montant du frais (${Number(structure.totalAmount).toLocaleString('fr-FR')} FCFA).`,
             );
           }
-          breakdown = await this.prisma.accountBreakdown.create({
-            data: {
-              studentAccountId: account.id,
-              feeStructureId: structure.id,
-              initialAmount: structure.totalAmount,
-              adjustedAmount: structure.totalAmount,
-              paidAmount: 0,
-              remainingAmount: structure.totalAmount,
-            },
-            include: { feeStructure: true },
+          // ⚠️ Le trigger prevent_balance_update bloque les UPDATE directs des
+          // champs de solde : on passe par $transaction + SET LOCAL
+          // app.allow_balance_update (pattern FeeStructureService) pour que le
+          // breakdown ET l'ajustement du compte soient atomiques et autorisés.
+          const structAmount = Number(structure.totalAmount);
+          breakdown = await this.prisma.$transaction(async (tx) => {
+            const created = await tx.accountBreakdown.create({
+              data: {
+                studentAccountId: account.id,
+                feeStructureId: structure.id,
+                initialAmount: structure.totalAmount,
+                adjustedAmount: structure.totalAmount,
+                paidAmount: 0,
+                remainingAmount: structure.totalAmount,
+              },
+              include: { feeStructure: true },
+            });
+            await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+            await tx.studentAccount.update({
+              where: { id: account.id },
+              data: {
+                totalDue: { increment: structAmount },
+                balance: { increment: structAmount },
+              },
+            });
+            return created;
           });
           account.breakdowns.push(breakdown);
-          const structAmount = Number(structure.totalAmount);
-          await this.prisma.studentAccount.update({
-            where: { id: account.id },
-            data: {
-              totalDue: { increment: structAmount },
-              balance: { increment: structAmount },
-            },
-          });
           account.totalDue = Number(account.totalDue) + structAmount;
           account.balance = Number(account.balance) + structAmount;
           merged.push({ accountBreakdownId: breakdown.id, amount: amt });

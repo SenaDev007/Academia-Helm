@@ -83,7 +83,6 @@ import { ContextModule } from './common/context/context.module';
 import { ContextModule as TenantContextModule } from './context/context.module';
 import { SynthesisModule } from './modules/synthesis/synthesis.module';
 import { AccessRequestsModule } from './access-requests/access-requests.module';
-import { SyncModule } from './sync/sync.module';
 import { ScolariteModule } from './modules/scolarite/scolarite.module';
 import { FinancesModule } from './modules/finances/finances.module';
 import { AIModule } from './ai/ai.module';

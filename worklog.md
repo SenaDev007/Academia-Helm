@@ -10018,3 +10018,21 @@ Stage Summary:
 - ⭐ Dashboard par défaut : secrétaire ET secrétaire-comptable voient le tableau de bord de pilotage à l'arrivée dans leur portail (l'outil métier reste module n°2) ; comptable déjà conforme (tableau de bord financier)
 - ⭐ Sélecteur de classe de la modale encaissement : les classes se listent pour TOUS les rôles (fin des 403 masqués en liste vide sur /api/all-classes) — même racine que le fix inscription Task 27, appliquée cette fois à la route classes
 - Suivi : build Vercel web-app ~5-10 min ; re-test CSPEB : connexion secrétaire/secrétaire-comptable → tableau de bord par défaut ; Finance > Encaissements > modale → le sélecteur Classe doit lister les classes du périmètre ; vérifier dans Comptes élèves que le compte Akpovi Péniel affiche dû 3000 / payé 0
+
+---
+Task ID: 30
+Agent: Super Z (agent principal)
+Task: Audit et correction systémique de la performance de chargement (brief z.ai : lent partout, chargements > 2 min ou infinis jusqu'à déconnexion/reconnexion, écritures échouant par timeout)
+
+Work Log:
+- Audit mesuré en production (lectures seule) : Neon EXPLAIN ANALYZE sur les 6 requêtes chaudes = 0,046-1,35 ms (DB NON goulot) ; API Railway HTTP = 206-400 ms stable (pas de boucle de redémarrage, /health 200, uptime vérifié) ; volumétrie CSPEB = 98 élèves / 97 comptes / tables < 2 Mo
+- 5 causes racines identifiées dans la couche de livraison : (1) refresh token SANS timeout → file 401 (failedQueue) bloquée à vie = LE « chargement éternel jusqu'à déconnexion » ; (2) POST/PATCH BFF en fetch() brut sans timeout → Vercel tuait la fonction, backend commettait quand même (risque double encaissement) ; (3) timeout axios 8 s < pire cas cold start Neon (5-15 s) ; (4) zéro cache client / zéro dédup in-flight (refetch complet à chaque onglet, requêtes dupliquées multi-composants) ; (5) stats planner jamais ANALYSÉES (reltuples=-1) + index composite transactions absent
+- Correctifs : timeout 10 s sur tryRefreshAccessToken + file protégée 12 s + purge de file ; axios 30 s ; get-cache.ts NOUVEAU (TTL 45 s + dédup in-flight + stale-while-revalidate + invalidation auto par intercepteur axios et wrappers mutation) branché sur apiFetch + financeFetch ; transactions POST/PATCH en fetchWithTimeout 30 s + retry 502/503/504 uniquement + 504 explicite ; balayage mécanique de 181 routes BFF (finance/élèves/classes/paramètres) fetch→fetchWithTimeout (30 s mutations/15 s lectures) avec réparation des 27 fichiers cassés (virgule d'élision multi-ligne) et dédup des 45 imports en double ; vercel.json maxDuration 30 global ; index composite finance_transactions(tenantId, academicYearId, createdAt DESC) via bootstrap main.ts idempotent + migration 20260907120000 + schéma Prisma ; ANALYZE des 13 tables chaudes exécuté en production ; caisses ouvertes exclues du cache (donnée opérationnelle)
+- Qualité : typecheck web-app 683 = baseline 683 (0 nouvelle — comparaison stash) ; transpile main.ts OK ; prisma validate = 3 erreurs préexistantes identiques avant/après (CLI v6 local vs Prisma 7.8 projet) ; tests cache 13/13 (dédup, TTL, SWR, pas de cache d'erreur, promesses non-zombies) ; scan secrets avant push = vide (scripts audit avec DATABASE_URL laissés non-trackés via .git/info/exclude)
+- Rapport complet avec mesures avant/après : PERFORMANCE-AUDIT-2026-09-07.md (racine + download/) ; scripts de mesure réutilisables : perf-audit-db.js / perf-audit-http.js / perf-apply-db-fixes.js (non-trackés, contiennent la chaîne Neon)
+- Commit 76f28aae poussé sur main → builds Vercel + Railway déclenchés
+
+Stage Summary:
+- Correctif du chargeur infini (deadlock refresh) + des écritures avortées (timeout BFF/Vercel) + cache client 45 s + 181 routes bornées + index/ANALYZE production
+- À vérifier après build : navigation onglets Finance instantanée en retour (< 45 s), encaissement sans échec, première requête après inactivité ≤ 3 s (réveil)
+- Checklist ops (Neon autosuspend console, ressources Railway, plan Vercel) dans PERFORMANCE-AUDIT-2026-09-07.md §4

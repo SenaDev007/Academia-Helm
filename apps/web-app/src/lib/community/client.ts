@@ -31,11 +31,69 @@ export interface CommunityChannel {
   icon: string | null;
   type: 'TEXT' | 'ANNOUNCEMENT' | 'RESTRICTED';
   position: number;
+  /** ⭐ v2 — GLOBAL (toutes les écoles) | SCHOOL (canal d'une école) */
+  scope?: 'GLOBAL' | 'SCHOOL';
+  tenantId?: string | null;
+  tenantName?: string | null;
+  /** SALON (annonces école) | ADMINS | TEACHERS | CUSTOM */
+  groupKind?: 'SALON' | 'ADMINS' | 'TEACHERS' | 'CUSTOM' | null;
+  parentId?: string | null;
+  autoManaged?: boolean;
   lastMessageAt: string | null;
   messageCount: number;
   unread: number;
   preview: string | null;
   canPost: boolean;
+}
+
+/** ⭐ v2 — École rattachée au membre (source du dispatch écoles/groupes) */
+export interface CommunitySchool {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string | null;
+  schoolRole: 'ADMIN' | 'TEACHER';
+}
+
+/** ⭐ v2 — Réponse GET /community/channels (regroupement structuré) */
+export interface CommunityChannelsResponse {
+  channels: CommunityChannel[];
+  globalChannels: CommunityChannel[];
+  schoolSections: { tenantId: string; tenantName: string; channels: CommunityChannel[] }[];
+  schools: CommunitySchool[];
+}
+
+/** ⭐ v2 — Live / formation / atelier (dispatch par audience) */
+export interface CommunityEvent {
+  id: string;
+  kind: 'LIVE' | 'FORMATION' | 'ATELIER';
+  title: string;
+  description: string | null;
+  audience: 'GLOBAL' | 'SCHOOL' | 'GROUP';
+  tenantId: string | null;
+  tenantName: string | null;
+  groupKind: 'ADMINS' | 'TEACHERS' | null;
+  channelId: string | null;
+  channelSlug: string | null;
+  channelName: string | null;
+  hostName: string | null;
+  externalUrl: string | null;
+  replayUrl: string | null;
+  scheduledAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  status: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED';
+  isLive: boolean;
+}
+
+/** ⭐ v2 — Vue synthèse école (cockpit équipe) */
+export interface AdminSchoolSummary {
+  tenantId: string;
+  name: string;
+  slug: string;
+  channels: { id: string; slug: string; name: string; icon: string | null; type: string; groupKind: string | null; autoManaged: boolean; lastMessageAt: string | null }[];
+  members: number;
+  admins: number;
+  teachers: number;
 }
 
 export interface CommunityMessage {
@@ -132,12 +190,35 @@ export const communityApi = {
     }),
 
   login: (input: { email: string; password: string }) =>
-    request<{ member: CommunityMember }>('auth/login', { method: 'POST', body: input }),
+    request<{ member: CommunityMember; viaAppLink?: boolean; schools?: CommunitySchool[] }>('auth/login', {
+      method: 'POST',
+      body: input,
+    }),
+
+  /** ⭐ v2 — Rejoindre depuis la session applicative (admins/enseignants
+   *  d'école : provision automatique écoles + groupes, cookie posé par BFF) */
+  provision: () =>
+    request<{ member: CommunityMember; viaAppLink: boolean; schools: CommunitySchool[] }>(
+      'provision',
+      { method: 'POST', body: {} },
+    ),
 
   me: () => request<CommunityMember & { teamEmail?: string }>('me'),
 
   // ── Canaux & messages ──
-  channels: () => request<CommunityChannel[]>('channels'),
+  channels: () => request<CommunityChannelsResponse>('channels'),
+
+  /** ⭐ v2 — Mes écoles (rattachements + rôles) */
+  mySchools: () => request<{ schools: CommunitySchool[] }>('schools'),
+
+  /** ⭐ v2 — Lives & événements visibles (dispatch par audience) */
+  events: (opts: { status?: string[]; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.status?.length) params.set('status', opts.status.join(','));
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return request<CommunityEvent[]>(`events${qs ? `?${qs}` : ''}`);
+  },
 
   channel: (slug: string) =>
     request<{
@@ -239,4 +320,47 @@ export const communityApi = {
         topContributors: { display_name: string; member_type: string; messages: number }[];
       };
     }>('admin/stats'),
+
+  // ── Admin v2 : écoles (canaux dynamiques) ──
+  adminSchools: () => request<AdminSchoolSummary[]>('admin/schools'),
+
+  adminSyncSchools: () =>
+    request<{ tenants: number; channelsCreated: number }>('admin/schools/sync', {
+      method: 'POST',
+      body: {},
+    }),
+
+  adminSchoolMembers: (tenantId: string) =>
+    request<{
+      tenantId: string;
+      name: string;
+      members: {
+        memberId: string; displayName: string; email: string; memberType: string;
+        status: string; schoolRole: string; source: string;
+        joinedAt: string; lastSeenAt: string | null;
+      }[];
+    }>(`admin/schools/${tenantId}/members`),
+
+  adminCreateSchoolGroup: (input: { tenantId: string; name: string; description?: string; icon?: string; memberRole?: string }) =>
+    request<unknown>('admin/schools/groups', { method: 'POST', body: input }),
+
+  // ── Admin v2 : lives & événements ──
+  adminListEvents: (status?: string) =>
+    request<CommunityEvent[]>(`admin/events${status ? `?status=${status}` : ''}`),
+
+  adminCreateEvent: (input: {
+    kind: 'LIVE' | 'FORMATION' | 'ATELIER';
+    title: string;
+    description?: string;
+    audience: 'GLOBAL' | 'SCHOOL' | 'GROUP';
+    tenantId?: string;
+    groupKind?: 'ADMINS' | 'TEACHERS';
+    externalUrl?: string;
+    scheduledAt: string;
+  }) => request<CommunityEvent>('admin/events', { method: 'POST', body: input }),
+
+  adminUpdateEvent: (
+    id: string,
+    patch: { title?: string; description?: string; status?: 'SCHEDULED' | 'LIVE' | 'ENDED' | 'CANCELLED'; externalUrl?: string; replayUrl?: string; scheduledAt?: string },
+  ) => request<CommunityEvent>(`admin/events/${id}`, { method: 'PATCH', body: patch }),
 };

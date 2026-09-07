@@ -23,6 +23,7 @@ import { DatabaseModule } from '../database/database.module';
 import { PrismaService } from '../database/prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunityAuthService } from './community-auth.service';
+import { CommunityProvisionService } from './community-provision.service';
 import { CommunityService } from './community.service';
 import { CommunityAdminService } from './community-admin.service';
 import { CommunityScheduledDispatcher } from './community-scheduled-dispatcher';
@@ -48,11 +49,12 @@ import { CommunityAdminController } from './community-admin.controller';
     PrismaService,
     CommunityRepository,
     CommunityAuthService,
+    CommunityProvisionService,
     CommunityService,
     CommunityAdminService,
     CommunityScheduledDispatcher,
     CommunityBootstrap,
   ],
-  exports: [CommunityBootstrap, CommunityAuthService, CommunityRepository],
+  exports: [CommunityBootstrap, CommunityAuthService, CommunityRepository, CommunityProvisionService],
 })
 export class CommunityModule {}

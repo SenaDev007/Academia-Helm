@@ -24,11 +24,13 @@ import { useRouter } from 'next/navigation';
 import {
   MessageSquare, Users, Megaphone, Pin, Reply, Pencil, Trash2, Smile,
   Send, LogOut, Hash, Star, Check, Loader2,
-  BarChart3, X, Home, Crown, ShieldCheck,
+  BarChart3, X, Home, Crown, ShieldCheck, School, Radio, CalendarClock,
+  ExternalLink, PlayCircle,
 } from 'lucide-react';
 import {
   communityApi, CommunityError,
   type CommunityChannel, type CommunityMember, type CommunityMessage, type PresenceMember,
+  type CommunitySchool, type CommunityEvent,
 } from '@/lib/community/client';
 import { PollCard } from './PollCard';
 import { AdminPanel } from './AdminPanel';
@@ -251,6 +253,12 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
   const [member, setMember] = useState<CommunityMember | null>(null);
   const [authState, setAuthState] = useState<'loading' | 'ok' | 'anon'>('loading');
   const [channels, setChannels] = useState<CommunityChannel[]>([]);
+  // ⭐ v2 — sections structurées (global + écoles) + écoles rattachées
+  const [globalChannels, setGlobalChannels] = useState<CommunityChannel[]>([]);
+  const [schoolSections, setSchoolSections] = useState<{ tenantId: string; tenantName: string; channels: CommunityChannel[] }[]>([]);
+  const [mySchools, setMySchools] = useState<CommunitySchool[]>([]);
+  const [events, setEvents] = useState<CommunityEvent[]>([]);
+  const [showEvents, setShowEvents] = useState(false);
   const [activeSlug, setActiveSlug] = useState<string>(initialSlug ?? '');
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
   const [channelInfo, setChannelInfo] = useState<{ name: string; description: string | null; icon: string | null; type: string; canPost: boolean; pinned: any[] } | null>(null);
@@ -282,18 +290,38 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
       });
   }, []);
 
-  // ── Canaux ──
+  // ── Canaux (v2 : réponse structurée global + écoles) ──
   const refreshChannels = useCallback(async () => {
     try {
-      const list = await communityApi.channels();
-      setChannels(list);
-      if (!activeSlug && list.length) {
-        setActiveSlug(list[0].slug);
+      const res = await communityApi.channels();
+      setChannels(res.channels);
+      setGlobalChannels(res.globalChannels);
+      setSchoolSections(res.schoolSections);
+      setMySchools(res.schools);
+      if (!activeSlug && res.channels.length) {
+        setActiveSlug(res.channels[0].slug);
       }
     } catch {
       /* silencieux (polling) */
     }
   }, [activeSlug]);
+
+  // ⭐ v2 — Lives & événements visibles (dispatch écoles/groupes)
+  const refreshEvents = useCallback(async () => {
+    try {
+      const list = await communityApi.events({ status: ['SCHEDULED', 'LIVE'] });
+      setEvents(list);
+    } catch {
+      /* silencieux */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authState !== 'ok') return;
+    refreshEvents();
+    const id = setInterval(refreshEvents, 30000);
+    return () => clearInterval(id);
+  }, [authState, refreshEvents]);
 
   useEffect(() => {
     if (authState !== 'ok') return;
@@ -428,6 +456,46 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
   const isTeam = member ? ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'].includes(member.role) : false;
   const canPost = channelInfo?.canPost ?? false;
 
+  // ⭐ v2 — Rendu d'un bouton de canal (section générale OU groupe d'école)
+  const renderChannelButton = (c: CommunityChannel) => (
+    <button
+      key={c.id}
+      onClick={() => {
+        setActiveSlug(c.slug);
+        setMobilePanel('messages');
+        setShowAdmin(false);
+        setShowEvents(false);
+      }}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
+        !showEvents && c.slug === activeSlug ? 'bg-navy text-white shadow-sm' : 'hover:bg-slate-100 text-slate-700'
+      }`}
+    >
+      <span className="text-base leading-none">
+        {c.groupKind === 'ADMINS' ? '🛡️' : c.groupKind === 'TEACHERS' ? '👨‍🏫' : (c.icon ?? '💬')}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[12.5px] font-medium truncate">{c.name}</span>
+        {c.preview && !showEvents && c.slug !== activeSlug && (
+          <span className={`block text-[10px] truncate ${c.slug === activeSlug ? 'text-blue-200' : 'text-slate-400'}`}>
+            {c.preview}
+          </span>
+        )}
+      </span>
+      {c.unread > 0 && !showEvents && c.slug !== activeSlug && (
+        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-gold text-navy text-[10px] font-bold flex items-center justify-center">
+          {c.unread > 99 ? '99+' : c.unread}
+        </span>
+      )}
+      {c.type === 'ANNOUNCEMENT' && (
+        <Megaphone size={11} className={c.slug === activeSlug ? 'text-gold' : 'text-goldd shrink-0'} />
+      )}
+    </button>
+  );
+
+  // ⭐ v2 — Événements du canal actif (bannière live + à venir)
+  const activeChannelEvents = events.filter((e) => e.channelSlug && e.channelSlug === activeSlug);
+  const liveNow = activeChannelEvents.filter((e) => e.isLive);
+
   // ── Rendu ──
   if (authState === 'loading') {
     return (
@@ -497,41 +565,53 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
         <aside
           className={`${mobilePanel === 'channels' ? 'flex' : 'hidden'} md:flex absolute md:relative inset-0 md:inset-auto z-20 md:z-auto w-full md:w-64 shrink-0 flex-col bg-white border-r border-slate-200`}
         >
-          <div className="p-3 border-b border-slate-100">
-            <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 px-2 pb-1">Canaux</p>
+          <div className="p-3 border-b border-slate-100 overflow-y-auto flex-1">
+            {/* ⭐ v2 — Bouton Lives & événements (dispatch par audience) */}
+            <button
+              onClick={() => {
+                setShowEvents(true);
+                setShowAdmin(false);
+                setMobilePanel('messages');
+              }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 mb-3 rounded-lg text-left transition-colors ${
+                showEvents ? 'bg-red-600 text-white shadow-sm' : 'bg-red-50 text-red-700 hover:bg-red-100'
+              }`}
+            >
+              <Radio size={15} className={events.some((e) => e.isLive) ? 'animate-pulse' : ''} />
+              <span className="flex-1 text-[12.5px] font-semibold truncate">Lives & événements</span>
+              {events.filter((e) => e.isLive).length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white text-red-600 text-[10px] font-bold flex items-center justify-center">
+                  {events.filter((e) => e.isLive).length}
+                </span>
+              )}
+            </button>
+
+            {/* ⭐ v2 — Section GÉNÉRALE : salon de toutes les écoles ensemble */}
+            <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 px-2 pb-1 flex items-center gap-1.5">
+              <Users size={11} /> Toutes les écoles
+            </p>
             <nav className="space-y-0.5">
-              {channels.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    setActiveSlug(c.slug);
-                    setMobilePanel('messages');
-                    setShowAdmin(false);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                    c.slug === activeSlug ? 'bg-navy text-white shadow-sm' : 'hover:bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  <span className="text-base leading-none">{c.icon ?? '💬'}</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-[12.5px] font-medium truncate">{c.name}</span>
-                    {c.preview && c.slug !== activeSlug && (
-                      <span className={`block text-[10px] truncate ${c.slug === activeSlug ? 'text-blue-200' : 'text-slate-400'}`}>
-                        {c.preview}
-                      </span>
-                    )}
-                  </span>
-                  {c.unread > 0 && c.slug !== activeSlug && (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-gold text-navy text-[10px] font-bold flex items-center justify-center">
-                      {c.unread > 99 ? '99+' : c.unread}
-                    </span>
-                  )}
-                  {c.type === 'ANNOUNCEMENT' && (
-                    <Megaphone size={11} className={c.slug === activeSlug ? 'text-gold' : 'text-goldd shrink-0'} />
-                  )}
-                </button>
-              ))}
+              {globalChannels.map((c) => renderChannelButton(c))}
             </nav>
+
+            {/* ⭐ v2 — Sections par ÉCOLE : salon + groupes (admins/enseignants) */}
+            {schoolSections.map((section) => (
+              <div key={section.tenantId} className="mt-3">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 px-2 pb-1 flex items-center gap-1.5">
+                  <School size={11} /> {section.tenantName}
+                </p>
+                <nav className="space-y-0.5">
+                  {section.channels.map((c) => renderChannelButton(c))}
+                </nav>
+              </div>
+            ))}
+
+            {schoolSections.length === 0 && (
+              <p className="mt-3 text-[10.5px] text-slate-400 px-2 leading-relaxed">
+                Votre école n'est pas encore rattachée — les administrateurs et enseignants
+                de votre établissement la rejoignent automatiquement depuis leur compte Academia Helm.
+              </p>
+            )}
           </div>
 
           <div className="p-3 mt-auto border-t border-slate-100">
@@ -547,10 +627,18 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
           </div>
         </aside>
 
-        {/* ═══ Zone messages ═══ */}
+        {/* ═══ Zone messages / Lives & événements ═══ */}
         <main className={`${mobilePanel === 'messages' ? 'flex' : 'hidden'} md:flex flex-1 min-w-0 flex-col`}>
-          {/* En-tête canal */}
-          {showAdmin && isTeam ? (
+          {/* ⭐ v2 — Vue Lives & événements (dispatch écoles/groupes) */}
+          {showEvents ? (
+            <EventsView
+              events={events}
+              onOpenChannel={(slug) => {
+                setActiveSlug(slug);
+                setShowEvents(false);
+              }}
+            />
+          ) : showAdmin && isTeam ? (
             <AdminPanel member={member!} channels={channels} onClose={() => setShowAdmin(false)} />
           ) : (
             <>
@@ -563,6 +651,16 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
                   )}
                 </div>
                 <div className="flex-1" />
+                {liveNow.length > 0 && (
+                  <a
+                    href={liveNow[0].externalUrl ?? '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-bold animate-pulse hover:bg-red-700"
+                  >
+                    <Radio size={11} /> EN DIRECT
+                  </a>
+                )}
                 {channelInfo && channelInfo.pinned.length > 0 && (
                   <div className="hidden md:flex items-center gap-1 text-[11px] text-goldd">
                     <Pin size={12} /> {channelInfo.pinned.length} épinglé{channelInfo.pinned.length > 1 ? 's' : ''}
@@ -732,6 +830,130 @@ export function CommunitySpace({ initialSlug }: CommunitySpaceProps) {
             )}
           </div>
         </aside>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════ VUE LIVES & ÉVÉNEMENTS (v2) ═══════════════════════
+
+function EventsView({ events, onOpenChannel }: { events: CommunityEvent[]; onOpenChannel: (slug: string) => void }) {
+  const lives = events.filter((e) => e.isLive);
+  const upcoming = events.filter((e) => !e.isLive && e.status === 'SCHEDULED');
+
+  const audienceLabel = (e: CommunityEvent) => {
+    if (e.audience === 'GLOBAL') return 'Toutes les écoles';
+    if (e.audience === 'SCHOOL') return e.tenantName ?? 'École';
+    const group = e.groupKind === 'ADMINS' ? 'Administrateurs' : 'Enseignants';
+    return `${group} · ${e.tenantName ?? ''}`;
+  };
+
+  const kindLabel: Record<string, string> = { LIVE: '🔴 Live', FORMATION: '🎓 Formation', ATELIER: '🛠️ Atelier' };
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-50">
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        <div>
+          <h1 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+            <Radio size={18} className="text-red-600" /> Lives & événements
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Formations, conseils et lives — dispatchés selon l&apos;audience : toutes les écoles, votre école, ou votre groupe.
+          </p>
+        </div>
+
+        {lives.length > 0 && (
+          <section className="space-y-2">
+            <p className="text-[11px] uppercase tracking-wider font-bold text-red-600 px-1">En direct maintenant</p>
+            {lives.map((e) => (
+              <div key={e.id} className="rounded-xl bg-white border-2 border-red-500 shadow-sm p-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold animate-pulse">EN DIRECT</span>
+                  <span className="text-[11px] font-semibold text-slate-500">{audienceLabel(e)}</span>
+                </div>
+                <h2 className="font-bold text-[15px] text-slate-800 mt-2">{e.title}</h2>
+                {e.description && <p className="text-[12.5px] text-slate-600 mt-1 line-clamp-3">{e.description}</p>}
+                <div className="flex items-center gap-2 mt-3">
+                  {e.externalUrl && (
+                    <a
+                      href={e.externalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-600 text-white text-[12px] font-semibold hover:bg-red-700"
+                    >
+                      <PlayCircle size={14} /> Rejoindre le live
+                    </a>
+                  )}
+                  {e.channelSlug && (
+                    <button
+                      onClick={() => onOpenChannel(e.channelSlug!)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-medium hover:border-navy hover:text-navy"
+                    >
+                      <MessageSquare size={13} /> {e.channelName ?? 'Canal'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <section className="space-y-2">
+          <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400 px-1">À venir</p>
+          {upcoming.length === 0 ? (
+            <div className="rounded-xl bg-white border border-slate-200 p-8 text-center">
+              <CalendarClock className="w-10 h-10 text-slate-300 mx-auto" />
+              <p className="text-sm text-slate-500 font-medium mt-2">Aucun événement programmé</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Les lives et formations de l&apos;équipe apparaîtront ici — les conseils quotidiens restent dans les canaux.
+              </p>
+            </div>
+          ) : (
+            upcoming.map((e) => (
+              <div key={e.id} className="rounded-xl bg-white border border-slate-200 shadow-sm p-4 flex items-start gap-3">
+                <div className="w-11 shrink-0 text-center bg-navy rounded-lg py-1.5 px-1">
+                  <p className="text-white font-black text-[15px] leading-none">
+                    {new Date(e.scheduledAt).toLocaleDateString('fr-FR', { day: 'numeric' })}
+                  </p>
+                  <p className="text-blue-200 text-[9px] uppercase font-bold mt-0.5">
+                    {new Date(e.scheduledAt).toLocaleDateString('fr-FR', { month: 'short' })}
+                  </p>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-navy">{kindLabel[e.kind] ?? e.kind}</span>
+                    <span className="text-[10.5px] text-slate-400">{audienceLabel(e)}</span>
+                    <span className="text-[10.5px] text-slate-400">
+                      · {new Date(e.scheduledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-[13.5px] text-slate-800 mt-0.5 truncate">{e.title}</h3>
+                  {e.description && <p className="text-[12px] text-slate-500 line-clamp-2">{e.description}</p>}
+                </div>
+                <div className="flex flex-col gap-1.5 shrink-0">
+                  {e.externalUrl && (
+                    <a
+                      href={e.externalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-navy text-white text-[11px] font-semibold hover:bg-navyl"
+                    >
+                      <ExternalLink size={11} /> Lien
+                    </a>
+                  )}
+                  {e.channelSlug && (
+                    <button
+                      onClick={() => onOpenChannel(e.channelSlug!)}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-500 text-[11px] hover:border-navy hover:text-navy"
+                    >
+                      <MessageSquare size={11} /> Canal
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </section>
       </div>
     </div>
   );

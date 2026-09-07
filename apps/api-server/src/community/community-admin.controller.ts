@@ -22,7 +22,8 @@ import { CommunityAdminService } from './community-admin.service';
 import {
   CommunityUpdateMemberDto, CommunityCreateChannelDto, CommunityUpdateChannelDto,
   CommunitySchedulePostDto, CommunityUpdateScheduledDto, CommunityBroadcastDto,
-  CommunityCreateInviteDto,
+  CommunityCreateInviteDto, CommunityCreateEventDto, CommunityUpdateEventDto,
+  CommunityCreateSchoolGroupDto,
 } from './community.dto';
 
 
@@ -106,5 +107,60 @@ export class CommunityAdminController {
   @CommunityRoles('MODERATOR')
   async stats(@Req() req: any) {
     return this.admin.stats(req.communityMember);
+  }
+
+  // ═════════════════ v2 : Écoles (canaux dynamiques) ═════════════════
+
+  /** Synchroniser : provisionne salon + groupes pour toutes les écoles actives */
+  @Post('schools/sync')
+  @CommunityRoles('ADMIN')
+  @HttpCode(HttpStatus.OK)
+  async syncSchools(@Req() req: any) {
+    return this.admin.syncSchools(req.communityMember);
+  }
+
+  /** Vue synthèse : écoles + canaux + effectifs rattachés */
+  @Get('schools')
+  @CommunityRoles('MODERATOR')
+  async schools(@Req() req: any) {
+    return this.admin.schools(req.communityMember);
+  }
+
+  /** Annuaire des membres rattachés à une école */
+  @Get('schools/:tenantId/members')
+  @CommunityRoles('MODERATOR')
+  async schoolMembers(@Param('tenantId') tenantId: string, @Req() req: any) {
+    return this.admin.schoolMembers(req.communityMember, tenantId);
+  }
+
+  /** Groupe custom au sein du canal d'une école */
+  @Post('schools/groups')
+  @CommunityRoles('ADMIN')
+  @HttpCode(HttpStatus.CREATED)
+  async createSchoolGroup(@Body() dto: CommunityCreateSchoolGroupDto, @Req() req: any) {
+    return this.admin.createSchoolGroup(req.communityMember, dto);
+  }
+
+  // ═════════════════ v2 : Lives & événements ═════════════════
+
+  @Get('events')
+  @CommunityRoles('MODERATOR')
+  async listEvents(@Req() req: any, @Query('status') status?: string) {
+    return this.admin.listEvents(req.communityMember, status);
+  }
+
+  /** Planifier un live/formation/atelier avec ciblage d'audience (dispatch) */
+  @Post('events')
+  @CommunityRoles('MODERATOR')
+  @HttpCode(HttpStatus.CREATED)
+  async createEvent(@Body() dto: CommunityCreateEventDto, @Req() req: any) {
+    return this.admin.createEvent(req.communityMember, dto);
+  }
+
+  /** Mise à jour (démarrer live, terminer + replay, annuler, reprogrammer) */
+  @Patch('events/:id')
+  @CommunityRoles('MODERATOR')
+  async updateEvent(@Param('id') id: string, @Body() dto: CommunityUpdateEventDto, @Req() req: any) {
+    return this.admin.updateEvent(req.communityMember, id, dto);
   }
 }

@@ -15,11 +15,12 @@
 
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
-  UseGuards, HttpCode, HttpStatus, Req,
+  UseGuards, HttpCode, HttpStatus, Req, Headers, UnauthorizedException,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { CommunityAuthGuard } from './community.guard';
 import { CommunityAuthService } from './community-auth.service';
+import { CommunityProvisionService } from './community-provision.service';
 import { CommunityService } from './community.service';
 import {
   CommunityRegisterDto, CommunityLoginDto, CommunityPostMessageDto,
@@ -54,6 +55,7 @@ function memberOf(req: any): MemberCtx {
 export class CommunityController {
   constructor(
     private readonly authService: CommunityAuthService,
+    private readonly provisionService: CommunityProvisionService,
     private readonly service: CommunityService,
   ) {}
 
@@ -68,7 +70,52 @@ export class CommunityController {
   @Post('auth/login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: CommunityLoginDto) {
-    return this.authService.login(dto.email, dto.password);
+    try {
+      return await this.authService.login(dto.email, dto.password);
+    } catch (e: any) {
+      // ⭐ v2 — Pont applicatif : les administrateurs/enseignants d'une
+      // école utilisent LEURS identifiants de compte école (users) pour
+      // entrer dans la communauté — provision automatique écoles/groupes.
+      if (e instanceof UnauthorizedException) {
+        const provisioned = await this.provisionService
+          .provisionFromAppCredentials(dto.email, dto.password)
+          .catch(() => null);
+        if (provisioned?.member && provisioned.token) {
+          return {
+            member: this.authService.sanitize(provisioned.member),
+            token: provisioned.token,
+            viaAppLink: true,
+            schools: provisioned.schools,
+          };
+        }
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * ⭐ v2 — Provision depuis la session APPLICATIVE : le BFF transmet le
+   * JWT de l'utilisateur connecté à l'app → membre communauté créé/lie +
+   * écoles synchronisées (canaux dynamiques) → token communauté renvoyé.
+   * Route appelée par /api/community/provision (web-app, cookie app).
+   */
+  @Public()
+  @Post('auth/link-app')
+  @HttpCode(HttpStatus.OK)
+  async linkApp(@Headers('x-app-authorization') appAuth?: string) {
+    // Le BFF place le JWT applicatif dans x-app-authorization (jamais
+    // exposé au navigateur) ; Authorization peut transporter le community
+    // token (inutile ici) — on n'accepte QUE le header dédié.
+    if (!appAuth?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Session applicative requise');
+    }
+    const result = await this.provisionService.linkFromAppToken(appAuth.slice(7));
+    return {
+      member: this.authService.sanitize(result.member),
+      token: result.token,
+      viaAppLink: true,
+      schools: result.schools,
+    };
   }
 
   /** Vitrine publique (page /community sans compte) : canaux + stats anonymisés */
@@ -107,6 +154,33 @@ export class CommunityController {
       memberType: m.memberType, status: m.status, organization: m.organization,
       avatarUrl: m.avatarUrl, teamEmail: this.authService.teamContact(),
     };
+  }
+
+  /** ⭐ v2 — Mes écoles (rattachements + rôles école) */
+  @UseGuards(CommunityAuthGuard)
+  @Get('schools')
+  async mySchools(@Req() req: any) {
+    const m = memberOf(req);
+    const result = await this.service.channelsForMember(m);
+    return { schools: result.schools };
+  }
+
+  /** ⭐ v2 — Lives & événements visibles (dispatch par audience) */
+  @UseGuards(CommunityAuthGuard)
+  @Get('events')
+  async events(@Req() req: any, @Query('status') status?: string, @Query('limit') limit?: string) {
+    const m = memberOf(req);
+    const statuses = status ? status.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : undefined;
+    return this.service.eventsForMember(m, {
+      status: statuses,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  @UseGuards(CommunityAuthGuard)
+  @Get('events/:id')
+  async event(@Param('id') id: string, @Req() req: any) {
+    return this.service.eventById(id, memberOf(req));
   }
 
   @UseGuards(CommunityAuthGuard)

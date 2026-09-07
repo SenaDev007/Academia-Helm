@@ -12,6 +12,7 @@ const files = [
   'community.guard.ts',
   'community.repository.ts',
   'community-auth.service.ts',
+  'community-provision.service.ts',
   'community.service.ts',
   'community-admin.service.ts',
   'community-scheduled-dispatcher.ts',
@@ -19,6 +20,7 @@ const files = [
   'community.controller.ts',
   'community-admin.controller.ts',
   'community.module.ts',
+  'community.dto.ts',
 ].map((f) => path.join(__dirname, '../src/community', f));
 files.push(path.join(__dirname, '../src/main.ts'));
 files.push(path.join(__dirname, '../src/app.module.ts'));

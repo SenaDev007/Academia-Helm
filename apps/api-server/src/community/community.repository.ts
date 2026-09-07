@@ -203,6 +203,20 @@ export class CommunityRepository {
     );
   }
 
+  /** ⭐ v2 — Positionnement scope/école/groupe d'un canal (groupes custom) */
+  async setChannelScope(
+    id: string,
+    data: { scope: string; tenantId: string; groupKind: string; parentId: string | null; autoManaged?: boolean },
+  ) {
+    await this.prisma.$queryRawUnsafe(
+      `UPDATE community_channels
+       SET scope = $2, tenant_id = $3, group_kind = $4, parent_id = $5, auto_managed = $6, updated_at = NOW()
+       WHERE id = $1`,
+      id, data.scope, data.tenantId, data.groupKind, data.parentId, data.autoManaged ?? false,
+    );
+    return this.findChannelById(id);
+  }
+
   // ─────────────────────────── Messages ───────────────────────────
 
   async listMessages(channelId: string, opts: { before?: string; limit?: number; since?: string }) {
@@ -534,7 +548,187 @@ export class CommunityRepository {
     );
   }
 
-  // ─────────────────────────── Stats ───────────────────────────
+  // ─────────────────── v2 : écoles & rattachements ───────────────────
+
+  /** Tenants (écoles) actifs — pilotage équipe */
+  async listActiveTenants() {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT id, name, slug FROM tenants WHERE status = 'active' ORDER BY name ASC`,
+    );
+  }
+
+  async findTenantById(id: string) {
+    const rows = await this.prisma.$queryRawUnsafe(
+      `SELECT id, name, slug FROM tenants WHERE id = $1 LIMIT 1`, id,
+    );
+    return (rows as any[])[0] ?? null;
+  }
+
+  /** Rattachements écoles d'un membre (avec infos tenant) */
+  async memberSchools(memberId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT ms.tenant_id, ms.school_role, ms.school_name, ms.source,
+              t.name AS tenant_name, t.slug AS tenant_slug, ms.created_at
+       FROM community_member_schools ms
+       LEFT JOIN tenants t ON t.id = ms.tenant_id
+       WHERE ms.member_id = $1
+       ORDER BY COALESCE(t.name, ms.school_name) ASC`,
+      memberId,
+    );
+  }
+
+  /** Rattachement idempotent d'un membre à une école (rôle école) */
+  async upsertMemberSchool(
+    memberId: string,
+    tenant: { id: string; name: string },
+    schoolRole: 'ADMIN' | 'TEACHER',
+    source: string,
+  ) {
+    await this.prisma.$queryRawUnsafe(
+      `INSERT INTO community_member_schools (id, member_id, tenant_id, school_role, school_name, source)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (member_id, tenant_id) DO UPDATE
+         SET school_role = $4, school_name = $5, updated_at = NOW()`,
+      randomUUID(), memberId, tenant.id, schoolRole, tenant.name, source,
+    );
+  }
+
+  async findMemberByLinkedUser(userId: string) {
+    const rows = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM community_members WHERE linked_user_id = $1 LIMIT 1`, userId,
+    );
+    return (rows as any[])[0] ?? null;
+  }
+
+  async linkMemberToUser(memberId: string, userId: string) {
+    await this.prisma.$queryRawUnsafe(
+      `UPDATE community_members SET linked_user_id = $2, linked_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      memberId, userId,
+    );
+  }
+
+  /** Unread counts bornés aux canaux visibles du membre (v2 : scoping écoles) */
+  async unreadCountsScoped(memberId: string, channelIds: string[]) {
+    if (!channelIds.length) return [];
+    return this.prisma.$queryRawUnsafe(
+      `SELECT c.id AS channel_id,
+              GREATEST(0,
+                (SELECT count(*) FROM community_messages m
+                 WHERE m.channel_id = c.id AND NOT m.is_deleted
+                   AND m.created_at > COALESCE(r.last_read_at, to_timestamp(0))
+                   AND m.member_id <> $1))::int AS unread
+       FROM community_channels c
+       LEFT JOIN community_channel_reads r ON r.channel_id = c.id AND r.member_id = $1
+       WHERE c.is_active AND c.id = ANY($2::text[])`,
+      memberId, channelIds,
+    );
+  }
+
+  /** Membres rattachés à une école (annuaire école côté équipe) */
+  async schoolMembers(tenantId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT ms.member_id, ms.school_role, ms.source, ms.created_at AS joined_at,
+              m.display_name, m.email, m.member_type, m.status, m.last_seen_at
+       FROM community_member_schools ms
+       JOIN community_members m ON m.id = ms.member_id
+       WHERE ms.tenant_id = $1
+       ORDER BY m.display_name ASC LIMIT 500`,
+      tenantId,
+    );
+  }
+
+  /** Comptes de rattachés par école (vue synthèse) */
+  async memberCountsByTenant() {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT tenant_id,
+              count(*)::int AS members,
+              count(*) FILTER (WHERE school_role = 'ADMIN')::int AS admins,
+              count(*) FILTER (WHERE school_role = 'TEACHER')::int AS teachers
+       FROM community_member_schools GROUP BY tenant_id`,
+    );
+  }
+
+  // ─────────────────── v2 : événements & lives ───────────────────
+
+  async insertEvent(data: {
+    kind: string; title: string; description?: string; audience: string;
+    tenantId?: string; groupKind?: string; channelId?: string; hostMemberId: string;
+    externalUrl?: string; scheduledAt: Date;
+  }) {
+    const id = randomUUID();
+    await this.prisma.$queryRawUnsafe(
+      `INSERT INTO community_events
+         (id, kind, title, description, audience, tenant_id, group_kind, channel_id,
+          host_member_id, external_url, scheduled_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      id, data.kind, data.title, data.description ?? null, data.audience,
+      data.tenantId ?? null, data.groupKind ?? null, data.channelId ?? null,
+      data.hostMemberId, data.externalUrl ?? null, data.scheduledAt,
+    );
+    return this.findEvent(id);
+  }
+
+  async findEvent(id: string) {
+    const rows = await this.prisma.$queryRawUnsafe(
+      `SELECT e.*, c.slug AS channel_slug, c.name AS channel_name,
+              t.name AS tenant_name, t.slug AS tenant_slug,
+              m.display_name AS host_name
+       FROM community_events e
+       LEFT JOIN community_channels c ON c.id = e.channel_id
+       LEFT JOIN tenants t ON t.id = e.tenant_id
+       LEFT JOIN community_members m ON m.id = e.host_member_id
+       WHERE e.id = $1 LIMIT 1`,
+      id,
+    );
+    return (rows as any[])[0] ?? null;
+  }
+
+  async updateEvent(id: string, patch: Record<string, any>) {
+    const allowed = ['title', 'description', 'status', 'external_url', 'replay_url',
+      'scheduled_at', 'started_at', 'ended_at', 'channel_id'];
+    const keys = Object.keys(patch).filter((k) => allowed.includes(k));
+    if (!keys.length) return;
+    const sets = keys.map((k, i) => `"${k}" = $${i + 2}`).join(', ');
+    const values = keys.map((k) => patch[k]);
+    await this.prisma.$queryRawUnsafe(
+      `UPDATE community_events SET ${sets}, updated_at = NOW() WHERE id = $1`, id, ...values,
+    );
+    return this.findEvent(id);
+  }
+
+  /** Événements visibles (filtre appliqué par le service selon les canaux du membre) */
+  async listEvents(opts: { status?: string[]; channelIds?: string[]; limit?: number } = {}) {
+    const params: any[] = [];
+    const conds: string[] = [];
+    if (opts.status?.length) {
+      params.push(opts.status);
+      conds.push(`e.status = ANY($${params.length}::text[])`);
+    }
+    if (opts.channelIds) {
+      if (!opts.channelIds.length) return [];
+      params.push(opts.channelIds);
+      // GLOBAL sans canal ciblé OU canal dans la liste visible
+      conds.push(`(e.channel_id IS NULL OR e.channel_id = ANY($${params.length}::text[]))`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    params.push(opts.limit ?? 100);
+    return this.prisma.$queryRawUnsafe(
+      `SELECT e.*, c.slug AS channel_slug, c.name AS channel_name,
+              t.name AS tenant_name, t.slug AS tenant_slug,
+              m.display_name AS host_name
+       FROM community_events e
+       LEFT JOIN community_channels c ON c.id = e.channel_id
+       LEFT JOIN tenants t ON t.id = e.tenant_id
+       LEFT JOIN community_members m ON m.id = e.host_member_id
+       ${where}
+       ORDER BY e.scheduled_at ASC
+       LIMIT $${params.length}`,
+      ...params,
+    );
+  }
+
+  // ─────────────────── Stats ───────────────────
 
   async engagementStats() {
     const [totals] = (await this.prisma.$queryRawUnsafe(

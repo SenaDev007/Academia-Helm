@@ -18,6 +18,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { CommunityRepository } from './community.repository';
 import { CommunityAuthService } from './community-auth.service';
+import { CommunityBootstrap } from './community.bootstrap';
 import { randomUUID } from 'crypto';
 
 const TEAM_ROLES = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'];
@@ -31,6 +32,7 @@ export class CommunityAdminService {
   constructor(
     private readonly repo: CommunityRepository,
     private readonly authService: CommunityAuthService,
+    private readonly bootstrap: CommunityBootstrap,
   ) {}
 
   // ─────────────────────────── Membres ───────────────────────────
@@ -232,6 +234,233 @@ export class CommunityAdminService {
     if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
     await this.repo.deleteInvite(inviteId);
     return { deleted: true };
+  }
+
+  // ─────────────────── v2 : Écoles (canaux dynamiques) ───────────────────
+
+  /**
+   * Synchronisation : provisionne la structure (salon + groupes) pour
+   * TOUTES les écoles actives — idempotent. Couvre les écoles créées
+   * depuis le dernier démarrage (le bootstrap ne tourne qu'au boot).
+   */
+  async syncSchools(actor: { role: string }) {
+    if (!isManager(actor.role)) throw new ForbiddenException('Synchronisation réservée aux ADMIN+');
+    const tenants = (await this.repo.listActiveTenants()) as any[];
+    let created = 0;
+    for (const t of tenants) {
+      created += await this.bootstrap.ensureSchoolStructure(t);
+    }
+    return { tenants: tenants.length, channelsCreated: created };
+  }
+
+  /** Vue synthèse : écoles + canaux + effectifs rattachés */
+  async schools(actor: { role: string }) {
+    if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
+    const [tenants, counts] = await Promise.all([
+      this.repo.listActiveTenants(),
+      this.repo.memberCountsByTenant(),
+    ]);
+    const countMap = new Map((counts as any[]).map((c) => [c.tenant_id, c]));
+    const channels = (await this.repo.listChannels()) as any[];
+    return (tenants as any[]).map((t) => {
+      const schoolChannels = channels
+        .filter((c) => c.scope === 'SCHOOL' && c.tenant_id === t.id)
+        .sort((a: any, b: any) => a.position - b.position)
+        .map((c: any) => ({
+          id: c.id, slug: c.slug, name: c.name, icon: c.icon,
+          type: c.type, groupKind: c.group_kind, autoManaged: c.auto_managed,
+          lastMessageAt: c.last_message_at,
+        }));
+      const cnt = countMap.get(t.id);
+      return {
+        tenantId: t.id,
+        name: t.name,
+        slug: t.slug,
+        channels: schoolChannels,
+        members: cnt?.members ?? 0,
+        admins: cnt?.admins ?? 0,
+        teachers: cnt?.teachers ?? 0,
+      };
+    });
+  }
+
+  /** Annuaire des membres rattachés à une école */
+  async schoolMembers(actor: { role: string }, tenantId: string) {
+    if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
+    const tenant = await this.repo.findTenantById(tenantId);
+    if (!tenant) throw new NotFoundException('École introuvable');
+    const rows = (await this.repo.schoolMembers(tenantId)) as any[];
+    return {
+      tenantId,
+      name: tenant.name,
+      members: rows.map((m) => ({
+        memberId: m.member_id,
+        displayName: m.display_name,
+        email: m.email,
+        memberType: m.member_type,
+        status: m.status,
+        schoolRole: m.school_role,
+        source: m.source,
+        joinedAt: m.joined_at,
+        lastSeenAt: m.last_seen_at,
+      })),
+    };
+  }
+
+  /** Groupe custom au sein du canal d'une école (au-delà admins/enseignants) */
+  async createSchoolGroup(
+    actor: { role: string },
+    input: { tenantId: string; name: string; description?: string; icon?: string; memberRole?: string },
+  ) {
+    if (!isManager(actor.role)) throw new ForbiddenException('Création de groupe réservée aux ADMIN+');
+    const tenant = await this.repo.findTenantById(input.tenantId);
+    if (!tenant) throw new NotFoundException('École introuvable');
+    if (!input.name?.trim() || input.name.trim().length < 2) {
+      throw new BadRequestException('Nom du groupe requis');
+    }
+    // Structure parente assurée (salon existant)
+    await this.bootstrap.ensureSchoolStructure(tenant);
+    const base = (tenant.slug ?? 'ecole').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    const kind = (input.memberRole === 'ADMINS' || input.memberRole === 'TEACHERS') ? input.memberRole : 'CUSTOM';
+    const slug = `grp-${kind === 'CUSTOM' ? 'libre' : kind.toLowerCase()}-${base}-${randomUUID().slice(0, 6)}`;
+    const salon = (await this.repo.listChannels() as any[]).find(
+      (c) => c.scope === 'SCHOOL' && c.tenant_id === tenant.id && c.group_kind === 'SALON',
+    );
+    const channel = await this.repo.insertChannel({
+      slug,
+      name: input.name.trim(),
+      description: input.description?.trim() ?? `Groupe de ${tenant.name}`,
+      icon: input.icon ?? '👥',
+      type: 'TEXT',
+      position: 1030,
+    });
+    // Colonnes v2 (scope/école/groupe/parent)
+    return this.repo.setChannelScope(channel.id, {
+      scope: 'SCHOOL', tenantId: tenant.id, groupKind: kind,
+      parentId: salon?.id ?? null, autoManaged: false,
+    });
+  }
+
+  // ─────────────────── v2 : Lives & événements ───────────────────
+
+  /**
+   * Planifier un live/formation/atelier avec ciblage d'audience :
+   *   GLOBAL → salon global annonces (toutes les écoles)
+   *   SCHOOL → salon de l'école ciblée
+   *   GROUP  → groupe ADMINS/TEACHERS de l'école ciblée
+   * Le canal ciblé est auto-résolu (structure assurée à la volée).
+   */
+  async createEvent(
+    actor: { id: string; role: string },
+    input: { kind: string; title: string; description?: string; audience: string;
+             tenantId?: string; groupKind?: string; externalUrl?: string; scheduledAt: string },
+  ) {
+    if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
+    if (!['LIVE', 'FORMATION', 'ATELIER'].includes(input.kind)) {
+      throw new BadRequestException('Type d\u2019événement invalide');
+    }
+    if (!input.title?.trim() || input.title.trim().length < 3) {
+      throw new BadRequestException('Titre requis (3 caractères minimum)');
+    }
+    if (!['GLOBAL', 'SCHOOL', 'GROUP'].includes(input.audience)) {
+      throw new BadRequestException('Audience invalide');
+    }
+    const when = new Date(input.scheduledAt);
+    if (isNaN(when.getTime())) throw new BadRequestException('Date invalide');
+
+    // Résolution du canal ciblé (dispatch)
+    let tenant: any = null;
+    let groupKind: string | null = null;
+    let channelId: string | null = null;
+    if (input.audience === 'GLOBAL') {
+      const annonces = (await this.repo.listChannels() as any[]).find(
+        (c) => (c.scope ?? 'GLOBAL') === 'GLOBAL' && c.slug === 'annonces',
+      );
+      channelId = annonces?.id ?? null;
+    } else {
+      if (!input.tenantId) throw new BadRequestException('École cible requise');
+      tenant = await this.repo.findTenantById(input.tenantId);
+      if (!tenant) throw new NotFoundException('École introuvable');
+      await this.bootstrap.ensureSchoolStructure(tenant);
+      const schoolChannels = (await this.repo.listChannels() as any[]).filter(
+        (c) => c.scope === 'SCHOOL' && c.tenant_id === tenant.id,
+      );
+      if (input.audience === 'GROUP') {
+        groupKind = input.groupKind ?? 'TEACHERS';
+        if (!['ADMINS', 'TEACHERS'].includes(groupKind)) {
+          throw new BadRequestException('Groupe cible invalide (ADMINS ou TEACHERS)');
+        }
+        channelId = schoolChannels.find((c) => c.group_kind === groupKind)?.id ?? null;
+      } else {
+        channelId = schoolChannels.find((c) => c.group_kind === 'SALON')?.id ?? null;
+      }
+    }
+
+    const event = await this.repo.insertEvent({
+      kind: input.kind,
+      title: input.title.trim(),
+      description: input.description?.trim(),
+      audience: input.audience,
+      tenantId: tenant?.id ?? null,
+      groupKind,
+      channelId,
+      hostMemberId: actor.id,
+      externalUrl: input.externalUrl?.trim(),
+      scheduledAt: when,
+    });
+
+    // Message d'annonce automatique dans le canal ciblé (dispatch visible)
+    if (channelId) {
+      const kindLabel = input.kind === 'LIVE' ? '🔴 LIVE' : input.kind === 'FORMATION' ? '🎓 Formation' : '🛠️ Atelier';
+      const target = input.audience === 'GLOBAL'
+        ? '**pour toutes les écoles**'
+        : input.audience === 'SCHOOL'
+          ? `pour **${tenant.name}**`
+          : `pour les **${groupKind === 'ADMINS' ? 'administrateurs' : 'enseignants'} de ${tenant.name}**`;
+      await this.repo.insertMessage({
+        channelId,
+        memberId: actor.id,
+        type: 'ANNOUNCEMENT',
+        content: `${kindLabel} · **${input.title.trim()}** ${target}\n\n📅 ${when.toLocaleString('fr-FR')}\n${input.externalUrl ? `🔗 ${input.externalUrl}` : ''}\n\n_Retrouvez ce live dans l\u2019onglet Lives & événements._`,
+      });
+    }
+
+    return event;
+  }
+
+  async updateEvent(
+    actor: { role: string },
+    eventId: string,
+    patch: { title?: string; description?: string; status?: string; externalUrl?: string; replayUrl?: string; scheduledAt?: string },
+  ) {
+    if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
+    const event = await this.repo.findEvent(eventId);
+    if (!event) throw new NotFoundException('Événement introuvable');
+    const clean: Record<string, any> = {};
+    if (patch.title?.trim()) clean.title = patch.title.trim();
+    if (patch.description !== undefined) clean.description = patch.description?.trim() || null;
+    if (patch.externalUrl !== undefined) clean.external_url = patch.externalUrl?.trim() || null;
+    if (patch.replayUrl !== undefined) clean.replay_url = patch.replayUrl?.trim() || null;
+    if (patch.scheduledAt) {
+      const when = new Date(patch.scheduledAt);
+      if (isNaN(when.getTime())) throw new BadRequestException('Date invalide');
+      clean.scheduled_at = when;
+    }
+    if (patch.status) {
+      if (!['SCHEDULED', 'LIVE', 'ENDED', 'CANCELLED'].includes(patch.status)) {
+        throw new BadRequestException('Statut invalide');
+      }
+      clean.status = patch.status;
+      if (patch.status === 'LIVE') clean.started_at = new Date();
+      if (patch.status === 'ENDED') clean.ended_at = new Date();
+    }
+    if (!Object.keys(clean).length) throw new BadRequestException('Rien à mettre à jour');
+    return this.repo.updateEvent(eventId, clean);
+  }
+
+  async listEvents(actor: { role: string }, status?: string) {
+    if (!isTeam(actor.role)) throw new ForbiddenException('Réservé à l\u2019équipe');
+    return this.repo.listEvents({ status: status ? [status] : undefined, limit: 200 });
   }
 
   // ─────────────────────────── Stats ───────────────────────────

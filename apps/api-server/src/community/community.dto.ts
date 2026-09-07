@@ -271,3 +271,102 @@ export class CommunityCreateInviteDto {
   @IsOptional() @IsInt() @Min(1)
   expiresInDays?: number;
 }
+
+// ═══════════════════════ v2 : ÉCOLES, GROUPES, LIVES ═══════════════════════
+
+export enum CommunityEventKind {
+  LIVE = 'LIVE',
+  FORMATION = 'FORMATION',
+  ATELIER = 'ATELIER',
+}
+
+export enum CommunityEventAudience {
+  GLOBAL = 'GLOBAL',
+  SCHOOL = 'SCHOOL',
+  GROUP = 'GROUP',
+}
+
+export enum CommunityEventGroupKind {
+  ADMINS = 'ADMINS',
+  TEACHERS = 'TEACHERS',
+}
+
+export enum CommunityEventStatus {
+  SCHEDULED = 'SCHEDULED',
+  LIVE = 'LIVE',
+  ENDED = 'ENDED',
+  CANCELLED = 'CANCELLED',
+}
+
+/** Création d'un live/formation/atelier avec ciblage d'audience (dispatch) */
+export class CommunityCreateEventDto {
+  @IsEnum(CommunityEventKind)
+  kind: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  title: string;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  description?: string;
+
+  @IsEnum(CommunityEventAudience)
+  audience: string;
+
+  /** Requis si audience = SCHOOL | GROUP */
+  @IsOptional() @IsUUID()
+  tenantId?: string;
+
+  /** Requis si audience = GROUP (groupe ciblé de l'école) */
+  @IsOptional() @IsEnum(CommunityEventGroupKind)
+  groupKind?: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  externalUrl?: string;
+
+  @IsString()
+  scheduledAt: string;
+}
+
+/** Mise à jour d'un événement (statut live, replay, reprogrammation) */
+export class CommunityUpdateEventDto {
+  @IsOptional() @IsString() @MinLength(3) @MaxLength(160)
+  title?: string;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  description?: string;
+
+  @IsOptional() @IsEnum(CommunityEventStatus)
+  status?: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  externalUrl?: string;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  replayUrl?: string;
+
+  @IsOptional() @IsString()
+  scheduledAt?: string;
+}
+
+/** Groupe custom au sein du canal d'une école */
+export class CommunityCreateSchoolGroupDto {
+  @IsUUID()
+  tenantId: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
+  name: string;
+
+  @IsOptional() @IsString() @MaxLength(280)
+  description?: string;
+
+  @IsOptional() @IsString() @MaxLength(8)
+  icon?: string;
+
+  /** Membres autorisés — rattachés école, par rôle */
+  @IsOptional() @IsEnum(CommunityEventGroupKind)
+  memberRole?: string;
+}

@@ -10093,3 +10093,22 @@ Stage Summary:
 - ✅ Academia Community v1 complète : 7 canaux seedés, comptes membres, messagerie riche (markdown, réponses, réactions, épingles), sondages live, posts programmés automatiques (conseil quotidien = cœur marketing), invitations trackées, stats engagement, équipe vs membres
 - Suivi post-build : vérifier statuts Railway/Vercel de 5cc322d3 → créer le SUPER_ADMIN (script bootstrap DB OU env COMMUNITY_ADMIN_EMAIL/PASSWORD dans Railway) → jouer test-community-e2e.js → re-test utilisateur (inscription, premier message, réaction, programmation d'un conseil)
 - Env à définir côté Railway (optionnel) : COMMUNITY_ADMIN_EMAIL, COMMUNITY_ADMIN_PASSWORD (≥ 8), COMMUNITY_AUTO_APPROVE (défaut true)
+
+---
+Task ID: 32 (suite — validation production)
+Agent: Super Z (agent principal)
+Task: Vérifier Academia Community en production, corriger les bugs détectés, purger les données de test, publier le message de bienvenue
+
+Work Log:
+- Déploiements verts vérifiés : 5cc322d3 → 17ebfc02 (DTOs class-validator + @Public classe) → 48127d61 (cast $3::text + insertScheduledPost) ; Railway + Vercel success sur les trois
+- SUPER_ADMIN créé en production : s.akpovitohou@gmail.com (script bootstrap DB direct, mot de passe fort généré — communiqué à l'utilisateur, à changer depuis /community/login après première connexion… v1 : changement = regeneration via script ou env)
+- 3 corrections de production nécessaires après les premiers tests E2E : (1) ValidationPipe global whitelist+forbidNonWhitelisted rejetait les DTOs interfaces → community.dto.ts complet class-validator (bornes longueurs partout) ; (2) JwtAuthGuard global (stratégie passport table users) rejetait les tokens communauté avant CommunityAuthGuard → @Public() niveau classe des 2 contrôleurs, l'auth communautaire portée exclusivement par @UseGuards(CommunityAuthGuard) ; (3) editMessage json_build_object('content', $3) sans cast → erreur Prisma P2010/42P18 → cast $3::text ; + insertScheduledPost renvoyait [row] au lieu de row
+- E2E FINAL (test-community-e2e.js, production) : **41/41** — vitrine, register (409 dupliqué), login (401 mauvais mdp), canaux + canPost RBAC (annonces interdites MEMBER ✓), messages (création/réponse/réactions toggle/édition/suppression/unread/présence), admin complet (sondage+vote, annonce+épinglage, **post programmé publié automatiquement par le dispatcher en ≤ 75 s et visible côté membre**, invitation trackée, stats, tag CLIENT, broadcast)
+- Frontend vérifié en production : /community (200, 1,4 s SSR), /community/join, /community/login, /community/space (200), BFF proxy vivant (overview 200 avec données, /me sans cookie → 401, login → cookie httpOnly → /me SUPER_ADMIN → 7 canaux)
+- Purge des données de test E2E (2 membres, 10 messages, 2 sondages, votes, invitations test-e2e) + message de bienvenue équipe publié dans #annonces (markdown riche présentant les 7 canaux)
+- État final production : 7 canaux seedés · 1 membre (admin) · 1 message de bienvenue — prêt à accueillir les premiers membres réels
+
+Stage Summary:
+- ✅ Academia Community EN LIGNE et validée 41/41 E2E : /community (vitrine) → /community/join (inscription + invitations trackées) → /community/space (espace Discord/WhatsApp-pro) + Pilotage équipe (posts programmés = moteur du conseil quotidien)
+- Identifiants admin communiqués à l'utilisateur (email s.akpovitohou@gmail.com) — recommandation : les définir aussi en variables Railway COMMUNITY_ADMIN_EMAIL/PASSWORD pour le bootstrap automatique
+- Prochaines étapes suggérées : programmer la première série de conseils quotidiens (Pilotage → Posts programmés), créer les liens d'invitation par campagne (page tarification, email post-achat), inviter les premiers clients CSPEB

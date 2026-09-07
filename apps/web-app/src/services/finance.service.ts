@@ -193,6 +193,9 @@ class FinanceService {
     changeGiven?: number;
     // ⭐ RÉPARTITION MANUELLE (flexibilité sept. 2026) — imputations explicites
     manualAllocations?: { accountBreakdownId: string; amount: number }[];
+    // ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) — sélection catalogue du modal
+    //    de paiement : breakdowns créés à la volée par le backend.
+    generalFeeAddOns?: { feeStructureId: string; amount: number }[];
   }): Promise<any> {
     return financeFetch('/api/finance/transactions/multi-action', { method: 'POST', body: data });
   }

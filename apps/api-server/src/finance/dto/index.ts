@@ -318,12 +318,48 @@ export class CreateTransactionDto {
   @ValidateNested({ each: true })
   @Type(() => ManualAllocationItemDto)
   manualAllocations?: ManualAllocationItemDto[];
+
+  /**
+   * ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) : frais généraux choisis dans
+   * le catalogue au moment de l'encaissement (pattern « articles boutique »).
+   *
+   * Chaque ligne référence une FeeStructure feeType=GENERAL (isActive) qui
+   * n'est PAS nécessairement déjà sur le compte de l'élève : le backend crée
+   * l'AccountBreakdown correspondant À LA VOLÉE (initial = montant de la
+   * structure) puis impute le paiement dessus via la répartition explicite.
+   *
+   * Comportement (voir FinanceTransactionService.create) :
+   *  - validation : structure GENERAL active du tenant, montant > 0 et ≤
+   *    totalAmount de la structure (ou ≤ restant dû si ligne déjà existante) ;
+   *  - le breakdown manquant est créé + totalDue/balance du compte ajustés ;
+   *  - les montants sont fusionnés dans les imputations explicites (le reliquat
+   *    éventuel part en cascade de priorité classique).
+   *
+   * Mutuellement exclusif avec targetFeeType.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => GeneralFeeAddOnItemDto)
+  generalFeeAddOns?: GeneralFeeAddOnItemDto[];
 }
 
 export class ManualAllocationItemDto {
   @IsString()
   accountBreakdownId: string;
 
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
+}
+
+export class GeneralFeeAddOnItemDto {
+  /** UUID de la FeeStructure feeType=GENERAL à ajouter au paiement. */
+  @IsString()
+  feeStructureId: string;
+
+  /** Montant à encaisser MAINTENANT pour ce frais (> 0, ≤ totalAmount). */
   @IsNumber()
   @Min(0.01)
   amount: number;

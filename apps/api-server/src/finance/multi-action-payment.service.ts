@@ -54,6 +54,10 @@ export interface MultiActionPaymentInput {
   //    sur les AccountBreakdown (section frais généraux + répartition
   //    personnalisée du NewPaymentModal). Le feeAmount doit couvrir la somme.
   manualAllocations?: { accountBreakdownId: string; amount: number }[];
+  // ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) : frais généraux choisis dans le
+  //    catalogue (pattern « articles boutique ») — breakdowns créés à la volée
+  //    par FinanceTransactionService.create puis imputés explicitement.
+  generalFeeAddOns?: { feeStructureId: string; amount: number }[];
 }
 
 export interface MultiActionResult {
@@ -102,6 +106,7 @@ export class MultiActionPaymentService {
       tenderedAmount,
       changeGiven,
       manualAllocations,
+      generalFeeAddOns,
     } = input;
 
     // ─── Validation ───
@@ -127,6 +132,7 @@ export class MultiActionPaymentService {
         tenderedAmount,
         changeGiven,
         manualAllocations,
+        generalFeeAddOns,
       });
       return {
         transaction: tx,
@@ -210,6 +216,7 @@ export class MultiActionPaymentService {
           ? Number(changeGiven)
           : (tenderedAmount != null ? Math.max(0, Number(tenderedAmount) - feeAmount - shopSubTotal) : undefined),
         manualAllocations,
+        generalFeeAddOns,
       });
       this.logger.log(
         `Multi-action: FinanceTransaction ${financeTx.receiptNumber} créée pour ${feeAmount} FCFA de frais` +

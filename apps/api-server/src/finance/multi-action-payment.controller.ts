@@ -103,6 +103,13 @@ export class MultiActionPaymentController {
           amount: Number(m?.amount ?? 0),
         }))
         : undefined,
+      // ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) — sélection catalogue
+      generalFeeAddOns: Array.isArray(body.generalFeeAddOns)
+        ? body.generalFeeAddOns.map((g: any) => ({
+          feeStructureId: String(g?.feeStructureId ?? ''),
+          amount: Number(g?.amount ?? 0),
+        }))
+        : undefined,
     });
 
     return result;

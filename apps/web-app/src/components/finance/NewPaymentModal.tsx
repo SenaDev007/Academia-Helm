@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import {
   Sparkles, Download, CheckCircle2, Search, Phone, ArrowRight, Loader2,
   AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard, ShoppingCart,
-  SlidersHorizontal, Zap, User, GraduationCap, Layers, Coins,
+  SlidersHorizontal, Zap, User, GraduationCap, Layers,
 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { FedapayLogo } from './FedapayLogo';
 import ShopCartSection, { type ShopCartItem } from './ShopCartSection';
+import GeneralFeesSection, { type GeneralFeeAddOn } from './GeneralFeesSection';
 // ⭐ FIX 2026-09-07 : l'import pointait vers '@/lib/fedapay/detect-operator'
 //    (module INEXISTANT — renommé en feexpay au commit 11a5b9ed sans mettre à
 //    jour ce fichier). Les fonctions importées étaient de toute façon inutilisées
@@ -151,6 +152,11 @@ export default function NewPaymentModal({
   const [allocationMode, setAllocationMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [generalFeeAmounts, setGeneralFeeAmounts] = useState<Record<string, string>>({});
   const [manualFeeAmounts, setManualFeeAmounts] = useState<Record<string, string>>({});
+  // ⭐ Frais généraux À LA CARTE (sept. 2026) : sélection catalogue dans la
+  //    section Frais généraux (pattern « articles boutique »). Les breakdowns
+  //    correspondants sont créés à la volée par le backend au moment de
+  //    l'encaissement (generalFeeAddOns).
+  const [generalAddOns, setGeneralAddOns] = useState<GeneralFeeAddOn[]>([]);
 
   // ⭐ Espèces : montant remis par le client + reliquat calculé automatiquement
   // (uniquement pertinent quand paymentMethod === 'CASH')
@@ -328,6 +334,7 @@ export default function NewPaymentModal({
   useEffect(() => {
     setGeneralFeeAmounts({});
     setManualFeeAmounts({});
+    setGeneralAddOns([]);
   }, [studentAccountId]);
 
   const parseFeeAmount = (v: string | undefined): number => {
@@ -336,13 +343,18 @@ export default function NewPaymentModal({
   };
 
   // ── Totaux frais selon le mode ──
-  // AUTO : montant global + Σ frais généraux saisis (imputés explicitement,
-  //        le reste part en cascade sur les frais non généraux).
+  // AUTO : montant global + Σ frais généraux (lignes du compte + à la carte —
+  //        imputés explicitement, le reste part en cascade sur les frais non
+  //        généraux).
   // MANUAL : Σ de toutes les lignes saisies (standard + généraux) — le
   //          dispatching est intégralement décidé par la comptable.
+  const generalAddOnsTotal = useMemo(
+    () => generalAddOns.reduce((s, a) => s + parseFeeAmount(a.amount), 0),
+    [generalAddOns],
+  );
   const generalFeesTotal = useMemo(
-    () => generalFeeLines.reduce((s, l) => s + parseFeeAmount(generalFeeAmounts[l.id]), 0),
-    [generalFeeLines, generalFeeAmounts],
+    () => generalFeeLines.reduce((s, l) => s + parseFeeAmount(generalFeeAmounts[l.id]), 0) + generalAddOnsTotal,
+    [generalFeeLines, generalFeeAmounts, generalAddOnsTotal],
   );
   const manualFeesTotal = useMemo(
     () => standardFeeLines.reduce((s, l) => s + parseFeeAmount(manualFeeAmounts[l.id]), 0),
@@ -390,10 +402,22 @@ export default function NewPaymentModal({
       });
     };
 
-    // 1. Frais généraux — imputation explicite (les DEUX modes)
+    // 1. Frais généraux — imputation explicite (les DEUX modes) :
+    //    lignes du compte + frais à la carte (créés côté backend).
     for (const l of generalFeeLines) {
       const pay = parseFeeAmount(generalFeeAmounts[l.id]);
       if (pay > 0) buildLine(l, pay);
+    }
+    for (const a of generalAddOns) {
+      const pay = parseFeeAmount(a.amount);
+      if (pay > 0) {
+        lines.push({
+          name: `${a.name} (à la carte)`,
+          pay,
+          feeType: 'GENERAL',
+          personalized: false,
+        });
+      }
     }
 
     // 2. Reste des frais
@@ -420,14 +444,17 @@ export default function NewPaymentModal({
     }
 
     setPreview({ totalPay: feeAmountTotal, lines });
-  }, [selectedAccount, amountNum, allocationMode, generalFeeLines, standardFeeLines, generalFeeAmounts, manualFeeAmounts, feeAmountTotal]);
+  }, [selectedAccount, amountNum, allocationMode, generalFeeLines, standardFeeLines, generalFeeAmounts, manualFeeAmounts, feeAmountTotal, generalAddOns]);
 
   // ⭐ Construit les imputations explicites (flexibilité sept. 2026) :
-  //  - section Frais généraux (les deux modes) ;
+  //  - section Frais généraux — lignes DU COMPTE (les deux modes) ;
   //  - répartition personnalisée (mode MANUAL) pour les autres lignes.
   // Si aucune ligne n'est saisie (mode AUTO pur), on renvoie undefined →
   // le backend applique la cascade classique + FIFO arriérés (comportement
   // historique inchangé).
+  // NB : les frais généraux À LA CARTE ne figurent PAS ici — ils partent via
+  // buildGeneralFeeAddOns() (le backend crée les breakdowns à la volée puis
+  // fusionne les montants dans ces imputations explicites).
   const buildManualAllocations = (): { accountBreakdownId: string; amount: number }[] | undefined => {
     const allocations: { accountBreakdownId: string; amount: number }[] = [];
     for (const l of generalFeeLines) {
@@ -443,6 +470,15 @@ export default function NewPaymentModal({
     return allocations.length > 0 ? allocations : undefined;
   };
 
+  // ⭐ Frais généraux à la carte (sept. 2026) : [{ feeStructureId, amount }]
+  //    pour le backend (création des breakdowns + imputation explicite).
+  const buildGeneralFeeAddOns = (): { feeStructureId: string; amount: number }[] | undefined => {
+    const addOns = generalAddOns
+      .map((a) => ({ feeStructureId: a.feeStructureId, amount: parseFeeAmount(a.amount) }))
+      .filter((a) => a.amount > 0);
+    return addOns.length > 0 ? addOns : undefined;
+  };
+
   // Ligne de frais dépassée ? (saisie > restant dû) — bloque le submit
   const oversetLine = useMemo(() => {
     for (const l of feeLines) {
@@ -454,8 +490,13 @@ export default function NewPaymentModal({
         if (pay > l.remaining) return { name: l.name, pay, remaining: l.remaining };
       }
     }
+    // Frais généraux à la carte : plafonnés au montant du frais (structure)
+    for (const a of generalAddOns) {
+      const pay = parseFeeAmount(a.amount);
+      if (pay > a.feeAmount) return { name: a.name, pay, remaining: a.feeAmount };
+    }
     return null;
-  }, [feeLines, generalFeeAmounts, manualFeeAmounts, allocationMode]);
+  }, [feeLines, generalFeeAmounts, manualFeeAmounts, allocationMode, generalAddOns]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -528,6 +569,7 @@ export default function NewPaymentModal({
         return;
       }
       const manualAllocations = buildManualAllocations();
+      const generalFeeAddOns = buildGeneralFeeAddOns();
       setLoading(true);
       try {
         const studentName = selectedAccount.student
@@ -598,6 +640,8 @@ export default function NewPaymentModal({
                 reference: fedapayReference,
                 // ⭐ Répartition explicite (frais généraux / personnalisée)
                 manualAllocations,
+                // ⭐ Frais généraux à la carte (création des lignes à la volée)
+                generalFeeAddOns,
               });
               if (result?.id) {
                 setReceipt({
@@ -658,6 +702,7 @@ export default function NewPaymentModal({
     try {
       // ⭐ Imputations explicites (frais généraux + répartition personnalisée)
       const manualAllocations = buildManualAllocations();
+      const generalFeeAddOns = buildGeneralFeeAddOns();
 
       // ─── Multi-action : frais + articles boutique en une seule opération ───
       // Si l'utilisateur a ajouté des articles boutique au panier, on appelle
@@ -682,6 +727,8 @@ export default function NewPaymentModal({
           changeGiven: paymentMethod === 'CASH' && tenderedNum > 0 ? changeGiven : undefined,
           // ⭐ Répartition explicite (frais généraux / personnalisée)
           manualAllocations,
+          // ⭐ Frais généraux à la carte (création des lignes à la volée)
+          generalFeeAddOns,
         });
 
         // Le résultat contient { transaction, shopSale, totalAmount, feeAmount, shopAmount }
@@ -723,6 +770,8 @@ export default function NewPaymentModal({
           changeGiven: paymentMethod === 'CASH' && tenderedNum > 0 ? changeGiven : undefined,
           // ⭐ Répartition explicite (frais généraux / personnalisée)
           manualAllocations,
+          // ⭐ Frais généraux à la carte (création des lignes à la volée)
+          generalFeeAddOns,
         });
         // Le backend renvoie la transaction avec receiptNumber + createdAt
         // + déclenche la génération PDF en fire-and-forget
@@ -787,6 +836,7 @@ export default function NewPaymentModal({
     setFeexpayPhone('');
     setGeneralFeeAmounts({});
     setManualFeeAmounts({});
+    setGeneralAddOns([]);
     setAllocationMode('AUTO');
     // ⚠️ En mode préréglé (flux post-inscription), on ne réinitialise PAS le
     // compte préréglé — l'élève reste sélectionné pour un second encaissement.
@@ -1210,54 +1260,27 @@ export default function NewPaymentModal({
             </div>
           )}
 
-          {/* ⭐ SECTION FRAIS GÉNÉRAUX (sept. 2026) — insérée juste AVANT la
-              section Articles : permet d'encaisser les frais généraux en même
-              temps que le reste, SANS exiger que l'inscription et la scolarité
-              soient d'abord soldées. Imputation explicite envoyée au backend. */}
-          {selectedAccount && !presetLoading && generalFeeLines.length > 0 && (
-            <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <Coins className="w-4 h-4 text-amber-600" />
-                  <span className="text-sm font-bold text-amber-900">Frais généraux</span>
-                </div>
-                <span className="text-xs text-slate-500">Payables en même temps que le reste</span>
-              </div>
-              <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
-                Saisissez le montant de chaque frais général à encaisser maintenant — le parent peut payer ces frais sans avoir soldé l'inscription ou la scolarité.
-              </p>
-              <div className="space-y-2">
-                {generalFeeLines.map((l) => (
-                  <div key={l.id} className="grid grid-cols-[1fr_150px] items-center gap-2 bg-white rounded-lg border border-slate-200 px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-700 truncate">{l.name}</p>
-                      <p className="text-[11px] text-slate-400">
-                        Restant : <span className="font-semibold text-slate-600">{formatCurrency(l.remaining)}</span>
-                        {parseFeeAmount(generalFeeAmounts[l.id]) > l.remaining && (
-                          <span className="ml-2 text-rose-600 font-semibold">⚠ Dépasse le restant dû</span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="justify-self-end">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={l.remaining}
-                        placeholder="0"
-                        className="w-[140px] text-right"
-                        value={generalFeeAmounts[l.id] ?? ''}
-                        onChange={(e) => setGeneralFeeAmounts((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                ))}
-                {generalFeesTotal > 0 && (
-                  <div className="flex justify-between items-center pt-2 border-t border-amber-200">
-                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Total frais généraux</span>
-                    <span className="text-sm font-bold text-amber-900">{formatCurrency(generalFeesTotal)}</span>
-                  </div>
-                )}
-              </div>
+          {/* ⭐ SECTION FRAIS GÉNÉRAUX (sept. 2026 — refonte « à la carte ») :
+              remplace l'ancienne section (lignes GENERAL du compte uniquement,
+              invisible quand le compte n'en avait pas). Désormais TOUJOURS
+              visible dès qu'un élève est sélectionné :
+                1. lignes GENERAL déjà sur le compte (paiements partiels) ;
+                2. frais généraux À LA CARTE sélectionnés dans le catalogue
+                   (pattern « articles boutique ») — le backend crée les
+                   breakdowns à la volée (generalFeeAddOns) au moment de
+                   l'encaissement : uniforme, fournitures… payables en même
+                   temps que le reste, SANS exiger l'inscription/scolarité
+                   soldées. */}
+          {selectedAccount && !presetLoading && (
+            <div className="md:col-span-2">
+              <GeneralFeesSection
+                academicYearId={academicYearId}
+                accountLines={generalFeeLines.map((l) => ({ id: l.id, name: l.name, remaining: l.remaining }))}
+                accountAmounts={generalFeeAmounts}
+                onAccountAmountsChange={setGeneralFeeAmounts}
+                addOns={generalAddOns}
+                onAddOnsChange={setGeneralAddOns}
+              />
             </div>
           )}
 

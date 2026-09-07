@@ -70,6 +70,24 @@ export class StudentAccountService {
   }
 
   /**
+   * ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) — les FeeStructures GENERAL avec
+   * isMandatory=false sont OPTIONNELLES : elles ne sont PAS appliquées
+   * automatiquement aux comptes élèves (sinon chaque élève devrait ce frais).
+   * Elles forment le « catalogue » de la section Frais généraux du modal de
+   * paiement : le breakdown est créé À LA VOLÉE quand la secrétaire le
+   * sélectionne dans l'encaissement (FinanceTransactionService.create,
+   * generalFeeAddOns).
+   *
+   * Les GENERAL isMandatory=true (défaut) restent appliqués automatiquement
+   * à tous les comptes — comportement historique inchangé.
+   */
+  private filterOptionalGeneralFees(feeStructures: any[]): any[] {
+    return feeStructures.filter(
+      (fs) => !(fs.feeType === 'GENERAL' && fs.isMandatory === false),
+    );
+  }
+
+  /**
    * ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
    *
    * Charge le StudentFeeProfile de l'élève pour l'année, et si un régime
@@ -229,7 +247,9 @@ export class StudentAccountService {
     //   Un élève ne doit JAMAIS payer à la fois INSCRIPTION et REINSCRIPTION.
     //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
     const feeStructuresRaw = Array.from(structuresByType.values());
-    const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
+    const feeStructures = this.filterOptionalGeneralFees(
+      this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType),
+    );
 
     // ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
     //   Charge les ajustements du régime appliqué à l'élève (réductions, exonérations)
@@ -350,7 +370,9 @@ export class StudentAccountService {
     // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève (même logique que getOrCreate)
     //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
     const feeStructuresRaw = Array.from(structuresByType.values());
-    const feeStructures = this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType);
+    const feeStructures = this.filterOptionalGeneralFees(
+      this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType),
+    );
 
     // ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
     const regimeAdjustments = await this.loadFeeRegimeAdjustments(tenantId, studentId, academicYearId);

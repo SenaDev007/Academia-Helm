@@ -158,6 +158,15 @@ export class FinanceTransactionController {
           amount: Number(m?.amount ?? 0),
         }))
         : undefined,
+      // ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) — frais généraux sélectionnés
+      //    dans le catalogue du modal de paiement (pattern « articles boutique ») :
+      //    breakdowns créés à la volée puis imputés via la répartition explicite.
+      generalFeeAddOns: Array.isArray(body.generalFeeAddOns)
+        ? body.generalFeeAddOns.map((g: any) => ({
+          feeStructureId: String(g?.feeStructureId ?? ''),
+          amount: Number(g?.amount ?? 0),
+        }))
+        : undefined,
     });
   }
 

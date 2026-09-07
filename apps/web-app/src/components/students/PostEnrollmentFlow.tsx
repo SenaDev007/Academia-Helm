@@ -24,7 +24,7 @@
  * physique), donc le modal de paiement ouvre sur les bons montants.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, Loader2, Layers, GraduationCap, ArrowRight,
@@ -36,6 +36,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { studentsService } from '@/services/students.service';
 import NewPaymentModal from '@/components/finance/NewPaymentModal';
+// ⭐ PERF (sept. 2026) : cache partagé React Query au lieu d'un fetch brut —
+//    l'onglet Inscriptions précharge les classes dès son montage (voir
+//    EnrollmentsContent), donc ce modal affiche la liste INSTANTANÉMENT
+//    (cache chaud) au lieu de re-télécharger /api/all-classes (~30 s perçues
+//    en conditions réseau dégradées : cold start fonction Vercel + Neon,
+//    timeout 15 s + retry → 30 s). Le refetch d'arrière-plan rafraîchit sans
+//    bloquer l'affichage.
+import { useAllClasses } from '@/lib/query/use-all-classes';
 
 export interface PostEnrollmentFlowData {
   studentId: string;
@@ -59,7 +67,6 @@ interface PhysicalClassOption {
   schoolLevelId?: string;
   officialClassId?: string | null;
 }
-
 export default function PostEnrollmentFlow({
   flow,
   academicYearId,
@@ -73,8 +80,26 @@ export default function PostEnrollmentFlow({
 }) {
   const { toast } = useToast();
   const [step, setStep] = useState<'AFFECTATION' | 'PAYMENT'>('AFFECTATION');
-  const [physicalClasses, setPhysicalClasses] = useState<PhysicalClassOption[]>([]);
-  const [classesLoading, setClassesLoading] = useState(true);
+  // ⭐ Cache partagé (2 min) + données affichées immédiatement si le cache est
+  //    chaud (préchargé par l'onglet Inscriptions pendant que la secrétaire
+  //    remplit le wizard — plusieurs minutes d'avance).
+  const {
+    classes: cachedClasses,
+    isLoading: classesLoading,
+    isFetching: classesFetching,
+    error: classesError,
+    refetch: refetchClasses,
+  } = useAllClasses({ academicYearId });
+  const physicalClasses: PhysicalClassOption[] = useMemo(
+    () => cachedClasses.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      schoolLevelId: c.schoolLevelId,
+      officialClassId: c.officialClassId ?? null,
+    })),
+    [cachedClasses],
+  );
   const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string>(
     flow.preassignedPhysicalClassId ?? '',
   );
@@ -84,30 +109,6 @@ export default function PostEnrollmentFlow({
   const [assignedPhysicalClassName, setAssignedPhysicalClassName] = useState<string | null>(
     flow.preassignedPhysicalClassName ?? null,
   );
-
-  // Charger les classes physiques (filtrées par le niveau de l'élève)
-  useEffect(() => {
-    if (step !== 'AFFECTATION') return;
-    setClassesLoading(true);
-    fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYearId)}`, {
-      credentials: 'include',
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        const list: PhysicalClassOption[] = (Array.isArray(d) ? d : (d?.data ?? []))
-          .filter((c: any) => c && c.id && c.name)
-          .map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            code: c.code,
-            schoolLevelId: c.schoolLevelId,
-            officialClassId: c.officialClassId ?? null,
-          }));
-        setPhysicalClasses(list);
-      })
-      .catch(() => setPhysicalClasses([]))
-      .finally(() => setClassesLoading(false));
-  }, [step, academicYearId]);
 
   // Classes physiques du niveau de l'élève — celles rattachées à sa classe
   // officielle en tête (les sections correspondantes), puis les autres du
@@ -232,16 +233,19 @@ export default function PostEnrollmentFlow({
             paiement des frais d&apos;inscription s&apos;ouvrira automatiquement.
           </p>
 
-          {classesLoading ? (
+          {classesLoading && physicalClasses.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-8 text-slate-400">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span className="text-sm">Chargement des classes…</span>
             </div>
           ) : (
             <div>
-              <Label className="text-xs mb-1.5 block">
-                Classe physique {flow.schoolLevelId ? '(niveau de l&apos;élève)' : ''}
-              </Label>
+              <Label className="text-xs mb-1.5 block">Classe physique</Label>
+              {classesFetching && (
+                <p className="text-[11px] text-slate-400 mb-1.5 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Actualisation de la liste…
+                </p>
+              )}
               <Select
                 value={selectedPhysicalClassId || '_none'}
                 onValueChange={(v) => {
@@ -271,11 +275,24 @@ export default function PostEnrollmentFlow({
                   Les sections rattachées à la classe officielle {flow.academicClassName ?? ''} sont proposées en priorité.
                 </p>
               )}
-              {candidateClasses.length === 0 && !classesLoading && (
+              {candidateClasses.length === 0 && !classesLoading && !classesFetching && (
                 <p className="text-xs text-amber-600 mt-2 flex items-start gap-1.5">
                   <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  Aucune classe physique trouvée pour ce niveau. Créez les classes dans
-                  Paramètres → Classes, ou passez cette étape.
+                  {classesError ? (
+                    <>
+                      Impossible de charger les classes ({classesError?.message ?? 'erreur réseau'}).
+                      <button
+                        type="button"
+                        className="font-semibold underline ml-1"
+                        onClick={() => refetchClasses()}
+                      >
+                        Réessayer
+                      </button>
+                    </>
+                  ) : (
+                    <>Aucune classe physique trouvée pour ce niveau. Créez les classes dans
+                    Paramètres → Classes, ou passez cette étape.</>
+                  )}
                 </p>
               )}
               {assignError && (

@@ -46,6 +46,12 @@ import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useEnrollments, useAcademicClasses, useAcademicYears } from '@/lib/query/student-queries';
 import { useQueryClient } from '@tanstack/react-query';
+// ⭐ PERF (sept. 2026) : précharge les classes PHYSIQUES dans le cache partagé
+//    React Query dès l'ouverture de l'onglet Inscriptions — le modal
+//    d'affectation du flux post-inscription (PostEnrollmentFlow) consomme ce
+//    même cache → affichage instantané au lieu d'un re-téléchargement de
+//    /api/all-classes (30 s perçues en réseau dégradé).
+import { useAllClasses } from '@/lib/query/use-all-classes';
 // ⭐ FIX 2026-09-07 « vérification multi-rôles » : les actions d'écriture du
 //    module Inscriptions (preRegister/admit/import/réinscription) sont
 //    réservées aux rôles d'administration (MANAGEMENT_ROLES backend) — un
@@ -214,6 +220,11 @@ export default function EnrollmentsContent() {
   const enrollmentsQuery = useEnrollments(academicYear?.id);
   const classesQuery = useAcademicClasses(academicYear?.id);
   const yearsQuery = useAcademicYears();
+  // ⭐ Précharge les classes physiques (cache partagé avec PostEnrollmentFlow).
+  //    Le hook est volontairement non utilisé au rendu : son seul rôle est de
+  //    maintenir le cache chaud pendant que la secrétaire travaille dans
+  //    l'onglet (wizard d'inscription = plusieurs minutes d'avance).
+  useAllClasses({ academicYearId: academicYear?.id });
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);

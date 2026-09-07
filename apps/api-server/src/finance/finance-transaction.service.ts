@@ -221,6 +221,11 @@ export class FinanceTransactionService {
       //    Validation : appartient au compte, > 0, ≤ restant dû ; le reliquat
       //    éventuel passe par la cascade de priorité classique.
       manualAllocations?: { accountBreakdownId: string; amount: number }[];
+      // ⭐ FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) : frais généraux sélectionnés
+      //    dans le catalogue au moment de l'encaissement (pattern « articles
+      //    boutique »). Les breakdowns manquants sont créés à la volée, puis
+      //    les montants sont fusionnés dans les imputations explicites.
+      generalFeeAddOns?: { feeStructureId: string; amount: number }[];
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
@@ -308,6 +313,93 @@ export class FinanceTransactionService {
     let remaining = data.amount;
     const updates: { breakdownId: string; paidDelta: number; remainingDelta: number; feeType: string }[] = [];
 
+    // ─── FRAIS GÉNÉRAUX À LA CARTE (sept. 2026) ───
+    // Frais généraux sélectionnés dans le catalogue du modal de paiement
+    // (pattern « articles boutique » — NewPaymentModal, flux post-inscription
+    // comme module Finance). Pour chaque ligne :
+    //   1. valider la FeeStructure (GENERAL + active + tenant) ;
+    //   2. retrouver le breakdown sur le compte — ou le CRÉER à la volée
+    //      (initialAmount = montant de la structure) en ajustant totalDue et
+    //      balance du compte (le trigger DB ne réagit qu'aux transactions) ;
+    //   3. fusionner le montant dans les imputations explicites → tout le
+    //      mécanisme existant (validation ≤ restant dû, Σ ≤ amount, reliquat
+    //      en cascade, FIFO sauté) s'applique ensuite naturellement.
+    let effectiveManualAllocations: { accountBreakdownId: string; amount: number }[] | undefined =
+      data.manualAllocations;
+    if (data.generalFeeAddOns?.length) {
+      if (data.targetFeeType) {
+        throw new BadRequestException(
+          'Les frais généraux à la carte sont incompatibles avec le type de frais cible (encaissement dédié).',
+        );
+      }
+      const merged: { accountBreakdownId: string; amount: number }[] = [
+        ...(data.manualAllocations ?? []),
+      ];
+      for (const addOn of data.generalFeeAddOns) {
+        const structure = await this.prisma.feeStructure.findFirst({
+          where: {
+            id: addOn.feeStructureId,
+            tenantId,
+            feeType: 'GENERAL',
+            isActive: true,
+          },
+        });
+        if (!structure) {
+          throw new BadRequestException(
+            'Un frais général sélectionné est introuvable, inactif ou n\u2019est pas un frais général.',
+          );
+        }
+        const amt = Number(addOn.amount);
+        if (!(amt > 0)) {
+          throw new BadRequestException(
+            `Montant invalide pour « ${structure.name} » : ${amt}.`,
+          );
+        }
+        let breakdown = account.breakdowns.find((x) => x.feeStructureId === structure.id);
+        if (breakdown) {
+          // Ligne déjà présente sur le compte (paiement partiel antérieur) :
+          // le montant est plafonné au restant dû (validation commune ci-dessous).
+          merged.push({ accountBreakdownId: breakdown.id, amount: amt });
+        } else {
+          // Création à la volée + cohérence des totaux du compte.
+          if (amt > Number(structure.totalAmount) + 1e-9) {
+            throw new BadRequestException(
+              `Le montant saisi pour « ${structure.name} » (${amt.toLocaleString('fr-FR')} FCFA) ` +
+              `dépasse le montant du frais (${Number(structure.totalAmount).toLocaleString('fr-FR')} FCFA).`,
+            );
+          }
+          breakdown = await this.prisma.accountBreakdown.create({
+            data: {
+              studentAccountId: account.id,
+              feeStructureId: structure.id,
+              initialAmount: structure.totalAmount,
+              adjustedAmount: structure.totalAmount,
+              paidAmount: 0,
+              remainingAmount: structure.totalAmount,
+            },
+            include: { feeStructure: true },
+          });
+          account.breakdowns.push(breakdown);
+          const structAmount = Number(structure.totalAmount);
+          await this.prisma.studentAccount.update({
+            where: { id: account.id },
+            data: {
+              totalDue: { increment: structAmount },
+              balance: { increment: structAmount },
+            },
+          });
+          account.totalDue = Number(account.totalDue) + structAmount;
+          account.balance = Number(account.balance) + structAmount;
+          merged.push({ accountBreakdownId: breakdown.id, amount: amt });
+          this.logger.log(
+            `Frais général à la carte : breakdown « ${structure.name} » créé sur le compte ` +
+            `${account.id} (${structAmount.toLocaleString('fr-FR')} FCFA) — imputation de ${amt.toLocaleString('fr-FR')} FCFA.`,
+          );
+        }
+      }
+      effectiveManualAllocations = merged.length > 0 ? merged : undefined;
+    }
+
     // ─── RÉPARTITION MANUELLE (flexibilité sept. 2026) ───
     // La comptable précise elle-même le dispatching (toggle « répartition
     // personnalisée » du NewPaymentModal + section frais généraux). Chaque
@@ -315,14 +407,14 @@ export class FinanceTransactionService {
     // SAUTÉ (décision explicite) et le reliquat éventuel passe par la cascade
     // de priorité classique sur les restants non couverts.
     const manualAllocMap = new Map<string, number>();
-    if (data.manualAllocations?.length) {
+    if (effectiveManualAllocations?.length) {
       if (data.targetFeeType) {
         throw new BadRequestException(
           'Répartition manuelle et type de frais cible sont mutuellement exclusifs.',
         );
       }
       let manualSum = 0;
-      for (const m of data.manualAllocations) {
+      for (const m of effectiveManualAllocations) {
         const b = account.breakdowns.find((x) => x.id === m.accountBreakdownId);
         if (!b) {
           throw new BadRequestException(
@@ -379,7 +471,7 @@ export class FinanceTransactionService {
     // ⭐ Répartition manuelle : FIFO sauté également — la comptable a précisé
     //    explicitement où imputer le paiement (les arriérés éventuels seront
     //    gérés par l'onglet dédié Arriérés).
-    if (remaining > 0 && !data.targetFeeType && !data.manualAllocations) {
+    if (remaining > 0 && !data.targetFeeType && !effectiveManualAllocations) {
       try {
         const fifoResult = await this.arrearAccumulationService.allocatePaymentFIFO(
           tenantId,
@@ -452,10 +544,11 @@ export class FinanceTransactionService {
       remaining -= pay;
     }
 
-    // ⭐ Répartition manuelle : refuser un paiement qui dépasserait le total
-    //    restant dû du compte (comme pour l'encaissement dédié — on ne crée
-    //    jamais de transaction avec de l'argent flottant via ce flux).
-    if (data.manualAllocations && remaining > 0) {
+    // ⭐ Répartition manuelle (ou frais généraux à la carte) : refuser un
+    //    paiement qui dépasserait le total restant dû du compte (comme pour
+    //    l'encaissement dédié — on ne crée jamais de transaction avec de
+    //    l'argent flottant via ce flux).
+    if (effectiveManualAllocations && remaining > 0) {
       const totalDue = account.breakdowns.reduce((s, b) => s + Number(b.remainingAmount), 0);
       throw new BadRequestException(
         `Le montant (${data.amount.toLocaleString('fr-FR')} FCFA) dépasse le total restant dû de cet élève ` +

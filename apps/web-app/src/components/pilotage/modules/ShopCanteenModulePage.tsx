@@ -33,7 +33,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Home, Search, Plus, ChefHat, ShoppingBag,
   Activity, List, Package, Archive, QrCode, Wallet, Box, Truck,
@@ -251,6 +251,36 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
   const config = MODE_CONFIG[mode];
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+
+  // ⭐ RESPONSIVE (sept. 2026 — fix « module boutique désordonné côté
+  //    comptable/secrétaire-comptable ») : la hauteur fixe historique
+  //    h-[calc(100vh-64px)] était calibrée pour le PilotageLayout du promoteur.
+  //    Dans l'AdminPortalShell (header 64px + padding main), le module
+  //    dépassait le viewport → double scrollbar + bas coupé, et la top bar
+  //    interne (sticky z-50) recouvrait le header du shell (z-30) au scroll.
+  //    On mesure désormais la hauteur réellement disponible (offsetTop →
+  //    bas du viewport) et on s'y ajuste exactement, quel que soit le shell.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [moduleHeight, setModuleHeight] = useState<number | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      if (!rootRef.current) return;
+      const rect = rootRef.current.getBoundingClientRect();
+      // 16px = padding bas du <main> du shell (p-4) ; plancher 460px pour les
+      // petits écrans (la zone interne scrolle, rien n'est perdu).
+      const available = window.innerHeight - rect.top - 16;
+      setModuleHeight(Math.max(Math.round(available), 460));
+    };
+    measure();
+    // Re-mesure après rendu complet (fonts/layout) et au redimensionnement.
+    const t = setTimeout(measure, 300);
+    window.addEventListener('resize', measure);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
+
   // ⭐ Persiste l'état plié/déplié de la sidebar dans localStorage pour qu'il
   //    survive aux navigations entre modules et aux rafraîchissements.
   //    Clé préfixée par `mode` pour que Boutique et Cantine gardent chacune
@@ -377,9 +407,17 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
   const accentClasses = ACCENT_COLOR_CLASSES[config.accent];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] bg-white overflow-hidden">
+    <div
+      ref={rootRef}
+      className="flex flex-col bg-white overflow-hidden rounded-lg border border-slate-200"
+      style={moduleHeight ? { height: `${moduleHeight}px` } : { minHeight: 460 }}
+    >
       {/* ═════════ TOP BAR ═════════ */}
-      <div className="flex items-center gap-4 px-4 h-14 border-b border-slate-200 bg-white sticky top-0 z-50">
+      {/* ⭐ Non sticky (fix sept. 2026) : dans l'AdminPortalShell, le sticky
+          z-50 faisait recouvrir le header du shell (z-30) au scroll body —
+          « les cartes se chevauchent » côté comptable. Le module étant
+          exactement ajusté à l'espace disponible, plus de scroll body. */}
+      <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 h-14 border-b border-slate-200 bg-white">
         {/* Hamburger menu — plie/déplie la sidebar (icônes seules vs icônes + textes) */}
         <button
           onClick={toggleSidebar}
@@ -393,11 +431,11 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
         </button>
 
         {/* Logo — couleur unique du module actif (pas de mélange) */}
-        <div className="flex items-center gap-2">
-          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', config.logoBg)}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', config.logoBg)}>
             <LogoIcon className="w-4 h-4 text-white" />
           </div>
-          <span className="hidden sm:block text-lg font-bold text-slate-900">{config.label}</span>
+          <span className="hidden sm:block text-base lg:text-lg font-bold text-slate-900 truncate">{config.label}</span>
         </div>
 
         {/* Search bar — limitée aux sous-modules du mode actif.
@@ -447,7 +485,9 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
         <div
           className={cn(
             'flex-shrink-0 border-r border-slate-200 overflow-y-auto bg-white transition-[width] duration-200',
-            sidebarCollapsed ? 'w-16' : 'w-60',
+            // ⭐ w-64 (au lieu de w-60) : évite la coupure/retour à la ligne des
+            //    libellés longs (« Fournisseurs & Achats », « Stocks & Inventaires »).
+            sidebarCollapsed ? 'w-16' : 'w-64',
           )}
         >
           <div className="py-2">

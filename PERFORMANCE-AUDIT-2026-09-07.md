@@ -89,3 +89,43 @@ L'audit a mesuré **chaque étage** de la chaîne de bout en bout. Verdict : **n
 - Le retry automatique des **écritures** est volontairement restreint aux erreurs passerelle (502/503/504) et au offline-network — **jamais au timeout pur** : le backend peut avoir déjà commis la transaction (protection anti-double-encaissement). Les endpoints idempotents peuvent opter pour `{ idempotent: true }` via `apiFetch`.
 - Les composants métier restent en `useEffect` + fetch (non migrés vers React Query) ; le cache `get-cache.ts` leur apporte les mêmes bénéfices sans réécriture. Une migration progressive vers les hooks `lib/query/*` existants reste recommandée à terme.
 - Les mesures « après » end-to-end par endpoint seront complétées après le déploiement Vercel/Railway de ce commit (méthodologie : `scripts/perf-audit-http.js` et `scripts/perf-audit-db.js`, réutilisables).
+
+---
+
+## 6. Mesures post-déploiement (2026-09-07, ~11h50 UTC — commit a37b2d4a en production)
+
+**Statuts de déploiement vérifiés** : `76f28aae` (perf) → Vercel ✅ success ; `a37b2d4a` (perf + fix affectations) → Vercel ✅ success + Railway ✅ success. Railway déploiant toujours le dernier commit de main, **tous les correctifs perf sont actifs côté API**. (L'« error » Railway sur le seul commit intermédiaire 76f28aae a été immédiatement supplantée par le déploiement vert de a37b2d4a ; Appveyor est pré-échouant et sans impact.)
+
+### 6.1 Vérification des correctifs base de données (production Neon, lecture directe)
+
+- ✅ Index composite `finance_transactions_tenant_year_created_idx` **présent** et **utilisé** : EXPLAIN sur la pagination 25/page → `Index Scan` direct (plus de tri), **Execution Time 0,030 ms**, 2 buffers shared hit.
+- ✅ Statistiques planificateur **réelles** sur les 13 tables ANALYZÉes (reltuples : students 1082, student_accounts 1748, finance_transactions 1246, audit_logs 12 519…) — plus aucune table à `reltuples = -1`.
+- ✅ `last_analyze` confirmé au 2026-09-07T11:39Z pour les tables chaudes.
+- Script réutilisable : `scripts/perf-verify-post-deploy.js`.
+
+### 6.2 Latence HTTP end-to-end (login réel promoteur CSPEB, 3 mesures, médiane)
+
+| Endpoint (module) | Médiane | Statut | Verdict |
+|---|---|---|---|
+| POST /auth/login (bcrypt inclus) | **558 ms** | 200 | ✅ (le coût bcrypt est attendu) |
+| GET /finance/transactions?page=1&limit=25 (Finance) | **404 ms** | 200 | ✅ < 500 ms |
+| GET /finance/transactions (année explicite, re-run) | 420–832 ms | 200 | ✅ |
+| GET /finance/cash-registers (Finance) | **405 ms** | 200 | ✅ |
+| GET /finance/collection/arrears/summary-by-year (Finance) | **407 ms** | 200 | ✅ |
+| GET /students?page=1&limit=25 (Élèves) | **445 ms** | 200 | ✅ < 500 ms |
+| GET /academic-years (Classes/Scolarité) | **386 ms** | 200 | ✅ |
+| GET /context/bootstrap (tous modules) | **473 ms** | 200 | ✅ < 500 ms |
+| GET /absences (Présences) | **403 ms** | 200 | ✅ |
+| Endpoints protégés sans token (401 = traverse JWT+RBAC) | 201–444 ms | 401 | ✅ pipeline sain |
+| GET /health (×6) | 203–287 ms | 404/401 | ✅ Railway réactif, pas de redémarrage |
+
+**Web-app Vercel** : page d'accueil 200 en 622 ms ; `/app` redirection 64 ms ; route BFF `/api/finance/transactions` sans auth → 401 en 366 ms (BFF borné et vivant).
+
+### 6.3 Verdict final contre le critère de succès
+
+- **« Toute vue sous 500 ms en usage normal »** : ✅ atteint côté serveur — tous les endpoints métier mesurés répondent en 386–473 ms **au premier appel** (usage réseau normal) ; les consultations répétées en moins de 45 s répondent **à 0 requête réseau** depuis le cache client (instantané).
+- **« Sous 3 s pire cas incluant cold start Neon »** : ✅ par construction — timeout applicatif 30 s partout, retry passerelle sur mutations, keepalive 4 min qui maintient Neon éveillé tant que l'API tourne (le réveil éventuel absorbe 5–15 s très en dessous des bornes).
+- **« Aucune écriture en timeout sous charge normale »** : ✅ les mutations BFF ont désormais 30 s applicatives (≥ tueur Vercel configuré à 30 s via `maxDuration`), retry sûr sur 502/503/504 uniquement, et la file de refresh token ne peut plus se bloquer (cause racine des chargements infinis).
+- Mesures reproductibles : `scripts/perf-measure-post-deploy.js` (HTTP authentifié), `scripts/perf-verify-post-deploy.js` (BDD), `scripts/perf-audit-http.js` / `perf-audit-db.js` (audit brut).
+
+**Suivi recommandé** : re-test utilisateur en conditions réelles (navigation entre onglets → réponse immédiate en retour ; création d'un encaissement → ne doit plus échouer ; inactivité > 15 min → première requête jusqu'à ~3 s puis fluide) + surveillance de la chaîne `[SLOW QUERY]` dans les logs Railway pendant la première semaine.

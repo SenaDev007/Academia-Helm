@@ -315,6 +315,213 @@ export class AcademicStructurePrismaService {
   }
 
   /**
+   * ⭐ Bugfix P2003 « Référence invalide : l'entité liée n'existe pas ».
+   *
+   * Résout l'AcademicClass pédagogique (table pedagogy_academic_classes)
+   * correspondant à un Classroom de l'onglet Structure (Paramètres), ou la
+   * crée proprement si elle n'existe pas encore.
+   *
+   * Pourquoi ce helper : les FK d'AcademicClass (levelId, cycleId, seriesId)
+   * référencent les tables PÉDAGOGIQUES (pedagogy_academic_levels,
+   * pedagogy_academic_cycles, pedagogy_academic_series) — PAS les tables
+   * education_* de l'onglet Structure. L'ancien fallback insérait directement
+   * les id education_*, ce qui déclenchait P2003 lors de la création de
+   * sections pour les classes du secondaire (dont les AcademicClass, inactives
+   * tant que le niveau est désactivé, échappaient à l'ancienne recherche
+   * filtrée sur isActive=true).
+   *
+   * Comportement :
+   *   1. AcademicClass existante (par nom OU code, sans filtre isActive) →
+   *      réutilisation ; réactivation si inactive (l'école crée une section,
+   *      donc elle utilise la classe).
+   *   2. Sinon → résolution/création de l'AcademicLevel et de l'AcademicCycle
+   *      pédagogiques correspondants (mapping EDUCATION_CODE_TO_PEDAGOGY +
+   *      matching insensible à la casse), puis création de l'AcademicClass
+   *      avec les bons ids pédagogiques.
+   */
+  private async resolveAcademicClassFromClassroom(
+    tenantId: string,
+    academicYearId: string,
+    classroom: {
+      name: string;
+      code: string | null;
+      capacity: number | null;
+      grade?: {
+        code?: string;
+        seriesId?: string | null;
+        series?: { code: string; name?: string | null } | null;
+        cycle?: { name: string; order: number; level?: { name: string; isEnabled: boolean } | null } | null;
+      } | null;
+    },
+  ): Promise<{ id: string; name: string; code: string; created: boolean } | null> {
+    const normalizedCode = this.normalizePedagogyClassCode(
+      classroom.grade?.code || classroom.code || classroom.name || '',
+    );
+
+    // 1. AcademicClass existante ? (par nom OU code — SANS filtre isActive :
+    //    une classe officielle inactive doit être réutilisée, pas dupliquée)
+    const existing = await this.prisma.academicClass.findFirst({
+      where: {
+        tenantId,
+        academicYearId,
+        OR: [
+          { name: classroom.name },
+          ...(normalizedCode ? [{ code: normalizedCode }] : []),
+        ],
+      },
+      select: { id: true, name: true, code: true, isActive: true },
+    });
+    if (existing) {
+      if (!existing.isActive) {
+        await this.prisma.academicClass.update({
+          where: { id: existing.id },
+          data: { ...prismaUpdateDefaults(), isActive: true },
+        });
+        this.logger?.log?.(
+          `resolveAcademicClassFromClassroom: AcademicClass "${existing.name}" réactivée (section en cours de création pour ce Classroom).`,
+        );
+      }
+      return { id: existing.id, name: existing.name, code: existing.code, created: false };
+    }
+
+    const grade = classroom.grade;
+    const cycle = grade?.cycle;
+    const eduLevel = cycle?.level;
+    if (!cycle || !eduLevel) {
+      this.logger?.warn?.(
+        `resolveAcademicClassFromClassroom: Classroom "${classroom.name}" sans grade/cycle/level — AcademicClass non résolue.`,
+      );
+      return null;
+    }
+
+    // 2. Résoudre/créer l'AcademicLevel pédagogique (mapping FR, sinon
+    //    matching insensible à la casse — couvre aussi NURSERY/PRIMARY EN)
+    const mapped = EDUCATION_CODE_TO_PEDAGOGY[eduLevel.name];
+    let academicLevel = await this.prisma.academicLevel.findFirst({
+      where: {
+        tenantId,
+        academicYearId,
+        name: { equals: mapped?.name ?? eduLevel.name, mode: 'insensitive' },
+      },
+    });
+    if (!academicLevel) {
+      academicLevel = await this.prisma.academicLevel.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          academicYearId,
+          name: mapped?.name ?? eduLevel.name,
+          orderIndex: mapped?.orderIndex ?? 50,
+          isActive: true,
+        },
+      });
+      this.logger?.log?.(
+        `resolveAcademicClassFromClassroom: AcademicLevel "${academicLevel.name}" créé pour Classroom "${classroom.name}".`,
+      );
+    }
+
+    // 3. Résoudre/créer l'AcademicCycle pédagogique
+    const normalizedCycleName = normalizeCycleNameForProduction(cycle.name);
+    let academicCycle = await this.prisma.academicCycle.findFirst({
+      where: {
+        tenantId,
+        academicYearId,
+        levelId: academicLevel.id,
+        name: { equals: normalizedCycleName, mode: 'insensitive' },
+      },
+    });
+    if (!academicCycle) {
+      const canonical = globalOrderIndexForCanonicalCycleName(normalizedCycleName);
+      academicCycle = await this.prisma.academicCycle.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          academicYearId,
+          levelId: academicLevel.id,
+          name: normalizedCycleName,
+          orderIndex:
+            canonical !== null
+              ? canonical
+              : fallbackGlobalOrderIndexForCycle(eduLevel.name, cycle.order ?? 1),
+          isActive: true,
+        },
+      });
+      this.logger?.log?.(
+        `resolveAcademicClassFromClassroom: AcademicCycle "${academicCycle.name}" créé pour Classroom "${classroom.name}".`,
+      );
+    }
+
+    // 4. Série (2nd cycle secondaire) : AcademicSeries par nom = code de série
+    let seriesId: string | null = null;
+    if (grade?.seriesId && grade.series?.code?.trim()) {
+      const seriesCode = grade.series.code.trim();
+      let academicSeries = await this.prisma.academicSeries.findFirst({
+        where: { tenantId, academicYearId, levelId: academicLevel.id, name: seriesCode },
+        select: { id: true },
+      });
+      if (!academicSeries) {
+        academicSeries = await this.prisma.academicSeries
+          .create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              academicYearId,
+              levelId: academicLevel.id,
+              name: seriesCode,
+              description: grade.series.name ?? null,
+              isActive: true,
+            },
+          })
+          .then((s) => ({ id: s.id }));
+      }
+      seriesId = academicSeries.id;
+    }
+
+    // 5. Créer l'AcademicClass avec les ids PÉDAGOGIQUES résolus
+    try {
+      const created = await this.prisma.academicClass.create({
+        data: {
+          ...prismaCreateDefaults(),
+          tenantId,
+          academicYearId,
+          levelId: academicLevel.id,
+          cycleId: academicCycle.id,
+          name: classroom.name,
+          code: normalizedCode,
+          capacity: classroom.capacity,
+          isActive: true,
+          ...(seriesId ? { seriesId } : {}),
+        },
+        select: { id: true, name: true, code: true },
+      });
+      this.logger?.log?.(
+        `resolveAcademicClassFromClassroom: AcademicClass "${created.name}" créée depuis Classroom (niveau/cycle pédagogiques résolus : ${academicLevel.name} / ${academicCycle.name}).`,
+      );
+      return { id: created.id, name: created.name, code: created.code, created: true };
+    } catch (e: any) {
+      // P2002 (créée entre-temps par la sync concurrente) → relire et réutiliser
+      const again = await this.prisma.academicClass.findFirst({
+        where: {
+          tenantId,
+          academicYearId,
+          OR: [
+            { name: classroom.name },
+            ...(normalizedCode ? [{ code: normalizedCode }] : []),
+          ],
+        },
+        select: { id: true, name: true, code: true },
+      });
+      if (again) {
+        this.logger?.warn?.(
+          `resolveAcademicClassFromClassroom: AcademicClass "${again.name}" créée en concurrence — réutilisée.`,
+        );
+        return { id: again.id, name: again.name, code: again.code, created: false };
+      }
+      throw e;
+    }
+  }
+
+  /**
    * Recopie les classes pédagogiques depuis Paramètres (EducationGrade sous EducationCycle)
    * vers AcademicClass (libellé + code + rattachement niveau/cycle + actif + capacité depuis les classes physiques).
    * Ne supprime pas les classes créées manuellement en pédagogie (codes absents des paramètres).
@@ -546,43 +753,20 @@ export class AcademicStructurePrismaService {
       // ⚠️ ÉTAPE 1 : Synchroniser les Classroom → AcademicClass
       // Les Classroom créés via l'onglet Structure (settings) n'ont pas d'AcademicClass
       // correspondante. On les crée ici pour que la sync des sections fonctionne.
+      // ⭐ Bugfix P2003 : on passe par resolveAcademicClassFromClassroom, qui résout
+      // les ids PÉDAGOGIQUES (pedagogy_academic_levels / cycles / series) au lieu
+      // d'insérer les id education_* — et qui réutilise/réactive une AcademicClass
+      // existante même inactive (cas des classes du secondaire).
       const classrooms = await this.prisma.classroom.findMany({
         where: { tenantId, academicYearId, isActive: true, isArchived: false },
         include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
       });
       for (const cr of classrooms) {
-        // Vérifier si une AcademicClass avec le même nom existe déjà
-        const existingAC = await this.prisma.academicClass.findFirst({
-          where: { tenantId, academicYearId, name: cr.name, isActive: true },
-          select: { id: true },
-        });
-        if (existingAC) continue; // Déjà synchronisé
-
-        const grade = cr.grade;
-        const cycle = grade?.cycle;
-        const level = cycle?.level;
-        if (!level || !cycle) {
-          this.logger.warn(`syncClassSections: Classroom ${cr.name} sans grade/cycle/level — ignoré.`);
-          continue;
-        }
-
-        // Créer l'AcademicClass manquante
-        await this.prisma.academicClass.create({
-          data: {
-            ...prismaCreateDefaults(),
-            tenantId,
-            academicYearId,
-            levelId: level.id,
-            cycleId: cycle.id,
-            name: cr.name,
-            code: cr.code || cr.name.replace(/\s/g, '').toUpperCase(),
-            capacity: cr.capacity,
-            isActive: true,
-            ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
-          },
-        });
-        synced++;
-        this.logger.log(`syncClassSections: AcademicClass créée depuis Classroom: ${cr.name}`);
+        // Déjà synchronisée ET active ? → rien à faire (les AcademicClass actives
+        // sont traitées à l'ÉTAPE 2 ; ici on ne compte que les résolutions utiles)
+        const resolved = await this.resolveAcademicClassFromClassroom(tenantId, academicYearId, cr);
+        if (!resolved) continue;
+        if (resolved.created) synced++;
       }
 
       // ÉTAPE 2 : Synchroniser les sections depuis les AcademicClass
@@ -812,58 +996,37 @@ export class AcademicStructurePrismaService {
       // L'ID fourni EST un AcademicClass.id — tout est bon.
       effectiveOfficialClassId = existingAcademicClass.id;
     } else {
-      // L'ID vient d'un Classroom — il faut soit trouver l'AcademicClass
-      // correspondante (déjà créée par sync), soit la créer.
+      // L'ID vient d'un Classroom — résoudre l'AcademicClass pédagogique
+      // correspondante (la créer proprement si absente).
+      // ⭐ Bugfix P2003 « l'entité liée n'existe pas » : l'ancien code insérait
+      // les id education_* (EducationLevel/EducationCycle/EducationSeries) dans
+      // les FK levelId/cycleId/seriesId d'AcademicClass, qui référencent les
+      // tables PÉDAGOGIQUES — violation de FK systématique pour les classes dont
+      // l'AcademicClass n'existait pas à l'état ACTIF (ex : secondaire, dont les
+      // AcademicClass sont inactives tant que le niveau est désactivé).
+      // resolveAcademicClassFromClassroom réutilise (et réactive si besoin) une
+      // AcademicClass existante, sinon la crée avec les ids pédagogiques résolus.
       const classroom = await this.prisma.classroom.findFirst({
         where: { id: data.academicClassId, tenantId: data.tenantId },
         include: { grade: { include: { cycle: { include: { level: true } }, series: true } } },
       });
 
       if (classroom) {
-        // 1. Chercher si une AcademicClass existe déjà pour ce Classroom
-        // (par nom + tenantId + academicYearId — la sync crée avec ce mapping)
-        const existingAc = await this.prisma.academicClass.findFirst({
-          where: {
-            tenantId: data.tenantId,
-            academicYearId: data.academicYearId,
-            name: classroom.name,
-            isActive: true,
-          },
-          select: { id: true },
-        });
-
-        if (existingAc) {
-          // L'AcademicClass existe déjà (créée par sync) — utiliser son id
-          effectiveOfficialClassId = existingAc.id;
-          this.logger?.log?.(`createClassSection: AcademicClass déjà existante pour Classroom ${classroom.name} → id=${existingAc.id}`);
+        const resolved = await this.resolveAcademicClassFromClassroom(
+          data.tenantId,
+          data.academicYearId,
+          classroom,
+        );
+        if (resolved) {
+          effectiveOfficialClassId = resolved.id;
+          this.logger?.log?.(
+            `createClassSection: AcademicClass ${resolved.created ? 'créée' : 'réutilisée'} pour Classroom ${classroom.name} → id=${resolved.id}`,
+          );
         } else {
-          // 2. Créer l'AcademicClass manquante
-          const grade = classroom.grade;
-          const cycle = grade?.cycle;
-          const level = cycle?.level;
-          if (level && cycle) {
-            const newAcademicClass = await this.prisma.academicClass.create({
-              data: {
-                ...prismaCreateDefaults(),
-                tenantId: data.tenantId,
-                academicYearId: data.academicYearId,
-                levelId: level.id,
-                cycleId: cycle.id,
-                name: classroom.name,
-                code: classroom.code || classroom.name.replace(/\s/g, '').toUpperCase(),
-                capacity: classroom.capacity,
-                isActive: true,
-                ...(grade.seriesId ? { seriesId: grade.seriesId } : {}),
-              },
-            });
-            effectiveOfficialClassId = newAcademicClass.id;
-            this.logger?.log?.(`createClassSection: AcademicClass créée depuis Classroom: ${newAcademicClass.id} (${newAcademicClass.name})`);
-          } else {
-            // Impossible de créer l'AcademicClass (grade/cycle/level manquant)
-            // → officialClassId à null pour éviter la violation de FK
-            effectiveOfficialClassId = null;
-            this.logger?.warn?.(`createClassSection: Impossible de créer AcademicClass depuis Classroom (grade/cycle/level manquant). Section créée sans lien officialClassId.`);
-          }
+          // Impossible de résoudre/créer l'AcademicClass (grade/cycle/level manquant)
+          // → officialClassId à null pour éviter la violation de FK
+          effectiveOfficialClassId = null;
+          this.logger?.warn?.(`createClassSection: Impossible de résoudre AcademicClass depuis Classroom (grade/cycle/level manquant). Section créée sans lien officialClassId.`);
         }
       } else {
         // Classroom introuvable aussi → null

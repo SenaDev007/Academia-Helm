@@ -10073,3 +10073,23 @@ Stage Summary:
 - ✅ Onglet Affectations & Mouvements réparé de bout en bout (endpoint 200, affichage, sélection, affectation, retrait de liste) — preuve E2E en production avec capture
 - ✅ Export EducMaster débloqué au passage (même bug Prisma)
 - ✅ Frontend ne masque plus jamais une erreur de chargement par un « tous affectés »
+
+---
+Task ID: 32
+Agent: Super Z (agent principal)
+Task: Academia Community — créer l'espace communautaire DANS le produit (brief utilisateur : fidéliser prospects/clients, conseils quotidiens, autorité + confiance, « comme Yeshua Connect mais au-delà », pas sur WhatsApp/Discord/Telegram)
+
+Work Log:
+- Analyse des 2 repos de référence clonés en local (refs/Mouvement-Christ-Libere : Next.js + Prisma — modèle Community/Channel/ChannelMember/Message/Poll/ScheduledMessage/MessageReaction + MessagingView 9k lignes WhatsApp-style polling 3-10 s ; refs/yeshua-connect-mobile : Flutter compagnon) — modèle fonctionnel extrait et adapté au périmètre business Academia
+- Architecture décidée : communauté PLATEFORME (hors tenant, comptes membres légers dédiés — pas des users applicatifs), backend module NestJS community/ + tables SQL idempotentes (pattern chat Helm Connect : migration 20260907150000 + bootstrap main.ts, zéro changement du schema.prisma 17k lignes), frontend routes publiques + espace authentifié
+- Backend (10 fichiers src/community/) : guard JWT dédié (claim typ:community + @CommunityRoles hiérarchiques + re-check statut BANNED/PENDING en base + presence last_seen best-effort), auth service (register/login bcryptjs, auto-approbation configurable COMMUNITY_AUTO_APPROVE, invitations pré-taggage PROSPECT/CLIENT/PARTNER), repository SQL paramétré complet, service (canaux+unread+previews, messages hydratés réponses/réactions/sondages, annonce réservée équipe, édition historisée, suppression douce, épinglage, présence 5 min), admin service (annuaire+rôles+tags, canaux CRUD, broadcast, invitations trackées, stats engagement), dispatcher posts programmés 30 s (claim atomique PENDING→SENDING, récupération crash > 5 min, borne 10/cycle), bootstrap (tables + 7 canaux défaut + admin env), 2 contrôleurs (membre + admin)
+- Frontend (8 nouveaux fichiers) : /community vitrine SSR publique (hero navy/gold, canaux+stats depuis GET public/overview, SEO), /community/join (+ ?invite= token) et /community/login (cards), /community/space/[slug] espace 3 colonnes Discord-pro (sidebar canaux+badges unread / messages markdown léger+réactions+réponses+sondages+épingles / panneau présence), responsive (panels mobile), polling 10 s (since) + 20 s canaux/présence, panneau Pilotage équipe 4 onglets (posts programmés datetime-local, membres tags/rôles/bannissement, stats KPI+activité/canal+top contributeurs, invitations copie-clipboard) ; BFF catch-all /api/community/[...path] (cookie httpOnly community_token 7 j, zéro token JS, timeouts 15/30 s, login/register posent le cookie, logout le retire) ; lib client typée complète
+- Intégration funnel marketing : lien « Communauté » dans header-1 + footer institutionnel + bloc CTA gradient sur la page tarification (post-achat → communauté)
+- Qualité : tsc api-server 6012 = baseline (0 erreur community) ; tsc web-app 683 = 683 baseline ; transpile 12/12 ; 7 erreurs détectées puis corrigées (@Req decorators, bcrypt→bcryptjs, TS1016 ordre params, casts unknown) ; scan secrets vide ; scripts e2e + bootstrap admin exclus via .git/info/exclude
+- Outils : apps/api-server/scripts/transpile-check-community.js (validé), test-community-e2e.js (à jouer post-déploiement : overview/register/login/canaux/messages/réactions/édition/suppression/unread/présence + parcours admin complet si COMMUNITY_ADMIN_EMAIL/PASSWORD), bootstrap-community-admin.js (création SUPER_ADMIN directe DB)
+- Commit 5cc322d3 (rebasé sur bafced6a) poussé sur main → builds Railway + Vercel déclenchés
+
+Stage Summary:
+- ✅ Academia Community v1 complète : 7 canaux seedés, comptes membres, messagerie riche (markdown, réponses, réactions, épingles), sondages live, posts programmés automatiques (conseil quotidien = cœur marketing), invitations trackées, stats engagement, équipe vs membres
+- Suivi post-build : vérifier statuts Railway/Vercel de 5cc322d3 → créer le SUPER_ADMIN (script bootstrap DB OU env COMMUNITY_ADMIN_EMAIL/PASSWORD dans Railway) → jouer test-community-e2e.js → re-test utilisateur (inscription, premier message, réaction, programmation d'un conseil)
+- Env à définir côté Railway (optionnel) : COMMUNITY_ADMIN_EMAIL, COMMUNITY_ADMIN_PASSWORD (≥ 8), COMMUNITY_AUTO_APPROVE (défaut true)

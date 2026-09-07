@@ -76,6 +76,9 @@ export default function AffectationVersClassePhysique() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  // ⭐ FIX 2026-09-07 : ne plus avaler les erreurs de chargement en silence —
+  // un backend en erreur (ex: 400 Prisma) s'affichait comme « tous affectés ».
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Sélection : élève + classe physique cible
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -91,6 +94,7 @@ export default function AffectationVersClassePhysique() {
   const loadData = async () => {
     if (!academicYear?.id) return;
     setIsLoading(true);
+    setLoadError(null);
     try {
       // ⭐ Bug fix : la déstructuration cassait (3 noms pour 2 promesses).
       // On ajoute un vrai fetch vers /api/academic-classes?isActive=true pour
@@ -100,7 +104,13 @@ export default function AffectationVersClassePhysique() {
       // était toujours vide.
       // Pattern inspiré de EnrollmentsContent.tsx (lignes 266-269).
       const [studentsData, classesRes, academicClassesRes] = await Promise.all([
-        studentsService.getStudentsWithoutPhysicalClass(academicYear.id).catch(() => []),
+        // ⭐ FIX 2026-09-07 : l'erreur est capturée et AFFICHÉE (bandeau rouge) au
+        // lieu d'être transformée en liste vide trompeuse.
+        studentsService.getStudentsWithoutPhysicalClass(academicYear.id).catch((e: any) => {
+          const msg = e?.response?.data?.message || e?.message || 'Erreur inconnue';
+          setLoadError(`Impossible de charger les élèves à affecter : ${msg}`);
+          return [] as StudentWithoutClass[];
+        }),
         fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
@@ -297,6 +307,25 @@ export default function AffectationVersClassePhysique() {
 
   return (
     <div className="flex flex-col h-full space-y-4">
+      {/* Erreur de chargement — visible au lieu d'une liste vide trompeuse */}
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-800 flex-1">
+            {loadError}
+            <p className="text-xs text-red-600 mt-0.5">
+              Vérifiez la connexion puis rouvrez l'onglet. Si l'erreur persiste, contactez le support.
+            </p>
+          </div>
+          <button
+            onClick={() => academicYear?.id && loadData()}
+            className="text-xs font-semibold text-red-700 hover:text-red-900 underline shrink-0"
+          >
+            Réessayer
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
@@ -466,7 +495,7 @@ export default function AffectationVersClassePhysique() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
             </div>
-          ) : filteredStudents.length === 0 ? (
+          ) : !loadError && filteredStudents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CheckCircle2 className="w-10 h-10 text-emerald-300 mb-2" />
               <p className="text-sm font-medium text-slate-700">Tous les élèves ont été affectés à une classe physique</p>
@@ -550,7 +579,7 @@ export default function AffectationVersClassePhysique() {
       )}
 
       {/* Avertissement si pas d'élèves à affecter */}
-      {!isLoading && studentsWithoutClass.length === 0 && (
+      {!isLoading && !loadError && studentsWithoutClass.length === 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
           <div className="text-sm text-emerald-800">

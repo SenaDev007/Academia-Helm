@@ -1024,7 +1024,12 @@ export class StudentsLifecycleService {
       include: {
         student: {
           include: {
-            guardians: { take: 1 },
+            // ⭐ FIX 2026-09-07 : la relation directe Student.guardians n'existe plus
+            // depuis la restructuration en table pivot (StudentGuardian, 2026-01-08).
+            // L'ancien include « guardians » déclenchait PrismaClientValidationError
+            // (400) → l'endpoint students-without-physical-class était cassé et le
+            // frontend avalait l'erreur en affichant « tous affectés ».
+            studentGuardians: { take: 1, include: { guardian: true } },
           },
         },
         academicClass: {

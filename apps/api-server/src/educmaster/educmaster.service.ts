@@ -28,7 +28,9 @@ export class EducMasterService {
             class: true,
           },
         },
-        guardians: {
+        // ⭐ FIX 2026-09-07 : relation pivot StudentGuardian (l'ancienne relation
+        // directe « guardians » n'existe plus — déclenchait PrismaClientValidationError 400).
+        studentGuardians: {
           include: {
             guardian: true,
           },
@@ -54,7 +56,7 @@ export class EducMasterService {
 
     students.forEach(student => {
       const enrollment = student.enrollments[0];
-      const guardian = student.guardians[0]?.guardian;
+      const guardian = student.studentGuardians[0]?.guardian;
 
       worksheet.addRow({
         matricule: student.studentCode,

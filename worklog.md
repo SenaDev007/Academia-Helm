@@ -10053,3 +10053,23 @@ Stage Summary:
 - Mission performance CLOSE : 9/9 étapes d'audit traitées (Neon config, N+1, index, pagination, cache, timeouts, parallélisation, retry écritures, mesures avant/après documentées)
 - Critères de succès : toute vue < 500 ms en usage normal (✅ 386-473 ms premier appel, 0 requête réseau au retour < 45 s) ; < 3 s pire cas cold start (✅ bornes 30 s + keepalive 4 min) ; aucune écriture en timeout (✅ mutations 30 s + retry passerelle + file refresh non bloquable)
 - Suivi utilisateur recommandé : re-test en conditions réelles (onglets, encaissement, inactivité > 15 min) + surveiller [SLOW QUERY] dans les logs Railway la première semaine
+
+Task ID: 31
+Agent: Super Z (principal)
+Task: « Module Élèves → Affectations & Mouvements : les élèves à affecter ne s'affichent pas »
+
+Work Log:
+- Reproduction API production : GET /students/students-without-physical-class → 400 PrismaClientValidationError « Champ "guardians" inconnu » (BFF idem) — le frontend avalait l'erreur (.catch(() => [])) et affichait « tous affectés » en boucle
+- Cause racine : include Prisma `student: { include: { guardians } }` écrit le 2026-07-11 (978163ed) contre l'ANCIEN schéma — la relation directe Student.guardians a été remplacée par la table pivot StudentGuardian le 2026-01-08 (7ee5dab4) → endpoint cassé depuis sa création, découvert maintenant (rentrée + 1re utilisation réelle)
+- Même bug dormant trouvé par scan : educmaster.service.ts (export Excel EducMaster → 400 aussi)
+- Correctifs (a37b2d4a) : include corrigé vers `studentGuardians` (pattern des ~30 autres services) ×2 + frontend durci (bandeau d'erreur rouge + bouton Réessayer au lieu du silence, états « tous affectés » masqués en cas d'erreur)
+- Validation syntaxe esbuild ×3 (repo sans node_modules) ; push → Railway/Vercel auto-déployés ; poll : 400 → 200 après ~2 min
+- Vérification navigateur production : tab fonctionnelle, 17 classes officielles / 11 sections dans les select, aucun bandeau d'erreur
+- Preuve E2E contrôlée : classId de l'inscription ADMITTED de BIAOU Carine NULL → elle s'affiche « à affecter » (badge CM1) → affectation CM1 via l'UI (toast succès) → retirée de la liste → DB revenue à l'état propre (0 en attente)
+- Diagnostic complémentaire : à CSPEB chaque classe officielle n'a qu'UNE section (CI, CE1, CM1…) → l'inscription auto-assigne la section (fix 2026-09-06) → liste « à affecter » légitimement vide ; le tab sert à la réaffectation (bouton « Réinitialiser les affectations ») ou aux niveaux multi-sections
+- Observation data : BIAOU Carine a 2 inscriptions (PRE_REGISTERED 09:51 + ADMITTED 09:52) — doublon du flux pré-inscription→admission, à surveiller
+
+Stage Summary:
+- ✅ Onglet Affectations & Mouvements réparé de bout en bout (endpoint 200, affichage, sélection, affectation, retrait de liste) — preuve E2E en production avec capture
+- ✅ Export EducMaster débloqué au passage (même bug Prisma)
+- ✅ Frontend ne masque plus jamais une erreur de chargement par un « tous affectés »

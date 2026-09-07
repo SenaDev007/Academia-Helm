@@ -268,13 +268,15 @@ export class CommunityRepository {
   }
 
   async editMessage(id: string, newContent: string, previousContent: string) {
+    // ⭐ $3::text — sans cast explicite, Postgres ne peut pas inférer le type
+    //    du paramètre dans json_build_object (erreur 42P18 via Prisma P2010)
     await this.prisma.$queryRawUnsafe(
       `UPDATE community_messages SET content = $2, is_edited = true,
          edited_history = COALESCE(edited_history, '[]'::jsonb) ||
-           jsonb_build_array(json_build_object('content', $3, 'at', NOW())),
+           jsonb_build_array(json_build_object('content', $3::text, 'at', NOW())),
          updated_at = NOW()
        WHERE id = $1`,
-      id, newContent, previousContent,
+      id, newContent, previousContent ?? '',
     );
   }
 
@@ -465,10 +467,11 @@ export class CommunityRepository {
        VALUES ($1,$2,$3,$4,$5,$6)`,
       id, data.channelId, data.authorId, data.type ?? 'ANNOUNCEMENT', data.content, data.scheduledAt,
     );
-    return this.prisma.$queryRawUnsafe(
+    const rows = (await this.prisma.$queryRawUnsafe(
       `SELECT s.*, c.name AS channel_name FROM community_scheduled_posts s
        JOIN community_channels c ON c.id = s.channel_id WHERE s.id = $1`, id,
-    );
+    )) as any[];
+    return rows[0] ?? null;
   }
 
   async listScheduledPosts(status?: string) {

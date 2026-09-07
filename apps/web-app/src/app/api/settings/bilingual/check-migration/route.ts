@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/bilingual/check-migration`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers });
+    const response = await fetchWithTimeout(url.toString(), { headers }, 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {

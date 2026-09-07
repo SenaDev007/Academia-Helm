@@ -12,10 +12,10 @@ export async function GET(
   const { studentId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/${studentId}/audit`),
       { headers }
-    );
+    , 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (e) {

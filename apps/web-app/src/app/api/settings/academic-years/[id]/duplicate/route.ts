@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -24,11 +25,11 @@ export async function POST(
   try {
     const body = await request.json();
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}/duplicate`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}/duplicate`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-    });
+    }, 30000);
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

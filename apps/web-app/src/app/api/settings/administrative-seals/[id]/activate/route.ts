@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerSession } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -21,13 +22,13 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${id}/activate`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/administrative-seals/${id}/activate`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 30000);
 
     if (!response.ok) {
       const error = await response.json();

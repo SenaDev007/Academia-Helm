@@ -276,6 +276,17 @@ export function clearRecentlyLoggedOutFlag(): void {
 /**
  * Renouvelle l’access token via le refresh stocké (en ligne uniquement).
  * Utilisé quand le JWT court a expiré mais que l’utilisateur peut rester dans l’app.
+ *
+ * ⭐ FIX PERF 2026-09-07 (« chargement éternel jusqu'à déconnexion/reconnexion ») :
+ *    Ce fetch N'AVAIT PAS DE TIMEOUT. Quand la route /api/auth/refresh pendait
+ *    (BFF lent, backend en redémarrage, réseau mobile instable), l'intercepteur
+ *    axios restait bloqué avec isRefreshing=true → TOUTES les requêtes 401
+ *    suivantes s'accumulaient dans failedQueue sans jamais se résoudre →
+ *    l'UI affichait un loading infini que seule une déconnexion/reconnexion
+ *    (rechargement complet de la page) pouvait débloquer.
+ *    → Timeout de 10s via AbortSignal.timeout : le refresh échoue proprement,
+ *      la file est rejetée, l'utilisateur reçoit une erreur au lieu d'un
+ *      loading sans fin.
  */
 export async function tryRefreshAccessToken(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
@@ -289,6 +300,7 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
       credentials: 'include',
       body: JSON.stringify({ refreshToken: rt }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(10_000), // ⭐ 10s max — plus de refresh pendant indéfiniment
     });
     if (!res.ok) return false;
 

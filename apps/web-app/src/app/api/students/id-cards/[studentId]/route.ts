@@ -16,10 +16,10 @@ export async function GET(
       return NextResponse.json({ error: 'academicYearId is required' }, { status: 400 });
     }
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/id-cards/${studentId}?academicYearId=${academicYearId}`),
       { headers }
-    );
+    , 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {

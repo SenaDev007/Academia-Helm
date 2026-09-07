@@ -30,10 +30,10 @@ export async function GET(request: NextRequest) {
     if (educationLevelId) url.searchParams.set('education_level_id', educationLevelId);
     if (signatureId) url.searchParams.set('signature_id', signatureId);
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       headers: { ...headers, 'Content-Type': '' },
       cache: 'no-store',
-    });
+    }, 15000);
 
     if (!response.ok) {
       const err = await response.text();

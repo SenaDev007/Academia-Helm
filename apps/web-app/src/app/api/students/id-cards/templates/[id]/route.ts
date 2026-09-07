@@ -3,6 +3,7 @@ import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
+
 const API_URL = getApiBaseUrlForRoutes();
 
 /**
@@ -22,10 +23,10 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/id-cards/templates/${encodeURIComponent(id)}`),
       { headers },
-    );
+    15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
@@ -45,14 +46,14 @@ export async function PUT(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/id-cards/templates/${encodeURIComponent(id)}`),
       {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
       },
-    );
+    30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
@@ -71,10 +72,10 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/id-cards/templates/${encodeURIComponent(id)}`),
       { method: 'DELETE', headers },
-    );
+    30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {

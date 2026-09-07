@@ -11115,6 +11115,8 @@ model FinanceTransaction {
   @@index([type])
   @@index([reversedFromId])
   @@index([cashRegisterId])
+  // ⭐ PERF 2026-09-07 : pagination transactions ORDER BY createdAt DESC
+  @@index([tenantId, academicYearId, createdAt(sort: Desc)])
   @@map("finance_transactions")
 }
 

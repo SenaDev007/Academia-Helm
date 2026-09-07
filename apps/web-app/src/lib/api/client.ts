@@ -10,15 +10,24 @@ import { getClientToken } from '@/lib/auth/session-client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { tryRefreshAccessToken, clearClientSessionSync } from '@/lib/auth/client-access-token';
 import { getUserScope } from '@/lib/auth/user-scope';
+import { cachedGet, invalidateApiCache } from './get-cache';
 
 const API_URL = getApiBaseUrl();
 
 /**
  * Instance Axios configurée
+ *
+ * ⭐ FIX PERF 2026-09-07 : timeout porté de 8s à 30s.
+ *    8s était INCOMPATIBLE avec le pire cas réel : réveil Neon (cold start
+ *    5-15s) + redémarrage Railway (bootstrap Nest 5-15s). Chaque dépassement
+ *    → « Délai d'attente dépassé » côté utilisateur + tempête de retries.
+ *    30s couvre le pire cas Y COMPRIS cold start (critère de succès : requête
+ *    réussie même au réveil de l'infra) — les GET passent par le cache client
+ *    (get-cache.ts) donc la latence perçue normale reste < 500ms.
  */
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_URL,
-  timeout: 8000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -139,7 +148,16 @@ function processQueue(error: any, token: string | null = null) {
 }
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ⭐ FIX PERF : toute mutation réussie via apiClient (POST/PATCH/PUT/DELETE)
+    //    invalide le cache GET → les listes rechargent des données fraîches
+    //    après une écriture, quel que soit le chemin utilisé par le composant.
+    const method = String(response?.config?.method || '').toUpperCase();
+    if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
+      invalidateApiCache();
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     // Erreur réseau (pas de réponse = hors ligne ou timeout)
     if (!error.response) {
@@ -247,12 +265,24 @@ apiClient.interceptors.response.use(
       }
 
       // Si un refresh est déjà en cours, mettre en queue
+      // ⭐ FIX PERF 2026-09-07 : file protégée par timeout (12s). Avant, si le
+      //    refresh en cours pendait (fetch sans timeout), TOUTES les requêtes
+      //    de cette file restaient pending pour toujours → loading infini →
+      //    seule une déconnexion/reconnexion débloquait la page.
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve: (token: string) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(apiClient(originalRequest));
-          }, reject });
+        return new Promise<string>((resolve, reject) => {
+          const queueTimeout = setTimeout(() => {
+            // Retirer l'entrée de la file pour éviter une fuite mémoire
+            const idx = failedQueue.findIndex((e) => e.reject === rejectWrapper);
+            if (idx !== -1) failedQueue.splice(idx, 1);
+            reject(new Error('Session expirée (refresh trop lent) — veuillez vous reconnecter'));
+          }, 12_000);
+          const rejectWrapper = (err: any) => { clearTimeout(queueTimeout); reject(err); };
+          const resolveWrapper = (token: string) => { clearTimeout(queueTimeout); resolve(token); };
+          failedQueue.push({ resolve: resolveWrapper, reject: rejectWrapper });
+        }).then((token: string) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
         });
       }
 
@@ -278,6 +308,9 @@ apiClient.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return apiClient(originalRequest);
           }
+          // ⭐ FIX : token rafraîchi mais introuvable en localStorage → il faut
+          //    AUSSI vider la file (avant, elle restait pending indéfiniment).
+          processQueue(error, null);
         }
         // Refresh échoué → rediriger vers login
         processQueue(error, null);
@@ -361,24 +394,74 @@ export const api: any = {
  * Wrapper fetch-like pour axios
  *
  * ⭐ Support d'un timeout personnalisé via options.timeout (en ms).
- * Par défaut : 8000ms (8s). Pour les opérations longues (génération de cartes
+ * Par défaut : 30000ms (30s). Pour les opérations longues (génération de cartes
  * scolaires en lot, import Excel, génération PDF groupé), passer un timeout
  * plus élevé, ex : { timeout: 300000 } pour 5 minutes.
+ *
+ * ⭐ FIX PERF 2026-09-07 :
+ *   - CACHE GET : les requêtes GET passent par cachedGet (dédup in-flight +
+ *     cache 45s) → changement d'onglet = réponse instantanée si données
+ *     fraîches, et N composants appelant le même endpoint = 1 seule requête.
+ *     Passer { noCache: true } pour forcer le réseau (données temps réel).
+ *   - RETRY GET : 1 retry automatique sur timeout/erreur réseau/502/503/504
+ *     (idempotent donc sans risque).
+ *   - RETRY ÉCRITURES : UNIQUEMENT sur 502/503/504 (erreurs passerelle — la
+ *     requête n'a vraisemblablement pas été traitée) ou si l'appelant déclare
+ *     { idempotent: true } (le backend fait la déduplication). On ne rejoue
+ *     JAMAIS un POST sur timeout : le backend peut l'avoir déjà commis
+ *     (double encaissement = risque financier réel).
+ *   - INVALIDATION : toute mutation réussie vide le cache GET.
  */
 export async function apiFetch<T>(url: string, options: any = {}): Promise<T> {
-  const method = options.method || 'GET';
-  // ⭐ Extraire timeout des options pour ne pas le passer à axios en double
-  // (axios accepte `timeout` au niveau de la config de la requête)
-  const { timeout, ...rest } = options;
-  const axiosConfig: any = {
-    url,
-    method,
-    data: rest.body ? (typeof rest.body === 'string' ? JSON.parse(rest.body) : rest.body) : undefined,
-    ...rest,
+  const method = (options.method || 'GET').toUpperCase();
+  // ⭐ Extraire timeout et options de cache pour ne pas les passer à axios en double
+  const { timeout, noCache, idempotent, retryOnGatewayError = true, ...rest } = options;
+  const isGet = method === 'GET';
+  const isMutation = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
+
+  const doFetch = async (): Promise<T> => {
+    const axiosConfig: any = {
+      url,
+      method,
+      data: rest.body ? (typeof rest.body === 'string' ? JSON.parse(rest.body) : rest.body) : undefined,
+      ...rest,
+    };
+    if (timeout) {
+      axiosConfig.timeout = timeout;
+    }
+    const response = await apiClient(axiosConfig);
+    return response.data;
   };
-  if (timeout) {
-    axiosConfig.timeout = timeout;
+
+  // ── GET avec cache + dédup in-flight (sauf noCache) ──
+  if (isGet && !noCache) {
+    return cachedGet<T>(`GET:${url}`, doFetch, { ttl: 45_000 });
   }
-  const response = await apiClient(axiosConfig);
-  return response.data;
+
+  // ── Mutations : retry sûr + invalidation du cache GET ──
+  if (isMutation) {
+    try {
+      const result = await doFetch();
+      // Mutation réussie → les données en cache sont potentiellement périmées
+      invalidateApiCache();
+      return result;
+    } catch (err: any) {
+      const status = err?.response?.status ?? err?.status;
+      const isGatewayError = status === 502 || status === 503 || status === 504;
+      const isNetworkErr = !err?.response && !err?.isTimeout && !err?.isOffline;
+      // Retry si : erreur passerelle (requête probablement non traitée),
+      // erreur réseau pure (requête jamais partie), ou endpoint explicitement
+      // idempotent (déduplication serveur — ex: encaissement par référence).
+      if (retryOnGatewayError && (isGatewayError || isNetworkErr || (idempotent && err?.isTimeout))) {
+        await new Promise((r) => setTimeout(r, 600));
+        const result = await doFetch();
+        invalidateApiCache();
+        return result;
+      }
+      throw err;
+    }
+  }
+
+  // GET noCache / autres méthodes → direct
+  return doFetch();
 }

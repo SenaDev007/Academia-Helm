@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
     const url = new URL(nestControllerUrl('settings/pedagogical-structure'));
     if (tenantId) url.searchParams.set('tenant_id', tenantId);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url.toString(), { headers, cache: 'no-store' }, 15000);
 
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
@@ -32,12 +32,12 @@ export async function PUT(request: NextRequest) {
     const tenantId = request.nextUrl?.searchParams?.get('tenant_id');
     const url = new URL(nestControllerUrl('settings/pedagogical-structure'));
     if (tenantId) url.searchParams.set('tenant_id', tenantId);
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
       cache: 'no-store',
-    });
+    }, 30000);
 
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });

@@ -43,7 +43,7 @@ export async function GET(
     // On ne veut pas forcer Accept: application/json pour une réponse binaire
     delete (headers as any)['Accept'];
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(
         `${API_URL}/students/admissions/${admissionId}/documents/${docId}/download`
       ),
@@ -52,7 +52,7 @@ export async function GET(
         headers,
         cache: 'no-store',
       }
-    );
+    , 15000);
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');

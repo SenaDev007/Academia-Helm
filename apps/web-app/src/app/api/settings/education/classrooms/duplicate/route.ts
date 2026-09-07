@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/education/classrooms/duplicate`);
     const q = request.nextUrl?.searchParams?.get('tenant_id');
     if (q) url.searchParams.set('tenant_id', q);
-    const response = await fetch(url.toString(), { method: 'POST', headers, body: JSON.stringify(body) });
+    const response = await fetchWithTimeout(url.toString(), { method: 'POST', headers, body: JSON.stringify(body) }, 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

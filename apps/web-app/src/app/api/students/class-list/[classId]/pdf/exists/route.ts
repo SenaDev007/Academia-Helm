@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
 const API_URL = getApiBaseUrlForRoutes();
 export const dynamic = 'force-dynamic';
 
@@ -20,10 +21,10 @@ export async function GET(
     const mode = request.nextUrl.searchParams.get('mode') || 'physical';
 
     const headers = await getProxyAuthHeaders(request);
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf/exists?academicYearId=${encodeURIComponent(academicYearId)}&mode=${encodeURIComponent(mode)}`),
       { headers, cache: 'no-store' },
-    );
+    15000);
     const data = await res.json().catch(() => ({ exists: false }));
     return NextResponse.json(data, { status: res.status });
   } catch (error) {

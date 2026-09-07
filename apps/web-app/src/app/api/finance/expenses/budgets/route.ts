@@ -6,7 +6,7 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 export async function GET(request: NextRequest) {
   const qs = request.nextUrl.searchParams.toString();
   const headers = await getProxyAuthHeaders(request);
-  const res = await fetch(normalizeApiUrl(`${getApiBaseUrlForRoutes()}/finance/expenses/budgets${qs ? `?${qs}` : ''}`), { headers, cache: 'no-store' });
+  const res = await fetchWithTimeout(normalizeApiUrl(`${getApiBaseUrlForRoutes()}/finance/expenses/budgets${qs ? `?${qs}` : ''}`), { headers, cache: 'no-store' }, 15000);
   const data = await res.json().catch(() => ({}));
   return NextResponse.json(data, { status: res.status });
 }
@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const headers = await getProxyAuthHeaders(request);
-  const res = await fetch(normalizeApiUrl(`${getApiBaseUrlForRoutes()}/finance/expenses/budgets`), {
+  const res = await fetchWithTimeout(normalizeApiUrl(`${getApiBaseUrlForRoutes()}/finance/expenses/budgets`), {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }, 30000);
   const data = await res.json().catch(() => ({}));
   return NextResponse.json(data, { status: res.status });
 }

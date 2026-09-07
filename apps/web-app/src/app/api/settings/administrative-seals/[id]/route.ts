@@ -22,12 +22,12 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 15000);
 
     if (!response.ok) {
       const error = await response.json();
@@ -58,14 +58,14 @@ export async function PUT(
 
     const body = await request.json();
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/administrative-seals/${id}`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-    });
+    }, 30000);
 
     if (!response.ok) {
       const error = await response.json();

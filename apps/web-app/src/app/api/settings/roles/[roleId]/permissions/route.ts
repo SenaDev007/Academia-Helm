@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { cookies } from 'next/headers';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -30,11 +31,11 @@ export async function PUT(
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}/permissions`), {
+    const response = await fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}/permissions`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
-    });
+    }, 30000);
 
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

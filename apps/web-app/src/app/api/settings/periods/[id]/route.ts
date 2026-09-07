@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -41,11 +42,11 @@ export async function PUT(
     const url = new URL(`${API_BASE_URL}/settings/periods/${id}`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
-    });
+    }, 30000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))

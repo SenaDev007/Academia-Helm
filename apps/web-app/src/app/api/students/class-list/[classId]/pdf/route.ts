@@ -54,11 +54,11 @@ export async function GET(
     // On ne veut pas forcer Accept: application/json pour une réponse binaire
     delete (headers as any)['Accept'];
 
-    const response = await fetch(normalizeApiUrl(url.toString()), {
+    const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), {
       method: 'GET',
       headers,
       cache: 'no-store',
-    });
+    }, 15000);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');

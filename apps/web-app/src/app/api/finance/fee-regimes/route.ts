@@ -19,10 +19,10 @@ export async function GET(request: NextRequest) {
     const query = schoolLevelId
       ? `academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`
       : `academicYearId=${academicYearId}`;
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/finance/fee-regimes?${query}`),
       { headers }
-    );
+    , 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (e) {
@@ -34,11 +34,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(normalizeApiUrl(`${API_URL}/finance/fee-regimes`), {
+    const response = await fetchWithTimeout(normalizeApiUrl(`${API_URL}/finance/fee-regimes`), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+    }, 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (e) {

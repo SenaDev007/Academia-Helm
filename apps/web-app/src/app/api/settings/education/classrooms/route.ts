@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     url.searchParams.set('academic_year_id', academicYearId);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url.toString(), { headers, cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
@@ -35,12 +35,12 @@ export async function POST(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/education/classrooms`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       cache: 'no-store',
-    });
+    }, 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {

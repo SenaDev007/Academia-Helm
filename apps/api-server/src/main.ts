@@ -1895,6 +1895,35 @@ async function bootstrap() {
     }
   }, 4 * 60 * 1000); // 4 minutes
 
+  // ─── PERF 2026-09-07 : index + ANALYZE pour la pagination transactions ───
+  // Index composite (tenantId, academicYearId, createdAt DESC) : la requête
+  // la plus chaude du module Finance (liste transactions paginée, ORDER BY
+  // createdAt DESC) faisait un tri en mémoire après lecture ; avec cet index,
+  // Postgres sert directement les lignes dans l'ordre → O(limit) au lieu de
+  // O(n log n) par page. ANALYZE : les stats de planificateur n'avaient JAMAIS
+  // été calculées (pg_class.reltuples = -1 sur la plupart des tables, détecté
+  // lors de l'audit du 2026-09-07) → plans sous-optimaux garantis à mesure
+  // que les écoles accumulent des données. Idempotent, non-bloquant.
+  setTimeout(async () => {
+    try {
+      const prisma = app.get(PrismaService);
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "finance_transactions_tenant_year_created_idx" ON "finance_transactions"("tenantId", "academicYearId", "createdAt" DESC)`,
+      );
+      await prisma.$executeRawUnsafe(`ANALYZE "finance_transactions"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "student_accounts"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "students"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "account_breakdowns"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "student_enrollments"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "fee_arrears"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "sessions"`);
+      await prisma.$executeRawUnsafe(`ANALYZE "users"`);
+      logger.log('✅ PERF: index transactions (tenant,year,createdAt) + ANALYZE des tables chaudes');
+    } catch (err: any) {
+      logger.warn(`PERF index/analyze skipped: ${err.message}`);
+    }
+  }, 15_000); // 15s après le boot (après le warmup DB)
+
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records
   // to the Pedagogy Teacher table so they appear in class assignments.

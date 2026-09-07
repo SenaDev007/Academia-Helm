@@ -18,12 +18,12 @@ export async function GET(_request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/electronic-signatures`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 15000);
 
     if (!response.ok) {
       const error = await response.json();
@@ -50,14 +50,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/electronic-signatures`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-    });
+    }, 30000);
 
     if (!response.ok) {
       const error = await response.json();

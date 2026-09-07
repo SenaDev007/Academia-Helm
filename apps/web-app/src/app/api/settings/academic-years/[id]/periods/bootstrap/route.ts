@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE = getApiBaseUrlForRoutes();
 
@@ -28,11 +29,11 @@ export async function POST(
     const url = new URL(`${API_BASE}/settings/academic-years/${id}/periods/create-default`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(normalizeApiUrl(url.toString()), {
+    const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), {
       method: 'POST',
       headers,
       cache: 'no-store',
-    });
+    }, 30000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))

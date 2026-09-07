@@ -22,12 +22,12 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const response = await fetch(`${API_BASE_URL}/settings/electronic-signatures/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/electronic-signatures/${id}`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 15000);
 
     if (!response.ok) {
       const error = await response.json();

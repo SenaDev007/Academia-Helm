@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,12 +12,12 @@ export async function POST(request: NextRequest) {
     const apiBaseUrl = getApiBaseUrlForRoutes();
     const url = `${apiBaseUrl}/students/bulk-setup`;
 
-    const response = await fetch(normalizeApiUrl(url), {
+    const response = await fetchWithTimeout(normalizeApiUrl(url), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       cache: 'no-store',
-    });
+    }, 30000);
 
     const data = await response.json();
     if (!response.ok) {

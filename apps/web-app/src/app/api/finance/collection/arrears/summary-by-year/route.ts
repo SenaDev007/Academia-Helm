@@ -7,9 +7,9 @@ const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(request: NextRequest) {
   const headers = await getProxyAuthHeaders(request);
-  const r = await fetch(normalizeApiUrl(`${API_URL}/finance/collection/arrears/summary-by-year`), {
+  const r = await fetchWithTimeout(normalizeApiUrl(`${API_URL}/finance/collection/arrears/summary-by-year`), {
     headers,
     cache: 'no-store',
-  });
+  }, 15000);
   return NextResponse.json(await r.json().catch(() => ({})), { status: r.status });
 }

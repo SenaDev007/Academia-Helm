@@ -35,7 +35,7 @@ export async function GET(
     const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}/periods`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url.toString(), { headers, cache: 'no-store' }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
@@ -67,11 +67,11 @@ export async function POST(
     const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}/periods`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-    });
+    }, 30000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))

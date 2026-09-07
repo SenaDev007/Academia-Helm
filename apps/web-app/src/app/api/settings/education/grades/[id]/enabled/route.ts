@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -35,7 +36,7 @@ export async function PUT(
     const url = new URL(`${API_BASE_URL}/settings/education/grades/${id}/enabled`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { method: 'PUT', headers, body: JSON.stringify(body) });
+    const response = await fetchWithTimeout(url.toString(), { method: 'PUT', headers, body: JSON.stringify(body) }, 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

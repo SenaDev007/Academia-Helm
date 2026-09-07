@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -28,10 +29,10 @@ export async function POST(
   const { id } = await params;
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}/activate`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}/activate`, {
       method: 'POST',
       headers,
-    });
+    }, 30000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))

@@ -3,6 +3,7 @@ import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
+
 const API_URL = getApiBaseUrlForRoutes();
 
 export async function GET(
@@ -12,10 +13,10 @@ export async function GET(
   try {
     const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const r = await fetch(
+    const r = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/finance/transactions/${id}/whatsapp-link`),
       { headers },
-    );
+    15000);
     const data = await r.json().catch(() => ({}));
     return NextResponse.json(data, { status: r.status });
   } catch (error) {

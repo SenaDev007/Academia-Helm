@@ -3,6 +3,7 @@ import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
+
 const API_URL = getApiBaseUrlForRoutes();
 
 /**
@@ -16,10 +17,10 @@ export async function GET(
   try {
     const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
-    const r = await fetch(
+    const r = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/finance/transactions/${id}/receipt.pdf`),
       { headers },
-    );
+    15000);
     if (!r.ok) {
       const text = await r.text().catch(() => '');
       return NextResponse.json(

@@ -12,10 +12,10 @@ export async function GET(
   const { studentId: cardId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/id-cards/${cardId}/preview-html`),
       { headers }
-    );
+    , 15000);
     if (!response.ok) {
       return NextResponse.json({ error: 'Preview failed' }, { status: response.status });
     }

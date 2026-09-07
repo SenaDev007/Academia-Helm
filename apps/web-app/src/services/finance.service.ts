@@ -525,7 +525,9 @@ class FinanceService {
     if (params?.isOpen !== undefined) query.set('isOpen', String(params.isOpen));
     if (params?.responsibleUserId) query.set('responsibleUserId', params.responsibleUserId);
     const qs = query.toString();
-    return financeFetch(`/api/finance/cash-registers${qs ? `?${qs}` : ''}`);
+    // ⭐ noCache : l'état ouvert/fermé d'une caisse est une donnée OPÉRATIONNELLE
+    //    (elle conditionne la possibilité d'encaisser) — pas de cache 45s ici.
+    return financeFetch(`/api/finance/cash-registers${qs ? `?${qs}` : ''}`, { noCache: true });
   }
 
   async getCashRegister(id: string): Promise<any> {

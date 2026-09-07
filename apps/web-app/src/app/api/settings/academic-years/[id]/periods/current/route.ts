@@ -31,7 +31,7 @@ export async function GET(
     const url = new URL(`${API_BASE_URL}/settings/academic-years/${id}/periods/current`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url.toString(), { headers, cache: 'no-store' }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => null)

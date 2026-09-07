@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const headers = await getProxyAuthHeaders(request);
     const url = normalizeApiUrl(`${API_BASE_URL.replace(/\/$/, '')}/${path}`);
-    const response = await fetch(url, { headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 15000);
 
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });

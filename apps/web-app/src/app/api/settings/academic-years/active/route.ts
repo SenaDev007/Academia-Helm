@@ -29,10 +29,10 @@ async function getAuthHeaders(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/active`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/active`, {
       headers,
       cache: 'no-store',
-    });
+    }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))

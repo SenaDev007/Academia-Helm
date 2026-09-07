@@ -23,10 +23,10 @@ export async function GET(
   const { studentId } = await params;
   try {
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/${studentId}/guardians`),
       { headers, cache: 'no-store' }
-    );
+    , 15000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {
@@ -43,10 +43,10 @@ export async function POST(
   try {
     const body = await request.json();
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/${studentId}/guardians`),
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    , 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status, headers: NO_CACHE_HEADERS });
   } catch (error) {

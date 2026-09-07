@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
     const url = new URL(`${API_BASE_URL}/settings/education/structure/initialize`);
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { method: 'POST', headers, cache: 'no-store' });
+    const response = await fetchWithTimeout(url.toString(), { method: 'POST', headers, cache: 'no-store' }, 30000);
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error) {

@@ -32,7 +32,7 @@ export async function GET(
     if (endDate) urlParams.append('endDate', endDate);
     if (documentType) urlParams.append('documentType', documentType);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_BASE_URL}/settings/administrative-seals/${id}/usage?${urlParams.toString()}`,
       {
         headers: {
@@ -40,7 +40,7 @@ export async function GET(
           'Content-Type': 'application/json',
         },
       }
-    );
+    , 15000);
 
     if (!response.ok) {
       const error = await response.json();

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
 const API_URL = getApiBaseUrlForRoutes();
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -23,10 +24,10 @@ export async function GET(
     const headers = await getProxyAuthHeaders(request);
     delete (headers as any)['Accept'];
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}&mode=${encodeURIComponent(mode)}`),
       { method: 'GET', headers, cache: 'no-store' },
-    );
+    15000);
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');

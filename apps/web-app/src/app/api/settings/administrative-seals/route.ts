@@ -34,12 +34,12 @@ export async function GET(request: NextRequest) {
     if (type) params.append('type', type);
     if (isActive) params.append('isActive', isActive);
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals?${params.toString()}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/administrative-seals?${params.toString()}`, {
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 15000);
 
     if (!response.ok) {
       const error = await response.json();
@@ -66,14 +66,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const response = await fetch(`${API_BASE_URL}/settings/administrative-seals`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/administrative-seals`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-    });
+    }, 30000);
 
     if (!response.ok) {
       const error = await response.json();

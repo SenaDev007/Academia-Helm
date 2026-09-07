@@ -40,10 +40,16 @@ const SECOND_CYCLE_GRADE_TEMPLATES = [
   { namePrefix: 'Terminale', codePrefix: 'TLE' },
 ];
 
-/** Aligné plateforme nationale Bénin Educmaster : Maternelle 1 et Maternelle 2 (au lieu de PS, MS, GS). */
+/**
+ * ⭐ `gradesDisabledByDefault` : les grades du cycle sont créés DÉSACTIVÉS par défaut.
+ * Utilisé pour le « 2nd cycle » du SECONDAIRE : une école qui active le niveau
+ * secondaire (souvent 1er cycle uniquement, ex. collège) ne doit pas voir les
+ * 2nde/1ère/Terminale polluer tous les sélecteurs. L'école active ensuite
+ * manuellement les classes/séries qu'elle propose réellement.
+ */
 const DEFAULT_CYCLES_AND_GRADES: Record<
   string,
-  { cycles: { name: string; order: number; grades: { name: string; code: string; order: number; seriesCode?: string }[] }[] }
+  { cycles: { name: string; order: number; gradesDisabledByDefault?: boolean; grades: { name: string; code: string; order: number; seriesCode?: string }[] }[] }
 > = {
   MATERNELLE: {
     cycles: [
@@ -81,6 +87,8 @@ const DEFAULT_CYCLES_AND_GRADES: Record<
       {
         name: '2nd cycle',
         order: 2,
+        // ⭐ Grades du 2nd cycle créés désactivés par défaut (voir commentaire ci-dessus).
+        gradesDisabledByDefault: true,
         grades: DEFAULT_SERIES.flatMap((series, seriesIdx) =>
           SECOND_CYCLE_GRADE_TEMPLATES.map((tpl, tplIdx) => ({
             name: `${tpl.namePrefix} ${series.code}`,
@@ -165,18 +173,23 @@ export class EducationStructureService {
         }
         for (const gr of cy.grades) {
           const seriesId = gr.seriesCode ? seriesByCode.get(gr.seriesCode) ?? null : null;
+          // ⭐ Grades du 2nd cycle SECONDAIRE : désactivés par défaut.
+          //    (update path ci-dessous ne touche PAS isEnabled → choix explicite
+          //    de l'école préservé lors d'une ré-initialisation idempotente)
+          const gradeDefaultEnabled = cy.gradesDisabledByDefault !== true;
           const existingGrade = await this.prisma.educationGrade.findFirst({
             where: { cycleId: cycle.id, code: gr.code },
           });
           if (!existingGrade) {
             await this.prisma.educationGrade.create({
               data: {
-        ...prismaCreateDefaults(),
+                ...prismaCreateDefaults(),
                 cycleId: cycle.id,
                 seriesId: seriesId ?? undefined,
                 name: gr.name,
                 code: gr.code,
                 order: gr.order,
+                isEnabled: gradeDefaultEnabled,
               },
             });
           } else {
@@ -501,14 +514,98 @@ export class EducationStructureService {
 
   /**
    * Activer/désactiver un niveau (MATERNELLE, PRIMAIRE, SECONDAIRE).
+   *
+   * ⭐ SECONDAIRE + activation : les grades du « 2nd cycle » (2nde, 1ère, Terminale)
+   *    sont remis à DÉSACTIVÉ par défaut — même comportement qu'à l'initialisation.
+   *    Une école (ex. collège 1er cycle) qui active le niveau secondaire ne doit
+   *    pas voir les 33 classes du 2nd cycle apparaître activées d'office dans
+   *    tous les sélecteurs ; elle active manuellement celles qu'elle propose.
+   *
+   *    Garde-fou : les grades du 2nd cycle qui ont déjà des classes physiques
+   *    (non archivées) restent activés — l'école les utilise réellement.
    */
   async setLevelEnabled(tenantId: string, levelId: string, isEnabled: boolean) {
     const level = await this.prisma.educationLevel.findFirst({ where: { id: levelId, tenantId } });
     if (!level) throw new NotFoundException('Niveau non trouvé.');
-    return this.prisma.educationLevel.update({
+
+    const updated = await this.prisma.educationLevel.update({
       where: { id: levelId },
       data: { ...prismaUpdateDefaults(), isEnabled },
     });
+
+    // ⭐ Transition OFF → ON du niveau SECONDAIRE : reset des grades 2nd cycle.
+    if (level.name === 'SECONDAIRE' && isEnabled && !level.isEnabled) {
+      try {
+        await this.resetSecondCycleGradesToDefault(tenantId, levelId);
+      } catch (e) {
+        // Non-bloquant : l'activation du niveau prime sur le reset.
+        this.logger.warn(
+          `setLevelEnabled: reset 2nd cycle échoué (non-bloquant) — ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * Remet les grades du « 2nd cycle » SECONDAIRE à l'état par défaut (désactivés),
+   * sauf ceux ayant des classes physiques non archivées (réellement utilisés).
+   * Propage ensuite la désactivation vers AcademicClass.isActive (effet immédiat
+   * dans les sélecteurs, sans attendre la sync du prochain findAllClasses).
+   */
+  private async resetSecondCycleGradesToDefault(tenantId: string, levelId: string) {
+    const secondCycle = await this.prisma.educationCycle.findFirst({
+      where: { levelId, name: '2nd cycle' },
+      select: { id: true },
+    });
+    if (!secondCycle) return;
+
+    // Grades du 2nd cycle actuellement activés
+    const enabledGrades = await this.prisma.educationGrade.findMany({
+      where: { cycleId: secondCycle.id, isEnabled: true },
+      select: { id: true, code: true, name: true },
+    });
+    if (enabledGrades.length === 0) return;
+
+    // Garde-fou : exclure les grades liés à des classes physiques non archivées
+    const usedGradeIds = new Set(
+      (
+        await this.prisma.classroom.findMany({
+          where: { tenantId, gradeId: { in: enabledGrades.map((g) => g.id) }, isArchived: false },
+          select: { gradeId: true },
+          distinct: ['gradeId'],
+        })
+      ).map((c) => c.gradeId),
+    );
+
+    const toDisable = enabledGrades.filter((g) => !usedGradeIds.has(g.id));
+    if (toDisable.length === 0) return;
+
+    await this.prisma.educationGrade.updateMany({
+      where: { id: { in: toDisable.map((g) => g.id) } },
+      data: { ...prismaUpdateDefaults(), isEnabled: false },
+    });
+    this.logger.log(
+      `Reset 2nd cycle → ${toDisable.length} grade(s) désactivé(s) par défaut : ${toDisable.map((g) => g.code).join(', ')}`,
+    );
+
+    // Propagation immédiate vers AcademicClass (toutes années du tenant)
+    for (const g of toDisable) {
+      const code = g.code?.trim();
+      if (!code) continue;
+      try {
+        const res = await this.prisma.academicClass.updateMany({
+          where: { tenantId, code },
+          data: { ...prismaUpdateDefaults(), isActive: false },
+        });
+        if (res.count > 0) {
+          this.logger.log(`AcademicClass (code=${code}) → isActive=false (${res.count} mise(s) à jour).`);
+        }
+      } catch {
+        // Non-bloquant : la sync auto au prochain findAllClasses corrigera.
+      }
+    }
   }
 
   /**
@@ -692,6 +789,9 @@ export class EducationStructureService {
           name: gradeName,
           code: gradeCode,
           order: gradeOrder,
+          // ⭐ 2nd cycle : grades créés désactivés par défaut — l'école les
+          //    active manuellement dans la section « Structure pédagogique ».
+          isEnabled: false,
         },
       });
       gradesCreated.push(grade);

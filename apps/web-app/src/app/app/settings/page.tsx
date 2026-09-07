@@ -445,7 +445,7 @@ export default function SettingsPage() {
    *   — la série est déjà dans le nom du grade, pas besoin de la répéter.
    */
   const groupedGradesForSelect = useMemo(() => {
-    const groups: Array<{ label: string; grades: Array<{ id: string; name: string }> }> = [];
+    const groups: Array<{ label: string; grades: Array<{ id: string; name: string; disabled: boolean }> }> = [];
     const groupMap: Record<string, number> = {};
     for (const g of allGradesFromStructure) {
       const levelName = g.level?.name || '';
@@ -462,7 +462,9 @@ export default function SettingsPage() {
         groupMap[groupLabel] = groups.length;
         groups.push({ label: groupLabel, grades: [] });
       }
-      groups[groupMap[groupLabel]].grades.push({ id: g.id, name: g.name });
+      // ⭐ flag « disabled » : les grades désactivés (ex. 2nd cycle par défaut)
+      //    sont signalés dans les listes déroulantes.
+      groups[groupMap[groupLabel]].grades.push({ id: g.id, name: g.name, disabled: g.isEnabled === false });
     }
     return groups;
   }, [allGradesFromStructure]);
@@ -3729,8 +3731,10 @@ export default function SettingsPage() {
                           ))}
                           {level.name === 'SECONDAIRE' && (
                             <p className="text-xs text-gray-500 ml-2 mt-1">
-                              💡 Activez uniquement les classes/séries réellement disponibles dans votre école.
-                              Les classes désactivées n'apparaîtront pas dans les listes déroulantes.
+                              💡 Par défaut, seules les classes du 1er cycle (6ème → 3ème) sont activées ;
+                              celles du 2nd cycle (2nde, 1ère, Terminale) sont désactivées — activez uniquement
+                              les classes/séries réellement disponibles dans votre école. Les classes désactivées
+                              n'apparaîtront pas dans les listes déroulantes.
                             </p>
                           )}
                         </div>
@@ -3825,7 +3829,7 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-gray-500 mt-2">
-                    💡 La série sera créée dans le cycle « 2nd cycle » du niveau SECONDAIRE, avec 3 grades (2nde {newSeriesCode || 'X'}, 1ère {newSeriesCode || 'X'}, Terminale {newSeriesCode || 'X'}). Elle sera ensuite disponible pour créer des classes officielles ci-dessous.
+                    💡 La série sera créée dans le cycle « 2nd cycle » du niveau SECONDAIRE, avec 3 grades (2nde {newSeriesCode || 'X'}, 1ère {newSeriesCode || 'X'}, Terminale {newSeriesCode || 'X'}), créés désactivés par défaut. Activez-les dans la structure ci-dessus, puis créez les classes officielles ci-dessous.
                   </p>
                 </div>
               </div>
@@ -3862,7 +3866,9 @@ export default function SettingsPage() {
                         {groupedGradesForSelect.map((grp) => (
                           <optgroup key={grp.label} label={grp.label}>
                             {grp.grades.map((g) => (
-                              <option key={g.id} value={g.id}>{formatGradeLabel(g.name)}</option>
+                              <option key={g.id} value={g.id} className={g.disabled ? 'text-gray-400' : ''}>
+                                {formatGradeLabel(g.name)}{g.disabled ? ' (désactivée)' : ''}
+                              </option>
                             ))}
                           </optgroup>
                         ))}
@@ -3983,6 +3989,9 @@ export default function SettingsPage() {
                                         className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                       />
                                       {formatGradeLabel(g.name)}
+                                      {g.disabled && (
+                                        <span className="text-[10px] text-gray-400 italic">(désactivée)</span>
+                                      )}
                                     </label>
                                   ))}
                                 </div>

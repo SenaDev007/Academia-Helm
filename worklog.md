@@ -9937,3 +9937,28 @@ Stage Summary:
 - ✅ Support des années antérieures (sélecteur d'année + avertissement d'alignement fichier vs cible)
 - ✅ Rétrocompatibilité totale (anciens templates plats reconnus), endpoints inchangés (preview/run/template)
 - ⚠️ Sémantique : la colonne Arriéré des fichiers POINT (solde année antérieure) n'est PAS importée dans les encaissements — l'import dédié des arriérés la traite ; la preview l'affiche en clair
+
+---
+Task ID: 27
+Agent: Super Z (agent principal)
+Task: FIX inscription élève — secrétaire/secrétaire comptable : sélecteurs niveaux/classes vides à l'étape « Classe » + « accès refusé » à la finalisation
+
+Work Log:
+- Diagnostic : l'option virtuelle «Tous les niveaux» (id='ALL') du SchoolLevelContext était auto-sélectionnée par défaut (withAll[0]) pour TOUS les rôles → localStorage schoolLevel={id:'ALL'} → l'intercepteur axios injectait x-school-level-id=ALL sur tous les appels directs
+- Root cause côté serveur : AccessScopeGuard (GLOBAL, app.module) réserve la sentinelle 'ALL' aux profils transverses (promoteur…) → 403 «Accès refusé : le périmètre tous les niveaux est réservé aux profils transverses» pour tout compte à périmètre restreint (Staff/StaffAdminAssignment, scope.allLevels=false — ex: secrétaire PRI)
+- 2e vecteur : le BFF /api/school-levels enrichissait ses sources A/B/C/D (/classes, /academic-classes, /students, /school-levels) avec x-school-level-id=ALL → 403 → schoolLevelMap vide → niveaux sans schoolLevelId → wizard d'inscription (filtre sl.schoolLevelId) : sélecteurs VIDES ; EnrollmentsContent retombait sur schoolLevel.id='ALL' → preRegister/admit rejetés (403)
+- 3e vecteur : l'intercepteur envoyait sl.id (UUID education_levels — mauvaise table) au lieu de sl.schoolLevelId (UUID school_levels attendu par le scope serveur)
+- FIX 1 apps/web-app/src/app/api/school-levels/route.ts : /context/bootstrap appelé EN PARALLÈLE de /settings/education/structure ; si scope.allLevels=false → map code→UUID construite DIRECTEMENT depuis levelCodes/levelIds (index-alignés), niveaux filtrés au périmètre (miroirs EN rattachés à leur code FR via EN_MIRROR_TO_FR), AUCUNE source appelée, AUCUN header ALL ; sinon comportement historique inchangé (transverses/rétro-compat bootstrap HS) ; buildScopedLevelsResponse() extrait (miroirs NURSERY/PRIMARY + cache 60s)
+- FIX 2 apps/web-app/src/contexts/SchoolLevelContext.tsx : option ALL réservée aux comptes dont le scope l'autorise (getUserScope) ; auto-sélection d'un niveau DU périmètre pour les comptes restreints (self-heal d'un 'ALL' sauvegardé) ; re-run de la sélection à l'arrivée asynchrone du scope (event user-scope-loaded)
+- FIX 3 apps/web-app/src/lib/api/client.ts : header x-school-level-id = sl.schoolLevelId || sl.id (bonne table) ; si valeur 'ALL' et périmètre restreint → header NON envoyé (scope serveur appliqué par scope-where) au lieu d'un 403 systématique
+- FIX 4 apps/web-app/src/components/students/EnrollmentsContent.tsx : effectiveSchoolLevelId ne retombe plus sur la sentinelle 'ALL' (schoolLevelId du contexte prioritaire) ; message explicite si niveau manquant ; prop schoolLevelId du wizard édit sanitized
+- FIX 4-bis apps/web-app/src/components/students/StudentEnrollmentForm.tsx : initialLevelId exclut 'ALL' (propLevelId > schoolLevelId > id≠'ALL')
+- Tests : apps/web-app/scripts/test-school-levels-bff.ts (4 cas : restreint=PRI → 1 niveau sl-pri sans header ALL ni sources ; transverse → 3 niveaux enrichis via sources ALL inchangé ; bootstrap HS → repli historique ; bilingue NURSERY hors scope MATERNELLE) — handler réel exécuté avec next/headers stubbé + fetch mocké ; apps/web-app/scripts/test-axios-level-header.ts (5 cas : ALL restreint → header absent ; ALL transverse → 'ALL' ; schoolLevelId prioritaire ; rétro-compat) — intercepteur réel via adapter axios
+- npm install web-app effectué (clone frais) ; typecheck : 0 nouvelle erreur (4 erreurs préexistantes à HEAD, décalées de lignes seulement)
+
+Stage Summary:
+- ✅ Sécrétaire/secrétaire comptable : niveaux + classes visibles à l'étape « Classe » de l'inscription (niveaux du périmètre uniquement — cohérent avec le design Rôles × Niveaux D2/D6)
+- ✅ Finalisation preRegister/admit : plus de 403 « Accès refusé » (vrai UUID school_levels dans body+header, sentinelle ALL neutralisée)
+- ✅ Promoteur : comportement 100% inchangé (option «Tous les niveaux» + enrichissement ALL)
+- Aucun changement backend (Railway/API inchangés) — déploiement Vercel web-app uniquement
+- Suivi : vérifier build Vercel (~5-10 min) puis re-tester en production CSPEB avec le compte secrétaire ; si un autre écran reste vide pour un compte restreint, vérifier que /context/bootstrap renvoie bien scope.allLevels=false pour ce compte

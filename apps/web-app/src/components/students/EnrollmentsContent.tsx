@@ -1656,7 +1656,25 @@ export default function EnrollmentsContent() {
         <StudentEnrollmentForm
           onSubmit={async (data) => {
             try {
-              const effectiveSchoolLevelId = data.schoolLevelId || schoolLevel!.schoolLevelId || schoolLevel!.id;
+              // ⭐ FIX 2026-09-07 « accès refusé à la finalisation » :
+              //   Le fallback historique `schoolLevel!.id` pouvait valoir 'ALL'
+              //   (option virtuelle « Tous les niveaux » auto-sélectionnée) ou
+              //   un UUID education_levels (mauvaise table) → AccessScopeGuard
+              //   rejetait preRegister/admit avec 403 « Accès refusé » pour les
+              //   comptes à périmètre restreint (secrétaires…).
+              //   → On utilise : 1) le niveau choisi dans le wizard (vrai UUID
+              //     school_levels), 2) le schoolLevelId du contexte, 3) l'id du
+              //     contexte SEULEMENT s'il n'est pas la sentinelle 'ALL'.
+              const fallbackLevelId =
+                schoolLevel?.schoolLevelId ||
+                (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined);
+              const effectiveSchoolLevelId = data.schoolLevelId || fallbackLevelId;
+              if (!effectiveSchoolLevelId) {
+                // Message explicite plutôt qu'un 403 opaque côté backend
+                throw new Error(
+                  "Le niveau scolaire est manquant. Sélectionnez un niveau (et une classe) à l'étape « Classe » avant de finaliser l'inscription.",
+                );
+              }
 
               // 1. Pré-inscrire l'élève — ne PAS envoyer photoUrl dans le payload
               //    (sera uploadée via uploadPhoto séparément pour persister dans student_photos).
@@ -1823,7 +1841,7 @@ export default function EnrollmentsContent() {
         >
           <StudentEnrollmentForm
             academicYearId={academicYear.id}
-            schoolLevelId={schoolLevel.schoolLevelId || schoolLevel.id}
+            schoolLevelId={schoolLevel.schoolLevelId || (schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined)}
             initialData={{
               firstName: editEnrollment.student.firstName || '',
               lastName: editEnrollment.student.lastName || '',

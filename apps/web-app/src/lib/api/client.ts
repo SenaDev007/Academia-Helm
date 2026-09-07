@@ -9,6 +9,7 @@ import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'ax
 import { getClientToken } from '@/lib/auth/session-client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
 import { tryRefreshAccessToken, clearClientSessionSync } from '@/lib/auth/client-access-token';
+import { getUserScope } from '@/lib/auth/user-scope';
 
 const API_URL = getApiBaseUrl();
 
@@ -63,12 +64,34 @@ apiClient.interceptors.request.use(
       }
 
       // Ajouter le niveau scolaire depuis localStorage
+      // ⭐ FIX 2026-09-07 « périmètres restreints » (secrétaires, comptables…) :
+      //   1) On envoie schoolLevelId (UUID de school_levels — la VRAIE table
+      //      attendue par AccessScopeGuard/Services) en priorité sur `id`
+      //      (UUID education_levels — mauvaise table → 403 «Accès refusé : votre
+      //      périmètre n'inclut pas le niveau demandé» pour les comptes à
+      //      périmètre restreint).
+      //   2) La sentinelle 'ALL' est réservée aux profils transverses côté
+      //      serveur (AccessScopeGuard) — si le scope local indique un
+      //      périmètre restreint, on ne l'envoie PAS (l'appel passe alors avec
+      //      le scope serveur appliqué par scope-where) au lieu d'un 403
+      //      systématique sur preRegister/admit et les autres écritures.
       const schoolLevelStr = localStorage.getItem('schoolLevel');
       if (schoolLevelStr) {
         try {
           const sl = JSON.parse(schoolLevelStr);
-          if (sl.id && config.headers) {
-            config.headers['x-school-level-id'] = sl.id;
+          if (sl && config.headers) {
+            const levelHeaderValue = sl.schoolLevelId || sl.id;
+            if (levelHeaderValue && typeof levelHeaderValue === 'string') {
+              if (levelHeaderValue.toUpperCase() === 'ALL') {
+                const scope = getUserScope();
+                if (!scope || scope.allLevels !== false) {
+                  config.headers['x-school-level-id'] = levelHeaderValue;
+                }
+                // sinon : périmètre restreint → pas de header (scope serveur)
+              } else {
+                config.headers['x-school-level-id'] = levelHeaderValue;
+              }
+            }
           }
         } catch (e) {}
       }

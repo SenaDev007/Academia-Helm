@@ -26,6 +26,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 import { useSchoolLevelsQuery } from '@/lib/query/use-school-levels';
+import { getUserScope, type UserScope } from '@/lib/auth/user-scope';
 
 export interface SchoolLevel {
   id: string;
@@ -83,6 +84,19 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
   const availableLevelsRef = useRef<SchoolLevel[]>([]);
   availableLevelsRef.current = availableLevels;
 
+  // ⭐ FIX 2026-09-07 : le scope serveur arrive de façon ASYNCHRONE (login →
+  //    /context/bootstrap → persistUserScope → event 'user-scope-loaded') alors
+  //    que ce provider est déjà monté. Sans re-run, l'option 'ALL' resterait
+  //    proposée/sauvegardée pour un compte restreint jusqu'au rechargement.
+  const [scopeTick, setScopeTick] = useState(0);
+  useEffect(() => {
+    const onScopeLoaded = () => setScopeTick((t) => t + 1);
+    window.addEventListener('user-scope-loaded', onScopeLoaded);
+    return () => {
+      window.removeEventListener('user-scope-loaded', onScopeLoaded);
+    };
+  }, []);
+
   // ⭐ Chargement via React Query — bénéficie du cache partagé, retry,
   //    refetchOnReconnect et invalidation sur sync-end / session-resumed.
   const { data: rawLevels, isLoading: levelsLoading } = useSchoolLevelsQuery();
@@ -111,6 +125,18 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
   // ─── Construction de la liste disponible (avec option "ALL") ──────────────
   //    Lancé en effet dès que `rawLevels` change — inclut l'auto-sélection
   //    pour les enseignants (depuis leurs accreditations ou leurs classes).
+  //
+  // ⭐ FIX 2026-09-07 « périmètres restreints » (secrétaires, comptables…) :
+  //    L'option virtuelle «Tous les niveaux» était proposée et AUTO-SÉLECTIONNÉE
+  //    (withAll[0]) pour TOUS les rôles → localStorage schoolLevel = {id:'ALL'}
+  //    → l'intercepteur axios envoyait x-school-level-id=ALL → AccessScopeGuard
+  //    (backend, global) → 403 «Accès refusé» sur les appels directs (dont la
+  //    finalisation d'inscription preRegister/admit) pour tout compte à
+  //    périmètre restreint (Staff/StaffAdminAssignment — scope.allLevels=false).
+  //    → L'option ALL est désormais réservée aux comptes dont le scope serveur
+  //    l'autorise (transverses : promoteur, plateforme, compte sans périmètre) ;
+  //    les comptes restreints sont auto-sélectionnés sur un niveau de LEUR
+  //    périmètre (self-heal : un 'ALL' sauvegardé est remplacé).
   useEffect(() => {
     if (!rawLevels || rawLevels.length === 0) {
       // Pas de données — on ne touche pas à currentLevel (pour ne pas clignoter)
@@ -120,7 +146,12 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
 
     const activeLevels = rawLevels.filter((l) => l.isActive);
 
-    // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
+    // Scope serveur persisté (login / context-bootstrap) — cf. user-scope.ts.
+    // Null/absent → rétro-compat : on garde l'option ALL (comportement antérieur).
+    const scope: UserScope | null = getUserScope();
+    const scopeAllowsAll = !scope || scope.allLevels !== false;
+
+    // Option virtuelle "Tous les niveaux" — UNIQUEMENT si le périmètre l'autorise.
     const allLevelsOption: SchoolLevel = {
       id: 'ALL',
       code: 'ALL',
@@ -128,7 +159,7 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
       isActive: true,
     };
 
-    const withAll = [allLevelsOption, ...activeLevels];
+    const withAll = scopeAllowsAll ? [allLevelsOption, ...activeLevels] : activeLevels;
     setAvailableLevels(withAll);
 
     // ─── Sélection du niveau courant ────────────────────────────────────────
@@ -168,6 +199,21 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // ⭐ FIX 2026-09-07 : compte à périmètre restreint (scope.allLevels=false,
+    //    ex: secrétaire/secrétaire comptable) → auto-sélection d'un niveau de
+    //    SON périmètre. Couvre le self-heal d'un 'ALL' sauvegardé (plus proposé)
+    //    et le premier chargement sans sélection.
+    if (!scopeAllowsAll && !autoSelectedLevel && (!savedLevelId || savedLevelId === 'ALL')) {
+      const scopedLevelIds = scope?.levelIds ?? [];
+      const scopedLevelCodes = scope?.levelCodes ?? [];
+      autoSelectedLevel =
+        activeLevels.find(
+          (l) =>
+            (l.schoolLevelId && scopedLevelIds.includes(l.schoolLevelId)) ||
+            (l.code && scopedLevelCodes.includes(l.code)),
+        ) || null;
+    }
+
     const selectedLevel = autoSelectedLevel
       || (savedLevelId ? withAll.find((l) => l.id === savedLevelId) || null : null)
       || withAll[0];
@@ -194,7 +240,7 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     }
     // ⚠️ On retire `currentLevel?.id` des deps pour éviter une boucle infinie
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawLevels, userRole, userAccreditations, invalidateQueriesForLevelChange]);
+  }, [rawLevels, userRole, userAccreditations, scopeTick, invalidateQueriesForLevelChange]);
 
   // ─── Recharger quand l'event "settings-updated" est dispatché ──────────────
   useEffect(() => {

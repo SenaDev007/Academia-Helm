@@ -6,6 +6,18 @@
  * en le récupérant depuis /api/all-classes. Ceci permet au frontend d'utiliser
  * le bon UUID pour filtrer les classes et créer des fee_structures.
  *
+ * ⭐ FIX 2026-09-07 « périmètres restreints » (secrétaires, comptables…) :
+ *   L'enrichissement envoyait x-school-level-id=ALL sur toutes ses sources.
+ *   Le AccessScopeGuard global (backend) réserve la sentinelle ALL aux profils
+ *   transverses (promoteur…) → 403 « Accès refusé » pour tout compte à
+ *   périmètre restreint (Staff/StaffAdminAssignment) → schoolLevelMap vide →
+ *   niveaux SANS schoolLevelId → sélecteurs vides dans l'inscription
+ *   (StudentEnrollmentForm filtre sl.schoolLevelId) + 403 à la finalisation.
+ *   → Pour ces comptes, on résout le scope via /context/bootstrap et on
+ *   construit la map DIRECTEMENT depuis levelCodes/levelIds (alignés), SANS
+ *   jamais envoyer la sentinelle ALL. Les comptes transverses gardent le
+ *   comportement historique (sources A/B/C/D avec ALL).
+ *
  * ⚠️ Pattern standardisé : timeout 15s + cache: 'no-store' + Cache-Control HTTP
  * Voir docs/CACHE_PERFORMANCE_PATTERN.md
  */
@@ -27,22 +39,86 @@ const LEVEL_LABELS: Record<string, string> = {
   PRIMARY: 'Primary',
 };
 
+/** Miroirs EN → code FR canonique (le scope serveur parle en codes FR). */
+const EN_MIRROR_TO_FR: Record<string, string> = {
+  NURSERY: 'MATERNELLE',
+  PRIMARY: 'PRIMAIRE',
+  SECONDARY: 'SECONDAIRE',
+};
+
 export async function GET(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
 
-    // 1. Récupérer les niveaux depuis education/structure (timeout 15s)
-    const url = new URL(normalizeApiUrl(`${API_BASE_URL}/settings/education/structure`));
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+
+    // 1. Récupérer les niveaux depuis education/structure (timeout 15s)
+    //    + le scope serveur de l'utilisateur via /context/bootstrap (EN PARALLÈLE).
+    //    Le scope est indispensable pour les comptes à périmètre restreint :
+    //    la sentinelle x-school-level-id=ALL leur est interdite (AccessScopeGuard).
+    const url = new URL(normalizeApiUrl(`${API_BASE_URL}/settings/education/structure`));
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetchWithTimeout(url.toString(), { headers }, 15000);
-    const data = await response.json().catch(() => ({}));
-    const levels = (data?.levels ?? []) as { id: string; name: string; isEnabled?: boolean }[];
+
+    const bootstrapUrl = new URL(normalizeApiUrl(`${API_BASE_URL}/context/bootstrap`));
+    if (fromQuery) bootstrapUrl.searchParams.set('tenant_id', fromQuery);
+
+    const [structureRes, bootstrapRes] = await Promise.allSettled([
+      fetchWithTimeout(url.toString(), { headers }, 15000),
+      fetchWithTimeout(bootstrapUrl.toString(), { headers }, 15000),
+    ]);
+
+    const response = structureRes.status === 'fulfilled' ? structureRes.value : null;
+    const data = response ? await response.json().catch(() => ({})) : {};
+    let levels = (data?.levels ?? []) as { id: string; name: string; isEnabled?: boolean }[];
+
+    // Scope serveur (Rôles × Pistes × Niveaux) — cf. context.service bootstrap.
+    // levelCodes/levelIds sont index-alignés par construction (AccessScopeService).
+    let scope: { levelCodes?: string[]; levelIds?: string[]; allLevels?: boolean } | null = null;
+    if (bootstrapRes.status === 'fulfilled') {
+      try {
+        const bootstrapData = await bootstrapRes.value.json().catch(() => ({}));
+        scope = bootstrapData?.scope ?? null;
+      } catch {
+        scope = null;
+      }
+    }
+    const isRestrictedScope =
+      !!scope &&
+      scope.allLevels === false &&
+      Array.isArray(scope.levelIds) &&
+      scope.levelIds.length > 0;
+
+    let schoolLevelMap: Record<string, string> = {};
+
+    if (isRestrictedScope && scope?.levelCodes && scope?.levelIds) {
+      // ─── Compte à périmètre restreint (secrétaire, comptable…) ───
+      // La map code→UUID est connue DIRECTEMENT depuis le scope : aucune
+      // source externe nécessaire, aucun header ALL envoyé (aucun 403).
+      const scopeCodes: string[] = scope.levelCodes;
+      const scopeIds: string[] = scope.levelIds;
+      for (let i = 0; i < scopeCodes.length; i++) {
+        const uuid = scopeIds[i];
+        if (uuid) schoolLevelMap[scopeCodes[i]] = uuid;
+      }
+
+      // Restreindre la liste aux niveaux du périmètre (défense en profondeur :
+      // le wizard d'inscription ne proposera alors QUE des niveaux autorisés,
+      // et la finalisation preRegister/admit passera le contrôle de scope).
+      // Les miroirs EN (NURSERY/PRIMARY/SECONDARY) sont rattachés à leur code FR
+      // (le scope serveur parle en codes FR — cf. EN_MIRROR_TO_FR).
+      const inScope = (name: string) =>
+        !!name &&
+        (scopeCodes.includes(name) ||
+          (!!EN_MIRROR_TO_FR[name] && scopeCodes.includes(EN_MIRROR_TO_FR[name])));
+      levels = levels.filter((l) => inScope(l.name));
+
+      const enabledLevels = levels.filter((l) => l.isEnabled !== false);
+      return buildScopedLevelsResponse(enabledLevels, schoolLevelMap);
+    }
+
     const enabledLevels = levels.filter((l) => l.isEnabled !== false);
 
     // 2. Récupérer les school_levels UUIDs depuis 3 sources EN PARALLÈLE
-    let schoolLevelMap: Record<string, string> = {};
-
     // ⭐ V10c — CORRECTIF CRITIQUE « schoolLevelId: null » :
     // /api/classes exige désormais un niveau scolaire (« School Level ID is
     // required ») → les 3 sources renvoyaient 400 et l'enrichissement
@@ -115,6 +191,8 @@ export async function GET(request: NextRequest) {
     //    niveau, on interroge school_levels directement (endpoint léger).
     //    Ça garantit que schoolLevelId n'est JAMAIS null quand le niveau
     //    existe côté backend (les miroirs EN partagent le UUID FR).
+    //    ⭐ FIX 2026-09-07 : cette source n'est appelée que sur le chemin
+    //    « non restreint » (transverse/ouvert) — le header ALL y est autorisé.
     for (const level of enabledLevels) {
       if (!schoolLevelMap[level.name]) {
         try {
@@ -135,22 +213,43 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const result = enabledLevels.map((l) => ({
-      id: l.id,
-      code: l.name,
-      label: LEVEL_LABELS[l.name] || l.name,
-      isActive: true,
-      schoolLevelId: schoolLevelMap[l.name] || null,
-    }));
-
-    // Cache 60s (les niveaux scolaires changent rarement)
-    return NextResponse.json(result, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
-      },
-    });
+    return buildScopedLevelsResponse(enabledLevels, schoolLevelMap);
   } catch (error) {
     console.error('Error fetching school levels from structure:', error);
     return NextResponse.json([], { status: 200 });
   }
+}
+
+/**
+ * Construit la réponse standard [{ id, code, label, isActive, schoolLevelId }]
+ * avec les miroirs EN (NURSERY/PRIMARY ← MATERNELLE/PRIMAIRE) et le cache 60s.
+ * Partagé par le chemin restreint (scope) et le chemin historique (ALL).
+ */
+function buildScopedLevelsResponse(
+  enabledLevels: { id: string; name: string; isEnabled?: boolean }[],
+  schoolLevelMap: Record<string, string>,
+) {
+  // Miroirs EN (idem V10c) — faits sur une copie pour ne pas muter la map reçue
+  const map: Record<string, string> = { ...schoolLevelMap };
+  if (!map['NURSERY'] && map['MATERNELLE']) {
+    map['NURSERY'] = map['MATERNELLE'];
+  }
+  if (!map['PRIMARY'] && map['PRIMAIRE']) {
+    map['PRIMARY'] = map['PRIMAIRE'];
+  }
+
+  const result = enabledLevels.map((l) => ({
+    id: l.id,
+    code: l.name,
+    label: LEVEL_LABELS[l.name] || l.name,
+    isActive: true,
+    schoolLevelId: map[l.name] || null,
+  }));
+
+  // Cache 60s (les niveaux scolaires changent rarement)
+  return NextResponse.json(result, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+    },
+  });
 }

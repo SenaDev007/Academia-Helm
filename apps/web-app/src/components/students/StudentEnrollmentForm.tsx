@@ -71,8 +71,16 @@ export default function StudentEnrollmentForm({
   const { academicYear, schoolLevel } = useModuleContext();
 
   // Niveau scolaire sélectionnable (state interne, pas figé par le contexte)
+  // ⭐ FIX 2026-09-07 : schoolLevel?.id peut être la sentinelle 'ALL' (option
+  //    virtuelle « Tous les niveaux ») — jamais un UUID valide pour le backend
+  //    (preRegister/admit + AccessScopeGuard) → on l'exclut de l'initialisation.
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
-  const [selectedLevelId, setSelectedLevelId] = useState<string>(propLevelId || schoolLevel?.id || schoolLevel?.schoolLevelId || '');
+  const initialLevelId =
+    propLevelId ||
+    schoolLevel?.schoolLevelId ||
+    (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : '') ||
+    '';
+  const [selectedLevelId, setSelectedLevelId] = useState<string>(initialLevelId);
 
   // IDs effectifs
   const yearId = propYearId || academicYear?.id || '';

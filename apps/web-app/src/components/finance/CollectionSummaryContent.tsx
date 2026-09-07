@@ -311,11 +311,22 @@ export default function CollectionSummaryContent() {
   }, [activeSubTab, academicYearId]);
 
   // ─── Filtered classes based on selected level ──────────────────────────────
+  // ⭐ FIX 2026-09-07 « miroir bilingue » : les niveaux EN (Nursery/Primary) du
+  //    sélecteur partagent le schoolLevelId de leur miroir FR, mais leur CODE
+  //    ('primary') ne matche JAMAIS le code des classes physiques ('primaire')
+  //    → 0 classes affichées côté anglophone alors que ce sont les MÊMES
+  //    classes/élèves. On mappe le code EN vers le code FR jumelé.
   const filteredClasses = useMemo(() => {
     if (!selectedLevelId) return classes;
     const selectedLevel = schoolLevels.find((l) => l.id === selectedLevelId);
     if (!selectedLevel) return classes;
-    const code = (selectedLevel.code || '').toLowerCase();
+    const EN_TO_FR: Record<string, string> = {
+      nursery: 'maternelle',
+      primary: 'primaire',
+      secondary: 'secondaire',
+    };
+    const rawCode = (selectedLevel.code || '').toLowerCase();
+    const code = EN_TO_FR[rawCode] || rawCode;
     return classes.filter((c: any) => {
       const levelCode = (c.schoolLevel?.code || '').toLowerCase();
       return levelCode === code;

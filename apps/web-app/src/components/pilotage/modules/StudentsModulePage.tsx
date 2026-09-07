@@ -47,6 +47,11 @@ import {
   ReadOnlyModal,
 } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
+// ⭐ FIX 2026-09-07 « miroir bilingue / sélecteurs vides » : le mode fused
+//    (Maternelle + Primaire = une seule unité administrative) doit filtrer
+//    les élèves sur les DEUX niveaux, pas seulement celui porté par le
+//    sélecteur. useAdminStructureMode expose le mode du tenant.
+import { useAdminStructureMode } from '@/hooks/useAdminStructureMode';
 import { formatGradeLabel } from '@/lib/utils';
 // ⭐ P4-final : module bilingue (piste EN → onglets et en-tête 100% EN)
 import { useL } from '@/lib/i18n/bilingual';
@@ -122,6 +127,29 @@ export default function StudentsModulePage() {
   // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
   const L = useL();
   const isEN = L('fr', 'en') === 'en';
+  // ⭐ FIX 2026-09-07 : mode fused → filtre composite MAT_PRI (résolu côté
+  //    backend en [MATERNELLE, PRIMAIRE]) au lieu d'un seul niveau.
+  const { mode: adminStructureMode } = useAdminStructureMode();
+  /**
+   * ⭐ FIX 2026-09-07 « miroir bilingue + listes vides » :
+   * Le filtre envoyé à l'API doit être l'UUID **school_levels**
+   * (schoolLevel.schoolLevelId) — PAS schoolLevel.id qui est l'UUID
+   * education_levels (autre table) → 0 résultat côté /students.
+   * En mode fused, on envoie le composite 'MAT_PRI' (résolu backend).
+   * Les miroirs EN (Nursery/Primary) partagent l'UUID FR → la piste
+   * anglophone montre les MÊMES élèves que la francophone.
+   */
+  const effectiveLevelFilter = (() => {
+    if (!schoolLevel) return undefined;
+    if (schoolLevel.id === 'ALL') return undefined;
+    if (
+      adminStructureMode === 'FUSED_MATERNELLE_PRIMAIRE' &&
+      ['MATERNELLE', 'PRIMARY', 'PRIMAIRE', 'NURSERY'].includes(schoolLevel.code)
+    ) {
+      return 'MAT_PRI';
+    }
+    return schoolLevel.schoolLevelId || schoolLevel.id;
+  })();
   const syncStatuses = useEntitySyncStatusBatch('STUDENT', tenantId ?? undefined);
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -178,6 +206,7 @@ export default function StudentsModulePage() {
   }, [
     academicYear?.id,
     schoolLevel?.id,
+    effectiveLevelFilter,
     filters.classId,
     filters.status,
     filters.search,
@@ -197,7 +226,8 @@ export default function StudentsModulePage() {
       return;
     }
     const params = new URLSearchParams({ academicYearId: academicYear.id });
-    if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.set('schoolLevelId', schoolLevel.id);
+    // ⭐ FIX 2026-09-07 : UUID school_levels (pas education_levels) + fused MAT_PRI
+    if (effectiveLevelFilter) params.set('schoolLevelId', effectiveLevelFilter);
     fetch(`/api/classes?${params}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: any) => {
@@ -205,7 +235,7 @@ export default function StudentsModulePage() {
         setClassesList(list.map((c: any) => ({ id: c.id, name: c.name || c.code || c.id })));
       })
       .catch(() => setClassesList([]));
-  }, [academicYear?.id, schoolLevel?.id]);
+  }, [academicYear?.id, effectiveLevelFilter]);
 
   // ============================================================================
   // HANDLERS
@@ -216,7 +246,7 @@ export default function StudentsModulePage() {
 
       const requestKey = JSON.stringify({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel.id,
+        schoolLevelId: effectiveLevelFilter,
         ...filters,
       });
       if (isStudentsLoadingRef.current && lastStudentsRequestKeyRef.current === requestKey) {
@@ -228,7 +258,8 @@ export default function StudentsModulePage() {
       try {
       const params = new URLSearchParams({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel.id,
+        // ⭐ FIX 2026-09-07 : UUID school_levels (pas education_levels) + fused MAT_PRI
+        ...(effectiveLevelFilter && { schoolLevelId: effectiveLevelFilter }),
         ...(filters.classId && { classId: filters.classId }),
         ...(filters.status && { status: filters.status }),
         ...(filters.search && { search: filters.search }),
@@ -259,7 +290,8 @@ export default function StudentsModulePage() {
     try {
       const params = new URLSearchParams({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel.id,
+        // ⭐ FIX 2026-09-07 : UUID school_levels (pas education_levels) + fused MAT_PRI
+        ...(effectiveLevelFilter && { schoolLevelId: effectiveLevelFilter }),
       });
 
       const requestKey = params.toString();
@@ -334,7 +366,10 @@ export default function StudentsModulePage() {
           body: JSON.stringify({
             ...formData,
             academicYearId: academicYear?.id,
-            schoolLevelId: schoolLevel?.id,
+            // ⭐ FIX 2026-09-07 : UUID school_levels réel (le create exige une FK
+            //    valide — PAS le composite fused MAT_PRI). Le wizard complet
+            //    (preRegister) reste le flux d'inscription principal.
+            schoolLevelId: schoolLevel?.schoolLevelId || schoolLevel?.id,
           }),
         });
         if (response.ok) {
@@ -1101,7 +1136,8 @@ export default function StudentsModulePage() {
                           lastName,
                           dateOfBirth,
                           academicYearId: academicYear.id,
-                          schoolLevelId: schoolLevel.id,
+                          // ⭐ FIX 2026-09-07 : UUID school_levels réel (FK valide)
+                          schoolLevelId: schoolLevel?.schoolLevelId || schoolLevel.id,
                         }),
                       });
                       if (res.ok) {

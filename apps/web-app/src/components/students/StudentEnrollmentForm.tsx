@@ -355,6 +355,12 @@ export default function StudentEnrollmentForm({
   // Stratégie: pour chaque academic-class, on cherche le school-level dont le
   // `label` (ex: "Maternelle") correspond au `level.name` de l'academic-class.
   // On utilise ce mapping pour filtrer les classes par `selectedLevelId`.
+  //
+  // ⭐ FIX 2026-09-07 « miroir bilingue » : les niveaux EN (Nursery/Primary)
+  //    partagent le schoolLevelId de leur miroir FR. Sans filtre de piste, la
+  //    liste mélangeait les classes FR (CI, CP…) et EN (Primary 1-6) pour un
+  //    même niveau. → piste EN sélectionnée = classes EN ; piste FR = classes
+  //    FR/non marquées. L'élève garde UN schoolLevelId (paiement unique).
   const filteredClasses = useMemo(() => {
     if (!selectedLevelId || classesList.length === 0) return classesList;
 
@@ -366,13 +372,21 @@ export default function StudentEnrollmentForm({
       }
     });
 
+    // Code du niveau sélectionné (MATERNELLE / NURSERY / PRIMAIRE / PRIMARY…)
+    const selectedLevelCode = (schoolLevels.find((sl: any) => sl.id === selectedLevelId)?.code || '').toUpperCase();
+    const isEnLevel = ['NURSERY', 'PRIMARY', 'SECONDARY'].includes(selectedLevelCode);
+
     // Filtrer les classes: on cherche les classes dont le level.name correspond
     // à un school-level dont l'id est selectedLevelId
     return classesList.filter((c: any) => {
       const levelName = c.level?.name || c.schoolLevel?.name || '';
       if (!levelName) return false;
       const mappedSchoolLevelId = labelToSchoolLevelId.get(levelName.toLowerCase());
-      return mappedSchoolLevelId === selectedLevelId;
+      if (mappedSchoolLevelId !== selectedLevelId) return false;
+      // ⭐ Cohérence de piste : niveau EN miroir → classes EN ; niveau FR → FR/null
+      const track = (c.languageTrack || '').toUpperCase() || null;
+      if (isEnLevel) return track === 'EN';
+      return track === 'FR' || track === null;
     });
   }, [selectedLevelId, classesList, schoolLevels]);
 
@@ -598,16 +612,29 @@ export default function StudentEnrollmentForm({
           {/* Niveau scolaire (sélecteur qui filtre les classes) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire</label>
-            <select
-              value={selectedLevelId}
-              onChange={e => handleLevelChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">— Sélectionner un niveau —</option>
-              {schoolLevels.map(sl => (
-                <option key={sl.id} value={sl.id}>{sl.name}</option>
-              ))}
-            </select>
+            {schoolLevels.length === 0 ? (
+              // ⭐ FIX 2026-09-07 « vérification multi-rôles » : compte dont le
+              //    périmètre ne couvre AUCUN niveau actif (ex: affectation
+              //    Secondaire alors que le niveau est désactivé) → message
+              //    explicite au lieu d'un sélecteur vide silencieux.
+              <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800">
+                <span className="font-semibold">Aucun niveau scolaire disponible.</span>{' '}
+                Votre compte n&apos;a accès à aucun niveau activé pour cet
+                établissement. Demandez au promoteur de vérifier votre affectation
+                (RH → Personnel) ou les niveaux actifs (Paramètres → Structure).
+              </div>
+            ) : (
+              <select
+                value={selectedLevelId}
+                onChange={e => handleLevelChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— Sélectionner un niveau —</option>
+                {schoolLevels.map(sl => (
+                  <option key={sl.id} value={sl.id}>{sl.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* ⭐ Classe OFFICIELLE (filtrée par le niveau sélectionné) */}

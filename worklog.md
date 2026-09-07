@@ -9962,3 +9962,35 @@ Stage Summary:
 - ✅ Promoteur : comportement 100% inchangé (option «Tous les niveaux» + enrichissement ALL)
 - Aucun changement backend (Railway/API inchangés) — déploiement Vercel web-app uniquement
 - Suivi : vérifier build Vercel (~5-10 min) puis re-tester en production CSPEB avec le compte secrétaire ; si un autre écran reste vide pour un compte restreint, vérifier que /context/bootstrap renvoie bien scope.allLevels=false pour ce compte
+
+---
+
+Task ID: 28
+Agent: Super Z (agent principal)
+Task: CSPEB — (1) vérification du parcours inscription pour TOUS les rôles (comptable, secrétaire comptable, directeur, enseignant, coordinateur) ; (2) miroir bilingue : les vues anglophones doivent montrer les MÊMES élèves que les francophones, avec un paiement unique (inscription/scolarité)
+
+Contexte: suite du fix Task 27 (inscription secrétaire — sélecteurs vides + accès refusé). L'utilisateur a demandé d'étendre la vérification aux autres rôles et a signalé que le miroir bilingue (piste EN) du module scolarité n'affiche AUCUN élève alors que ce sont les mêmes élèves qu'en francophone (pas de double paiement).
+
+Work Log:
+- Inspection DB Neon production (tenant CSPEB) : 14 users, 11 staff, 8 staff_admin_assignments ; simulation du scope AccessScopeService par user — rôles couverts : PROMOTEUR (transverse), DIRECTEUR_MAT_PRI (FR/EN/2-pistes), SECRETAIRE_COMPTABLE_MAT_PRI (auroretheodoraa), SECRETAIRE_COMPTABLE_SEC (recette), ENSEIGNANT (FR/EN). COORDINATEUR = poste RH mappé sur DIRECTEUR (refineUserRole — Task 13) → couvert par la vérification DIRECTEUR
+- Preuve en production (API + navigateur réel sur app CSPEB avec compte promoteur) : GET /students?schoolLevelId=<UUID education_levels> → 0 élèves alors que <UUID school_levels> → 83 (PRIMAIRE) / 10 (MATERNELLE). StudentsModulePage envoyait schoolLevel.id (UUID education_levels) comme schoolLevelId → listes VIDES dès qu'un niveau est sélectionné (FR comme EN) — cause racine du « miroir bilingue sans élèves »
+- 96 élèves inscrits uniquement via classes officielles FR (CI=9, CP=22, CE1=21, CE2=12, CM1=12, CM2=9, 6e=3, MAT1=1, MAT2=6) ; les 8 classes EN (Nursery 1-2, Primary 1-6) sont des miroirs vides PAR CONSTRUCTION (bilingual-structure.service : AUCUNE duplication des élèves)
+- Diagnostic RBAC : MANAGEMENT_ROLES (students-lifecycle.controller) inclut déjà SECRETAIRE/SECRETAIRE_COMPTABLE/COMPTABLE/CENSEUR + suffixes (fix 2026-09-06) ; RolesGuard normalise suffixes + synonymes FR/EN ; ENSEIGNANT correctement EXCLU de preRegister/admit (par design) mais l'UI lui proposait le wizard → 403 « accès refusé » en finalisation
+- Correctifs BACKEND (4 fichiers) :
+  - NOUVEAU common/context/resolve-school-level.ts : resolveSchoolLevelFilter() traduit TOUTE valeur (UUID school_levels / UUID education_levels / miroir EN NURSERY-PRIMARY-SECONDARY → FR / composite MAT_PRI / codes courts) en UUIDs school_levels — cache mémoire 2 min par tenant
+  - access-scope.guard.ts : résolution AVANT rejet 403 (un UUID education_levels du périmètre n'est plus rejeté — fin des « accès refusé » multi-tables pour les comptes restreints)
+  - students-prisma.service : résolution dans findAllStudents + getStudentStatistics + getAbandonedStudents (where.schoolLevelId multi-UUID) + createStudent (FK valide)
+  - students-lifecycle.service : résolution dans preRegister + admit → l'élève garde UN schoolLevelId (paiement unique : ce qui est payé côté FR vaut pour le miroir EN)
+- Correctifs FRONT (4 fichiers) :
+  - StudentsModulePage : effectiveLevelFilter = schoolLevelId (UUID school_levels, PAS education_levels) + mode fused → composite MAT_PRI (résolu [MATERNELLE, PRIMAIRE] backend) ; create modal garde l'UUID réel
+  - EnrollmentsContent : boutons Nouvelle/Importer/Réinscription masqués pour ENSEIGNANT + bannière « Mode consultation » (fin du 403 UX pour les enseignants)
+  - StudentEnrollmentForm : message explicite si le périmètre ne couvre aucun niveau actif (ex: affectation SEC alors que le niveau est désactivé) ; filtrage classes par piste cohérent (niveau EN miroir → classes EN, niveau FR → classes FR — fin du mélange CI/CP…+Primary 1-6)
+  - CollectionSummaryContent (finance/bilan encaissements) : mapping code EN→FR (primary→primaire, nursery→maternelle) dans le filtre des classes — les vues anglophones montrent les mêmes classes/élèves/encaissements
+- Tests : scripts/_test_task28.mjs 41/41 OK (transpilation 8 fichiers, résolution avec les UUIDs réels CSPEB, miroirs EN→FR, composite MAT_PRI, structure guard/services/front) ; typecheck : 0 nouvelle erreur (les 4 erreurs web-app et les erreurs prisma/node_modules préexistent à HEAD — baseline vérifiée par git stash) ; bun test : 12 pass / 5 fail / 2 errors identiques à la baseline
+
+Stage Summary:
+- ⭐ Résolution multi-tables des niveaux (education_levels ↔ school_levels ↔ miroirs EN ↔ composite MAT_PRI) appliquée au guard global + 6 endpoints clés → les sélecteurs/listes fonctionnent quel que soit l'identifiant envoyé
+- ⭐ Miroir bilingue : la piste anglophone voit les MÊMES élèves que la francophone (résolution NURSERY→MATERNELLE, PRIMARY→PRIMAIRE) — conforme au design « aucune duplication des élèves » ; paiement unique par construction (un seul schoolLevelId par élève)
+- ⭐ Mode fused : « Maternelle + Primaire » filtre sur les DEUX niveaux (MAT_PRI résolu backend) au lieu d'un seul
+- ⭐ Enseignants : consultation seule (boutons masqués + bannière) — plus de 403 silencieux ; Coordinateur = DIRECTEUR (déjà couvert) ; comptable/secrétaire comptable/directeur passent RolesGuard + scope
+- Suivi : builds Railway (API) + Vercel (front) ~5-10 min, puis re-test CSPEB : sélectionner un niveau (ex: Maternelle + Primaire) dans le module Élèves & Scolarité → la liste doit rester peuplée (10 maternelle / 83 primaire / 93 fused) ; vue EN du bilan encaissements → mêmes élèves

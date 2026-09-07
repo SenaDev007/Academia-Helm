@@ -44,6 +44,12 @@ import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { useEnrollments, useAcademicClasses, useAcademicYears } from '@/lib/query/student-queries';
 import { useQueryClient } from '@tanstack/react-query';
+// ⭐ FIX 2026-09-07 « vérification multi-rôles » : les actions d'écriture du
+//    module Inscriptions (preRegister/admit/import/réinscription) sont
+//    réservées aux rôles d'administration (MANAGEMENT_ROLES backend) — un
+//    enseignant qui finalisait le wizard recevait un 403 « accès refusé ».
+//    → masquage des boutons + bannière explicite côté enseignant.
+import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 
 interface Enrollment {
   id: string;
@@ -193,6 +199,14 @@ const getLevelDisplayName = (name: string) => {
 export default function EnrollmentsContent() {
   const { academicYear, schoolLevel, tenantId } = useModuleContext();
   const router = useRouter();
+  // ⭐ FIX 2026-09-07 : rôle courant — les enseignants n'inscrivent pas.
+  const session = useAppSessionOptional();
+  const currentUserRole = (session?.user?.role || '').toUpperCase();
+  const isTeacherOnly =
+    currentUserRole === 'ENSEIGNANT' ||
+    currentUserRole === 'TEACHER' ||
+    currentUserRole === 'TEACHER_RESP';
+  const canWriteEnrollments = !isTeacherOnly;
 
   // ⭐ React Query — cache partagé entre onglets, pas de re-fetch au remontage
   const enrollmentsQuery = useEnrollments(academicYear?.id);
@@ -1008,6 +1022,21 @@ export default function EnrollmentsContent() {
           );
         })()}
 
+        {/* ⭐ FIX 2026-09-07 : bannière explicite pour les enseignants — la
+            finalisation d'inscription est réservée à l'administration
+            (secrétaire, comptable, direction, promoteur). */}
+        {isTeacherOnly && (
+          <div className="flex items-start gap-2.5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-800 leading-relaxed">
+              <span className="font-semibold">Mode consultation.</span> La création
+              et la finalisation des inscriptions sont réservées au secrétariat, à
+              la comptabilité et à la direction. Contactez l&apos;administration
+              de votre établissement pour inscrire un élève.
+            </p>
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
           <div className="relative flex-1 max-w-md">
@@ -1063,26 +1092,34 @@ export default function EnrollmentsContent() {
               {isGlobalPdfExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
               {isGlobalPdfExporting ? '...' : 'PDF global'}
             </button>
-            <button
-              onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition"
-              title="Importer des élèves depuis Excel"
-            >
-              <Upload className="w-4 h-4" /> Importer
-            </button>
-            <button
-              onClick={() => setBulkReEnrollOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition"
-              title="Réinscription massive"
-            >
-              <RotateCcw className="w-4 h-4" /> Réinscription lot
-            </button>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
-            >
-              <Plus className="w-4 h-4" /> Nouvelle
-            </button>
+            {/* ⭐ FIX 2026-09-07 : actions d'écriture réservées à l'administration
+                (les enseignants reçoivent 403 du backend — boutons masqués) */}
+            {canWriteEnrollments && (
+              <button
+                onClick={() => setIsImportModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition"
+                title="Importer des élèves depuis Excel"
+              >
+                <Upload className="w-4 h-4" /> Importer
+              </button>
+            )}
+            {canWriteEnrollments && (
+              <button
+                onClick={() => setBulkReEnrollOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition"
+                title="Réinscription massive"
+              >
+                <RotateCcw className="w-4 h-4" /> Réinscription lot
+              </button>
+            )}
+            {canWriteEnrollments && (
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
+              >
+                <Plus className="w-4 h-4" /> Nouvelle
+              </button>
+            )}
           </div>
         </div>
 

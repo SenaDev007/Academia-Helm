@@ -32,12 +32,17 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 import { ALLOW_CROSS_LEVEL_KEY } from '../decorators/allow-cross-level.decorator';
+import { isSchoolLevelFilterWithinScope } from '../context/resolve-school-level';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class AccessScopeGuard implements CanActivate {
   private readonly logger = new Logger(AccessScopeGuard.name);
 
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -103,11 +108,32 @@ export class AccessScopeGuard implements CanActivate {
 
       if (scope.allLevels) continue; // pas de restriction de niveau
 
-      const allowed: boolean =
+      // ⭐ FIX 2026-09-07 « multi-tables de niveaux » : la valeur peut être
+      //    l'UUID education_levels (structure pédagogique), un miroir bilingue
+      //    EN (NURSERY/PRIMARY) ou un composite fused (MAT_PRI) — aucun de
+      //    ces identifiants n'est littéralement dans scope.levelIds (UUIDs
+      //    school_levels) alors que le niveau demandé est BIEN dans le
+      //    périmètre → résolution avant rejet (403 sinon = « accès refusé »
+      //    observé par les secrétaires sur la liste des élèves).
+      const allowedRaw: boolean =
         (typeof value === 'string' && scope.levelIds.includes(value)) ||
         (Array.isArray(value) && (value as string[]).every((v) => scope.levelIds.includes(v)));
 
-      if (!allowed) {
+      if (!allowedRaw && typeof value === 'string' && tenantId) {
+        try {
+          const resolvedOk = await isSchoolLevelFilterWithinScope(
+            this.prisma,
+            tenantId,
+            value,
+            scope.levelIds,
+          );
+          if (resolvedOk) continue;
+        } catch {
+          // Résolution impossible → retomber sur la vérification brute
+        }
+      }
+
+      if (!allowedRaw) {
         log('LEVEL_OUT_OF_SCOPE', { source: src, requested: value, scopeLevels: scope.levelCodes });
         throw new ForbiddenException(
           `Accès refusé : votre périmètre (${scope.levelCodes.join(', ')}) n'inclut pas le niveau demandé.`,

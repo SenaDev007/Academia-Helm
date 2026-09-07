@@ -14,6 +14,7 @@ import { PrismaService } from '../database/prisma.service';
 import { MatriculeService } from './services/matricule.service';
 import { AccessScope } from '../common/context/access-scope.service';
 import { levelWhere, studentTrackRelation, assertLevelInScope } from '../common/context/scope-where';
+import { resolveSchoolLevelFilter } from '../common/context/resolve-school-level';
 import { PublicVerificationService } from './services/public-verification.service';
 import { StudentCountVerifierService } from '../billing/services/student-count-verifier.service';
 
@@ -70,6 +71,25 @@ export class StudentsPrismaService {
   }) {
     // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
     await this.assertCanEnroll(data.tenantId);
+
+    // ⭐ FIX 2026-09-07 « miroir bilingue / multi-tables » : la FK
+    //    Student.schoolLevelId référence school_levels — le client peut envoyer
+    //    l'UUID education_levels (ou un miroir EN). Résolution systématique ;
+    //    un composite (MAT_PRI) est ambigu → premier niveau (log warning).
+    if (data.schoolLevelId) {
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, data.tenantId, data.schoolLevelId);
+      if (resolvedIds && resolvedIds.length > 0) {
+        if (resolvedIds.length > 1) {
+          console.warn('STUDENT_CREATE_AMBIGUOUS_LEVEL', {
+            tenantId: data.tenantId,
+            received: data.schoolLevelId,
+            resolved: resolvedIds,
+            note: 'composite fused reçu — premier niveau utilisé (le wizard preRegister est le flux principal)',
+          });
+        }
+        data = { ...data, schoolLevelId: resolvedIds[0] };
+      }
+    }
 
     const schoolCode = await this.matriculeService.getSchoolCode(data.tenantId);
     const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(data.academicYearId);
@@ -161,8 +181,17 @@ export class StudentsPrismaService {
     if (scopeLvl) {
       where.schoolLevelId = scopeLvl.schoolLevelId;
     }
+    // ⭐ FIX 2026-09-07 « miroir bilingue » : le front peut envoyer l'UUID
+    //    education_levels (ou un miroir EN NURSERY/PRIMARY, ou un composite
+    //    MAT_PRI) alors que la FK Student.schoolLevelId référence school_levels
+    //    → résolution systématique : la piste anglophone voit les MÊMES élèves
+    //    que la piste francophone (les élèves ne sont jamais dupliqués — cf.
+    //    bilingual-structure.service).
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
-      where.schoolLevelId = filters.schoolLevelId;
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, filters.schoolLevelId);
+      if (resolvedIds) {
+        where.schoolLevelId = resolvedIds.length === 1 ? resolvedIds[0] : { in: resolvedIds };
+      }
     }
 
     // ⭐ Piste linguistique : élèves de SA piste uniquement
@@ -519,8 +548,13 @@ export class StudentsPrismaService {
     if (scopeLvl) {
       enrollmentWhere.schoolLevelId = scopeLvl.schoolLevelId;
     }
+    // ⭐ FIX 2026-09-07 « miroir bilingue » : résolution du filtre client
+    //    (UUID education_levels / miroir EN / composite → UUIDs school_levels).
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      enrollmentWhere.schoolLevelId = schoolLevelId;
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, schoolLevelId);
+      if (resolvedIds) {
+        enrollmentWhere.schoolLevelId = resolvedIds.length === 1 ? resolvedIds[0] : { in: resolvedIds };
+      }
     }
     // ⭐ Piste : filtrer via l'élève (règle héritage FR / marquage EN classe)
     const scopeTrack = studentTrackRelation(scope || undefined);
@@ -717,8 +751,13 @@ export class StudentsPrismaService {
     if (scopeLvl) {
       where.schoolLevelId = scopeLvl.schoolLevelId;
     }
+    // ⭐ FIX 2026-09-07 « miroir bilingue » : résolution du filtre client
+    //    (UUID education_levels / miroir EN / composite → UUIDs school_levels).
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      where.schoolLevelId = schoolLevelId;
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, schoolLevelId);
+      if (resolvedIds) {
+        where.schoolLevelId = resolvedIds.length === 1 ? resolvedIds[0] : { in: resolvedIds };
+      }
     }
     const scopeTrack = studentTrackRelation(scope || undefined);
     if (scopeTrack) {

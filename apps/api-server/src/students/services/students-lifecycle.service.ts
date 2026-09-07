@@ -10,6 +10,7 @@ import { PublicVerificationService } from './public-verification.service';
 import { StudentAccountService } from '../../finance/student-account.service';
 import { StudentCountVerifierService } from '../../billing/services/student-count-verifier.service';
 import { StudentIdentifierService } from './student-identifier.service';
+import { resolveSchoolLevelFilter } from '../../common/context/resolve-school-level';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -161,6 +162,27 @@ export class StudentsLifecycleService {
     // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
     await this.assertCanEnroll(tenantId);
 
+    // ⭐ FIX 2026-09-07 « miroir bilingue / multi-tables » : la FK
+    //    Student.schoolLevelId référence school_levels. Le wizard envoie
+    //    déjà le bon UUID (schoolLevelId du BFF — Task 27), mais par défense
+    //    en profondeur on résout aussi un UUID education_levels / un miroir
+    //    EN (NURSERY/PRIMARY → MATERNELLE/PRIMAIRE) ou un composite MAT_PRI.
+    //    ⭐ Paiement unique : l'élève garde UN seul schoolLevelId (FR) —
+    //    l'inscription/scolarité payée côté FR vaut pour la piste EN (miroir).
+    if (data.schoolLevelId) {
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, data.schoolLevelId);
+      if (resolvedIds && resolvedIds.length > 0) {
+        if (resolvedIds.length > 1) {
+          console.warn('PRE_REGISTER_AMBIGUOUS_LEVEL', {
+            tenantId,
+            received: data.schoolLevelId,
+            resolved: resolvedIds,
+          });
+        }
+        data = { ...data, schoolLevelId: resolvedIds[0] };
+      }
+    }
+
     const enrollmentDate = new Date();
     const enrollmentType = data.enrollmentType || 'NEW';
 
@@ -290,6 +312,15 @@ export class StudentsLifecycleService {
     // encore de classe (ex: admission convertie sans classe disponible), on
     // génère quand même le matricule + le dossier académique. L'affectation
     // à une classe se fera plus tard via l'onglet Affectations (changeClass).
+
+    // ⭐ FIX 2026-09-07 « miroir bilingue / multi-tables » : résolution du
+    //    schoolLevelId (UUID education_levels / miroir EN → school_levels).
+    if (data.schoolLevelId) {
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, data.schoolLevelId);
+      if (resolvedIds && resolvedIds.length > 0) {
+        data = { ...data, schoolLevelId: resolvedIds[0] };
+      }
+    }
 
     const student = await this.prisma.student.findFirst({
       where: { id: data.studentId, tenantId },

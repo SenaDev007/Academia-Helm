@@ -128,6 +128,18 @@ class FinanceService {
     return financeFetch(`/api/finance/student-accounts/${encodeURIComponent(id)}`);
   }
 
+  /**
+   * ⭐ FLUX POST-INSCRIPTION : récupère (ou crée) le compte financier d'un élève
+   * précis pour une année — utilisé par le modal de paiement préréglé après
+   * l'inscription d'un nouvel élève (le compte existe déjà grâce à admit()).
+   * Backend : GET /finance/accounts/student/:studentId (getOrCreate).
+   */
+  async getStudentAccountByStudentId(studentId: string, academicYearId: string): Promise<any> {
+    return financeFetch(
+      `/api/finance/student-accounts/student/${encodeURIComponent(studentId)}?academicYearId=${encodeURIComponent(academicYearId)}`,
+    );
+  }
+
   async unblockStudentAccount(id: string, data: { reason: string }): Promise<any> {
     return financeFetch(`/api/finance/student-accounts/${encodeURIComponent(id)}/unblock`, { method: 'POST', body: data });
   }
@@ -140,6 +152,26 @@ class FinanceService {
 
   async createTransaction(data: any): Promise<any> {
     return financeFetch('/api/finance/transactions', { method: 'POST', body: data });
+  }
+
+  /**
+   * ⭐ RÉPARTITION MANUELLE — type partagé (flexibilité encaissement sept. 2026).
+   * Imputations explicites sur les lignes de frais du compte élève, décidées
+   * par la comptable (toggle « répartition personnalisée » + section frais
+   * généraux du NewPaymentModal). Le backend impute EXACTEMENT ces lignes.
+   */
+  async createManualTransaction(data: {
+    academicYearId: string;
+    studentAccountId: string;
+    amount: number;
+    paymentMethod: string;
+    reference?: string;
+    cashRegisterId?: string;
+    tenderedAmount?: number;
+    changeGiven?: number;
+    manualAllocations: { accountBreakdownId: string; amount: number }[];
+  }): Promise<any> {
+    return this.createTransaction(data);
   }
 
   /**
@@ -159,6 +191,8 @@ class FinanceService {
     // ⭐ Espèces : montant remis par le client + reliquat (pour traçabilité reçu)
     tenderedAmount?: number;
     changeGiven?: number;
+    // ⭐ RÉPARTITION MANUELLE (flexibilité sept. 2026) — imputations explicites
+    manualAllocations?: { accountBreakdownId: string; amount: number }[];
   }): Promise<any> {
     return financeFetch('/api/finance/transactions/multi-action', { method: 'POST', body: data });
   }

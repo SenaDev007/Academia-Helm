@@ -50,6 +50,10 @@ export interface MultiActionPaymentInput {
   // Le total encaissé = feeAmount + shopAmount. Le reliquat est calculé sur ce total.
   tenderedAmount?: number;
   changeGiven?: number;
+  // ⭐ RÉPARTITION MANUELLE (flexibilité sept. 2026) : imputations explicites
+  //    sur les AccountBreakdown (section frais généraux + répartition
+  //    personnalisée du NewPaymentModal). Le feeAmount doit couvrir la somme.
+  manualAllocations?: { accountBreakdownId: string; amount: number }[];
 }
 
 export interface MultiActionResult {
@@ -97,6 +101,7 @@ export class MultiActionPaymentService {
       notes,
       tenderedAmount,
       changeGiven,
+      manualAllocations,
     } = input;
 
     // ─── Validation ───
@@ -121,6 +126,7 @@ export class MultiActionPaymentService {
         cashRegisterId,
         tenderedAmount,
         changeGiven,
+        manualAllocations,
       });
       return {
         transaction: tx,
@@ -203,6 +209,7 @@ export class MultiActionPaymentService {
         changeGiven: (tenderedAmount != null && changeGiven != null)
           ? Number(changeGiven)
           : (tenderedAmount != null ? Math.max(0, Number(tenderedAmount) - feeAmount - shopSubTotal) : undefined),
+        manualAllocations,
       });
       this.logger.log(
         `Multi-action: FinanceTransaction ${financeTx.receiptNumber} créée pour ${feeAmount} FCFA de frais` +

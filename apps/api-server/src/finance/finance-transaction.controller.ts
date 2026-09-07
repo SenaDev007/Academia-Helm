@@ -150,6 +150,14 @@ export class FinanceTransactionController {
       changeGiven: body.changeGiven != null ? Number(body.changeGiven) : undefined,
       // ⭐ Encaissement DÉDIÉ (ex: frais généraux) — imputation restreinte à ce type
       targetFeeType: body.targetFeeType,
+      // ⭐ RÉPARTITION MANUELLE (flexibilité sept. 2026) — imputations explicites
+      //    décidées par la comptable (ex: inscription + frais généraux sans scolarité)
+      manualAllocations: Array.isArray(body.manualAllocations)
+        ? body.manualAllocations.map((m: any) => ({
+          accountBreakdownId: String(m?.accountBreakdownId ?? ''),
+          amount: Number(m?.amount ?? 0),
+        }))
+        : undefined,
     });
   }
 

@@ -214,6 +214,13 @@ export class FinanceTransactionService {
       // ⭐ Encaissement DÉDIÉ (sept. 2026 — frais généraux) : imputer UNIQUEMENT
       //    aux AccountBreakdown de ce type (ex: 'GENERAL'). Voir CreateTransactionDto.
       targetFeeType?: string;
+      // ⭐ RÉPARTITION MANUELLE (sept. 2026 — flexibilité encaissement) :
+      //    imputations EXPLICITES décidées par la comptable / secrétaire comptable.
+      //    Ex: parent paie inscription + uniforme + frais généraux, mais pas la
+      //    scolarité (ou partiellement). Chaque ligne = (breakdown, montant).
+      //    Validation : appartient au compte, > 0, ≤ restant dû ; le reliquat
+      //    éventuel passe par la cascade de priorité classique.
+      manualAllocations?: { accountBreakdownId: string; amount: number }[];
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
@@ -301,6 +308,66 @@ export class FinanceTransactionService {
     let remaining = data.amount;
     const updates: { breakdownId: string; paidDelta: number; remainingDelta: number; feeType: string }[] = [];
 
+    // ─── RÉPARTITION MANUELLE (flexibilité sept. 2026) ───
+    // La comptable précise elle-même le dispatching (toggle « répartition
+    // personnalisée » du NewPaymentModal + section frais généraux). Chaque
+    // ligne est imputée EXACTEMENT comme spécifié — le FIFO des arriérés est
+    // SAUTÉ (décision explicite) et le reliquat éventuel passe par la cascade
+    // de priorité classique sur les restants non couverts.
+    const manualAllocMap = new Map<string, number>();
+    if (data.manualAllocations?.length) {
+      if (data.targetFeeType) {
+        throw new BadRequestException(
+          'Répartition manuelle et type de frais cible sont mutuellement exclusifs.',
+        );
+      }
+      let manualSum = 0;
+      for (const m of data.manualAllocations) {
+        const b = account.breakdowns.find((x) => x.id === m.accountBreakdownId);
+        if (!b) {
+          throw new BadRequestException(
+            'Une ligne de répartition ne correspond à aucun frais du compte de cet élève.',
+          );
+        }
+        const amt = Number(m.amount);
+        if (!(amt > 0)) {
+          throw new BadRequestException(
+            `Montant invalide pour « ${b.feeStructure.name} » : ${amt}.`,
+          );
+        }
+        const prev = manualAllocMap.get(b.id) ?? 0;
+        if (prev + amt > Number(b.remainingAmount) + 1e-9) {
+          throw new BadRequestException(
+            `Le montant saisi pour « ${b.feeStructure.name} » (${amt.toLocaleString('fr-FR')} FCFA) ` +
+            `dépasse le restant dû (${Number(b.remainingAmount).toLocaleString('fr-FR')} FCFA).`,
+          );
+        }
+        manualAllocMap.set(b.id, prev + amt);
+        manualSum += amt;
+      }
+      if (manualSum > data.amount + 1e-9) {
+        throw new BadRequestException(
+          `La somme des imputations manuelles (${manualSum.toLocaleString('fr-FR')} FCFA) ` +
+          `dépasse le montant du paiement (${data.amount.toLocaleString('fr-FR')} FCFA).`,
+        );
+      }
+      // Construire les updates depuis la répartition manuelle
+      for (const [breakdownId, pay] of manualAllocMap) {
+        const b = account.breakdowns.find((x) => x.id === breakdownId)!;
+        updates.push({
+          breakdownId,
+          paidDelta: pay,
+          remainingDelta: -pay,
+          feeType: b.feeStructure.feeType,
+        });
+      }
+      remaining = Math.max(0, data.amount - manualSum);
+      this.logger.log(
+        `Répartition manuelle: ${manualAllocMap.size} ligne(s) imputée(s) pour ${manualSum.toLocaleString('fr-FR')} FCFA` +
+        (remaining > 0 ? `, reliquat de ${remaining.toLocaleString('fr-FR')} FCFA en cascade` : ''),
+      );
+    }
+
     // ─── PHASE 3 : Paiement FIFO — solder d'abord les arriérés anciens ───
     // Avant d'allouer le paiement aux AccountBreakdown de l'année en cours,
     // on solde d'abord les FeeArrear des années antérieures (FIFO).
@@ -309,7 +376,10 @@ export class FinanceTransactionService {
     // ⭐ Encaissement DÉDIÉ (targetFeeType) : on SAUTE cette phase — le
     //    paiement cible explicitement les frais de l'année en cours pour ce
     //    type (ex: frais généraux), pas les arriérés de scolarité.
-    if (remaining > 0 && !data.targetFeeType) {
+    // ⭐ Répartition manuelle : FIFO sauté également — la comptable a précisé
+    //    explicitement où imputer le paiement (les arriérés éventuels seront
+    //    gérés par l'onglet dédié Arriérés).
+    if (remaining > 0 && !data.targetFeeType && !data.manualAllocations) {
       try {
         const fifoResult = await this.arrearAccumulationService.allocatePaymentFIFO(
           tenantId,
@@ -356,18 +426,41 @@ export class FinanceTransactionService {
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
     });
 
+    // Cascade de priorité sur le restant non couvert par la répartition
+    // manuelle (effective remaining = remainingAmount − déjà imputé manuellement).
+    // ⚠️ MERGE obligatoire dans updates : la contrainte @@unique
+    // (financeTransactionId, accountBreakdownId) interdit deux allocations
+    // de la même ligne de frais pour une même transaction.
     for (const b of sortedBreakdowns) {
       if (remaining <= 0) break;
-      const rem = Number(b.remainingAmount);
+      const alreadyManual = manualAllocMap.get(b.id) ?? 0;
+      const rem = Number(b.remainingAmount) - alreadyManual;
       if (rem <= 0) continue;
       const pay = Math.min(remaining, rem);
-      updates.push({
-        breakdownId: b.id,
-        paidDelta: pay,
-        remainingDelta: -pay,
-        feeType: b.feeStructure.feeType,
-      });
+      const existing = updates.find((u) => u.breakdownId === b.id);
+      if (existing) {
+        existing.paidDelta += pay;
+        existing.remainingDelta -= pay;
+      } else {
+        updates.push({
+          breakdownId: b.id,
+          paidDelta: pay,
+          remainingDelta: -pay,
+          feeType: b.feeStructure.feeType,
+        });
+      }
       remaining -= pay;
+    }
+
+    // ⭐ Répartition manuelle : refuser un paiement qui dépasserait le total
+    //    restant dû du compte (comme pour l'encaissement dédié — on ne crée
+    //    jamais de transaction avec de l'argent flottant via ce flux).
+    if (data.manualAllocations && remaining > 0) {
+      const totalDue = account.breakdowns.reduce((s, b) => s + Number(b.remainingAmount), 0);
+      throw new BadRequestException(
+        `Le montant (${data.amount.toLocaleString('fr-FR')} FCFA) dépasse le total restant dû de cet élève ` +
+        `(${totalDue.toLocaleString('fr-FR')} FCFA). Réduisez le montant ou ajustez la répartition.`,
+      );
     }
 
     // ⭐ Encaissement DÉDIÉ : refuser un montant supérieur au restant dû pour

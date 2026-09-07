@@ -15,7 +15,10 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
 import NewPaymentModal from './NewPaymentModal';
 import GeneralFeePaymentModal from './GeneralFeePaymentModal';
-import { SchoolFeePaymentDialog } from './SchoolFeePaymentDialog';
+// ⭐ FIX 2026-09-07 : import mort SUPPRIMÉ — SchoolFeePaymentDialog n'était jamais
+// rendu ici et son import cassait le build webpack : le fichier importe
+// '@/services/fedapay.service' (module inexistant — renommé feexpay.service
+// au commit 11a5b9ed sans mise à jour). Vercel échouait silencieusement depuis.
 import { financeService } from '@/services/finance.service';
 import { formatCurrency } from '@/lib/utils';
 import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';

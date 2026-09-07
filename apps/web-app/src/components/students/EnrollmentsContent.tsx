@@ -37,6 +37,8 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 import ImportElevesModal from '@/components/students/ImportElevesModal';
 import BulkActionModal from '@/components/students/BulkActionModal';
+// ⭐ Chaînage dynamique post-inscription : affectation → paiement (sept. 2026)
+import PostEnrollmentFlow, { type PostEnrollmentFlowData } from '@/components/students/PostEnrollmentFlow';
 import { studentsService } from '@/services/students.service';
 import { apiFetch } from '@/lib/api/client';
 import { financeService } from '@/services/finance.service';
@@ -246,6 +248,11 @@ export default function EnrollmentsContent() {
   const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
   // PDF liste de classe en cours de visualisation (blob URL + fileName)
   const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+
+  // ⭐ FLUX POST-INSCRIPTION (sept. 2026) : après la création d'une inscription,
+  // chaînage automatique Modal Affectation (skippable) → Modal Paiement
+  // préréglé sur l'élève — plus besoin de naviguer entre les onglets/modules.
+  const [postFlow, setPostFlow] = useState<PostEnrollmentFlowData | null>(null);
   // ⭐ Export Excel par classe (bouton à côté du PDF)
   const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
   // ⭐ Export PDF de toutes les classes d'un niveau
@@ -1778,6 +1785,30 @@ export default function EnrollmentsContent() {
               });
               setIsCreateModalOpen(false);
               loadData();
+
+              // ⭐ CHAÎNAGE DYNAMIQUE POST-INSCRIPTION (sept. 2026) :
+              // ouvre automatiquement le modal d'affectation vers une classe
+              // physique (skippable), puis le modal de paiement préréglé sur
+              // l'élève — la secrétaire n'a plus à naviguer entre onglets et
+              // modules pour finaliser l'accueil d'un nouvel élève.
+              // NB : l'auto-affectation éventuelle de preRegister (section
+              // physique unique) est pré-sélectionnée dans le modal.
+              const preassigned = (admitted?.studentEnrollments ?? []).find(
+                (e: any) => e.academicYearId === academicYear!.id && e.classId,
+              );
+              setPostFlow({
+                studentId: student.id,
+                firstName: data.student.firstName,
+                lastName: data.student.lastName,
+                matricule: admitted?.matricule ?? undefined,
+                schoolLevelId: effectiveSchoolLevelId,
+                academicClassId: data.classId || undefined,
+                academicClassName: data.classId
+                  ? classes.find((c) => c.id === data.classId)?.name
+                  : undefined,
+                preassignedPhysicalClassId: preassigned?.classId ?? null,
+                preassignedPhysicalClassName: preassigned?.class?.name ?? null,
+              });
               return admitted;
             } catch (e: any) {
               console.error('Erreur inscription:', e);
@@ -2030,6 +2061,17 @@ export default function EnrollmentsContent() {
           window.location.reload();
         }}
       />
+
+      {/* ─── FLUX POST-INSCRIPTION : Affectation (skippable) → Paiement ───
+          Ouvert automatiquement juste après une inscription réussie. */}
+      {postFlow && academicYear?.id && (
+        <PostEnrollmentFlow
+          flow={postFlow}
+          academicYearId={academicYear.id}
+          onClose={() => setPostFlow(null)}
+          onRefresh={loadData}
+        />
+      )}
 
       {/* ⭐ MODAL personnalisé pour actions multiples (remplace confirm()/prompt()) */}
       {bulkModal && (

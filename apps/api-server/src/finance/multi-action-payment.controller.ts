@@ -96,6 +96,13 @@ export class MultiActionPaymentController {
       cashRegisterId: body.cashRegisterId,
       customerName: body.customerName,
       notes: body.notes,
+      // ⭐ RÉPARTITION MANUELLE (flexibilité sept. 2026) — imputations explicites
+      manualAllocations: Array.isArray(body.manualAllocations)
+        ? body.manualAllocations.map((m: any) => ({
+          accountBreakdownId: String(m?.accountBreakdownId ?? ''),
+          amount: Number(m?.amount ?? 0),
+        }))
+        : undefined,
     });
 
     return result;

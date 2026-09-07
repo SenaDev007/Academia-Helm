@@ -39,8 +39,8 @@ import { toast } from '@/components/ui/toast';
 import { formatCurrency } from '@/lib/utils';
 import {
   feexPayService,
-  type FedaPayConfig,
-} from '@/services/fedapay.service';
+  type FeexPayConfig,
+} from '@/services/feexpay.service';
 
 const OPERATORS = [
   { value: 'MTN', label: 'MTN MoMo' },
@@ -89,7 +89,7 @@ export function SchoolFeePaymentDialog({
   onConfigureFedaPay,
 }: SchoolFeePaymentDialogProps) {
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [feexPayConfig, setFedaPayConfig] = useState<FedaPayConfig | null>(null);
+  const [feexPayConfig, setFedaPayConfig] = useState<FeexPayConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 

@@ -17,7 +17,10 @@ import {
   IsIn,
   IsArray,
   ValidateNested,
+  ArrayMinSize,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 // ─── 1. FeeStructure ────────────────────────────────────────────────────────
 
@@ -292,6 +295,38 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsIn(['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'])
   targetFeeType?: string;
+
+  /**
+   * ⭐ RÉPARTITION MANUELLE (sept. 2026 — flexibilité encaissement) :
+   * liste d'imputations EXPLICITES fournies par la comptable / secrétaire
+   * comptable (ex. : parent qui paie frais d'inscription + uniforme mais pas
+   * encore la scolarité, ou partiellement).
+   *
+   * Comportement (voir FinanceTransactionService.create) :
+   *  - chaque ligne est imputée EXACTEMENT sur l'AccountBreakdown visé
+   *    (validation : appartient au compte, montant > 0, ≤ restant dû) ;
+   *  - l'allocation FIFO des arriérés antérieurs est ignorée (la
+   *    comptable décide explicitement de la répartition) ;
+   *  - le reliquat éventuel (amount - somme des lignes) est imputé via
+   *    la cascade de priorité classique, sur les restants non couverts.
+   *
+   * Mutuellement exclusif avec targetFeeType.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ManualAllocationItemDto)
+  manualAllocations?: ManualAllocationItemDto[];
+}
+
+export class ManualAllocationItemDto {
+  @IsString()
+  accountBreakdownId: string;
+
+  @IsNumber()
+  @Min(0.01)
+  amount: number;
 }
 
 // ─── 7. ExpenseCategory ─────────────────────────────────────────────────────

@@ -213,9 +213,12 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     active: true,
     roles: SECRETARY_ROLES,
     modules: [
-      // ⭐ Le quotidien du secrétariat est la scolarité : la home du portail
-      //    est l'outil Élèves & Scolarité (composant partagé StudentsModulePage).
-      { path: '/app/secretaire', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
+      // ⭐ FIX 2026-09-07 (demande promoteur) : la home du portail est le
+      // TABLEAU DE BORD (PilotageDashboardV2 — même tableau de bord que /app),
+      // pas l'outil métier directement. Le quotidien « Élèves & Scolarité »
+      // reste le module n°2, à un clic.
+      { path: '/app/secretaire', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
+      { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
       { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
@@ -233,11 +236,17 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
     active: true,
     roles: SECRETARY_COMPTABLE_ROLES,
     modules: [
-      // ⭐ UNION DES DEUX MÉTIERS (validation utilisateur) : le secrétaire-
-      //    comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
-      //    a. Home = son quotidien : l'outil Encaissements (TransactionsContent
-      //    partagé — le même que /app/finance/payments).
-      { path: '/app/secretaire-comptable', label: 'Encaissements', labelEn: 'Collections', icon: 'Receipt', desc: 'Saisie des encaissements de frais', descEn: 'Fee collection entry' },
+      //  FIX 2026-09-07 (demande promoteur) : la home du portail est le
+      // TABLEAU DE BORD (PilotageDashboardV2 — même tableau de bord unifié
+      // que /app, cohérent avec l'union des deux métiers), pas l'outil
+      // Encaissements directement. L'outil Encaissements reste le module n°2,
+      // à un clic.
+      { path: '/app/secretaire-comptable', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
+      // UNION DES DEUX MÉTIERS (validation utilisateur) : le secrétaire-
+      // comptable a TOUT ce que le secrétaire a ET TOUT ce que le comptable
+      // a. Outil quotidien : Encaissements (TransactionsContent partagé —
+      // le même que /app/finance/payments).
+      { path: '/app/finance/payments', label: 'Encaissements', labelEn: 'Collections', icon: 'Receipt', desc: 'Saisie des encaissements de frais', descEn: 'Fee collection entry' },
       // Côté COMPTABLE : tableau de bord financier (page du portail comptable,
       // rendue dans SON shell — zéro duplication).
       { path: '/app/comptable', label: 'Tableau de bord financier', labelEn: 'Financial Dashboard', icon: 'LayoutDashboard', desc: "Vue financière de l'établissement", descEn: "School's financial view" },

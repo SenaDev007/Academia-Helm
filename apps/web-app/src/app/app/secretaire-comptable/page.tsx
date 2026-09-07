@@ -6,11 +6,13 @@
  * ============================================================================
  *
  * Home du portail dédié du secrétaire-comptable (/app/secretaire-comptable).
- * Le quotidien du secrétaire-comptable est l'ENCAISSEMENT des frais de
- * scolarité : l'accueil du portail est l'outil Encaissements (composant
- * partagé TransactionsContent — le même que /app/finance/payments, zéro
- * duplication), rendu dans le shell secrétaire-comptable (AdminPortalShell,
- * accent emerald).
+ * ⭐ FIX 2026-09-07 (demande promoteur) : le TABLEAU DE BORD s'affiche par
+ * défaut à l'arrivée dans le portail — plus l'outil Encaissements directement.
+ * On rend PilotageDashboardV2 (tableau de bord de pilotage unifié — le même
+ * que /app : KPIs transverses élèves/finances/pédagogie/RH), cohérent avec
+ * l'union des deux métiers (secrétariat + comptabilité). L'outil quotidien
+ * « Encaissements » (TransactionsContent — le même que /app/finance/payments)
+ * reste le module n°2 de la sidebar, à un clic.
  *
  * Optimisé avec lazy loading — pattern identique à /app/students/page.tsx.
  * Client Component requis (Next 16 : `dynamic` + `ssr: false` interdit dans
@@ -22,14 +24,14 @@ import dynamic from 'next/dynamic';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
 
 // ✅ Lazy load du composant lourd pour améliorer le temps de chargement initial
-const TransactionsContent = dynamic(
-  () => import('@/components/finance/TransactionsContent'),
+const PilotageDashboardV2 = dynamic(
+  () => import('@/components/pilotage/dashboards/PilotageDashboardV2'),
   {
-    loading: () => <LoadingState message="Chargement des encaissements..." />,
+    loading: () => <LoadingState message="Chargement du tableau de bord..." />,
     ssr: false, // ✅ Désactiver SSR pour les composants lourds côté client
   }
 );
 
 export default function SecretaryAccountantHomePage() {
-  return <TransactionsContent />;
+  return <PilotageDashboardV2 />;
 }

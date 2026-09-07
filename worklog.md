@@ -9994,3 +9994,27 @@ Stage Summary:
 - ⭐ Mode fused : « Maternelle + Primaire » filtre sur les DEUX niveaux (MAT_PRI résolu backend) au lieu d'un seul
 - ⭐ Enseignants : consultation seule (boutons masqués + bannière) — plus de 403 silencieux ; Coordinateur = DIRECTEUR (déjà couvert) ; comptable/secrétaire comptable/directeur passent RolesGuard + scope
 - Suivi : builds Railway (API) + Vercel (front) ~5-10 min, puis re-test CSPEB : sélectionner un niveau (ex: Maternelle + Primaire) dans le module Élèves & Scolarité → la liste doit rester peuplée (10 maternelle / 83 primaire / 93 fused) ; vue EN du bilan encaissements → mêmes élèves
+
+---
+
+Task ID: 29
+Agent: Super Z (agent principal)
+Task: CSPEB — (1) purge des encaissements de TEST de l'élève Akpovi Péniel ; (2) dashboard par défaut à la connexion pour secrétaire / secrétaire-comptable / comptable ; (3) sélecteur de classe vide dans la modale encaissement (Finance > Encaissements)
+
+Contexte: trois signalements promoteur consécutifs au déploiement Task 28. Les encaissements de test faits en production avec l'élève Akpovi Péniel devaient être supprimés ; les portails secrétaire/secrétaire-comptable atterrissaient sur l'outil métier (encaissements) au lieu du tableau de bord ; la modale encaissement n'affichait aucune classe dans le sélecteur.
+
+Work Log:
+- (1) Purge DB Neon production : l'élève « Sèhomie Pénielle Béroukhyah AKPOVI TOHOU » (matricule CSPEBE-E-26-005, id c9a4b7d0) avait 4 finance_transactions de test (CSPEBE-REC-26-001 10000 CASH, -002 1000 FEDAPAY, -003 1000 CASH, -004 5000 CASH — total 17 000 XOF, caissier Erhel DEGBE) ; les tables payments/tuition_payments étaient vides (l'encaissement vit dans finance_transactions liées aux student_accounts)
+- Diagnostic des triggers d'immutabilité : no_delete_finance_transaction + trg_no_delete_finance_transaction (BEFORE DELETE → exception), prevent_balance_update (student_accounts, bypass via set_config app.allow_balance_update — même mécanisme que le trigger serveur update_account_balance_after_tx) ; pattern repris de la purge précédente (PURGE_TEST_DATA du directeur déjà en audit log)
+- scripts/purge-akpovi-test-tx.js (dry-run validé puis exécuté) : transaction unique BEGIN/COMMIT — disable des 2 triggers delete → suppression des 5 allocations + 4 transactions → re-enable → account_breakdowns remis à zéro (payé=0, restant=ajusté) → student_account remis à neuf (payé=0, solde=dû=3000, statut ACTIVE) → clôtures journalières des 3 dates de tests remises à zéro (income 11000/1000/5000 → 0) → entrée financial_audit_logs PURGE_TEST_DATA signée du promoteur
+- Vérification post-purge : 0 transaction dans le tenant CSPEB, compte Akpovi dû=3000/payé=0/solde=3000/ACTIVE, breakdowns propres
+- (2) Dashboard par défaut : /app/secretaire et /app/secretaire-comptable rendent désormais PilotageDashboardV2 (le même tableau de bord unifié que /app et le portail directeur) ; /app/comptable inchangé (FinanceDashboardV2) ; admin-portal-map.ts : module n°1 = « Tableau de bord » (LayoutDashboard) pour les portails secrétaire et secrétaire-comptable, l'outil métier (Élèves & Scolarité / Encaissements) devient module n°2 à un clic — redirections post-login inchangées (getAdminPortalHomeForRole → home du portail = dashboard)
+- (3) Sélecteur de classe vide : cause racine identique à la Task 27 — /api/all-classes (BFF) envoyait x-school-level-id=ALL sur TOUTES les requêtes ; AccessScopeGuard réserve la sentinelle ALL aux profils transverses → 403 pour les comptes restreints (secrétaire, secrétaire-comptable, comptable, directeur de niveau) → le BFF masquait le 403 en renvoyant [] → sélecteur vide dans NewPaymentModal
+- Fix route scope-aware (même pattern que school-levels Task 27) : scope résolu via /context/bootstrap en parallèle de l'année active ; compte restreint → /classes interrogé pour CHAQUE UUID du périmètre (header spécifique par niveau, jamais ALL) + déduplication + filtre de défense scopeLevelIds + composites non-UUID (MAT_PRI) écartés ; compte transverse → comportement historique ALL conservé ; filtre officialClass actif et échec silencieux [] inchangés
+- Tests : scripts/_test_task29.mjs 33/33 (transpilation 4 fichiers, homes = dashboards, nav modules n°1/n°2, redirections, structure de la route, simulation agrégation multi-niveaux + dédoublonnage + MAT_PRI, consommateurs de la route) ; typecheck web-app : 683 erreurs = baseline 683 (0 nouvelle) ; bun test orion : 12 pass / 3 fail identique à la baseline
+
+Stage Summary:
+- ⭐ Encaissements de test supprimés de la production : le tenant CSPEB n'a plus AUCUNE transaction, le compte Akpovi est remis à neuf (dû 3000, payé 0), les clôtures journalières des dates de test sont neutralisées, purge tracée dans l'audit financier (PURGE_TEST_DATA)
+- ⭐ Dashboard par défaut : secrétaire ET secrétaire-comptable voient le tableau de bord de pilotage à l'arrivée dans leur portail (l'outil métier reste module n°2) ; comptable déjà conforme (tableau de bord financier)
+- ⭐ Sélecteur de classe de la modale encaissement : les classes se listent pour TOUS les rôles (fin des 403 masqués en liste vide sur /api/all-classes) — même racine que le fix inscription Task 27, appliquée cette fois à la route classes
+- Suivi : build Vercel web-app ~5-10 min ; re-test CSPEB : connexion secrétaire/secrétaire-comptable → tableau de bord par défaut ; Finance > Encaissements > modale → le sélecteur Classe doit lister les classes du périmètre ; vérifier dans Comptes élèves que le compte Akpovi Péniel affiche dû 3000 / payé 0

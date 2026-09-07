@@ -10112,3 +10112,24 @@ Stage Summary:
 - ✅ Academia Community EN LIGNE et validée 41/41 E2E : /community (vitrine) → /community/join (inscription + invitations trackées) → /community/space (espace Discord/WhatsApp-pro) + Pilotage équipe (posts programmés = moteur du conseil quotidien)
 - Identifiants admin communiqués à l'utilisateur (email s.akpovitohou@gmail.com) — recommandation : les définir aussi en variables Railway COMMUNITY_ADMIN_EMAIL/PASSWORD pour le bootstrap automatique
 - Prochaines étapes suggérées : programmer la première série de conseils quotidiens (Pilotage → Posts programmés), créer les liens d'invitation par campagne (page tarification, email post-achat), inviter les premiers clients CSPEB
+
+---
+Task ID: 33 (sandbox)
+Agent: Super Z (principal)
+Task: Correctifs pré-démo — frais généraux à la carte (pattern articles boutique) dans les 2 modals de paiement + perf chargement classes flux post-inscription + libellé + responsive boutique UI comptable
+
+Work Log:
+- Diagnostic : section Frais généraux Task 32 invisible (condition generalFeeLines.length>0 jamais vraie — 0 structure GENERAL à CSPEB) ; chargement classes ~30 s = fetch brut sans cache (cold start + timeout 15 s + retry) ; boutique : h-[calc(100vh-64px)] calibrée PilotageLayout → dépassement + double scrollbar + top bar sticky z-50 recouvrant le header du shell AdminPortalShell
+- Backend : GeneralFeeAddOnItemDto + generalFeeAddOns (CreateTransactionDto, transactions controller, multi-action service+controller) ; FinanceTransactionService.create() crée les AccountBreakdown GENERAL manquants à la volée dans $transaction + SET LOCAL app.allow_balance_update (trigger prevent_balance_update) en incrémentant totalDue/balance, puis fusionne dans les imputations explicites (validations ≤ totalAmount / ≤ restant dû / Σ ≤ amount) ; filterOptionalGeneralFees : GENERAL isMandatory=false exclus de l'application auto (getOrCreate + recalculate)
+- Frontend : GeneralFeesSection.tsx (sélecteur catalogue multi-select pattern ShopCartSection + montants éditables + totaux) intégré dans NewPaymentModal → visible module Finance ET flux post-inscription ; PostEnrollmentFlow → useAllClasses (cache partagé React Query) + libellé « Classe physique » ; EnrollmentsContent précharge les classes ; ShopCanteenModulePage hauteur mesurée (offsetTop → viewport) + top bar non-sticky + sidebar w-64
+- Données : seed idempotent CSPEB — Uniforme scolaire (tissu) 3000, T-Shirt établissement 3000, Fournitures/Cahiers 2000 (GENERAL optionnels)
+- E2E production : validation 400 ✅, paiement partiel 1500/2000 avec breakdown créé + totaux cohérents ✅, paiement UI complet 6000 (inscription + T-shirt à la carte, reçu CSPEBE-REC-26-003) ✅ ; classes du modal affectation instantanées (18 ms) + libellé corrigé ✅ ; shop comptable 1366×768 : docScrollH 816→768 = zéro scroll, VLM « clean, no overlap » ✅
+- Nettoyage : transactions de test reversées (REVERSAL officiel), comptes/caisses restaurés, élèves de test désactivés ; incident 4 vrais élèves désactivés par une requête trop large → réactivés immédiatement (enrollments intacts vérifiés)
+- Commits : f4762b6c, 51ab39c4 (fix trigger + SyncModule dupliqué), 955fa267 (marge 24px) — rebases sur sessions parallèles
+
+Stage Summary:
+- ✅ Frais généraux (uniforme, fournitures…) payables en même temps que le reste, sans scolarité soldée — catalogue à la carte dans les DEUX modals, breakdowns créés à la volée, reçus OK
+- ✅ Modal affectation post-inscription : classes instantanées (cache partagé préchargé par l'onglet Inscriptions), libellé « Classe physique »
+- ✅ Boutique responsive dans les 2 shells (AdminPortalShell exact-fit zéro scroll, PilotageLayout préservé)
+- ⚠ Edge reporté : sélecteur de niveau peut persister un niveau hors périmètre (localStorage) → 403 axios cross-origin pour comptes à périmètre vide (compte test SEC) — n'affecte pas les comptes réels CSPEB
+- Compte test recette.comptable-sec@cspeb.test : mdp SecComptable2026!

@@ -50,10 +50,14 @@ export interface PointColumnMap {
   unif: number;
   tenue: number;
   fraisGeneraux: number;
-  /** Colonnes des tranches P1..P6 (résolues depuis la ligne P1) */
+  /** Colonnes des tranches P1..P8 (résolues depuis la ligne P1) */
   tranches: number[];
   scolariteTotal: number;
   reste: number;
+  /** ⭐ -1 = colonne « Total des payements » ABSENTE de l'en-tête → on ne
+   *  doit PAS faire foi d'une colonne numérique non étiquetée (certains
+   *  fichiers multi-classes ont une colonne Q sans libellé contenant des
+   *  totaux incohérents). */
   totalPayments: number;
   notes: number;
 }
@@ -72,6 +76,10 @@ export interface SheetDetection {
 export interface PointParsedRow {
   rowIndex: number;
   sheetName: string;
+  /** ⭐ Nom de la SECTION de classe (format multi-classes : une feuille contient
+   *  plusieurs classes séparées par des lignes-titres, ex "MATERNELLE", "CI").
+   *  Undefined si la feuille ne contient qu'une classe (= nom de feuille). */
+  className?: string;
   studentName: string;
   /** Valeur NUMÉRIQUE de la colonne Arriéré (texte → 0 + arrearNote) */
   arrear: number;
@@ -101,6 +109,9 @@ export interface PointSheetResult {
   yearLabel?: string;
   /** Frais annuels de scolarité de la classe (cellule à droite de "Scolarité") */
   classFee?: number;
+  /** ⭐ Sections de classes détectées dans la feuille (multi-classes).
+   *  Absent/vide si la feuille ne porte qu'une seule classe. */
+  sections?: string[];
 }
 
 export interface SimpleParsedRow {
@@ -129,7 +140,7 @@ const DEFAULT_POINT_COLUMNS: PointColumnMap = {
   tranches: [9, 10, 11, 12, 13, 14],
   scolariteTotal: 15,
   reste: 16,
-  totalPayments: 17,
+  totalPayments: -1, // ⬅ résolu uniquement si l'étiquette est présente dans l'en-tête
   notes: 18,
 };
 
@@ -266,21 +277,23 @@ export function detectSheetFormat(ws: ExcelJS.Worksheet): SheetDetection {
   };
 }
 
-/** Trouve la ligne P1..P6 contiguës dans une plage de lignes donnée. */
+/** Trouve la ligne P1..Pn contiguës dans une plage de lignes donnée.
+ *  ⭐ Supporte P1..P8 (certains fichiers vont jusqu'à P8 ; les fichiers
+ *  classiques s'arrêtent à P3 ou P6). */
 function findTrancheRow(
   ws: ExcelJS.Worksheet,
   fromRow: number,
   toRow: number,
 ): { row: number; cols: number[] } | null {
   const maxRow = Math.min(toRow, ws.rowCount || toRow);
+  const MAX_TRANCHES = 8;
   for (let r = fromRow; r <= maxRow; r++) {
     for (let c = 1; c <= MAX_SCAN_COLS; c++) {
       const t = normLabel(cellText(ws.getRow(r).getCell(c).value));
       if (t === 'p1') {
-        // Vérifier la contiguïté P1..P6 (tolérer P1..P3 seulement)
+        // Vérifier la contiguïté P1..Pn (tolérer P1..P3 seulement, jusqu'à P8)
         const cols: number[] = [c];
-        let ok = true;
-        for (let i = 1; i < 6; i++) {
+        for (let i = 1; i < MAX_TRANCHES; i++) {
           const next = normLabel(cellText(ws.getRow(r).getCell(c + i).value));
           if (next === `p${i + 1}`) {
             cols.push(c + i);
@@ -288,7 +301,7 @@ function findTrancheRow(
             break;
           }
         }
-        if (ok && cols.length >= 1) {
+        if (cols.length >= 1) {
           return { row: r, cols };
         }
       }
@@ -313,7 +326,13 @@ function resolvePointColumns(
     ...DEFAULT_POINT_COLUMNS,
     tranches: trancheCols.length > 0 ? trancheCols : DEFAULT_POINT_COLUMNS.tranches,
   };
-  // Valeurs par défaut si une étiquette manque
+  // ⭐ Colonnes explicitement étiquetées dans la ligne d'en-tête.
+  // Les colonnes non étiquetées gardent leur position par défaut — mais
+  // doivent être NEUTRALISÉES (-1) si elles entrent en collision avec la
+  // zone des tranches P1..Pn (ex fichiers modernes : tranches dès la
+  // colonne G → la position par défaut de « Tenue » (7) tomberait sur P1
+  // et gonflerait artificiellement le total encaissé).
+  const labeled = new Set<string>();
   let foundName = false;
 
   for (let c = 1; c <= MAX_SCAN_COLS; c++) {
@@ -325,24 +344,48 @@ function resolvePointColumns(
       foundName = true;
     } else if (t.startsWith('arrier')) {
       map.arrear = c;
+      labeled.add('arrear');
     } else if (t === 'tel' || t.startsWith('telephon') || t.startsWith('telephone')) {
       map.phone = c;
+      labeled.add('phone');
     } else if (t.startsWith('inscript')) {
       map.inscription = c;
+      labeled.add('inscription');
     } else if (t === 'unif' || t.startsWith('uniform')) {
       map.unif = c;
+      labeled.add('unif');
     } else if (t.startsWith('tenue')) {
       map.tenue = c;
+      labeled.add('tenue');
     } else if (t.startsWith('total frais')) {
       map.fraisGeneraux = c;
+      labeled.add('fraisGeneraux');
     } else if (t.startsWith('total scolarit')) {
       map.scolariteTotal = c;
+      labeled.add('scolariteTotal');
     } else if (t === 'reste' || t.startsWith('reste')) {
       map.reste = c;
+      labeled.add('reste');
     } else if (t.startsWith('total des pay') || t.startsWith('total des paiement') || t.startsWith('total paiement') || t.startsWith('total payement')) {
       map.totalPayments = c;
+      labeled.add('totalPayments');
     } else if (t === 'n' || t === 'no' || t.startsWith('num')) {
       map.numero = c;
+      labeled.add('numero');
+    }
+  }
+
+  // ⭐ Neutralisation des collisions : toute colonne de montant NON
+  // étiquetée dont la position par défaut tombe dans la zone P1..Pn est
+  // ignorée (sinon P1 serait compté deux fois : une fois comme tranche,
+  // une fois comme « tenue »/« frais généraux »).
+  if (map.tranches.length > 0) {
+    const firstTranche = Math.min(...map.tranches);
+    const lastTranche = Math.max(...map.tranches);
+    for (const key of ['tenue', 'fraisGeneraux', 'notes'] as const) {
+      if (!labeled.has(key) && map[key] >= firstTranche && map[key] <= lastTranche) {
+        map[key] = -1; // colonne ignorée
+      }
     }
   }
 
@@ -418,11 +461,25 @@ export function parsePointSheet(
   const cols = detection.columns || DEFAULT_POINT_COLUMNS;
   const dataStart = detection.dataStartRow || 6;
   const rows: PointParsedRow[] = [];
+  const sections: string[] = [];
+  let currentSection: string | undefined;
   const maxRow = ws.rowCount || dataStart;
 
   for (let r = dataStart; r <= maxRow; r++) {
     const row = ws.getRow(r);
     const name = cellText(row.getCell(cols.name).value);
+
+    // ⭐ Ligne-SECTION de classe (fichiers multi-classes) : N° = nom de classe,
+    // Noms vide. Les montants éventuels (totaux de classe) sont ignorés.
+    const sectionLabel = isClassSectionRow(
+      row.getCell(cols.numero).value,
+      row.getCell(cols.name).value,
+    );
+    if (sectionLabel) {
+      currentSection = sectionLabel;
+      if (!sections.includes(sectionLabel)) sections.push(sectionLabel);
+      continue;
+    }
 
     // Ligne sans nom (ex: ligne 15 de Maternelle 1 — juste un N°) → ignorée
     if (!name) continue;
@@ -432,9 +489,12 @@ export function parsePointSheet(
     if (/^[⚠️📅💰✅📊🧑📋💡🏫🔄📝]/.test(name)) continue;
 
     // ── Montants (parse STRICT : le texte est conservé comme note) ──
-    const inscription = parseAmountStrict(row.getCell(cols.inscription).value).amount;
-    const unif = parseAmountStrict(row.getCell(cols.unif).value).amount;
-    const tenue = parseAmountStrict(row.getCell(cols.tenue).value).amount;
+    // ⭐ Colonnes neutralisées (-1) ignorées : tenue/fraisGeneraux peuvent
+    // être absents du fichier (pas d'étiquette + collision avec les tranches).
+    const inscription =
+      cols.inscription > 0 ? parseAmountStrict(row.getCell(cols.inscription).value).amount : 0;
+    const unif = cols.unif > 0 ? parseAmountStrict(row.getCell(cols.unif).value).amount : 0;
+    const tenue = cols.tenue > 0 ? parseAmountStrict(row.getCell(cols.tenue).value).amount : 0;
 
     const tranches: number[] = [];
     const trancheTexts: string[] = [];
@@ -450,25 +510,33 @@ export function parsePointSheet(
 
     const phone = cellText(row.getCell(cols.phone).value) || undefined;
     const reste = parseAmountStrict(row.getCell(cols.reste).value).amount;
-    const totalCell = parseAmountStrict(row.getCell(cols.totalPayments).value);
+    // ⭐ La colonne « Total des payements » n'est lue QUE si elle est
+    // étiquetée dans l'en-tête (cols.totalPayments > 0). Certains fichiers
+    // multi-classes ont une colonne numérique résiduelle sans libellé — on
+    // ne doit pas en faire foi.
+    const totalCell =
+      cols.totalPayments > 0
+        ? parseAmountStrict(row.getCell(cols.totalPayments).value)
+        : { amount: 0 };
 
     // Notes libres (colonne R + textes trouvés dans les tranches)
     const notes: string[] = [];
-    const freeNote = cellText(row.getCell(cols.notes).value);
+    const freeNote = cols.notes > 0 ? cellText(row.getCell(cols.notes).value) : '';
     if (freeNote) notes.push(freeNote);
     notes.push(...trancheTexts);
 
     const fraisGeneraux = inscription + unif + tenue;
     const scolaritePayee = tranches.reduce((s, v) => s + v, 0);
     const computedTotal = fraisGeneraux + scolaritePayee;
-    // Le total fait foi s'il est numérique, sinon on le recalcule.
+    // Le total étiqueté fait foi s'il est numérique, sinon on le recalcule.
     // ⚠️ La colonne Arriéré (année antérieure) n'est JAMAIS incluse dans le
     // total encaissé — elle relève de l'import des arriérés.
-    const total = totalCell.amount > 0 ? totalCell.amount : computedTotal;
+    const total = cols.totalPayments > 0 && totalCell.amount > 0 ? totalCell.amount : computedTotal;
 
     rows.push({
       rowIndex: r,
       sheetName,
+      className: currentSection,
       studentName: name,
       arrear,
       arrearNote,
@@ -486,7 +554,49 @@ export function parsePointSheet(
   }
 
   const { yearLabel, classFee } = detectYearAndFee(ws, dataStart);
-  return { sheetName, rows, yearLabel, classFee };
+  return {
+    sheetName,
+    rows,
+    yearLabel,
+    classFee,
+    sections: sections.length > 0 ? sections : undefined,
+  };
+}
+
+// ─── Détection des lignes-sections de classes (multi-classes) ───────────────
+
+/**
+ * ⭐ Détecte une ligne-SECTION de classe (fichiers "point financier" avec
+ * plusieurs classes dans une même feuille).
+ * Caractéristiques observées :
+ *   - colonne N° (A) contient un TEXTE court = nom de la classe
+ *     ("MATERNELLE", "CI", "CP", "CE1", "6e"...) ;
+ *   - colonne Noms (B) VIDE ;
+ *   - les autres cellules portent les totaux de la classe (ignorés).
+ * Sont exclus : lignes de données (N° numérique), instructions (emoji),
+ * ligne "ANNEE SCOLAIRE" et libellés "TOTAL".
+ */
+function isClassSectionRow(
+  numeroCell: unknown,
+  nameCell: unknown,
+): string | null {
+  const label = cellText(numeroCell);
+  const name = cellText(nameCell);
+  // Nom d'élève présent et DIFFÉRENT du N° → ligne de données.
+  // ⭐ Cas fusion : les lignes-titres de classes sont souvent fusionnées A:B
+  // (merges "A6:B6"...) — ExcelJS retourne alors la valeur maître dans les
+  // DEUX cellules (A et B portent le même libellé) → c'est une section.
+  if (!label || (name && name !== label)) return null;
+  // Numérique (n° d'élève) ou vide → pas une section
+  if (/^\d+$/.test(label.replace(/[\s.]/g, ''))) return null;
+  // Lignes d'instructions (emoji) → exclues
+  if (/^[⚠️📅💰✅📊🧑📋💡🏫🔄📝]/.test(label)) return null;
+  // Zone d'en-tête (année scolaire) et libellés TOTAL → exclus
+  if (normLabel(label).startsWith('annee scolaire')) return null;
+  if (normLabel(label).startsWith('total')) return null;
+  // Nom de classe plausible : court, sans ponctuation de phrase
+  if (label.length > 40 || /[:;]/.test(label)) return null;
+  return label.trim();
 }
 
 // ─── Parsing format SIMPLE (template Academia — rétrocompatible) ────────────

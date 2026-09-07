@@ -68,7 +68,11 @@ import {
 
 export interface BilanImportRow {
   rowIndex: number;
-  sheetName: string; // nom de la feuille (= classe)
+  sheetName: string; // nom de la feuille (= classe en format POINT classique)
+  /** ⭐ Classe détectée dans la feuille (format multi-classes : sections
+   *  MATERNELLE/CI/CP/... dans une même feuille). Prioritaire sur sheetName
+   *  pour la résolution de la classe et le matching des élèves. */
+  className?: string;
   studentName: string; // nom tel que lu dans l'Excel
   arrear: number;
   inscription: number;
@@ -99,7 +103,13 @@ export interface BilanImportPreviewResult {
   rows: BilanImportRow[];
   sheetsProcessed: string[];
   // ⭐ NOUVEAU — informations par feuille (format détecté + année scolaire lue)
-  sheetInfo: Record<string, { format: 'POINT' | 'SIMPLE'; yearLabel?: string; classFee?: number }>;
+  sheetInfo: Record<string, {
+    format: 'POINT' | 'SIMPLE';
+    yearLabel?: string;
+    classFee?: number;
+    /** ⭐ Sections de classes détectées dans la feuille (multi-classes) */
+    sections?: string[];
+  }>;
   // ⭐ NOUVEAU — avertissement si l'année lue dans le fichier ne correspond pas
   // à l'année scolaire cible sélectionnée pour l'import
   yearMismatch: {
@@ -109,6 +119,8 @@ export interface BilanImportPreviewResult {
   summary: {
     totalAmount: number;
     bySheet: Record<string, number>;
+    /** ⭐ Totaux par classe (sections détectées) — plus fin que bySheet */
+    byClass?: Record<string, number>;
     studentsMatched: number;
     studentsNotFound: number;
   };
@@ -338,17 +350,21 @@ export class CollectionSummaryImportService {
       sheetsProcessed.push(sheetName);
 
       if (detection.format === 'POINT') {
-        // ⭐ FORMAT POINT — standard des écoles
+        // ⭐ FORMAT POINT — standard des écoles (1 feuille = 1 classe) OU
+        // multi-classes (sections MATERNELLE/CI/CP/... dans une même feuille,
+        // tranches P1..P8).
         const parsed = parsePointSheet(worksheet, sheetName, detection);
         sheetInfo[sheetName] = {
           format: 'POINT',
           yearLabel: parsed.yearLabel,
           classFee: parsed.classFee,
+          sections: parsed.sections,
         };
         for (const pr of parsed.rows) {
           rows.push({
             rowIndex: pr.rowIndex,
             sheetName,
+            className: pr.className,
             studentName: pr.studentName,
             arrear: pr.arrear,
             arrearNote: pr.arrearNote,
@@ -397,9 +413,11 @@ export class CollectionSummaryImportService {
       }
     });
 
-    // ⭐ Résolution des élèves — bassin restreint à la classe de la feuille
+    // ⭐ Résolution des élèves — bassin restreint à la classe :
+    //   - format multi-classes → classe de la SECTION (row.className) ;
+    //   - format classique → classe portée par le nom de la feuille.
     for (const row of rows) {
-      const classId = this.resolveClassId(row.sheetName, classes);
+      const classId = this.resolveClassId(row.className || row.sheetName, classes);
       const pool = classId ? studentsByClassId.get(classId) || [] : allStudents;
       const poolVariants = getPoolVariants(classId);
       this.validateAndResolveRow(
@@ -436,11 +454,15 @@ export class CollectionSummaryImportService {
     const summary = {
       totalAmount: rows.filter((r) => r.isValid).reduce((sum, r) => sum + r.total, 0),
       bySheet: {} as Record<string, number>,
+      byClass: {} as Record<string, number>,
       studentsMatched: rows.filter((r) => r.isValid && r.matchStatus !== 'NOT_FOUND').length,
       studentsNotFound: rows.filter((r) => r.matchStatus === 'NOT_FOUND').length,
     };
     for (const r of rows.filter((r) => r.isValid)) {
       summary.bySheet[r.sheetName] = (summary.bySheet[r.sheetName] || 0) + r.total;
+      // ⭐ Par classe : section si présente, sinon feuille (= classe)
+      const classKey = r.className || r.sheetName;
+      summary.byClass![classKey] = (summary.byClass![classKey] || 0) + r.total;
     }
 
     return { totalRows: rows.length, validRows, invalidRows, rows, sheetsProcessed, sheetInfo, yearMismatch, summary };
@@ -523,8 +545,10 @@ export class CollectionSummaryImportService {
         }
 
         // Référence unique par ligne (préserve le préfixe "Import Excel - Bilan Encaissements")
+        // ⭐ Inclut la classe (section) pour les fichiers multi-classes
         const formatTag = row.format === 'POINT' ? ' [POINT]' : '';
-        const reference = `Import Excel - Bilan Encaissements - ${row.sheetName} - L${row.rowIndex}${formatTag}`;
+        const classTag = row.className || row.sheetName;
+        const reference = `Import Excel - Bilan Encaissements - ${classTag} - L${row.rowIndex}${formatTag}`;
 
         // Créer la FinanceTransaction — le service gère :
         //   - génération receiptNumber unique

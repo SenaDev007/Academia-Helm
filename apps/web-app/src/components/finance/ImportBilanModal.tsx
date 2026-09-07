@@ -40,6 +40,8 @@ import { getAcademicYears } from '@/services/settings.service';
 interface PreviewRow {
   rowIndex: number;
   sheetName: string;
+  /** ⭐ Classe détectée (sections multi-classes dans une même feuille) */
+  className?: string;
   studentName: string;
   arrear: number;
   arrearNote?: string;
@@ -67,7 +69,7 @@ interface PreviewResult {
   invalidRows: number;
   rows: PreviewRow[];
   sheetsProcessed: string[];
-  sheetInfo?: Record<string, { format: 'POINT' | 'SIMPLE'; yearLabel?: string; classFee?: number }>;
+  sheetInfo?: Record<string, { format: 'POINT' | 'SIMPLE'; yearLabel?: string; classFee?: number; sections?: string[] }>;
   yearMismatch?: {
     targetYear: string;
     sheets: Array<{ sheet: string; detected: string }>;
@@ -75,6 +77,7 @@ interface PreviewResult {
   summary: {
     totalAmount: number;
     bySheet: Record<string, number>;
+    byClass?: Record<string, number>;
     studentsMatched: number;
     studentsNotFound: number;
   };
@@ -371,11 +374,13 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                     <p className="text-xs font-bold text-blue-800 mb-1">Fichier « POINT » des écoles (reconnu automatiquement)</p>
                     <ul className="text-xs text-slate-600 space-y-1">
                       <li>• <strong>Une feuille par classe</strong> — le nom de la feuille doit être le nom de la classe (ex: "CP A", "Maternelle 1").</li>
-                      <li>• En-têtes sur les lignes 4-5 : <strong>N° | Noms et Prénoms | Arriéré | Tél | Inscript | Unif | Tenue de Sport | Total frais Généraux | Scolarité P1 P2 P3 P4 P5 P6 | Total Scolarité | Reste | Total des payements</strong>.</li>
-                      <li>• Les tranches de scolarité <strong>P1..P6</strong> sont importées comme montants encaissés.</li>
-                      <li>• Total encaissé importé = Inscript + Unif + Tenue de Sport + P1 + ... + P6.</li>
+                      <li>• <strong>Ou plusieurs classes par feuille</strong> (« point financier ») — une ligne-titre par classe (ex: MATERNELLE, CI, CP, CE1...) au-dessus des élèves de la classe.</li>
+                      <li>• En-têtes sur les lignes 4-5 : <strong>N° | Noms et Prénoms | Arriéré | Tél | Inscript | Unif | Tenue de Sport | Total frais Généraux | Scolarité P1 P2 P3 ... | Total Scolarité | Reste | Total des payements</strong>.</li>
+                      <li>• Les tranches de scolarité <strong>P1..P8</strong> sont importées comme montants encaissés (jusqu'à 8 tranches selon les fichiers).</li>
+                      <li>• Total encaissé importé = Inscript + Unif + Tenue de Sport + P1 + ... + P8.</li>
                       <li>• La colonne « Arriéré » (année antérieure) est <strong>informative</strong> — utilisez l'import dédié des arriérés pour la solder.</li>
                       <li>• Textes type "ABD", "FONDE" ou une école d'origine sont ignorés (non numériques).</li>
+                      <li>• Si le fichier mentionne une année différente de l'année cible, un avertissement s'affiche (import feuille par feuille sur la bonne année).</li>
                     </ul>
                   </div>
                   <div className="p-2.5 bg-white border border-slate-200 rounded-lg">
@@ -421,6 +426,19 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                 <p className="text-sm font-semibold text-blue-800">
                   Total à encaisser : {formatCurrency(preview.summary.totalAmount)}
                 </p>
+                {/* ⭐ Totaux par classe (sections détectées) — prioritaire sur les feuilles */}
+                {preview.summary.byClass && Object.keys(preview.summary.byClass).length > 0 && (
+                  <div className="mt-1">
+                    <p className="text-[10px] font-semibold text-blue-500 uppercase tracking-wide mb-1">Par classe</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(preview.summary.byClass).map(([cls, amount]) => (
+                        <span key={cls} className="text-xs bg-white px-2 py-1 rounded border border-blue-200 text-blue-800">
+                          {cls}: {formatCurrency(amount)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2 mt-1">
                   {Object.entries(preview.summary.bySheet).map(([sheet, amount]) => (
                     <span key={sheet} className="text-xs bg-white px-2 py-1 rounded border border-blue-200 text-blue-800">
@@ -463,9 +481,10 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">#</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Élève (Excel)</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Match</th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Classe</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Feuille</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Frais gén. (Inscr+Unif+Tenue)</th>
-                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Scolarité (P1-P6)</th>
+                        <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Scolarité (P1-P8)</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Arriéré (info)</th>
                         <th className="px-3 py-2 text-right font-medium text-slate-600 text-xs">Total</th>
                       </tr>
@@ -487,6 +506,13 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                               )}
                             </td>
                             <td className="px-3 py-2"><MatchBadge status={row.matchStatus} /></td>
+                            <td className="px-3 py-2 text-xs text-slate-600">
+                              {row.className ? (
+                                <span className="font-medium text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{row.className}</span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2 text-xs text-slate-600">{row.sheetName}</td>
                             <td className="px-3 py-2 text-right text-xs font-mono">{fraisGen > 0 ? formatCurrency(fraisGen) : '—'}</td>
                             <td className="px-3 py-2 text-right text-xs font-mono">{tranchesSum > 0 ? formatCurrency(tranchesSum) : '—'}</td>

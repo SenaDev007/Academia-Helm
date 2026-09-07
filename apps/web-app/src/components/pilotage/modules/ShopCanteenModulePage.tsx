@@ -266,9 +266,9 @@ export default function ShopCanteenModulePage({ mode, initialView }: ShopCanteen
     const measure = () => {
       if (!rootRef.current) return;
       const rect = rootRef.current.getBoundingClientRect();
-      // 16px = padding bas du <main> du shell (p-4) ; plancher 460px pour les
-      // petits écrans (la zone interne scrolle, rien n'est perdu).
-      const available = window.innerHeight - rect.top - 16;
+      // 24px = padding bas du <main> + bordures/arrondis du module ; plancher
+      // 460px pour les petits écrans (la zone interne scrolle, rien n'est perdu).
+      const available = window.innerHeight - rect.top - 24;
       setModuleHeight(Math.max(Math.round(available), 460));
     };
     measure();

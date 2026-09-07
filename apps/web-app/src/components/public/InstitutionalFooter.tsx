@@ -177,6 +177,7 @@ export default function InstitutionalFooter() {
                   { label: 'Recrutement', href: '/jobs' },
                   { label: 'Mode offline', href: '/#offline' },
                   { label: 'ORION (IA)', href: '/orion' },
+                  { label: 'Communauté', href: '/community' },
                 ].map((item) => (
                   <li key={item.label}>
                     <motion.div whileHover={{ x: 4 }} transition={{ type: 'spring', stiffness: 260, damping: 20 }}>

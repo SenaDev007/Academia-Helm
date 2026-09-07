@@ -309,6 +309,30 @@ export default function TarificationPage() {
             </div>
           </div>
         </section>
+
+        {/* ─── COMMUNAUTÉ — funnel post-achat (stratégie marketing) ─── */}
+        <section className="pb-20 px-4">
+          <div className="max-w-3xl mx-auto rounded-3xl bg-gradient-to-br from-[#0b2f73] to-[#1d4fa5] p-8 md:p-10 text-white relative overflow-hidden">
+            <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-[#f5b335]/10 blur-2xl" />
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[#f5b335] font-bold mb-2">
+              En savoir plus avant de choisir ?
+            </p>
+            <h2 className="text-2xl font-black mb-3">
+              Rejoignez Academia Community
+            </h2>
+            <p className="text-[14px] text-blue-100 leading-relaxed mb-6 max-w-xl">
+              La communauté des dirigeants d&apos;établissements qui utilisent Academia Helm :
+              conseils quotidiens de pilotage, démonstrations, réponses de l&apos;équipe
+              et de la communauté — directement dans le produit, dès aujourd&apos;hui, gratuitement.
+            </p>
+            <a
+              href="/community/join"
+              className="inline-flex items-center gap-2 px-7 py-3 rounded-xl bg-[#f5b335] text-[#0b2f73] font-bold hover:bg-[#ffd666] transition-colors"
+            >
+              Découvrir la communauté
+            </a>
+          </div>
+        </section>
       </main>
       <Footer2 />
     </>

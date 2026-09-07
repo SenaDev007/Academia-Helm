@@ -97,6 +97,8 @@ const navItems = [
   { label: 'Tarification', href: '/tarification', isInstitutional: false },
   { label: 'Recrutement', href: '/jobs', isInstitutional: false },
   { label: 'Academia Federis', href: 'https://academiafederis.academiahelm.com', isInstitutional: true, external: true },
+  // ⭐ Academia Community — l'espace clients/prospects DANS le produit (funnel marketing)
+  { label: 'Communauté', href: '/community', isInstitutional: false },
   { label: 'Contact', href: '/contact', isInstitutional: false },
 ];
 

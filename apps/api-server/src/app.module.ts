@@ -6,6 +6,7 @@ import { AtlasModule } from './atlas/atlas.module';
 import { SaraModule } from './sara/sara.module';
 import { EducMasterModule } from './educmaster/educmaster.module';
 import { SaisieMasterModule } from './saisiemaster/saisiemaster.module';
+import { CommunityModule } from './community/community.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -343,6 +344,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // SaisieMaster Module (free lead-capture tool for school directors)
     SaisieMasterModule,
+
+    // ⭐ Academia Community — espace clients/prospects du produit (plateforme)
+    CommunityModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

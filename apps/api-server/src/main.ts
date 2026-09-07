@@ -7,6 +7,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { PrismaService } from './database/prisma.service';
+import { CommunityBootstrap } from './community/community.bootstrap';
 
 /**
  * ⭐ Polyfill global : permet à JSON.stringify de sérialiser les BigInt.
@@ -1878,6 +1879,20 @@ async function bootstrap() {
     logger.warn(`Tenant Website tables migration warning: ${twErr.message}`);
   }
   }, 1000); // ⭐ Run ensure-tables 1s after listen (non-blocking)
+
+  // ─── ACADEMIA COMMUNITY — bootstrap idempotent (tables + canaux + admin) ───
+  // Espace clients/prospects du produit : tables community_*, 7 canaux par
+  // défaut (annonces, conseils quotidiens, discussion, formation, support,
+  // témoignages, sondages) + SUPER_ADMIN depuis COMMUNITY_ADMIN_EMAIL/PASSWORD.
+  // Non-bloquant (3s après listen), même politique que le reste du bootstrap.
+  setTimeout(async () => {
+    try {
+      const communityBootstrap = app.get(CommunityBootstrap);
+      await communityBootstrap.run();
+    } catch (e: any) {
+      logger.warn(`Bootstrap communauté ignoré : ${e?.message}`);
+    }
+  }, 3000);
 
   // ─── Neon DB Keep-Alive — ping every 4 minutes to prevent auto-suspend ───
   // Neon is a serverless PostgreSQL that suspends after ~5 min of inactivity.

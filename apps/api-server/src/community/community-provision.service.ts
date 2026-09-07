@@ -92,21 +92,23 @@ export class CommunityProvisionService {
    * provisionner. Les enseignants gardent leurs identifiants habituels.
    */
   async provisionFromAppCredentials(email: string, password: string): Promise<ProvisionedMember | null> {
+    // ⚠️ Colonnes camelCase Prisma ("passwordHash") — pas de snake_case
     const users = (await this.prisma.$queryRawUnsafe(
-      `SELECT id, password_hash FROM users WHERE lower(email) = lower($1) AND status = 'active' LIMIT 1`,
+      `SELECT id, "passwordHash" FROM users WHERE lower(email) = lower($1) AND status = 'active' LIMIT 1`,
       email,
     )) as any[];
-    if (!users.length || !users[0].password_hash) return null;
+    if (!users.length || !users[0].passwordHash) return null;
     const bcrypt = await import('bcryptjs');
-    const ok = await bcrypt.compare(password, users[0].password_hash);
+    const ok = await bcrypt.compare(password, users[0].passwordHash);
     if (!ok) return null;
     return this.provisionUser(users[0].id);
   }
 
   /** Cœur : synchronise un User applicatif vers un membre communauté */
   async provisionUser(userId: string): Promise<ProvisionedMember> {
+    // ⚠️ Colonnes camelCase Prisma ("firstName"/"lastName"/"tenantId")
     const users = (await this.prisma.$queryRawUnsafe(
-      `SELECT id, email, first_name, last_name, role, tenant_id, status
+      `SELECT id, email, "firstName", "lastName", role, "tenantId", status
        FROM users WHERE id = $1 LIMIT 1`,
       userId,
     )) as any[];
@@ -116,19 +118,19 @@ export class CommunityProvisionService {
     const user = users[0];
 
     // ── Écoles de l'utilisateur : user_tenants actifs ∪ tenant principal ──
-    // (⭐ sous-requête : DISTINCT ON ne peut pas opérer directement sur un
-    //  opérande d'UNION — PostgreSQL rejette la syntaxe)
+    // (⭐ sous-requête : DISTINCT ON interdit sur un opérande d'UNION ;
+    //    colonnes camelCase "userId"/"isActive"/"tenantId" Prisma)
     const tenantRows = (await this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT ON (id) id, name, slug, status, user_tenant_role FROM (
          SELECT t.id, t.name, t.slug, t.status, ut.role AS user_tenant_role
-         FROM user_tenants ut JOIN tenants t ON t.id = ut.tenant_id
-         WHERE ut.user_id = $1 AND ut.is_active = true AND t.status = 'active'
+         FROM user_tenants ut JOIN tenants t ON t.id = ut."tenantId"
+         WHERE ut."userId" = $1 AND ut."isActive" = true AND t.status = 'active'
          UNION ALL
          SELECT t.id, t.name, t.slug, t.status, $2 AS user_tenant_role
          FROM tenants t WHERE t.id = $3 AND t.status = 'active'
        ) ecoles
        ORDER BY id, user_tenant_role`,
-      user.id, user.role ?? 'TEACHER', user.tenant_id,
+      user.id, user.role ?? 'TEACHER', user.tenantId,
     )) as any[];
 
     // ── Structure dynamique : chaque école obtient son canal + ses groupes ──
@@ -138,7 +140,7 @@ export class CommunityProvisionService {
 
     // ── Membre communauté : créer si absent, lier sinon ──
     let member = await this.repo.findMemberByEmail(user.email);
-    const displayName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
+    const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
     if (!member) {
       member = await this.repo.insertMember({
         email: user.email,
@@ -146,8 +148,8 @@ export class CommunityProvisionService {
         // sel aléatoire ; l'authentification passe par le lien applicatif.
         passwordHash: await this.randomHash(),
         displayName,
-        firstName: user.first_name ?? null,
-        lastName: user.last_name ?? null,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
         organization: tenantRows[0]?.name ?? null,
         role: 'MEMBER',
         memberType: 'CLIENT',
@@ -160,8 +162,8 @@ export class CommunityProvisionService {
       await this.repo.linkMemberToUser(member.id, user.id);
       await this.repo.updateMember(member.id, {
         display_name: displayName,
-        first_name: user.first_name ?? null,
-        last_name: user.last_name ?? null,
+        first_name: user.firstName ?? null,
+        last_name: user.lastName ?? null,
         member_type: (member as any).member_type === 'TEAM' ? 'TEAM' : 'CLIENT',
       });
     }

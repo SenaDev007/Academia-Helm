@@ -116,13 +116,18 @@ export class CommunityProvisionService {
     const user = users[0];
 
     // ── Écoles de l'utilisateur : user_tenants actifs ∪ tenant principal ──
+    // (⭐ sous-requête : DISTINCT ON ne peut pas opérer directement sur un
+    //  opérande d'UNION — PostgreSQL rejette la syntaxe)
     const tenantRows = (await this.prisma.$queryRawUnsafe(
-      `SELECT DISTINCT ON (t.id) t.id, t.name, t.slug, t.status, ut.role AS user_tenant_role
-       FROM user_tenants ut JOIN tenants t ON t.id = ut.tenant_id
-       WHERE ut.user_id = $1 AND ut.is_active = true AND t.status = 'active'
-       UNION
-       SELECT t.id, t.name, t.slug, t.status, $2 AS user_tenant_role
-       FROM tenants t WHERE t.id = $3 AND t.status = 'active'`,
+      `SELECT DISTINCT ON (id) id, name, slug, status, user_tenant_role FROM (
+         SELECT t.id, t.name, t.slug, t.status, ut.role AS user_tenant_role
+         FROM user_tenants ut JOIN tenants t ON t.id = ut.tenant_id
+         WHERE ut.user_id = $1 AND ut.is_active = true AND t.status = 'active'
+         UNION ALL
+         SELECT t.id, t.name, t.slug, t.status, $2 AS user_tenant_role
+         FROM tenants t WHERE t.id = $3 AND t.status = 'active'
+       ) ecoles
+       ORDER BY id, user_tenant_role`,
       user.id, user.role ?? 'TEACHER', user.tenant_id,
     )) as any[];
 

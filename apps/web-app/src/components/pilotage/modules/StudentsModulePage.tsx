@@ -228,7 +228,14 @@ export default function StudentsModulePage() {
     }
     const params = new URLSearchParams({ academicYearId: academicYear.id });
     // ⭐ FIX 2026-09-07 : UUID school_levels (pas education_levels) + fused MAT_PRI
-    if (effectiveLevelFilter) params.set('schoolLevelId', effectiveLevelFilter);
+    // ⭐ FIX 2026-09-09 « sélecteur de classes vide » : le backend /classes EXIGE
+    //    schoolLevelId (SchoolLevelId decorator → 400 « School Level ID is
+    //    required » si absent). Quand aucun niveau n'est filtré (promoteur
+    //    « Tous les niveaux », ou niveau pas encore résolu au montage), on
+    //    envoyait la requête SANS le paramètre → 400 → liste de classes VIDE
+    //    dans le filtre du module Élèves. On envoie désormais 'ALL'
+    //    explicitement (le service interprète 'ALL' = tous les niveaux).
+    params.set('schoolLevelId', effectiveLevelFilter || 'ALL');
     fetch(`/api/classes?${params}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: any) => {

@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
-import { getAcademicYears } from '@/services/settings.service';
 import { financeService } from '@/services/finance.service';
+// ⭐ FIX 2026-09-09 « switch année sans effet » : le bilan suit l'année du
+//    sélecteur GLOBAL (header/sidebar) via le contexte partagé.
+import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { formatCurrency, cn } from '@/lib/utils';
 import ImportBilanModal from './ImportBilanModal';
 
@@ -93,7 +95,15 @@ export default function CollectionSummaryContent() {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedLevelId, setSelectedLevelId] = useState<string>('');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
-  const [academicYearId, setAcademicYearId] = useState<string>('');
+  // ⭐ FIX 2026-09-09 « switch année sans effet » (incident Mon Avenir Plus) :
+  //    Avant : le composant résolvait SA PROPRE année au montage
+  //    (years.find(isActive)) et IGNORAIT le sélecteur d'année du header.
+  //    L'école ayant activé 2026-2027 (données vides) alors que tout le
+  //    bilan importé était en 2025-2026, le switch header ne changeait
+  //    RIEN → « je ne vois ni frais, ni tranches, rien ».
+  //    Maintenant : academicYearId = année du contexte global (header).
+  const { currentYear, isLoading: academicYearLoading } = useAcademicYear();
+  const academicYearId = currentYear?.id || '';
   // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
   //    du bilan des encaissements. Permet d'isoler les stats caissiers.
   const [excludePromoterCaisse, setExcludePromoterCaisse] = useState<boolean>(false);
@@ -214,7 +224,7 @@ export default function CollectionSummaryContent() {
     }
   };
 
-  // ─── Load school levels + classes + academic year ──────────────────────────
+  // ─── Load school levels (une seule fois) ──────────────────────────────────
   useEffect(() => {
     const authHeaders = getClientAuthorizationHeader();
 
@@ -223,25 +233,33 @@ export default function CollectionSummaryContent() {
       .then((res) => res.json())
       .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setSchoolLevels([]));
+  }, []);
 
-    // Classes physiques
-    fetch('/api/all-classes', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
+  // ─── Classes physiques DE L'ANNÉE SÉLECTIONNÉE (rechargées au switch) ─────
+  // ⭐ FIX 2026-09-09 : la requête porte academicYearId (sinon le BFF retombe
+  //    sur l'année ACTIVE — 22 classes 2026-2027 pendant que le bilan affiche
+  //    2025-2026 → un classId hors année filtre à 0 ligne). On reset aussi la
+  //    sélection de classe : les IDs de classes appartiennent à une année.
+  useEffect(() => {
+    if (!academicYearId) {
+      setClasses([]);
+      return;
+    }
+    const authHeaders = getClientAuthorizationHeader();
+    setSelectedClassId('');
+    setCurrentPage(1);
+    fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYearId)}`, {
+      headers: { ...authHeaders },
+      credentials: 'include',
+      cache: 'no-store',
+    })
       .then((res) => res.json())
       .then((d) => {
         const cls = Array.isArray(d) ? d : (d.data ?? []);
         setClasses(cls);
       })
       .catch(() => setClasses([]));
-
-    // Academic year
-    getAcademicYears()
-      .then((d) => {
-        const years = Array.isArray(d) ? d : (d.data ?? []);
-        const active = years.find((y: any) => y.isActive) || years[0];
-        if (active?.id) setAcademicYearId(active.id);
-      })
-      .catch(() => {});
-  }, []);
+  }, [academicYearId]);
 
   // ─── Load data ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -289,8 +307,11 @@ export default function CollectionSummaryContent() {
   }, [academicYearId, selectedLevelId, selectedClassId, currentPage, excludePromoterCaisse]);
 
   useEffect(() => {
+    // ⭐ Attendre la résolution de l'année globale (contexte) avant de charger
+    //    — évite le flash « Aucune donnée » pendant le chargement des années.
+    if (!academicYearId && academicYearLoading) return;
     loadData();
-  }, [loadData]);
+  }, [loadData, academicYearId, academicYearLoading]);
 
   // ⭐ Reset page à 1 quand les filtres changent
   useEffect(() => {

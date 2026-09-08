@@ -159,11 +159,83 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
       isActive: true,
     };
 
-    const withAll = scopeAllowsAll ? [allLevelsOption, ...activeLevels] : activeLevels;
+    // ⭐ FIX 2026-09-09 « dashboards comptable : KPI incohérents » (Mon Avenir
+    //    Plus) : un compte RESTREINT dont le périmètre couvre PLUSIEURS
+    //    niveaux (ex: COMPTABLE @ MAT_PRI) était auto-sélectionné sur le
+    //    PREMIER niveau du périmètre (Maternelle) → les hooks du dashboard qui
+    //    passent ?schoolLevelId=<niveau> (stats élèves, KPI…) se retrouvaient
+    //    scopés à CE SEUL niveau, incohérents avec les KPI Axios (périmètre
+    //    complet MAT+PRI côté serveur) → « pas les bons KPI, pas les bonnes
+    //    stats comme chez le promoteur ».
+    //    → Option virtuelle « Mon périmètre » avec id='ALL' : tous les guards
+    //    existants (schoolLevelId !== 'ALL') l'ignorent, et l'intercepteur
+    //    axios N'ENVOIE PAS le header x-school-level-id pour un compte
+    //    restreint → le scope serveur (MAT+PRI…) s'applique PARTOUT, KPI et
+    //    listes restent COHÉRENTS entre eux.
+    const scopedActiveLevels = scopeAllowsAll
+      ? []
+      : activeLevels.filter(
+          (l) =>
+            (l.schoolLevelId && (scope?.levelIds ?? []).includes(l.schoolLevelId)) ||
+            (l.code && (scope?.levelCodes ?? []).includes(l.code)),
+        );
+
+    let withAll: SchoolLevel[];
+    if (scopeAllowsAll) {
+      // Compte transverse (promoteur…) → « Tous les niveaux » comme avant.
+      withAll = [allLevelsOption, ...activeLevels];
+    } else if (scopedActiveLevels.length > 1) {
+      // Périmètre restreint MULTI-niveaux → « Mon périmètre (Mat. + Pri.) ».
+      const perimeterOption: SchoolLevel = {
+        id: 'ALL',
+        code: 'ALL',
+        label: `Mon périmètre (${scopedActiveLevels.map((l) => l.label).join(' + ')})`,
+        isActive: true,
+        schoolLevelId: 'ALL',
+      };
+      withAll = [perimeterOption, ...activeLevels];
+    } else {
+      // Périmètre mono-niveau → pas d'option globale (comportement 2026-09-07).
+      withAll = activeLevels;
+    }
     setAvailableLevels(withAll);
 
     // ─── Sélection du niveau courant ────────────────────────────────────────
     const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
+
+    // ⭐ Self-heal (UNE fois, flag localStorage) 2026-09-09 : les comptes
+    //    multi-niveaux restreints ont souvent un niveau UNIQUE sauvegardé qui
+    //    avait été AUTO-IMPOSÉ par l'ancienne logique (1er niveau du périmètre
+    //    → Maternelle) → dashboard incohérent. On le remplace par l'option
+    //    « Mon périmètre ». Une fois le flag posé, les choix MANUELS de
+    //    l'utilisateur sont respectés durablement.
+    const HEAL_FLAG = 'schoolLevelPerimeterHealed';
+    const legacyAutoLevelId = scopedActiveLevels.length > 1 ? scopedActiveLevels[0]?.id : null;
+    if (
+      !scopeAllowsAll &&
+      legacyAutoLevelId &&
+      (currentLevel?.id === legacyAutoLevelId || savedLevelId === legacyAutoLevelId) &&
+      typeof window !== 'undefined' &&
+      !localStorage.getItem(HEAL_FLAG)
+    ) {
+      const perimeter = withAll[0];
+      const previousLevelId = currentLevel?.id;
+      setCurrentLevelState(perimeter);
+      try {
+        localStorage.setItem(HEAL_FLAG, '1');
+        localStorage.setItem(STORAGE_KEY_ID, perimeter.id);
+        localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(perimeter));
+      } catch { /* ignore quota errors */ }
+      if (previousLevelId && previousLevelId !== perimeter.id) {
+        invalidateQueriesForLevelChange();
+        window.dispatchEvent(
+          new CustomEvent(SCHOOL_LEVEL_CHANGED_EVENT, {
+            detail: { previousLevelId, newLevelId: perimeter.id },
+          }),
+        );
+      }
+      return;
+    }
 
     // Si on a déjà un niveau courant et qu'il est toujours valide, on le garde
     if (currentLevel && withAll.some((l) => l.id === currentLevel.id)) {
@@ -203,15 +275,15 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     //    ex: secrétaire/secrétaire comptable) → auto-sélection d'un niveau de
     //    SON périmètre. Couvre le self-heal d'un 'ALL' sauvegardé (plus proposé)
     //    et le premier chargement sans sélection.
+    // ⭐ FIX 2026-09-09 : périmètre MULTI-niveaux → auto-sélection de
+    //    l'option « Mon périmètre » (id 'ALL', first de withAll) pour la
+    //    cohérence KPI/listes (cf. commentaire ci-dessus). Mono-niveau → le
+    //    seul niveau du périmètre, comme avant.
     if (!scopeAllowsAll && !autoSelectedLevel && (!savedLevelId || savedLevelId === 'ALL')) {
-      const scopedLevelIds = scope?.levelIds ?? [];
-      const scopedLevelCodes = scope?.levelCodes ?? [];
       autoSelectedLevel =
-        activeLevels.find(
-          (l) =>
-            (l.schoolLevelId && scopedLevelIds.includes(l.schoolLevelId)) ||
-            (l.code && scopedLevelCodes.includes(l.code)),
-        ) || null;
+        scopedActiveLevels.length > 1
+          ? withAll[0] // = option « Mon périmètre (…) »
+          : scopedActiveLevels[0] ?? null;
     }
 
     const selectedLevel = autoSelectedLevel

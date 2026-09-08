@@ -179,9 +179,13 @@ export class CollectionSummaryImportService {
     });
     const yearLabel = academicYear?.name || academicYear?.label || '';
 
-    // Récupérer toutes les classes physiques du tenant
+    // ⭐ Récupérer toutes les classes physiques du tenant POUR L'ANNÉE CIBLE
+    // FIX 500 : sans le filtre academicYearId, les classes des années antérieures
+    // (qui portent les MÊMES noms — ex: « CI A » en 2024-2025 et 2025-2026)
+    // génèrent des feuilles Excel en double et ExcelJS jette
+    // « Worksheet name already exists » → erreur 500 au téléchargement du template.
     const classes = await this.prisma.class.findMany({
-      where: { tenantId },
+      where: { tenantId, academicYearId },
       include: {
         schoolLevel: { select: { id: true, name: true, code: true, order: true } },
       },
@@ -222,9 +226,22 @@ export class CollectionSummaryImportService {
       const ws = workbook.addWorksheet('Bilan');
       this.applyPointSheetLayout(ws, '', yearLabel, []);
     } else {
-      // Une feuille par classe
+      // Une feuille par classe — ⭐ déduplication défensive des noms de feuilles
+      // (pas de contrainte d'unicité sur Class.name au sein d'une même année :
+      // deux sections homonymes feraient planter ExcelJS de la même façon)
+      const usedSheetNames = new Set<string>();
       for (const cls of classes) {
-        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        let sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        if (usedSheetNames.has(sheetName)) {
+          let suffix = 2;
+          let candidate = sheetName;
+          while (usedSheetNames.has(candidate)) {
+            candidate = `${sheetName.substring(0, 28)}-${suffix}`;
+            suffix++;
+          }
+          sheetName = candidate;
+        }
+        usedSheetNames.add(sheetName);
         const schoolLevelName = cls.schoolLevel?.name || '';
         const studentsInClass = studentsByClass.get(cls.id) || [];
         const ws = workbook.addWorksheet(sheetName);
@@ -299,9 +316,12 @@ export class CollectionSummaryImportService {
       }
     }
 
-    // ⭐ Classes du tenant → résolution feuille (nom) → classe
+    // ⭐ Classes du tenant (ANNÉE CIBLE uniquement) → résolution feuille (nom) → classe
+    // FIX : les bassins d'élèves sont filtrés par l'année cible ; sans ce filtre, une
+    // feuille « CI A » pouvait se résoudre sur la classe 2024-2025 (bassin vide →
+    // matching global dégradé) au lieu de la classe 2025-2026.
     const classes = await this.prisma.class.findMany({
-      where: { tenantId },
+      where: { tenantId, academicYearId },
       select: { id: true, name: true, code: true },
     });
 

@@ -136,8 +136,11 @@ export class StudentsImportService {
       where: { tenantId },
       select: { id: true, name: true, code: true },
     });
+    // ⭐ Classes du tenant pour l'ANNÉE CIBLE uniquement — les nouveaux élèves
+    // seront inscrits dans cette année ; sans le filtre, une feuille « CI A »
+    // pouvait se résoudre sur la classe 2024-2025 (au lieu de 2025-2026).
     const classes = await this.prisma.class.findMany({
-      where: { tenantId },
+      where: { tenantId, academicYearId },
       select: {
         id: true,
         name: true,
@@ -368,11 +371,27 @@ export class StudentsImportService {
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
+    // ⭐ FIX 500 : récupérer les classes de l'ANNÉE ACTIVE uniquement (fallback :
+    // la plus récente). Sans ce filtre, les classes des années antérieures (mêmes
+    // noms — ex: « CI A » ×2) créent des feuilles Excel en double et ExcelJS jette
+    // « Worksheet name already exists » → erreur 500 au téléchargement du template.
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'desc' },
+      select: { id: true },
+    });
+    const latestYear = activeYear
+      ?? await this.prisma.academicYear.findFirst({
+        where: { tenantId },
+        orderBy: { name: 'desc' },
+        select: { id: true },
+      });
+
     // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
     // Inclure la classe officielle (officialClass) pour l'afficher dans les instructions
     // de la feuille — l'admin sait ainsi à quelle classe officielle correspond chaque section.
     const classes = await this.prisma.class.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(latestYear ? { academicYearId: latestYear.id } : {}) },
       include: {
         schoolLevel: {
           select: { id: true, name: true, code: true, order: true },
@@ -394,11 +413,22 @@ export class StudentsImportService {
       this.applySheetLayout(ws, '', '', undefined);
       this.addInstructionsRow(ws);
     } else {
-      // ⭐ Une feuille par classe physique (section)
+      // ⭐ Une feuille par classe physique (section) — déduplication défensive des noms
+      const usedSheetNames = new Set<string>();
       for (const cls of classes) {
         // ⭐ Nom de feuille : nom de la classe physique (limité à 31 chars — limite Excel)
         // + sanitized pour éviter les caractères interdits : \ / ? * [ ]
-        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        let sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        if (usedSheetNames.has(sheetName)) {
+          let suffix = 2;
+          let candidate = sheetName;
+          while (usedSheetNames.has(candidate)) {
+            candidate = `${sheetName.substring(0, 28)}-${suffix}`;
+            suffix++;
+          }
+          sheetName = candidate;
+        }
+        usedSheetNames.add(sheetName);
         const schoolLevelName = cls.schoolLevel?.name || '';
         // ⭐ Nom de la classe officielle (AcademicClass) pour les instructions
         const officialClassName = cls.officialClass?.name;

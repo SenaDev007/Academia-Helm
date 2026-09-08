@@ -281,9 +281,25 @@ export class ArrearsImportService {
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
+    // ⭐ FIX 500 : récupérer les classes de l'ANNÉE ACTIVE uniquement (fallback :
+    // la plus récente). Sans ce filtre, les classes des années antérieures (mêmes
+    // noms — ex: « CI A » ×2) créent des feuilles Excel en double et ExcelJS jette
+    // « Worksheet name already exists » → erreur 500 au téléchargement du template.
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'desc' },
+      select: { id: true },
+    });
+    const latestYear = activeYear
+      ?? await this.prisma.academicYear.findFirst({
+        where: { tenantId },
+        orderBy: { name: 'desc' },
+        select: { id: true },
+      });
+
     // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
     const classes = await this.prisma.class.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(latestYear ? { academicYearId: latestYear.id } : {}) },
       include: {
         schoolLevel: {
           select: { id: true, name: true, code: true, order: true },
@@ -333,9 +349,20 @@ export class ArrearsImportService {
         studentsByClass.get(e.classId)!.push(e.student);
       });
 
-      // ⭐ Une feuille par classe
+      // ⭐ Une feuille par classe — déduplication défensive des noms de feuilles
+      const usedSheetNames = new Set<string>();
       for (const cls of classes) {
-        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        let sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        if (usedSheetNames.has(sheetName)) {
+          let suffix = 2;
+          let candidate = sheetName;
+          while (usedSheetNames.has(candidate)) {
+            candidate = `${sheetName.substring(0, 28)}-${suffix}`;
+            suffix++;
+          }
+          sheetName = candidate;
+        }
+        usedSheetNames.add(sheetName);
         const schoolLevelName = cls.schoolLevel?.name || '';
         const studentsInClass = studentsByClass.get(cls.id) || [];
         const ws = workbook.addWorksheet(sheetName);

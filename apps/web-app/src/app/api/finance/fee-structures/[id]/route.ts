@@ -52,8 +52,11 @@ export async function PATCH(
     const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /timeout|abort/i.test(e?.message ?? '');
     return NextResponse.json(
       {
+        // ⚠️ Ne PAS inviter à réessayer : sur un timeout amont, la modification
+        // a probablement DÉJÀ été commitée — un re-PATCH serait au mieux inutile,
+        // au pire destructeur (re-application d'un changement de périmètre).
         message: isTimeout
-          ? "La modification prend plus de temps que prévu (recalcul des comptes élèves). Réessayez — si le frais affiche déjà les nouvelles valeurs, il a bien été modifié."
+          ? "Le serveur met anormalement longtemps à répondre. La modification a probablement été prise en compte — rechargez la page pour vérifier avant de réessayer."
           : 'Internal server error',
         error: isTimeout ? 'UPSTREAM_TIMEOUT' : 'Internal server error',
       },

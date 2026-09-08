@@ -19,6 +19,93 @@ const STATUS_OVERDUE = 'OVERDUE';
 const STATUS_BLOCKED = 'BLOCKED';
 const STATUS_CLOSED = 'CLOSED';
 
+/**
+ * ⭐ FIX (sept. 2026 — bug « mauvais frais appliqués aux comptes élèves ») :
+ * Sélectionne les FeeStructures applicables à un élève, avec la priorité :
+ *
+ *   Classe PHYSIQUE (classId, ex: CE1-A)  >  Classe OFFICIELLE (academicClassId, ex: CE1)
+ *   >  Niveau (levelId, ex: Primaire)  >  Global (aucun scope)
+ *
+ * AVANT ce fix : `academicClassId` était IGNORÉ dans le matching. Or le modal
+ * « Configuration des frais » crée les frais par classe OFFICIELLE (le frontend
+ * envoie academicClassId, pas classId). Résultat : tous les frais d'un même
+ * niveau entraient en collision sur la clé de déduplication (feeType) et un
+ * SEUL frais — choisi dans un ordre arbitraire renvoyé par la DB — était
+ * appliqué à TOUS les élèves du niveau. Concrètement à La Gaité (2026-2027) :
+ * le « Frais de scolarité — 4ème » (80 000) appliqué aux 3ème/5ème/6ème/2nde D
+ * (au lieu de 95 000 pour les 3ème), et le frais CE1 (50 000) appliqué aux
+ * CI/CP (au lieu de 47 000).
+ *
+ * Déduplication : pour un même feeType, la structure la plus SPÉCIFIQUE gagne.
+ * Exception : les frais GENERAUX (feeType = GENERAL) sont transversaux — ils se
+ * dédupliquent par NOM (même nom = la plus spécifique gagne), ce qui permet à
+ * plusieurs frais généraux distincts de coexister.
+ *
+ * @param allStructures Toutes les FeeStructures actives de l'année (avec installments)
+ * @param student Scope de l'élève : classe physique, classe officielle, niveau
+ */
+export function selectApplicableStructures(
+  allStructures: any[],
+  student: { classId: string | null; academicClassId: string | null; levelId: string | null },
+): any[] {
+  const byType = new Map<string, { fs: any; specificity: number }>();
+  for (const fs of allStructures) {
+    let specificity = -1;
+    if (fs.classId) {
+      // Frais scoped à une classe PHYSIQUE : ne matche QUE cette classe.
+      if (fs.classId === student.classId) specificity = 3;
+    } else if (fs.academicClassId) {
+      // Frais scoped à une classe OFFICIELLE : ne matche QUE cette classe officielle.
+      if (fs.academicClassId === student.academicClassId) specificity = 2;
+    } else if (fs.levelId) {
+      // Frais scoped à un niveau (sans classe) : matche les élèves du niveau.
+      if (fs.levelId === student.levelId) specificity = 1;
+    } else {
+      // Frais global : applicable à tous.
+      specificity = 0;
+    }
+    if (specificity < 0) continue;
+
+    const key =
+      fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
+    const existing = byType.get(key);
+    if (!existing || specificity > existing.specificity) {
+      byType.set(key, { fs, specificity });
+    }
+  }
+  return Array.from(byType.values()).map((v) => v.fs);
+}
+
+/**
+ * Plan de recalcul d'un compte élève — sortie PURE de buildAccountRecalcPlan().
+ * Contient toutes les écritures à effectuer, sans aucun accès DB : le chemin
+ * mono-élève (recalculate) et le chemin batch (recalculateAccountsWhere)
+ * partagent EXACTEMENT les mêmes règles métier via ce plan.
+ */
+export interface RecalcPlan {
+  /** Breakdowns à supprimer (non payés — qu'ils soient applicables ou orphelins). */
+  deleteIds: string[];
+  /** Breakdowns conservés (payés) dont le montant doit être mis à jour. */
+  updateBreakdowns: {
+    id: string;
+    initialAmount: number;
+    adjustedAmount: number;
+    remainingAmount: number;
+  }[];
+  /** Nouveaux breakdowns à créer (frais applicables pas encore présents). */
+  createBreakdowns: {
+    studentAccountId: string;
+    feeStructureId: string;
+    initialAmount: number;
+    adjustedAmount: number;
+    paidAmount: number;
+    remainingAmount: number;
+  }[];
+  totalDue: number;
+  totalPaid: number;
+  balance: number;
+}
+
 @Injectable()
 export class StudentAccountService {
   private readonly logger = new Logger(StudentAccountService.name);
@@ -205,6 +292,9 @@ export class StudentAccountService {
 
     const enrollment = student.studentEnrollments?.[0];
     const classId = enrollment?.classId ?? null;
+    /// ⭐ Classe officielle de l'élève (CE1, 4ème…) — utilisée par le matching
+    ///    des frais scoped par classe officielle (voir selectApplicableStructures).
+    const academicClassId = enrollment?.academicClassId ?? null;
     const levelId = student.schoolLevelId;
     const enrollmentType = enrollment?.enrollmentType ?? 'NEW';
     const previousArrears = Number(enrollment?.previousArrears ?? 0);
@@ -213,40 +303,10 @@ export class StudentAccountService {
       where: { tenantId, academicYearId, isActive: true },
       include: { structureInstallments: true, overrides: { where: { studentId } } },
     });
-    // RÈGLE MÉTIER : Priorité d'application (Classe > Niveau > Global)
-    // Pour chaque type de frais (feeType), on ne garde que la structure la plus spécifique.
-    const structuresByType = new Map<string, any>();
-
-    allStructures.forEach((fs) => {
-      const isClassMatch = fs.classId && fs.classId === classId;
-      const isLevelMatch = fs.levelId === levelId && !fs.classId;
-      const isGlobalMatch = !fs.levelId && !fs.classId;
-
-      if (isClassMatch || isLevelMatch || isGlobalMatch) {
-        const dedupKey = fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
-        const existing = structuresByType.get(dedupKey);
-        if (!existing) {
-          structuresByType.set(dedupKey, fs);
-        } else {
-          // Remplacement si plus spécifique
-          const existingIsClass = existing.classId;
-          const existingIsLevel = existing.levelId && !existing.classId;
-          
-          if (isClassMatch) {
-            structuresByType.set(dedupKey, fs); // La classe gagne toujours
-          } else if (isLevelMatch && !existingIsClass) {
-            structuresByType.set(dedupKey, fs); // Le niveau gagne contre le global
-          }
-        }
-      }
-    });
-
-    // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève
-    //   - enrollmentType === 'NEW' → frais d'INSCRIPTION (pas de REINSCRIPTION)
-    //   - enrollmentType ∈ ['REPEAT', 'PROMOTION', 'TRANSFER'] → frais de REINSCRIPTION (pas d'INSCRIPTION)
-    //   Un élève ne doit JAMAIS payer à la fois INSCRIPTION et REINSCRIPTION.
-    //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
-    const feeStructuresRaw = Array.from(structuresByType.values());
+    // RÈGLE MÉTIER : Priorité d'application
+    //   (Classe physique > Classe officielle > Niveau > Global)
+    // ⭐ selectApplicableStructures honore academicClassId (fix sept. 2026).
+    const feeStructuresRaw = selectApplicableStructures(allStructures, { classId, academicClassId, levelId });
     const feeStructures = this.filterOptionalGeneralFees(
       this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType),
     );
@@ -335,6 +395,8 @@ export class StudentAccountService {
 
     const enrollment = student.studentEnrollments?.[0];
     const classId = enrollment?.classId ?? null;
+    /// ⭐ Classe officielle de l'élève — pour le matching academicClassId (fix sept. 2026).
+    const academicClassId = enrollment?.academicClassId ?? null;
     const levelId = student.schoolLevelId;
     const enrollmentType = enrollment?.enrollmentType ?? 'NEW';
 
@@ -342,159 +404,52 @@ export class StudentAccountService {
       where: { tenantId, academicYearId, isActive: true },
       include: { structureInstallments: true, overrides: { where: { studentId } } },
     });
-
-    // Priorité Classe > Niveau > Global
-    const structuresByType = new Map<string, any>();
-    allStructures.forEach((fs) => {
-      const isClassMatch = fs.classId && fs.classId === classId;
-      const isLevelMatch = fs.levelId === levelId && !fs.classId;
-      const isGlobalMatch = !fs.levelId && !fs.classId;
-
-      if (isClassMatch || isLevelMatch || isGlobalMatch) {
-        const dedupKey = fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
-        const existing = structuresByType.get(dedupKey);
-        if (!existing) {
-          structuresByType.set(dedupKey, fs);
-        } else {
-          const existingIsClass = existing.classId;
-          const existingIsLevel = existing.levelId && !existing.classId;
-          if (isClassMatch) {
-            structuresByType.set(dedupKey, fs);
-          } else if (isLevelMatch && !existingIsClass) {
-            structuresByType.set(dedupKey, fs);
-          }
-        }
-      }
-    });
-
-    // ⚠️ RÈGLE MÉTIER : Nouvel élève vs ancien élève (même logique que getOrCreate)
-    //   (Logique extraite dans filterFeesByEnrollmentType() pour éviter la duplication)
-    const feeStructuresRaw = Array.from(structuresByType.values());
-    const feeStructures = this.filterOptionalGeneralFees(
-      this.filterFeesByEnrollmentType(feeStructuresRaw, enrollmentType),
-    );
+    // Overrides de CET élève, à plat (le planner prend les structures SANS overrides attachées)
+    const studentOverrides: any[] = allStructures.flatMap((fs: any) => fs.overrides ?? []);
 
     // ⚠️ RÈGLE MÉTIER : Régimes tarifaires (FeeRegime)
     const regimeAdjustments = await this.loadFeeRegimeAdjustments(tenantId, studentId, academicYearId);
 
-    // Helper : calculer le montant ajusté pour une FeeStructure
-    const computeAmount = (fs: any): number => {
-      const override = fs.overrides[0];
-      if (override) return Number(override.customAmount);
-      if (regimeAdjustments.has(fs.id)) return regimeAdjustments.get(fs.id)!;
-      return Number(fs.totalAmount);
-    };
+    // Plan de recalcul (règles métier partagées avec le chemin batch — voir buildAccountRecalcPlan)
+    const plan = this.buildAccountRecalcPlan({
+      account: { id: account.id },
+      breakdowns: account.breakdowns as any[],
+      classId,
+      academicClassId,
+      levelId,
+      enrollmentType,
+      structures: allStructures,
+      studentOverrides,
+      regimeAdjustments,
+    });
 
-    const totalDue = feeStructures.reduce((sum, fs) => sum + computeAmount(fs), 0);
+    // ── Application du plan (mêmes écritures qu'avant le refactor) ──
 
     // Supprimer les anciens breakdowns (non payés)
-    await this.prisma.accountBreakdown.deleteMany({
-      where: { studentAccountId: account.id, paidAmount: 0 },
-    });
-
-    // Récupérer les breakdowns restants (ceux avec paiements)
-    const existingBreakdowns = await this.prisma.accountBreakdown.findMany({
-      where: { studentAccountId: account.id },
-    });
-    const existingFeeStructureIds = new Set(existingBreakdowns.map((b) => b.feeStructureId));
-
-    // Créer les nouveaux breakdowns (seulement pour les frais pas déjà présents)
-    const newBreakdowns = feeStructures.filter((fs) => !existingFeeStructureIds.has(fs.id));
-
-    // Mettre à jour les breakdowns existants avec les overrides/régimes
-    for (const b of existingBreakdowns) {
-      const fs = feeStructures.find((f) => f.id === b.feeStructureId);
-      if (fs) {
-        const newAmount = computeAmount(fs);
-        if (Number(b.initialAmount) !== newAmount) {
-          await this.prisma.accountBreakdown.update({
-            where: { id: b.id },
-            data: {
-              initialAmount: newAmount,
-              adjustedAmount: newAmount,
-              remainingAmount: newAmount - Number(b.paidAmount),
-            },
-          });
-        }
-      }
-    }
-
-    // Créer les nouveaux breakdowns
-    if (newBreakdowns.length > 0) {
-      await this.prisma.accountBreakdown.createMany({
-        data: newBreakdowns.map((fs) => {
-          const initialAmount = computeAmount(fs);
-          return {
-            studentAccountId: account.id,
-            feeStructureId: fs.id,
-            initialAmount,
-            adjustedAmount: initialAmount,
-            paidAmount: 0,
-            remainingAmount: initialAmount,
-          };
-        }),
+    if (plan.deleteIds.length > 0) {
+      await this.prisma.accountBreakdown.deleteMany({
+        where: { id: { in: plan.deleteIds } },
       });
     }
 
-    // ⭐ FIX (suppression d'override) : Traiter les breakdowns « orphelins » — ceux dont
-    // la feeStructure n'est plus dans la liste filtrée `feeStructures` (par ex. l'élève a
-    // changé de classe, la feeStructure a été désactivée, ou l'enrollmentType a changé).
-    //
-    // Sans ce bloc, ces breakdowns conservent leur ancien `initialAmount` = montant de
-    // l'override supprimé (ex: 35000), et le badge « Pers. » reste affiché côté frontend
-    // (StudentAccountsContent compare `b.initialAmount` à `b.feeStructure.totalAmount`).
-    //
-    // Pour chaque breakdown orphelin :
-    //   - Si un override actif existe encore pour (student, feeStructure) → l'appliquer
-    //   - Sinon → reset à `feeStructure.totalAmount` (montant original)
-    //   - Recalculer `remainingAmount = adjustedAmount - paidAmount`
-    const filteredFeeStructureIds = new Set(feeStructures.map((fs) => fs.id));
-    const orphanedBreakdowns = await this.prisma.accountBreakdown.findMany({
-      where: {
-        studentAccountId: account.id,
-        feeStructureId: { notIn: Array.from(filteredFeeStructureIds) },
-      },
-      include: {
-        feeStructure: {
-          select: {
-            id: true,
-            totalAmount: true,
-            isActive: true,
-            overrides: { where: { studentId } },
-          },
+    // Mettre à jour les breakdowns conservés (applicables + orphelins resynchronisés)
+    for (const u of plan.updateBreakdowns) {
+      await this.prisma.accountBreakdown.update({
+        where: { id: u.id },
+        data: {
+          initialAmount: u.initialAmount,
+          adjustedAmount: u.adjustedAmount,
+          remainingAmount: u.remainingAmount,
         },
-      },
-    });
+      });
+    }
 
-    for (const b of orphanedBreakdowns) {
-      const override = b.feeStructure?.overrides?.[0];
-      const newAmount = override
-        ? Number(override.customAmount)
-        : Number(b.feeStructure?.totalAmount ?? 0);
-      // Toujours resynchroniser adjustedAmount avec initialAmount (au cas où ils auraient
-      // divergé), et recalculer remainingAmount.
-      if (
-        Number(b.initialAmount) !== newAmount ||
-        Number(b.adjustedAmount) !== newAmount
-      ) {
-        await this.prisma.accountBreakdown.update({
-          where: { id: b.id },
-          data: {
-            initialAmount: newAmount,
-            adjustedAmount: newAmount,
-            remainingAmount: newAmount - Number(b.paidAmount),
-          },
-        });
-      }
+    // Créer les nouveaux breakdowns
+    if (plan.createBreakdowns.length > 0) {
+      await this.prisma.accountBreakdown.createMany({ data: plan.createBreakdowns });
     }
 
     // Recalculer totalDue et balance
-    const allBreakdowns = await this.prisma.accountBreakdown.findMany({
-      where: { studentAccountId: account.id },
-    });
-    const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
-    const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
-
     // ⭐ Juillet 2026 : SET LOCAL app.allow_balance_update doit être dans la MÊME
     // transaction que l'UPDATE du studentAccount, sinon le trigger prevent_balance_update
     // déclenche l'erreur "Direct modification of balance fields is forbidden".
@@ -502,14 +457,15 @@ export class StudentAccountService {
     // transactions séparées → le flag était perdu.
     // Maintenant : tout est dans une seule $transaction (pattern identique à
     // fee-structure.service.ts lignes 641-652 qui fonctionne correctement).
+    const accountId = account.id;
     account = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
       return tx.studentAccount.update({
-        where: { id: account.id },
+        where: { id: accountId },
         data: {
-          totalDue: newTotalDue,
-          totalPaid,
-          balance: newTotalDue - totalPaid,
+          totalDue: plan.totalDue,
+          totalPaid: plan.totalPaid,
+          balance: plan.balance,
           updatedAt: new Date(),
         },
         include: { breakdowns: { include: { feeStructure: true } } },
@@ -517,6 +473,368 @@ export class StudentAccountService {
     });
 
     return account;
+  }
+
+  /**
+   * ⭐ PLAN DE RECALCUL (sept. 2026) — cœur métier PUR (aucune requête DB).
+   *
+   * Calcule, pour UN compte élève, l'ensemble des écritures à effectuer pour
+   * resynchroniser ses breakdowns avec les FeeStructures applicables :
+   *
+   *   1. Structures applicables = selectApplicableStructures (priorité
+   *      Classe physique > Classe officielle > Niveau > Global, dédup par
+   *      feeType — GENERAL dédup par nom), puis filtres métier :
+   *      - filterFeesByEnrollmentType (NEW → INSCRIPTION, ancien → REINSCRIPTION)
+   *      - filterOptionalGeneralFees (GENERAL isMandatory=false hors catalogue)
+   *   2. Montant = override élève > régime tarifaire > totalAmount.
+   *   3. Breakdowns non payés → supprimés (recréés si applicables).
+   *      Breakdowns payés conservés → montants resynchronisés (applicables
+   *      ET orphelins — cf. fix « suppression d'override »).
+   *   4. Totaux = somme des breakdowns à l'état final.
+   *
+   * Ce planner est partagé par le chemin mono-élève (recalculate, utilisé par
+   * les paiements/personnalisations) et le chemin batch
+   * (recalculateAccountsWhere) → une seule source de vérité pour les règles.
+   */
+  private buildAccountRecalcPlan(input: {
+    account: { id: string };
+    breakdowns: any[];
+    classId: string | null;
+    academicClassId: string | null;
+    levelId: string | null;
+    enrollmentType: string;
+    structures: any[];
+    studentOverrides: any[];
+    regimeAdjustments: Map<string, number>;
+  }): RecalcPlan {
+    const { breakdowns } = input;
+    const structuresById = new Map<string, any>(input.structures.map((fs) => [fs.id, fs]));
+    const overrideByFsId = new Map<string, any>(
+      input.studentOverrides.map((o) => [o.feeStructureId, o]),
+    );
+
+    const applicable = this.filterOptionalGeneralFees(
+      this.filterFeesByEnrollmentType(
+        selectApplicableStructures(input.structures, {
+          classId: input.classId,
+          academicClassId: input.academicClassId,
+          levelId: input.levelId,
+        }),
+        input.enrollmentType,
+      ),
+    );
+    const applicableIds = new Set(applicable.map((fs) => fs.id));
+
+    // Priorité : override personnalisé > régime tarifaire > montant standard
+    const computeAmount = (fs: any): number => {
+      const override = overrideByFsId.get(fs.id);
+      if (override) return Number(override.customAmount);
+      if (input.regimeAdjustments.has(fs.id)) return input.regimeAdjustments.get(fs.id)!;
+      return Number(fs.totalAmount);
+    };
+
+    // 1) Évaluer CHAQUE breakdown en place.
+    //    - orphelin NON PAYÉ (structure sortie du périmètre) → à supprimer
+    //      (comportement historique : deleteMany des non payés) ;
+    //    - tous les autres (payés OU non payés d'une structure applicable) →
+    //      conservés et mis à jour SUR PLACE si besoin. ⭐ Amélioration vs
+    //      l'ancien code qui supprimait PUIS recréait les breakdowns non payés
+    //      à chaque recalcul : ici on préserve les ids de lignes (et donc les
+    //      FinanceTransactionAllocation qui les référencent), on ne réécrit
+    //      que ce qui a réellement changé → recalcul idempotent et rapide.
+    const deleteIds: string[] = [];
+    const kept: any[] = [];
+    for (const b of breakdowns) {
+      const isApplicable = applicableIds.has(b.feeStructureId);
+      if (!isApplicable && Number(b.paidAmount) === 0) {
+        deleteIds.push(b.id);
+        continue;
+      }
+      kept.push(b);
+    }
+    const keptFsIds = new Set(kept.map((b) => b.feeStructureId));
+
+    // 2) Breakdowns conservés : resynchroniser les montants.
+    //    - breakdown d'une structure APPLICABLE → montant recalculé (override/régime/total)
+    //    - breakdown ORPHELIN PAYÉ (structure sortie du périmètre : élève changé
+    //      de classe, frais désactivé, enrollmentType changé) → override actif
+    //      éventuel, sinon montant d'origine de la structure. On resynchronise
+    //      toujours adjustedAmount avec initialAmount et on recalcule
+    //      remainingAmount (cf. fix « badge Pers. » après suppression d'override).
+    const updateBreakdowns: RecalcPlan['updateBreakdowns'] = [];
+    for (const b of kept) {
+      const fs = structuresById.get(b.feeStructureId);
+      let newAmount: number;
+      if (applicableIds.has(b.feeStructureId) && fs) {
+        newAmount = computeAmount(fs);
+      } else {
+        const override = overrideByFsId.get(b.feeStructureId);
+        newAmount = override
+          ? Number(override.customAmount)
+          : fs
+            ? Number(fs.totalAmount)
+            : Number(b.initialAmount);
+      }
+      if (Number(b.initialAmount) !== newAmount || Number(b.adjustedAmount) !== newAmount) {
+        updateBreakdowns.push({
+          id: b.id,
+          initialAmount: newAmount,
+          adjustedAmount: newAmount,
+          remainingAmount: newAmount - Number(b.paidAmount),
+        });
+      }
+    }
+
+    // 3) Breakdowns applicables manquants (aucune ligne existante, payée ou
+    //    non) → à créer
+    const createBreakdowns: RecalcPlan['createBreakdowns'] = applicable
+      .filter((fs) => !keptFsIds.has(fs.id))
+      .map((fs) => {
+        const initialAmount = computeAmount(fs);
+        return {
+          studentAccountId: input.account.id,
+          feeStructureId: fs.id,
+          initialAmount,
+          adjustedAmount: initialAmount,
+          paidAmount: 0,
+          remainingAmount: initialAmount,
+        };
+      });
+
+    // 4) Totaux sur l'état final (conservés mis à jour + créations)
+    let totalDue = 0;
+    let totalPaid = 0;
+    for (const b of kept) {
+      const upd = updateBreakdowns.find((u) => u.id === b.id);
+      totalDue += upd ? upd.initialAmount : Number(b.initialAmount);
+      totalPaid += Number(b.paidAmount);
+    }
+    for (const c of createBreakdowns) totalDue += c.initialAmount;
+
+    return {
+      deleteIds,
+      updateBreakdowns,
+      createBreakdowns,
+      totalDue,
+      totalPaid,
+      balance: totalDue - totalPaid,
+    };
+  }
+
+  /**
+   * ⭐ RECALCUL EN BATCH (sept. 2026 — fix « le modal de configuration des frais
+   * charge indéfiniment / délai d'attente dépassé »).
+   *
+   * AVANT : recalculateAllAccounts exécutait ~12 requêtes SÉQUENTIELLES par élève
+   * (426 comptes × 173 ms ≈ 177 s) dans le fil de la requête HTTP → les timeouts
+   * (30 s côté navigateur, 55 s côté BFF Vercel) tuaient la réponse alors que
+   * l'enregistrement était déjà créé côté Railway → « échec » affiché à tort.
+   *
+   * MAINTENANT : ce runner remplace le N+1 par du bulk :
+   *   - ~6 lectures groupées (comptes, structures, overrides, régimes, breakdowns, élèves)
+   *   - calcul des plans en mémoire (buildAccountRecalcPlan — mêmes règles métier
+   *     que le chemin mono-élève)
+   *   - 4 écritures groupées : deleteMany + createMany + 2 UPDATE…FROM unnest
+   * → une année entière est recalculée en quelques secondes, quel que soit
+   *   l'effectif. Utilisé en arrière-plan par la création/modification de frais
+   * (fee-structure.service) et par l'endpoint explicite recalculate-accounts.
+   *
+   * @param accountWhere Filtre Prisma optionnel sur student_accounts — permet de
+   *        ne recalculer que les comptes du périmètre d'un frais (classe officielle,
+   *        classe physique, niveau, ou tout le tenant).
+   */
+  async recalculateAccountsWhere(
+    tenantId: string,
+    academicYearId: string | undefined,
+    accountWhere?: any,
+  ): Promise<{
+    success: boolean;
+    accountsRecalculated: number;
+    breakdownsUpdated: number;
+    accountsTotal: number;
+  }> {
+    const accounts = await this.prisma.studentAccount.findMany({
+      where: {
+        tenantId,
+        ...(academicYearId ? { academicYearId } : {}),
+        ...(accountWhere ?? {}),
+      },
+      select: { id: true, studentId: true, academicYearId: true },
+    });
+    if (accounts.length === 0) {
+      return { success: true, accountsRecalculated: 0, breakdownsUpdated: 0, accountsTotal: 0 };
+    }
+
+    // Grouper par année scolaire (les structures/régimes sont résolus PAR année,
+    // exactement comme le chemin mono-élève qui filtrait sur academicYearId).
+    const accountsByYear = new Map<string, { id: string; studentId: string }[]>();
+    for (const a of accounts) {
+      const list = accountsByYear.get(a.academicYearId) ?? [];
+      list.push({ id: a.id, studentId: a.studentId });
+      accountsByYear.set(a.academicYearId, list);
+    }
+
+    const allDeleteIds: string[] = [];
+    const allUpdates: RecalcPlan['updateBreakdowns'] = [];
+    const allCreates: RecalcPlan['createBreakdowns'] = [];
+    const accountTotals: { id: string; totalDue: number; totalPaid: number; balance: number }[] = [];
+    let accountsRecalculated = 0;
+
+    for (const [year, yearAccounts] of accountsByYear) {
+      // ── Contexte partagé de l'année (6 lectures au total, année entière) ──
+      const structures = await this.prisma.feeStructure.findMany({
+        where: { tenantId, academicYearId: year, isActive: true },
+        include: { structureInstallments: true },
+      });
+      const structureIds = structures.map((fs) => fs.id);
+
+      const overrides = structureIds.length
+        ? await this.prisma.feeOverride.findMany({
+            where: { feeStructureId: { in: structureIds } },
+          })
+        : [];
+      const overridesByStudent = new Map<string, any[]>();
+      for (const o of overrides) {
+        const list = overridesByStudent.get(o.studentId) ?? [];
+        list.push(o);
+        overridesByStudent.set(o.studentId, list);
+      }
+
+      // Régimes tarifaires : même calcul que loadFeeRegimeAdjustments, en une requête
+      const regimeAdjustmentsByStudent = new Map<string, Map<string, number>>();
+      const profiles = await this.prisma.studentFeeProfile.findMany({
+        where: { academicYearId: year },
+        include: { feeRegime: { include: { rules: true } } },
+      });
+      for (const profile of profiles) {
+        const adjustments = new Map<string, number>();
+        for (const rule of profile.feeRegime?.rules ?? []) {
+          if (rule.feeStructureId) {
+            const baseAmount = Number(rule.baseAmount ?? 0);
+            let adjusted = baseAmount;
+            if (rule.reductionPercentage != null && rule.reductionPercentage > 0) {
+              adjusted = baseAmount * (1 - rule.reductionPercentage / 100);
+            } else if (rule.fixedAmount != null) {
+              adjusted = rule.fixedAmount;
+            }
+            adjustments.set(rule.feeStructureId, Math.round(adjusted));
+          }
+        }
+        regimeAdjustmentsByStudent.set(profile.studentId, adjustments);
+      }
+
+      const yearAccountIds = yearAccounts.map((a) => a.id);
+      const breakdowns = await this.prisma.accountBreakdown.findMany({
+        where: { studentAccountId: { in: yearAccountIds } },
+      });
+      const breakdownsByAccount = new Map<string, any[]>();
+      for (const b of breakdowns) {
+        const list = breakdownsByAccount.get(b.studentAccountId) ?? [];
+        list.push(b);
+        breakdownsByAccount.set(b.studentAccountId, list);
+      }
+
+      const yearStudentIds = Array.from(new Set(yearAccounts.map((a) => a.studentId)));
+      const students: any[] = await this.prisma.student.findMany({
+        where: { id: { in: yearStudentIds }, tenantId },
+        include: {
+          studentEnrollments: {
+            where: { academicYearId: year },
+            select: { classId: true, academicClassId: true, enrollmentType: true },
+          },
+        },
+      });
+      const studentById = new Map(students.map((s) => [s.id, s]));
+
+      // ── Plans (pur, en mémoire) ──
+      for (const account of yearAccounts) {
+        const student = studentById.get(account.studentId);
+        if (!student) continue; // élève introuvable → ignoré (non bloquant, comme avant)
+        const enrollment = student.studentEnrollments?.[0];
+        const plan = this.buildAccountRecalcPlan({
+          account,
+          breakdowns: breakdownsByAccount.get(account.id) ?? [],
+          classId: enrollment?.classId ?? null,
+          academicClassId: enrollment?.academicClassId ?? null,
+          levelId: (student as any).schoolLevelId ?? null,
+          enrollmentType: enrollment?.enrollmentType ?? 'NEW',
+          structures,
+          studentOverrides: overridesByStudent.get(account.studentId) ?? [],
+          regimeAdjustments: regimeAdjustmentsByStudent.get(account.studentId) ?? new Map(),
+        });
+        allDeleteIds.push(...plan.deleteIds);
+        allUpdates.push(...plan.updateBreakdowns);
+        allCreates.push(...plan.createBreakdowns);
+        accountTotals.push({
+          id: account.id,
+          totalDue: plan.totalDue,
+          totalPaid: plan.totalPaid,
+          balance: plan.balance,
+        });
+        accountsRecalculated++;
+      }
+    }
+
+    // ── Application groupée (4 écritures, quelle que soit la taille du batch) ──
+    if (allDeleteIds.length > 0) {
+      await this.prisma.accountBreakdown.deleteMany({ where: { id: { in: allDeleteIds } } });
+    }
+    if (allCreates.length > 0) {
+      await this.prisma.accountBreakdown.createMany({ data: allCreates });
+    }
+    if (allUpdates.length > 0) {
+      const ids = allUpdates.map((u) => u.id);
+      const initials = allUpdates.map((u) => u.initialAmount);
+      const adjusteds = allUpdates.map((u) => u.adjustedAmount);
+      const remainings = allUpdates.map((u) => u.remainingAmount);
+      await this.prisma.$executeRaw`
+        UPDATE account_breakdowns AS ab
+        SET "initialAmount" = t.ia, "adjustedAmount" = t.aa, "remainingAmount" = t.ra
+        FROM unnest(
+          ${ids}::text[],
+          ${initials}::float8[],
+          ${adjusteds}::float8[],
+          ${remainings}::float8[]
+        ) AS t(bid, ia, aa, ra)
+        WHERE ab.id = t.bid
+      `;
+    }
+    if (accountTotals.length > 0) {
+      const ids = accountTotals.map((a) => a.id);
+      const dues = accountTotals.map((a) => a.totalDue);
+      const paids = accountTotals.map((a) => a.totalPaid);
+      const bals = accountTotals.map((a) => a.balance);
+      const now = new Date();
+      // SET LOCAL app.allow_balance_update dans la MÊME transaction que l'UPDATE
+      // (pattern obligatoire — cf. trigger prevent_balance_update_trigger).
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+        await tx.$executeRaw`
+          UPDATE student_accounts AS sa
+          SET "totalDue" = t.due, "totalPaid" = t.paid, "balance" = t.bal, "updatedAt" = ${now}
+          FROM unnest(
+            ${ids}::text[],
+            ${dues}::float8[],
+            ${paids}::float8[],
+            ${bals}::float8[]
+          ) AS t(aid, due, paid, bal)
+          WHERE sa.id = t.aid
+        `;
+      });
+    }
+
+    console.log(
+      `[StudentAccount] Recalcul batch: ${accountsRecalculated}/${accounts.length} comptes, ` +
+        `${allCreates.length} créations, ${allUpdates.length} mises à jour, ` +
+        `${allDeleteIds.length} suppressions (tenant=${tenantId}${academicYearId ? `, year=${academicYearId}` : ''})`,
+    );
+
+    return {
+      success: true,
+      accountsRecalculated,
+      breakdownsUpdated: allUpdates.length + allCreates.length,
+      accountsTotal: accounts.length,
+    };
   }
 
   /**

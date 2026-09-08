@@ -50,8 +50,10 @@ export async function POST(request: NextRequest) {
     const isTimeout = e?.name === 'AbortError' || e?.name === 'TimeoutError' || /timeout|abort/i.test(e?.message ?? '');
     return NextResponse.json(
       {
+        // ⚠️ Ne PAS inviter à réessayer : sur un timeout amont, l'API a
+        // probablement DÉJÀ commité le frais — un re-POST créerait un doublon.
         message: isTimeout
-          ? "L'enregistrement prend plus de temps que prévu (recalcul des comptes élèves). Réessayez — si le frais apparaît déjà dans la liste, il a bien été créé."
+          ? "Le serveur met anormalement longtemps à répondre. L'enregistrement a probablement été pris en compte — rechargez la page pour vérifier AVANT de réessayer (sinon vous risquez de créer un doublon)."
           : 'Internal server error',
         error: isTimeout ? 'UPSTREAM_TIMEOUT' : 'Internal server error',
       },

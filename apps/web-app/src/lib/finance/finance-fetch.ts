@@ -29,15 +29,19 @@ import { cachedGet, invalidateApiCache } from '@/lib/api/get-cache';
 const FINANCE_TIMEOUT_MS = 30_000;
 
 /** Est-ce une erreur « requête probablement jamais traitée par le backend » ?
- * (timeout réseau côté client AVANT envoi, connexion refusée, ou 502/503/504
- * renvoyés par la passerelle Vercel/CDN — dans ces cas un retry est SÛR). */
+ * (timeout réseau côté client AVANT envoi, connexion refusée, ou 502/503
+ * renvoyés par la passerelle Vercel/CDN — dans ces cas un retry est SÛR).
+ * ⚠️ 504 VOLONTAIREMENT EXCLU (fix sept. 2026) : un 504 « UPSTREAM_TIMEOUT »
+ * du BFF signifie que l'API a potentiellement DÉJÀ commité l'écriture mais a
+ * mis trop de temps à répondre — rejouer la mutation créerait un DOUBLON
+ * (ex: frais configuré 2×, encaissement enregistré 2×). L'utilisateur doit
+ * recharger la page et vérifier, pas rejouer automatiquement. */
 function isRetryableMutationError(err: any): boolean {
   const status = err?.status;
-  if (status === 502 || status === 503 || status === 504) return true;
+  if (status === 502 || status === 503) return true;
   const name = String(err?.name || '');
   if (name === 'TypeError' && /fetch|network/i.test(String(err?.message || ''))) return true; // fetch jamais parti
-  if (name === 'AbortError') return false; // timeout — le backend a PU committer
-  return false;
+  return false; // 504 / AbortError / erreurs applicatives → jamais rejouées
 }
 
 // ⭐ Le mapping URL → store IDB est centralisé dans lib/offline/store-names.ts

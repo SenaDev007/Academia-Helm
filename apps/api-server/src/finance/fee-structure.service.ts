@@ -9,22 +9,10 @@ import { StudentAccountService } from './student-account.service';
 
 const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
 
-/**
- * ⭐ Clé de déduplication des FeeStructure applicables à un élève.
- *
- * RÈGLE MÉTIER (priorité Classe > Niveau > Global) : pour un même type de
- * frais, une seule structure s'applique — SAUF pour les FRAIS GÉNÉRAUX
- * (feeType = GENERAL) qui sont transversaux : l'école peut en créer PLUSIEURS
- * (tenue scolaire, carte ID, activités…). On déduplique donc les GENERAL
- * par NOM (même nom = la structure la plus spécifique gagne), ce qui permet
- * à plusieurs frais généraux distincts de s'appliquer simultanément.
- */
-function structureDedupKey(fs: { feeType: string; name: string }): string {
-  if (fs.feeType === 'GENERAL') {
-    return `GENERAL::${(fs.name ?? '').trim().toLowerCase()}`;
-  }
-  return fs.feeType;
-}
+// NOTE (sept. 2026) : la clé de déduplication des structures applicables
+// (feeType, GENERAL dédup par nom) vit désormais dans
+// selectApplicableStructures() de student-account.service.ts — source unique
+// partagée par le matching des comptes élèves et le scope des recalculs.
 
 @Injectable()
 export class FeeStructureService {
@@ -210,13 +198,21 @@ export class FeeStructureService {
     });
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_CREATE', 'FeeStructure', structure.id, undefined, { id: structure.id, name: structure.name, feeType: structure.feeType });
 
-    // ⭐ Recalculer SYNCHRONE les comptes élèves (comme pour update)
-    try {
-      const result = await this.recalculateAllAccounts(tenantId, data.academicYearId);
-      console.log(`[FeeStructure] Recalcul synchrone après create: ${result.accountsRecalculated} comptes (fee=${structure.id}, year=${data.academicYearId})`);
-    } catch (err: any) {
-      console.error(`[FeeStructure] Recalcul synchrone après create échoué (non bloquant): ${err.message}`);
-    }
+    // ⭐ Recalculer les comptes élèves du PÉRIMÈTRE du frais, EN ARRIÈRE-PLAN.
+    //    AVANT (bug « le modal charge indéfiniment / délai d'attente dépassé ») :
+    //    recalcul SYNCHRONE de TOUS les comptes de l'année dans le fil de la
+    //    requête HTTP (~12 requêtes séquentielles par élève : 426 comptes ≈ 177 s)
+    //    → les timeouts (30 s navigateur / 55 s BFF Vercel) tuaient la réponse
+    //    alors que l'enregistrement était déjà commité côté Railway → l'UI
+    //    affichait « échec » alors que le frais était bien créé (visible après
+    //    rechargement). MAINTENANT : la réponse repart en < 1 s, et le recalcul
+    //    batch scoped (quelques secondes) tourne en tâche de fond.
+    this.scheduleAccountRecalculation(
+      tenantId,
+      data.academicYearId,
+      `fs:${structure.id}`,
+      this.structureScopeToAccountFilter(structure, data.academicYearId),
+    );
 
     return structure;
   }
@@ -402,19 +398,37 @@ export class FeeStructureService {
 
     await this.audit(tenantId, userId, 'FEE_STRUCTURE_UPDATE', 'FeeStructure', id, { name: existing.name }, { name: updated.name });
 
-    // ⭐ Recalculer SYNCHRONE tous les comptes élèves de cette année
-    //    scolaire pour propager la modification des frais.
-    //    AVANT : fire-and-forget → le recalcul pouvait échouer silencieusement
-    //      ou ne pas être déployé à temps.
-    //    APRÈS : synchrone avec try/catch (non bloquant en cas d'erreur —
-    //      l'update de la fee structure est déjà fait, le recalcul est un bonus).
-    if (data.totalAmount !== undefined || data.isActive !== undefined) {
-      try {
-        const result = await this.recalculateAllAccounts(tenantId, existing.academicYearId);
-        console.log(`[FeeStructure] Recalcul synchrone après update: ${result.accountsRecalculated} comptes, ${result.breakdownsUpdated} breakdowns (fee=${id}, year=${existing.academicYearId})`);
-      } catch (err: any) {
-        console.error(`[FeeStructure] Recalcul synchrone échoué (non bloquant): ${err.message}`);
-      }
+    // ⭐ Recalculer les comptes élèves du périmètre du frais (ancien ∪ nouveau),
+    //    EN ARRIÈRE-PLAN — même fix que create() (cf. commentaire là-bas).
+    //    AVANT : recalcul synchrone de TOUS les comptes de l'année → timeouts
+    //    30 s / 55 s → « échec » affiché alors que la modification était prise
+    //    en compte. MAINTENANT : réponse immédiate + recalcul batch scoped.
+    //    On couvre l'UNION des périmètres : si le frais a changé de classe/niveau,
+    //    les comptes de l'ANCIEN périmètre doivent aussi être recalculés (leurs
+    //    breakdowns deviennent orphelins et doivent être retirés/resynchronisés).
+    //    Un recalcul est prévu si un champ peut influer sur les montants ou le
+    //    périmètre d'application (montant, activation, obligatoire, type, nom
+    //    [clé de dédup GENERAL], niveau, classes, tranches).
+    const affectsAccounts =
+      data.totalAmount !== undefined ||
+      data.isActive !== undefined ||
+      data.isMandatory !== undefined ||
+      data.feeType !== undefined ||
+      data.name !== undefined ||
+      data.levelId !== undefined ||
+      data.classId !== undefined ||
+      data.academicClassId !== undefined ||
+      data.installments !== undefined;
+    if (affectsAccounts) {
+      const oldFilter = this.structureScopeToAccountFilter(existing, existing.academicYearId);
+      const newFilter = this.structureScopeToAccountFilter(updated, existing.academicYearId);
+      const sameScope = JSON.stringify(oldFilter) === JSON.stringify(newFilter);
+      this.scheduleAccountRecalculation(
+        tenantId,
+        existing.academicYearId,
+        `fs:${id}`,
+        sameScope ? newFilter : { OR: [oldFilter, newFilter] },
+      );
     }
 
     return reloaded ?? updated;
@@ -587,7 +601,9 @@ export class FeeStructureService {
       select: { studentId: true, status: true },
     });
 
-    const studentIds = Array.from(new Set(enrollments.map((e) => e.studentId)));
+    const studentIds: string[] = Array.from(
+      new Set(enrollments.map((e: any) => e.studentId as string)),
+    );
     if (studentIds.length === 0) {
       throw new BadRequestException("Aucun élève actif trouvé dans cette classe pour l'année du frais.");
     }
@@ -597,56 +613,96 @@ export class FeeStructureService {
       `${studentIds.length} élève(s), montant personnalisé=${customAmount} (initial=${originalAmount})`,
     );
 
-    // 5) Upsert override par élève + recalcul du compte
+    // 5) Upsert EN BATCH des overrides + recalcul arrière-plan des comptes.
+    //    ⭐ FIX (sept. 2026) : AVANT, boucle par élève (findFirst + update/create
+    //    + recalculate synchrone + audit PAR élève) → pour une classe de 50
+    //    élèves ≈ 150+ requêtes séquentielles ≈ 60 s → même bug de timeout que
+    //    la configuration des frais (modal qui charge indéfiniment). MAINTENANT :
+    //      - 1 requête pour connaître les overrides existants,
+    //      - 1 updateMany (montant personnalisé identique pour toute la classe),
+    //      - 1 createMany pour les nouveaux,
+    //      - 1 audit récapitulatif (au lieu de N audits),
+    //      - recalcul des comptes de la classe en arrière-plan (batch scoped).
     let applied = 0;
     let failed = 0;
     const details: { studentId: string; status: 'created' | 'updated' | 'failed'; error?: string }[] = [];
 
-    for (const studentId of studentIds) {
-      try {
-        const existing = await this.prisma.feeOverride.findFirst({
-          where: { feeStructureId: data.feeStructureId, studentId },
-          select: { id: true },
+    try {
+      // Overrides existants pour (frais × élèves de la classe) — 1 seule requête
+      const existingOverrides: any[] = await this.prisma.feeOverride.findMany({
+        where: { feeStructureId: data.feeStructureId, studentId: { in: studentIds } },
+        select: { id: true, studentId: true },
+      });
+      const existingByStudent = new Set(existingOverrides.map((o) => o.studentId));
+      const existingIds = existingOverrides.map((o) => o.id);
+      const missingStudentIds = studentIds.filter((sid) => !existingByStudent.has(sid));
+
+      // Mise à jour des overrides existants (mêmes valeurs pour tous)
+      if (existingIds.length > 0) {
+        await this.prisma.feeOverride.updateMany({
+          where: { id: { in: existingIds } },
+          data: {
+            customAmount,
+            reason: data.reason.trim(),
+            updatedById: data.createdById ?? userId ?? null,
+          },
         });
-        const override = existing
-          ? await this.prisma.feeOverride.update({
-              where: { id: existing.id },
-              data: {
-                customAmount,
-                reason: data.reason.trim(),
-                updatedById: data.createdById ?? userId ?? null,
-              },
-            })
-          : await this.prisma.feeOverride.create({
-              data: {
-                feeStructureId: data.feeStructureId,
-                studentId,
-                customAmount,
-                reason: data.reason.trim(),
-                createdById: data.createdById ?? userId ?? null,
-              },
-            });
-
-        details.push({ studentId, status: existing ? 'updated' : 'created' });
-        applied++;
-
-        // Recalcul synchrone du compte (crée le compte s'il n'existe pas)
-        await this.studentAccountService.recalculate(studentId, tenantId, fs.academicYearId);
-
-        await this.audit(
-          tenantId,
-          userId,
-          existing ? 'FEE_OVERRIDE_BULK_UPDATE' : 'FEE_OVERRIDE_BULK_CREATE',
-          'FeeOverride',
-          override.id,
-          undefined,
-          { feeStructureId: data.feeStructureId, studentId, customAmount, reason: data.reason.trim(), classId: data.classId },
-        );
-      } catch (err: any) {
-        failed++;
-        details.push({ studentId, status: 'failed', error: err?.message ?? String(err) });
-        this.logger.warn(`createBulkClassOverride: échec élève ${studentId}: ${err?.message}`);
       }
+
+      // Création des overrides manquants
+      if (missingStudentIds.length > 0) {
+        await this.prisma.feeOverride.createMany({
+          data: missingStudentIds.map((studentId) => ({
+            feeStructureId: data.feeStructureId,
+            studentId,
+            customAmount,
+            reason: data.reason.trim(),
+            createdById: data.createdById ?? userId ?? null,
+          })),
+        });
+      }
+
+      for (const sid of existingByStudent) details.push({ studentId: sid, status: 'updated' });
+      for (const sid of missingStudentIds) details.push({ studentId: sid, status: 'created' });
+      applied = studentIds.length;
+
+      // Audit récapitulatif (1 entrée au lieu de N — même information, bornée)
+      await this.audit(
+        tenantId,
+        userId,
+        'FEE_OVERRIDE_BULK_CLASS',
+        'FeeOverride',
+        data.feeStructureId,
+        undefined,
+        {
+          feeStructureId: data.feeStructureId,
+          classId: data.classId,
+          customAmount,
+          originalAmount,
+          reason: data.reason.trim(),
+          updated: existingByStudent.size,
+          created: missingStudentIds.length,
+          students: studentIds.slice(0, 100),
+        },
+      );
+
+      // Recalcul des comptes des élèves de la classe — en arrière-plan
+      this.scheduleAccountRecalculation(
+        tenantId,
+        fs.academicYearId,
+        `bulk-override:${data.classId}:${data.feeStructureId}`,
+        {
+          student: {
+            studentEnrollments: { some: { academicYearId: fs.academicYearId, classId: data.classId } },
+          },
+        },
+      );
+    } catch (err: any) {
+      failed = studentIds.length;
+      applied = 0;
+      details.length = 0;
+      details.push({ studentId: '(batch)', status: 'failed', error: err?.message ?? String(err) });
+      this.logger.warn(`createBulkClassOverride: échec du batch: ${err?.message}`);
     }
 
     return {
@@ -927,207 +983,139 @@ export class FeeStructureService {
   }
 
   /**
-   * Recalcule le compte élève après création/modification/suppression d'un override.
-   * Met à jour les breakdowns + totalDue + balance.
-   */
-  private async recalculateStudentAccount(tenantId: string, studentId: string, academicYearId: string) {
-    try {
-      const account = await this.prisma.studentAccount.findUnique({
-        where: { studentId_academicYearId: { studentId, academicYearId } },
-        include: { breakdowns: true },
-      });
-      if (!account) return; // Pas de compte → rien à recalculer
-
-      const student = await this.prisma.student.findFirst({
-        where: { id: studentId, tenantId },
-        include: { studentEnrollments: { where: { academicYearId }, include: { class: true } } },
-      });
-      if (!student) return;
-
-      const classId = student.studentEnrollments?.[0]?.classId ?? null;
-      const levelId = student.schoolLevelId;
-
-      const allStructures = await this.prisma.feeStructure.findMany({
-        where: { tenantId, academicYearId, isActive: true },
-        include: { overrides: { where: { studentId } } },
-      });
-
-      // Priorité Classe > Niveau > Global
-      // ⭐ GENERAL (frais généraux) : déduplication par nom — plusieurs frais
-      //    généraux distincts peuvent s'appliquer simultanément (voir structureDedupKey).
-      const structuresByType = new Map<string, any>();
-      allStructures.forEach((fs) => {
-        const isClassMatch = fs.classId && fs.classId === classId;
-        const isLevelMatch = fs.levelId === levelId && !fs.classId;
-        const isGlobalMatch = !fs.levelId && !fs.classId;
-        if (isClassMatch || isLevelMatch || isGlobalMatch) {
-          const key = structureDedupKey(fs);
-          const existing = structuresByType.get(key);
-          if (!existing) {
-            structuresByType.set(key, fs);
-          } else {
-            const existingIsClass = existing.classId;
-            const existingIsLevel = existing.levelId && !existing.classId;
-            if (isClassMatch || (isLevelMatch && !existingIsClass)) {
-              structuresByType.set(key, fs);
-            }
-          }
-        }
-      });
-
-      const feeStructures = Array.from(structuresByType.values());
-
-      // Mettre à jour les breakdowns existants
-      for (const b of account.breakdowns) {
-        const fs = feeStructures.find((f) => f.id === b.feeStructureId);
-        if (fs) {
-          const override = fs.overrides[0];
-          const newAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
-          if (Number(b.initialAmount) !== newAmount) {
-            await this.prisma.accountBreakdown.update({
-              where: { id: b.id },
-              data: {
-                initialAmount: newAmount,
-                adjustedAmount: newAmount,
-                remainingAmount: newAmount - Number(b.paidAmount),
-              },
-            });
-          }
-        }
-      }
-
-      // Créer les nouveaux breakdowns manquants
-      const existingFeeStructureIds = new Set(account.breakdowns.map((b) => b.feeStructureId));
-      const newBreakdowns = feeStructures.filter((fs) => !existingFeeStructureIds.has(fs.id));
-      if (newBreakdowns.length > 0) {
-        await this.prisma.accountBreakdown.createMany({
-          data: newBreakdowns.map((fs) => {
-            const override = fs.overrides[0];
-            const initialAmount = override ? Number(override.customAmount) : Number(fs.totalAmount);
-            return {
-              studentAccountId: account.id,
-              feeStructureId: fs.id,
-              initialAmount,
-              adjustedAmount: initialAmount,
-              paidAmount: 0,
-              remainingAmount: initialAmount,
-            };
-          }),
-        });
-      }
-
-      // Recalculer totalDue + balance — utiliser $transaction pour que
-      // SET LOCAL app.allow_balance_update persiste pendant l'UPDATE
-      // (sinon prevent_balance_update_trigger bloque la mise à jour)
-      const allBreakdowns = await this.prisma.accountBreakdown.findMany({
-        where: { studentAccountId: account.id },
-      });
-      const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
-      const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-        await tx.studentAccount.update({
-          where: { id: account.id },
-          data: {
-            totalDue: newTotalDue,
-            totalPaid,
-            balance: newTotalDue - totalPaid,
-            updatedAt: new Date(),
-          },
-        });
-      });
-
-      console.log(`[FeeStructure] Compte élève recalculé: student=${studentId}, totalDue=${newTotalDue}, balance=${newTotalDue - totalPaid}`);
-    } catch (err: any) {
-      console.warn(`[FeeStructure] recalculateStudentAccount failed (non-blocking): ${err.message}`);
-    }
-  }
-
-  /**
    * Recalcule dynamiquement TOUS les comptes élèves du tenant en appliquant
    * les FeeOverrides existants. Pour chaque compte :
    *   - Met à jour les breakdowns avec le customAmount si un override existe
    *   - Recalcule totalDue = SUM(breakdowns.initialAmount)
    *   - Recalcule totalPaid = SUM(breakdowns.paidAmount)
    *   - Recalcule balance = totalDue - totalPaid
-   *   - Recalcule status (PAID/PARTIAL/ACTIVE)
    *
-   * Utilise $transaction avec SET LOCAL app.allow_balance_update pour
-   * bypasser prevent_balance_update_trigger.
+   * ⭐ FIX (sept. 2026) : délègue au runner BATCH de StudentAccountService —
+   * ~6 lectures groupées + 4 écritures groupées au lieu de ~12 requêtes
+   * SÉQUENTIELLES par élève (426 comptes ≈ 177 s avant → quelques secondes).
    */
   async recalculateAllAccounts(tenantId: string, academicYearId?: string) {
-    const where: any = { tenantId };
-    if (academicYearId) where.academicYearId = academicYearId;
+    return this.studentAccountService.recalculateAccountsWhere(tenantId, academicYearId);
+  }
 
-    const accounts = await this.prisma.studentAccount.findMany({
-      where,
-      select: { id: true, studentId: true, academicYearId: true },
-    });
+  // ───────────────────────────────────────────────────────────────────────────
+  // ⭐ RECALCUL DES COMPTES EN ARRIÈRE-PLAN (sept. 2026)
+  //
+  // La création/modification d'un frais ne doit PLUS attendre le recalcul des
+  // comptes élèves : la réponse HTTP repart immédiatement (structure créée),
+  // et le recalcul du périmètre impacté tourne en tâche de fond sur le process
+  // Node persistant (Railway). Les jobs sont :
+  //   - SCOPÉS : uniquement les comptes des élèves concernés par le frais
+  //     (classe officielle > classe physique > niveau > global) ;
+  //   - SÉRIALISÉS : une seule boucle traite la file (protège le pool Prisma) ;
+  //   - COALESCÉS : deux modifications rapides du même frais ne planifient
+  //     qu'un job (les filtres d'étudiants sont unis en OR).
+  // ───────────────────────────────────────────────────────────────────────────
 
-    // ⭐ FIX (sept. 2026 — bug « le modal de configuration ne se ferme pas ») :
-    //    le recalcul était SÉQUENTIEL (93 comptes × ~0,23 s = ~21 s) → la
-    //    réponse API mettait 21,8 s en production → la fonction serverless
-    //    Vercel du BFF (timeout par défaut 10-15 s) était TUÉE avant la
-    //    réponse → le frontend ne fermait jamais le modal alors que
-    //    l'enregistrement était bien créé côté Railway (visible après reload).
-    //    → Parallélisation par lots (concurrence 5, compatible pool Prisma)
-    //      21,8 s → ~4,5 s mesuré (93 comptes).
-    let updatedAccounts = 0;
-    let updatedBreakdowns = 0;
+  /**
+   * Traduit le périmètre d'une FeeStructure en filtre Prisma sur
+   * student_accounts, en répliquant EXACTEMENT la sémantique de matching de
+   * selectApplicableStructures (student-account.service) :
+   *   - classId       → élèves dont l'inscription de l'année est dans cette classe physique
+   *   - academicClassId → élèves dont l'inscription de l'année est dans cette classe officielle
+   *   - levelId       → élèves dont student.schoolLevelId = niveau (sans classe)
+   *   - global        → tous les comptes (aucun filtre)
+   */
+  private structureScopeToAccountFilter(
+    fs: {
+      classId?: string | null;
+      academicClassId?: string | null;
+      levelId?: string | null;
+    },
+    academicYearId: string,
+  ): any {
+    if (fs.classId) {
+      return {
+        student: {
+          studentEnrollments: { some: { academicYearId, classId: fs.classId } },
+        },
+      };
+    }
+    if (fs.academicClassId) {
+      return {
+        student: {
+          studentEnrollments: { some: { academicYearId, academicClassId: fs.academicClassId } },
+        },
+      };
+    }
+    if (fs.levelId) {
+      return { student: { schoolLevelId: fs.levelId } };
+    }
+    return {}; // frais global → tous les comptes
+  }
 
-    /**
-     * mapLimit : exécute les tâches avec une concurrence bornée.
-     * (Prisma gère un pool de connexions limité — concurrence 5 = sûr)
-     */
-    const mapLimit = async <T, R>(
-      items: T[],
-      limit: number,
-      fn: (item: T) => Promise<R>,
-    ): Promise<R[]> => {
-      const results: R[] = new Array(items.length);
-      let cursor = 0;
-      const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-        while (cursor < items.length) {
-          const idx = cursor++;
-          results[idx] = await fn(items[idx]);
+  /** File de jobs de recalcul en attente, indexée par clé de coalescence. */
+  private pendingRecalcs = new Map<
+    string,
+    { tenantId: string; academicYearId: string; accountWhere: any }
+  >();
+  /** Indique si la boucle de traitement de la file est déjà active. */
+  private recalcLoopActive = false;
+
+  /**
+   * Planifie un recalcul de comptes en arrière-plan (fire-and-forget).
+   * Ne bloque JAMAIS la requête HTTP appelante — le retour est immédiat.
+   */
+  private scheduleAccountRecalculation(
+    tenantId: string,
+    academicYearId: string,
+    key: string,
+    accountWhere: any,
+  ) {
+    const existing = this.pendingRecalcs.get(key);
+    if (existing) {
+      // Coalescence : unir les périmètres (OR) — un seul job couvrira tout.
+      existing.accountWhere = { OR: [existing.accountWhere, accountWhere] };
+    } else {
+      this.pendingRecalcs.set(key, { tenantId, academicYearId, accountWhere });
+    }
+    this.logger.log(
+      `Recalcul comptes planifié en arrière-plan: key=${key} ` +
+        `(${this.pendingRecalcs.size} job(s) en file)`,
+    );
+    this.runRecalcLoop();
+  }
+
+  /** Boucle sérialisée de traitement de la file de recalculs. */
+  private runRecalcLoop() {
+    if (this.recalcLoopActive) return;
+    this.recalcLoopActive = true;
+    void (async () => {
+      while (this.pendingRecalcs.size > 0) {
+        const [key, job] = this.pendingRecalcs.entries().next().value!;
+        const startedAt = Date.now();
+        try {
+          const result = await this.studentAccountService.recalculateAccountsWhere(
+            job.tenantId,
+            job.academicYearId,
+            job.accountWhere,
+          );
+          console.log(
+            `[FeeStructure] Recalcul arrière-plan terminé: key=${key}, ` +
+              `${result.accountsRecalculated}/${result.accountsTotal} comptes ` +
+              `en ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+          );
+        } catch (err: any) {
+          console.error(
+            `[FeeStructure] Recalcul arrière-plan ÉCHOUÉ (key=${key}): ${err?.message}`,
+          );
+        } finally {
+          this.pendingRecalcs.delete(key);
         }
-      });
-      await Promise.all(workers);
-      return results;
-    };
-
-    // Chaque recalculate() est indépendant (un compte par élève — il ne
-    // touche QUE les breakdowns/paiements de SON élève) → parallélisable.
-    // Les échecs restent non bloquants (un élève en échec n'interrompt pas
-    // le recalcul global).
-    const RECALC_CONCURRENCY = 5;
-    await mapLimit(accounts, RECALC_CONCURRENCY, async (account) => {
-      try {
-        const updated = await this.studentAccountService.recalculate(
-          account.studentId,
-          tenantId,
-          account.academicYearId,
-        );
-        if (updated) {
-          updatedAccounts++;
-          updatedBreakdowns += (updated.breakdowns ?? []).length;
-        }
-      } catch (err: any) {
-        // Non bloquant : un élève en échec n'interrompt pas le recalcul global
-        this.logger.warn(
-          `recalculateAllAccounts: échec élève ${account.studentId}: ${err?.message}`,
-        );
       }
-    });
-
-    console.log(`[FeeStructure] Recalcul global: ${updatedAccounts}/${accounts.length} comptes recalculés (tenant=${tenantId})`);
-
-    return {
-      success: true,
-      accountsRecalculated: updatedAccounts,
-      breakdownsUpdated: updatedBreakdowns,
-    };
+    })()
+      .catch((err) => {
+        this.recalcLoopActive = false;
+        this.logger.error(`Boucle de recalcul interrompue: ${err?.message}`);
+      })
+      .finally(() => {
+        this.recalcLoopActive = false;
+      });
   }
 
   /** Copie les FeeStructures d'une année vers une nouvelle année (sans overrides). */
@@ -1149,8 +1137,13 @@ export class FeeStructureService {
           academicYearId: data.toAcademicYearId,
           levelId: s.levelId,
           classId: s.classId,
+          /// ⭐ Conserver la classe officielle (fix sept. 2026) : sans elle, la
+          /// copie d'un frais « par classe » devenait un frais de NIVEAU et
+          /// s'appliquait à tout le niveau au lieu de la classe d'origine.
+          academicClassId: s.academicClassId,
           name: s.name,
           feeType: s.feeType,
+          customFeeTypeLabel: s.customFeeTypeLabel,
           totalAmount: s.totalAmount,
           isInstallment: s.isInstallment,
           isMandatory: s.isMandatory,

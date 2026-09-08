@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { financeService } from '@/services/finance.service';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { invalidateApiCache } from '@/lib/api/get-cache';
 import { getAcademicYears } from '@/services/settings.service';
 import FeeStructureModal from './FeeStructureModal';
 import FeeOverrideModal from './FeeOverrideModal';
@@ -297,6 +298,27 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
     return <Clock className="w-3.5 h-3.5 text-slate-500" />;
   };
 
+  // ⭐ FIX (sept. 2026 — bug « le modal de configuration des frais charge
+  //    indéfiniment / délai d'attente dépassé ») :
+  //    Le recalcul des comptes élèves tourne désormais EN ARRIÈRE-PLAN côté
+  //    backend (réponse immédiate). Pour que l'onglet « Comptes élèves » (page
+  //    séparée) rattrape les données une fois le recalcul terminé (~5-10 s),
+  //    on invalide le cache GET et on rediffuse l'événement global avec un
+  //    petit décalage. Sans cela, un GET effectué pendant le recalcul mettait
+  //    des totaux intermédiaires en cache 45 s.
+  const scheduleAccountsCatchUp = useCallback(() => {
+    [10_000, 25_000].forEach((ms) => {
+      setTimeout(() => {
+        try {
+          invalidateApiCache();
+          window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+        } catch {
+          /* non bloquant */
+        }
+      }, ms);
+    });
+  }, []);
+
   const handleCreate = async (body: any) => {
     if (!academicYear?.id) return;
     if (saving) return; // anti double-clic
@@ -322,28 +344,34 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
           installments: body.installments,
         };
 
-        let successCount = 0;
-        let failCount = 0;
-        let lastError: string | undefined;
-        for (const cid of classIds) {
-          try {
+        // ⭐ FIX (sept. 2026) : créations PARALLÈLES (au lieu d'une boucle
+        //    séquentielle) — la réponse du backend est désormais immédiate
+        //    (le recalcul des comptes est passé en arrière-plan), donc autant
+        //    créer les N frais d'un coup : de ~N × 30 s de spinner bloqué à
+        //    ~1-2 s au total.
+        const results = await Promise.allSettled(
+          classIds.map((cid: string) =>
             // ⭐ Envoyer academicClassId (classe officielle) au lieu de classId (classe physique).
-            await financeService.createFeeStructure({ ...basePayload, academicClassId: cid });
-            successCount++;
-          } catch (err: any) {
-            // ⚠️ Ne pas avaler silencieusement l'erreur — la logger et conserver le message
-            // pour l'afficher dans le toast (aide à diagnostiquer les FK violations, etc.)
-            console.error('createFeeStructure failed for class', cid, err);
-            failCount++;
-            lastError = err?.message || String(err);
-          }
-        }
+            financeService.createFeeStructure({ ...basePayload, academicClassId: cid }),
+          ),
+        );
+        const successCount = results.filter((r) => r.status === 'fulfilled').length;
+        const failCount = results.length - successCount;
+        const lastError = results
+          .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+          .map((r) => (r.reason as any)?.message || String(r.reason))
+          .pop();
+        // ⚠️ Ne pas avaler silencieusement les erreurs — les logger (aide à
+        //    diagnostiquer les FK violations, etc.)
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') console.error('createFeeStructure failed for class', classIds[i], r.reason);
+        });
 
         setModalNewFee(false);
         if (failCount === 0) {
           toast({
             title: 'Configuration réussie',
-            description: `${successCount} frais créés avec succès (un par classe sélectionnée).`,
+            description: `${successCount} frais créés avec succès (un par classe sélectionnée). Les comptes élèves concernés sont mis à jour dans quelques secondes.`,
           });
         } else if (successCount === 0) {
           // Échec total — ne pas dire "réussi" dans le titre
@@ -361,8 +389,10 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
           });
         }
         await loadStructures();
-        // ⭐ Déclencher le rafraîchissement des comptes élèves
+        // ⭐ Déclencher le rafraîchissement des comptes élèves (recalcul
+        //    arrière-plan → rafraîchissement différé pour rattraper les totaux)
         onAccountsChanged?.();
+        scheduleAccountsCatchUp();
         return;
       }
 
@@ -372,10 +402,12 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       delete payload.classIds; // nettoyer au cas où
       await financeService.createFeeStructure(payload);
       setModalNewFee(false);
-      toast({ title: 'Succès', description: 'Frais configuré avec succès. Les comptes élèves ont été recalculés.' });
+      toast({ title: 'Succès', description: 'Frais configuré avec succès. Les comptes élèves concernés sont mis à jour dans quelques secondes.' });
       await loadStructures();
-      // ⭐ Déclencher le rafraîchissement des comptes élèves
+      // ⭐ Déclencher le rafraîchissement des comptes élèves (recalcul
+      //    arrière-plan → rafraîchissement différé pour rattraper les totaux)
       onAccountsChanged?.();
+      scheduleAccountsCatchUp();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     } finally {
@@ -399,12 +431,12 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       delete payload.classIds;
       await financeService.updateFeeStructure(editingFee.id, payload);
       setEditingFee(null);
-      toast({ title: 'Succès', description: 'Frais modifié avec succès. Les comptes élèves ont été recalculés.' });
+      toast({ title: 'Succès', description: 'Frais modifié avec succès. Les comptes élèves concernés sont mis à jour dans quelques secondes.' });
       await loadStructures();
-      // ⭐ Déclencher le rafraîchissement des comptes élèves (le backend a
-      //    déjà recalculé les montants synchrone — il suffit que le frontend
-      //    recharge les données quand l'utilisateur va sur l'onglet Comptes).
+      // ⭐ Déclencher le rafraîchissement des comptes élèves : immédiat + différé
+      //    (le recalcul est désormais en arrière-plan côté backend — quelques secondes)
       onAccountsChanged?.();
+      scheduleAccountsCatchUp();
       // ⭐ Aussi dispatch l'événement global (cross-page, au cas où
       //    StudentAccountsContent est sur une route séparée)
       window.dispatchEvent(new CustomEvent('finance-accounts-changed'));

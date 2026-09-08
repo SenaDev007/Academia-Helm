@@ -425,7 +425,7 @@ export default function FeeStructureModal({
           </div>
           {saving && (
             <p className="text-xs text-blue-600 text-right mt-1">
-              💡 Recalcul des comptes élèves en cours — cela peut prendre quelques secondes, ne fermez pas la page.
+              💡 Enregistrement en cours — les comptes élèves concernés seront mis à jour automatiquement dans quelques secondes.
             </p>
           )}
         </form>

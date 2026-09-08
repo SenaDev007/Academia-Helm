@@ -27,12 +27,13 @@ import {
   ArrowRightLeft, Send, Inbox, History as HistoryIcon,
   CheckCircle2, XCircle, Clock, Search, FileText, User,
   Loader2, AlertCircle, ArrowRight, Settings as SettingsIcon,
-  RefreshCw, Eye, Check, X,
+  RefreshCw, Eye, Check, X, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 import TransferWizard from './TransferWizard';
+import FicheTransfertModal from './FicheTransfertModal';
 
 type SubTab = 'OUTGOING' | 'INCOMING' | 'REQUESTS' | 'DOSSIERS' | 'HISTORY' | 'SETTINGS';
 
@@ -94,6 +95,7 @@ export default function StudentTransferContent() {
   const [incoming, setIncoming] = useState<TransferRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [ficheModalLevel, setFicheModalLevel] = useState<'primaire' | 'secondaire' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionTransfer, setActionTransfer] = useState<TransferRecord | null>(null);
   const [actionType, setActionType] = useState<'approve' | 'reject' | 'confirm-exit' | 'execute' | null>(null);
@@ -354,13 +356,31 @@ export default function StudentTransferContent() {
               <p className="text-xs text-slate-500">Transferts inter-écoles — réseau Academia Helm</p>
             </div>
           </div>
-          <button
-            onClick={() => setIsWizardOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
-          >
-            <Send className="w-3.5 h-3.5" />
-            Initier un transfert
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFicheModalLevel('primaire')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Fiche de transfert Educmaster (Primaire)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Fiche Primaire
+            </button>
+            <button
+              onClick={() => setFicheModalLevel('secondaire')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Demande de transfert (Secondaire)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Fiche Secondaire
+            </button>
+            <button
+              onClick={() => setIsWizardOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Initier un transfert
+            </button>
+          </div>
         </div>
 
         {/* Stats rapides — style cohérent avec Sorties & Abandons */}
@@ -637,6 +657,13 @@ export default function StudentTransferContent() {
       )}
 
       <TransferWizard isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
+
+      {/* ⭐ Fiche de Transfert modals */}
+      <FicheTransfertModal
+        isOpen={ficheModalLevel !== null}
+        onClose={() => setFicheModalLevel(null)}
+        level={ficheModalLevel || 'primaire'}
+      />
     </div>
   );
 }

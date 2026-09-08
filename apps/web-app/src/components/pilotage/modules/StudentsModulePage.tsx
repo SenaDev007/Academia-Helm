@@ -70,8 +70,9 @@ import StudentAnalyticsContent from '@/components/students/StudentAnalyticsConte
 // ⭐ StudentComplianceContent et StudentSettingsContent supprimés — onglets retirés du module
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
+import CertificateScolariteContent from '@/components/students/CertificateScolariteContent';
 import StudentClassListsContent from '@/components/students/StudentClassListsContent';
-import { ArrowRightLeft, BarChart3 } from 'lucide-react';
+import { ArrowRightLeft, BarChart3, Award } from 'lucide-react';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 
@@ -498,6 +499,7 @@ export default function StudentsModulePage() {
             { id: 'dossiers', label: L("Dossiers Élèves", "Student Files"), icon: <FileText className="w-4 h-4" /> },
             { id: 'families', label: L("Familles", "Families"), icon: <User className="w-4 h-4" /> },
             { id: 'transfers', label: L("Transferts & Mobilité", "Transfers & Mobility"), icon: <ArrowRightLeft className="w-4 h-4" /> },
+            { id: 'certificates', label: L("Certificats de Scolarité", "School Certificates"), icon: <Award className="w-4 h-4" /> },
             { id: 'history', label: L("Historique Scolaire", "Academic History"), icon: <Archive className="w-4 h-4" /> },
             { id: 'educmaster', label: "Educmaster", icon: <Globe className="w-4 h-4" /> },
             { id: 'analytics', label: L("ORION, Stats & Audit", "ORION, Stats & Audit"), icon: <Activity className="w-4 h-4" /> },
@@ -575,6 +577,11 @@ export default function StudentsModulePage() {
             ? {
                 layout: 'default',
                 children: <StudentTransferContent />,
+              }
+            : activeSubModuleId === 'certificates'
+            ? {
+                layout: 'default',
+                children: <CertificateScolariteContent />,
               }
             : activeSubModuleId === 'cards'
             ? {

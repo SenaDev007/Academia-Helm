@@ -77,6 +77,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
+    // ⭐ PWA — manifest du site institutionnel de l'école (branding dynamique :
+    // nom, logo, couleurs résolus par la route). ⚠️ OBLIGATOIRE ici : le
+    // fichier app/manifest.json (convention Next.js) ÉCRASE le champ
+    // `manifest` du ROOT layout (mergeStaticMetadata) — seule une
+    // déclaration explicite au niveau PAGE prend le dessus.
+    // (cf. (auth)/layout.tsx et portal/layout.tsx qui font de même avec
+    // /manifest-app.webmanifest)
+    manifest: '/manifest-site.webmanifest',
     alternates: { canonical: canonicalUrl },
     openGraph: {
       title,

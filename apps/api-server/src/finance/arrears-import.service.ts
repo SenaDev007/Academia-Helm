@@ -331,7 +331,7 @@ export class ArrearsImportService {
         where: {
           tenantId,
           classId: { in: classes.map(c => c.id) },
-          status: { in: ['ENROLLED', 'PRE_REGISTERED'] },
+          status: { in: ['ENROLLED', 'PRE_REGISTERED', 'ACTIVE', 'ADMITTED', 'PROMOTED', 'RE_ENROLLED'] }, // ⭐ inclut les élèves promus (actifs de l'année)
         },
         include: {
           student: {

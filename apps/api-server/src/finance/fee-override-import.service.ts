@@ -158,7 +158,7 @@ export class FeeOverrideImportService {
         tenantId,
         academicYearId,
         classId: { in: classes.map((c) => c.id) },
-        status: { in: ['ACTIVE', 'ENROLLED', 'PRE_REGISTERED', 'ADMITTED'] },
+        status: { in: ['ACTIVE', 'ENROLLED', 'PRE_REGISTERED', 'ADMITTED', 'PROMOTED', 'RE_ENROLLED'] }, // ⭐ PROMOTED/RE_ENROLLED = élèves actifs de l'année (cf. students-prisma activeEnrollmentStatuses)
         student: { status: { not: 'WITHDRAWN' } },
       },
       include: {

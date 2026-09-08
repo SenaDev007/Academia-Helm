@@ -142,10 +142,14 @@ export class CollectionSummaryController {
 
     // ─── 2. Récupérer les élèves (enrollments) avec leurs classes ─────────────
     // ⭐ Inclure ADMITTED (statut utilisé par l'import en masse et le bulk-setup)
+    // ⭐ Inclure PROMOTED + RE_ENROLLED — les élèves promus d'une année sur
+    //    l'autre sont des élèves ACTIFS de l'année courante (même définition que
+    //    students-prisma.service activeEnrollmentStatuses). Sans eux, le bilan
+    //    ignore ~la moitié de l'effectif (ex: 358/688 à Mon Avenir Plus 2025-2026).
     const enrollmentWhere: any = {
       tenantId,
       academicYearId,
-      status: { in: ['ACTIVE', 'ENROLLED', 'PENDING', 'ADMITTED'] },
+      status: { in: ['ACTIVE', 'ENROLLED', 'PENDING', 'ADMITTED', 'PROMOTED', 'RE_ENROLLED'] },
       // ⭐ Task 23 : exclure les élèves abandonnés (Student.status = 'WITHDRAWN')
       // du bilan des encaissements pour ne pas fausser les totaux.
       student: { status: { not: 'WITHDRAWN' } },

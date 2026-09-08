@@ -41,6 +41,28 @@ const SECOND_CYCLE_GRADE_TEMPLATES = [
 ];
 
 /**
+ * ⭐ Mapping EducationLevel.name → SchoolLevel.code.
+ *    Les DEUX tables coexistent : education_levels (structure pédagogique,
+ *    consommée par Settings → Structure et les sélecteurs de classes) et
+ *    school_levels (niveaux « administratifs », consommés par AdminStructureService
+ *    (unités administratives du module RH → onglet Administration), le
+ *    SchoolLevelSelector de la topbar et les guards LevelScopeGuard).
+ *    ⚠️ Sans synchronisation, activer « Secondaire » dans Settings → Structure
+ *    n'active PAS school_levels → l'onglet Administration du module Personnel
+ *    n'affiche que Maternelle(+Primaire) alors que le niveau est « activé ».
+ *    Les noms anglais (piste EN bilingue : NURSERY/PRIMARY/SECONDARY) sont mappés
+ *    vers les codes français canoniques de school_levels.
+ */
+const EDUCATION_NAME_TO_SCHOOL_CODE: Record<string, string> = {
+  MATERNELLE: 'MATERNELLE',
+  PRIMAIRE: 'PRIMAIRE',
+  SECONDAIRE: 'SECONDAIRE',
+  NURSERY: 'MATERNELLE',
+  PRIMARY: 'PRIMAIRE',
+  SECONDARY: 'SECONDAIRE',
+};
+
+/**
  * ⭐ `gradesDisabledByDefault` : les grades du cycle sont créés DÉSACTIVÉS par défaut.
  * Utilisé pour le « 2nd cycle » du SECONDAIRE : une école qui active le niveau
  * secondaire (souvent 1er cycle uniquement, ex. collège) ne doit pas voir les
@@ -134,6 +156,9 @@ export class EducationStructureService {
         create: { ...prismaCreateDefaults(), tenantId, name, isEnabled, order },
         update: { ...prismaUpdateDefaults(), isEnabled, order },
       });
+
+      // ⭐ Sync school_levels.isActive (unités administratives RH + sélecteur de niveau)
+      await this.syncSchoolLevelActive(tenantId, name, isEnabled);
     }
 
     const levels = await this.prisma.educationLevel.findMany({
@@ -533,6 +558,12 @@ export class EducationStructureService {
       data: { ...prismaUpdateDefaults(), isEnabled },
     });
 
+    // ⭐ Synchroniser school_levels.isActive (source des unités administratives
+    //    du module RH → onglet Administration, du SchoolLevelSelector et des
+    //    guards). Sans cette synchro, le niveau « activé » dans les paramètres
+    //    n'apparaît pas dans l'onglet Administration du module Personnel.
+    await this.syncSchoolLevelActive(tenantId, level.name, isEnabled);
+
     // ⭐ Transition OFF → ON du niveau SECONDAIRE : reset des grades 2nd cycle.
     if (level.name === 'SECONDAIRE' && isEnabled && !level.isEnabled) {
       try {
@@ -546,6 +577,38 @@ export class EducationStructureService {
     }
 
     return updated;
+  }
+
+  /**
+   * ⭐ Synchronise school_levels.isActive depuis un EducationLevel.
+   *
+   * education_levels (Settings → Structure) et school_levels (niveaux
+   * administratifs) sont DEUX tables distinctes consommées par des modules
+   * différents. Historiquement seule education_levels était mise à jour par
+   * le toggle des paramètres → l'onglet Administration du module Personnel
+   * (qui lit school_levels via AdminStructureService) n'affichait pas le
+   * niveau activé. Cette synchro corrige la divergence à la source.
+   *
+   * Non-bloquante : une erreur ici n'empêche jamais le toggle principal.
+   */
+  private async syncSchoolLevelActive(tenantId: string, educationLevelName: string, isEnabled: boolean) {
+    const code = EDUCATION_NAME_TO_SCHOOL_CODE[educationLevelName?.trim()?.toUpperCase?.() ?? ''];
+    if (!code) return; // Niveau pédagogique sans équivalent administratif (ex: piste EN dupliquée)
+    try {
+      const res = await this.prisma.schoolLevel.updateMany({
+        where: { tenantId, code },
+        data: { isActive: isEnabled },
+      });
+      if (res.count > 0) {
+        this.logger.log(
+          `Sync school_levels: ${code}.isActive=${isEnabled} (${res.count} ligne(s)) — niveau « ${educationLevelName} » du tenant ${tenantId}`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        `syncSchoolLevelActive(${tenantId}, ${educationLevelName}, ${isEnabled}) échoué (non-bloquant) — ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
 
   /**

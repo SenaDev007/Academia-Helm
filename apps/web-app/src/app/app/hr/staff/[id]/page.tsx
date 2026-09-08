@@ -1937,14 +1937,36 @@ export default function StaffDetailPage() {
                 onClick={async () => {
                   try {
                     setSaving(true);
-                    const res = await hrFetch(hrUrl(`staff/${member.id}/generate-credentials`, { tenantId: tenant?.id }), { method: 'POST' });
+                    const res = await hrFetch<{
+                      success?: boolean;
+                      message?: string;
+                      email?: string;
+                      username?: string;
+                      emailSent?: boolean;
+                      emailError?: string;
+                      error?: string;
+                    }>(hrUrl(`staff/${member.id}/generate-credentials`, { tenantId: tenant?.id }), { method: 'POST' });
                     if (res?.success) {
-                      toast({
-                        variant: 'success',
-                        title: 'Identifiants générés !',
-                        description: `Email envoyé à ${res.email || member.email}. Identifiant : ${res.username || 'N/A'}`,
-                      });
-                      setCredModalOpen(false);
+                      // ⚆ emailSent=false → identifiants générés mais email NON
+                      //    parti (ex: quota d'envoi quotidien du fournisseur) :
+                      //    on l'indique clairement au lieu d'un faux succès.
+                      if (res.emailSent === false) {
+                        toast({
+                          variant: 'warning',
+                          title: 'Identifiants générés, mais email non envoyé',
+                          description: res.emailError
+                            ? `Cause : ${res.emailError}. Réessayez plus tard (le fournisseur d'emails a peut-être atteint son quota quotidien d'envoi).`
+                            : (res.message || 'L\'email n\'a pas pu être envoyé. Réessayez plus tard.'),
+                        });
+                        setCredModalOpen(false);
+                      } else {
+                        toast({
+                          variant: 'success',
+                          title: 'Identifiants générés !',
+                          description: `Email envoyé à ${res.email || member.email}. Identifiant : ${res.username || 'N/A'}`,
+                        });
+                        setCredModalOpen(false);
+                      }
                     } else {
                       toast({ variant: 'error', title: 'Erreur', description: res?.error || res?.message || 'Échec de la génération' });
                     }

@@ -179,6 +179,7 @@ export class StaffCredentialService {
     password?: string;
     role?: string;
     emailSent?: boolean;
+    emailError?: string;
     error?: string;
   } | null> {
     try {
@@ -320,6 +321,7 @@ export class StaffCredentialService {
 
       // 8. Envoyer l'email avec les credentials
       let emailSent = false;
+      let emailError: string | undefined;
       try {
         await this.sendCredentialEmail({
           to: staff.email.trim().toLowerCase(),
@@ -339,7 +341,8 @@ export class StaffCredentialService {
         emailSent = true;
         this.logger.log(`📧 Credential email sent to ${staff.email}`);
       } catch (emailErr: any) {
-        this.logger.error(`Failed to send credential email to ${staff.email}: ${emailErr?.message}`);
+        emailError = emailErr?.message || 'Erreur inconnue lors de l\'envoi de l\'email';
+        this.logger.error(`Failed to send credential email to ${staff.email}: ${emailError}`);
         // Non-blocking — les credentials sont créés même si l'email échoue
       }
 
@@ -350,6 +353,7 @@ export class StaffCredentialService {
         password: tempPassword,
         role: userRole,
         emailSent,
+        emailError,
       };
     } catch (error: any) {
       this.logger.error(`Error creating credentials for staff ${staffId}: ${error?.message}`);
@@ -381,6 +385,9 @@ export class StaffCredentialService {
     username?: string;
     email?: string;
     emailSent?: boolean;
+    emailError?: string;
+    hasTeacherProfile?: boolean;
+    teacherMatricule?: string;
     error?: string;
   }> {
     try {
@@ -557,6 +564,7 @@ export class StaffCredentialService {
 
       // 8. Envoyer l'email avec les credentials (même si l'user existait déjà — c'est une régénération)
       let emailSent = false;
+      let emailError: string | undefined;
       try {
         await this.sendCredentialEmail({
           to: normalizedEmail,
@@ -590,7 +598,8 @@ export class StaffCredentialService {
         emailSent = true;
         this.logger.log(`📧 Credential ${action === 'updated' ? 'reset' : 'creation'} email sent to ${normalizedEmail}${hasTeacherProfile ? ' (includes teacher portal credentials)' : ''}`);
       } catch (emailErr: any) {
-        this.logger.error(`Failed to send credential email to ${normalizedEmail}: ${emailErr?.message}`);
+        emailError = emailErr?.message || 'Erreur inconnue lors de l\'envoi de l\'email';
+        this.logger.error(`Failed to send credential email to ${normalizedEmail}: ${emailError}`);
         // Non-blocking — les credentials sont créés/mis à jour même si l'email échoue
       }
 
@@ -602,15 +611,25 @@ export class StaffCredentialService {
         messageParts.push('— le compte existait dans un autre établissement : il a été rattaché à votre école');
       }
 
+      // ⭐ Message honnête quand l'email échoue : le mot de passe a bien été
+      //    régénéré, mais la personne ne le recevra PAS. On inclut la cause
+      //    exacte (ex: « You have reached your daily email sending quota. »)
+      //    pour que l'admin sache qu'il faut réessayer plus tard.
+      const emailFailedMessage =
+        `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} avec succès, MAIS l'email n'a PAS pu être envoyé à ${normalizedEmail}. ` +
+        (emailError ? `Cause : ${emailError}. ` : '') +
+        'Le mot de passe a été changé — la personne ne le connaît pas. Réessayez l\'envoi plus tard (le bouton reste utilisable) ou transmettez-lui les identifiants par un autre canal.';
+
       return {
         success: true,
         message: emailSent
           ? messageParts.join(' ')
-          : `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} (l'envoi email a échoué — vérifiez la configuration SMTP)`,
+          : emailFailedMessage,
         userId,
         username,
         email: normalizedEmail,
         emailSent,
+        emailError,
         hasTeacherProfile,
         teacherMatricule: hasTeacherProfile ? teacherMatricule : undefined,
       };

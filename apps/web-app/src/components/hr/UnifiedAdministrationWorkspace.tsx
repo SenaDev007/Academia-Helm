@@ -145,6 +145,23 @@ interface AssignmentFormState {
   sendCredentials: boolean;
 }
 
+/** Réponse de POST /api/hr/staff/:id/generate-credentials.
+ *  ⚆ emailSent=false → identifiants créés mais email NON parti (ex: quota
+ *  d'envoi du fournisseur) : il faut l'afficher à l'utilisateur au lieu d'un
+ *  faux « Identifiants envoyés ».
+ */
+interface CredentialResponse {
+  success?: boolean;
+  message?: string;
+  userId?: string;
+  username?: string;
+  email?: string;
+  emailSent?: boolean;
+  emailError?: string;
+  hasTeacherProfile?: boolean;
+  teacherMatricule?: string;
+}
+
 const EMPTY_FORM: AssignmentFormState = {
   adminRole: '',
   staffId: '',
@@ -584,11 +601,19 @@ export default function UnifiedAdministrationWorkspace() {
 
       // 4. Envoyer identifiants si demandé
       let credentialsSent = false;
+      let credentialsError: string | null = null;
       if (form.sendCredentials && selectedStaff?.email) {
         try {
-          await authedFetch(`/api/hr/staff/${form.staffId}/generate-credentials`, { method: 'POST' });
-          credentialsSent = true;
+          // ⚆ Vérifier emailSent — l'email peut échouer (quota fournisseur)
+          //    alors que les identifiants sont bien créés.
+          const credRes = await authedFetch<CredentialResponse>(`/api/hr/staff/${form.staffId}/generate-credentials`, { method: 'POST' });
+          if (credRes?.emailSent === false) {
+            credentialsError = credRes?.emailError || credRes?.message || 'cause inconnue';
+          } else {
+            credentialsSent = true;
+          }
         } catch (err: any) {
+          credentialsError = err?.message || 'erreur inconnue';
           console.warn('Credentials sending failed (non-blocking):', err.message);
         }
       }
@@ -598,8 +623,17 @@ export default function UnifiedAdministrationWorkspace() {
       const roleLabel = ADMIN_ROLE_LABELS[form.adminRole as AdminRole] || form.adminRole;
       const credInfo = credentialsSent
         ? ' · Identifiants envoyés par email'
-        : (form.sendCredentials ? ' · Envoi identifiants échoué (réessayez depuis le tableau)' : '');
+        : (form.sendCredentials
+          ? ` · ⚠ Email identifiants NON envoyé (${credentialsError}) — réessayez depuis le tableau`
+          : '');
       setSuccess(`${roleLabel} affecté(e) à ${staffName} pour ${ADMIN_UNIT_LABELS[modalUnit] || modalUnit}${credInfo}`);
+      if (credentialsError) {
+        toast({
+          variant: 'error',
+          title: 'Email identifiants non envoyé',
+          description: `Cause : ${credentialsError}. Les identifiants ont été générés — réessayez l'envoi plus tard (le fournisseur d'emails a peut-être atteint son quota quotidien d'envoi).`,
+        });
+      }
 
       setModalOpen(false);
       setForm(EMPTY_FORM);
@@ -639,11 +673,24 @@ export default function UnifiedAdministrationWorkspace() {
     setError(null);
     setSuccess(null);
     try {
-      await authedFetch(`/api/hr/staff/${assignment.staffId}/generate-credentials`, { method: 'POST' });
+      // ⭐ Vérifier emailSent dans la réponse : l'API renvoie success=true même
+      //    quand l'email échoue (identifiants créés, mail non parti — ex: quota
+      //    d'envoi quotidien du fournisseur atteint). On informe honnêtement.
+      const res = await authedFetch<CredentialResponse>(`/api/hr/staff/${assignment.staffId}/generate-credentials`, { method: 'POST' });
       const name = assignment.staff
         ? `${assignment.staff.firstName} ${assignment.staff.lastName}`.trim()
         : 'du staff';
-      setSuccess(`Identifiants envoyés à ${name}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
+      if (res?.emailSent === false) {
+        const cause = res?.emailError || res?.message || 'cause inconnue';
+        setError(`Email NON envoyé à ${name}. Cause : ${cause}. Les identifiants ont bien été générés — réessayez l'envoi plus tard.`);
+        toast({
+          variant: 'error',
+          title: 'Email non envoyé',
+          description: `Cause : ${cause}. Réessayez plus tard (le fournisseur d'emails a peut-être atteint son quota quotidien d'envoi).`,
+        });
+      } else {
+        setSuccess(`Identifiants envoyés à ${name}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
+      }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'envoi des identifiants');
       toast({ variant: 'error', title: 'Échec envoi identifiants', description: err?.message });
@@ -658,8 +705,19 @@ export default function UnifiedAdministrationWorkspace() {
     setError(null);
     setSuccess(null);
     try {
-      await authedFetch(`/api/hr/staff/${staffId}/generate-credentials`, { method: 'POST' });
-      setSuccess(`Identifiants envoyés à ${staffName}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
+      // ⭐ Même vérification emailSent (voir handleSendCredentials)
+      const res = await authedFetch<CredentialResponse>(`/api/hr/staff/${staffId}/generate-credentials`, { method: 'POST' });
+      if (res?.emailSent === false) {
+        const cause = res?.emailError || res?.message || 'cause inconnue';
+        setError(`Email NON envoyé à ${staffName}. Cause : ${cause}. Les identifiants ont bien été générés — réessayez l'envoi plus tard.`);
+        toast({
+          variant: 'error',
+          title: 'Email non envoyé',
+          description: `Cause : ${cause}. Réessayez plus tard (le fournisseur d'emails a peut-être atteint son quota quotidien d'envoi).`,
+        });
+      } else {
+        setSuccess(`Identifiants envoyés à ${staffName}. Un email avec identifiant + mot de passe temporaire a été envoyé.`);
+      }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l\'envoi des identifiants');
       toast({ variant: 'error', title: 'Échec envoi identifiants', description: err?.message });

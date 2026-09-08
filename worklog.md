@@ -10173,3 +10173,28 @@ Stage Summary:
 - ✅ Academia Community v2 EN LIGNE et validée 43/43 E2E : canaux dynamiques par école + groupes admins/enseignants + salon global + lives dispatchés par audience + pont comptes écoles + app mobile Flutter (apps/community-mobile)
 - 5 écoles actives ont déjà leur structure (salon + 2 groupes) — provisionnées au démarrage du service
 - Suivi utilisateur : test connexion avec le compte promoteur depuis /community/login (identifiants école) ou le bouton « Entrer avec mon compte école » après connexion à l'app ; Pilotage → onglets Lives & formations / Écoles ; build mobile : flutter build apk --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+
+---
+Task ID: 36
+Agent: main (Super Z)
+Task: Purge BDD des encaissements 2025-2026 — Mon Avenir Plus + vérification production PWA logo école
+
+Work Log:
+- Inspections READ-ONLY sur Neon prod (scripts hors dépôt /home/z/my-project/scripts/) :
+  * Tenant CSP Mon Avenir Plus N'Dali (e0aaa032-bf95-494a-8dfb-7ea62d9fcdeb, subdomain csp-mon-avenir-plus-ndali), année 2025-2026 (78e862b0)
+  * Inventaire : 1246 tx PAYMENT = 14 746 000 FCFA (1163 IMP- import 13,7M + 83 CSPMON-REC- app 1,045M) ; 1092 allocations = 13 117 000 ; 53 clôtures ; caisse accueil 1 045 000
+  * Réconciliation comptes : 343/688 conformes + « ghost » 18 159 000 FCFA (un import antérieur supprimé sans revert des comptes) → source de la non-conformité au fichier
+  * Découverte triggers : 2× anti-DELETE sur finance_transactions + prevent_balance_update (bypass set_config app.allow_balance_update)
+- BACKUP AVANT PURGE : /home/z/my-project/download/backup-map-encaissements-2025-2026.json (1,77 MB : 1246 tx + 1092 alloc + 688 comptes + 793 breakdowns + 53 clôtures + 9 caisses)
+- PURGE (transaction unique, rollback auto) : breakdowns revertés (333), caisse débitée → 0, 1092 allocations supprimées, triggers anti-delete désactivés/réactivés autour du DELETE, 1246 tx supprimées, 53 clôtures supprimées, 688 comptes reset (totalPaid=0, balance=totalDue 36 733 000 — dette conservée)
+- Vérifications post-purge : 0 tx / 0 allocations / 0 clôtures / Σ totalPaid 0 / Σ paidAmount breakdowns 0 / caisse 0 ✅ — base prête pour réimport via Import Bilan (modale finance, parser POINT P1..P8, commit d17ccd51b)
+- PWA logo école : l'implémentation parallèle (1fffcdf33 → dc46e0b90) reprise telle quelle (mon implémentation locale redondante abandonnée au rebase) ; VALIDATION PRODUCTION bout-en-bout :
+  * /manifest-site.webmanifest sur csp-mon-avenir-plus-ndali.academiahelm.com → 200 : name « Complexe Scolaire Privé Mon Avenir Plus N'Dali », short_name CMAPN, slogan, theme_color #3b82f6, icônes /pwa-icon 192/512+maskable
+  * /pwa-icon?s=192 → PNG réel 192×192 (46 KB) ; apple-touch-icon → /pwa-icon?s=180 dans le HTML de la page école
+  * /manifest-app.webmanifest → 200 (app de gestion, start /login, branding école) ; /sw.js → 200 (9,9 KB)
+  * PWARegister monté au layout racine ; PWAInstallPrompt avec appName école sur school-portal + layout-client
+
+Stage Summary:
+- ✅ Encaissements 2025-2026 de Mon Avenir Plus VIDÉS de la production (backup JSON conservé) — prêts pour réimport conforme au fichier transmis
+- ✅ Installation PWA = LOGO + NOM de l'école vérifiés en production (desktop Chrome/Edge, Android, iOS apple-touch-icon 180px) — exigence utilisateur satisfaite
+- Aucun commit nécessaire côté dépôt (implémentation PWA déjà déployée par la session parallèle ; scripts BDD hors dépôt)

@@ -134,6 +134,39 @@ const nextConfig = {
   // Multi-tenant: Support des sous-domaines
   async headers() {
     return [
+      // ✅ PWA — Service Worker : JAMAIS de cache long (le navigateur doit
+      // re-valider le script à chaque visite pour appliquer les mises à
+      // jour rapidement). Vercel sert public/ avec max-age=0 par défaut,
+      // on l'explicite ici pour tous les environnements.
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      // ✅ PWA — manifest statique : cache navigateur 1h ( branding AH )
+      {
+        source: '/manifest.json',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=3600' },
+          { key: 'Content-Type', value: 'application/manifest+json' },
+        ],
+      },
+      // ✅ PWA — icône iOS statique : cache 1 an (immuable)
+      {
+        source: '/apple-touch-icon.png',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      // ✅ PWA — icônes manifest statiques : cache 1 an (immuables)
+      {
+        source: '/web-app-manifest-:file*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
       // ✅ Cache agressif pour les images statiques (1 an) — PageSpeed optimization
       {
         source: '/images/:path*',

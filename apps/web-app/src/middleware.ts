@@ -776,6 +776,9 @@ export const config = {
     // gérés statiquement dans next.config.js → headers() (plus efficace).
     // Cela évite à l'Edge Function de s'exécuter sur chaque requête API
     // (économise des invocations Vercel + réduit TBT de ~50ms).
-    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml|api/).*)',
+    // ✅ PWA : /pwa-icon (icônes dynamiques par école, résout le tenant
+    // elle-même) et les manifests dynamiques (*.webmanifest) sont exclus —
+    // leurs routes gèrent leur propre contexte + Cache-Control.
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
   ],
 };

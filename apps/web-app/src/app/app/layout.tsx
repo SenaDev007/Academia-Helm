@@ -26,6 +26,7 @@
 import { redirect } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
+import type { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth/session';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { getEffectivePortal } from '@/lib/auth/role-portal-map';
@@ -42,6 +43,24 @@ const PilotageLayout = dynamic(
     ssr: true, // ✅ Garder SSR pour le SEO
   }
 );
+
+/**
+ * ⭐ PWA — Surcharge du manifest pour l'application authentifiée.
+ *
+ * Les pages /app/* sont liées à /manifest-app.webmanifest (branding de
+ * l'école + start_url /login) pour que Chrome/Edge/Safari proposent
+ * d'installer L'APPLICATION — distincte du site institutionnel de
+ * l'école (/manifest-site.webmanifest, lié sur la racine du sous-domaine).
+ * Deux apps installables côte à côte sur PC et mobile.
+ */
+export const metadata: Metadata = {
+  manifest: '/manifest-app.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Academia Helm',
+  },
+};
 
 export default async function AppLayout({
   children,

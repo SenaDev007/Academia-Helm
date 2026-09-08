@@ -171,9 +171,10 @@ export default async function SchoolPortalPage() {
     <>
       <InstitutionalWebsite schoolInfo={schoolInfo} subdomain={subdomain} />
       {/* ⭐ PWA install prompt — permet d'installer le site institutionnel
-          comme une application native sur desktop/mobile. Re-prompt différé :
-          3j, 3j, 7j, 14j, 30j après chaque refus. */}
-      <PWAInstallPrompt />
+          de l'école comme une application native sur desktop/mobile (nom de
+          l'école dans la bannière). Re-prompt différé : 3j, 3j, 7j, 14j, 30j
+          après chaque refus. */}
+      <PWAInstallPrompt appName={schoolInfo?.name || 'l\'application'} />
     </>
   );
 }

@@ -2,138 +2,307 @@
 
 /**
  * ============================================================================
- * PWA INSTALL PROMPT — App authentifiée
+ * PWA INSTALL PROMPT — Bannière d'installation (site + app)
  * ============================================================================
  *
- * Composant qui gère l'invitation à installer l'app comme une PWA.
- * Affiché dans l'app authentifiée (layout-client.tsx).
+ * Affiche une bannière discrète en bas à droite permettant d'installer la
+ * PWA (site institutionnel ou application, selon le manifest lié à la page).
  *
- * Affiche une bannière discrète en bas à droite quand le navigateur
- * déclenche `beforeinstallprompt`. L'utilisateur peut installer ou
- * fermer (re-prompt dans 7 jours).
+ * Compatibilité :
+ *   - Chrome / Edge / Brave (desktop + Android) : beforeinstallprompt →
+ *     bouton "Installer" natif via prompt()
+ *   - iOS Safari (iPhone/iPad) : pas d'API programmatique → bannière qui
+ *     ouvre un modal d'instructions (Partager → "Sur l'écran d'accueil")
+ *   - Firefox / desktop Safari : pas d'installation PWA → aucune bannière
+ *
+ * Re-prompt gradué après refus : 3j, 3j, 7j, 14j, 30j (puis 30j max).
+ *
+ * Props :
+ *   - appName : nom affiché dans la bannière (ex: nom de l'école)
  * ============================================================================
  */
 
-import { useEffect, useState } from 'react';
-import { Download, X, Monitor } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Download, X, Monitor, Share, Iphone, PlusSquare, CheckCircle2, Smartphone } from 'lucide-react';
 
-const STORAGE_KEY = 'app_pwa_install_state';
+const STORAGE_KEY = 'ah_pwa_prompt_v2';
+
+/** Délais de re-prompt après chaque refus (en jours), plafonné au dernier. */
+const RE_PROMPT_DAYS = [3, 3, 7, 14, 30];
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-export function PWAInstallPrompt() {
+interface PromptState {
+  dismissCount?: number;
+  lastDismissedAt?: number;
+  installed?: boolean;
+}
+
+function readState(): PromptState {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeState(state: PromptState) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
+/** Détecte iOS (iPhone/iPad, Safari et Chrome iOS inclus). */
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  // iPadOS 13+ se présente comme Mac — vérifier le multi-touch
+  const isIpad = /iPad/.test(ua) || (/Macintosh/.test(ua) && typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 1);
+  return /iPhone|iPod/.test(ua) || isIpad;
+}
+
+/** Déjà installé / affiché en standalone ? */
+function isStandalone(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: minimal-ui)').matches ||
+    (navigator as any).standalone === true
+  );
+}
+
+export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: string }) {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showBanner, setShowBanner] = useState(false);
   const [installed, setInstalled] = useState(false);
+  const [showIOSModal, setShowIOSModal] = useState(false);
+  const [ios, setIos] = useState(false);
 
   useEffect(() => {
-    // Vérifier si déjà installé ou refusé récemment
-    try {
-      const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-      if (state.installed) {
-        setInstalled(true);
-        return;
-      }
-      // Re-prompt après 7 jours
-      if (state.lastDismissedAt) {
-        const elapsed = Date.now() - state.lastDismissedAt;
-        if (elapsed < 7 * 24 * 60 * 60 * 1000) return; // Pas encore
-      }
-    } catch {}
+    if (typeof window === 'undefined') return;
 
-    // ⭐ Écouter beforeinstallprompt
-    const handler = (e: Event) => {
-      e.preventDefault(); // Empêcher le prompt natif automatique
+    const standalone = isStandalone();
+    const onIOS = isIOS();
+
+    if (standalone) {
+      setInstalled(true);
+      writeState({ ...readState(), installed: true });
+      return;
+    }
+
+    setIos(onIOS);
+
+    // Respecter le délai de re-prompt gradué
+    const state = readState();
+    if (state.installed) {
+      setInstalled(true);
+      return;
+    }
+    if (state.lastDismissedAt) {
+      const dismissCount = state.dismissCount || 0;
+      const delayDays = RE_PROMPT_DAYS[Math.min(dismissCount - 1, RE_PROMPT_DAYS.length - 1)] ?? 7;
+      const elapsed = Date.now() - state.lastDismissedAt;
+      if (elapsed < delayDays * 24 * 60 * 60 * 1000) return; // Pas encore
+    }
+
+    // ⭐ Récupérer un prompt déjà capturé par PWARegister (monté plus tôt)
+    const globalPrompt = (window as any).__ahPwaDeferredPrompt as BeforeInstallPromptEvent | undefined;
+    if (globalPrompt) {
+      setDeferredPrompt(globalPrompt);
+      setShowBanner(true);
+    }
+
+    // ⭐ Écouter les nouveaux prompts + l'événement custom de PWARegister
+    const handleBeforeInstallPrompt = (e: Event) => {
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setShowBanner(true);
     };
+    const handleCustomAvailable = (e: Event) => {
+      setDeferredPrompt((e as CustomEvent).detail as BeforeInstallPromptEvent);
+      setShowBanner(true);
+    };
 
-    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('ah-install-available', handleCustomAvailable as EventListener);
 
-    // ⭐ Détecter si déjà installé (standalone mode)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (navigator as any).standalone === true;
-    if (isStandalone) {
-      setInstalled(true);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ installed: true })); } catch {}
+    // ⭐ iOS : pas de beforeinstallprompt — afficher la bannière d'instructions
+    // (avec un léger délai pour ne pas perturber la première lecture)
+    let iosTimer: ReturnType<typeof setTimeout> | undefined;
+    if (onIOS) {
+      iosTimer = setTimeout(() => setShowBanner(true), 2500);
     }
 
-    // ⭐ Écouter appinstalled
-    const installedHandler = () => {
+    // ⭐ Détecter l'installation effective
+    const handleInstalled = () => {
       setInstalled(true);
       setShowBanner(false);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ installed: true })); } catch {}
+      writeState({ ...readState(), installed: true });
     };
-    window.addEventListener('appinstalled', installedHandler);
+    window.addEventListener('appinstalled', handleInstalled);
+    window.addEventListener('ah-installed', handleInstalled);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', installedHandler);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('ah-install-available', handleCustomAvailable as EventListener);
+      window.removeEventListener('appinstalled', handleInstalled);
+      window.removeEventListener('ah-installed', handleInstalled);
+      if (iosTimer) clearTimeout(iosTimer);
     };
   }, []);
 
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    if (choice.outcome === 'accepted') {
-      setInstalled(true);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ installed: true })); } catch {}
-    } else {
-      handleDismiss();
+  const handleDismiss = useCallback(() => {
+    setShowBanner(false);
+    const state = readState();
+    writeState({
+      ...state,
+      dismissCount: (state.dismissCount || 0) + 1,
+      lastDismissedAt: Date.now(),
+    });
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    // Chrome/Edge/Android → prompt natif
+    if (deferredPrompt) {
+      try {
+        await deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        if (choice.outcome === 'accepted') {
+          setInstalled(true);
+          writeState({ ...readState(), installed: true });
+        } else {
+          handleDismiss();
+        }
+      } catch {
+        handleDismiss();
+      }
+      setDeferredPrompt(null);
+      setShowBanner(false);
+      return;
     }
-    setDeferredPrompt(null);
-    setShowBanner(false);
-  };
+    // iOS → modal d'instructions
+    if (ios) {
+      setShowIOSModal(true);
+    }
+  }, [deferredPrompt, ios, handleDismiss]);
 
-  const handleDismiss = () => {
+  const handleIOSDone = useCallback(() => {
+    setShowIOSModal(false);
     setShowBanner(false);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        lastDismissedAt: Date.now(),
-      }));
-    } catch {}
-  };
+    const state = readState();
+    writeState({
+      ...state,
+      dismissCount: (state.dismissCount || 0) + 1,
+      lastDismissedAt: Date.now(),
+    });
+  }, []);
 
-  if (installed || !showBanner || !deferredPrompt) return null;
+  if (installed || !showBanner) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9998] bg-white border border-slate-200 rounded-xl shadow-lg p-4 max-w-xs animate-in fade-in slide-in-from-bottom duration-300">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-          <Monitor className="h-5 w-5 text-blue-600" />
+    <>
+      {/* ─── Bannière discrète en bas à droite ───────────────────────────── */}
+      <div className="fixed bottom-4 right-4 z-[9998] bg-white border border-slate-200 rounded-xl shadow-lg p-4 max-w-xs animate-in fade-in slide-in-from-bottom duration-300">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-[#0D1F6E]/10 flex items-center justify-center shrink-0">
+            {ios ? (
+              <Iphone className="h-5 w-5 text-[#0D1F6E]" />
+            ) : (
+              <Monitor className="h-5 w-5 text-[#0D1F6E]" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-slate-900">
+              {ios ? `Installer ${appName}` : `Installer ${appName}`}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {ios
+                ? 'Ajoutez l\'application à votre écran d\'accueil'
+                : 'Accédez plus rapidement, comme une vraie application'}
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={handleInstall}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0D1F6E] text-white rounded-lg text-xs font-bold hover:bg-[#0D1F6E]/90 transition-colors"
+              >
+                {ios ? <Smartphone className="h-3 w-3" /> : <Download className="h-3 w-3" />}
+                {ios ? 'Comment installer' : 'Installer'}
+              </button>
+              <button
+                onClick={handleDismiss}
+                className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-xs font-medium"
+              >
+                Plus tard
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={handleDismiss}
+            aria-label="Fermer"
+            className="text-slate-400 hover:text-slate-600 shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-slate-900">Installer Academia Helm</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Accédez à l'app plus rapidement, même hors ligne
-          </p>
-          <div className="flex items-center gap-2 mt-3">
+      </div>
+
+      {/* ─── Modal instructions iOS (Partager → Sur l'écran d'accueil) ──── */}
+      {showIOSModal && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={handleIOSDone}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-[#0D1F6E]/10 flex items-center justify-center mb-3">
+                <Iphone className="h-7 w-7 text-[#0D1F6E]" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">Installer sur iPhone / iPad</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Suivez ces 3 étapes dans Safari :
+              </p>
+            </div>
+
+            <ol className="space-y-4 text-left">
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-[#0D1F6E] text-white flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                <div className="flex items-center gap-2 text-sm text-slate-700 pt-0.5">
+                  <span>Appuyez sur le bouton</span>
+                  <Share className="h-5 w-5 text-[#007AFF] mx-1" />
+                  <span>(Partager)</span>
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-[#0D1F6E] text-white flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                <div className="text-sm text-slate-700 pt-0.5">
+                  Faites défiler puis choisissez
+                  <span className="font-semibold"> « Sur l’écran d’accueil »</span>
+                  <PlusSquare className="h-4 w-4 inline-block mx-1 text-[#007AFF]" />
+                </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-[#0D1F6E] text-white flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                <div className="text-sm text-slate-700 pt-0.5">
+                  Confirmez avec <span className="font-semibold">« Ajouter »</span>
+                </div>
+              </li>
+            </ol>
+
             <button
-              onClick={handleInstall}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700"
+              onClick={handleIOSDone}
+              className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0D1F6E] text-white rounded-xl font-bold text-sm hover:bg-[#0D1F6E]/90 transition-colors"
             >
-              <Download className="h-3 w-3" />
-              Installer
-            </button>
-            <button
-              onClick={handleDismiss}
-              className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-xs font-medium"
-            >
-              Plus tard
+              <CheckCircle2 className="h-4 w-4" />
+              C’est fait
             </button>
           </div>
         </div>
-        <button
-          onClick={handleDismiss}
-          className="text-slate-400 hover:text-slate-600 shrink-0"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

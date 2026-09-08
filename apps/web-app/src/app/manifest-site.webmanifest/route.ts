@@ -1,110 +1,100 @@
 /**
  * ============================================================================
- * MANIFEST DINAMIQUE — Site institutionnel PWA
+ * MANIFEST DYNAMIQUE — Site institutionnel PWA
  * ============================================================================
  *
  * GET /manifest-site.webmanifest
  *
- * Retourne un manifest.json adapté au tenant courant (basé sur le subdomain).
- * Permet aux utilisateurs d'installer le site institutionnel de leur école
- * comme une PWA sur desktop ou mobile.
+ * Manifest du SITE INSTITUTIONNEL d'une école (servi sur son sous-domaine,
+ * ex: cspeb-eveildafriqueeducation.academiahelm.com).
+ * Permet d'installer le site vitrine de l'école comme une application sur
+ * PC (Chrome/Edge) et mobile (Android — iOS via apple-touch-icon).
  *
- * Le manifeste utilise :
- *   - Le nom de l'école (tenant.name) comme `name`
- *   - Le logo du tenant comme icône (si disponible)
- *   - La couleur primaire du tenant comme `theme_color`
- *   - L'URL du sous-domaine comme `start_url` (avec `?source=pwa`)
- *   - `display: standalone` pour une expérience type app
+ * Branding par école :
+ *   - name        → nom de l'école
+ *   - short_name  → acronyme de l'école
+ *   - description → slogan de l'école
+ *   - theme_color → couleur primaire de l'école
+ *   - icons       → logo de l'école (via /pwa-icon, redimensionné)
+ *
+ * Domaine principal (academiahelm.com) → valeurs par défaut Academia Helm.
+ *
+ * NOTE : start_url et scope sont RELATIFS — résolus par rapport à l'origine
+ * du manifest (le sous-domaine de l'école), donc corrects dans tous les
+ * environnements sans construction d'URL absolue.
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrl } from '@/lib/utils/urls';
-import { isReservedSubdomain } from '@/lib/tenant/constants';
+import {
+  extractSchoolSubdomain,
+  resolveSchoolBranding,
+  schoolManifestIcons,
+  defaultManifestIcons,
+} from '@/lib/pwa/manifest-branding';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const DEFAULT_THEME_COLOR = '#1A3A8F';
+const DEFAULT_THEME_COLOR = '#0D1F6E';
 const DEFAULT_BG_COLOR = '#ffffff';
 
 export async function GET(request: NextRequest) {
   // Résoudre le subdomain depuis le host
-  const host = request.headers.get('host') || request.headers.get('x-forwarded-host') || '';
-  const parts = host.split(':')[0].split('.');
-  const subdomain = parts.length >= 3 && !isReservedSubdomain(parts[0]) ? parts[0] : null;
+  const host = request.headers.get('host') || request.headers.get('x-forwarded-host') || null;
+  const subdomain = extractSchoolSubdomain(host);
 
-  // Valeurs par défaut (domaine principal)
+  // Valeurs par défaut (domaine principal / tenant introuvable)
   let name = 'Academia Helm';
-  let shortName = 'Academia';
-  let description = 'Plateforme de pilotage éducatif';
+  let shortName = 'Academia Helm';
+  let description = 'La plateforme de pilotage éducatif nouvelle génération. Prenez le gouvernail de votre institution.';
   let themeColor = DEFAULT_THEME_COLOR;
-  let backgroundColor = DEFAULT_BG_COLOR;
-  let logoUrl: string | null = null;
+  let icons = defaultManifestIcons();
 
-  // Si on est sur un sous-domaine d'école, récupérer le branding
   if (subdomain) {
-    try {
-      const apiUrl = getApiBaseUrl();
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(`${apiUrl}/tenants/by-subdomain/${subdomain}`, {
-        signal: controller.signal,
-        headers: { 'Cache-Control': 'no-store' },
-      });
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const tenant = await response.json();
-        name = tenant.name || name;
-        shortName = (tenant.shortName || tenant.acronym || name).substring(0, 12);
-        description = tenant.slogan || description;
-        themeColor = tenant.themeColor || tenant.primaryColor || DEFAULT_THEME_COLOR;
-        logoUrl = tenant.logoUrl || null;
-      }
-    } catch {
-      // Fallback silencieux — utiliser les valeurs par défaut
+    const branding = await resolveSchoolBranding(subdomain);
+    if (branding) {
+      name = branding.name;
+      shortName = branding.shortName;
+      description = branding.slogan || `${branding.name} — Établissement scolaire`;
+      themeColor = branding.primaryColor || DEFAULT_THEME_COLOR;
+      icons = schoolManifestIcons(subdomain);
     }
   }
 
-  // Construire les icônes
-  const icons = [];
-  if (logoUrl) {
-    // Logo custom du tenant — utilisation avec différents sizes (le navigateur
-    // redimensionne automatiquement)
-    icons.push(
-      { src: logoUrl, sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: logoUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: logoUrl, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    );
-  } else {
-    // Icônes par défaut Academia Helm
-    icons.push(
-      { src: '/web-app-manifest-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/web-app-manifest-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/web-app-manifest-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    );
-  }
-
-  const startUrl = subdomain
-    ? `https://${parts.join('.')}/?source=pwa`
-    : `https://${host}/?source=pwa`;
-
   const manifest = {
+    // ⭐ id distinct de l'app (/manifest-app.webmanifest) → les deux sont
+    // installables séparément (site vitrine ET application de gestion).
+    id: '/?source=pwa-site',
     name,
     short_name: shortName,
     description,
-    start_url: startUrl,
-    scope: subdomain ? `https://${parts.join('.')}/` : '/',
+    start_url: '/?source=pwa-site',
+    scope: '/',
     display: 'standalone',
-    orientation: 'portrait-primary',
     theme_color: themeColor,
-    background_color: backgroundColor,
-    icons,
-    categories: ['education', 'productivity'],
-    lang: 'fr',
+    background_color: DEFAULT_BG_COLOR,
+    lang: 'fr-FR',
     dir: 'ltr',
+    categories: ['education'],
+    icons,
+    shortcuts: [
+      {
+        name: 'Pré-inscription',
+        short_name: 'S\'inscrire',
+        description: 'Formulaire de pré-inscription en ligne',
+        url: '/public/pre-enrollment?source=pwa-site',
+        icons: [{ src: '/web-app-manifest-192x192.png', sizes: '192x192' }],
+      },
+      {
+        name: 'Recrutement',
+        short_name: 'Jobs',
+        description: 'Offres d\'emploi de l\'établissement',
+        url: '/jobs?source=pwa-site',
+        icons: [{ src: '/web-app-manifest-192x192.png', sizes: '192x192' }],
+      },
+    ],
+    prefer_related_applications: false,
   };
 
   return NextResponse.json(manifest, {

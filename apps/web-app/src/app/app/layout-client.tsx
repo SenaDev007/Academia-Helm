@@ -264,7 +264,7 @@ export default function AppLayoutClient({
       <Toaster richColors position="top-right" closeButton />
       {/* ⛔ OfflineStatusBadge désactivé */}
       {/* <OfflineStatusBadge /> */}
-      <PWAInstallPrompt />
+      <PWAInstallPrompt appName={tenant?.name || 'Academia Helm'} />
       {/* ⛔ SyncModal + ConflictResolutionModal désactivés */}
       {/* <SyncModal /> */}
       {/* <ConflictResolutionModal /> */}

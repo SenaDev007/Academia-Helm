@@ -1833,9 +1833,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   }, [currentUserId]);
 
   // ⭐ SERVICE WORKER registration for push notifications
+  // ⚠️ PWA : /sw.js est le SW UNIFIÉ (push + cache + installabilité).
+  // L'ancien /sw-chat.js ne doit PLUS être enregistré : deux scripts SW
+  // différents sur le même scope '/' se remplacent mutuellement en
+  // ping-pong. /sw.js gère désormais les notifications push du chat
+  // (handlers push + notificationclick identiques).
   useEffect(() => {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-chat.js').catch(() => {});
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     }
   }, []);
 

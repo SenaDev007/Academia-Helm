@@ -22,6 +22,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 import TenantPortalSelection from '@/components/portal/TenantPortalSelection';
+import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
@@ -66,6 +67,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
+    // ⭐ PWA — cette page est l'entrée de L'APPLICATION de l'école :
+    // manifest de l'app (branding école, start_url /login), distinct du
+    // manifest du site institutionnel (racine du sous-domaine).
+    manifest: '/manifest-app.webmanifest',
     robots: {
       index: true,
       follow: true,
@@ -136,5 +141,11 @@ export default async function TenantPortalPage() {
     // headers() peut échouer dans certains contextes
   }
 
-  return <TenantPortalSelection schoolInfo={schoolInfo} subdomain={subdomain} />;
+  return (
+    <>
+      <TenantPortalSelection schoolInfo={schoolInfo} subdomain={subdomain} />
+      {/* ⭐ PWA — bannière d'installation de l'application de l'école */}
+      <PWAInstallPrompt appName={schoolInfo?.name || 'Academia Helm'} />
+    </>
+  );
 }

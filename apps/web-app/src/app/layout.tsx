@@ -30,6 +30,8 @@ import { buildHreflangLanguages } from '@/lib/seo/locales';
 import { cn } from "@/lib/utils";
 import { ToastContainer } from '@/components/ui/toast';
 import I18nWrapper from '@/components/i18n/I18nWrapper';
+import { PWARegister } from '@/components/pwa/PWARegister';
+import { extractSchoolSubdomain } from '@/lib/pwa/manifest-branding';
 
 // ✅ POLICES LOCALES - Téléchargées depuis Google Fonts et stockées localement
 // 
@@ -103,6 +105,21 @@ export async function generateMetadata(): Promise<Metadata> {
     ? null
     : hostname.split(':')[0].split('.')[0];
 
+  // ⭐ PWA — manifest et icône iOS dynamiques selon le contexte :
+  //   - Domaine principal → /manifest.json (site corporate Academia Helm,
+  //     branding AH, icône statique)
+  //   - Sous-domaine école → /manifest-site.webmanifest (branding de
+  //     l'école : nom, logo, couleurs — résolu côté route). L'icône iOS
+  //     (apple-touch-icon) est générée à la volée par /pwa-icon à partir
+  //     du logo de l'école.
+  //   Les pages de l'application (/app/*, /login, /portal) surchargent ce
+  //   manifest par /manifest-app.webmanifest (voir leurs layouts).
+  const schoolSubdomain = mainDomain ? null : extractSchoolSubdomain(hostname.split(':')[0]);
+  const manifestUrl = schoolSubdomain ? '/manifest-site.webmanifest' : '/manifest.json';
+  const appleTouchIcon = schoolSubdomain
+    ? `/pwa-icon?tenant=${encodeURIComponent(schoolSubdomain)}&s=180`
+    : '/apple-touch-icon.png';
+
   const title = mainDomain
     ? defaultTitle
     : `${tenantSubdomain} — Portail Academia Helm`;
@@ -138,6 +155,8 @@ export async function generateMetadata(): Promise<Metadata> {
     category: 'technology',
     ...(verification ? { verification } : {}),
     appleWebApp: {
+      capable: true,
+      statusBarStyle: 'default',
       title: mainDomain ? 'Academia Helm' : `${tenantSubdomain} — Academia Helm`,
     },
     icons: {
@@ -145,10 +164,10 @@ export async function generateMetadata(): Promise<Metadata> {
         { url: '/favicon.ico', sizes: 'any' },
         { url: '/icon.png', type: 'image/png' },
       ],
-      apple: [{ url: '/apple-icon.png' }],
+      apple: [{ url: appleTouchIcon }],
       shortcut: '/favicon.ico',
     },
-    manifest: '/manifest.json',
+    manifest: manifestUrl,
     openGraph: {
       type: 'website',
       locale: 'fr_FR',
@@ -201,7 +220,9 @@ export default function RootLayout({
   return (
     <html lang="fr" className={cn('scroll-smooth', 'font-sans', inter.variable)}>
       <head>
-        <meta name="apple-mobile-web-app-title" content="Academia Helm" />
+        {/* apple-mobile-web-app-title est généré dynamiquement par
+            generateMetadata (appleWebApp.title) — pas de meta statique ici
+            pour éviter les doublons et garder le titre par école. */}
       </head>
       <body className={`${inter.className} antialiased overflow-x-hidden`}>
         <I18nWrapper>
@@ -210,6 +231,11 @@ export default function RootLayout({
         {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ */}
         {/* <ServiceWorkerCleanup /> */}
         <ToastContainer />
+
+        {/* ⭐ PWA — Service Worker unifié (push + cache + installabilité
+            sur PC et mobile). Captures précoces de beforeinstallprompt
+            pour les bannières d'installation (PWAInstallPrompt). */}
+        <PWARegister />
 
         {/* ────────────────────────────────────────────────────────────────
             🚀 Partytown — exécute les scripts tiers dans un Web Worker

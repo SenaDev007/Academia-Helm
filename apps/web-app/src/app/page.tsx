@@ -8,6 +8,7 @@
 import { Metadata } from 'next';
 import PremiumLandingPage from '@/components/public/PremiumLandingPage';
 import StructuredData from '@/components/public/StructuredData';
+import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import {
   buildAbsoluteOGImageUrl,
   detectRequestHostname,
@@ -112,6 +113,9 @@ export default function HomePage() {
     <>
       <StructuredData platformReviews={[]} />
       <PremiumLandingPage />
+      {/* ⭐ PWA — bannière d'installation du site Academia Helm
+          (PC : Chrome/Edge ; mobile : Android + iOS instructions) */}
+      <PWAInstallPrompt appName="Academia Helm" />
     </>
   );
 }

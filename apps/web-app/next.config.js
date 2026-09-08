@@ -162,7 +162,13 @@ const nextConfig = {
       },
       // ✅ PWA — icônes manifest statiques : cache 1 an (immuables)
       {
-        source: '/web-app-manifest-:file*',
+        source: '/web-app-manifest-192x192.png',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        source: '/web-app-manifest-512x512.png',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],

@@ -166,8 +166,13 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
         `/api/finance/collection-summary/import/template?academicYearId=${encodeURIComponent(selectedYearId)}`,
         { credentials: 'include' },
       );
-      if (!res.ok) throw new Error('Erreur téléchargement template');
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        console.error('Template download failed:', res.status, errText);
+        throw new Error(`Erreur téléchargement template (${res.status})`);
+      }
       const blob = await res.blob();
+      if (!blob || blob.size === 0) throw new Error('Template vide ou introuvable');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -176,9 +181,10 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast({ title: '✅ Template téléchargé', description: 'Une feuille par classe (structure POINT standard), pré-remplie avec vos élèves.' });
+      toast({ title: '✅ Template téléchargé', description: 'Une feuille par classe.' });
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+      console.error('handleDownloadTemplate error:', e);
+      toast({ title: 'Erreur', description: e.message || 'Erreur téléchargement template', variant: 'destructive' });
     }
   };
 
@@ -338,8 +344,8 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                     <FileSpreadsheet className="w-5 h-5 text-blue-700" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">Template Excel bilan (structure POINT)</p>
-                    <p className="text-xs text-slate-500">Une feuille par classe, pré-remplie avec les élèves</p>
+                    <p className="text-sm font-semibold text-slate-800">Template Excel bilan</p>
+                    <p className="text-xs text-slate-500">Une feuille par classe</p>
                   </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="border-blue-300 text-blue-700 hover:bg-blue-100">

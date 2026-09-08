@@ -514,6 +514,30 @@ export class CollectionSummaryImportService {
     const preview = await this.previewImport(tenantId, academicYearId, fileDataUrl);
     const validRows = preview.rows.filter((r) => r.isValid);
 
+    // ⭐ IDEMPOTENCE : pré-charger les références DÉJÀ importées pour ce tenant +
+    // cette année. Un relancement (double-clic, reconnexion, proxy qui coupe) ne
+    // crée JAMAIS de doublon : les lignes déjà importées sont ignorées.
+    // (Incident 08/09/2026 : timeout BFF 30 s → relance utilisateur → 2 imports
+    // concurrents → 116 transactions en double sur Mon Avenir Plus.)
+    const importPrefix = 'Import Excel - Bilan Encaissements - ';
+    const existingRefs = new Set(
+      (
+        await this.prisma.financeTransaction.findMany({
+          where: {
+            tenantId,
+            academicYearId,
+            reference: { startsWith: importPrefix },
+          },
+          select: { reference: true },
+        })
+      ).map((t) => t.reference),
+    );
+    if (existingRefs.size > 0) {
+      this.logger.warn(
+        `Idempotence import bilan : ${existingRefs.size} ligne(s) déjà importée(s) seront ignorée(s)`,
+      );
+    }
+
     const results: BilanImportRunResult['results'] = [];
     let imported = 0;
     let skipped = 0;
@@ -570,12 +594,29 @@ export class CollectionSummaryImportService {
         const classTag = row.className || row.sheetName;
         const reference = `Import Excel - Bilan Encaissements - ${classTag} - L${row.rowIndex}${formatTag}`;
 
+        // ⭐ IDEMPOTENCE : ligne déjà importée (même référence) → ignorée.
+        // Protège contre les relances concurrentes (timeout proxy, double-clic).
+        if (existingRefs.has(reference)) {
+          skipped++;
+          results.push({
+            rowIndex: row.rowIndex,
+            sheetName: row.sheetName,
+            studentName: row.studentName,
+            success: true,
+            amount: 0,
+            error: 'Déjà importée — ignorée (protection anti-doublon)',
+          });
+          continue;
+        }
+
         // Créer la FinanceTransaction — le service gère :
         //   - génération receiptNumber unique
         //   - allocations FIFO sur les AccountBreakdowns
         //   - update account_breakdowns.paidAmount + remainingAmount
         //   - update student_account.totalPaid + balance (via trigger)
-        //   - génération reçu PDF + notifications (fire-and-forget)
+        //   - ⭐ IMPORT : PAS de reçu PDF ni notification (skipReceiptSideEffects) —
+        //     un import de masse historique ne doit pas déclencher 300+ PDF/emails
+        //     (lourd, ralentit l'import et notifie les parents de paiements passés)
         const tx = await this.financeTransactionService.create(tenantId, {
           academicYearId,
           studentAccountId: account.id,
@@ -583,6 +624,7 @@ export class CollectionSummaryImportService {
           paymentMethod: 'CASH',
           reference,
           cashierId: userId || 'excel-import',
+          skipReceiptSideEffects: true,
         });
 
         imported++;

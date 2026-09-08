@@ -569,7 +569,8 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="w-12 h-12 text-blue-700 animate-spin mb-4" />
               <p className="text-lg font-semibold text-slate-800">Import en cours...</p>
-              <p className="text-sm text-slate-500 mt-1">Création des transactions + génération des reçus PDF</p>
+              <p className="text-sm text-slate-500 mt-1">Création des transactions — ne fermez pas cette fenêtre</p>
+              <p className="text-xs text-slate-400 mt-3 text-center max-w-md">L'import de plusieurs centaines d'élèves peut prendre 1 à 3 minutes.<br/>Si une erreur de connexion survient, cliquez à nouveau sur « Importer » : les lignes déjà importées seront ignorées, aucun doublon ne sera créé.</p>
             </div>
           )}
 
@@ -595,7 +596,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
                 </div>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-center">
                   <p className="text-2xl font-bold text-slate-700">{runResult.skipped}</p>
-                  <p className="text-xs text-slate-600">Ignorées (Total=0)</p>
+                  <p className="text-xs text-slate-600">Ignorées (Total=0 ou déjà importées)</p>
                 </div>
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-center">
                   <p className="text-2xl font-bold text-rose-700">{runResult.errors}</p>

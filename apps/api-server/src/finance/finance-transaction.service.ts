@@ -226,6 +226,11 @@ export class FinanceTransactionService {
       //    boutique »). Les breakdowns manquants sont créés à la volée, puis
       //    les montants sont fusionnés dans les imputations explicites.
       generalFeeAddOns?: { feeStructureId: string; amount: number }[];
+      // ⭐ IMPORT DE MASSE (sept. 2026) : sauter le reçu PDF + les notifications
+      //    (email / Helm Connect). Un import Excel de bilan historique ne doit pas
+      //    déclencher 300+ PDF/emails — lourd en ressources et trompeur pour les
+      //    parents (paiements passés). Les reçus restent générables à la demande.
+      skipReceiptSideEffects?: boolean;
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
@@ -593,12 +598,15 @@ export class FinanceTransactionService {
         select: { id: true },
       });
       if (!existing) break; // Numéro libre
-      // Numéro déjà pris — incrémenter la séquence
+      // Numéro déjà pris — incrémenter la séquence (en conservant la largeur
+      // d'origine du numéro : « -150 » → « -151 », pas « -00151 » — des largeurs
+      // incohérentes créent des collisions numériques entre reçus)
       this.logger.warn(`Receipt number ${receiptNumber} already exists, trying next (attempt ${attempt + 1})`);
       const parts = receiptNumber.split('-');
-      const seq = parseInt(parts[parts.length - 1], 10);
+      const lastPart = parts[parts.length - 1];
+      const seq = parseInt(lastPart, 10);
       const nextSeq = (isNaN(seq) ? 0 : seq) + 1;
-      parts[parts.length - 1] = String(nextSeq).padStart(5, '0');
+      parts[parts.length - 1] = String(nextSeq).padStart(lastPart.length, '0');
       receiptNumber = parts.join('-');
     }
 
@@ -723,6 +731,10 @@ export class FinanceTransactionService {
     // ─── Génération du reçu PDF + notifications automatiques (fire-and-forget) ─
     // Le PDF est généré en arrière-plan, puis les notifications (email, WhatsApp,
     // SMS) sont envoyées automatiquement au parent de l'élève.
+    // ⭐ Sauf pour les IMPORTS DE MASSE (skipReceiptSideEffects) : un import Excel
+    //    de bilan ne doit pas déclencher des centaines de PDF/emails — lourd en
+    //    ressources, ralentit l'import et notifie les parents de paiements passés.
+    if (!data.skipReceiptSideEffects) {
     this.receiptFinanceService
       .generateForTransaction(tx.id, tenantId)
       .then(({ receiptUrl }) => {
@@ -752,6 +764,7 @@ export class FinanceTransactionService {
       .catch((err) => {
         this.logger.error(`Échec génération reçu/notifications pour ${tx.receiptNumber}: ${err.message}`);
       });
+    }
 
     return this.prisma.financeTransaction.findUnique({
       where: { id: tx.id },

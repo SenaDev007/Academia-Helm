@@ -559,6 +559,29 @@ export class CollectionSummaryImportService {
           continue;
         }
 
+        // Référence unique par ligne (préserve le préfixe "Import Excel - Bilan Encaissements")
+        // ⭐ Inclut la classe (section) pour les fichiers multi-classes
+        const formatTag = row.format === 'POINT' ? ' [POINT]' : '';
+        const classTag = row.className || row.sheetName;
+        const reference = `Import Excel - Bilan Encaissements - ${classTag} - L${row.rowIndex}${formatTag}`;
+
+        // ⭐ IDEMPOTENCE — VÉRIFIÉE EN PREMIER (avant tout appel DB coûteux) :
+        // ligne déjà importée (même référence) → ignorée immédiatement.
+        // Un retry de confirmation sur 650+ lignes répond ainsi en quelques secondes
+        // au lieu de re-payer un recalculate par ligne (~0,3 s × N = plusieurs minutes).
+        if (existingRefs.has(reference)) {
+          skipped++;
+          results.push({
+            rowIndex: row.rowIndex,
+            sheetName: row.sheetName,
+            studentName: row.studentName,
+            success: true,
+            amount: 0,
+            error: 'Déjà importée — ignorée (protection anti-doublon)',
+          });
+          continue;
+        }
+
         const studentId = row.resolvedStudentId!;
 
         // Garantir l'existence du StudentAccount (et des AccountBreakdowns)
@@ -584,27 +607,6 @@ export class CollectionSummaryImportService {
             studentName: row.studentName,
             success: false,
             error: 'StudentAccount introuvable après recalcul',
-          });
-          continue;
-        }
-
-        // Référence unique par ligne (préserve le préfixe "Import Excel - Bilan Encaissements")
-        // ⭐ Inclut la classe (section) pour les fichiers multi-classes
-        const formatTag = row.format === 'POINT' ? ' [POINT]' : '';
-        const classTag = row.className || row.sheetName;
-        const reference = `Import Excel - Bilan Encaissements - ${classTag} - L${row.rowIndex}${formatTag}`;
-
-        // ⭐ IDEMPOTENCE : ligne déjà importée (même référence) → ignorée.
-        // Protège contre les relances concurrentes (timeout proxy, double-clic).
-        if (existingRefs.has(reference)) {
-          skipped++;
-          results.push({
-            rowIndex: row.rowIndex,
-            sheetName: row.sheetName,
-            studentName: row.studentName,
-            success: true,
-            amount: 0,
-            error: 'Déjà importée — ignorée (protection anti-doublon)',
           });
           continue;
         }

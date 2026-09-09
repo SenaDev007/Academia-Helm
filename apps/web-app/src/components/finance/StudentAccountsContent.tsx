@@ -1270,8 +1270,10 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                             {/* ⭐ PROMOTEUR uniquement : éditer / supprimer l'encaissement
                                 (alignement sur les documents papier de l'école).
                                 Visibilité réservée au promoteur — le backend
-                                re-vérifie le rôle sur PATCH/DELETE (garde double). */}
-                            {isPromoter && (
+                                re-vérifie le rôle sur PATCH/DELETE (garde double).
+                                Les lignes REVERSAL (écritures d'annulation, montant
+                                négatif) ne sont PAS éditables/supprimables — boutons masqués. */}
+                            {isPromoter && t.type !== 'REVERSAL' && (
                               <>
                                 <Button
                                   variant="ghost"

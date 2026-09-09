@@ -10223,3 +10223,29 @@ Stage Summary:
 - ✅ Affectation complète du secrétaire comptable en production
 - ✅ Bascule d'année globale : noyau context + caches + 16 composants + 3 endpoints backend
 - En attente : validation post-déploiement du switch d'année (Vercel), PWA/frais généraux/liste classes lente
+
+---
+Task ID: 40 (suite — validation production post-déploiement)
+Agent: main (Super Z)
+Task: Validation E2E production — bascule d'année + KPI scopés (b7ff5c232 + 30e565dab)
+
+Work Log:
+- Fix hotfix 30e565dab : findAllDeclarations CNSS — academicYearId NON-NULLABLE dans le schéma Prisma → le OR avec null donnait un 400 PrismaClientValidationError en prod (constaté puis corrigé, redéployé)
+- Déploiements vérifiés : Railway (uptime reset → nouveau code actif), Vercel
+- Endpoints backend validés : staff-admin-assignments?year=2025-2026 → 0 affectations (toutes en 2026-2027) ; sans année → 6 (comportement historique préservé) ; anomalies/kpi → 200
+- NAVIGATEUR E2E (agent-browser, promoteur de test, academiahelm.com) :
+  1. Dashboard pilotage : 2026-2027 actif → 0 F CFA / 670 élèves ; switch 2025-2026 → 34 545 000 F CFA / 688 élèves ✅
+  2. PERSISTANCE : rechargement complet de page → l'année RESTE 2025-2026 (l'ancien code revertait vers l'année active) ✅
+  3. Finance > Configuration des frais : 15 structures 2025-2026 (Maternelle/Primaire, tranches) ✅
+  4. Finance > Comptes élèves : TOTAL PAYÉ 34 545 000 ; filtre de classes = exactement les 19 classes physiques 2025-2026 (sans 1ère A2/1ERE-D/2nde A2 qui sont 2026-2027) ✅
+  5. Module Élèves : « 2025-2026 • Tous les niveaux », 358 PROMOTED / 309 ADMITTED ✅
+  6. RH > Administration : 2025-2026 → 0 affectation ; 2026-2027 → 6 affectations, DOUGLA KOSSI visible sur MAT_PRI ET Secondaire (Secrétaire-Comptable) ✅
+  7. Dashboard financier : 34 545 000 encaissé / 40 091 000 dû / 5 546 000 impayés (= 40 091 000 − 34 545 000 exact) ✅
+- E2E KPI scopés par périmètre RH (3/3, cf. Task 40) : MAT_PRI+SEC → 34 545 000 ; MAT_PRI → 22 185 000 ; SEC → 12 360 000
+- Test empirique cache edge Vercel : requêtes authentifiées = BYPASS (pas de partage cross-comptes/cross-années) ; le header x-academic-year-id modifie bien la réponse via BFF (678 vs 668 comptes)
+- Nettoyage : promoteur de test et users E2E supprimés, navigateur fermé
+
+Stage Summary:
+- ✅ DEMANDE 1 (KPI par affectation RH) : validée 3/3 en production — le secrétaire comptable DOUGLA KOSSI a désormais SEC + MAT_PRI (KPI combinés comme le promoteur)
+- ✅ DEMANDE 2 (bascule d'année globale) : validée sur 7 parcours navigateur — dashboard, frais, comptes, élèves, RH administration ; l'année tient après rechargement
+- En attente (queue utilisateur) : PWA restant, frais généraux bloc paiement, liste classes ~30 s

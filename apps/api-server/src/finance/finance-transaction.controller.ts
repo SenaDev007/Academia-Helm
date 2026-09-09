@@ -1,7 +1,7 @@
 /**
  * SOUS-MODULE 3 — Encaissements (FinanceTransaction) — API
  */
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Res, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Res, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -11,7 +11,7 @@ import { ReceiptNotificationFinanceService } from './receipt-notification-financ
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateTransactionDto } from './dto';
+import { CreateTransactionDto, UpdateTransactionDto, DeleteTransactionDto } from './dto';
 
 const PARENT_ROLES = ['PARENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE', 'GUARDIAN'];
 // ⭐ FIX : ajouter 'PROMOTEUR' (FR) en plus de 'PROMOTER' (EN) — le RBAC bootstrap
@@ -37,6 +37,14 @@ const isStaffRole = (role: string) =>
 // ⭐ Rôles autorisés à encaisser sur la caisse FONDE (caisse promoteur/fondateur).
 //    Empêche un caissier (ACCOUNTANT) d'encaisser sur la caisse du promoteur.
 const PROMOTER_CAISSE_ALLOWED_ROLES = ['PROMOTER', 'PROMOTEUR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
+
+// ⭐ ÉDITION / SUPPRESSION d'un encaissement (sept. 2026) : réservé au
+//    PROMOTEUR (FR/EN) + rôles plateforme. Le promoteur aligne les données
+//    sur les documents papier fournis par les écoles — une mutation aussi
+//    sensible (soldes, imputations, caisses) ne doit PAS être ouverte aux
+//    comptables/caissiers. Garde DOUBLE : ici (backend) + visibilité des
+//    boutons dans StudentAccountsContent (frontend).
+const PROMOTER_EDIT_ROLES = ['PROMOTER', 'PROMOTEUR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
 
 @Controller('finance/transactions')
 @UseGuards(JwtAuthGuard)
@@ -428,6 +436,71 @@ export class FinanceTransactionController {
       body?.reason ?? 'Non précisé',
       user?.id ?? '',
     );
+  }
+
+  /**
+   * PATCH /finance/transactions/:id — ÉDITER un encaissement (PROMOTEUR uniquement).
+   *
+   * Aligne un paiement saisi sur les documents papier de l'école :
+   * montant, mode, date, référence, caisse. Les imputations sont
+   * ré-échelonnées au prorata, les soldes (compte + caisses) ajustés,
+   * le reçu PDF régénéré, le tout tracé dans financial_audit_logs.
+   */
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: UpdateTransactionDto,
+  ) {
+    const role = (user?.role || '').toUpperCase();
+    const normalized = PROMOTER_EDIT_ROLES.includes(role) ||
+      PROMOTER_EDIT_ROLES.includes(role.replace(ROLE_LEVEL_SUFFIX, ''));
+    if (!normalized) {
+      this.logger.warn(
+        `FINANCE_TX_EDIT_DENIED — user ${user?.id} (role=${role}) a tenté de modifier la transaction ${id}`,
+      );
+      throw new ForbiddenException(
+        'Seul le promoteur peut modifier un encaissement.',
+      );
+    }
+    return this.service.update(tenantId, id, user, {
+      amount: body.amount,
+      paymentMethod: body.paymentMethod,
+      createdAt: body.createdAt,
+      reference: body.reference,
+      cashRegisterId: body.cashRegisterId,
+      tenderedAmount: body.tenderedAmount,
+      reason: body.reason,
+    });
+  }
+
+  /**
+   * DELETE /finance/transactions/:id — SUPPRIMER un encaissement (PROMOTEUR uniquement).
+   *
+   * Suppression physique exceptionnelle pour un paiement inexistant/erroné :
+   * réverse imputations + soldes + caisses, trace d'audit complète, puis
+   * supprime la transaction (bypass contrôlé app.allow_transaction_delete).
+   */
+  @Delete(':id')
+  async remove(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: DeleteTransactionDto,
+  ) {
+    const role = (user?.role || '').toUpperCase();
+    const normalized = PROMOTER_EDIT_ROLES.includes(role) ||
+      PROMOTER_EDIT_ROLES.includes(role.replace(ROLE_LEVEL_SUFFIX, ''));
+    if (!normalized) {
+      this.logger.warn(
+        `FINANCE_TX_DELETE_DENIED — user ${user?.id} (role=${role}) a tenté de supprimer la transaction ${id}`,
+      );
+      throw new ForbiddenException(
+        'Seul le promoteur peut supprimer un encaissement.',
+      );
+    }
+    return this.service.remove(tenantId, id, user, body?.reason ?? 'Non précisé');
   }
 
   /**

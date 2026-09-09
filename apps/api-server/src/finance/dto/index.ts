@@ -345,6 +345,64 @@ export class CreateTransactionDto {
   generalFeeAddOns?: GeneralFeeAddOnItemDto[];
 }
 
+/**
+ * ⭐ ÉDITION D'UN ENCAISSEMENT (sept. 2026 — promoteur uniquement) :
+ * permet au promoteur de rectifier un paiement saisi par erreur pour aligner
+ * les données sur les documents papier fournis par les écoles.
+ * Voir FinanceTransactionService.update() + FinanceTransactionController.
+ */
+export class UpdateTransactionDto {
+  /** Nouveau montant du paiement (> 0). Les imputations sont recalculées
+   *  proportionnellement (même répartition, montants rescaling). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  amount?: number;
+
+  /** Nouveau mode de paiement. Bloqué pour les paiements FEDAPAY (origine
+   *  passerelle en ligne — changer sa nature casserait la traçabilité). */
+  @IsOptional()
+  @IsIn(['CASH', 'MOBILE_MONEY', 'FEDAPAY', 'WIRE'])
+  paymentMethod?: string;
+
+  /** Nouvelle date/heure du paiement (alignement documents papier).
+   *  Date ISO 8601 — le frontend envoie la date locale Bénin (UTC+1). */
+  @IsOptional()
+  @IsString()
+  createdAt?: string;
+
+  /** Nouvelle référence libre. */
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  /** Nouvelle caisse (déplacement de l'encaissement). Bloqué pour FEDAPAY. */
+  @IsOptional()
+  @IsString()
+  cashRegisterId?: string | null;
+
+  /** Montant remis en espèces (si CASH) — recalculé si montant changé. */
+  @IsOptional()
+  @IsNumber()
+  tenderedAmount?: number;
+
+  /** Motif de la correction (obligatoire — trace d'audit). */
+  @IsString()
+  reason: string;
+}
+
+/**
+ * ⭐ SUPPRESSION D'UN ENCAISSEMENT (sept. 2026 — promoteur uniquement) :
+ * suppression physique exceptionnelle (imputations + soldes + caisses
+ * réversés) — réservée aux paiements erronés/inexistants dans les documents.
+ * Voir FinanceTransactionService.remove() + FinanceTransactionController.
+ */
+export class DeleteTransactionDto {
+  /** Motif de la suppression (obligatoire — trace d'audit). */
+  @IsString()
+  reason: string;
+}
+
 export class ManualAllocationItemDto {
   @IsString()
   accountBreakdownId: string;

@@ -155,6 +155,42 @@ class FinanceService {
   }
 
   /**
+   * ⭐ ÉDITER UN ENCAISSEMENT (promoteur uniquement — garde de rôle côté
+   * api-server). Aligne un paiement sur les documents papier de l'école :
+   * montant, mode, date, référence, caisse. Les imputations sont
+   * ré-échelonnées au prorata, les soldes ajustés, le reçu régénéré.
+   */
+  async updateTransaction(
+    id: string,
+    data: {
+      amount?: number;
+      paymentMethod?: string;
+      createdAt?: string;
+      reference?: string;
+      cashRegisterId?: string | null;
+      tenderedAmount?: number;
+      reason: string;
+    },
+  ): Promise<any> {
+    return financeFetch(`/api/finance/transactions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ SUPPRIMER UN ENCAISSEMENT (promoteur uniquement — garde de rôle côté
+   * api-server). Suppression physique exceptionnelle : réverse imputations,
+   * soldes, caisses ; trace d'audit complète.
+   */
+  async deleteTransaction(id: string, reason: string): Promise<any> {
+    return financeFetch(`/api/finance/transactions/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      body: { reason },
+    });
+  }
+
+  /**
    * ⭐ RÉPARTITION MANUELLE — type partagé (flexibilité encaissement sept. 2026).
    * Imputations explicites sur les lignes de frais du compte élève, décidées
    * par la comptable (toggle « répartition personnalisée » + section frais

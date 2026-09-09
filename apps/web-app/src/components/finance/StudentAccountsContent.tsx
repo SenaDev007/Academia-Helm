@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle, Pencil, Trash2 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -33,6 +33,7 @@ import {
   studentHistoryFilename,
 } from '@/lib/exports/filename-helpers';
 import PromoterEligibilityToggle from './PromoterEligibilityToggle';
+import EditPaymentModal from './EditPaymentModal';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -45,7 +46,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function StudentAccountsContent({ refreshTrigger = 0 }: { refreshTrigger?: number }) {
   const { academicYear, schoolLevel } = useModuleContext();
-  const { tenant } = useAppSession();
+  const { tenant, user } = useAppSession();
   const searchParams = useSearchParams();
   const preselectStudentId = searchParams.get('studentId');
   const { toast } = useToast();
@@ -71,6 +72,17 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+
+  // ⭐ ÉDITION / SUPPRESSION D'UN ENCAISSEMENT (sept. 2026 — PROMOTEUR
+  //    uniquement) : le promoteur aligne les encaissements saisis sur les
+  //    documents papier fournis par les écoles. Les boutons ne sont visibles
+  //    que pour lui ; le backend re-vérifie le rôle (garde double).
+  const PROMOTER_EDIT_ROLES = ['PROMOTER', 'PROMOTEUR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
+  const isPromoter = PROMOTER_EDIT_ROLES.includes((user?.role || '').toUpperCase());
+  const [editPaymentTx, setEditPaymentTx] = useState<any | null>(null);
+  const [deletePaymentTx, setDeletePaymentTx] = useState<any | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
   const PAGE_SIZE = 50;
@@ -296,6 +308,48 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
       if (detailAccount?.id === unblockModal) loadDetail(unblockModal);
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    }
+  };
+
+  // ⭐ ÉDITION D'UN ENCAISSEMENT (promoteur) — après succès : recharger
+  //    l'historique du compte affiché + les comptes (soldes), et notifier
+  //    les autres pages du module Finance (event finance-accounts-changed).
+  const handleEditPaymentSuccess = (result: any) => {
+    setEditPaymentTx(null);
+    if (result?.warning) {
+      toast({ title: 'Paiement modifié', description: result.warning, variant: 'warning' });
+    } else {
+      toast({
+        title: 'Paiement modifié',
+        description: `Reçu ${result?.receiptNumber || ''} mis à jour — soldes et imputations recalculés.`,
+      });
+    }
+    if (selectedAccountId) loadPaymentHistory(selectedAccountId);
+    if (detailAccount?.id === selectedAccountId && selectedAccountId) loadDetail(selectedAccountId);
+    loadAccounts();
+    window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+  };
+
+  // ⭐ SUPPRESSION D'UN ENCAISSEMENT (promoteur)
+  const handleDeletePayment = async () => {
+    if (!deletePaymentTx || !deleteReason.trim()) return;
+    setDeleteLoading(true);
+    try {
+      const result = await financeService.deleteTransaction(deletePaymentTx.id, deleteReason.trim());
+      setDeletePaymentTx(null);
+      setDeleteReason('');
+      toast({
+        title: 'Paiement supprimé',
+        description: `Reçu ${result?.receiptNumber || deletePaymentTx.receiptNumber || ''} (${formatCurrency(Number(deletePaymentTx.amount ?? 0))}) supprimé — soldes et imputations recalculés.`,
+      });
+      if (selectedAccountId) loadPaymentHistory(selectedAccountId);
+      if (detailAccount?.id === selectedAccountId && selectedAccountId) loadDetail(selectedAccountId);
+      loadAccounts();
+      window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+    } catch (error: any) {
+      toast({ title: 'Erreur de suppression', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -1213,6 +1267,32 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                             >
                               <SmsIcon className="w-3.5 h-3.5" />
                             </Button>
+                            {/* ⭐ PROMOTEUR uniquement : éditer / supprimer l'encaissement
+                                (alignement sur les documents papier de l'école).
+                                Visibilité réservée au promoteur — le backend
+                                re-vérifie le rôle sur PATCH/DELETE (garde double). */}
+                            {isPromoter && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 hover:bg-amber-100 hover:shadow-sm transition-all duration-150"
+                                  onClick={() => setEditPaymentTx(t)}
+                                  title="Modifier ce paiement (promoteur)"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-amber-600" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 hover:bg-red-100 hover:shadow-sm transition-all duration-150"
+                                  onClick={() => { setDeletePaymentTx(t); setDeleteReason(''); }}
+                                  title="Supprimer ce paiement (promoteur)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1399,6 +1479,69 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => { setUnblockModal(null); setUnblockReason(''); }}>Annuler</Button>
               <Button onClick={handleUnblock} disabled={!unblockReason.trim()}>Débloquer</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ MODAL D'ÉDITION D'UN ENCAISSEMENT (promoteur uniquement) */}
+      {editPaymentTx && (
+        <EditPaymentModal
+          transaction={editPaymentTx}
+          studentName={
+            filteredAccounts.find((a) => a.id === selectedAccountId)?.student
+              ? `${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.lastName} ${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.firstName}`.trim()
+              : undefined
+          }
+          onClose={() => setEditPaymentTx(null)}
+          onSuccess={handleEditPaymentSuccess}
+        />
+      )}
+
+      {/* ⭐ MODAL DE CONFIRMATION DE SUPPRESSION (promoteur uniquement) */}
+      {deletePaymentTx && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full border border-red-100 shadow-2xl">
+            <h3 className="text-lg font-semibold flex items-center gap-2 mb-1">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              Supprimer ce paiement ?
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Reçu <span className="font-mono font-semibold">{deletePaymentTx.receiptNumber || '—'}</span>
+              {' — '}
+              <span className="font-semibold text-red-700">{formatCurrency(Number(deletePaymentTx.amount ?? 0))}</span>
+              {' — '}
+              {deletePaymentTx.createdAt
+                ? new Date(deletePaymentTx.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                : '—'}
+            </p>
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-xs text-red-800">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <p>
+                Action <strong>irréversible</strong> (promoteur) : les imputations sur les frais, le solde du
+                compte et les caisses seront reversés. L&apos;opération est tracée dans le journal d&apos;audit.
+                Préférez la modification quand c&apos;est possible.
+              </p>
+            </div>
+            <label className="text-sm font-medium mb-1 block">Motif de la suppression *</label>
+            <input
+              className="w-full border rounded px-3 py-2 mb-4"
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder="Ex: paiement inexistant sur le bordereau papier de l'école"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => { setDeletePaymentTx(null); setDeleteReason(''); }}
+                disabled={deleteLoading}
+              >
+                Annuler
+              </Button>
+              <Button variant="destructive" onClick={handleDeletePayment} disabled={!deleteReason.trim() || deleteLoading}>
+                {deleteLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Supprimer définitivement
+              </Button>
             </div>
           </div>
         </div>

@@ -8,9 +8,11 @@
  * - Valide que la caisse est ouverte avant d'accepter un paiement
  */
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { TransactionType, PaymentMethod } from '@prisma/client';
+import { TransactionType, PaymentMethod, AccountStatus } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
@@ -927,5 +929,645 @@ export class FinanceTransactionService {
       where: { id: reversal.id },
       include: { studentAccount: true, reversedFrom: true },
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  ÉDITION / SUPPRESSION D'UN ENCAISSEMENT (sept. 2026 — PROMOTEUR)
+  // ═══════════════════════════════════════════════════════════════════
+  //  Le promoteur doit pouvoir aligner les encaissements saisis sur les
+  //  documents papier fournis par les écoles (montant, mode, date, caisse).
+  //  Contraintes d'intégrité respectées :
+  //   - imputations (allocations) réversées puis ré-échelonnées au prorata ;
+  //   - le solde du compte (totalPaid/balance) est ajusté manuellement car
+  //     le trigger update_account_balance_after_tx ne réagit qu'aux INSERT
+  //     (bypass app.allow_balance_update — même pattern que la Task 37) ;
+  //   - le hash d'intégrité est recalculé EN SQL avec l'expression exacte
+  //     du trigger verify_integrity_hash (pgcrypto) pour passer la vérification ;
+  //   - les caisses (multi-caisses) sont ajustées du delta, y compris les
+  //     allocations automatiques FEDAPAY (caisse ONLINE → caisses métier) ;
+  //   - chaque opération est tracée dans financial_audit_logs ;
+  //   - la suppression physique passe par le flag session
+  //     app.allow_transaction_delete (trigger prevent_finance_transaction_delete).
+
+  /** Charge une transaction avec tout le contexte nécessaire à l'édition/suppression. */
+  private async loadEditableTransaction(tenantId: string, transactionId: string) {
+    const original = await this.prisma.financeTransaction.findFirst({
+      where: { id: transactionId, tenantId },
+      include: {
+        allocations: {
+          include: { accountBreakdown: { include: { feeStructure: { select: { feeType: true, name: true } } } } },
+        },
+        reversals: { select: { id: true, receiptNumber: true } },
+        cashRegister: { select: { id: true, code: true, name: true } },
+        studentAccount: { select: { id: true, isBlocked: true, status: true } },
+      },
+    });
+    if (!original) throw new NotFoundException('Transaction introuvable');
+    if (original.type !== TransactionType.PAYMENT) {
+      throw new BadRequestException('Seuls les encaissements (paiements) peuvent être modifiés ou supprimés — pas les annulations.');
+    }
+    if (original.reversals.length > 0) {
+      throw new BadRequestException(
+        `Ce paiement a été annulé par une écriture inverse (reçu ${original.reversals[0].receiptNumber}) — il ne peut plus être modifié ni supprimé.`,
+      );
+    }
+    return original;
+  }
+
+  /** Traduit une erreur SQL de trigger en message métier clair. */
+  private friendlyTriggerError(err: any, fallback: string): never {
+    const msg = String(err?.message || '');
+    if (msg.includes('Transaction locked after daily closure')) {
+      throw new BadRequestException(
+        'Cette transaction appartient à une journée déjà clôturée (clôture de caisse) — la modification est verrouillée.',
+      );
+    }
+    if (msg.includes('Integrity hash mismatch')) {
+      throw new BadRequestException('Incohérence du hash d’intégrité détectée — opération refusée.');
+    }
+    if (msg.includes('Suppression de transaction interdite')) {
+      throw new BadRequestException(
+        'La suppression physique est encore verrouillée en base (redémarrage du backend requis pour activer le bypass contrôlé).',
+      );
+    }
+    if (msg.includes('Direct modification of balance fields')) {
+      throw new BadRequestException('Ajustement du solde bloqué par le trigger de protection — opération annulée.');
+    }
+    throw new BadRequestException(fallback);
+  }
+
+  /**
+   * Ajuste les allocations automatiques FEDAPAY (caisse ONLINE → caisses métier)
+   * après un changement de montant : met à jour les transferts AUTO_ALLOCATION
+   * et les soldes des caisses de destination, groupés par type de frais.
+   */
+  private async adjustFedapayAutoAllocations(
+    tx: any,
+    tenantId: string,
+    transactionId: string,
+    oldAllocsByFeeType: Record<string, number>,
+    newAllocsByFeeType: Record<string, number>,
+  ): Promise<void> {
+    const idPrefix = `AUTO-${transactionId.substring(0, 8)}-`;
+    const transfers: any[] = await tx.$queryRawUnsafe(
+      `SELECT "id", "toCashRegisterId", "amount" FROM "cash_register_transfers"
+       WHERE "tenantId" = $1 AND "status" = 'AUTO_ALLOCATION' AND "reference" LIKE $2`,
+      tenantId, `${idPrefix}%`,
+    ).catch(() => [] as any[]);
+
+    // ⭐ Approche cumulative robuste : pour chaque type de frais, appliquer le
+    //    delta (nouveau − ancien) à la caisse de destination correspondante et
+    //    ajuster le transfert existant (ou le supprimer si le nouveau montant
+    //    groupé tombe à 0).
+    const allCaisses = await tx.cashRegister.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, code: true },
+    });
+    const findDest = (feeType: string) => {
+      const code = FinanceTransactionService.FEE_TYPE_TO_CAISSE[feeType] || 'MAIN';
+      return allCaisses.find((c) => c.code === code) ?? allCaisses.find((c) => c.code === 'MAIN');
+    };
+
+    for (const feeType of new Set([...Object.keys(oldAllocsByFeeType), ...Object.keys(newAllocsByFeeType)])) {
+      const oldSum = oldAllocsByFeeType[feeType] ?? 0;
+      const newSum = newAllocsByFeeType[feeType] ?? 0;
+      const delta = newSum - oldSum;
+      if (Math.abs(delta) < 0.005) continue;
+
+      const dest = findDest(feeType);
+      if (!dest) {
+        this.logger.warn(`adjustFedapayAutoAllocations: caisse de destination introuvable pour feeType=${feeType} — ajustement ignoré`);
+        continue;
+      }
+      // Ajuster le solde de la caisse de destination du delta
+      await tx.cashRegister.update({
+        where: { id: dest.id },
+        data: { currentBalance: { increment: delta } },
+      });
+      // Ajuster le transfert de traçabilité (montant du flux, ≥ 0)
+      const transfer = transfers.find((t) => t.toCashRegisterId === dest.id);
+      if (transfer) {
+        const newTransferAmount = Number(transfer.amount) + delta;
+        if (newTransferAmount > 0.005) {
+          await tx.$executeRawUnsafe(
+            `UPDATE "cash_register_transfers" SET "amount" = $1 WHERE "id" = $2`,
+            newTransferAmount, transfer.id,
+          );
+        } else {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM "cash_register_transfers" WHERE "id" = $1`,
+            transfer.id,
+          );
+        }
+      } else if (newSum > 0.005) {
+        // Nouveau type de frais apparu à l'édition → créer le transfert de traçabilité
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "cash_register_transfers" ("id", "tenantId", "fromCashRegisterId", "toCashRegisterId", "amount", "note", "reference", "userId", "status", "createdAt")
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, NULL, 'AUTO_ALLOCATION', NOW())`,
+          tenantId, null, dest.id, newSum,
+          `Allocation automatique (édition) — ${feeType} (transaction ${transactionId.substring(0, 8)})`,
+          `${idPrefix}${feeType}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * ⭐ ÉDITER UN ENCAISSEMENT (promoteur uniquement — garde dans le controller).
+   * Aligne les données sur les documents papier de l'école.
+   */
+  async update(
+    tenantId: string,
+    transactionId: string,
+    user: any,
+    data: {
+      amount?: number;
+      paymentMethod?: string;
+      createdAt?: string;
+      reference?: string;
+      cashRegisterId?: string | null;
+      tenderedAmount?: number;
+      reason: string;
+    },
+  ) {
+    const original = await this.loadEditableTransaction(tenantId, transactionId);
+
+    const oldAmount = Number(original.amount);
+    const newAmount = data.amount != null ? Number(data.amount) : oldAmount;
+    if (!(newAmount > 0)) throw new BadRequestException('Le montant doit être supérieur à 0.');
+
+    const isFedapay = original.paymentMethod === ('FEDAPAY' as any) || original.paymentMethod === ('FEEXPAY' as any);
+
+    // ── Mode de paiement ──
+    let newMethod: string = original.paymentMethod as string;
+    if (data.paymentMethod && data.paymentMethod !== original.paymentMethod) {
+      if (isFedapay) {
+        throw new BadRequestException(
+          'Le mode de paiement d’un encaissement en ligne (Fedapay) ne peut pas être changé. Supprimez-le et recréez-le si nécessaire.',
+        );
+      }
+      newMethod = data.paymentMethod;
+    }
+
+    // ── Caisse ──
+    let newCashRegisterId: string | null = original.cashRegisterId ?? null;
+    if (data.cashRegisterId !== undefined && (data.cashRegisterId || null) !== (original.cashRegisterId ?? null)) {
+      if (isFedapay) {
+        throw new BadRequestException(
+          'La caisse d’un encaissement en ligne (Fedapay) ne peut pas être changée. Supprimez-le et recréez-le si nécessaire.',
+        );
+      }
+      if (data.cashRegisterId) {
+        const register = await this.prisma.cashRegister.findFirst({
+          where: { id: data.cashRegisterId, tenantId },
+        });
+        if (!register) throw new NotFoundException('Caisse non trouvée');
+        if (!register.isActive) throw new BadRequestException('Caisse archivée — sélection impossible.');
+        newCashRegisterId = data.cashRegisterId;
+      } else {
+        newCashRegisterId = null;
+      }
+    }
+
+    // ── Date (alignement documents) ──
+    let newCreatedAt: Date = original.createdAt;
+    if (data.createdAt) {
+      const d = new Date(data.createdAt);
+      if (isNaN(d.getTime())) throw new BadRequestException('Date de paiement invalide.');
+      newCreatedAt = d;
+    }
+
+    // ── Référence ──
+    const newReference = data.reference !== undefined ? (data.reference?.trim() || null) : original.reference;
+
+    // ── Espèces : montant remis / reliquat ──
+    let newTendered: number | null = original.tenderedAmount != null ? Number(original.tenderedAmount) : null;
+    let newChange: number | null = original.changeGiven != null ? Number(original.changeGiven) : null;
+    if (newMethod === 'CASH') {
+      if (data.tenderedAmount != null && Number(data.tenderedAmount) > 0) {
+        newTendered = Number(data.tenderedAmount);
+        newChange = Math.max(0, newTendered - newAmount);
+      } else if (data.amount != null && newTendered != null) {
+        // Montant changé sans remise re-saisie → on aligne la remise sur le nouveau montant
+        newTendered = newAmount;
+        newChange = 0;
+      }
+    } else {
+      newTendered = null;
+      newChange = null;
+    }
+
+    // ── Anciennes imputations groupées par type (pour l'ajustement FEDAPAY) ──
+    const oldAllocs = original.allocations.map((a: any) => ({
+      breakdownId: a.accountBreakdownId,
+      amount: Number(a.amount),
+      feeType: String(a.accountBreakdown?.feeStructure?.feeType ?? 'OTHER'),
+    }));
+    const oldAllocTotal = oldAllocs.reduce((s, a) => s + a.amount, 0);
+
+    // ── Nouvelles imputations : même répartition, montants rescaling au prorata ──
+    //    (on travaille en centimes pour éviter les artefacts flottants)
+    let newAllocs: { breakdownId: string; amount: number; feeType: string }[] = [];
+    let unallocatedAmount = 0;
+    if (oldAllocs.length > 0 && oldAllocTotal > 0) {
+      const factor = newAmount / oldAllocTotal;
+      const cents = oldAllocs.map((a) => ({ ...a, cents: Math.round(a.amount * 100 * factor) }));
+      let diff = Math.round(newAmount * 100) - cents.reduce((s, c) => s + c.cents, 0);
+      // Reporter l'arrondi sur la plus grosse ligne (stable, déterministe)
+      if (diff !== 0 && cents.length > 0) {
+        const biggest = [...cents].sort((a, b) => b.cents - a.cents)[0];
+        biggest.cents += diff;
+      }
+      newAllocs = cents.map((c) => ({ breakdownId: c.breakdownId, amount: c.cents / 100, feeType: c.feeType }));
+    } else if (oldAllocs.length === 0 && newAmount > 0) {
+      // Paiement historique sans imputations (argent flottant / import) → reste flottant
+      unallocatedAmount = newAmount;
+    }
+
+    // ── Transaction atomique : réversion + ré-imputation + UPDATE + soldes ──
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Réverser les anciennes imputations sur les breakdowns
+        for (const alloc of original.allocations) {
+          const amt = Number(alloc.amount);
+          await tx.accountBreakdown.update({
+            where: { id: alloc.accountBreakdownId },
+            data: {
+              paidAmount: { decrement: amt },
+              remainingAmount: { increment: amt },
+            },
+          });
+        }
+
+        // 2. Supprimer les anciennes lignes d'allocation
+        if (original.allocations.length > 0) {
+          await tx.financeTransactionAllocation.deleteMany({
+            where: { financeTransactionId: original.id },
+          });
+        }
+
+        // 3. Ré-imputer au prorata (plafonné au restant dû — le reliquat éventuel flotte,
+        //    même comportement que la cascade de create())
+        const applied: { breakdownId: string; amount: number; feeType: string }[] = [];
+        if (newAllocs.length > 0) {
+          const freshBreakdowns = await tx.accountBreakdown.findMany({
+            where: { studentAccountId: original.studentAccountId },
+            select: { id: true, remainingAmount: true },
+          });
+          const remainingById = new Map<string, number>(
+            freshBreakdowns.map((b: any) => [String(b.id), Number(b.remainingAmount)] as [string, number]),
+          );
+          for (const na of newAllocs) {
+            const room = remainingById.get(na.breakdownId);
+            if (room == null) {
+              // Breakdown disparu (frais supprimé en cascade ?) → la part flotte
+              unallocatedAmount += na.amount;
+              continue;
+            }
+            const pay = Math.min(na.amount, room);
+            if (pay > 0.005) {
+              await tx.accountBreakdown.update({
+                where: { id: na.breakdownId },
+                data: {
+                  paidAmount: { increment: pay },
+                  remainingAmount: { decrement: pay },
+                },
+              });
+              applied.push({ ...na, amount: pay });
+              remainingById.set(na.breakdownId, room - pay);
+              if (pay < na.amount - 0.005) {
+                unallocatedAmount += na.amount - pay;
+              }
+            } else {
+              unallocatedAmount += na.amount;
+            }
+          }
+          if (applied.length > 0) {
+            await tx.financeTransactionAllocation.createMany({
+              data: applied.map((a) => ({
+                financeTransactionId: original.id,
+                accountBreakdownId: a.breakdownId,
+                amount: a.amount,
+              })),
+            });
+          }
+        }
+
+        // 4. UPDATE de la transaction — hash d'intégrité recalculé EN SQL avec
+        //    l'expression EXACTE du trigger verify_integrity_hash (pgcrypto) :
+        //    stored_hash == expected_hash → validation passée, hash rafraîchi.
+        const newAllocsByFeeType: Record<string, number> = {};
+        for (const a of applied) {
+          newAllocsByFeeType[a.feeType] = (newAllocsByFeeType[a.feeType] ?? 0) + a.amount;
+        }
+        await tx.$executeRawUnsafe(
+          `UPDATE "finance_transactions"
+           SET
+             "amount"        = $2::numeric(10,2),
+             "paymentMethod" = $3::"PaymentMethod",
+             "reference"     = $4,
+             "createdAt"     = $5::timestamptz,
+             "cashRegisterId" = $6,
+             "tenderedAmount" = $7,
+             "changeGiven"   = $8,
+             "integrityHash" = COALESCE(
+               encode(digest(
+                 "tenantId" || '|' || "studentAccountId" || '|' ||
+                 $2::numeric(10,2)::text || '|' ||
+                 "type"::text || '|' ||
+                 $5::timestamptz::text,
+                 'sha256'
+               ), 'hex'),
+               "integrityHash"
+             )
+           WHERE "id" = $1`,
+          original.id,
+          newAmount,
+          newMethod,
+          newReference,
+          newCreatedAt.toISOString(),
+          newCashRegisterId,
+          newTendered,
+          newChange,
+        );
+
+        // 5. Solde du compte élève : le trigger ne réagit qu'aux INSERT →
+        //    ajustement manuel du delta (bypass contrôlé app.allow_balance_update)
+        const delta = newAmount - oldAmount;
+        if (Math.abs(delta) > 0.005) {
+          await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+          const account: any = await tx.studentAccount.findUnique({
+            where: { id: original.studentAccountId },
+            select: { balance: true, totalDue: true, totalPaid: true, isBlocked: true },
+          });
+          const newBalance = Number(account.balance) - delta;
+          const newStatus = account.isBlocked
+            ? AccountStatus.BLOCKED
+            : newBalance <= 0.005
+              ? AccountStatus.PAID
+              : newBalance < Number(account.totalDue) - 0.005
+                ? AccountStatus.PARTIAL
+                : AccountStatus.ACTIVE;
+          await tx.studentAccount.update({
+            where: { id: original.studentAccountId },
+            data: {
+              totalPaid: { increment: delta },
+              balance: { decrement: delta },
+              status: newStatus,
+            },
+          });
+        }
+
+        // 6. Caisses : ajuster du delta (ou transférer si caisse changée)
+        if (!isFedapay) {
+          if (newCashRegisterId === (original.cashRegisterId ?? null)) {
+            if (original.cashRegisterId && Math.abs(delta) > 0.005) {
+              await tx.cashRegister.update({
+                where: { id: original.cashRegisterId },
+                data: { currentBalance: { increment: delta } },
+              });
+            }
+          } else {
+            if (original.cashRegisterId) {
+              await tx.cashRegister.update({
+                where: { id: original.cashRegisterId },
+                data: { currentBalance: { decrement: oldAmount } },
+              });
+            }
+            if (newCashRegisterId) {
+              await tx.cashRegister.update({
+                where: { id: newCashRegisterId },
+                data: { currentBalance: { increment: newAmount } },
+              });
+            }
+          }
+        } else if (Math.abs(delta) > 0.005) {
+          // FEDAPAY : la caisse ONLINE porte le volume total → delta simple ;
+          // les caisses métier suivent via les allocations automatiques.
+          if (original.cashRegisterId) {
+            await tx.cashRegister.update({
+              where: { id: original.cashRegisterId },
+              data: { currentBalance: { increment: delta } },
+            });
+          }
+          const oldByType: Record<string, number> = {};
+          for (const a of oldAllocs) {
+            oldByType[a.feeType] = (oldByType[a.feeType] ?? 0) + a.amount;
+          }
+          await this.adjustFedapayAutoAllocations(tx, tenantId, original.id, oldByType, newAllocsByFeeType);
+        }
+
+        // 7. Trace d'audit
+        await tx.financialAuditLog.create({
+          data: {
+            tenantId,
+            entityType: 'FinanceTransaction',
+            entityId: original.id,
+            action: 'UPDATE',
+            oldValue: {
+              amount: oldAmount,
+              paymentMethod: original.paymentMethod,
+              reference: original.reference,
+              createdAt: original.createdAt,
+              cashRegisterId: original.cashRegisterId,
+              allocations: oldAllocs.map((a) => ({ breakdownId: a.breakdownId, amount: a.amount })),
+            },
+            newValue: {
+              amount: newAmount,
+              paymentMethod: newMethod,
+              reference: newReference,
+              createdAt: newCreatedAt,
+              cashRegisterId: newCashRegisterId,
+              allocations: applied.map((a) => ({ breakdownId: a.breakdownId, amount: a.amount })),
+              unallocatedAmount,
+            },
+            performedById: user?.id ?? '',
+          },
+        });
+      });
+    } catch (err: any) {
+      this.logger.error(`update transaction ${transactionId} failed: ${err?.message}`);
+      this.friendlyTriggerError(err, `Échec de la modification : ${err?.message || 'erreur inconnue'}`);
+    }
+
+    // 8. Régénérer le reçu PDF (fire-and-forget — le PDF reflète les nouveaux montants)
+    this.receiptFinanceService
+      .generateForTransaction(original.id, tenantId)
+      .then(() => this.logger.log(`Reçu ${original.receiptNumber} régénéré après édition (promoteur)`))
+      .catch((err) => this.logger.warn(`Reçu ${original.receiptNumber} non régénéré: ${err?.message}`));
+
+    const updated: any = await this.prisma.financeTransaction.findUnique({
+      where: { id: original.id },
+      include: {
+        studentAccount: { include: { student: true } },
+        allocations: true,
+        cashRegister: { select: { id: true, code: true, name: true } },
+      },
+    });
+    return {
+      ...(updated ?? {}),
+      unallocatedAmount,
+      warning: unallocatedAmount > 0.005
+        ? `${unallocatedAmount.toLocaleString('fr-FR')} FCFA ne sont plus imputés à des frais précis (restant dû insuffisant) — ils restent comptés comme payés sur le compte.`
+        : undefined,
+    };
+  }
+
+  /**
+   * ⭐ SUPPRIMER UN ENCAISSEMENT (promoteur uniquement — garde dans le controller).
+   * Suppression physique exceptionnelle : réverse imputations, soldes, caisses,
+   * trace d'audit, puis supprime la transaction (flag session contrôlé).
+   */
+  async remove(
+    tenantId: string,
+    transactionId: string,
+    user: any,
+    reason: string,
+  ) {
+    const original = await this.loadEditableTransaction(tenantId, transactionId);
+    const amount = Number(original.amount);
+    const isFedapay = original.paymentMethod === ('FEDAPAY' as any) || original.paymentMethod === ('FEEXPAY' as any);
+
+    const oldAllocs = original.allocations.map((a: any) => ({
+      breakdownId: a.accountBreakdownId,
+      amount: Number(a.amount),
+      feeType: String(a.accountBreakdown?.feeStructure?.feeType ?? 'OTHER'),
+    }));
+    const allocTotal = oldAllocs.reduce((s, a) => s + a.amount, 0);
+    const unallocatedAmount = amount - allocTotal; // part FIFO/flottante non tracée dans les allocations
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Réverser les imputations sur les breakdowns
+        for (const alloc of original.allocations) {
+          const amt = Number(alloc.amount);
+          await tx.accountBreakdown.update({
+            where: { id: alloc.accountBreakdownId },
+            data: {
+              paidAmount: { decrement: amt },
+              remainingAmount: { increment: amt },
+            },
+          });
+        }
+
+        // 2. Supprimer les lignes d'allocation
+        if (original.allocations.length > 0) {
+          await tx.financeTransactionAllocation.deleteMany({
+            where: { financeTransactionId: original.id },
+          });
+        }
+
+        // 3. Solde du compte : réverser le montant (trigger INSERT-only → manuel)
+        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+        const account: any = await tx.studentAccount.findUnique({
+          where: { id: original.studentAccountId },
+          select: { balance: true, totalDue: true, isBlocked: true },
+        });
+        const newBalance = Number(account.balance) + amount;
+        const newStatus = account.isBlocked
+          ? AccountStatus.BLOCKED
+          : newBalance <= 0.005
+            ? AccountStatus.PAID
+            : newBalance < Number(account.totalDue) - 0.005
+              ? AccountStatus.PARTIAL
+              : AccountStatus.ACTIVE;
+        await tx.studentAccount.update({
+          where: { id: original.studentAccountId },
+          data: {
+            totalPaid: { decrement: amount },
+            balance: { increment: amount },
+            status: newStatus,
+          },
+        });
+
+        // 4. Caisses : réverser le crédit
+        if (!isFedapay) {
+          if (original.cashRegisterId) {
+            await tx.cashRegister.update({
+              where: { id: original.cashRegisterId },
+              data: { currentBalance: { decrement: amount } },
+            });
+          }
+        } else {
+          // FEDAPAY : débiter la caisse ONLINE du montant total + réverser les
+          // allocations automatiques vers les caisses métier (transferts AUTO)
+          if (original.cashRegisterId) {
+            await tx.cashRegister.update({
+              where: { id: original.cashRegisterId },
+              data: { currentBalance: { decrement: amount } },
+            });
+          }
+          const idPrefix = `AUTO-${original.id.substring(0, 8)}-`;
+          const transfers: any[] = await tx.$queryRawUnsafe(
+            `SELECT "id", "toCashRegisterId", "amount" FROM "cash_register_transfers"
+             WHERE "tenantId" = $1 AND "status" = 'AUTO_ALLOCATION' AND "reference" LIKE $2`,
+            tenantId, `${idPrefix}%`,
+          ).catch(() => [] as any[]);
+          for (const t of transfers) {
+            await tx.cashRegister.update({
+              where: { id: t.toCashRegisterId },
+              data: { currentBalance: { decrement: Number(t.amount) } },
+            });
+            await tx.$executeRawUnsafe(`DELETE FROM "cash_register_transfers" WHERE "id" = $1`, t.id);
+          }
+        }
+
+        // 5. Trace d'audit (AVANT la suppression — snapshot complet)
+        await tx.financialAuditLog.create({
+          data: {
+            tenantId,
+            entityType: 'FinanceTransaction',
+            entityId: original.id,
+            action: 'DELETE',
+            oldValue: {
+              receiptNumber: original.receiptNumber,
+              amount,
+              paymentMethod: original.paymentMethod,
+              reference: original.reference,
+              createdAt: original.createdAt,
+              cashRegisterId: original.cashRegisterId,
+              studentAccountId: original.studentAccountId,
+              academicYearId: original.academicYearId,
+              allocations: oldAllocs.map((a) => ({ breakdownId: a.breakdownId, amount: a.amount })),
+              unallocatedAmount,
+              reason,
+            },
+            newValue: null,
+            performedById: user?.id ?? '',
+          },
+        });
+
+        // 6. Suppression physique — flag session posé par le service promoteur
+        //    (le trigger prevent_finance_transaction_delete l'autorise)
+        await tx.$executeRawUnsafe(`SET LOCAL app.allow_transaction_delete = 'true'`);
+        await tx.financeTransaction.delete({ where: { id: original.id } });
+      });
+    } catch (err: any) {
+      this.logger.error(`delete transaction ${transactionId} failed: ${err?.message}`);
+      this.friendlyTriggerError(err, `Échec de la suppression : ${err?.message || 'erreur inconnue'}`);
+    }
+
+    // 7. Nettoyer le fichier reçu PDF (best effort, après commit)
+    //    Convention de ReceiptFinanceService : uploads/receipts/<tenant>/<année>/receipt-<n°>.pdf
+    try {
+      const receiptPath = path.join(
+        process.cwd(), 'uploads', 'receipts', tenantId, original.academicYearId,
+        `receipt-${original.receiptNumber.replace(/[/\\?%*:|"<>]/g, '-')}.pdf`,
+      );
+      if (fs.existsSync(receiptPath)) {
+        fs.unlinkSync(receiptPath);
+        this.logger.log(`Reçu PDF supprimé: ${receiptPath}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Reçu PDF non supprimé: ${e?.message}`);
+    }
+
+    return {
+      success: true,
+      deleted: true,
+      receiptNumber: original.receiptNumber,
+      amount,
+      unallocatedAmount,
+    };
   }
 }

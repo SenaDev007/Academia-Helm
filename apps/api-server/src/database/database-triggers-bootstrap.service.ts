@@ -169,9 +169,19 @@ $$ LANGUAGE plpgsql`,
   private getFinanceTriggerStatements(): string[] {
     return [
       // 1. Interdiction de suppression physique des transactions
+      //    ⭐ Sept. 2026 : bypass contrôlé — la correction de données par le
+      //    promoteur (FinanceTransactionService.remove, opération réservée à ce
+      //    rôle) pose le flag session app.allow_transaction_delete='true' DANS la
+      //    même transaction que le DELETE. Aucune autre voie ne peut le poser.
       `CREATE OR REPLACE FUNCTION prevent_finance_transaction_delete()
 RETURNS TRIGGER AS $$
+DECLARE
+  allow_delete text;
 BEGIN
+  allow_delete := current_setting('app.allow_transaction_delete', true);
+  IF allow_delete IS NOT NULL AND allow_delete = 'true' THEN
+    RETURN OLD;
+  END IF;
   RAISE EXCEPTION 'Suppression de transaction interdite. Academia Hub impose l''immutabilité financière. Utilisez une écriture inverse (REVERSAL).';
 END;
 $$ LANGUAGE plpgsql`,

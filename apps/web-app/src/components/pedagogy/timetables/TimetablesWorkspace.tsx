@@ -811,7 +811,7 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
 
   const handleTypeChange = (type: string) => {
     const meta = CONSTRAINT_TYPES.find(t => t.type === type);
-    setForm(prev => ({ ...prev, type, entityType: meta?.entityType || 'subject', entityId: '', params: {} }));
+    setForm((prev: any) => ({ ...prev, type, entityType: meta?.entityType || 'subject', entityId: '', params: {} }));
   };
 
   const handleSubmit = async () => {
@@ -1157,18 +1157,30 @@ interface ManualEntry {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  // ⭐ Champs réellement renvoyés par l'API (GET /api/timetables/:id) —
+  //    ajoutés pour aligner le typage TS sur la réalité (le build passait
+  //    grâce à ignoreBuildErrors, mais le typage était faux).
+  timetableId?: string;
+  classId?: string;
+  subjectId?: string;
+  step?: string;
   subject?: { id: string; name: string; code: string };
   teacher?: { id: string; firstName: string; lastName: string };
   room?: { id: string; name: string; code: string };
-  class?: { id: string; name: string };
+  class?: { id: string; name: string; officialClassId?: string };
 }
 
 function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { schoolLevelId: string; academicYearId: string; academicYearLabel?: string }) {
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
-  // ⭐ Niveaux réels (sans l'option virtuelle 'ALL')
-  const realLevels = (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false);
+  // ⭐ Niveaux réels (sans l'option virtuelle 'ALL') — useMemo pour une identité
+  //    STABLE (les effets qui dépendent de realLevels ne doivent re-tourner que
+  //    quand la liste change réellement, pas à chaque render).
+  const realLevels = useMemo(
+    () => (availableLevels || []).filter((l: any) => l.id !== 'ALL' && l.isActive !== false),
+    [availableLevels]
+  );
   // ⭐ DEUX IDs différents pour deux usages différents :
   //    - configLevelId = l.id (UUID education_structure) → pour fetch la config
   //      (le ConfigTab sauve avec cet ID, donc on doit l'utiliser pour retrouver)
@@ -1193,6 +1205,41 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
   const [activeTimetableId, setActiveTimetableId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ManualEntry[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // ⭐ FIX BUG « Cliquez sur Nouvel EDT » (2026-09-10) :
+  //    localLevelId était initialisé UNE SEULE FOIS au montage — à ce moment
+  //    realLevels est souvent encore VIDE (React Query async) → localLevelId
+  //    restait null À VIE → handleNewTimetable retombait sur schoolLevelId
+  //    (UUID education_levels = MAUVAISE table pour la FK timetables.schoolLevelId)
+  //    → la création d'EDT échouait SILENCIEUSEMENT → « Aucun EDT actif » à
+  //    chaque séance, alors que l'utilisateur avait bien cliqué « Nouvel EDT ».
+  //    → Resynchronisation dès que la liste des niveaux arrive / change.
+  useEffect(() => {
+    if (realLevels.length === 0) return;
+    const match = realLevels.find((l: any) => l.id === configLevelId);
+    const next = match?.schoolLevelId
+      ?? realLevels.find((l: any) => l.schoolLevelId)?.schoolLevelId
+      ?? null;
+    // Idempotent : ne setState que si la valeur change (évite tout re-render inutile)
+    setLocalLevelId(prev => (prev === next ? prev : next));
+  }, [configLevelId, realLevels]);
+
+  // ⭐ Résolution FIABLE du schoolLevelId (UUID school_levels) — utilisé partout
+  //    où l'on crée un Timetable ou un Subject (les DEUX ont une FK vers
+  //    school_levels.id). JAMAIS de fallback vers schoolLevelId (education_levels)
+  //    qui est une FK invalide et faisait échouer la création en silence.
+  const resolveSchoolLevelId = useCallback((): string | null => {
+    const match = realLevels.find((l: any) => l.id === configLevelId);
+    if (match?.schoolLevelId) return match.schoolLevelId;
+    const first = realLevels.find((l: any) => l.schoolLevelId);
+    return first?.schoolLevelId ?? null;
+  }, [realLevels, configLevelId]);
+
+  // ⭐ Ref du niveau courant — contourne le problème de closure obsolète : les
+  //    useCallback (loadData, loadEntries…) capturent la valeur du render où
+  //    ils ont été créés ; le ref reflète TOUJOURS la dernière valeur.
+  const levelIdRef = useRef<string | null>(null);
+  levelIdRef.current = resolveSchoolLevelId();
   const [configSchoolDays, setConfigSchoolDays] = useState<number[]>([1,2,3,4,5]);
   const [configTimeBlocks, setConfigTimeBlocks] = useState<any[]>(DEFAULT_TIME_BLOCKS);
   const [classes, setClasses] = useState<any[]>([]);
@@ -1272,9 +1319,16 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         pedagogyFetch<any[]>(`/api/pedagogy/teacher-class-assignments?academicYearId=${academicYearId}`).catch(() => []),
       ]);
       setClasses(cls || []); setRooms(rms || []); setTeachers(tchs || []); setSubjects(subs || []);
-      setTeacherAssignments(Array.isArray(tca) ? tca : (tca?.data || []));
+      setTeacherAssignments(Array.isArray(tca) ? tca : ((tca as any)?.data || []));
       setSchoolIdentity(si);
-      if (tts && tts.length > 0) { setActiveTimetableId(tts[0].id); setTimetables(tts); }
+      if (tts && tts.length > 0) {
+        setTimetables(tts);
+        // ⭐ Activer l'EDT du NIVEAU courant s'il existe (au lieu du 1er EDT
+        //    arbitraire de la liste, qui peut appartenir à un autre niveau)
+        const lv = levelIdRef.current;
+        const levelMatch = lv ? tts.find((t: any) => t.schoolLevelId === lv) : null;
+        setActiveTimetableId((levelMatch ?? tts[0]).id);
+      }
       if (cls && cls.length > 0) setSelectedClassIds([cls[0].id]);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   }, [academicYearId]);
@@ -1321,7 +1375,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     //    - class.id correspond (même chose)
     //    - class.officialClassId correspond (l'entry a été créée pour la 1ère section physique
     //      de l'AcademicClass, mais représente l'EDT pour toute la classe académique)
-    return entries.filter(e => {
+    return entries.filter((e: any) => {
       if (!e.classId) return true;
       return selectedClassIds.includes(e.classId)
         || selectedClassIds.includes(e.class?.id)
@@ -1436,6 +1490,79 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     return total;
   };
 
+  // ⭐ Reset + toast d'erreur unifié — chaque retour anticipé de handleInlineSave
+  //    DOIT libérer le verrou savingRef, sinon plus AUCUNE sauvegarde n'est
+  //    possible (spinner bloqué, auto-save et bouton « Ajouter » inertes)
+  //    jusqu'au rechargement complet de la page.
+  const failSave = (description: string, title = 'Erreur') => {
+    toast({ title, description, variant: 'destructive' });
+    savingRef.current = false;
+    setSaving(false);
+  };
+
+  // ⭐ AUTO-CRÉATION de l'EDT (2026-09-10, demande utilisateur : « il faut que
+  //    ça soit simple ») : si l'utilisateur ajoute une séance sans EDT actif,
+  //    on crée l'emploi du temps À LA VOLÉE avec un nom parlant (classes +
+  //    année), puis on enregistre la séance dedans. L'utilisateur n'a plus
+  //    JAMAIS besoin de penser au bouton « Nouvel EDT » avant de saisir.
+  //    Remplace le message bloquant « Cliquez sur Nouvel EDT d'abord » qui
+  //    créait une boucle frustrante (la création échouait silencieusement à
+  //    cause du mauvais UUID de niveau, puis le message reprochait à
+  //    l'utilisateur de ne pas avoir cliqué le bouton qu'il venait de cliquer).
+  const ensureActiveTimetable = async (): Promise<string | null> => {
+    if (activeTimetableId) return activeTimetableId;
+    if (!academicYearId) return null;
+    const levelId = resolveSchoolLevelId();
+    if (!levelId) {
+      toast({
+        title: 'Niveau scolaire introuvable',
+        description: 'Sélectionnez un niveau scolaire dans le sélecteur « Niveau scolaire », puis réessayez.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+    // ⭐ RÉUTILISER un EDT existant du même niveau plutôt qu'en créer un doublon
+    //    (ex: l'utilisateur recharge la page — on rebranche sur son EDT existant)
+    const existing = timetables.find((t: any) => t.schoolLevelId === levelId);
+    if (existing?.id) {
+      setActiveTimetableId(existing.id);
+      return existing.id;
+    }
+    const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label
+      || realLevels.find((l: any) => l.id === configLevelId)?.label
+      || 'Niveau';
+    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
+    const classNames = selectedClassIds
+      .map(id => classes.find(c => c.id === id)?.name)
+      .filter(Boolean);
+    const edtName = classNames.length > 0
+      ? `EDT ${classNames.join(' + ')} ${yearLabel}`
+      : `EDT ${levelLabel} ${yearLabel}`;
+    try {
+      const newTt = await pedagogyFetch<ManualTimetable>('/api/timetables', {
+        method: 'POST', body: {
+          academicYearId,
+          schoolLevelId: levelId,
+          name: edtName,
+          startDate: new Date().toISOString(),
+        },
+      });
+      if (newTt?.id) {
+        setTimetables(prev => prev.some(t => t.id === newTt.id) ? prev : [...prev, newTt]);
+        setActiveTimetableId(newTt.id);
+        toast({
+          title: '✅ EDT créé automatiquement',
+          description: `${edtName} — vos séances y sont enregistrées.`,
+        });
+        return newTt.id;
+      }
+      return null;
+    } catch (e: any) {
+      toast({ title: 'Erreur lors de la création de l\'EDT', description: e.message, variant: 'destructive' });
+      return null;
+    }
+  };
+
   // ⭐ Sauvegarder l'entry inline
   const handleInlineSave = async () => {
     if (savingRef.current) {
@@ -1457,7 +1584,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     let resolvedSubjectId = inlineForm.subjectId;
     if (inlineForm.subjectId === '__CUSTOM__') {
       const customName = (inlineForm as any).customSubjectName?.trim();
-      if (!customName) { toast({ title: 'Erreur', description: 'Saisissez le nom de la matière.', variant: 'destructive' }); return; }
+      if (!customName) { failSave('Saisissez le nom de la matière.'); return; }
       // ⭐ Code auto-généré normalisé — utiliser normalizeSubjectName pour cohérence
       //    ex: "Lecture-Écriture" → "lecture ecriture" → "LECTURE-ECRITURE" (uppercase)
       //    Les variantes orthographiques donnent le même code.
@@ -1465,7 +1592,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       try {
         const newSub = await pedagogyFetch<any>(`/api/subjects`, {
           method: 'POST', body: {
-            academicYearId, schoolLevelId: localLevelId || schoolLevelId,
+            academicYearId, schoolLevelId: resolveSchoolLevelId() || localLevelId,
             code: normalizedCode,
             abbreviation: normalizeSubjectName(customName).replace(/\s/g, '').substring(0, 5).toUpperCase() || 'CUSTOM',
             name: customName, coefficient: 1, weeklyHours: 120,
@@ -1477,8 +1604,8 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
           resolvedSubjectId = newSub.id;
           setSubjects(prev => prev.some(s => s.id === newSub.id) ? prev : [...prev, newSub]);
         }
-        else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
-      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
+        else { failSave('Impossible de créer la matière.'); return; }
+      } catch (e: any) { failSave(e.message); return; }
     } else if (inlineForm.subjectId.startsWith('__CAT__')) {
       // ⭐ Matière du catalogue qui n'existe pas encore en DB → créer à la volée
       const catName = inlineForm.subjectId.replace('__CAT__', '');
@@ -1486,7 +1613,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       try {
         const newSub = await pedagogyFetch<any>(`/api/subjects`, {
           method: 'POST', body: {
-            academicYearId, schoolLevelId: localLevelId || schoolLevelId,
+            academicYearId, schoolLevelId: resolveSchoolLevelId() || localLevelId,
             code: normalizedCatCode,
             abbreviation: normalizeSubjectName(catName).replace(/\s/g, '').substring(0, 5).toUpperCase() || 'CAT',
             name: catName, coefficient: 1, weeklyHours: 120,
@@ -1496,12 +1623,12 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
           resolvedSubjectId = newSub.id;
           setSubjects(prev => prev.some(s => s.id === newSub.id) ? prev : [...prev, newSub]);
         }
-        else { toast({ title: 'Erreur', description: 'Impossible de créer la matière.', variant: 'destructive' }); return; }
-      } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); return; }
+        else { failSave('Impossible de créer la matière.'); return; }
+      } catch (e: any) { failSave(e.message); return; }
     }
 
     if (!resolvedSubjectId || resolvedSubjectId.startsWith('__')) {
-      toast({ title: 'Erreur', description: 'Sélectionnez une matière.', variant: 'destructive' }); return;
+      failSave('Sélectionnez une matière.'); return;
     }
     setSaving(true);
 
@@ -1527,22 +1654,23 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
       calcEnd = calcEndTime(calcStart, Number(inlineForm.duration) || 30);
     }
 
-    // ⭐ NE PAS auto-créer un EDT silencieusement — c'est ce qui causait la confusion :
-    //    l'utilisateur cliquait "Ajouter une matière", un EDT était créé en silence,
-    //    puis l'ajout échouait sans explication. Maintenant on demande explicitement
-    //    à l'utilisateur de créer un EDT d'abord via le bouton "Nouvel EDT".
-    if (!activeTimetableId) {
-      toast({
-        title: 'Aucun EDT actif',
-        description: 'Cliquez sur "Nouvel EDT" pour créer un emploi du temps avant d\'ajouter des séances.',
-        variant: 'destructive',
-      });
-      setSaving(false);
+    // ⭐ SIMPLIFICATION UX (2026-09-10) : plus besoin de cliquer « Nouvel EDT »
+    //    avant de saisir. Si aucun EDT n'est actif, on en crée un
+    //    AUTOMATIQUEMENT (nommé classes + année) et on enregistre la séance
+    //    dedans dans la foulée. L'ancien message bloquant « Cliquez sur
+    //    Nouvel EDT d'abord » créait une boucle frustrante : la création
+    //    échouait en silence (mauvais UUID de niveau) puis le message
+    //    reprochait à l'utilisateur de ne pas avoir cliqué le bouton.
+    const currentTimetableId = await ensureActiveTimetable();
+    if (!currentTimetableId) {
+      // erreur actionnable déjà affichée par ensureActiveTimetable — on libère le verrou
       savingRef.current = false;
+      setSaving(false);
       return;
     }
-    const currentTimetableId = activeTimetableId;
-    const resolvedSchoolLevelId = localLevelId || schoolLevelId;
+    // resolveSchoolLevelId() : UUID school_levels (FK valide pour les entries)
+    //    — JAMAIS l'UUID education_levels du header (FK invalide → 500 silencieux).
+    const resolvedSchoolLevelId = resolveSchoolLevelId() || localLevelId;
 
     // ⭐ MODE ÉDITION : PUT /api/timetables/entries/:id avec les champs modifiés
     //    On ne met à jour qu'une seule entry (pas de boucle sur selectedClassIds).
@@ -1646,7 +1774,10 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     const isValidSubject = inlineForm.subjectId &&
       !inlineForm.subjectId.startsWith('__') &&
       !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
-    if (!isValidSubject || !activeTimetableId) {
+    // ⭐ FIX : l'auto-save ne requiert PLUS d'EDT actif — la sauvegarde
+    //    auto-crée l'EDT à la volée (ensureActiveTimetable). On exige juste
+    //    qu'une classe soit sélectionnée (sinon pas de grille visible).
+    if (!isValidSubject || selectedClassIds.length === 0) {
       return;
     }
     // ⭐ Écouteurs d'activité globale — reset du compteur sur n'importe quelle
@@ -1698,7 +1829,6 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     };
     return cleanup;
     // ⚠️ Ne pas inclure handleInlineSave dans les deps — il change à chaque render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingCell, editingEntryId, inlineForm.subjectId, inlineForm.customSubjectName, inlineForm.step, inlineForm.duration, saving, activeTimetableId, selectedClassIds]);
 
   const handleDeleteEntry = async (id: string) => {
@@ -1740,9 +1870,17 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
   };
 
   // ⭐ Créer un NOUVEL EDT pour d'autres classes
+  //    (NB : ce bouton est désormais OPTIONNEL — l'EDT se crée aussi
+  //    automatiquement à la première séance via ensureActiveTimetable.
+  //    Ce bouton sert à repartir sur un EDT vierge.)
   const handleNewTimetable = async () => {
     if (!academicYearId) return;
-    const levelId = localLevelId || schoolLevelId;
+    // ⭐ FIX : resolveSchoolLevelId() retourne l'UUID school_levels (FK valide).
+    //    Avant : localLevelId || schoolLevelId → si localLevelId était null
+    //    (course d'initialisation), on envoyait l'UUID education_levels →
+    //    FK invalide → échec SILENCIEUX de la création → boucle « Cliquez
+    //    sur Nouvel EDT » alors que l'utilisateur venait de cliquer.
+    const levelId = resolveSchoolLevelId();
     if (!levelId || levelId === 'ALL') {
       toast({ title: 'Erreur', description: 'Sélectionnez un niveau scolaire dans le sélecteur ci-dessus avant de créer un EDT.', variant: 'destructive' });
       return;
@@ -1753,7 +1891,13 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
     // ⭐ Nommer l'EDT de façon professionnelle : niveau + année scolaire
     //    Ex: "EDT Primaire 2026-2027" au lieu de "EDT Primaire #3"
     const levelLabel = realLevels.find((l: any) => l.schoolLevelId === levelId)?.label || realLevels.find((l: any) => l.id === configLevelId)?.label || 'Niveau';
-    const yearLabel = academicYear?.label || new Date().getFullYear().toString();
+    // ⭐ FIX CRITIQUE : « academicYear » n'existe PAS dans le scope de ManualEditor
+    //    (la prop s'appelle academicYearLabel). L'ancienne ligne provoquait une
+    //    ReferenceError silencieuse → le clic sur « Nouvel EDT » plantait SANS
+    //    aucun message → l'utilisateur croyait avoir créé l'EDT alors que rien
+    //    ne s'était passé → « Cliquez sur Nouvel EDT d'abord » à la première
+    //    séance. C'était LE bug signalé par l'utilisateur.
+    const yearLabel = academicYearLabel || new Date().getFullYear().toString();
     const edtName = `EDT ${levelLabel} ${yearLabel}`;
     // Créer un nouveau timetable
     try {
@@ -1764,8 +1908,8 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
           startDate: new Date().toISOString(),
         },
       });
-      if (newTt) {
-        setTimetables(prev => [...prev, newTt]);
+      if (newTt?.id) {
+        setTimetables(prev => prev.some(t => t.id === newTt.id) ? prev : [...prev, newTt]);
         setActiveTimetableId(newTt.id);
         toast({ title: '✅ Nouvel EDT créé', description: 'Sélectionnez les classes pour ce nouvel emploi du temps.' });
       }
@@ -1856,8 +2000,11 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
 
         <div className="flex-1 min-w-[250px]">
           <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Emplois du temps sauvegardés</label>
+          {/* ⭐ SIMPLIFICATION (2026-09-10) : plus besoin de cliquer « Nouvel EDT » —
+              l'EDT se crée automatiquement à la première séance. Ce message guide
+              l'utilisateur vers le flux simple : classe → case → matière. */}
           {timetables.length === 0 ? (
-            <span className="text-xs text-slate-400 italic">Aucun EDT sauvegardé. Cliquez sur "Nouvel EDT" pour commencer.</span>
+                <span className="text-xs text-slate-400 italic">Aucun EDT — sélectionnez une classe et remplissez la grille : l'EDT sera créé automatiquement.</span>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {timetables.map(tt => {
@@ -1906,6 +2053,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
         <div className="flex flex-col items-end gap-1">
           <div className="flex gap-2">
             <button onClick={handleNewTimetable}
+              title="Optionnel : un EDT est créé automatiquement à la première séance. Ce bouton sert à repartir sur un EDT vierge."
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
               <Plus className="w-3.5 h-3.5" /> Nouvel EDT
             </button>
@@ -2335,7 +2483,7 @@ function ManualEditor({ schoolLevelId, academicYearId, academicYearLabel }: { sc
                                 const isValidSubject = inlineForm.subjectId &&
                                   !inlineForm.subjectId.startsWith('__') &&
                                   !(inlineForm.subjectId === '__CUSTOM__' && !(inlineForm as any).customSubjectName?.trim());
-                                const canAutoSave = isValidSubject && !!activeTimetableId && !saving;
+                                const canAutoSave = isValidSubject && !saving && selectedClassIds.length > 0;
                                 if (!canAutoSave) return null;
                                 return (
                                   <div className="flex items-center justify-between gap-1 px-1.5 py-0.5 bg-blue-100/60 border border-blue-200 rounded text-[9px]">

@@ -173,6 +173,69 @@ export class TenantWebsiteService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  IDENTITÉ / COORDONNÉES PUBLIQUES (module Paramètres → Identité)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Coordonnées publiques de l'établissement — lues depuis le profil
+   * d'identité ACTIF (module Paramètres → Identité établissement, versionné).
+   *
+   * Utilisé par la section Contact + la carte de localisation du site
+   * institutionnel public : contacts (téléphone, WhatsApp, email, site web),
+   * adresse postale et position GPS exacte (latitude/longitude configurées
+   * via Paramètres → Identité → Géolocalisation).
+   *
+   * ⚠️ PUBLIC (sans auth) : ne sélectionner QUE des champs publics — jamais
+   * d'UUID interne, d'email d'admin ou de métadonnées d'audit.
+   */
+  async getPublicIdentityInfo(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: {
+          schoolName: true,
+          schoolAcronym: true,
+          slogan: true,
+          address: true,
+          city: true,
+          department: true,
+          country: true,
+          postalCode: true,
+          phonePrimary: true,
+          phoneSecondary: true,
+          whatsapp: true,
+          email: true,
+          website: true,
+          latitude: true,
+          longitude: true,
+        },
+      });
+
+      if (!profile) {
+        return { configured: false };
+      }
+
+      // Ne renvoyer lat/lng que si les deux sont définies (sinon la carte
+      // du site retombera sur le géocodage par ville — pas de pin faux)
+      const hasGps =
+        profile.latitude != null && profile.longitude != null &&
+        !Number.isNaN(Number(profile.latitude)) && !Number.isNaN(Number(profile.longitude));
+
+      return {
+        configured: true,
+        ...profile,
+        latitude: hasGps ? Number(profile.latitude) : null,
+        longitude: hasGps ? Number(profile.longitude) : null,
+      };
+    } catch (error: any) {
+      this.logger.warn(
+        `getPublicIdentityInfo failed for tenant ${tenantId}: ${error?.message}`,
+      );
+      return { configured: false };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  ACTUALITÉS
   // ═══════════════════════════════════════════════════════════════════════
 

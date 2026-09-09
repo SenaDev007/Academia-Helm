@@ -13,8 +13,32 @@
  *
  * Les collections (news, events, gallery, testimonials, faq) ont 1-2 items
  * de démo légers pour montrer comment ça rend.
+ *
+ * ⭐ IMAGES PAR DÉFAUT (2026-09) : un tenant sans images CMS reçoit désormais
+ * des images d'école par défaut (campus, salle de classe, sport, laboratoire,
+ * bibliothèque...) générées pour Academia Helm — le landing page n'est plus
+ * un dégradé vide. Voir public/images/portal-defaults/.
  * ============================================================================
  */
+
+// ─── Images par défaut du site institutionnel (photos d'école génériques) ─
+// Sert de fallback visuel attractif pour les écoles qui n'ont pas encore
+// configuré leurs images CMS. Les écoles peuvent les remplacer via le CMS.
+export const DEFAULT_PORTAL_IMAGES = {
+  hero: '/images/portal-defaults/hero-campus.png',
+  presentation: '/images/portal-defaults/presentation-classroom.png',
+  news: [
+    '/images/portal-defaults/news-science.png',
+    '/images/portal-defaults/news-sport.png',
+    '/images/portal-defaults/news-graduation.png',
+  ],
+  gallery: [
+    '/images/portal-defaults/gallery-campus.png',
+    '/images/portal-defaults/gallery-classroom.png',
+    '/images/portal-defaults/gallery-sport.png',
+    '/images/portal-defaults/gallery-library.png',
+  ],
+} as const;
 
 // ─── Configuration globale par défaut ─────────────────────────────────────
 
@@ -22,7 +46,9 @@ export const DEFAULT_WEBSITE_CONFIG = {
   // Hero
   heroTitle: 'Excellence éducative et accompagnement personnalisé',
   heroSubtitle: "Une école où chaque enfant grandit, apprend et s'épanouit dans un cadre bienveillant.",
-  heroImageUrl: null,
+  // Image de hero par défaut — photo d'un campus scolaire africain (Academia
+  // Helm) ; remplacée dès que l'école configure heroImageUrl dans le CMS.
+  heroImageUrl: DEFAULT_PORTAL_IMAGES.hero,
   heroCtaText: 'Pré-inscription',
   heroCtaUrl: '/public/pre-enrollment',
   heroIsActive: true,
@@ -50,7 +76,7 @@ export const DEFAULT_WEBSITE_CONFIG = {
   // Présentation
   presentationTitle: 'Présentation de notre établissement',
   presentationContent: "Notre établissement s'engage à offrir une éducation de qualité, alliant tradition et modernité. Nous proposons un cadre d'apprentissage stimulant où chaque élève peut développer son potentiel académique, artistique et sportif.\n\nAvec des classes à effectif réduit, un encadrement personnalisé et des équipements modernes, nous créons les conditions optimales pour la réussite de chaque élève.",
-  presentationImageUrl: null,
+  presentationImageUrl: DEFAULT_PORTAL_IMAGES.presentation,
   presentationIsActive: true,
 
   // Admissions
@@ -98,13 +124,41 @@ export const DEFAULT_NEWS_ARTICLES = [
     slug: 'bienvenue-nouveau-site',
     excerpt: "Découvrez notre tout nouveau site web, conçu pour vous informer et vous accompagner au quotidien.",
     content: "Nous avons le plaisir de vous présenter notre nouveau site institutionnel. Conçu pour être plus clair, plus moderne et plus accessible, il vous permettra de suivre toute l'actualité de l'établissement, de prendre connaissance des événements à venir et de trouver toutes les informations pratiques.\n\nN'hésitez pas à parcourir les différentes sections : présentation, admissions, vie scolaire, actualités et contact. Notre assistant virtuel est également à votre disposition pour répondre à vos questions.\n\nBienvenue à toutes et à tous !",
-    coverImageUrl: null,
+    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[0],
     category: 'Annonce',
     status: 'PUBLISHED',
     publishedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     isFeatured: true,
+  },
+  {
+    id: 'demo-news-2',
+    title: "Journée des sciences : nos élèves à l'honneur",
+    slug: 'journee-des-sciences',
+    excerpt: "Ateliers pratiques, expériences guidées et présentations de projets : la science au cœur de notre pédagogie.",
+    content: "Nos élèves ont brillé lors de la journée des sciences organisée dans notre laboratoire. Au programme : expériences de chimie, observations au microscope et présentation de projets d'ingénierie.\n\nCes ateliers pratiques illustrent notre engagement pour une pédagogie active, où l'expérimentation précède la théorie. Félicitations à tous les participants et merci à nos enseignants pour leur accompagnement.",
+    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[1],
+    category: 'Vie scolaire',
+    status: 'PUBLISHED',
+    publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    isFeatured: false,
+  },
+  {
+    id: 'demo-news-3',
+    title: "Résultats remarquables aux examens nationaux",
+    slug: 'resultats-examens-nationaux',
+    excerpt: "Une nouvelle promotion qui honore le travail collectif de nos élèves, de leurs familles et de nos équipes pédagogiques.",
+    content: "Nos élèves ont obtenu des résultats exceptionnels aux examens nationaux de cette session. Ce succès est le fruit d'un travail rigoureux tout au long de l'année : séances de renforcement, simulations d'examens et accompagnement personnalisé.\n\nNous remercions les familles pour leur confiance et nos enseignants pour leur dévouement. Ensemble, nous continuons de viser l'excellence.",
+    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[2],
+    category: 'Résultats',
+    status: 'PUBLISHED',
+    publishedAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
+    isFeatured: false,
   },
 ];
 
@@ -122,10 +176,10 @@ export const DEFAULT_EVENTS = [
 ];
 
 export const DEFAULT_GALLERY_ITEMS = [
-  { id: 'demo-gallery-1', imageUrl: null, caption: 'Campus principal', category: 'Campus', displayOrder: 0, isActive: true },
-  { id: 'demo-gallery-2', imageUrl: null, caption: 'Salles de classe modernes', category: 'Infrastructure', displayOrder: 1, isActive: true },
-  { id: 'demo-gallery-3', imageUrl: null, caption: 'Activités sportives', category: 'Sport', displayOrder: 2, isActive: true },
-  { id: 'demo-gallery-4', imageUrl: null, caption: 'Bibliothèque', category: 'Infrastructure', displayOrder: 3, isActive: true },
+  { id: 'demo-gallery-1', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[0], caption: 'Campus principal', category: 'Campus', displayOrder: 0, isActive: true },
+  { id: 'demo-gallery-2', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[1], caption: 'Salles de classe modernes', category: 'Infrastructure', displayOrder: 1, isActive: true },
+  { id: 'demo-gallery-3', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[2], caption: 'Activités sportives', category: 'Sport', displayOrder: 2, isActive: true },
+  { id: 'demo-gallery-4', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[3], caption: 'Bibliothèque', category: 'Infrastructure', displayOrder: 3, isActive: true },
 ];
 
 export const DEFAULT_TESTIMONIALS = [

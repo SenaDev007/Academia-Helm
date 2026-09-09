@@ -86,6 +86,31 @@ export class TenantWebsiteController {
   }
 
   /**
+   * GET /api/tenant-website/public/:tenantSlug/identity-info
+   * Coordonnées publiques de l'établissement — source : module Paramètres →
+   * Identité (profil actif versionné). Contacts (téléphone, WhatsApp, email,
+   * site web), adresse et position GPS exacte. Utilisé par la section
+   * Contact + la carte de localisation du site institutionnel public.
+   */
+  @Public()
+  @Get('public/:tenantSlug/identity-info')
+  async getPublicIdentityInfo(@Param('tenantSlug') tenantSlug: string) {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }],
+        status: { in: ['active', 'trial'] },
+      },
+      select: { id: true },
+    });
+
+    if (!tenant) {
+      throw new BadRequestException('Établissement introuvable');
+    }
+
+    return this.websiteService.getPublicIdentityInfo(tenant.id);
+  }
+
+  /**
    * GET /api/tenant-website/public/:tenantSlug/news/:slug
    * Récupère un article publié par son slug.
    */

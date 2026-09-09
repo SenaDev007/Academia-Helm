@@ -2,72 +2,62 @@
 
 /**
  * ============================================================================
- * PWA INSTALL PROMPT — Popup d'installation (desktop, tablette, mobile)
+ * PWA INSTALL PROMPT — Petite bannière d'installation (coin bas droit)
  * ============================================================================
  *
- * ⭐ Exigence utilisateur : « un petit popup pour demander d'installer
- *    (desktop, tablette et mobile) avec possibilité de skip ».
+ * ⭐ Exigence utilisateur (2026-09) : « Pas de modal avec instructions qui
+ *    n'installe rien. Une PETITE BANNIÈRE en bas dans le coin droit sur PC,
+ *    pareil sur téléphone. Quand on clique sur "Installer", que ça installe
+ *    DIRECTEMENT. »
  *
- * Le popup s'affiche PROACTIVEMENT (≈ 3,5 s après le chargement) sur tout
- * appareil dont le navigateur permet d'installer la PWA — sans attendre les
- * heuristiques de Chrome (beforeinstallprompt) :
+ * Comportement :
+ *   - Bannière compacte (pas de fond bloquant, pas de modal) :
+ *       • PC/tablette large → coin bas droit (max-w-[360px])
+ *       • Mobile → barre pleine largeur ancrée en bas
+ *   - Bouton « Installer » :
+ *       • Chromium (Chrome/Edge/Brave/Opera, desktop + Android) → déclenche
+ *         le prompt natif via beforeinstallprompt → installation DIRECTE
+ *       • iOS Safari (pas d'API programmatique) → la bannière se déplie en
+ *         3 mini-étapes intégrées (Partager → Sur l'écran d'accueil →
+ *         Ajouter) — jamais de modal séparé
+ *       • Chromium sans prompt capté (heuristiques pas encore déclenchées)
+ *         → même dépliage compact (icône ⊕ barre d'adresse / menu ⋮)
  *
- *   ┌──────────────┬──────────────────────────────────────────────────────┐
- *   │ Appareil     │ Comportement du bouton « Installer »                │
- *   ├──────────────┼──────────────────────────────────────────────────────┤
- *   │ Desktop      │ Chrome/Edge/Brave/Opera → prompt natif (ou menu ⋮)  │
- *   │              │ Safari 17+ (macOS)  → instructions « Ajouter au Dock »│
- *   │              │ Firefox            → AUCUN popup (non installable)   │
- *   ├──────────────┼──────────────────────────────────────────────────────┤
- *   │ Tablette     │ iPad → instructions iOS · Android → prompt natif    │
- *   │              │ (ou menu selon navigateur)                           │
- *   ├──────────────┼──────────────────────────────────────────────────────┤
- *   │ Mobile       │ Android → prompt natif (ou menu) · iPhone →         │
- *   │              │ instructions « Sur l'écran d'accueil »               │
- *   └──────────────┴──────────────────────────────────────────────────────┘
- *
- * SKIP (2 niveaux) :
- *   - « Plus tard » / ✕ / Échap / clic fond → snooze gradué 3j/3j/7j/14j/30j
- *   - « Ne plus demander » → skip PERMANENT (localStorage, jusqu'à
- *     désinstallation des données du site)
+ * DISMISS (2 niveaux) :
+ *   - ✕ / Échap → snooze gradué 3j/3j/7j/14j/30j
+ *   - « Ne plus demander » (lien discret) → skip PERMANENT (localStorage)
  *
  * Garde-fous :
  *   - Déjà installé (standalone) → jamais affiché
+ *   - Firefox desktop (non installable) → jamais affiché
  *   - Une seule apparition par session navigateur (sessionStorage)
- *   - beforeinstallprompt écouté en continu : si le prompt natif arrive
- *     pendant que le popup est ouvert, le bouton bascule automatiquement
- *     en installation native.
+ *   - beforeinstallprompt écouté en continu (PWARegister capture tôt et
+ *     expose window.__ahPwaDeferredPrompt + événement ah-install-available)
  *
- * Bilingue FR/EN via useL() — suit la locale du profil (piste anglophone).
- *
- * Props :
- *   - appName : nom affiché (ex: nom de l'école sur son sous-domaine)
+ * Bilingue FR/EN via useL().
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Download,
   X,
   Share,
   Smartphone,
   PlusSquare,
-  CheckCircle2,
   Monitor,
   Tablet,
-  Menu,
-  MoreVertical,
   ExternalLink,
+  MoreVertical,
 } from 'lucide-react';
 import { useL } from '@/lib/i18n/bilingual';
 
 const STORAGE_KEY = 'ah_pwa_prompt_v3';
 const SESSION_KEY = 'ah_pwa_prompt_shown_v3';
 
-/** Délai avant l'apparition du popup (assez tôt pour être vu, assez tard
- *  pour ne pas perturber la lecture de la page). */
+/** Délai avant l'apparition de la bannière (après le chargement). */
 const SHOW_DELAY_MS = 3500;
 
-/** Délais de re-prompt après chaque « Plus tard » (en jours), plafonné au dernier. */
+/** Délais de re-prompt après chaque fermeture (en jours), plafonné au dernier. */
 const RE_PROMPT_DAYS = [3, 3, 7, 14, 30];
 
 interface BeforeInstallPromptEvent extends Event {
@@ -117,7 +107,6 @@ function markSessionShown() {
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
-  // iPadOS 13+ se présente comme Mac — vérifier le multi-touch
   const isIpad =
     /iPad/.test(ua) ||
     (/Macintosh/.test(ua) &&
@@ -136,7 +125,7 @@ function isStandalone(): boolean {
   );
 }
 
-/** Type d'appareil — pour l'icône et le wording du popup. */
+/** Type d'appareil — pour l'icône et le wording de la bannière. */
 function detectDevice(): DeviceType {
   if (typeof navigator === 'undefined') return 'desktop';
   const ua = navigator.userAgent;
@@ -150,7 +139,7 @@ function detectDevice(): DeviceType {
   return 'desktop';
 }
 
-/** Navigateur — pour adapter les instructions d'installation manuelle. */
+/** Navigateur — pour adapter les mini-étapes de secours. */
 function detectBrowser(): BrowserType {
   if (typeof navigator === 'undefined') return 'other';
   const ua = navigator.userAgent;
@@ -166,7 +155,7 @@ function detectBrowser(): BrowserType {
 }
 
 /** Le navigateur permet-il D'INSTALLER une PWA sur cet appareil ?
- *  (Firefox desktop ne le permet pas → pas de popup). */
+ *  (Firefox desktop ne le permet pas → pas de bannière). */
 function canInstallPWA(device: DeviceType, browser: BrowserType): boolean {
   if (device === 'mobile' || device === 'tablet') return true; // iOS + Android : toujours un chemin
   // Desktop : tout sauf Firefox (Safari ≥ 17 → « Ajouter au Dock »)
@@ -178,13 +167,15 @@ function canInstallPWA(device: DeviceType, browser: BrowserType): boolean {
 export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: string }) {
   const L = useL();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showPopup, setShowPopup] = useState(false);
+  const [showBanner, setShowBanner] = useState(false);
   const [installed, setInstalled] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(false);
+  // Bannière dépliée : mini-étapes d'installation intégrées (iOS / prompt
+  // natif non encore disponible) — JAMAIS un modal séparé.
+  const [expanded, setExpanded] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [device, setDevice] = useState<DeviceType>('desktop');
   const [ios, setIos] = useState(false);
   const [browser, setBrowser] = useState<BrowserType>('other');
-  const primaryBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // ─── Détection + logique d'apparition ───────────────────────────────────
   useEffect(() => {
@@ -199,12 +190,11 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
 
     const detectedDevice = detectDevice();
     const detectedBrowser = detectBrowser();
-    const onIOS = isIOS();
     setDevice(detectedDevice);
     setBrowser(detectedBrowser);
-    setIos(onIOS);
+    setIos(isIOS());
 
-    // Firefox desktop → aucune possibilité d'installation → jamais de popup
+    // Firefox desktop → aucune possibilité d'installation → jamais de bannière
     if (!canInstallPWA(detectedDevice, detectedBrowser)) return;
 
     // Skip permanent (« Ne plus demander »)
@@ -214,7 +204,7 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
       return;
     }
 
-    // Snooze gradué (« Plus tard »)
+    // Snooze gradué (fermeture simple)
     if (state.lastDismissedAt) {
       const dismissCount = state.dismissCount || 0;
       const delayDays =
@@ -233,7 +223,7 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
     if (globalPrompt) setDeferredPrompt(globalPrompt);
 
     // ⭐ Nouveaux prompts natifs (arrivent selon les heuristiques Chrome —
-    //    même APRÈS l'ouverture du popup : le bouton bascule en natif)
+    //    même APRÈS l'affichage de la bannière : le bouton devient direct)
     const handleBeforeInstallPrompt = (e: Event) => {
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
@@ -243,17 +233,17 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('ah-install-available', handleCustomAvailable as EventListener);
 
-    // ⭐ Apparition proactive après SHOW_DELAY_MS (desktop + tablette + mobile)
+    // ⭐ Apparition de la bannière après SHOW_DELAY_MS (desktop + mobile)
     const showTimer = setTimeout(() => {
-      setShowPopup(true);
+      setShowBanner(true);
       markSessionShown();
     }, SHOW_DELAY_MS);
 
     // ⭐ Installation effective (marque installed + cache)
     const handleInstalled = () => {
       setInstalled(true);
-      setShowPopup(false);
-      setShowInstructions(false);
+      setShowBanner(false);
+      setExpanded(false);
       writeState({ ...readState(), installed: true });
     };
     window.addEventListener('appinstalled', handleInstalled);
@@ -268,28 +258,21 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
     };
   }, []);
 
-  // ─── Focus sur le bouton principal à l'ouverture ────────────────────────
+  // ─── Échap = fermer la bannière ─────────────────────────────────────────
   useEffect(() => {
-    if (showPopup && !installed) {
-      primaryBtnRef.current?.focus();
-    }
-  }, [showPopup, installed]);
-
-  // ─── Échap = snooze ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!showPopup) return;
+    if (!showBanner) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') handleDismiss();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup]);
+  }, [showBanner]);
 
-  /** « Plus tard » / ✕ / Échap / clic sur le fond → snooze gradué. */
+  /** ✕ / Échap → snooze gradué. */
   const handleDismiss = useCallback(() => {
-    setShowPopup(false);
-    setShowInstructions(false);
+    setShowBanner(false);
+    setExpanded(false);
     const state = readState();
     writeState({
       ...state,
@@ -300,311 +283,206 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
 
   /** « Ne plus demander » → skip permanent. */
   const handleSkipForever = useCallback(() => {
-    setShowPopup(false);
-    setShowInstructions(false);
+    setShowBanner(false);
+    setExpanded(false);
     writeState({ ...readState(), skipped: true });
   }, []);
 
-  /** « Installer » → prompt natif si dispo, sinon instructions adaptées. */
+  /** « Installer » → installation DIRECTE via le prompt natif si dispo.
+   *  Sinon : dépliage compact des mini-étapes (iOS, prompt non capté). */
   const handleInstall = useCallback(async () => {
-    if (deferredPrompt) {
-      // Chrome/Edge/Brave/Opera (desktop + Android) → prompt natif
+    // Re-vérifier le prompt global (peut être arrivé entre-temps)
+    const prompt =
+      deferredPrompt ||
+      ((window as any).__ahPwaDeferredPrompt as BeforeInstallPromptEvent | undefined) ||
+      null;
+
+    if (prompt) {
       try {
-        await deferredPrompt.prompt();
-        const choice = await deferredPrompt.userChoice;
+        setInstalling(true);
+        await prompt.prompt();
+        const choice = await prompt.userChoice;
         if (choice.outcome === 'accepted') {
           setInstalled(true);
           writeState({ ...readState(), installed: true });
-          setShowPopup(false);
+          setShowBanner(false);
         } else {
           handleDismiss(); // refus dans le dialog natif = snooze
         }
       } catch {
         handleDismiss();
+      } finally {
+        setInstalling(false);
+        setDeferredPrompt(null);
+        if ((window as any).__ahPwaDeferredPrompt) {
+          delete (window as any).__ahPwaDeferredPrompt;
+        }
       }
-      setDeferredPrompt(null);
       return;
     }
-    // iOS / navigateurs sans API programmatique → instructions pas-à-pas
-    setShowInstructions(true);
+    // iOS / prompt natif pas encore disponible → mini-étapes intégrées
+    setExpanded((prev) => !prev);
   }, [deferredPrompt, handleDismiss]);
 
-  /** Fin des instructions → snooze (l'utilisateur suit les étapes de son côté). */
-  const handleInstructionsDone = useCallback(() => {
-    setShowInstructions(false);
-    setShowPopup(false);
-    const state = readState();
-    writeState({
-      ...state,
-      dismissCount: (state.dismissCount || 0) + 1,
-      lastDismissedAt: Date.now(),
-    });
-  }, []);
-
-  if (installed || !showPopup) return null;
+  if (installed || !showBanner) return null;
 
   const DeviceIcon =
     device === 'mobile' ? Smartphone : device === 'tablet' ? Tablet : Monitor;
 
-  // ─── Rendu ───────────────────────────────────────────────────────────────
-  return (
-    <>
-      {/* ═══ Petit popup : carte centrée (desktop) / bottom-sheet (mobile) ═══ */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={L(`Installer ${appName}`, `Install ${appName}`)}
-        className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-[2px] animate-in fade-in duration-200"
-        onClick={handleDismiss}
-      >
-        <div
-          className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200/60 overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 sm:slide-in-from-bottom-0 duration-300"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Barre de tir (mobile) */}
-          <div className="sm:hidden flex justify-center pt-2.5 pb-0.5">
-            <span className="w-10 h-1 rounded-full bg-slate-300" />
-          </div>
-
-          <div className="relative p-5 sm:p-6">
-            {/* ✕ (desktop uniquement — mobile a « Plus tard » + fond cliquable) */}
-            <button
-              onClick={handleDismiss}
-              aria-label={L('Fermer', 'Close')}
-              className="absolute hidden sm:block top-3.5 right-3.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1.5 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-
-            <div className="flex items-center gap-3.5 sm:gap-4">
-              {/* Icône app (icône de l'appareil + badge download) */}
-              <div className="relative shrink-0">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-[#0D1F6E] to-[#1E40AF] flex items-center justify-center shadow-lg shadow-[#0D1F6E]/25">
-                  <DeviceIcon className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
-                </div>
-                <span className="absolute -bottom-1 -right-1 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center">
-                  <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#0D1F6E]" />
-                </span>
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h3
-                  title={L(`Installer ${appName}`, `Install ${appName}`)}
-                  className="text-base sm:text-lg font-bold text-slate-900 leading-snug line-clamp-2"
-                >
-                  {L(`Installer ${appName}`, `Install ${appName}`)}
-                </h3>
-                <p className="text-[13px] leading-relaxed text-slate-500 mt-1">
-                  {device === 'mobile'
-                    ? L(
-                        'Sur votre écran d\u2019accueil, comme une vraie application — rapide, même avec une connexion faible.',
-                        'On your home screen, like a real app — fast, even on a weak connection.',
-                      )
-                    : L(
-                        'Comme une vraie application sur votre ordinateur : fenêtre dédiée, lancement rapide, même hors ligne.',
-                        'Like a real app on your computer: dedicated window, quick launch, even offline.',
-                      )}
-                </p>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                ref={primaryBtnRef}
-                onClick={handleInstall}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0D1F6E] text-white rounded-xl font-bold text-sm hover:bg-[#0D1F6E]/90 active:scale-[0.99] transition-all shadow-md shadow-[#0D1F6E]/20"
-              >
-                <Download className="h-4 w-4" />
-                {L('Installer maintenant', 'Install now')}
-              </button>
-              <button
-                onClick={handleDismiss}
-                className="w-full px-4 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl text-sm font-semibold transition-colors"
-              >
-                {L('Plus tard', 'Maybe later')}
-              </button>
-              {/* ⭐ Skip permanent */}
-              <button
-                onClick={handleSkipForever}
-                className="mt-0.5 text-xs text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
-              >
-                {L('Ne plus demander', 'Don\u2019t ask again')}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══ Modal d'instructions (iOS + navigateurs sans prompt natif) ═══ */}
-      {showInstructions && (
-        <InstallInstructions
-          appName={appName}
-          device={device}
-          browser={browser}
-          ios={ios}
-          onDone={handleInstructionsDone}
-        />
-      )}
-    </>
-  );
-}
-
-// ─── Instructions pas-à-pas adaptées au navigateur/appareil ─────────────────
-
-function InstallInstructions({
-  appName,
-  device,
-  browser,
-  ios,
-  onDone,
-}: {
-  appName: string;
-  device: DeviceType;
-  browser: BrowserType;
-  ios: boolean;
-  onDone: () => void;
-}) {
-  const L = useL();
+  const title = L(`Installer ${appName}`, `Install ${appName}`);
+  const benefit =
+    device === 'mobile'
+      ? L(
+          'Application sur votre écran d\u2019accueil — rapide, même hors connexion.',
+          'App on your home screen — fast, even offline.',
+        )
+      : L(
+          'Fenêtre dédiée, lancement rapide — comme une vraie application.',
+          'Dedicated window, quick launch — like a real app.',
+        );
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[9999] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
-      onClick={onDone}
+      role="region"
+      aria-label={title}
+      // ─── Petite bannière : coin bas droit (PC) / bas pleine largeur (mobile)
+      className="fixed z-[9998] bottom-3 right-3 left-3 sm:left-auto sm:bottom-4 sm:right-4 animate-in slide-in-from-bottom-4 fade-in duration-300"
     >
-      <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-w-sm w-full p-6 max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 duration-300"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="text-center mb-5">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-[#0D1F6E]/10 flex items-center justify-center mb-3">
-            {ios ? (
-              <Smartphone className="h-7 w-7 text-[#0D1F6E]" />
-            ) : (
-              <Download className="h-7 w-7 text-[#0D1F6E]" />
-            )}
+      <div className="bg-white sm:max-w-[360px] rounded-2xl shadow-2xl border border-slate-200/70 overflow-hidden">
+        <div className="relative p-3.5 sm:p-4">
+          {/* ✕ fermeture */}
+          <button
+            onClick={handleDismiss}
+            aria-label={L('Fermer', 'Close')}
+            className="absolute top-2 right-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full p-1.5 transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+
+          <div className="flex items-center gap-3 pr-6">
+            {/* Icône app */}
+            <div className="relative shrink-0">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-[#0D1F6E] to-[#1E40AF] flex items-center justify-center shadow-md shadow-[#0D1F6E]/25">
+                <DeviceIcon className="h-5 w-5 text-white" />
+              </div>
+              <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center">
+                <Download className="h-3 w-3 text-[#0D1F6E]" />
+              </span>
+            </div>
+
+            {/* Titre + bénéfice */}
+            <div className="min-w-0 flex-1">
+              <h3
+                title={title}
+                className="text-sm font-bold text-slate-900 leading-snug line-clamp-1"
+              >
+                {title}
+              </h3>
+              <p className="text-[11px] sm:text-xs leading-snug text-slate-500 mt-0.5 line-clamp-2">
+                {benefit}
+              </p>
+            </div>
+
+            {/* Bouton Installer — installation DIRECTE (prompt natif) */}
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#0D1F6E] text-white rounded-xl font-bold text-xs sm:text-sm hover:bg-[#0D1F6E]/90 active:scale-[0.98] transition-all shadow-md shadow-[#0D1F6E]/20 disabled:opacity-60"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {installing
+                ? L('Installation…', 'Installing…')
+                : L('Installer', 'Install')}
+            </button>
           </div>
-          <h3 className="text-lg font-bold text-slate-900 leading-snug line-clamp-2">
-            {ios
-              ? L('Installer sur iPhone / iPad', 'Install on iPhone / iPad')
-              : L(`Installer ${appName}`, `Install ${appName}`)}
-          </h3>
-          <p className="text-sm text-slate-500 mt-1">
-            {L('Suivez ces étapes :', 'Follow these steps:')}
-          </p>
+
+          {/* ─── Mini-étapes intégrées (iOS / prompt non capté) — PAS de modal ─── */}
+          {expanded && (
+            <div className="mt-3 pt-3 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
+              <p className="text-[11px] font-semibold text-slate-600 mb-2">
+                {ios
+                  ? L('Sur iPhone / iPad :', 'On iPhone / iPad:')
+                  : L(
+                      'Installation manuelle (le navigateur n\u2019a pas encore proposé l\u2019installation directe) :',
+                      'Manual install (your browser has not offered direct install yet):',
+                    )}
+              </p>
+              <ol className="space-y-1.5 text-left">
+                {ios ? (
+                  <>
+                    <MiniStep
+                      text={L('Appuyez sur', 'Tap')}
+                      icon={<Share className="h-3.5 w-3.5 mx-0.5 text-[#007AFF]" />}
+                      suffix={L('(Partager)', '(Share)')}
+                    />
+                    <MiniStep
+                      text={L('Puis', 'Then')}
+                      icon={<PlusSquare className="h-3.5 w-3.5 mx-0.5 text-[#007AFF]" />}
+                      suffix={L('« Sur l\u2019écran d\u2019accueil »', '"Add to Home Screen"')}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <MiniStep
+                      text={L(
+                        'Cliquez sur l\u2019icône d\u2019installation dans la barre d\u2019adresse',
+                        'Click the install icon in the address bar',
+                      )}
+                      icon={<ExternalLink className="h-3.5 w-3.5 mx-0.5 text-[#0D1F6E] rotate-45" />}
+                    />
+                    <MiniStep
+                      text={L('Ou menu', 'Or menu')}
+                      icon={<MoreVertical className="h-3.5 w-3.5 mx-0.5 text-slate-500" />}
+                      suffix={
+                        browser === 'edge'
+                          ? L('→ Applications → Installer', '→ Apps → Install')
+                          : L(`→ « Installer ${appName} »`, `→ "Install ${appName}"`)
+                      }
+                    />
+                  </>
+                )}
+              </ol>
+              {/* Lien discret skip permanent */}
+              <button
+                onClick={handleSkipForever}
+                className="mt-2.5 text-[10px] text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+              >
+                {L('Ne plus proposer l\u2019installation', 'Don\u2019t ask again')}
+              </button>
+            </div>
+          )}
+
+          {/* Skip permanent (bannière compacte, non dépliée) */}
+          {!expanded && (
+            <button
+              onClick={handleSkipForever}
+              className="absolute bottom-1 right-2 text-[10px] text-slate-300 hover:text-slate-500 transition-colors"
+              aria-label={L('Ne plus demander', 'Don\u2019t ask again')}
+            >
+              {L('Ne plus demander', 'Don\u2019t ask again')}
+            </button>
+          )}
         </div>
-
-        {ios ? (
-          <ol className="space-y-4 text-left">
-            <InstructionStep
-              n={1}
-              text={L('Appuyez sur le bouton', 'Tap the')}
-              icon={<Share className="h-5 w-5 text-[#007AFF] mx-1" />}
-              suffix={L('(Partager)', '(Share)')}
-            />
-            <InstructionStep
-              n={2}
-              text={L('Faites défiler puis choisissez', 'Scroll down and choose')}
-              suffix={L('« Sur l\u2019écran d\u2019accueil »', '"Add to Home Screen"')}
-              icon={<PlusSquare className="h-4 w-4 inline-block mx-1 text-[#007AFF]" />}
-            />
-            <InstructionStep
-              n={3}
-              text={L('Confirmez avec', 'Confirm with')}
-              suffix={L('« Ajouter »', '"Add"')}
-            />
-          </ol>
-        ) : (
-          <ol className="space-y-4 text-left">
-            {browser === 'safari' && device === 'desktop' ? (
-              <>
-                <InstructionStep
-                  n={1}
-                  text={L('Dans la barre de menus, ouvrez', 'In the menu bar, open')}
-                  suffix={L('« Fichier »', '"File"')}
-                />
-                <InstructionStep
-                  n={2}
-                  text={L('Choisissez', 'Choose')}
-                  suffix={L('« Ajouter au Dock »', '"Add to Dock"')}
-                />
-              </>
-            ) : device === 'desktop' ? (
-              <>
-                <InstructionStep
-                  n={1}
-                  text={L(
-                    'Cliquez sur l\u2019icône d\u2019installation dans la barre d\u2019adresse',
-                    'Click the install icon in the address bar',
-                  )}
-                  icon={<ExternalLink className="h-4 w-4 inline-block mx-1 text-[#0D1F6E] rotate-45" />}
-                />
-                <InstructionStep
-                  n={2}
-                  text={L('Ou ouvrez le menu', 'Or open the browser menu')}
-                  icon={<MoreVertical className="h-4 w-4 inline-block mx-1 text-slate-600" />}
-                  suffix={browser === 'edge'
-                    ? L('→ Applications → « Installer ce site comme application »', '→ Apps → "Install this site as an app"')
-                    : L(`→ « Installer ${appName} »`, `→ "Install ${appName}"`)}
-                />
-              </>
-            ) : (
-              <>
-                <InstructionStep
-                  n={1}
-                  text={L('Ouvrez le menu du navigateur', 'Open the browser menu')}
-                  icon={<Menu className="h-4 w-4 inline-block mx-1 text-slate-600" />}
-                  suffix={browser === 'firefox' || browser === 'samsung' ? L('(⋮ ou ⋯)', '(⋮ or ⋯)') : '(⋮)'}
-                />
-                <InstructionStep
-                  n={2}
-                  text={L('Choisissez', 'Choose')}
-                  suffix={
-                    browser === 'firefox'
-                      ? L('« Ajouter à l\u2019écran d\u2019accueil »', '"Add to Home Screen"')
-                      : L('« Installer l\u2019application »', '"Install app"')
-                  }
-                />
-              </>
-            )}
-          </ol>
-        )}
-
-        <button
-          onClick={onDone}
-          className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0D1F6E] text-white rounded-xl font-bold text-sm hover:bg-[#0D1F6E]/90 transition-colors"
-        >
-          <CheckCircle2 className="h-4 w-4" />
-          {L('C\u2019est fait', 'Done')}
-        </button>
       </div>
     </div>
   );
 }
 
-function InstructionStep({
-  n,
+/** Mini-étape compacte intégrée à la bannière (remplace l'ancien modal). */
+function MiniStep({
   text,
-  suffix,
   icon,
+  suffix,
 }: {
-  n: number;
   text: string;
-  suffix?: string;
   icon?: React.ReactNode;
+  suffix?: string;
 }) {
   return (
-    <li className="flex items-start gap-3">
-      <span className="w-7 h-7 rounded-full bg-[#0D1F6E] text-white flex items-center justify-center text-xs font-bold shrink-0">
-        {n}
-      </span>
-      <div className="flex items-center flex-wrap gap-x-1 text-sm text-slate-700 pt-1">
-        <span>{text}</span>
-        {icon}
-        {suffix && <span className="font-semibold">{suffix}</span>}
-      </div>
+    <li className="flex items-center flex-wrap gap-x-0.5 text-[11px] text-slate-600">
+      <span>{text}</span>
+      {icon}
+      {suffix && <span className="font-semibold">{suffix}</span>}
     </li>
   );
 }

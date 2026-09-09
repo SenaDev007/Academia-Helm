@@ -3486,6 +3486,12 @@ model TenantIdentityProfile {
   deactivatedBy        String?
   changeReason         String?
 
+  // ⭐ Géolocalisation école (migration 20260723080000 — pointage géolocalisé
+  // + carte de localisation du site institutionnel public)
+  latitude             Float?    @db.DoublePrecision
+  longitude            Float?    @db.DoublePrecision
+  geoRadius            Int       @default(100)
+
   // ⭐ Paramètres cartes scolaires (migrations 011 + 012)
   maternellePickupMorning   String?  @default("12:00")
   maternellePickupAfternoon String?  @default("16:30")

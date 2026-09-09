@@ -40,10 +40,10 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, MapPin, Phone, Mail, ChevronRight, ChevronLeft, Calendar,
-  Quote, ExternalLink, FileText, Sparkles,
+  Quote, FileText, Sparkles,
   Building2, GraduationCap, Users, Globe, ArrowRight, Star, Images,
   CheckCircle2, Award, BookOpen, Microscope, Palette, Trophy, Languages,
-  Baby, School, Library, Clock, Send, Image as ImageIcon,
+  Baby, School, Library, Clock, Send, Image as ImageIcon, MessageCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
@@ -68,9 +68,11 @@ import {
   DEFAULT_GALLERY_ITEMS,
   DEFAULT_TESTIMONIALS,
   DEFAULT_FAQ_ITEMS,
+  DEFAULT_PORTAL_IMAGES,
   withDefault,
   shouldShowSection,
 } from '@/lib/tenant/default-cms-content';
+import SchoolLocationMap from '@/components/portal/SchoolLocationMap';
 
 interface SchoolPortalInfo {
   tenantId?: string | null;
@@ -83,6 +85,26 @@ interface SchoolPortalInfo {
 interface WebsiteData {
   website: any; newsArticles: any[]; events: any[]; galleryItems: any[];
   testimonials: any[]; faqItems: any[];
+}
+
+/**
+ * Coordonnées publiques de l'établissement — source : module Paramètres →
+ * Identité (API publique /tenant-website/public/:slug/identity-info).
+ * Contacts + adresse + GPS exact (configuré via Paramètres → Géolocalisation).
+ */
+interface IdentityInfo {
+  configured?: boolean;
+  phonePrimary?: string | null;
+  phoneSecondary?: string | null;
+  whatsapp?: string | null;
+  email?: string | null;
+  website?: string | null;
+  address?: string | null;
+  city?: string | null;
+  department?: string | null;
+  country?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface Props {
@@ -271,6 +293,9 @@ function useCountUp(target: number, duration = 1500) {
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
   const [websiteData, setWebsiteData] = useState<WebsiteData | null>(null);
+  // ⭐ Coordonnées du module Paramètres (Identité établissement) — alimentent
+  // la section Contact + la carte de localisation (GPS exact si configuré).
+  const [identityInfo, setIdentityInfo] = useState<IdentityInfo | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(
     (schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null,
   );
@@ -315,13 +340,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
       setIsLoading(false);
       // Charger en parallèle les données complémentaires
-      Promise.all([loadWebsiteData(), loadThemeSettings()]);
+      Promise.all([loadWebsiteData(), loadThemeSettings(), loadIdentityInfo()]);
     } else {
-      // Pas de schoolInfo → tout charger en parallèle (3 fetchs)
+      // Pas de schoolInfo → tout charger en parallèle (4 fetchs)
       Promise.all([
         loadSchoolData(),
         loadWebsiteData(),
         loadThemeSettings(),
+        loadIdentityInfo(),
       ]).finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -371,6 +397,30 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     } catch (e) {
       clearTimeout(timeoutId);
       console.error(e);
+    }
+  };
+
+  // ─── Coordonnées du module Paramètres → Identité (public) ────────────
+  // GET /api/tenant-website/public/:slug/identity-info → contacts, adresse
+  // et GPS exact de l'établissement. La section Contact utilise ces valeurs
+  // quand le CMS n'a pas été configuré — la carte place le pin sur la VRAIE
+  // position de l'école (ex: Parakou) au lieu d'un marker générique.
+  const loadIdentityInfo = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/identity-info`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.configured) setIdentityInfo(data);
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      // Silencieux — fallback sur les valeurs CMS / schoolData / defaults
+      console.debug('[identity-info] unavailable for', slug, e);
     }
   };
 
@@ -532,11 +582,34 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     'Suivez la vie de notre établissement : événements, résultats et moments forts.',
   );
 
-  // ─── Coordonnées contact ──
-  const contactEmail = withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || schoolData?.phone || '';
-  const contactPhone = withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || '';
-  const contactAddress = withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || '';
-  const contactCity = schoolData?.city || '';
+  // ─── Coordonnées contact — dynamiques depuis le module Paramètres ────
+  // Priorité : CMS (site web) > Paramètres → Identité > tenants table > défaut.
+  // ⚠️ Fix : l'ancien code faisait tomber contactEmail sur schoolData.phone
+  // (un numéro de téléphone dans le champ email) — corrigé.
+  const contactEmail =
+    withDefault(rawWebsite?.contactEmail, '') ||
+    identityInfo?.email ||
+    '';
+  const contactPhone =
+    withDefault(rawWebsite?.contactPhone, '') ||
+    identityInfo?.phonePrimary ||
+    identityInfo?.phoneSecondary ||
+    schoolData?.phone ||
+    '';
+  const contactWhatsapp = identityInfo?.whatsapp || null;
+  const contactAddress =
+    withDefault(rawWebsite?.contactAddress, '') ||
+    identityInfo?.address ||
+    schoolData?.address ||
+    '';
+  const contactCity =
+    identityInfo?.city ||
+    schoolData?.city ||
+    '';
+  // GPS exact (module Paramètres → Identité → Géolocalisation) — utilisé par
+  // SchoolLocationMap pour placer le pin sur la vraie position de l'école.
+  const contactLatitude = identityInfo?.latitude ?? null;
+  const contactLongitude = identityInfo?.longitude ?? null;
 
   // ─── Navigation CDC ──
   const navLinks = [
@@ -550,10 +623,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   ];
 
   // ─── Iframe OpenStreetMap (CDC 3.9) ──
-  // Utilise l'adresse de l'école pour géolocaliser via OpenStreetMap
-  const mapQuery = encodeURIComponent(`${contactAddress} ${contactCity} Bénin`.trim());
-  const osmIframeSrc = `https://www.openstreetmap.org/export/embed.html?bbox=2.0,6.3,2.7,6.6&layer=mapnik&marker=6.4968,2.6036`;
-  // Note: l'iframe reste générique — l'école peut configurer contactMapUrl si elle veut un lien précis
+  // ⚠️ Remplacée par <SchoolLocationMap /> : l'ancienne iframe était codée
+  // en dur (marker à Porto-Novo + bbox Cotonou/Porto-Novo pour TOUTES les
+  // écoles, y compris Parakou/Natitingou/Djougou...).
 
   return (
     <div className="min-h-screen bg-white">
@@ -597,16 +669,32 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       </div>
 
       {/* ═══ 3.2 HERO ═══ */}
-      <section id="hero" className="relative min-h-[640px] md:min-h-[720px] flex items-center justify-center overflow-hidden">
+      {/* ⚠️ RESPONSIVE FIX (2026-09) : le bandeau de chiffres clés était en
+          position ABSOLUE collé en bas — sur mobile il chevauchait les boutons
+          CTA. Structure corrigée : le section est en flex-col, le contenu prend
+          l'espace restant (flex-1, centré) et le bandeau est DANS le flux sur
+          mobile (relative) / superposé en bas sur md+ (absolute) — plus aucun
+          chevauchement possible, quelle que soit la hauteur d'écran. */}
+      <section id="hero" className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden md:min-h-[720px]">
         <div className="absolute inset-0">
-          {heroImage ? (
-            <Image src={heroImage} alt={schoolName} fill priority className="object-cover" sizes="100vw" />
+          {/* Image de fond : CMS de l'école > image par défaut (campus scolaire
+              africain Academia Helm) > dégradé navy → bleu académique (CDC 3.2) */}
+          {(heroImage || DEFAULT_PORTAL_IMAGES.hero) ? (
+            <Image
+              src={heroImage || DEFAULT_PORTAL_IMAGES.hero}
+              alt={schoolName}
+              fill
+              priority
+              className="object-cover"
+              sizes="100vw"
+            />
           ) : (
             // CDC 3.2 — Fond : dégradé navy → bleu académique par défaut
             <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
           )}
-          {/* Overlay sombre 40% (CDC 3.2) */}
-          <div className="absolute inset-0 bg-black/40" />
+          {/* Overlay sombre 45% (CDC 3.2) — légèrement renforcé pour la
+              lisibilité sur la photo de fond par défaut */}
+          <div className="absolute inset-0 bg-black/45" />
           {/* Halo doré en haut à droite — signature Academia Helm */}
           <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_45%)]" />
         </div>
@@ -614,8 +702,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         {/* Particules dorées flottantes */}
         <FloatingEduParticles count={18} opacityMultiplier={1.2} variant="light" />
 
-        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 text-center py-20">
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
+        <div className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-6 text-center flex-1 flex flex-col items-center justify-center py-12 md:py-20">
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="w-full">
             <div className="inline-flex items-center gap-2 mb-5 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
               <Sparkles className="w-3.5 h-3.5" style={{ color: GOLD }} />
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: GOLD }}>
@@ -624,10 +712,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             </div>
 
             {/* H1 — baseline institutionnelle (CDC 3.2) */}
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-5 drop-shadow-lg">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-5 drop-shadow-lg">
               {heroTitle}
             </h1>
-            <p className="text-base md:text-xl text-blue-50/85 mb-8 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-sm sm:text-base md:text-xl text-blue-50/85 mb-8 max-w-2xl mx-auto leading-relaxed">
               {heroSubtitle}
             </p>
 
@@ -638,11 +726,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             </div>
 
             {/* CTA primaire (or) + CTA secondaire (contour blanc → /portal) */}
+            {/* Empilés pleine largeur sur mobile (w-full sm:w-auto) — fini les
+                boutons trop étroits / chevauchants sur petit écran */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               {/* CTA primaire — "Demander une admission" (or plein) */}
               <button
                 onClick={() => handlePortalClick('PUBLIC')}
-                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold shadow-lg transition-all hover:scale-105 hover:shadow-xl w-full sm:w-auto"
                 style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
               >
                 {heroCtaText} <ChevronRight size={16} />
@@ -650,7 +740,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               {/* CTA secondaire — "Portail" (contour blanc) → /school-portal/portal (page portail tenant) */}
               <a
                 href="/school-portal/portal"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold text-white border-2 border-white/40 hover:bg-white/10 hover:border-white/70 transition-all backdrop-blur-sm"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold text-white border-2 border-white/40 hover:bg-white/10 hover:border-white/70 transition-all backdrop-blur-sm w-full sm:w-auto"
               >
                 Portail <ArrowRight size={16} />
               </a>
@@ -659,10 +749,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </div>
 
         {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
+        {/* Mobile : DANS le flux (sous le contenu — zéro chevauchement) ;
+            md+ : superposé en bas du hero comme au CDC. */}
         {keyFigures.length > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 pb-6 md:pb-8">
+          <div className="relative z-10 w-full pb-5 pt-2 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
             <div className="max-w-6xl mx-auto px-4 sm:px-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4">
                 {keyFigures.map((fig: any, i: number) => (
                   <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
                 ))}
@@ -714,10 +806,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 transition={{ duration: 0.6, delay: 0.15 }}
                 className="relative"
               >
-                {website.presentationImageUrl ? (
+                {(website.presentationImageUrl || DEFAULT_PORTAL_IMAGES.presentation) ? (
                   <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl">
                     <Image
-                      src={website.presentationImageUrl}
+                      src={website.presentationImageUrl || DEFAULT_PORTAL_IMAGES.presentation}
                       alt="Présentation"
                       fill
                       sizes="(max-width: 768px) 100vw, 50vw"
@@ -922,10 +1014,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                   className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all cursor-pointer group"
                   onClick={() => { if (article.slug) window.location.href = `/actualites/${article.slug}`; }}
                 >
-                  {article.coverImageUrl ? (
+                  {article.coverImageUrl || DEFAULT_PORTAL_IMAGES.news[i % DEFAULT_PORTAL_IMAGES.news.length] ? (
                     <div className="h-44 overflow-hidden">
                       <Image
-                        src={article.coverImageUrl}
+                        src={article.coverImageUrl || DEFAULT_PORTAL_IMAGES.news[i % DEFAULT_PORTAL_IMAGES.news.length]}
                         alt={article.title}
                         fill
                         sizes="(max-width: 768px) 100vw, 33vw"
@@ -980,9 +1072,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                     transition={{ delay: i * 0.05 }}
                     className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group"
                   >
-                    {item.imageUrl ? (
+                    {item.imageUrl || DEFAULT_PORTAL_IMAGES.gallery[i % DEFAULT_PORTAL_IMAGES.gallery.length] ? (
                       <Image
-                        src={item.imageUrl}
+                        src={item.imageUrl || DEFAULT_PORTAL_IMAGES.gallery[i % DEFAULT_PORTAL_IMAGES.gallery.length]}
                         alt={item.caption || ''}
                         fill
                         sizes="(max-width: 768px) 50vw, 25vw"
@@ -1240,7 +1332,26 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                       </div>
                       <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wider">Téléphone</p>
-                        <a href={`tel:${contactPhone}`} className="text-sm font-semibold text-slate-900 hover:underline">{contactPhone}</a>
+                        <a href={`tel:${contactPhone.replace(/\s/g, '')}`} className="text-sm font-semibold text-slate-900 hover:underline">{contactPhone}</a>
+                      </div>
+                    </li>
+                  )}
+                  {/* WhatsApp (module Paramètres → Identité) */}
+                  {contactWhatsapp && (
+                    <li className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `#25D36618` }}>
+                        <MessageCircle className="w-4 h-4" style={{ color: '#128C7E' }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">WhatsApp</p>
+                        <a
+                          href={`https://wa.me/${contactWhatsapp.replace(/[^0-9]/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-semibold text-slate-900 hover:underline"
+                        >
+                          {contactWhatsapp}
+                        </a>
                       </div>
                     </li>
                   )}
@@ -1268,30 +1379,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 </ul>
               </div>
 
-              {/* Carte de localisation — iframe OpenStreetMap (CDC 3.9) */}
-              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
-                <iframe
-                  title="Localisation de l'établissement"
-                  src={osmIframeSrc}
-                  className="w-full h-64 md:h-72 border-0"
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-                <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5" /> {contactCity || 'Bénin'}
-                  </span>
-                  <a
-                    href={`https://www.openstreetmap.org/search?query=${mapQuery}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-semibold flex items-center gap-1 hover:underline"
-                    style={{ color: NAVY }}
-                  >
-                    Ouvrir la carte <ExternalLink size={12} />
-                  </a>
-                </div>
-              </div>
+              {/* Carte de localisation — position RÉELLE de l'école (CDC 3.9)
+                  ⚠️ Fix : l'ancienne iframe était codée en dur (pin à
+                  Porto-Novo pour toutes les écoles). SchoolLocationMap résout :
+                  GPS exact (Paramètres) → géocodage adresse → ville → pays. */}
+              <SchoolLocationMap
+                latitude={contactLatitude}
+                longitude={contactLongitude}
+                address={contactAddress || null}
+                city={contactCity || null}
+                schoolName={schoolName}
+                navy={NAVY}
+              />
             </div>
 
             {/* Colonne droite : Formulaire de contact (nom, email, sujet, message) (CDC 3.9) */}

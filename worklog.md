@@ -10198,3 +10198,28 @@ Stage Summary:
 - ✅ Encaissements 2025-2026 de Mon Avenir Plus VIDÉS de la production (backup JSON conservé) — prêts pour réimport conforme au fichier transmis
 - ✅ Installation PWA = LOGO + NOM de l'école vérifiés en production (desktop Chrome/Edge, Android, iOS apple-touch-icon 180px) — exigence utilisateur satisfaite
 - Aucun commit nécessaire côté dépôt (implémentation PWA déjà déployée par la session parallèle ; scripts BDD hors dépôt)
+
+---
+Task ID: 40
+Agent: main (Super Z)
+Task: Bascule d'année GLOBALE (tous les modules) + KPI scopés par affectations RH — demande promoteur Mon Avenir Plus (2026-09-09)
+
+Work Log:
+- Reprise : pull 67 commits (df799883c « dashboards comptable KPI » + 464b23381 « sélecteur classes » déjà poussés par la session précédente)
+- Vérif BDD prod : WITHDRAWN réactivés ✅ (11 ACTIVE, 659 tx = 34 545 000 FCFA — la tâche en suspens est SOLDÉE)
+- Audit exhaustif (agent Explore) : composants ignorant AcademicYearContext, caches 45 s sans année dans la clé, event 'academic-year-changed' dispatché mais JAMAIS écouté, priorité activeYear ?? savedYear qui revertait la sélection
+- Test empirique cache edge Vercel : les requêtes authentifiées sont BYPASS (pas de partage cross-comptes) ; le header x-academic-year-id change bien la réponse via BFF (678 vs 668 comptes) ; sans header → 0 compte
+- NOYAU (AcademicYearContext) : choix utilisateur persistant (flag academicYearUserChoice + activeIdAtChoice), année en mémoire jamais écrasée, purge invalidateApiCache() au switch, bascule collective conservée si l'admin active une nouvelle année
+- NOUVEAU lib/api/year-header.ts : withAcademicYearHeader (injecte x-academic-year-id si l'URL/body ne porte pas déjà l'année) — appliqué à financeFetch, hrFetch, pedagogyFetch, steFetch
+- 16 composants frontend corrigés (pattern all-classes sans année, ImportBilanModal, FinanceAudit, AdministrativeSeals placeholders TODO, congés/CNSS RH)
+- Backend : filtre academicYearId sur GET /staff-admin-assignments, /hr/cnss/declarations, /finance/anomalies (bornes d'année)
+- RH prod : affectation MAT_PRI @ SECRETAIRE_COMPTABLE ajoutée pour DOUGLA KOSSI (comme TABE/OGBON : SEC + MAT_PRI = toute l'école)
+- E2E production KPI scopés 3/3 : MAT_PRI+SEC → 34 545 000 ; MAT_PRI → 22 185 000 ; SEC → 12 360 000 (3 users/staff/affectations de test créés puis purgés)
+- KPI attendus recalculés depuis la BDD (44 MAT + 464 PRI + 180 SEC comptes) — cohérents avec l'incident df799883c (22 185 000)
+- Commit b7ff5c232 poussé (31 fichiers, +447/−109) — déploiements Railway + Vercel en cours
+
+Stage Summary:
+- ✅ KPI par périmètre RH validé E2E (matrice exacte demandée : combiné / MAT_PRI / SEC)
+- ✅ Affectation complète du secrétaire comptable en production
+- ✅ Bascule d'année globale : noyau context + caches + 16 composants + 3 endpoints backend
+- En attente : validation post-déploiement du switch d'année (Vercel), PWA/frais généraux/liste classes lente

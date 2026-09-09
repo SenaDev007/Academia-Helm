@@ -692,9 +692,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             // CDC 3.2 — Fond : dégradé navy → bleu académique par défaut
             <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
           )}
-          {/* Overlay sombre 45% (CDC 3.2) — légèrement renforcé pour la
-              lisibilité sur la photo de fond par défaut */}
-          <div className="absolute inset-0 bg-black/45" />
+          {/* Overlay sombre 40% (CDC 3.2) — équilibre lisibilité du texte /
+              visibilité de la photo de fond */}
+          <div className="absolute inset-0 bg-black/40" />
           {/* Halo doré en haut à droite — signature Academia Helm */}
           <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_45%)]" />
         </div>
@@ -750,9 +750,11 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
         {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
         {/* Mobile : DANS le flux (sous le contenu — zéro chevauchement) ;
-            md+ : superposé en bas du hero comme au CDC. */}
+            md+ : superposé en bas du hero comme au CDC.
+            ⚠️ pb-24 sur mobile : réserve la zone de la bannière PWA (fixée en
+            bas d'écran) pour qu'elle ne recouvre pas les cartes chiffres clés. */}
         {keyFigures.length > 0 && (
-          <div className="relative z-10 w-full pb-5 pt-2 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
+          <div className="relative z-10 w-full pb-24 pt-2 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
             <div className="max-w-6xl mx-auto px-4 sm:px-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4">
                 {keyFigures.map((fig: any, i: number) => (

@@ -404,15 +404,14 @@ export class CNSSPrismaService {
   /**
    * Récupère toutes les déclarations d'un tenant avec le nombre de lignes
    * ⭐ FIX 2026-09-09 (« bascule d'année globale ») : filtre année optionnel —
-   *    les déclarations SANS année (héritées) sont toujours incluses.
+   *    academicYearId est OBLIGATOIRE sur CNSSDeclaration (pas de valeur
+   *    null possible), filtre direct.
    */
   async findAllDeclarations(tenantId: string, academicYearId?: string) {
     return this.prisma.cNSSDeclaration.findMany({
       where: {
         tenantId,
-        ...(academicYearId
-          ? { OR: [{ academicYearId }, { academicYearId: null }] }
-          : {}),
+        ...(academicYearId ? { academicYearId } : {}),
       },
       include: {
         _count: { select: { lines: true } },

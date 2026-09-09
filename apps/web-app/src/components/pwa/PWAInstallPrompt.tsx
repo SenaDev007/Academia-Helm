@@ -370,7 +370,8 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
               </span>
             </div>
 
-            {/* Titre + bénéfice */}
+            {/* Titre + bénéfice — bénéfice masqué < sm : bannière mobile
+                ultra-compacte (~64px) pour ne pas recouvrir le contenu */}
             <div className="min-w-0 flex-1">
               <h3
                 title={title}
@@ -378,7 +379,7 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
               >
                 {title}
               </h3>
-              <p className="text-[11px] sm:text-xs leading-snug text-slate-500 mt-0.5 line-clamp-2">
+              <p className="hidden sm:block text-[11px] sm:text-xs leading-snug text-slate-500 mt-0.5 line-clamp-2">
                 {benefit}
               </p>
             </div>
@@ -452,11 +453,12 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
             </div>
           )}
 
-          {/* Skip permanent (bannière compacte, non dépliée) */}
+          {/* Skip permanent (bannière compacte, non dépliée) — sm+ uniquement :
+              la bannière mobile compacte n'a pas la place (dispo dépliée) */}
           {!expanded && (
             <button
               onClick={handleSkipForever}
-              className="absolute bottom-1 right-2 text-[10px] text-slate-300 hover:text-slate-500 transition-colors"
+              className="hidden sm:block absolute bottom-1 right-2 text-[10px] text-slate-300 hover:text-slate-500 transition-colors"
               aria-label={L('Ne plus demander', 'Don\u2019t ask again')}
             >
               {L('Ne plus demander', 'Don\u2019t ask again')}

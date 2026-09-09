@@ -675,7 +675,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           l'espace restant (flex-1, centré) et le bandeau est DANS le flux sur
           mobile (relative) / superposé en bas sur md+ (absolute) — plus aucun
           chevauchement possible, quelle que soit la hauteur d'écran. */}
-      <section id="hero" className="relative flex min-h-[100svh] flex-col items-center justify-center overflow-hidden md:min-h-[720px]">
+      <section id="hero" className="relative flex min-h-[calc(100svh-4rem)] flex-col items-center justify-center overflow-hidden md:min-h-[720px]">
         <div className="absolute inset-0">
           {/* Image de fond : CMS de l'école > image par défaut (campus scolaire
               africain Academia Helm) > dégradé navy → bleu académique (CDC 3.2) */}
@@ -754,7 +754,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             ⚠️ pb-24 sur mobile : réserve la zone de la bannière PWA (fixée en
             bas d'écran) pour qu'elle ne recouvre pas les cartes chiffres clés. */}
         {keyFigures.length > 0 && (
-          <div className="relative z-10 w-full pb-24 pt-2 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
+          <div className="relative z-10 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
             <div className="max-w-6xl mx-auto px-4 sm:px-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4">
                 {keyFigures.map((fig: any, i: number) => (

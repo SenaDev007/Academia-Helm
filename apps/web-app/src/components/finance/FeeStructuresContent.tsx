@@ -458,9 +458,16 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
   const handleDelete = async (id: string) => {
     try {
       await financeService.deleteFeeStructure(id);
-      toast({ title: 'Succès', description: 'Frais supprimé définitivement.' });
+      // ⭐ FIX 9 sept. 2026 : la suppression déclenche désormais un recalcul
+      //    arrière-plan des comptes du périmètre du frais (le fantôme
+      //    « +1000 F sur le total dû » venait de l'absence de ce recalcul).
+      toast({
+        title: 'Succès',
+        description: 'Frais supprimé. Les comptes élèves concernés sont mis à jour dans quelques secondes.',
+      });
       setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       await loadStructures();
+      scheduleAccountsCatchUp();
       window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
     } catch (error: any) {
       toast({
@@ -485,12 +492,17 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       const deletedCount = result.deleted?.length || 0;
       const blockedCount = result.blocked?.length || 0;
       if (deletedCount > 0 && blockedCount === 0) {
-        toast({ title: 'Succès', description: `${deletedCount} frais supprimé(s) définitivement.` });
+        toast({
+          title: 'Succès',
+          description: `${deletedCount} frais supprimé(s). Les comptes élèves concernés sont mis à jour dans quelques secondes.`,
+        });
       } else if (deletedCount > 0 && blockedCount > 0) {
         toast({
           title: 'Suppression partielle',
           description: `${deletedCount} supprimé(s), ${blockedCount} bloqué(s) (paiements liés).`,
-          variant: 'default',
+          // ⭐ FIX 9 sept. 2026 : 'default' n'est pas un ToastVariant valide
+          // (success|warning|error|info|destructive|loading) → 'warning'.
+          variant: 'warning',
         });
       } else if (deletedCount === 0 && blockedCount > 0) {
         toast({
@@ -501,6 +513,11 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
       }
       setSelectedIds(new Set());
       await loadStructures();
+      // ⭐ FIX 9 sept. 2026 : rattraper les comptes après le recalcul arrière-plan
+      if (deletedCount > 0) {
+        scheduleAccountsCatchUp();
+        window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+      }
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
     } finally {

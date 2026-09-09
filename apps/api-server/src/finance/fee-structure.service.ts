@@ -1182,6 +1182,17 @@ export class FeeStructureService {
    *
    * Si des account_breakdowns ont des paiements (paidAmount > 0), on bloque
    * la suppression pour éviter de perdre l'historique financier.
+   *
+   * ⭐ FIX (9 sept. 2026 — bug « +1000 F fantôme sur le total dû / solde ») :
+   *    AVANT : les account_breakdowns étaient supprimés en cascade SANS
+   *    recalculer les StudentAccount → totalDue/totalPaid/balance conservaient
+   *    le montant du frais supprimé (« +1000 F à chaque fois, à tous les
+   *    niveaux » — incident CSPEB : frais d'examen 1000 F global créé puis
+   *    supprimé 13 s plus tard → +1000 F fantôme sur les 100 comptes élèves).
+   *    MAINTENANT : après la suppression, on planifie le même recalcul
+   *    arrière-plan SCOPÉ que la création/modification (file sérialisée +
+   *    coalescence) → les totaux des comptes du périmètre du frais sont
+   *    resynchronisés sur la somme de leurs breakdowns restants.
    */
   async delete(id: string, tenantId: string) {
     const existing = await this.findOne(id, tenantId);
@@ -1196,6 +1207,17 @@ export class FeeStructureService {
         `Veuillez d'abord supprimer ou annuler ces paiements avant de supprimer le frais.`
       );
     }
+
+    // Capturer le périmètre AVANT la suppression (classId/academicClassId/
+    // levelId de la structure) : structureScopeToAccountFilter() en a besoin
+    // pour cibler les comptes élèves à recalculer — la structure n'existera
+    // plus au moment du recalcul.
+    const scope = {
+      classId: (existing as any).classId ?? null,
+      academicClassId: (existing as any).academicClassId ?? null,
+      levelId: (existing as any).levelId ?? null,
+    };
+    const academicYearId = (existing as any).academicYearId;
 
     // Suppression physique (désactiver les triggers temporairement)
     // - no_delete_fee : empêche la suppression de fee_structures
@@ -1227,6 +1249,21 @@ export class FeeStructureService {
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
     }
 
+    // ⭐ FIX 9 sept. 2026 : recalculer les comptes du périmètre du frais en
+    //    arrière-plan. Les breakdowns du frais viennent d'être supprimés ;
+    //    sans ce recalcul, totalDue/totalPaid/balance garderaient le montant
+    //    du frais supprimé (fantôme). Le runner resynchronise les totaux sur
+    //    la somme des breakdowns restants (fire-and-forget : réponse HTTP
+    //    immédiate, même UX que la création/modification de frais).
+    if (academicYearId) {
+      this.scheduleAccountRecalculation(
+        tenantId,
+        academicYearId,
+        `fs-del:${id}`,
+        this.structureScopeToAccountFilter(scope, academicYearId),
+      );
+    }
+
     return { id, deleted: true };
   }
 
@@ -1236,6 +1273,8 @@ export class FeeStructureService {
    * Supprime plusieurs frais en une seule opération. Même logique que delete() :
    * - Bloque si un frais a des paiements (paidAmount > 0 sur account_breakdowns)
    * - Supprime en cascade : installments, overrides, breakdowns sans paiement, fee_structure
+   * - ⭐ FIX 9 sept. 2026 : planifie le recalcul arrière-plan du périmètre de
+   *   CHAQUE frais supprimé (sinon fantôme sur total dû / solde — cf. delete()).
    *
    * @param ids Tableau d'IDs de fee_structures à supprimer
    * @returns { deleted: string[], blocked: { id: string, reason: string }[] }
@@ -1247,6 +1286,9 @@ export class FeeStructureService {
 
     const deleted: string[] = [];
     const blocked: { id: string; name: string; reason: string }[] = [];
+    // ⭐ FIX 9 sept. 2026 : périmètres à recalculer après suppression —
+    // groupés par année (une année = un seul job, périmètres unis en OR).
+    const scopesByYear = new Map<string, any>();
 
     // Désactiver les triggers pour toute l'opération
     // - no_delete_fee : empêche la suppression de fee_structures
@@ -1271,6 +1313,19 @@ export class FeeStructureService {
             continue;
           }
 
+          // Mémoriser le périmètre AVANT suppression (pour le recalcul des comptes)
+          const scope = {
+            classId: (existing as any).classId ?? null,
+            academicClassId: (existing as any).academicClassId ?? null,
+            levelId: (existing as any).levelId ?? null,
+          };
+          const yearId = (existing as any).academicYearId as string | undefined;
+          if (yearId) {
+            const filter = this.structureScopeToAccountFilter(scope, yearId);
+            const prev = scopesByYear.get(yearId);
+            scopesByYear.set(yearId, prev ? { OR: [prev, filter] } : filter);
+          }
+
           // Supprimer en cascade
           await this.prisma.feeStructureInstallment.deleteMany({ where: { feeStructureId: id } });
           await this.prisma.feeOverride.deleteMany({ where: { feeStructureId: id } });
@@ -1290,6 +1345,17 @@ export class FeeStructureService {
       // Réactiver les triggers
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" ENABLE TRIGGER no_delete_fee');
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
+    }
+
+    // ⭐ FIX 9 sept. 2026 : recalcul arrière-plan des comptes des périmètres
+    //    supprimés (une clé par année → un job coalescé par année, périmètres OR).
+    for (const [yearId, accountWhere] of scopesByYear) {
+      this.scheduleAccountRecalculation(
+        tenantId,
+        yearId,
+        `fs-del-bulk:${yearId}`,
+        accountWhere,
+      );
     }
 
     return {

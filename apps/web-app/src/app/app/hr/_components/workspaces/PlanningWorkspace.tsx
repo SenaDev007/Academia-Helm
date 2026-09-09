@@ -280,7 +280,7 @@ export function PlanningWorkspace() {
     }
 
     toast({
-      variant: failed > 0 ? 'default' : 'success',
+      variant: failed > 0 ? 'warning' : 'success',
       title: 'Semaine assignée',
       description: `${created + updated} créneau(x) mis à jour${failed > 0 ? `, ${failed} échec(s)` : ''}`,
     });

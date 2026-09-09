@@ -2985,7 +2985,7 @@ export function RecruitmentWorkspace({ initialTab }: { initialTab?: 'jobs' | 'ca
                                     <button
                                       onClick={async () => {
                                         try {
-                                          toast({ variant: 'default', title: 'Relance en cours...' });
+                                          toast({ variant: 'info', title: 'Relance en cours...' });
                                           await hrFetch(hrUrl(`contracts/${c.contract.id}/resend-sign-email`, { tenantId: tenant?.id }), { method: 'POST' });
                                           toast({ variant: 'success', title: 'Email renvoyé !', description: `Le lien de signature a été renvoyé à ${c.name}.` });
                                         } catch (err: any) {

@@ -199,7 +199,7 @@ export default function AbsencesContent() {
       toast({
         title: success > 0 ? '✅ Absences enregistrées' : 'Erreur',
         description: `${success} absence(s) enregistrée(s)${failed > 0 ? `, ${failed} échouée(s)` : ''} pour le ${new Date(selectedDate).toLocaleDateString('fr-FR')}.`,
-        variant: success > 0 ? 'default' : 'destructive',
+        variant: success > 0 ? 'success' : 'destructive',
       });
       setBulkAbsentIds(new Set());
       loadAbsences();

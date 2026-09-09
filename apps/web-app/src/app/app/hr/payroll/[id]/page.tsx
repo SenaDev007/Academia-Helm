@@ -212,7 +212,7 @@ export default function PayrollDetailPage() {
         method: 'POST',
       });
       toast({
-        variant: result.failed > 0 ? 'default' : 'success',
+        variant: result.failed > 0 ? 'warning' : 'success',
         title: result.failed === 0
           ? `Paiement groupé terminé — ${result.success} salarié(s) payés`
           : `Paiement partiel — ${result.success} réussis, ${result.failed} échecs`,

@@ -504,7 +504,7 @@ export default function RecoveryContent() {
         toast({
           title: sent.length > 0 ? '✅ Relance envoyée' : (skipped.length > 0 ? '⚠️ Contact manquant' : '❌ Échec d\'envoi'),
           description: parts.join(' — ') || 'Aucune notification envoyée.',
-          variant: sent.length > 0 ? 'default' : 'destructive',
+          variant: sent.length > 0 ? 'success' : 'destructive',
         });
       }
       setManualModal(false);

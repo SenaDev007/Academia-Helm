@@ -207,7 +207,7 @@ export default function ImportOverridesModal({ open, onClose, onSuccess }: Impor
       toast({
         title: data.errors === 0 ? '✅ Import terminé' : 'Import terminé avec erreurs',
         description: `${data.created} créé(s), ${data.updated} mis à jour, ${data.errors} échec(s).`,
-        variant: data.errors > 0 ? 'destructive' : 'default',
+        variant: data.errors > 0 ? 'destructive' : 'success',
       });
       if (onSuccess) onSuccess();
     } catch (e: any) {

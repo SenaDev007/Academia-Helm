@@ -262,7 +262,7 @@ export default function FeeOverridesContent() {
         toast({
           title: 'Suppression partielle',
           description: `${deletedCount} supprimée(s), ${blockedCount} bloquée(s).`,
-          variant: 'default',
+          variant: 'warning',
         });
       } else if (deletedCount === 0 && blockedCount > 0) {
         toast({

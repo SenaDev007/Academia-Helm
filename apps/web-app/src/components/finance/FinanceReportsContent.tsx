@@ -283,7 +283,7 @@ export default function FinanceReportsContent() {
           mimeType: 'application/pdf',
         });
       } else if (subTab === 'comparatif') {
-        toast({ title: 'Export non disponible', description: 'L\'export du comparatif sera ajouté prochainement.', variant: 'default' });
+        toast({ title: 'Export non disponible', description: 'L\'export du comparatif sera ajouté prochainément.', variant: 'info' });
         return;
       }
       toast({ title: '✅ Export PDF généré', description: 'Le document est prêt.' });

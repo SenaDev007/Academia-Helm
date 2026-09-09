@@ -258,7 +258,7 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
       toast({
         title: data.errors === 0 ? '✅ Import terminé' : 'Import terminé avec erreurs',
         description: `${data.imported} importé(s), ${data.skipped} ignoré(s), ${data.errors} échec(s).`,
-        variant: data.errors > 0 ? 'destructive' : 'default',
+        variant: data.errors > 0 ? 'destructive' : 'success',
       });
       if (onSuccess) onSuccess();
     } catch (e: any) {

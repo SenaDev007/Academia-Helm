@@ -183,7 +183,7 @@ export default function BulkClassOverrideModal({
         toast({
           title: 'Personnalisation partielle',
           description: `${applied} personnalisé(s), ${failed} en échec sur ${totalStudents} élève(s).`,
-          variant: 'default',
+          variant: 'warning',
         });
       }
       onSuccess();

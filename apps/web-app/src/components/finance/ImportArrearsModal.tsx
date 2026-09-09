@@ -173,7 +173,7 @@ export default function ImportArrearsModal({ open, onClose, onSuccess }: ImportA
       toast({
         title: data.failed === 0 ? '✅ Import terminé' : 'Import terminé avec erreurs',
         description: `${data.succeeded} réussi(s), ${data.failed} échec(s).`,
-        variant: data.failed > 0 ? 'destructive' : 'default',
+        variant: data.failed > 0 ? 'destructive' : 'success',
       });
       if (onSuccess) onSuccess();
       // ⭐ Déclencher le rafraîchissement des comptes élèves (cross-page)

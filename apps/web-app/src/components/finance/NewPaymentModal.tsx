@@ -92,6 +92,7 @@ export default function NewPaymentModal({
   defaultPaymentMethod,
   refreshTrigger = 0,
   presetStudent,
+  presetMode = 'ENROLLMENT',
 }: {
   academicYearId: string;
   /** Liste des comptes (module Finance). Optionnel si presetStudent est fourni. */
@@ -110,6 +111,13 @@ export default function NewPaymentModal({
    *    compte est chargé automatiquement (getOrCreate).
    */
   presetStudent?: PresetStudent;
+  /**
+   * ⭐ Contexte d'ouverture en mode préréglé : ENROLLMENT = flux
+   *    post-inscription (titre dédié frais d'inscription), ACCOUNT =
+   *    encaissement direct depuis l'onglet « Compte élève » (l'élève est
+   *    sélectionné dans le tableau, on encaisse pour lui directement).
+   */
+  presetMode?: 'ENROLLMENT' | 'ACCOUNT';
 }) {
   const [studentAccountId, setStudentAccountId] = useState('');
   const [amount, setAmount] = useState('');
@@ -868,11 +876,13 @@ export default function NewPaymentModal({
       >
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="text-lg font-semibold">
-            {presetStudent ? 'Encaissement — Frais d\u2019inscription' : 'Nouveau paiement'}
+            {presetStudent
+              ? (presetMode === 'ACCOUNT' ? 'Nouvel encaissement' : 'Encaissement — Frais d\u2019inscription')
+              : 'Nouveau paiement'}
           </h3>
           {presetStudent && (
             <Badge variant="outline" className="text-[10px] text-blue-700 border-blue-300 bg-blue-50 shrink-0">
-              Flux post-inscription
+              {presetMode === 'ACCOUNT' ? 'Compte élève' : 'Flux post-inscription'}
             </Badge>
           )}
         </div>

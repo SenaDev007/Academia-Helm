@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle, Pencil, Trash2 } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -34,6 +34,7 @@ import {
 } from '@/lib/exports/filename-helpers';
 import PromoterEligibilityToggle from './PromoterEligibilityToggle';
 import EditPaymentModal from './EditPaymentModal';
+import NewPaymentModal from './NewPaymentModal';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -83,6 +84,18 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
   const [deletePaymentTx, setDeletePaymentTx] = useState<any | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // ⭐ CRÉATION D'UN ENCAISSEMENT POUR L'ÉLÈVE SÉLECTIONNÉ (sept. 2026) :
+  //    dans le tableau « Historique des encaissements », un bouton permet
+  //    d'encaisser directement pour l'élève sélectionné (le modal s'ouvre
+  //    préréglé sur son compte — pas de sélecteurs niveau/classe/élève).
+  //    Cas d'usage : le promoteur aligne la base sur les documents papier
+  //    fournis par les écoles (encaissements historiques). L'édition et la
+  //    suppression restent réservées au promoteur ; la création est un
+  //    encaissement standard (mêmes droits que l'onglet Encaissements,
+  //    garde backend inchangée).
+  const [newPaymentOpen, setNewPaymentOpen] = useState(false);
+  const [modalRefreshTrigger, setModalRefreshTrigger] = useState(0);
 
   // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
   const PAGE_SIZE = 50;
@@ -352,6 +365,27 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
       setDeleteLoading(false);
     }
   };
+
+  // ⭐ CRÉATION D'UN ENCAISSEMENT POUR L'ÉLÈVE SÉLECTIONNÉ — après succès :
+  //    recharger l'historique du compte affiché + les comptes (soldes) +
+  //    le détail éventuellement ouvert, incrémenter le refreshTrigger du
+  //    modal (recharge des caisses) et notifier les autres pages Finance.
+  //    Le modal reste ouvert (bandeau reçu) — l'utilisateur le ferme lui-même.
+  const handleNewPaymentSuccess = () => {
+    if (selectedAccountId) loadPaymentHistory(selectedAccountId);
+    if (detailAccount?.id === selectedAccountId && selectedAccountId) loadDetail(selectedAccountId);
+    loadAccounts();
+    setModalRefreshTrigger((n) => n + 1);
+    window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+  };
+
+  // ⭐ Compte de l'élève sélectionné (pour prérégler le modal d'encaissement).
+  //    On cherche dans les comptes chargés (page courante) — le compte est
+  //    forcément présent puisqu'il vient d'être cliqué dans le tableau.
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === selectedAccountId) ?? null,
+    [accounts, selectedAccountId],
+  );
 
   // Filtrage frontend par recherche (nom, prénom, matricule) — SUPPRIMÉ
   // (le backend filtre déjà en SQL — pattern identique au module Élève Task 9-a).
@@ -1084,17 +1118,35 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
             className="flex flex-col min-w-0"
             style={{ width: isDesktop ? `calc(${100 - leftPercent}% - 4px)` : '100%' }}
           >
-            <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-slate-500" />
-              Historique des encaissements
-              {selectedAccountId && (
-                <span className="text-xs font-normal text-slate-500 ml-1">
-                  ({filteredAccounts.find((a) => a.id === selectedAccountId)?.student
-                    ? `${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.lastName} ${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.firstName}`
-                    : '—'})
-                </span>
+            {/* ⭐ En-tête + bouton « Nouvel encaissement » pour l'élève
+                sélectionné : ouvre le modal préréglé sur son compte (sans
+                sélecteurs). Permet au promoteur d'aligner la base sur les
+                documents papier, et à tout rôle finance d'encaisser pour
+                l'élève affiché sans repasser par l'onglet Encaissements. */}
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-slate-500" />
+                Historique des encaissements
+                {selectedAccountId && (
+                  <span className="text-xs font-normal text-slate-500 ml-1">
+                    ({filteredAccounts.find((a) => a.id === selectedAccountId)?.student
+                      ? `${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.lastName} ${filteredAccounts.find((a) => a.id === selectedAccountId)?.student.firstName}`
+                      : '—'})
+                  </span>
+                )}
+              </h3>
+              {selectedAccount && (
+                <Button
+                  size="sm"
+                  onClick={() => setNewPaymentOpen(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  title={`Encaisser un paiement pour ${selectedAccount.student ? `${selectedAccount.student.lastName} ${selectedAccount.student.firstName}` : 'cet élève'}`}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Nouvel encaissement
+                </Button>
               )}
-            </h3>
+            </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-auto" style={{ maxHeight: '70vh' }}>
               {!selectedAccountId ? (
                 <div className="text-center text-gray-500 py-16">
@@ -1484,6 +1536,31 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
             </div>
           </div>
         </div>
+      )}
+
+      {/* ⭐ MODAL DE CRÉATION D'UN ENCAISSEMENT pour l'élève sélectionné —
+          préréglé sur son compte (presetStudent + presetMode ACCOUNT :
+          titre « Nouvel encaissement », carte récapitulative de l'élève,
+          solde en direct). Le compte est rechargé via getOrCreate côté
+          backend avec l'année du filtre courant (effectiveYearId). */}
+      {newPaymentOpen && selectedAccount && (
+        <NewPaymentModal
+          academicYearId={effectiveYearId}
+          accounts={[]}
+          presetStudent={{
+            studentId: selectedAccount.studentId,
+            firstName: selectedAccount.student?.firstName ?? '',
+            lastName: selectedAccount.student?.lastName ?? '',
+            matricule: selectedAccount.student?.studentCode
+              ?? selectedAccount.student?.matricule
+              ?? undefined,
+            academicClassName: selectedAccount.studentEnrollments?.[0]?.class?.name ?? undefined,
+          }}
+          presetMode="ACCOUNT"
+          onClose={() => setNewPaymentOpen(false)}
+          onSuccess={handleNewPaymentSuccess}
+          refreshTrigger={modalRefreshTrigger}
+        />
       )}
 
       {/* ⭐ MODAL D'ÉDITION D'UN ENCAISSEMENT (promoteur uniquement) */}

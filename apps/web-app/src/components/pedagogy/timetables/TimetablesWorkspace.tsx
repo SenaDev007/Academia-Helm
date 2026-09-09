@@ -29,6 +29,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { withAcademicYearHeader } from '@/lib/api/year-header';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -104,7 +105,12 @@ const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
 async function steFetch<T>(path: string, options?: { method?: string; body?: any }): Promise<T> {
   const res = await fetch(path, {
     method: options?.method ?? 'GET',
-    headers: { 'Content-Type': 'application/json', ...getClientAuthorizationHeader() },
+    // ⭐ FIX 2026-09-09 : header x-academic-year-id (année du sélecteur global)
+    headers: withAcademicYearHeader(
+      path,
+      { 'Content-Type': 'application/json', ...getClientAuthorizationHeader() },
+      options?.body,
+    ),
     credentials: 'include', cache: 'no-store',
     ...(options?.body && { body: JSON.stringify(options.body) }),
   });

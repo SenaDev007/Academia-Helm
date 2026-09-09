@@ -61,6 +61,10 @@ export function LeavesWorkspace() {
       setLoading(true);
       const queryParams: Record<string, string> = { tenantId: tenant.id };
       if (filterStatus !== 'ALL') queryParams.status = filterStatus;
+      // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : les demandes de congé
+      //    suivent l'année du CONTEXTE (la création l'enregistre déjà avec
+      //    academicYearId — la liste doit être cohérente).
+      if (academicYear?.id) queryParams.academicYearId = academicYear.id;
       const result = await hrFetch<any[]>(hrUrl('leaves/requests', queryParams));
       setRequests(result);
     } catch (error) {
@@ -70,7 +74,7 @@ export function LeavesWorkspace() {
     }
   }
 
-  useEffect(() => { fetchLeaves(); }, [tenant?.id, filterStatus]);
+  useEffect(() => { fetchLeaves(); }, [tenant?.id, filterStatus, academicYear?.id]);
 
   // Fetch staff list when modal opens
   useEffect(() => {

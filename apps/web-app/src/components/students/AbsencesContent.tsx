@@ -77,12 +77,13 @@ export default function AbsencesContent() {
   const [justifyReason, setJustifyReason] = useState('');
 
   // ─── Load classes ───
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // ─── Load students for selected class ───
   const loadStudents = useCallback(async () => {

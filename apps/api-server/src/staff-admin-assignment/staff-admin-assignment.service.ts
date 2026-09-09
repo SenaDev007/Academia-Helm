@@ -83,7 +83,7 @@ export class StaffAdminAssignmentService {
 
   async list(
     tenantId: string,
-    filters?: { staffId?: string; schoolLevelCode?: string; adminRole?: string; isActive?: boolean; academicTrackId?: string | null },
+    filters?: { staffId?: string; schoolLevelCode?: string; adminRole?: string; isActive?: boolean; academicTrackId?: string | null; academicYearId?: string },
   ): Promise<StaffAdminAssignment[]> {
     await this.ensureTableExists();
 
@@ -94,6 +94,17 @@ export class StaffAdminAssignmentService {
     if (filters?.isActive !== undefined) where.isActive = filters.isActive;
     // ⭐ Filtre piste : UUID AcademicTrack → affectations de cette piste ; null → bi-piste
     if (filters?.academicTrackId !== undefined) where.academicTrackId = filters.academicTrackId;
+    // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : filtre année demandé par
+    //    le module RH (onglet Administration) — les affectations de l'année
+    //    sélectionnée dans le header + les affectations SANS année (héritées,
+    //    valables toutes années) sont retournées. Sans filtre → tout (comportement
+    //    historique, utilisé par la résolution de périmètre côté access-scope).
+    if (filters?.academicYearId) {
+      where.OR = [
+        { academicYearId: filters.academicYearId },
+        { academicYearId: null },
+      ];
+    }
 
     const rows = await this.prisma.staffAdminAssignment.findMany({
       where,

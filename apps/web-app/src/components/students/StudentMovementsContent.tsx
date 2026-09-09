@@ -249,15 +249,20 @@ export default function StudentMovementsContent() {
       .then(r => r.ok ? r.json() : [])
       .then(data => setAcademicYears(Array.isArray(data) ? data : []))
       .catch(() => setAcademicYears([]));
-    // Charger les classes
-    // ⭐ FIX : passer academicYearId pour récupérer les classes de l'année
-    //    sélectionnée (et non l'année active par défaut).
-    const yearId = academicYear?.id || '';
-    fetch(`/api/all-classes${yearId ? `?academicYearId=${encodeURIComponent(yearId)}` : ''}`, { credentials: 'include', cache: 'no-store' })
+  }, []);
+
+  // Charger les classes
+  // ⭐ FIX : passer academicYearId pour récupérer les classes de l'année
+  //    sélectionnée (et non l'année active par défaut).
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : l'effet se REJOUE quand
+  //    l'année du contexte change — avant, deps `[]` figeaient l'année au
+  //    montage (closure stale) : les classes ne suivaient pas le sélecteur.
+  useEffect(() => {
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(data => setClasses(Array.isArray(data) ? data : []))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // ⭐ Bug fix : reset currentPage à 1 quand n'importe quel filtre change.
   // Sans ça, on reste bloqué sur une page potentiellement vide (ex: page 3 avec

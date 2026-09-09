@@ -674,8 +674,11 @@ class FinanceService {
   }
 
   // --- Audit ---
-  async getAnomalies(limit: number = 30): Promise<any> {
-    return financeFetch(`/api/finance/anomalies?limit=${limit}`);
+  // ⭐ FIX 2026-09-09 : academicYearId optionnel — l'onglet Audit du module
+  //    Finance suit l'année du sélecteur global (anomalies de la période).
+  async getAnomalies(limit: number = 30, academicYearId?: string): Promise<any> {
+    const qs = academicYearId ? `&academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    return financeFetch(`/api/finance/anomalies?limit=${limit}${qs}`);
   }
 
   async getAuditLogs(limit: number = 30): Promise<any> {

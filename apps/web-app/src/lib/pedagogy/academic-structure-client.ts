@@ -3,6 +3,7 @@
  */
 
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { withAcademicYearHeader } from '@/lib/api/year-header';
 
 export async function pedagogyFetch<T>(
   path: string,
@@ -10,11 +11,16 @@ export async function pedagogyFetch<T>(
 ): Promise<T> {
   const res = await fetch(path, {
     method: options?.method ?? 'GET',
-    headers: {
-      ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...getClientAuthorizationHeader(),
-      ...options?.headers,
-    },
+    // ⭐ FIX 2026-09-09 : header x-academic-year-id (année du sélecteur global)
+    headers: withAcademicYearHeader(
+      path,
+      {
+        ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...getClientAuthorizationHeader(),
+        ...options?.headers,
+      },
+      options?.body,
+    ),
     credentials: 'include',
     cache: 'no-store',
     ...(options?.body && { 

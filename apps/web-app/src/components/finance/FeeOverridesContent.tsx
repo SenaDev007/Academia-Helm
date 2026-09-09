@@ -121,9 +121,12 @@ export default function FeeOverridesContent() {
   }, [classes, filterLevelId, eduToSchoolLevelMap]);
 
   // Chargement initial : niveaux + classes (via BFF same-origin)
+  // ⭐ FIX 2026-09-09 : les classes suivent l'année du CONTEXTE (sélecteur
+  //    global du header) — avant : année active serveur, jamais rechargées
+  //    au switch (désynchronisées des overrides/structures affichés).
   useEffect(() => {
     const authHeaders = getClientAuthorizationHeader();
-    fetch('/api/all-classes', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${academicYear.id}` : ''}`, { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
       .then((res) => res.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
@@ -131,7 +134,7 @@ export default function FeeOverridesContent() {
       .then((res) => res.json())
       .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setLevels([]));
-  }, []);
+  }, [academicYear?.id]);
 
   useEffect(() => {
     if (!academicYear?.id) return;

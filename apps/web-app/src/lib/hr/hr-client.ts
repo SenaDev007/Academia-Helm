@@ -13,6 +13,7 @@ import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/
 import { offlineFetch } from '@/lib/offline/offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from '@/lib/offline/store-names';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
+import { withAcademicYearHeader } from '@/lib/api/year-header';
 
 // ⭐ Le mapping URL → store IDB est centralisé dans lib/offline/store-names.ts
 //    (function deriveStoreName). Plus de duplication locale.
@@ -52,11 +53,18 @@ export async function hrFetch<T>(
 
   const res = await fetch(fetchUrl, {
     method,
-    headers: {
-      ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...getClientAuthorizationHeader(),
-      ...options?.headers,
-    },
+    // ⭐ FIX 2026-09-09 : header x-academic-year-id (année du sélecteur global)
+    //    pour les requêtes SANS academicYearId explicite — le backend
+    //    retombait sinon sur l'année active serveur.
+    headers: withAcademicYearHeader(
+      path,
+      {
+        ...(options?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...getClientAuthorizationHeader(),
+        ...options?.headers,
+      },
+      options?.body,
+    ),
     credentials: 'include',
     cache: 'no-store',
     ...(options?.body && {

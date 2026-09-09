@@ -56,6 +56,9 @@ export class StaffAdminAssignmentController {
     @Query('schoolLevelCode') schoolLevelCode?: string,
     @Query('adminRole') adminRole?: string,
     @Query('isActive') isActive?: string,
+    // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : filtre année — le module
+    //    RH (onglet Administration) doit suivre le sélecteur d'année du header.
+    @Query('academicYearId') academicYearId?: string,
   ) {
     const tid = resolveTid(tenant, tenantIdFallback);
     return this.service.list(tid, {
@@ -63,6 +66,7 @@ export class StaffAdminAssignmentController {
       schoolLevelCode,
       adminRole,
       isActive: isActive !== undefined ? isActive === 'true' : undefined,
+      academicYearId: academicYearId || undefined,
     });
   }
 

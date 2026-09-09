@@ -18,6 +18,7 @@ import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-quer
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
 import { fetchAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
+import { invalidateApiCache } from '@/lib/api/get-cache';
 import type { AcademicYear } from '@/types/academic-year';
 
 export type { AcademicYear };
@@ -35,12 +36,21 @@ export const ACADEMIC_YEAR_CHANGED_EVENT = 'academic-year-changed';
  * - STORAGE_KEY_OBJ ('academicYear') : l'objet année JSON complet, lu par
  *   l'intercepteur Axios (`lib/api/client.ts`) pour injecter le header
  *   `x-academic-year-id` dans toutes les requêtes API sortantes.
+ * - STORAGE_KEY_CHOICE ('academicYearUserChoice') : { chosenId, activeIdAtChoice }
+ *   — le CHOIX EXPLICITE de l'utilisateur dans le sélecteur, avec l'ID de
+ *   l'année active serveur AU MOMENT du choix. Tant que cette année active
+ *   n'a pas changé, le choix utilisateur GAGNE sur l'année active (demande
+ *   2026-09-09 : « quand on bascule vers une année précédente, toutes les
+ *   données doivent se recharger pour cette année » — y compris après un
+ *   refresh). Si l'admin active une NOUVELLE année côté serveur, elle gagne
+ *   et le choix est nettoyé (bascule collective).
  *
- * Les DEUX clés doivent être écrites en parallèle pour éviter le bug où
- * l'intercepteur ne trouve pas l'année (header jamais injecté).
+ * Les DEUX premières clés doivent être écrites en parallèle pour éviter le
+ * bug où l'intercepteur ne trouve pas l'année (header jamais injecté).
  */
 const STORAGE_KEY_ID = 'currentAcademicYearId';
 const STORAGE_KEY_OBJ = 'academicYear';
+const STORAGE_KEY_CHOICE = 'academicYearUserChoice';
 
 interface AcademicYearContextType {
   currentYear: AcademicYear | null;
@@ -83,6 +93,10 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
   const availableYearsRef = useRef<AcademicYear[]>([]);
   availableYearsRef.current = availableYears;
+  /** ID de la dernière année active serveur vue par cet effet — sert à
+   *  détecter l'activation d'une NOUVELLE année (bascule collective) sans
+   *  écraser le choix utilisateur lors d'un simple refetch. */
+  const lastActiveYearIdRef = useRef<string | null>(null);
 
   /**
    * Invalide toutes les queries TanStack quand l'année scolaire change.
@@ -91,6 +105,14 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
    *
    * On préserve les queries liées aux années scolaires elles-mêmes
    * (academicYearsKeys) pour éviter une boucle de rechargement.
+   *
+   * ⭐ FIX 2026-09-09 (« bascule d'année globale ») : on purge AUSSI le cache
+   * GET 45 s (get-cache.ts — utilisé par apiFetch ET financeFetch). Sans
+   * ça, les endpoints appelés SANS academicYearId explicite dans l'URL
+   * (qui dépendent du header x-academic-year-id / de l'année injectée
+   * serveur) continuaient de servir les données de l'ANCIENNE année
+   * jusqu'à 45 s après le switch — incohérent avec la demande
+   * « toutes les données doivent se recharger pour l'année sélectionnée ».
    */
   const invalidateQueriesForYearChange = useCallback(() => {
     // Invalider toutes les queries sauf celles liées aux années scolaires
@@ -104,6 +126,10 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
         return true;
       },
     });
+    // ⭐ Purge du cache GET client (45 s) — les clés (GET:… / finance:…)
+    // ne contiennent PAS l'année, il faut les vider pour éviter de servir
+    // les données de l'ancienne année après le switch.
+    invalidateApiCache();
   }, [queryClient]);
 
   useEffect(() => {
@@ -112,21 +138,58 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // ⭐ Priorité 1 : l'année active (isActive=true en DB) — c'est la source
-    //    de vérité serveur. Si l'année active a changé (ex: passage 2025-2026
-    //    → 2026-2027), on DOIT l'utiliser même si le localStorage a encore
-    //    l'ancienne année.
-    const activeYear = availableYears.find((y) => y.isCurrent);
+    // ⭐ FIX 2026-09-09 (« le switch d'année ne tient pas ») :
+    // AVANT : `selectedYear = activeYear ?? savedYear ?? …` — l'année ACTIVE
+    // serveur écrasait la sélection utilisateur à CHAQUE re-exécution de cet
+    // effet (refetch du snapshot des années après invalidation/reconnexion) →
+    // l'utilisateur qui avait basculé sur 2025-2026 se retrouvait REMIS sur
+    // 2026-2027 sans action de sa part → « les données ne se rechargent pas
+    // pour l'année sélectionnée ».
+    // APRÈS, dans l'ordre :
+    //   1. Si l'année active serveur a CHANGÉ depuis le choix utilisateur
+    //      (l'admin a activé une nouvelle année) → elle gagne, le choix est
+    //      nettoyé (bascule collective).
+    //   2. L'année courante EN MÉMOIRE, si toujours valide → conservée
+    //      (jamais écrasée par un refetch silencieux).
+    //   3. Le CHOIX utilisateur persisté (flag dédié), si toujours proposé.
+    //   4. L'année active serveur (premier chargement sans choix).
+    //   5. La première année disponible.
 
-    // ⭐ Priorité 2 : l'année sauvegardée dans localStorage (choix utilisateur)
-    //    MAIS seulement si cette année existe encore dans availableYears.
-    const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
-    const savedYear = savedYearId ? availableYears.find((y) => y.id === savedYearId) : null;
+    const activeYear = availableYears.find((y) => y.isCurrent) ?? null;
 
-    // ⭐ Si l'année active du serveur est différente de l'année sauvegardée,
-    //    l'année active gagne — le serveur a la vérité (ex: admin a activé
-    //    2026-2027 en DB, le localStorage a encore 2025-2026).
-    const selectedYear = activeYear ?? savedYear ?? availableYears[0] ?? null;
+    // 1. Changement d'année active serveur → nettoyer le choix utilisateur
+    //    (bascule collective vers la nouvelle année activée).
+    if (
+      lastActiveYearIdRef.current &&
+      activeYear &&
+      lastActiveYearIdRef.current !== activeYear.id
+    ) {
+      try { localStorage.removeItem(STORAGE_KEY_CHOICE); } catch { /* ignore */ }
+    }
+    lastActiveYearIdRef.current = activeYear?.id ?? null;
+
+    // 2. Année courante en mémoire toujours valide → la conserver (sync de
+    //    l'objet si le label a changé côté serveur, sans changer l'ID).
+    if (currentYear && availableYears.some((y) => y.id === currentYear.id)) {
+      const synced = availableYears.find((y) => y.id === currentYear.id) ?? currentYear;
+      if (synced !== currentYear) setCurrentYearState(synced);
+      return;
+    }
+
+    // 3. Choix utilisateur persisté (tant que l'année est encore proposée)
+    let userChoice: { chosenId?: string; activeIdAtChoice?: string } | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_CHOICE);
+        if (raw) userChoice = JSON.parse(raw);
+      } catch { /* ignore */ }
+    }
+    const chosenYear = userChoice?.chosenId
+      ? availableYears.find((y) => y.id === userChoice.chosenId) ?? null
+      : null;
+
+    // 4-5. Choix utilisateur → sinon année active → sinon 1re année
+    const selectedYear = chosenYear ?? activeYear ?? availableYears[0] ?? null;
 
     if (selectedYear) {
       const previousYearId = currentYear?.id;
@@ -134,7 +197,7 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
 
       // ⭐ TOUJOURS écrire dans localStorage, même si l'année n'a pas changé.
       //    Cela garantit que si le localStorage était stale (ancienne année),
-      //    il est mis à jour avec l'année active du serveur.
+      //    il est mis à jour avec l'année sélectionnée.
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ID, selectedYear.id);
         try {
@@ -170,6 +233,20 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
         // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
         try {
           localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(year));
+        } catch {
+          /* ignore quota errors */
+        }
+        // ⭐ FIX 2026-09-09 : persister le CHOIX EXPLICITE utilisateur avec
+        //    l'année active serveur du moment. Tant que celle-ci ne change
+        //    pas, le choix survit aux refresh/refetch (le sélecteur « tient ») ;
+        //    si l'admin active une nouvelle année, le nettoyage ci-dessus
+        //    (effet) restaure la priorité serveur.
+        try {
+          const activeIdAtChoice = years.find((y) => y.isCurrent)?.id ?? null;
+          localStorage.setItem(
+            STORAGE_KEY_CHOICE,
+            JSON.stringify({ chosenId: yearId, activeIdAtChoice }),
+          );
         } catch {
           /* ignore quota errors */
         }

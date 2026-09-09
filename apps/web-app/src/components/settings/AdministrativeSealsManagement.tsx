@@ -29,6 +29,7 @@ import {
   Settings
 } from 'lucide-react';
 import { compressImageFileToDataUrl } from '@/lib/media';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
 interface AdministrativeSeal {
   id: string;
@@ -379,6 +380,13 @@ export default function AdministrativeSealsManagement() {
 
 // Modal de formulaire pour créer/éditer un cachet
 function SealFormModal({ seal, onClose, onSuccess }: { seal: AdministrativeSeal | null; onClose: () => void; onSuccess: () => void }) {
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale » + TODO placeholder) : la
+  //    création de cachet envoyait les littéraux 'current-school-id' /
+  //    'current-academic-year-id' au backend → FK/IDs invalides en base.
+  //    → année du CONTEXTE (sélecteur global du header). schoolId : école
+  //    principale du tenant depuis la session (repli : chaîne vide — le
+  //    service gère les cachets INSTITUTIONNAL sans école spécifique).
+  const { academicYear, tenant } = useModuleContext();
   const [formData, setFormData] = useState({
     label: seal?.label || '',
     type: seal?.type || 'INSTITUTIONAL',
@@ -407,8 +415,8 @@ function SealFormModal({ seal, onClose, onSuccess }: { seal: AdministrativeSeal 
         },
         body: JSON.stringify({
           ...formData,
-          schoolId: 'current-school-id', // TODO: Récupérer depuis le contexte
-          academicYearId: 'current-academic-year-id', // TODO: Récupérer depuis le contexte
+          schoolId: (tenant as any)?.schoolId || (tenant as any)?.schools?.[0]?.id || '',
+          academicYearId: academicYear?.id || '',
         }),
       });
 

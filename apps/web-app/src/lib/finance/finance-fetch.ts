@@ -24,6 +24,7 @@ import { offlineFetch } from '@/lib/offline/offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from '@/lib/offline/store-names';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { cachedGet, invalidateApiCache } from '@/lib/api/get-cache';
+import { withAcademicYearHeader } from '@/lib/api/year-header';
 
 /** Timeout par défaut des requêtes finance (lecture ET écriture) via BFF. */
 const FINANCE_TIMEOUT_MS = 30_000;
@@ -125,16 +126,26 @@ export async function financeFetch<T>(
     }
   }
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...getClientAuthorizationHeader(),
-    ...options?.headers,
-  };
+  // ⭐ FIX 2026-09-09 : header x-academic-year-id (année sélectionnée dans le
+  //    header de l'app) pour les URLs SANS academicYearId explicite — sinon le
+  //    backend retombait sur l'année ACTIVE serveur (2025-2026 → 2026-2027…)
+  //    et les données ne suivaient pas le sélecteur d'année global.
+  const headers: Record<string, string> = withAcademicYearHeader(
+    path,
+    {
+      'Content-Type': 'application/json',
+      ...getClientAuthorizationHeader(),
+      ...options?.headers,
+    },
+    options?.body,
+  );
 
   // ── GET en ligne : CACHE 45s + DÉDUP in-flight (sauf noCache) ──
   // Avant : chaque changement d'onglet du module Finance refetchait TOUT
   // (liste transactions, comptes élèves exportAll…) → latence ressentie
   // multipliée par 3-4 sur réseau mobile. Les mutations invalident le cache.
+  // ⚠️ Le switch d'année vide ce cache (AcademicYearContext →
+  // invalidateApiCache) car les clés ne portent pas l'année.
   if (method === 'GET' && !options?.noCache) {
     return cachedGet<T>(
       `finance:${path}`,

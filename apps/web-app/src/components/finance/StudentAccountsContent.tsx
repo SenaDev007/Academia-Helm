@@ -227,10 +227,16 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
 
   useEffect(() => {
     // Use /api/all-classes (bypasses school-level filter) so ALL classes are shown
-    fetch('/api/all-classes', { credentials: 'include' })
+    // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : les classes suivent
+    //    l'année du CONTEXTE (effectiveYearId = selecteur global + override
+    //    local) — avant : année active serveur via BFF fallback, jamais
+    //    rechargées au switch → filtre de classe désynchronisé des comptes.
+    fetch(`/api/all-classes${effectiveYearId ? `?academicYearId=${effectiveYearId}` : ''}`, { credentials: 'include' })
       .then((res) => res.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
+  }, [effectiveYearId]);
+  useEffect(() => {
     getAcademicYears()
       .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setAcademicYears([]));

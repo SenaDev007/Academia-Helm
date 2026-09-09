@@ -102,16 +102,20 @@ export default function GeneralFeesContent() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Chargement des niveaux + classes (BFF same-origin — pattern FeeOverridesContent)
+  // ⭐ FIX 2026-09-09 : les classes suivent l'année du CONTEXTE (selecteur
+  //    global du header) — avant : année active serveur, jamais rechargées.
   useEffect(() => {
     fetch('/api/school-levels')
       .then((res) => res.json())
       .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setLevels([]));
-    fetch('/api/all-classes', { credentials: 'include' })
+  }, []);
+  useEffect(() => {
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${academicYear.id}` : ''}`, { credentials: 'include' })
       .then((res) => res.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // Mapping education_levels → school_levels (pour le filtre par niveau)
   const eduToSchoolLevelMap = useMemo(() => {

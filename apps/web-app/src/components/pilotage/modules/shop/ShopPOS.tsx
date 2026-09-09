@@ -352,16 +352,19 @@ export default function ShopPOS() {
 
   // ⭐ Chargement des classes (toutes classes confondues — on filtre
   //    ensuite par niveau côté client via useMemo).
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : classes de l'année du
+  //    CONTEXTE + rechargement au switch. La garde `classes.length > 0` qui
+  //    empêchait TOUT rechargement (même au changement d'année) est retirée :
+  //    on recharge uniquement quand l'année change.
   useEffect(() => {
-    if (classes.length > 0) return;
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const list = Array.isArray(d) ? d : (d?.data ?? []);
         setClasses(list);
       })
       .catch(() => setClasses([]));
-  }, [classes.length]);
+  }, [academicYear?.id]);
 
   // ⭐ Chargement des élèves — OPTIMISÉ : on utilise l'endpoint
   //    /api/finance/student-accounts (le même que Finance/Encaissement)

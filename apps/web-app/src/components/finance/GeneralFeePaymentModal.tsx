@@ -114,12 +114,14 @@ export default function GeneralFeePaymentModal({
       .catch(() => setLevels([]));
   }, []);
 
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : classes de l'année du
+  //    contexte (prop academicYearId) + rechargement au changement d'année.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYearId ? `?academicYearId=${academicYearId}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYearId]);
 
   const filteredClasses = useMemo(() => {
     if (!selectedLevelId) return classes;

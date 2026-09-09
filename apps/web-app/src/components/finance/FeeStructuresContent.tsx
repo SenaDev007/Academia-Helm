@@ -170,36 +170,44 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
     };
   }, [installmentPopoverId]);
 
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : les classes officielles
+  //    (CE1, CM2, 6ème…) étaient chargées UNE SEULE FOIS au montage avec
+  //    l'année ACTIVE serveur (find(isActive)) — ignorant le sélecteur d'année
+  //    du header. Résultat : après bascule vers 2025-2026, la liste des frais
+  //    affichait bien 2025-2026 mais le filtre/modale « classe » proposait
+  //    les classes de l'année active (2026-2027) → classId hors-année,
+  //    structures introuvables pour la classe choisie.
+  //    → On utilise l'année du CONTEXTE (useModuleContext, prop du sélecteur
+  //    global) et on RECHARGE quand elle change.
   useEffect(() => {
+    if (!academicYear?.id) return;
+    const authHeaders = getClientAuthorizationHeader();
     // ⭐ Utiliser /api/academic-classes (classes OFFICIELLES : CE1, CM2, 6ème, etc.)
     // au lieu de /api/all-classes (classes PHYSIQUES : CE1-A, CE1-B, etc.)
     // Les classes officielles sont utilisées pour la configuration des frais.
-    const authHeaders = getClientAuthorizationHeader();
-    
-    // D'abord récupérer l'année académique active pour filtrer les classes officielles
+    fetch(`/api/academic-classes?academicYearId=${academicYear.id}`, {
+      headers: { ...authHeaders },
+      credentials: 'include',
+      cache: 'no-store',
+    })
+      .then((res) => res.json())
+      .then((d) => {
+        const cls = Array.isArray(d) ? d : (d.data ?? []);
+        setClasses(cls);
+      })
+      .catch(() => setClasses([]));
+  }, [academicYear?.id]);
+
+  // La liste des années n'est utile que pour la modale « copier d'une année
+  // à l'autre » (source/cible) — pas pour la sélection de données.
+  useEffect(() => {
     getAcademicYears()
       .then((d) => {
         const years = Array.isArray(d) ? d : (d.data ?? []);
         setAcademicYears(years);
-        const activeYear = years.find((y: any) => y.isActive) || years[0];
-        if (activeYear?.id) {
-          // Fetch les classes officielles pour cette année académique
-          return fetch(`/api/academic-classes?academicYearId=${activeYear.id}`, {
-            headers: { ...authHeaders },
-            credentials: 'include',
-            cache: 'no-store',
-          })
-            .then((res) => res.json())
-            .then((d) => {
-              const cls = Array.isArray(d) ? d : (d.data ?? []);
-              setClasses(cls);
-            })
-            .catch(() => setClasses([]));
-        }
-        return null;
       })
       .catch(() => setAcademicYears([]));
-    
+
     fetch('/api/school-levels')
       .then((res) => res.json())
       .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))

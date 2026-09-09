@@ -124,12 +124,17 @@ export default function ImportBilanModal({ open, onClose, academicYearId, onSucc
 
   useEffect(() => {
     if (!open) return;
-    setSelectedYearId((prev) => prev || academicYearId || '');
+    // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : à l'ouverture (et si
+    //    l'année du contexte change), la cible PAR DÉFAUT est l'année du
+    //    CONTEXTE (sélecteur global du header) — pas l'année active serveur
+    //    ni une sélection stale d'une session précédente de la modale.
+    //    L'utilisateur peut ensuite choisir une autre année dans la modale.
+    if (academicYearId) setSelectedYearId(academicYearId);
     getAcademicYears()
       .then((d: any) => {
         const yrs = Array.isArray(d) ? d : (d?.data ?? []);
         setYears(yrs);
-        if (!selectedYearId) {
+        if (!selectedYearId && !academicYearId) {
           const active = yrs.find((y: any) => y.isActive) || yrs[0];
           if (active?.id) setSelectedYearId(active.id);
         }

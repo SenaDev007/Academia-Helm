@@ -140,9 +140,12 @@ export class CNSSPrismaController {
   async findAllDeclarations(
     @GetTenant() tenant: any,
     @Query('tenantId') tenantIdFallback?: string,
+    // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : filtre année optionnel
+    //    (module RH — onglet CNSS) — suit le sélecteur d'année du header.
+    @Query('academicYearId') academicYearId?: string,
   ) {
     const tid = tenant?.id ?? tenantIdFallback;
-    return this.cnssService.findAllDeclarations(tid);
+    return this.cnssService.findAllDeclarations(tid, academicYearId || undefined);
   }
 
   @Get('declarations/:id')

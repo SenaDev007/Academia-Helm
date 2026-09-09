@@ -79,12 +79,13 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   }, []);
 
   // ⭐ Charger les classes physiques depuis /api/all-classes (comme les autres onglets)
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
       .then(data => setAllClasses(Array.isArray(data) ? data : []))
       .catch(() => setAllClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // Charger les élèves actifs
   const loadStudents = useCallback(async (query: string, levelId?: string, classId?: string) => {

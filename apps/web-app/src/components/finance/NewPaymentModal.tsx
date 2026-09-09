@@ -199,15 +199,19 @@ export default function NewPaymentModal({
   }, []);
 
   // Charge les classes (filtrées par niveau si sélectionné)
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : l'URL porte l'année du
+  //    contexte (prop academicYearId) et l'effet se REJOUE quand elle change
+  //    — avant, les classes restaient celles de l'année active serveur,
+  //    décalées des comptes/élèves affichés (année sélectionnée).
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYearId ? `?academicYearId=${academicYearId}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const list = Array.isArray(d) ? d : (d.data ?? []);
         setClasses(list);
       })
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYearId]);
 
   // Classes filtrées par niveau sélectionné
   const filteredClasses = useMemo(() => {

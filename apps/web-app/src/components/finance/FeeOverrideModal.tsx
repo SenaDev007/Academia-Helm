@@ -75,15 +75,16 @@ export default function FeeOverrideModal({
   }, []);
 
   // Charge les classes (toutes — filtrées par niveau côté client)
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${academicYear.id}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => {
         const list = Array.isArray(d) ? d : (d.data ?? []);
         setClasses(list);
       })
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   // Classes filtrées par niveau sélectionné
   const filteredClasses = useMemo(() => {

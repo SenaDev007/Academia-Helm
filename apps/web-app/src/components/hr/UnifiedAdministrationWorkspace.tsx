@@ -392,9 +392,17 @@ export default function UnifiedAdministrationWorkspace() {
       }
 
       // 4. Affectations admin existantes
+      //    ⭐ FIX 2026-09-09 (« bascule d'année globale ») : on passe
+      //    academicYearId (année du CONTEXTE — sélecteur global du header) :
+      //    l'onglet Administration du module RH affiche les affectations de
+      //    l'année sélectionnée (+ les affectations sans année, héritées).
+      //    Avant : liste globale sans année, jamais rechargée au switch.
       try {
+        const assignmentsUrl = academicYearId
+          ? `/api/staff-admin-assignments?academicYearId=${encodeURIComponent(academicYearId)}`
+          : '/api/staff-admin-assignments';
         const assignmentsData = await authedFetch<AdminAssignment[] | { items?: AdminAssignment[] }>(
-          '/api/staff-admin-assignments',
+          assignmentsUrl,
         );
         const all = Array.isArray(assignmentsData) ? assignmentsData : (assignmentsData?.items ?? []);
         setAssignments(all);
@@ -421,7 +429,7 @@ export default function UnifiedAdministrationWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, academicYearId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

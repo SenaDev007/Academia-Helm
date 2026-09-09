@@ -30,7 +30,13 @@ export function CnssWorkspace() {
       try {
         setLoading(true);
         // Load CNSS declarations
-        const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
+        // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : les déclarations
+        //    suivent l'année du CONTEXTE (la création enregistre déjà
+        //    academicYearId — la liste doit être cohérente).
+        const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', {
+          tenantId: tenant.id,
+          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+        }));
         setDeclarations(decls);
 
         // Load active rate via BFF route (country-aware)
@@ -45,7 +51,7 @@ export function CnssWorkspace() {
       }
     }
     loadData();
-  }, [tenant?.id]);
+  }, [tenant?.id, academicYear?.id]);
 
   async function handleCreateDeclaration(e: React.FormEvent) {
     e.preventDefault();
@@ -60,7 +66,11 @@ export function CnssWorkspace() {
         },
       });
       // Refresh
-      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
+      // ⭐ FIX 2026-09-09 : refresh avec le filtre année (cohérent avec le chargement).
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', {
+        tenantId: tenant.id,
+        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+      }));
       setDeclarations(decls);
       setIsCreateOpen(false);
       toast({ variant: 'success', title: 'Déclaration créée avec succès' });
@@ -81,7 +91,11 @@ export function CnssWorkspace() {
         body: { status },
       });
       // Refresh
-      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', { tenantId: tenant.id }));
+      // ⭐ FIX 2026-09-09 : refresh avec le filtre année (cohérent avec le chargement).
+      const decls = await hrFetch<any[]>(hrUrl('cnss/declarations', {
+        tenantId: tenant.id,
+        ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+      }));
       setDeclarations(decls);
       toast({ variant: 'success', title: 'Statut mis à jour avec succès' });
     } catch (err) {

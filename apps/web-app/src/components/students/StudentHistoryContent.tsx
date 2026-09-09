@@ -95,12 +95,13 @@ export default function StudentHistoryContent() {
   }, [academicYear]);
 
   // Charger les classes physiques (pour le filtre classe)
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+    fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include', cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setAllClasses(Array.isArray(data) ? data : []))
       .catch(() => setAllClasses([]));
-  }, []);
+  }, [academicYear?.id]);
 
   const loadHistory = async () => {
     setIsLoading(true);

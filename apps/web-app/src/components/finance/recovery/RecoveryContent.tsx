@@ -27,7 +27,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
   Send, Play, Loader2, ChevronRight, Filter, Search,
@@ -141,7 +141,25 @@ export default function RecoveryContent() {
   const [arrearSearch, setArrearSearch] = useState('');
   const [arrearSchoolLevelId, setArrearSchoolLevelId] = useState<string>('ALL');
   const [arrearClassId, setArrearClassId] = useState<string>('ALL');
-  const [arrearYearId, setArrearYearId] = useState<string>('ALL');
+  // ⭐ FIX 2026-09-09 (« bascule d'année globale ») : par défaut, le tableau
+  //    des arriérés affiche l'année du CONTEXTE (sélecteur global du header)
+  //    au lieu de 'ALL' — la vue multi-années reste disponible via le filtre.
+  //    Les arriérés restent chargés multi-années (données recouvrement par
+  //    nature) mais le FILTRE suit l'année sélectionnée.
+  const [arrearYearId, setArrearYearId] = useState<string>(academicYear?.id || 'ALL');
+
+  // Quand l'année du contexte change, si le filtre année n'a pas été touché
+  // manuellement (encore en 'ALL' ou égal à l'ancienne année du contexte),
+  // il suit la nouvelle année.
+  const lastCtxYearRef = useRef<string | null>(academicYear?.id ?? null);
+  useEffect(() => {
+    const prevCtx = lastCtxYearRef.current;
+    lastCtxYearRef.current = academicYear?.id ?? null;
+    if (academicYear?.id && academicYear.id !== prevCtx) {
+      setArrearYearId((cur) => (cur === 'ALL' || cur === prevCtx ? academicYear.id! : cur));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id]);
 
   // Filtres promesses
   const [promiseStatusFilter, setPromiseStatusFilter] = useState<string>('ALL');
@@ -1605,12 +1623,18 @@ function ArrearsTab({
   }, []);
 
   // Charger les classes
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE (sélecteur global) +
+  //    rechargement au switch. Le filtre yearId peut être 'ALL' (vue
+  //    multi-années) ; le sélecteur de classe propose les classes de l'année
+  //    sélectionnée dans le header, avec repli sur le filtre local.
+  const { academicYear: arrearsTabYear } = useModuleContext();
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    const ctxYearId = arrearsTabYear?.id || (yearId && yearId !== 'ALL' ? yearId : '');
+    fetch(`/api/all-classes${ctxYearId ? `?academicYearId=${encodeURIComponent(ctxYearId)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [arrearsTabYear?.id, yearId]);
 
   // Classes filtrées par niveau scolaire
   const filteredClasses = useMemo(() => {
@@ -2138,12 +2162,14 @@ function ManualReminderModal({
   }, []);
 
   // Charger les classes
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE (prop academicYearId,
+  //    transmise par le parent depuis useModuleContext) + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYearId]);
 
   // Charger les comptes élèves avec solde dû
   useEffect(() => {
@@ -2378,12 +2404,14 @@ function ManualArrearModal({
   }, []);
 
   // Charger les classes
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE (prop academicYearId,
+  //    transmise par le parent depuis useModuleContext) + rechargement au switch.
   useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
+    fetch(`/api/all-classes${academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [academicYearId]);
 
   // Charger les comptes élèves
   useEffect(() => {
@@ -3357,16 +3385,20 @@ function CasesTab({
   const [filterClassId, setFilterClassId] = useState<string>('ALL');
   const [search, setSearch] = useState('');
 
+  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
+  const { academicYear: casesTabYear } = useModuleContext();
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setSchoolLevels([]));
-    fetch('/api/all-classes', { credentials: 'include' })
+  }, []);
+  useEffect(() => {
+    fetch(`/api/all-classes${casesTabYear?.id ? `?academicYearId=${encodeURIComponent(casesTabYear.id)}` : ''}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => setClasses([]));
-  }, []);
+  }, [casesTabYear?.id]);
 
   const filteredClasses = useMemo(() => {
     if (filterSchoolLevelId === 'ALL') return classes;

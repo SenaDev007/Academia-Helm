@@ -103,7 +103,7 @@ export default function FinanceAuditContent() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await financeService.getAnomalies(100);
+      const data = await financeService.getAnomalies(100, academicYear?.id);
       setAnomalies(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error('Anomalies error:', e);
@@ -202,7 +202,7 @@ export default function FinanceAuditContent() {
     try {
       // S'assurer qu'on a toutes les données
       const [anomData, suspData, mmData, taData, alData] = await Promise.all([
-        anomalies.length ? anomalies : financeService.getAnomalies(100).catch(() => []),
+        anomalies.length ? anomalies : financeService.getAnomalies(100, academicYear?.id).catch(() => []),
         suspicious || financeService.getSuspiciousTransactions(academicYear.id, { days: 30, minAmount: 100000 }).catch(() => null),
         cashMismatches.length ? cashMismatches : financeService.getCashMismatches(academicYear.id).catch(() => []),
         topAccountants.length ? topAccountants : financeService.getTopAccountants(academicYear.id, 30).catch(() => []),
@@ -238,7 +238,7 @@ export default function FinanceAuditContent() {
     setExporting('excel');
     try {
       const [anomData, suspData, mmData, taData, alData] = await Promise.all([
-        anomalies.length ? anomalies : financeService.getAnomalies(100).catch(() => []),
+        anomalies.length ? anomalies : financeService.getAnomalies(100, academicYear?.id).catch(() => []),
         suspicious || financeService.getSuspiciousTransactions(academicYear.id, { days: 30, minAmount: 100000 }).catch(() => null),
         cashMismatches.length ? cashMismatches : financeService.getCashMismatches(academicYear.id).catch(() => []),
         topAccountants.length ? topAccountants : financeService.getTopAccountants(academicYear.id, 30).catch(() => []),

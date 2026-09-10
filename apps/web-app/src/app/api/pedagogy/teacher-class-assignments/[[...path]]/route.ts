@@ -46,7 +46,7 @@ async function forward(request: NextRequest, pathSegments: string[], method: str
 
     try {
       const data = JSON.parse(text);
-      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
     } catch {
       return new NextResponse(text, {
         status: response.status,

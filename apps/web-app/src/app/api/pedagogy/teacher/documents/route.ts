@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url, { headers, cache: 'no-store' });
 
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching teacher documents:', error);
     return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 });
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     });
 
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error creating document:', error);
     return NextResponse.json({ error: 'Failed to create document' }, { status: 500 });

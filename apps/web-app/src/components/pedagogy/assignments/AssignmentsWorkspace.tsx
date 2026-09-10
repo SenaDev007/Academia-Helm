@@ -270,10 +270,18 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id || classSubjects.length === 0 || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
-      // 1. Supprimer TOUTES les affectations existantes pour ces classSubjects
-      //    Séquentiel pour éviter le rate limit
-      const allAssignments = classSubjects.flatMap(cs => (cs.assignments || []));
-      for (const a of allAssignments) {
+      // 1. ⭐ FIX désaffectation croisée (2026-09-10) : supprimer UNIQUEMENT les
+      //    affectations de CETTE section physique. `cs.assignments` contient les
+      //    affectations de TOUTES les sections de la classe officielle (CE1 A,
+      //    CE1 B…) — l'ancien code les supprimait toutes, puis ne recréait que la
+      //    section courante → les autres sections perdaient leur titulaire
+      //    « quelques instants » après leur affectation.
+      //    Les lignes classId null (legacy) sont incluses car elles s'affichent
+      //    pour cette section (même logique que currentHomeroom).
+      const sectionAssignments = classSubjects.flatMap(cs =>
+        (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId || !a.classId)
+      );
+      for (const a of sectionAssignments) {
         await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
       }
 
@@ -329,9 +337,14 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
-      // Supprimer TOUTES les affectations existantes pour ces classSubjects (séquentiel)
-      const allAssignments = classSubjects.flatMap(cs => (cs.assignments || []));
-      for (const a of allAssignments) {
+      // ⭐ FIX désaffectation croisée (2026-09-10) : même correction que
+      // handleAssignHomeroom — ne supprimer que les affectations de CETTE
+      // section physique, sinon « Retirer » vidait TOUTES les sections de la
+      // classe officielle (CE1 A, CE1 B…).
+      const sectionAssignments = classSubjects.flatMap(cs =>
+        (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId || !a.classId)
+      );
+      for (const a of sectionAssignments) {
         await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
       }
       await loadClassSubjects();

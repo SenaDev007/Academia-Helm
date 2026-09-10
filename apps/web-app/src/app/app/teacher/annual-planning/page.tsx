@@ -95,8 +95,6 @@ interface AnnualPlan {
 }
 
 export default function TeacherAnnualPlanningPage() {
-  // ⭐ Libellés dans la langue du profil (piste EN → anglais)
-  const L = useL();
   // ⭐ FIX ANOMALIE 1 : cette page est dans l'UI ENSEIGNANT — elle ne doit PAS
   //    afficher la navigation du module Pédagogie (direction/promoteur).
   //    Seule la planification annuelle (lecture seule) est affichée ici.
@@ -111,6 +109,10 @@ export default function TeacherAnnualPlanningPage() {
 
 function TeacherAnnualPlanningContent() {
   const { academicYear } = useModuleContext();
+  // ⭐ FIX crash runtime : L(...) était appelé dans CE composant mais n'était défini
+  //    que dans le wrapper TeacherAnnualPlanningPage → ReferenceError « L is not
+  //    defined » (écran blanc côté enseignant). useL est déjà importé en tête de fichier.
+  const L = useL();
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<AnnualPlan[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('MATERNELLE_GRANDS');

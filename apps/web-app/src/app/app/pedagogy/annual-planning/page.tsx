@@ -228,7 +228,13 @@ function AnnualPlanningContent() {
   //    on passe currentLevel?.id (education_levels UUID) en fallback, ou null
   //    et le backend fait SELECT FROM school_levels WHERE tenantId = $1.
   //    ⭐ force=true : réinsère les données officielles (sans écraser les personnalisations)
-  const handleSeedAll = useCallback(async (force = false) => {
+  const handleSeedAll = useCallback(async (force: boolean = false) => {
+    // ⭐ Garde anti-événement : un `onClick={handleSeedAll}` (sans flèche) passerait
+    //    l'événement React en 1er argument → force = event (truthy) →
+    //    JSON.stringify(event) explose : « Converting circular structure to JSON
+    //    (HTMLButtonElement → __reactFiber$ → stateNode) ».
+    //    On normalise : seul `true` explicite active le mode force.
+    const forceFlag = force === true;
     if (!academicYear?.id) {
       toast({ title: 'Erreur', description: 'Année scolaire non sélectionnée. Vérifiez le sélecteur d\'année dans l\'en-tête.', variant: 'destructive' });
       return;
@@ -245,10 +251,10 @@ function AnnualPlanningContent() {
       
       const result = await pedagogyFetch<any>('/api/pedagogy/annual-plans/seed', {
         method: 'POST',
-        body: { 
-          academicYearId: academicYear.id, 
+        body: {
+          academicYearId: academicYear.id,
           schoolLevelId: slId,
-          force,
+          force: forceFlag,
         },
       });
       
@@ -257,7 +263,7 @@ function AnnualPlanningContent() {
       
       if (result?.skipped) {
         toast({ title: 'ℹ️ Déjà initialisé', description: `${result.count} planifications existent déjà. Cliquez sur "Mettre à jour" pour rafraîchir.` });
-      } else if (force) {
+      } else if (forceFlag) {
         const msg = result?.skippedCustom 
           ? `${result.count} planifications mises à jour (${result.skippedCustom} personnalisations conservées).`
           : `${result.count} planifications mises à jour avec les dernières données officielles.`;
@@ -417,7 +423,7 @@ function AnnualPlanningContent() {
           <p className="text-sm text-slate-500">Aucune planification disponible pour {CLASS_LEVELS.find(c => c.value === selectedClass)?.label}.</p>
           <p className="text-xs text-slate-400 mt-1">Cliquez sur le bouton ci-dessous pour initialiser la planification officielle pour TOUTES les classes.</p>
           <button
-            onClick={handleSeedAll}
+            onClick={() => handleSeedAll(false)}
             disabled={seeding}
             className="mt-4 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold"
           >

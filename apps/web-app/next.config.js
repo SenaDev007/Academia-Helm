@@ -383,6 +383,13 @@ if (process.env.NODE_ENV === 'production' && !isVercel) {
             handler: 'NetworkOnly',
           },
           {
+            // ⭐ Affectations enseignants : JAMAIS de cache SW (même en fallback
+            // réseau lent). Sinon le SW sert la réponse pré-affectation (24 h de
+            // cache) quand l'API met > 10 s à répondre → « ça désaffecte ».
+            urlPattern: /\/api\/pedagogy\/(?:class-subjects|teacher-class-assignments|academic-structure).*/i,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\/(?!auth\/|students\/export\/|students\/class-list\/.*\/pdf|students\/id-cards\/.*\/pdf|finance\/.*\/export).*/i,
             handler: 'NetworkFirst',
             options: {

@@ -14,6 +14,21 @@
  * - TOUTES LES AUTRES → MODE NON-BLOQUANT :
  *   Si academicYearId absent, on laisse passer (warning loggé).
  *   Si academicYearId présent, on l'injecte dans body/query.
+ *
+ * ⭐ FIX 2026-09-10 — injection DTO-AWARE (body ET query) :
+ *   Le ValidationPipe global (whitelist + forbidNonWhitelisted — CDC §16.3.3)
+ *   s'exécute APRÈS les interceptors (lifecycle Nest : guards → interceptors
+ *   → pipes). Injecter academicYearId dans le body d'un DTO qui ne déclare pas
+ *   cette propriété déclenchait un 400 « property academicYearId should not
+ *   exist » sur tous les POST/PUT stricts (ex : POST /hr/contracts/:id/sign —
+ *   SignContractDto — étape Signature de l'onboarding d'embauche RH ;
+ *   POST /hr/contracts/onboarding/complete). Régression apparue avec l'envoi
+ *   du header x-academic-year-id par tous les clients fetch (fix 2026-09-09).
+ *
+ *   L'injection body/query n'a désormais lieu QUE si elle est SÛRE pour la
+ *   validation (voir academicYearInjectionIsSafe) ; l'année reste toujours
+ *   accessible aux services via request['academicYearId'] et le décorateur
+ *   @AcademicYearId() (Règle 4, sans impact validation).
  * ============================================================================
  */
 
@@ -26,12 +41,33 @@ import {
 import { Observable } from 'rxjs';
 import { Request } from 'express';
 import { Reflector } from '@nestjs/core';
+import { getMetadataStorage } from 'class-validator';
 import { ALLOW_CROSS_LEVEL_KEY } from '../decorators/allow-cross-level.decorator';
 import { IS_PUBLIC_KEY } from '../../auth/decorators/public.decorator';
 import { SKIP_ACADEMIC_YEAR_KEY } from '../decorators/skip-academic-year.decorator';
 
+/** Types JS/TS et types express exclus de la détection « classe DTO ». */
+const NON_DTO_CLASS_NAMES = [
+  'Object',
+  'String',
+  'Number',
+  'Boolean',
+  'Array',
+  'Function',
+  'Promise',
+  'Date',
+  'Request',
+  'Response',
+];
+
 @Injectable()
 export class AcademicYearEnforcementInterceptor implements NestInterceptor {
+  /**
+   * Cache statique des design:paramtypes par handler (métadonnées figées au
+   * bootstrap — évite une relecture reflect-metadata à chaque requête).
+   */
+  private static readonly PARAMTYPES_CACHE = new WeakMap<Function, unknown[]>();
+
   constructor(private reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -84,6 +120,11 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    // ⭐ FIX 2026-09-10 : l'injection body/query n'est SÛRE que si les DTO
+    //    validés par le pipe l'acceptent (sinon 400 forbidNonWhitelisted).
+    //    Calcul UNE fois par requête, partagé par les règles 2 et 3.
+    const injectionSafe = this.academicYearInjectionIsSafe(context);
+
     // RÈGLE 2 : Forcer academic_year_id dans le body pour CREATE/UPDATE
     if (request.body && typeof request.body === 'object') {
       if (request.body.academicYearId && request.body.academicYearId !== academicYearId) {
@@ -94,8 +135,8 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
         );
       }
 
-      // Forcer l'injection si absent
-      if (!request.body.academicYearId) {
+      // Forcer l'injection si absent — uniquement si DTO-compatible (fix 2026-09-10)
+      if (!request.body.academicYearId && injectionSafe) {
         request.body.academicYearId = academicYearId;
       }
     }
@@ -109,8 +150,8 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
         );
       }
 
-      // Forcer l'injection si absent
-      if (!request.query.academicYearId) {
+      // Forcer l'injection si absent — uniquement si DTO-compatible (fix 2026-09-10)
+      if (!request.query.academicYearId && injectionSafe) {
         request.query.academicYearId = academicYearId;
       }
     }
@@ -138,6 +179,130 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
       return request.body.academicYearId;
     }
     return null;
+  }
+
+  // ─── ⭐ FIX 2026-09-10 : helpers d'injection DTO-aware ────────────────────
+
+  /**
+   * Détermine si l'injection de academicYearId dans body/query est SÛRE pour
+   * le ValidationPipe global (whitelist + forbidNonWhitelisted), qui tourne
+   * APRÈS les interceptors (lifecycle Nest : guards → interceptors → pipes).
+   *
+   * Politique :
+   *  - aucun paramètre typé « classe DTO » sur le handler (@Body() any, type
+   *    inline…) → pas de validation stricte → injection sans risque ;
+   *  - au moins un DTO déclare academicYearId (metadata class-validator) →
+   *    injection (comportement historique préservé, ex : CreateContractDto) ;
+   *  - des DTO existent mais aucun ne le déclare (ex : SignContractDto) →
+   *    PAS d'injection — sinon 400 « property academicYearId should not exist ».
+   *    L'année reste disponible via request['academicYearId'] (Règle 4) et le
+   *    décorateur @AcademicYearId().
+   */
+  private academicYearInjectionIsSafe(context: ExecutionContext): boolean {
+    try {
+      const paramtypes = this.getHandlerParamtypes(context);
+      const dtoClasses = paramtypes.filter(
+        (t) =>
+          typeof t === 'function' &&
+          !!(t as { name?: string }).name &&
+          !NON_DTO_CLASS_NAMES.includes((t as { name: string }).name),
+      ) as { new (...args: any[]): any }[];
+
+      if (dtoClasses.length === 0) {
+        return true; // Pas de DTO typé → le pipe ne validera rien
+      }
+
+      const storage: any = getMetadataStorage();
+      if (dtoClasses.some((dto) => this.dtoDeclaresAcademicYear(storage, dto))) {
+        return true;
+      }
+      // Aucun DTO ne déclare academicYearId : si l'un d'eux possède des règles
+      // class-validator, l'injection serait rejetée → on n'injecte pas.
+      return !dtoClasses.some((dto) => this.dtoHasValidationRules(storage, dto));
+    } catch {
+      // En cas d'erreur de réflexion : ne jamais provoquer un 400 → pas d'injection
+      return false;
+    }
+  }
+
+  /**
+   * design:paramtypes du handler — via (Controller.prototype, methodName),
+   * emplacement réel des métadonnées émises par TypeScript (reflect-metadata
+   * ne les expose PAS sur la référence de fonction seule).
+   * Résultat mis en cache (statique après bootstrap).
+   */
+  private getHandlerParamtypes(context: ExecutionContext): unknown[] {
+    const handler = context.getHandler();
+    const cached = AcademicYearEnforcementInterceptor.PARAMTYPES_CACHE.get(handler);
+    if (cached) {
+      return cached;
+    }
+
+    let paramtypes: unknown[] = [];
+    try {
+      const proto = context.getClass()?.prototype;
+      if (proto && handler) {
+        const methodName =
+          Object.getOwnPropertyNames(proto).find((k) => {
+            try {
+              return (proto as Record<string, unknown>)[k] === handler;
+            } catch {
+              return false;
+            }
+          }) ?? handler.name;
+        if (methodName) {
+          paramtypes =
+            (Reflect.getMetadata('design:paramtypes', proto, methodName) as unknown[]) ?? [];
+        }
+      }
+    } catch {
+      paramtypes = [];
+    }
+
+    AcademicYearEnforcementInterceptor.PARAMTYPES_CACHE.set(handler, paramtypes);
+    return paramtypes;
+  }
+
+  /** Le DTO (ou un parent) déclare-t-il une validation sur academicYearId ? */
+  private dtoDeclaresAcademicYear(storage: any, dto: Function): boolean {
+    return this.validationMetadataFor(storage, dto).some(
+      (m: { propertyName?: string }) => m?.propertyName === 'academicYearId',
+    );
+  }
+
+  /** Le DTO (ou un parent) possède-t-il au moins une règle class-validator ? */
+  private dtoHasValidationRules(storage: any, dto: Function): boolean {
+    return this.validationMetadataFor(storage, dto).length > 0;
+  }
+
+  /**
+   * Metadatas class-validator d'une classe (héritage inclus).
+   * API 0.13/0.14 : getTargetValidationMetadatas(targetConstructor, schema,
+   * always, strictGroups, groups) ; fallback sur la Map interne (cible directe).
+   */
+  private validationMetadataFor(storage: any, dto: Function): any[] {
+    try {
+      const direct = storage?.getTargetValidationMetadatas?.(
+        dto,
+        undefined,
+        false,
+        false,
+        undefined,
+      );
+      if (Array.isArray(direct)) {
+        return direct;
+      }
+      const map = storage?.validationMetadatas;
+      if (map && typeof map.get === 'function') {
+        const list = map.get(dto);
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch {
+      // API de stockage indisponible → considérer « aucune règle »
+    }
+    return [];
   }
 
   /**

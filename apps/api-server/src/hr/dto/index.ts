@@ -616,12 +616,22 @@ export class SignContractDto {
   @IsString() signerName: string;
   /** EMPLOYEUR = employer representative signs first; EMPLOYE = employee signs second */
   @IsOptional() @IsIn(['EMPLOYEUR', 'EMPLOYE', 'Employeur', 'Employé', 'Employe']) signerRole?: string;
+  /**
+   * ⭐ FIX 2026-09-10 — tolère academicYearId (pass-through, non utilisé ici).
+   * L'AcademicYearEnforcementInterceptor n'injecte plus dans les DTO qui ne le
+   * déclarent pas, mais on blinde le DTO au cas où le client l'enverrait
+   * (pattern PaginationDto / CreateContractDto) — évite tout 400
+   * « property academicYearId should not exist » sur l'étape Signature.
+   */
+  @IsOptional() @IsUUID() academicYearId?: string;
 }
 
 export class CompleteOnboardingDto {
   @IsUUID() staffId: string;
   @IsUUID() contractId: string;
   @IsOptional() @IsBoolean() sendEmail?: boolean;
+  /** ⭐ FIX 2026-09-10 — pass-through académique (cf. SignContractDto). */
+  @IsOptional() @IsUUID() academicYearId?: string;
   /**
    * ⭐ Mode de signature différée (aligné avec le flux de recrutement public) :
    *   - false (défaut, mode présentiel) : le contrat a été signé par les deux
@@ -742,7 +752,17 @@ export class CreateCandidateDto {
   /** Optional: if provided, an HrApplication is auto-created for this job */
   @IsOptional() @IsUUID() jobId?: string;
   /** Optional: initial application status (defaults to NOUVEAU) */
-  @IsOptional() @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ']) status?: string;
+  @IsOptional() @IsIn(['NOUVEAU', 'EN_COURS', 'ENTRETIEN', 'TEST', 'EMBAUCHÉ', 'REJETÉ', 'ÉLIGIBLE']) status?: string;
+  /**
+   * ⭐ FIX 2026-09-10 — embauche interne (OnboardingWizard RH) :
+   * le wizard envoie staffId + source: 'INTERNAL_HIRE' pour lier le staff
+   * déjà créé à une candidature/application ÉLIGIBLE (le service les gère —
+   * cf. recruitment.service createCandidate → HrJob « Interne » + application
+   * ÉLIGIBLE). Sans whitelist, forbidNonWhitelisted rejetait en 400
+   * « property staffId should not exist » (silencieux — try/catch côté wizard).
+   */
+  @IsOptional() @IsUUID() staffId?: string;
+  @IsOptional() @IsString() source?: string;
   /** Frontend may send tenantId — ignored (resolved server-side) */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -808,7 +828,6 @@ export class UpdateInterviewDto {
   @IsOptional() @IsString() feedback?: string;
   @IsOptional() @IsString() meetingLink?: string;
   @IsOptional() @IsString() phoneNumber?: string;
-  @IsOptional() @IsString() feedback?: string;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }

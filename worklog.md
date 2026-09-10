@@ -10249,3 +10249,39 @@ Stage Summary:
 - ✅ DEMANDE 1 (KPI par affectation RH) : validée 3/3 en production — le secrétaire comptable DOUGLA KOSSI a désormais SEC + MAT_PRI (KPI combinés comme le promoteur)
 - ✅ DEMANDE 2 (bascule d'année globale) : validée sur 7 parcours navigateur — dashboard, frais, comptes, élèves, RH administration ; l'année tient après rechargement
 - En attente (queue utilisateur) : PWA restant, frais généraux bloc paiement, liste classes ~30 s
+
+---
+Task ID: 41
+Agent: main (Super Z)
+Task: Bug RH — onboarding d'embauche, étape Signature : « Erreur de signature — property academicYearId should not exist »
+
+Work Log:
+- Reproduction du cheminement : StepSignatures (hr/_components/onboarding/steps) appelle POST /api/hr/contracts/:id/sign via hrFetch ; toast « Erreur de signature » = description de l'erreur API
+- Chaîne racine identifiée :
+  1. FIX 2026-09-09 : hrFetch (et les autres clients fetch) envoie le header x-academic-year-id sur TOUTES les requêtes (withAcademicYearHeader)
+  2. Le proxy BFF (/api/hr/[...path]) relaie le header (proxy-auth.ts)
+  3. AcademicYearEnforcementInterceptor (APP_INTERCEPTOR global) : /hr non exempté → RÈGLE 2 INJECTE academicYearId dans request.body
+  4. Lifecycle Nest : interceptors courent AVANT pipes → le ValidationPipe global (whitelist + forbidNonWhitelisted) rejette la propriété inconnue → 400 « property academicYearId should not exist »
+  5. SignContractDto / CompleteOnboardingDto ne déclarent pas academicYearId → l'étape 6 (signature) et la finalisation échouent dès qu'une année est sélectionnée dans le sélecteur global
+- Vérifications en bac à sable (scratch/rmeta-test : reflect-metadata + @nestjs 10 + class-validator 0.14.1) :
+  - Reflect.getMetadata('design:paramtypes', handlerFn) = undefined → il faut lire via (Controller.prototype, methodName) ; méthode de résolution + cache WeakMap implémentée
+  - class-validator 0.14 : getMetadataStorage().getTargetValidationMetadatas(cls, undefined, false, false, undefined) → metadata par classe avec héritage ; @IsOptional() enregistre bien propertyName
+- FIX BACKEND (interceptor, apps/api-server/src/common/interceptors/academic-year-enforcement.interceptor.ts) :
+  - academicYearInjectionIsSafe(context) : injection body (RÈGLE 2) et query (RÈGLE 3) uniquement si (a) aucun DTO typé (=> @Body() any / type inline) OU (b) un DTO déclare academicYearId ; sinon PAS d'injection (la requête passe telle que le client l'a envoyée)
+  - RÈGLE 4 inchangée : request['academicYearId'] toujours posé + décorateur @AcademicYearId() — l'année reste accessible aux services sans impact validation
+  - Garde-fous mismatch (Cannot change academic_year_id) inchangés ; cache statique WeakMap des paramtypes
+- FIX DTOs (hr/dto/index.ts) — défense en profondeur (pattern PaginationDto/CreateContractDto) :
+  - SignContractDto + CompleteOnboardingDto : @IsOptional() @IsUUID() academicYearId (pass-through)
+  - CreateCandidateDto : + staffId (UUID), source (string) et statut 'ÉLIGIBLE' — le wizard envoie staffId+source:'INTERNAL_HIRE' (gérés par recruitment.service → HrJob « Interne » + application ÉLIGIBLE) mais la whitelist les rejetait en 400 silencieux (try/catch) → la création de candidature de l'onboarding n'a jamais fonctionné
+  - UpdateInterviewDto : suppression du doublon préexistant « feedback » (TS2300 Duplicate identifier)
+- Tests (scratch/rmeta-test, fichiers run-behavioral.js + run-pipe-sim.js) :
+  - 8 scénarios comportementaux sur l'intercepteur compilé : sign ✅, DTO strict sans année → PAS d'injection ✅ (cœur du fix), complete ✅, CreateContractDto → injection préservée ✅, body inline ✅, GET query injection préservée (fix Task 40 intact) ✅, garde-fou mismatch ✅, cache ✅
+  - 5 simulations ValidationPipe (whitelist+forbidNonWhitelisted+transform) sur les corps réels du wizard : sign/complete/candidates ✅
+  - tsc --noEmit clean sur les 2 fichiers modifiés (exit 0)
+
+Stage Summary:
+- ✅ Bug signature onboarding embauche corrigé à la racine (régression du fix 2026-09-09 sur le header x-academic-year-id) — général : TOUS les POST/PUT stricts sans academicYearId dans le DTO sont protégés
+- ✅ Bonus : création de candidature interne (HrCandidate + application ÉLIGIBLE) de l'OnboardingWizard débloquée (staffId/source/ÉLIGIBLE whitelistés)
+- ✅ Fix bascule d'année (Task 40) préservé : injection query des GET inchangée
+- Latent connu (non traité, volontaire) : SchoolLevelEnforcementInterceptor injecte schoolLevelId en body/query avec le même pattern (routes @RequireTenant uniquement) — même classe de bug possible si un DTO ne déclare pas schoolLevelId
+- À faire : commit + déploiement Railway (api-server uniquement ; aucun changement frontend)

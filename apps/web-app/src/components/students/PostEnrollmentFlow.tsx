@@ -2,7 +2,8 @@
 
 /**
  * ============================================================================
- * POST-ENROLLMENT FLOW — Chaînage dynamique Inscription → Affectation → Paiement
+ * POST-ENROLLMENT FLOW — Chaînage dynamique Inscription → Affectation →
+ * Personnalisation → Paiement
  * ============================================================================
  *
  * ⭐ SEPT. 2026 — « C'est trop de gymnastique » : avant, après l'inscription
@@ -15,13 +16,17 @@
  * l'inscription :
  *   Étape 1 — Modal d'affectation vers une classe physique (SKIPPABLE :
  *              « Passer cette étape ») ;
- *   Étape 2 — Modal de paiement (réutilise NewPaymentModal du module
+ *   Étape 2 — Modal de PERSONNALISATION des frais (réductions inscription/
+ *              scolarité, pattern du module Finance → Personnalisations)
+ *              — SKIPPABLE : « Passer cette étape » ;
+ *   Étape 3 — Modal de paiement (réutilise NewPaymentModal du module
  *              Finance, préréglé sur l'élève + sa classe officielle + sa
  *              classe physique) — même pattern que « Nouveau paiement ».
  *
  * L'étape d'affectation recalcule le compte financier côté backend
  * (StudentAccountService.recalculate — les frais dépendent de la classe
- * physique), donc le modal de paiement ouvre sur les bons montants.
+ * physique), et chaque personnalisation recalcule le compte à nouveau
+ * (upsert override) → le modal de paiement ouvre sur les bons montants.
  */
 
 import { useState, useMemo } from 'react';
@@ -36,6 +41,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import { studentsService } from '@/services/students.service';
 import NewPaymentModal from '@/components/finance/NewPaymentModal';
+import EnrollmentFeeCustomizationStep from './EnrollmentFeeCustomizationStep';
 // ⭐ PERF (sept. 2026) : cache partagé React Query au lieu d'un fetch brut —
 //    l'onglet Inscriptions précharge les classes dès son montage (voir
 //    EnrollmentsContent), donc ce modal affiche la liste INSTANTANÉMENT
@@ -79,7 +85,9 @@ export default function PostEnrollmentFlow({
   onRefresh?: () => void;
 }) {
   const { toast } = useToast();
-  const [step, setStep] = useState<'AFFECTATION' | 'PAYMENT'>('AFFECTATION');
+  // ⭐ Étapes du flux : AFFECTATION (classe physique, skippable) →
+  //    CUSTOMIZATION (personnalisation des frais, skippable) → PAYMENT.
+  const [step, setStep] = useState<'AFFECTATION' | 'CUSTOMIZATION' | 'PAYMENT'>('AFFECTATION');
   // ⭐ Cache partagé (2 min) + données affichées immédiatement si le cache est
   //    chaud (préchargé par l'onglet Inscriptions pendant que la secrétaire
   //    remplit le wizard — plusieurs minutes d'avance).
@@ -129,7 +137,7 @@ export default function PostEnrollmentFlow({
 
   const studentFullName = `${flow.firstName} ${flow.lastName}`;
 
-  /** Étape 1 → affecter la classe physique puis passer au paiement */
+  /** Étape 1 → affecter la classe physique puis passer à la personnalisation */
   const handleAssign = async () => {
     if (!selectedPhysicalClassId) {
       setAssignError('Sélectionnez une classe physique (ou passez cette étape).');
@@ -151,7 +159,10 @@ export default function PostEnrollmentFlow({
         variant: 'success',
       });
       onRefresh?.();
-      setStep('PAYMENT');
+      // ⭐ La personnalisation des frais se fait APRÈS l'affectation : le compte
+      //    vient d'être recalculé avec les frais de la classe physique → les
+      //    montants affichés à l'étape personnalisation sont exacts.
+      setStep('CUSTOMIZATION');
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || 'Erreur inconnue';
       setAssignError(msg);
@@ -160,12 +171,12 @@ export default function PostEnrollmentFlow({
     }
   };
 
-  /** Étape 1 → ignorer l'affectation, passer directement au paiement */
+  /** Étape 1 → ignorer l'affectation, passer à la personnalisation des frais */
   const handleSkipAffectation = () => {
-    setStep('PAYMENT');
+    setStep('CUSTOMIZATION');
   };
 
-  // ─── ÉTAPE 2 : modal de paiement (réutilise le pattern Finance) ───
+  // ─── ÉTAPE 3 : modal de paiement (réutilise le pattern Finance) ───
   if (step === 'PAYMENT') {
     return (
       <NewPaymentModal
@@ -181,6 +192,23 @@ export default function PostEnrollmentFlow({
         }}
         onClose={onClose}
         onSuccess={() => onRefresh?.()}
+      />
+    );
+  }
+
+  // ─── ÉTAPE 2 : personnalisation des frais (inscription / scolarité) ───
+  //    Réutilise la logique du module Finance → Personnalisations (upsert
+  //    override + recalcul synchrone du compte). Skippable.
+  if (step === 'CUSTOMIZATION') {
+    return (
+      <EnrollmentFeeCustomizationStep
+        flow={flow}
+        academicYearId={academicYearId}
+        physicalClassName={assignedPhysicalClassName}
+        onClose={onClose}
+        onSkip={() => setStep('PAYMENT')}
+        onDone={() => setStep('PAYMENT')}
+        onRefresh={onRefresh}
       />
     );
   }
@@ -229,8 +257,9 @@ export default function PostEnrollmentFlow({
           <p className="text-xs text-slate-500 leading-relaxed mb-4">
             Souhaitez-vous affecter {flow.firstName} à une classe physique maintenant&nbsp;?
             Cette étape est <span className="font-semibold">facultative</span> — vous pourrez la faire
-            plus tard dans l&apos;onglet « Affectations &amp; Mouvements ». Après cette étape, le
-            paiement des frais d&apos;inscription s&apos;ouvrira automatiquement.
+            plus tard dans l&apos;onglet « Affectations &amp; Mouvements ». Après cette étape, vous
+            pourrez personnaliser ses frais (réduction, bourse — facultatif), puis l&apos;encaissement
+            s&apos;ouvrira automatiquement.
           </p>
 
           {classesLoading && physicalClasses.length === 0 ? (
@@ -327,7 +356,7 @@ export default function PostEnrollmentFlow({
                 </>
               ) : (
                 <>
-                  Affecter et encaisser <ArrowRight className="w-4 h-4 ml-1.5" />
+                  Affecter et continuer <ArrowRight className="w-4 h-4 ml-1.5" />
                 </>
               )}
             </Button>

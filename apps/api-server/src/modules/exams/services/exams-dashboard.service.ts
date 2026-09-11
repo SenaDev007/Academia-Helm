@@ -151,26 +151,51 @@ export class ExamsDashboardService {
       },
     });
 
-    const completionStats = await Promise.all(
-      classes.map(async (cls) => {
-        const evaluations = await this.prisma.evaluation.findMany({
-          where: { classId: cls.id, status: 'VALIDATED' },
-          select: { id: true },
-        });
+    // ⭐ BRIEF PERF 3.4 — N+1 (2N+1 requêtes) éliminé :
+    // Avant : PAR classe → findMany evaluations (ids) + grade.count = 2 requêtes
+    // × N classes en Promise.all (saturation du pool pendant les pics).
+    // Maintenant : 2 requêtes GLOBALES (evaluations groupBy classId + grades
+    // groupBy classId), agrégation en mémoire.
+    const classIds = classes.map((cls) => cls.id);
 
-        const totalExpectedGrades = evaluations.length * cls._count.classStudents;
-        const actualGrades = await this.prisma.grade.count({
-          where: { classId: cls.id, status: 'VALIDATED' },
-        });
+    const [evaluationsByClass, gradesByClass] = await Promise.all([
+      classIds.length > 0
+        ? this.prisma.evaluation.groupBy({
+            by: ['classId'],
+            where: { classId: { in: classIds }, status: 'VALIDATED' },
+            _count: { _all: true },
+          }).catch(() => [])
+        : Promise.resolve([]),
+      classIds.length > 0
+        ? this.prisma.grade.groupBy({
+            by: ['classId'],
+            where: { classId: { in: classIds }, status: 'VALIDATED' },
+            _count: { _all: true },
+          }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
 
-        return {
-          classId: cls.id,
-          className: cls.name,
-          completion: totalExpectedGrades > 0 ? (actualGrades / totalExpectedGrades) * 100 : 0,
-          totalEvaluations: evaluations.length,
-        };
-      }),
-    );
+    const evalCountMap = new Map<string, number>();
+    for (const row of evaluationsByClass as any[]) {
+      if (row.classId) evalCountMap.set(row.classId, row._count._all);
+    }
+    const gradeCountMap = new Map<string, number>();
+    for (const row of gradesByClass as any[]) {
+      if (row.classId) gradeCountMap.set(row.classId, row._count._all);
+    }
+
+    const completionStats = classes.map((cls) => {
+      const evaluationCount = evalCountMap.get(cls.id) || 0;
+      const totalExpectedGrades = evaluationCount * cls._count.classStudents;
+      const actualGrades = gradeCountMap.get(cls.id) || 0;
+
+      return {
+        classId: cls.id,
+        className: cls.name,
+        completion: totalExpectedGrades > 0 ? (actualGrades / totalExpectedGrades) * 100 : 0,
+        totalEvaluations: evaluationCount,
+      };
+    });
 
     return completionStats;
   }

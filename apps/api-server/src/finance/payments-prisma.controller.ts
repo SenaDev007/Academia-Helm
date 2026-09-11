@@ -86,6 +86,9 @@ export class PaymentsPrismaController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
+    // ⭐ BRIEF PERF 3.4 — pagination côté serveur (optionnelle, rétro-compatible)
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     // ⭐ FIX 2026-09-06 (D6 — matrice P5) : la liste des paiements est réservée
     //    aux profils staff (finance/direction). Avant : un ENSEIGNANT ou un
@@ -117,6 +120,8 @@ export class PaymentsPrismaController {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       search,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
     }, user?.scope ?? null);
   }
 

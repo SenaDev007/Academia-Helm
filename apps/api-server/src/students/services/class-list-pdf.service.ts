@@ -168,35 +168,19 @@ export class ClassListPdfService {
     });
 
     // 5. Construire un seul HTML avec toutes les classes (séparées par page-break)
+    // ⭐ BRIEF PERF 3.4 — inscriptions chargées en BATCH (1 requête IN (…))
+    // au lieu d'une requête par classe.
+    const enrollmentsByClass = await this.loadEnrollmentsByClass(
+      tenantId,
+      academicYearId,
+      academicClasses.map((ac) => ac.id),
+      'academicClassId',
+      statusFilter,
+    );
     const allHtml: string[] = [];
     for (const ac of academicClasses) {
-      // Récupérer les élèves de cette classe officielle
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId,
-          academicClassId: ac.id,
-          academicYearId,
-          // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
-          //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (comportement par défaut).
-          ...(statusFilter
-            ? { status: statusFilter }
-            : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
-        },
-        include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              matricule: true,
-              studentCode: true,
-              gender: true,
-              dateOfBirth: true,
-            },
-          },
-        },
-        orderBy: { student: { lastName: 'asc' } },
-      });
+      // Élèves de cette classe officielle (regroupés depuis le batch)
+      const enrollments = enrollmentsByClass.get(ac.id) || [];
 
       const bodyContent = this.buildBodyContent({
         className: ac.name,
@@ -307,33 +291,19 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
     });
 
     // 3. Construire le HTML combiné
+    // ⭐ BRIEF PERF 3.4 — inscriptions chargées en BATCH (1 requête IN (…))
+    const enrollmentsByClass = await this.loadEnrollmentsByClass(
+      tenantId,
+      academicYearId,
+      academicClasses.map((ac) => ac.id),
+      'academicClassId',
+    );
     const allHtml: string[] = [];
     for (const ac of academicClasses) {
       const levelName = (ac.level?.name || '').toUpperCase();
       const isSecondary = levelName.includes('SECONDAIRE');
 
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId,
-          academicClassId: ac.id,
-          academicYearId,
-          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
-        },
-        include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              matricule: true,
-              studentCode: true,
-              gender: true,
-              dateOfBirth: true,
-            },
-          },
-        },
-        orderBy: { student: { lastName: 'asc' } },
-      });
+      const enrollments = enrollmentsByClass.get(ac.id) || [];
 
       const bodyContent = this.buildBodyContent({
         className: ac.name,
@@ -434,33 +404,19 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
     });
 
     // 3. Construire le HTML combiné
+    // ⭐ BRIEF PERF 3.4 — inscriptions chargées en BATCH (1 requête IN (…))
+    const enrollmentsByPhysicalClass = await this.loadEnrollmentsByClass(
+      tenantId,
+      academicYearId,
+      physicalClasses.map((cls) => cls.id),
+      'classId',
+    );
     const allHtml: string[] = [];
     for (const cls of physicalClasses) {
       const levelName = (cls.schoolLevel?.name || '').toUpperCase();
       const isSecondary = levelName.includes('SECONDAIRE');
 
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId,
-          classId: cls.id,
-          academicYearId,
-          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
-        },
-        include: {
-          student: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              matricule: true,
-              studentCode: true,
-              gender: true,
-              dateOfBirth: true,
-            },
-          },
-        },
-        orderBy: { student: { lastName: 'asc' } },
-      });
+      const enrollments = enrollmentsByPhysicalClass.get(cls.id) || [];
 
       const subtitle = cls.officialClass?.name
         ? `Section physique — classe officielle : ${cls.officialClass.name}`
@@ -968,6 +924,59 @@ ${this.buildBodyContent(data)}
   </div>
 ${data.pageBreakAfter ? '<div style="page-break-after: always;"></div>' : ''}
 `;
+  }
+
+  /**
+   * ⭐ BRIEF PERF 3.4 — Chargement BATCH des inscriptions (N+1 éliminé).
+   *
+   * Avant : une requête studentEnrollment.findMany PAR classe dans une
+   * boucle (N classes = N requêtes + N allers-retours sur le pool).
+   * Maintenant : 1 seule requête avec classId IN (…), résultats regroupés
+   * en mémoire par classe. L'orderBy global student.lastName est préservé
+   * dans chaque groupe (tri stable du tri global).
+   */
+  private async loadEnrollmentsByClass(
+    tenantId: string,
+    academicYearId: string,
+    classIds: string[],
+    classIdField: 'academicClassId' | 'classId',
+    statusFilter?: string,
+  ): Promise<Map<string, any[]>> {
+    const map = new Map<string, any[]>();
+    if (classIds.length === 0) return map;
+    const rows = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        [classIdField]: { in: classIds },
+        // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
+        //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (défaut).
+        ...(statusFilter
+          ? { status: statusFilter }
+          : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            matricule: true,
+            studentCode: true,
+            gender: true,
+            dateOfBirth: true,
+          },
+        },
+      },
+      orderBy: { student: { lastName: 'asc' } },
+    }).catch(() => []);
+    for (const row of rows) {
+      const key = (row as any)[classIdField];
+      const list = map.get(key) || [];
+      list.push(row);
+      map.set(key, list);
+    }
+    return map;
   }
 
   /**

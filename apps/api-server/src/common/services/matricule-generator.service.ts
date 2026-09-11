@@ -38,6 +38,7 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { AppSequenceService } from './app-sequence.service';
 
 const GLOBAL_PAD = 6;
 const LOCAL_PAD = 5;
@@ -75,7 +76,10 @@ export interface GeneratedMatricule {
 export class MatriculeGeneratorService {
   private readonly logger = new Logger(MatriculeGeneratorService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly appSequences: AppSequenceService,
+  ) {}
 
   /**
    * Génère un numéro global + local pour un type donné.
@@ -154,12 +158,17 @@ export class MatriculeGeneratorService {
 
   /**
    * Séquence locale (par tenant + type).
-   * Utilise une approche simple : count des enregistrements existants + 1.
-   * Pour une robustesse production, il faudrait une table de séquence
-   * dédiée avec upsert atomique (comme studentNumberSequence).
+   *
+   * ⭐ BRIEF PERF 3.3 — Toutes les séquences sont désormais ATOMIQUES via la
+   * table app_sequences (upsert ON CONFLICT DO UPDATE current = current + 1).
+   * L'ancien pattern findFirst/count max + 1 était une lecture-modification-
+   * écriture avec course sous écritures concurrentes (reçus en doublon quand
+   * deux comptables valident en même temps). À la première utilisation de
+   * chaque séquence, la valeur est initialisée au max existant (initFrom)
+   * pour respecter la numérotation en production.
    */
   private async getNextLocalSequence(tenantId: string, type: MatriculeType): Promise<number> {
-    // Pour STU : utiliser studentNumberSequence (déjà existant)
+    // Pour STU : utiliser studentNumberSequence (déjà atomique)
     if (type === 'STU') {
       const seq = await this.prisma.studentNumberSequence.upsert({
         where: { tenantId },
@@ -169,47 +178,47 @@ export class MatriculeGeneratorService {
       return seq.current;
     }
 
-    // Pour les autres types : utiliser un compteur basé sur une table
-    // générique. On stocke la séquence dans une table key-value.
-    // Pour l'instant, on utilise un simple count + 1.
-    // TODO: créer une table MatriculeSequence(tenantId, type, current) pour
-    // garantir l'atomicité.
     const year = new Date().getFullYear();
     const year2 = year.toString().slice(-2);
-    const prefix = `${type}-${year2}-`;
 
-    // Compter selon le type
-    let count = 0;
-    switch (type) {
-      case 'INV':
-        count = await this.prisma.invoice.count({
-          where: { tenantId, invoiceNumber: { startsWith: prefix } },
-        }).catch(() => 0);
-        break;
-      case 'REC':
-        // ⚠️ Les reçus sont au format {schoolCode}-R-{year2}-{seq} (ex: CSPEBE-R-26-00001)
-        // Le préfixe 'REC-26-' ne correspond PAS au format réel.
-        // On trouve le max seq existant pour ce tenant en extrayant le dernier
-        // segment numérique du receiptNumber le plus récent.
-        const lastTx = await this.prisma.financeTransaction.findFirst({
-          where: { tenantId },
-          select: { receiptNumber: true },
-          orderBy: { receiptNumber: 'desc' },
-        });
-        if (lastTx?.receiptNumber) {
-          // Extraire le dernier segment après le dernier '-'
-          const parts = lastTx.receiptNumber.split('-');
-          const lastSeq = parseInt(parts[parts.length - 1], 10);
-          count = isNaN(lastSeq) ? 0 : lastSeq;
-        } else {
-          count = 0;
+    // Initialisation paresseuse : max réellement utilisé avant la migration
+    const initFromMax = async (): Promise<number> => {
+      switch (type) {
+        case 'INV': {
+          const prefix = `${type}-${year2}-`;
+          const invoices = await this.prisma.invoice.findMany({
+            where: { tenantId, invoiceNumber: { startsWith: prefix } },
+            select: { invoiceNumber: true },
+          }).catch(() => [] as { invoiceNumber: string }[]);
+          let max = 0;
+          for (const inv of invoices) {
+            const seq = parseInt(inv.invoiceNumber.replace(prefix, ''), 10);
+            if (!isNaN(seq) && seq > max) max = seq;
+          }
+          return max;
         }
-        break;
-      default:
-        count = 0;
-    }
+        case 'REC': {
+          // Les reçus existants sont au format {schoolCode}-R-{year2}-{seq}
+          // (ex: CSPEBE-R-26-00001) — on extrait le max du dernier segment.
+          const lastTx = await this.prisma.financeTransaction.findFirst({
+            where: { tenantId },
+            select: { receiptNumber: true },
+            orderBy: { receiptNumber: 'desc' },
+          }).catch(() => null);
+          if (lastTx?.receiptNumber) {
+            const parts = lastTx.receiptNumber.split('-');
+            const lastSeq = parseInt(parts[parts.length - 1], 10);
+            return isNaN(lastSeq) ? 0 : lastSeq;
+          }
+          return 0;
+        }
+        default:
+          return 0;
+      }
+    };
 
-    return count + 1;
+    // ⭐ Upsert atomique — remplace le count+1 / findFirst+parse (course)
+    return this.appSequences.next(tenantId, `LOCAL:${type}:${year2}`, { initFrom: initFromMax });
   }
 
   /**

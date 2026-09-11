@@ -32,15 +32,53 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private keepaliveInterval: NodeJS.Timeout | null = null;
 
   constructor(private configService?: ConfigService) {
-    const databaseUrl = configService?.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
+    const rawUrl = configService?.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
 
-    if (!databaseUrl) {
+    if (!rawUrl) {
       throw new Error('DATABASE_URL is required');
     }
 
-    // ── Détection du mode Neon (pooler vs direct) pour le pool size ──
-    const isNeonPooler = /-pooler[.-]/.test(databaseUrl);
-    const isNeon = databaseUrl.includes('.neon.tech');
+    // ── Détection du mode Neon (pooler vs direct) ──
+    const isNeonPooler = /-pooler[.-]/.test(rawUrl);
+    const isNeon = rawUrl.includes('.neon.tech');
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ⭐ BRIEF PERF 3.1 — Bascule automatique vers le host POOLER Neon.
+    //
+    // Constat diagnostic (panneau Neon) : l'app en production utilisait le host
+    // DIRECT (« Pooler client connections: no data to display » alors que
+    // « Postgres connections count » montrait 2 connexions directes = la taille
+    // exacte de l'ancien pool en mode direct). Le pooler Neon (PgBouncer)
+    // multiplexe les connexions clientes vers le compute et supprime :
+    //   1. le goulot d'étranglement du pool applicatif (2-3 connexions)
+    //   2. les erreurs de connexion quand Neon recycle une socket directe
+    //
+    // Compatibilité VERIFIÉE en conditions réelles (test pooler) :
+    //   - prepared statements nommés (protocole pg) : ✅
+    //   - transactions interactives BEGIN/…/COMMIT ($transaction Prisma) : ✅
+    //   - SET LOCAL app.allow_balance_update dans une transaction : ✅
+    //
+    // Pour désactiver : DB_USE_POOLER=false (la DATABASE_URL est alors utilisée
+    // telle quelle). Pour migrer vers le pooler sans réécriture côté app,
+    // il suffit de pointer DATABASE_URL sur l'hôte -pooler.
+    // ─────────────────────────────────────────────────────────────────────────
+    let databaseUrl = rawUrl;
+    let rewroteToPooler = false;
+    if (
+      process.env.DB_USE_POOLER !== 'false' &&
+      isNeon &&
+      !isNeonPooler
+    ) {
+      const hostMatch = databaseUrl.match(/@([^:/?]+)/);
+      const host = hostMatch?.[1];
+      if (host && host.startsWith('ep-') && !host.split('.')[0].endsWith('-pooler')) {
+        const firstSegment = host.split('.')[0];
+        const poolerHost = host.replace(firstSegment, `${firstSegment}-pooler`);
+        databaseUrl = databaseUrl.replace(host, poolerHost);
+        rewroteToPooler = true;
+      }
+    }
+    const effectiveIsPooler = /-pooler[.-]/.test(databaseUrl);
 
     // ── Configuration du pool PostgreSQL ──
     const needsSsl =
@@ -48,22 +86,28 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       process.env.NODE_ENV === 'production' ||
       isNeon;
 
-    // Taille du pool adaptée au mode
-    // - Neon pooler : 3 connexions (le pooler multiplexe déjà vers Neon)
-    // - Neon direct : 2 connexions (Neon free tier = limité)
-    // - Local dev : 3 connexions
-    // ⭐ Réduit de 5→3 pour Neon pooler : moins de sockets à maintenir = moins
-    //    de chances d'en avoir une stale quand Neon recycle.
-    const poolMax = isNeonPooler ? 3 : isNeon ? 2 : 3;
+    // Taille du pool :
+    // - PGPOOL_MAX (env) : override explicite
+    // - Neon pooler : 10 connexions clientes — PgBouncer multiplexe côté Neon,
+    //   le serveur ne voit qu'un petit nombre de connexions réelles. 4
+    //   utilisateurs simultanés × (garde + service + intercepteur) passent
+    //   sans file d'attente.
+    // - Neon direct : 5 (sans pooler, chaque socket = 1 connexion serveur ;
+    //   max_connections Neon ≈ 900 → 5 reste très prudent)
+    // - Local dev : 10
+    const envPoolMax = parseInt(process.env.PGPOOL_MAX || '', 10);
+    const defaultPoolMax = effectiveIsPooler ? 10 : isNeon ? 5 : 10;
+    const poolMax = Number.isFinite(envPoolMax) && envPoolMax > 0 ? envPoolMax : defaultPoolMax;
 
     const poolConfig: any = {
       connectionString: databaseUrl,
       max: poolMax,
-      // ⭐ idleTimeoutMillis réduit à 20s (au lieu de 30s) :
-      //    ferme les connexions inactives plus vite côté client, ce qui
-      //    réduit la fenêtre pendant laquelle une socket peut devenir stale
-      //    pendant que Neon recycle.
-      idleTimeoutMillis: 20000,
+      // ⭐ idleTimeoutMillis = 0 : on NE ferme plus les connexions inactives
+      //    après 20s. Chaque reconnexion = handshake TLS + auth (~50-150ms
+      //    inter-région) payé par la requête utilisateur suivante — c'était
+      //    une source de pics de latence aléatoires. Le recyclage est assuré
+      //    par maxLifetimeMilliseconds + le keepalive 4 min ci-dessous.
+      idleTimeoutMillis: 0,
       // ✅ 30s pour laisser Neon le temps de se réveiller (cold start = 5-10s)
       connectionTimeoutMillis: 30000,
       // ⭐ maxLifetimeMillis : ferme les connexions après 30 min d'existence
@@ -93,7 +137,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     (this as any).__pool = pool;
 
     this.logger.log(
-      `Database config: ${isNeonPooler ? 'Neon POOLER' : isNeon ? 'Neon DIRECT' : 'Local/Other'}, pool max: ${poolMax}, SSL: ${needsSsl}`,
+      `Database config: ${effectiveIsPooler ? 'Neon POOLER' : isNeon ? 'Neon DIRECT' : 'Local/Other'}` +
+      `${rewroteToPooler ? ' (auto-rewritten from direct URL — brief perf 3.1)' : ''}, ` +
+      `pool max: ${poolMax}, SSL: ${needsSsl}`,
     );
 
     // ── Slow query logging + RETRY sur erreurs de connexion ──

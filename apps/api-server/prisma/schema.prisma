@@ -400,6 +400,7 @@ model Tenant {
   studentIdCards                   StudentIdCard[]
   studentIdentifiers               StudentIdentifier[]
   studentNumberSequence            StudentNumberSequence?
+  appSequences                     AppSequence[]
   studentPhotos                    StudentPhoto[]
   sourceTransfers                  StudentTransferRequest[]          @relation("SourceSchoolTransfers")
   targetTransfers                  StudentTransferRequest[]          @relation("TargetSchoolTransfers")
@@ -2347,6 +2348,24 @@ model StudentNumberSequence {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("student_number_sequences")
+}
+
+/// ⭐ BRIEF PERF 3.3 — Séquences atomiques génériques (reçus, références TX, ventes).
+/// Remplace les patterns read-modify-write (findFirst max + 1) par un upsert
+/// atomique ON CONFLICT DO UPDATE current = current + 1 : verrou de ligne
+/// tenu uniquement pendant la durée du statement, zéro race condition.
+/// Une ligne par (tenantId, key) — ex: key = "RECEIPT_AH:2026".
+model AppSequence {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String
+  current   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("app_sequences")
 }
 
 model StudentAcademicTrack {

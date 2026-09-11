@@ -11,6 +11,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentAllocationService } from './payment-allocation.service';
+import { AppSequenceService } from '../common/services/app-sequence.service';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class PaymentsPrismaEnhancedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly allocationService: PaymentAllocationService,
+    private readonly appSequences: AppSequenceService,
   ) {}
 
   /**
@@ -128,31 +130,38 @@ export class PaymentsPrismaEnhancedService {
 
   /**
    * Génère un numéro de reçu unique
+   *
+   * ⭐ BRIEF PERF 3.3 — séquence atomique via app_sequences (même clé que
+   * payments-prisma.service : PAYRECEIPT:{year} — même format REC-YYYY-NNNNNN).
+   * Avant : findFirst(orderBy desc) + parse + 1 = read-modify-write (course
+   * sous paiements concurrents). Init au max existant à la première utilisation.
    */
   private async generateReceiptNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `REC-${year}-`;
 
-    // Récupérer le dernier numéro de reçu de l'année
-    const lastReceipt = await this.prisma.paymentReceipt.findFirst({
-      where: {
-        receiptNumber: {
-          startsWith: prefix,
-        },
-        payment: {
-          tenantId,
-        },
-      },
-      orderBy: {
-        receiptNumber: 'desc',
+    const sequence = await this.appSequences.next(tenantId, `PAYRECEIPT:${year}`, {
+      initFrom: async () => {
+        // Récupérer le dernier numéro de reçu de l'année
+        const lastReceipt = await this.prisma.paymentReceipt.findFirst({
+          where: {
+            receiptNumber: {
+              startsWith: prefix,
+            },
+            payment: {
+              tenantId,
+            },
+          },
+          orderBy: {
+            receiptNumber: 'desc',
+          },
+          select: { receiptNumber: true },
+        });
+        if (!lastReceipt?.receiptNumber) return 0;
+        const lastSequence = parseInt(lastReceipt.receiptNumber.split('-').pop() || '0', 10);
+        return isNaN(lastSequence) ? 0 : lastSequence;
       },
     });
-
-    let sequence = 1;
-    if (lastReceipt) {
-      const lastSequence = parseInt(lastReceipt.receiptNumber.split('-').pop() || '0', 10);
-      sequence = lastSequence + 1;
-    }
 
     return `${prefix}${sequence.toString().padStart(6, '0')}`;
   }

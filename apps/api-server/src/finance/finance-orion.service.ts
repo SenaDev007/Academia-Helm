@@ -453,12 +453,23 @@ export class FinanceOrionService {
       include: { category: true },
     });
 
-    for (const b of budgets) {
-      const expenses = await this.prisma.financeExpense.aggregate({
-        where: { tenantId, academicYearId, categoryId: b.categoryId, status: 'APPROVED' },
+    // ⭐ BRIEF PERF 3.4 — N+1 éliminé : 1 groupBy categoryId (sommes des
+    // dépenses approuvées) au lieu d'un aggregate PAR budget.
+    const budgetCategoryIds = [...new Set(budgets.map((b) => b.categoryId))];
+    const expensesByCategory = new Map<string, number>();
+    if (budgetCategoryIds.length > 0) {
+      const groupedExpenses = await this.prisma.financeExpense.groupBy({
+        by: ['categoryId'],
+        where: { tenantId, academicYearId, categoryId: { in: budgetCategoryIds }, status: 'APPROVED' },
         _sum: { amount: true },
-      });
-      const spent = Number(expenses._sum.amount ?? 0);
+      }).catch(() => []);
+      for (const row of groupedExpenses as any[]) {
+        expensesByCategory.set(row.categoryId, Number(row._sum.amount ?? 0));
+      }
+    }
+
+    for (const b of budgets) {
+      const spent = expensesByCategory.get(b.categoryId) ?? 0;
       const allocated = Number(b.allocatedAmount);
       const percent = allocated > 0 ? (spent / allocated) * 100 : 0;
 

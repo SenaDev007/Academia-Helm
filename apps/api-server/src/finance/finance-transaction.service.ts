@@ -17,6 +17,7 @@ import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
 import { AccessScope } from '../common/context/access-scope.service';
+import { AppSequenceService } from '../common/services/app-sequence.service';
 
 // ⭐ Ordre de priorité d'imputation des paiements. GENERAL (frais généraux)
 //    est imputé APRÈS les frais pédagogiques classiques — cohérent avec le
@@ -46,6 +47,7 @@ export class FinanceTransactionService {
     private readonly receiptNotificationService: ReceiptNotificationFinanceService,
     @Inject(forwardRef(() => ArrearAccumulationService))
     private readonly arrearAccumulationService: ArrearAccumulationService,
+    private readonly appSequences: AppSequenceService,
   ) {}
 
   /** Expose prisma pour le controller (downloadReceipt, resendReceipt) */
@@ -85,19 +87,34 @@ export class FinanceTransactionService {
     return register.id;
   }
 
+  /**
+   * ⭐ BRIEF PERF 3.3 — Numéro de reçu ATOMIQUE (AH-YYYY-NNNNNN).
+   *
+   * Avant : findFirst(orderBy receiptNumber desc) + parse + 1 — pattern
+   * lecture-modification-écriture. Deux comptables validant un paiement au
+   * même moment obtenaient le MÊME numéro (course entre le find et le create).
+   *
+   * Maintenant : upsert atomique sur app_sequences (INSERT ... ON CONFLICT
+   * DO UPDATE current = current + 1 RETURNING) — le verrou de ligne n'est tenu
+   * que pendant le statement (< 1ms), aucun doublon possible. À la première
+   * utilisation, la séquence est initialisée au max existant (initFrom) pour
+   * respecter la numérotation déjà en production.
+   */
   private async nextReceiptNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `AH-${year}-`;
-    const last = await this.prisma.financeTransaction.findFirst({
-      where: { tenantId, receiptNumber: { startsWith: prefix } },
-      orderBy: { receiptNumber: 'desc' },
+    const seq = await this.appSequences.next(tenantId, `RECEIPT_AH:${year}`, {
+      initFrom: async () => {
+        const last = await this.prisma.financeTransaction.findFirst({
+          where: { tenantId, receiptNumber: { startsWith: prefix } },
+          orderBy: { receiptNumber: 'desc' },
+          select: { receiptNumber: true },
+        });
+        if (!last?.receiptNumber) return 0;
+        const n = parseInt(last.receiptNumber.replace(prefix, ''), 10);
+        return isNaN(n) ? 0 : n;
+      },
     });
-    let seq = 1;
-    if (last) {
-      const part = last.receiptNumber.replace(prefix, '');
-      const n = parseInt(part, 10);
-      if (!isNaN(n)) seq = n + 1;
-    }
     return `${prefix}${seq.toString().padStart(6, '0')}`;
   }
 
@@ -584,52 +601,29 @@ export class FinanceTransactionService {
       );
     }
 
-    // Génération du numéro de reçu avec vérification d'unicité + retry
-    // (évite l'erreur "champ unique existe déjà" en cas de race condition)
-    let receiptNumber = await this.receiptFinanceService.generateReceiptNumber(tenantId, data.academicYearId)
+    // Génération du numéro de reçu — chaîne atomique (MatriculeGenerator
+    // patché séquence atomique, fallback AH-YYYY-NNNNNN atomique également).
+    // L'ancienne boucle de 10 vérifications d'unicité (jusqu'à 10 requêtes
+    // de plus par paiement) est supprimée : la séquence ON CONFLICT rend
+    // structurellement impossible l'obtention du même numéro par deux
+    // requêtes concurrentes.
+    let receiptNumber = await this.receiptFinanceService
+      .generateReceiptNumber(tenantId, data.academicYearId)
       .then((r) => r.local)
-      .catch((err) => {
+      .catch((err: any) => {
         this.logger.warn(`MatriculeGeneratorService failed, fallback to AH-YYYY-NNNNNN: ${err.message}`);
         return this.nextReceiptNumber(tenantId);
       });
 
-    // Vérifier l'unicité — si le numéro existe déjà, incrémenter jusqu'à trouver un numéro libre
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const existing = await this.prisma.financeTransaction.findFirst({
-        where: { receiptNumber },
-        select: { id: true },
-      });
-      if (!existing) break; // Numéro libre
-      // Numéro déjà pris — incrémenter la séquence (en conservant la largeur
-      // d'origine du numéro : « -150 » → « -151 », pas « -00151 » — des largeurs
-      // incohérentes créent des collisions numériques entre reçus)
-      this.logger.warn(`Receipt number ${receiptNumber} already exists, trying next (attempt ${attempt + 1})`);
-      const parts = receiptNumber.split('-');
-      const lastPart = parts[parts.length - 1];
-      const seq = parseInt(lastPart, 10);
-      const nextSeq = (isNaN(seq) ? 0 : seq) + 1;
-      parts[parts.length - 1] = String(nextSeq).padStart(lastPart.length, '0');
-      receiptNumber = parts.join('-');
-    }
-
     // Génération de la référence de transaction (si non fournie par l'utilisateur)
     // Format : TX-{YY}{MM}-{SEQ}  ex: TX-2607-001
+    // ⭐ BRIEF PERF 3.3 — séquence atomique (avant : findFirst max+1, même course)
     let transactionReference = data.reference ?? null;
     if (!transactionReference) {
       const now = new Date();
       const ym = `${now.getFullYear().toString().slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
       const prefix = `TX-${ym}-`;
-      const lastRef = await this.prisma.financeTransaction.findFirst({
-        where: { tenantId, reference: { startsWith: prefix } },
-        select: { reference: true },
-        orderBy: { reference: 'desc' },
-      });
-      let refSeq = 1;
-      if (lastRef?.reference) {
-        const part = lastRef.reference.replace(prefix, '');
-        const n = parseInt(part, 10);
-        if (!isNaN(n)) refSeq = n + 1;
-      }
+      const refSeq = await this.appSequences.next(tenantId, `TXREF:${ym}`);
       transactionReference = `${prefix}${String(refSeq).padStart(3, '0')}`;
     }
 
@@ -662,60 +656,78 @@ export class FinanceTransactionService {
       }
     }
 
-    const tx = await this.prisma.financeTransaction.create({
-      data: {
-        tenantId,
-        academicYearId: data.academicYearId,
-        studentAccountId: data.studentAccountId,
-        type: TransactionType.PAYMENT,
-        amount: data.amount,
-        paymentMethod,
-        reference: transactionReference,
-        cashierId: data.cashierId,
-        deviceId: data.deviceId ?? null,
-        receiptNumber,
-        receiptUrl: data.receiptUrl ?? null,
-        cashRegisterId: effectiveCashRegisterId ?? null,
-        // ⭐ Espèces : tracer le montant remis + reliquat pour le reçu PDF/WhatsApp/SMS
-        tenderedAmount: computedTendered ?? null,
-        changeGiven: computedChange ?? null,
-        allocations: updates.length
-          ? { create: updates.map((u) => ({ accountBreakdownId: u.breakdownId, amount: u.paidDelta })) }
-          : undefined,
-      },
-    });
-    const integrityHash = crypto
-      .createHash('sha256')
-      .update(
-        `${tenantId}|${data.studentAccountId}|${data.amount}|${TransactionType.PAYMENT}|${tx.createdAt.toISOString()}`,
-      )
-      .digest('hex');
-    await this.prisma.financeTransaction.update({
-      where: { id: tx.id },
-      data: { integrityHash },
-    });
-
-    for (const u of updates) {
-      await this.prisma.accountBreakdown.update({
-        where: { id: u.breakdownId },
+    // ⭐ BRIEF PERF 3.3 + 3.4 — Écritures du paiement regroupées en UNE
+    // transaction interactive : create + hash d'intégrité + imputations des
+    // breakdowns + solde de caisse.
+    // Avant : chaque écriture partait en autocommit séparé — une déconnexion
+    // en cours de route laissait la transaction créée SANS imputation (incohérence
+    // de solde), et chaque aller-retour occupait le pool de connexions pendant
+    // les pics de charge.
+    // Maintenant : atomique (tout ou rien) + un seul BEGIN/COMMIT.
+    // Le trigger DB update_balance_after_transaction maintient les totaux du
+    // compte élève à l'INSERT exactement comme avant (incrément atomique).
+    const tx = await this.prisma.$transaction(async (prismaTx) => {
+      const created = await prismaTx.financeTransaction.create({
         data: {
-          paidAmount: { increment: u.paidDelta },
-          remainingAmount: { decrement: u.paidDelta },
+          tenantId,
+          academicYearId: data.academicYearId,
+          studentAccountId: data.studentAccountId,
+          type: TransactionType.PAYMENT,
+          amount: data.amount,
+          paymentMethod,
+          reference: transactionReference,
+          cashierId: data.cashierId,
+          deviceId: data.deviceId ?? null,
+          receiptNumber,
+          receiptUrl: data.receiptUrl ?? null,
+          cashRegisterId: effectiveCashRegisterId ?? null,
+          // ⭐ Espèces : tracer le montant remis + reliquat pour le reçu PDF/WhatsApp/SMS
+          tenderedAmount: computedTendered ?? null,
+          changeGiven: computedChange ?? null,
+          allocations: updates.length
+            ? { create: updates.map((u) => ({ accountBreakdownId: u.breakdownId, amount: u.paidDelta })) }
+            : undefined,
         },
       });
-    }
 
-    // Mise à jour du solde de la caisse (multi-caisses)
-    if (effectiveCashRegisterId) {
-      try {
-        await this.prisma.cashRegister.update({
-          where: { id: effectiveCashRegisterId },
-          data: { currentBalance: { increment: data.amount } },
+      // Hash d'intégrité — calculé depuis le createdAt réel de la ligne, dans
+      // la même transaction (format d'entrée identique à l'existant).
+      const integrityHash = crypto
+        .createHash('sha256')
+        .update(
+          `${tenantId}|${data.studentAccountId}|${data.amount}|${TransactionType.PAYMENT}|${created.createdAt.toISOString()}`,
+        )
+        .digest('hex');
+      await prismaTx.financeTransaction.update({
+        where: { id: created.id },
+        data: { integrityHash },
+      });
+
+      // Imputations sur les breakdowns — incrémentations SQL atomiques
+      for (const u of updates) {
+        await prismaTx.accountBreakdown.update({
+          where: { id: u.breakdownId },
+          data: {
+            paidAmount: { increment: u.paidDelta },
+            remainingAmount: { decrement: u.paidDelta },
+          },
         });
-      } catch (err: any) {
-        this.logger.error(`Failed to update cash register balance: ${err.message}`);
       }
-    }
+
+      // Mise à jour du solde de la caisse (multi-caisses) — increment atomique
+      if (effectiveCashRegisterId) {
+        try {
+          await prismaTx.cashRegister.update({
+            where: { id: effectiveCashRegisterId },
+            data: { currentBalance: { increment: data.amount } },
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to update cash register balance: ${err.message}`);
+        }
+      }
+
+      return created;
+    });
 
     // ─── Allocation intelligente : caisse ONLINE → caisses de destination ───
     // Quand un paiement arrive dans la caisse ONLINE (Fedapay/FedaPay),

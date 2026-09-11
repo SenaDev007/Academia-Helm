@@ -21,6 +21,7 @@ import { DatabaseModule } from '../database/database.module';
 import { SecurityModule } from '../security/security.module';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { MatriculeGeneratorService } from './services/matricule-generator.service';
+import { AppSequenceService } from './services/app-sequence.service';
 import { ModelEnsembleService } from './services/model-ensemble.service';
 import { AccessScopeService } from './context/access-scope.service';
 
@@ -45,6 +46,7 @@ import { AccessScopeService } from './context/access-scope.service';
     AdminStructureService, // Structure admin (exports/modules)
     MatriculeGeneratorService,
     ModelEnsembleService, // ⭐ Multi-modèle IA (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
+    AppSequenceService, // ⭐ BRIEF PERF 3.3 — séquences atomiques (reçus, refs TX, ventes)
     AccessScopeService, // ⭐ Filtre Rôles × Pistes × Niveaux — résolution du périmètre serveur
   ],
   exports: [
@@ -60,6 +62,7 @@ import { AccessScopeService } from './context/access-scope.service';
     OpenRouterModule,
     AdminStructureService, // Structure admin (exports/modules) dans autres modules
     MatriculeGeneratorService,
+    AppSequenceService, // ⭐ BRIEF PERF 3.3 — séquences atomiques (reçus, refs TX, ventes)
     ModelEnsembleService, // ⭐ Exporté pour que tous les agents puissent l'utiliser
     AccessScopeService, // ⭐ Exporté pour JwtStrategy + guards + services métier
   ],

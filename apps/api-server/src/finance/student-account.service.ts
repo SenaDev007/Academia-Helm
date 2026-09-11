@@ -916,26 +916,27 @@ export class StudentAccountService {
 
     const { account } = await this.getOrCreate(tenantId, studentId, toAcademicYearId);
 
-    const newTotalDue = Number(account.totalDue) + arrearsAmount;
-    const newBalance = Number(account.balance) + arrearsAmount;
-
     // ⭐ Juillet 2026 : SET LOCAL + UPDATE dans la MÊME $transaction (sinon le flag
     // est perdu entre les deux appels et le trigger prevent_balance_update déclenche).
-    await this.prisma.$transaction(async (tx) => {
+    // ⭐ BRIEF PERF 3.3 — incrémentations SQL ATOMIQUES ({ increment }) au lieu
+    // de recalculer totalDue/balance en JS depuis des valeurs lues AVANT la
+    // transaction (fenêtre de course : deux écritures simultanées sur le même
+    // compte s'écrasaient mutuellement leurs montants).
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-      await tx.studentAccount.update({
+      return tx.studentAccount.update({
         where: { id: account.id },
         data: {
-          arrearsAmount: Number(account.arrearsAmount) + arrearsAmount,
-          totalDue: newTotalDue,
-          balance: newBalance,
+          arrearsAmount: { increment: arrearsAmount },
+          totalDue: { increment: arrearsAmount },
+          balance: { increment: arrearsAmount },
           updatedAt: new Date(),
         },
       });
     });
 
     return this.prisma.studentAccount.findUnique({
-      where: { id: account.id },
+      where: { id: updated.id },
       include: { breakdowns: true },
     });
   }

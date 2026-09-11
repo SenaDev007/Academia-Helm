@@ -23,6 +23,7 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { FinanceTransactionService } from './finance-transaction.service';
 import { StockMovementType } from '@prisma/client';
+import { AppSequenceService } from '../common/services/app-sequence.service';
 
 export interface MultiActionItem {
   productId: string;
@@ -75,6 +76,7 @@ export class MultiActionPaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly financeTransactionService: FinanceTransactionService,
+    private readonly appSequences: AppSequenceService,
   ) {}
 
   /**
@@ -225,8 +227,14 @@ export class MultiActionPaymentService {
     }
 
     // ─── 4. Créer la ShopSale + items + mettre à jour le stock ───
-    const saleCount = await this.prisma.shopSale.count({ where: { tenantId, academicYearId } });
-    const saleNumber = `VTE-${new Date().getFullYear()}-${String(saleCount + 1).padStart(5, '0')}`;
+    // ⭐ BRIEF PERF 3.3 — numéro de vente ATOMIQUE via app_sequences.
+    // Avant : shopSale.count() + 1 — deux ventes simultanées obtenaient le
+    // même saleNumber (read-modify-write). Init au count existant (max).
+    const saleYear = new Date().getFullYear();
+    const saleCount = await this.appSequences.next(tenantId, `SHOPSALE:${saleYear}`, {
+      initFrom: () => this.prisma.shopSale.count({ where: { tenantId, academicYearId } }),
+    });
+    const saleNumber = `VTE-${saleYear}-${String(saleCount).padStart(5, '0')}`;
 
     const studentName = account.student
       ? `${account.student.lastName} ${account.student.firstName}`

@@ -70,21 +70,31 @@ export class CollectionPrismaService {
         },
       });
 
-      for (const account of accountsWithCarriedArrears) {
-        const carriedArrears = Number(account.carriedArrears ?? 0);
-
-        // Vérifier si un FeeArrear GLOBAL existe déjà pour cet élève/année
-        const existing = await this.prisma.feeArrear.findFirst({
+      // ⭐ BRIEF PERF 3.4 — Batchs (N+1 éliminés) : arriérés existants +
+      // dates de dernier paiement chargés en 2 requêtes globales au lieu
+      // de 2 requêtes PAR compte (findMany IN + jointure studentAccount).
+      const studentIds1 = accountsWithCarriedArrears.map((acc) => acc.studentId);
+      const [existingGlobalArrears, lastPaymentDates1] = await Promise.all([
+        this.prisma.feeArrear.findMany({
           where: {
-            studentId: account.studentId,
+            studentId: { in: studentIds1 },
             academicYearId,
             tenantId,
             studentFeeId: null,
             notes: { contains: 'reporté' },
           },
-        });
+        }).catch(() => []),
+        this.getLastPaymentDates(studentIds1, academicYearId),
+      ]);
+      const existingByStudent1 = new Map<string, any>();
+      for (const ea of existingGlobalArrears) existingByStudent1.set(ea.studentId, ea);
 
-        const lastPaymentDate = await this.getLastPaymentDate(account.studentId, academicYearId);
+      for (const account of accountsWithCarriedArrears) {
+        const carriedArrears = Number(account.carriedArrears ?? 0);
+
+        const existing = existingByStudent1.get(account.studentId);
+
+        const lastPaymentDate = lastPaymentDates1.get(account.studentId) ?? null;
         const arrearsLevel = this.calculateArrearsLevel(carriedArrears, lastPaymentDate);
 
         if (existing) {
@@ -154,6 +164,26 @@ export class CollectionPrismaService {
         ).map((a) => a.studentId),
       );
 
+      // ⭐ BRIEF PERF 3.4 — Batchs (N+1 éliminés), identiques à la source 1 :
+      // arriérés existants + dates de dernier paiement en 2 requêtes globales
+      // (les élèves déjà reportés sont exclus du batch — ils sont skippés).
+      const studentIds2 = accountsWithBalance
+        .map((acc) => acc.studentId)
+        .filter((sid) => !carriedForwardStudentIds.has(sid));
+      const [existingGlobalArrears2, lastPaymentDates2] = await Promise.all([
+        this.prisma.feeArrear.findMany({
+          where: {
+            studentId: { in: studentIds2 },
+            academicYearId,
+            tenantId,
+            studentFeeId: null,
+          },
+        }).catch(() => []),
+        this.getLastPaymentDates(studentIds2, academicYearId),
+      ]);
+      const existingByStudent2 = new Map<string, any>();
+      for (const ea of existingGlobalArrears2) existingByStudent2.set(ea.studentId, ea);
+
       for (const account of accountsWithBalance) {
         const balance = Number(account.balance ?? 0);
         if (balance <= 0) continue;
@@ -164,17 +194,9 @@ export class CollectionPrismaService {
           continue;
         }
 
-        // Vérifier si un FeeArrear GLOBAL existe déjà
-        const existing = await this.prisma.feeArrear.findFirst({
-          where: {
-            studentId: account.studentId,
-            academicYearId,
-            tenantId,
-            studentFeeId: null,
-          },
-        });
+        const existing = existingByStudent2.get(account.studentId);
 
-        const lastPaymentDate = await this.getLastPaymentDate(account.studentId, academicYearId);
+        const lastPaymentDate = lastPaymentDates2.get(account.studentId) ?? null;
         const arrearsLevel = this.calculateArrearsLevel(balance, lastPaymentDate);
 
         if (existing) {
@@ -235,15 +257,23 @@ export class CollectionPrismaService {
 
         if (summaries.length === 0) break;
 
+        // ⭐ BRIEF PERF 3.4 — Batch (N+1 éliminé) : arriérés existants du
+        // batch chargés en 1 requête IN (tous studentFeeId confondus, y
+        // compris null — comme le findFirst d'origine), clé composite en mémoire
+        const existingFeeArrears3 = await this.prisma.feeArrear.findMany({
+          where: {
+            studentId: { in: summaries.map((s) => s.studentId) },
+            academicYearId,
+            tenantId,
+          },
+          select: { studentId: true, studentFeeId: true },
+        }).catch(() => []);
+        const existingKeys3 = new Set(
+          existingFeeArrears3.map((ea) => `${ea.studentId}|${ea.studentFeeId ?? 'null'}`),
+        );
+
         for (const summary of summaries) {
-          const existing = await this.prisma.feeArrear.findFirst({
-            where: {
-              studentId: summary.studentId,
-              studentFeeId: summary.studentFeeId,
-              academicYearId,
-              tenantId,
-            },
-          });
+          const existing = existingKeys3.has(`${summary.studentId}|${summary.studentFeeId ?? 'null'}`);
 
           if (existing) continue;
 
@@ -295,6 +325,38 @@ export class CollectionPrismaService {
       select: { createdAt: true },
     });
     return lastTx?.createdAt ?? null;
+  }
+
+  /**
+   * ⭐ BRIEF PERF 3.4 — Batch de getLastPaymentDate (N+1 éliminé).
+   *
+   * 1 requête groupBy (max createdAt par studentAccount) remplace N appels
+   * individuels à getLastPaymentDate (1 requête par élève).
+   * `WHERE type='PAYMENT' AND "studentAccount"."academicYearId" = …`
+   */
+  private async getLastPaymentDates(
+    studentIds: string[],
+    academicYearId: string,
+  ): Promise<Map<string, Date | null>> {
+    const map = new Map<string, Date | null>();
+    for (const id of studentIds) map.set(id, null);
+    if (studentIds.length === 0) return map;
+
+    const rows = await this.prisma.financeTransaction.findMany({
+      where: {
+        type: 'PAYMENT',
+        studentAccount: { studentId: { in: studentIds }, academicYearId },
+      },
+      select: { studentAccount: { select: { studentId: true } }, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }).catch(() => []);
+
+    // Ascending order → le dernier enregistrement vu par élève = max
+    for (const row of rows) {
+      const sid = (row as any).studentAccount?.studentId;
+      if (sid) map.set(sid, row.createdAt);
+    }
+    return map;
   }
 
   /**

@@ -12,10 +12,14 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../database/prisma.service';
 import { AccessScope } from '../common/context/access-scope.service';
 import { levelWhere, paymentTrackWhere, assertLevelInScope } from '../common/context/scope-where';
+import { AppSequenceService } from '../common/services/app-sequence.service';
 
 @Injectable()
 export class PaymentsPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly appSequences: AppSequenceService,
+  ) {}
 
   /**
    * ⭐ Piste d'un élève : UUID de l'AcademicTrack de sa classe courante
@@ -134,6 +138,9 @@ export class PaymentsPrismaService {
       startDate?: Date;
       endDate?: Date;
       search?: string;
+      /** ⭐ BRIEF PERF 3.4 — pagination côté serveur (optionnelle, rétro-compatible) */
+      page?: number;
+      limit?: number;
     },
     scope?: AccessScope | null,
   ) {
@@ -205,20 +212,46 @@ export class PaymentsPrismaService {
       ];
     }
 
+    const include = {
+      student: true,
+      studentFee: {
+        include: {
+          feeDefinition: true,
+        },
+      },
+      receipt: true,
+    };
+    const orderBy = { paymentDate: 'desc' as const };
+
+    // ⭐ BRIEF PERF 3.4 — Pagination côté serveur : si page/limit fournis →
+    // réponse paginée { data, total, page, limit, totalPages } + count()
+    // parallélisé. Sinon → array complet (rétro-compatibilité consumers).
+    if (filters?.page && filters?.limit) {
+      const page = Math.max(1, filters.page);
+      const limit = Math.min(200, Math.max(1, filters.limit));
+      const [data, total] = await Promise.all([
+        this.prisma.payment.findMany({
+          where,
+          include,
+          orderBy,
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.payment.count({ where }),
+      ]);
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      };
+    }
+
     return this.prisma.payment.findMany({
       where,
-      include: {
-        student: true,
-        studentFee: {
-          include: {
-            feeDefinition: true,
-          },
-        },
-        receipt: true,
-      },
-      orderBy: {
-        paymentDate: 'desc',
-      },
+      include,
+      orderBy,
     });
   }
 
@@ -252,6 +285,14 @@ export class PaymentsPrismaService {
 
   /**
    * Met à jour le résumé de paiement
+   *
+   * ⭐ BRIEF PERF 3.3 — Incrémentations SQL atomiques (UPDATE ... SET
+   * paidAmount = paidAmount + montant) au lieu du pattern
+   * lecture-modification-écriture (find → compute en JS → update).
+   * Deux paiements simultanés sur le même frais ne peuvent plus s'écraser
+   * mutuellement leurs montants. Le statut est recalculé depuis la ligne
+   * RÉELLEMENT mise à jour (retournée par l'UPDATE), pas depuis une valeur
+   * lue avant l'écriture.
    */
   private async updatePaymentSummary(studentFeeId: string, amount: number) {
     const studentFee = await this.prisma.studentFee.findFirst({
@@ -265,20 +306,21 @@ export class PaymentsPrismaService {
       return;
     }
 
-    const newPaidAmount = Number(studentFee.paymentSummary.paidAmount) + amount;
-    const balance = Number(studentFee.paymentSummary.expectedAmount) - newPaidAmount;
-
-    // Mettre à jour le résumé
-    await this.prisma.paymentSummary.update({
+    // ⭐ UPDATE atomique : increment du payé + decrement du solde (gère aussi
+    // les montants négatifs des annulations REVERSAL)
+    const updated = await this.prisma.paymentSummary.update({
       where: { id: studentFee.paymentSummary.id },
       data: {
-        paidAmount: newPaidAmount,
-        balance,
+        paidAmount: { increment: amount },
+        balance: { decrement: amount },
         lastPaymentDate: new Date(),
       },
     });
 
-    // Mettre à jour le statut du frais élève
+    const newPaidAmount = Number(updated.paidAmount);
+    const balance = Number(updated.balance);
+
+    // Mettre à jour le statut du frais élève depuis les valeurs réelles
     let status: 'NOT_STARTED' | 'PARTIAL' | 'PAID' = 'NOT_STARTED';
     if (balance <= 0) {
       status = 'PAID';
@@ -294,28 +336,34 @@ export class PaymentsPrismaService {
 
   /**
    * Génère un numéro de reçu unique
+   *
+   * ⭐ BRIEF PERF 3.3 — séquence atomique via app_sequences (upsert ON
+   * CONFLICT current = current + 1). Avant : findFirst(orderBy desc) + parse
+   * + 1 = read-modify-write → deux paiements simultanés produisaient le même
+   * numéro. Initialisation au max existant à la première utilisation.
    */
   private async generateReceiptNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
     const prefix = `REC-${year}-`;
 
-    // Trouver le dernier numéro de l'année
-    const lastReceipt = await this.prisma.paymentReceipt.findFirst({
-      where: {
-        receiptNumber: {
-          startsWith: prefix,
-        },
-      },
-      orderBy: {
-        receiptNumber: 'desc',
+    const sequence = await this.appSequences.next(tenantId, `PAYRECEIPT:${year}`, {
+      initFrom: async () => {
+        const lastReceipt = await this.prisma.paymentReceipt.findFirst({
+          where: {
+            receiptNumber: {
+              startsWith: prefix,
+            },
+          },
+          orderBy: {
+            receiptNumber: 'desc',
+          },
+          select: { receiptNumber: true },
+        });
+        if (!lastReceipt?.receiptNumber) return 0;
+        const lastSequence = parseInt(lastReceipt.receiptNumber.split('-')[2] || '0');
+        return isNaN(lastSequence) ? 0 : lastSequence;
       },
     });
-
-    let sequence = 1;
-    if (lastReceipt) {
-      const lastSequence = parseInt(lastReceipt.receiptNumber.split('-')[2] || '0');
-      sequence = lastSequence + 1;
-    }
 
     return `${prefix}${sequence.toString().padStart(6, '0')}`;
   }

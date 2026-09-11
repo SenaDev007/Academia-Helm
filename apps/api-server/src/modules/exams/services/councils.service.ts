@@ -408,13 +408,23 @@ export class CouncilsService {
     }).catch(() => []);
 
     // 3. Get grades for each evaluation
+    // ⭐ BRIEF PERF 3.4 — N+1 éliminé : 1 findMany avec evaluationId IN (…)
+    // au lieu d'une requête PAR évaluation (une classe de 14 matières =
+    // 14 requêtes → 1). Les notes sont regroupées en mémoire par évaluation.
     const evalGradesMap = new Map<string, any[]>();
-    for (const ev of evaluations) {
-      const grades = await this.prisma.grade.findMany({
-        where: { evaluationId: ev.id, tenantId },
-        select: { studentId: true, score: true, qualitativeCode: true, isAbsent: true },
+    if (evaluations.length > 0) {
+      const allGrades = await this.prisma.grade.findMany({
+        where: {
+          evaluationId: { in: evaluations.map((ev: any) => ev.id) },
+          tenantId,
+        },
+        select: { evaluationId: true, studentId: true, score: true, qualitativeCode: true, isAbsent: true },
       }).catch(() => []);
-      evalGradesMap.set(ev.id, grades);
+      for (const g of allGrades) {
+        const list = evalGradesMap.get(g.evaluationId) || [];
+        list.push(g);
+        evalGradesMap.set(g.evaluationId, list);
+      }
     }
 
     // 4. Get attendance records for this quarter

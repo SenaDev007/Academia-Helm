@@ -83,6 +83,20 @@ export class RecoveryReminderService {
 
       const now = new Date();
 
+      // ⭐ BRIEF PERF 3.4 — N+1 éliminé : les années académiques du batch
+      // sont résolues en UNE requête (IN) puis mises en cache dans une Map.
+      // Avant : academicYear.findFirst PAR compte dans la boucle (200 requêtes
+      // par batch de 200 comptes — alors que le tenant n'a que quelques années).
+      const yearIds = [...new Set(accounts.map((a) => a.academicYearId).filter(Boolean))];
+      const yearsById = new Map<string, Date | null>();
+      if (yearIds.length > 0) {
+        const years = await this.prisma.academicYear.findMany({
+          where: { id: { in: yearIds } },
+          select: { id: true, startDate: true },
+        });
+        for (const y of years) yearsById.set(y.id, y.startDate ? new Date(y.startDate) : null);
+      }
+
       for (const account of accounts) {
         const balance = Number(account.balance);
         if (balance <= 0) continue;
@@ -92,11 +106,7 @@ export class RecoveryReminderService {
         const lastUrgent = reminders.find((r) => r.reminderLevel === ReminderLevel.URGENT);
         const lastFinal = reminders.find((r) => r.reminderLevel === ReminderLevel.FINAL_NOTICE);
 
-        const academicYear = await this.prisma.academicYear.findFirst({
-          where: { id: account.academicYearId },
-          select: { startDate: true },
-        });
-        const refDate = academicYear?.startDate ? new Date(academicYear.startDate) : account.createdAt;
+        const refDate = yearsById.get(account.academicYearId) ?? account.createdAt;
         const daysSinceStart = Math.floor((now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24));
 
         if (daysSinceStart >= 15 && !lastFinal) {

@@ -3,6 +3,7 @@ import { Injectable, BadRequestException, ForbiddenException, NotFoundException,
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
 import { RolesPermissionsBootstrapService } from './roles-permissions-bootstrap.service';
+import { CacheService } from '../../common/services/cache.service';
 
 /**
  * Service pour la gestion des rôles et permissions.
@@ -16,6 +17,7 @@ export class RolesPermissionsService {
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
     private readonly rolesBootstrap: RolesPermissionsBootstrapService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
@@ -144,6 +146,7 @@ export class RolesPermissionsService {
       userId,
     );
 
+    await this.invalidateUserPermissionCache(); // ⭐ FIX PERF — cache verdicts permissions
     return this.getRoleById(tenantId, role.id);
   }
 
@@ -200,6 +203,8 @@ export class RolesPermissionsService {
     return this.getRoleById(tenantId, id);
   }
 
+  // ⭐ (invalidation updateRole : le cache perm est invalidé dans updateRolePermissions / assign / revoke — les changements de nom/description n'affectent pas les verdicts)
+
   /**
    * Supprime un rôle
    */
@@ -231,6 +236,7 @@ export class RolesPermissionsService {
       userId,
     );
 
+    await this.invalidateUserPermissionCache(); // ⭐ FIX PERF — cache verdicts permissions
     return { success: true, message: `Rôle "${role.name}" supprimé.` };
   }
 
@@ -309,12 +315,21 @@ export class RolesPermissionsService {
       userId,
     );
 
+    await this.invalidateUserPermissionCache(); // ⭐ FIX PERF — cache verdicts permissions
     return this.getRoleById(tenantId, roleId);
   }
 
   /**
    * Vérifie si un utilisateur a une permission spécifique.
    * Si tenantId est fourni, ne considère que les rôles du tenant (userRole.tenantId ou role.tenantId) ou rôles globaux.
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — cache 60 s du verdict :
+   *    appelé par PermissionGuard sur les routes @RequirePermission →
+   *    AVANT : 1 requête userRole.findMany (include 3 niveaux) PAR REQUÊTE
+   *    HTTP. 20 utilisateurs actifs = flux permanent de grosses requêtes.
+   *    Invalidé par invalidateUserPermissionCache() à chaque mutation de
+   *    rôles/permissions (createRole, updateRole, updateRolePermissions,
+   *    assignRoleToUser, revokeRoleFromUser, deleteRole).
    */
   async userHasPermission(
     userId: string,
@@ -322,6 +337,12 @@ export class RolesPermissionsService {
     action: string,
     tenantId?: string | null,
   ): Promise<boolean> {
+    const cacheKey = `perm:${userId}:${tenantId || 'any'}:${resource}:${action}`;
+    const cached = await this.cacheService.get<boolean>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+
     const userRoles = await this.prisma.userRole.findMany({
       where: { userId },
       include: {
@@ -337,7 +358,8 @@ export class RolesPermissionsService {
       },
     });
 
-    for (const userRole of userRoles) {
+    let verdict = false;
+    outer: for (const userRole of userRoles) {
       const role = userRole.role;
       // Isolation tenant : si un tenant est demandé, l'assignment doit être pour ce tenant ou global (tenantId null)
       if (tenantId != null) {
@@ -348,12 +370,22 @@ export class RolesPermissionsService {
       }
       for (const rolePermission of role.rolePermissions) {
         const perm = rolePermission.permission;
-        if (perm.resource === resource && perm.action === action) return true;
-        if (perm.resource === '*' || perm.action === '*') return true;
+        if (perm.resource === resource && perm.action === action) { verdict = true; break outer; }
+        if (perm.resource === '*' || perm.action === '*') { verdict = true; break outer; }
       }
     }
 
-    return false;
+    await this.cacheService.set(cacheKey, verdict, 60 * 1000);
+    return verdict;
+  }
+
+  /** ⭐ FIX PERF — invalide le cache des verdicts de permission (mutations de rôles). */
+  async invalidateUserPermissionCache(): Promise<void> {
+    try {
+      await this.cacheService.invalidatePattern('perm:');
+    } catch (e: any) {
+      this.logger.warn?.(`invalidate perm cache: ${e?.message || e}`);
+    }
   }
 
   /**
@@ -480,6 +512,7 @@ export class RolesPermissionsService {
       assignedBy,
     );
 
+    await this.invalidateUserPermissionCache(); // ⭐ FIX PERF — cache verdicts permissions
     return this.getUsersWithRoles(tenantId);
   }
 
@@ -515,6 +548,7 @@ export class RolesPermissionsService {
       revokedBy,
     );
 
+    await this.invalidateUserPermissionCache(); // ⭐ FIX PERF — cache verdicts permissions
     return { success: true };
   }
 

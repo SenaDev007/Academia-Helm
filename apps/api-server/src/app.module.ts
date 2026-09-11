@@ -9,7 +9,8 @@ import { SaisieMasterModule } from './saisiemaster/saisiemaster.module';
 import { CommunityModule } from './community/community.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { SmartThrottlerGuard } from './common/guards/smart-throttler.guard';
 import { AccessScopeGuard } from './common/guards/access-scope.guard';
 import { AppController } from './app.controller';
 import { HealthController } from './health/health.controller';
@@ -115,27 +116,32 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     ScheduleModule.forRoot(),
 
     // Rate Limiting
-    // ⭐ V5 (chantier 4) — ANTI-SPAM : le throttler nommé 'medium' est le régime
-    //    GLOBAL par défaut → 300 requêtes/minute pour toutes les routes (les GET
-    //    de polling restent à ce régime, jamais throttlés spécifiquement).
-    //    Les POST d'ENVOI de messages surchargent localement 'medium' à 30/min
-    //    via @Throttle({ medium: { limit: 30, ttl: 60000 } }) — voir
-    //    chat.controller.ts (messages/text, messages/attachment, sticker).
+    // ⭐ FIX PERFORMANCE CONCURRENCE (SaaS multi-tenant) :
+    //    (1) Les buckets sont désormais cléés par UTILISATEUR authentifié
+    //        (SmartThrottlerGuard) — avant, la clé était l'IP du proxy Railway
+    //        partagée par TOUS les utilisateurs : 300 req/min pour TOUTE la
+    //        plateforme → 429 massifs dès que ~8 utilisateurs se connectaient
+    //        (test école : ~20 enseignants simultanés → « le site buguait »).
+    //    (2) Seuils relevés pour la charge multi-établissements légitime :
+    //        un login + dashboard = 20-40 requêtes en rafale par utilisateur,
+    //        le polling de secours chat (socket coupé) ≈ 60 req/min.
+    //    Les POST d'envoi de messages gardent leur override 'medium' 30/min
+    //    (par utilisateur désormais, cf. chat.controller.ts).
     ThrottlerModule.forRoot([
       {
         name: 'short',
         ttl: 1000, // 1 seconde
-        limit: 10, // 10 requêtes par seconde
+        limit: 30, // 30 requêtes/s — une rafale de chargement de page (20-40 fetch parallèles) ne doit pas 429
       },
       {
         name: 'medium',
         ttl: 60000, // 1 minute
-        limit: 300, // ⭐ V5 — 300 requêtes/minute (global, spec anti-spam Helm Connect)
+        limit: 600, // 600 requêtes/min par utilisateur (10/s soutenu) — polling de secours inclus
       },
       {
         name: 'long',
         ttl: 3600000, // 1 heure
-        limit: 1000, // 1000 requêtes par heure
+        limit: 5000, // 5000 requêtes/h par utilisateur — journée complète avec chat en polling de secours
       },
     ]),
 
@@ -386,7 +392,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard, // Rate limiting global
+      useClass: SmartThrottlerGuard, // Rate limiting global — bucket par UTILISATEUR authentifié (fix concurrence multi-tenant)
     },
     {
       provide: APP_INTERCEPTOR,

@@ -29,18 +29,29 @@ export class RolesGuard implements CanActivate {
       return false;
     }
 
-    // Récupérer le rôle et le statut super admin de l'utilisateur
-    const dbUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { isSuperAdmin: true, role: true },
-    });
-
-    // Super Admin a toujours accès
-    if (dbUser?.isSuperAdmin === true || dbUser?.role === 'SUPER_ADMIN') {
-      return true;
+    // ⭐ FIX PERFORMANCE CONCURRENCE — plus de requête DB par requête :
+    //    request.user est résolu par JwtStrategy (payload JWT + cache
+    //    utilisateur de 2 min) et contient DÉJÀ role + isSuperAdmin.
+    //    Avant : prisma.user.findUnique() sur CHAQUE requête protégée par
+    //    @Roles (106 routes) → avec 20+ utilisateurs simultanés, le pool
+    //    PostgreSQL (10-20 connexions) saturait sur des lectures redondantes.
+    //    Fallback défensif : si le rôle n'est pas disponible dans le payload,
+    //    on retombe sur la lecture DB (une fois, puis cachée par la stratégie).
+    let isSuperAdmin = user.isSuperAdmin === true;
+    let userRole = (user.role as string) || '';
+    if (!userRole && !isSuperAdmin) {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { isSuperAdmin: true, role: true },
+      });
+      isSuperAdmin = dbUser?.isSuperAdmin === true || dbUser?.role === 'SUPER_ADMIN';
+      userRole = dbUser?.role || '';
     }
 
-    const userRole = dbUser?.role || '';
+    // Super Admin a toujours accès
+    if (isSuperAdmin || userRole === 'SUPER_ADMIN') {
+      return true;
+    }
 
     // Vérifier si le rôle de l'utilisateur correspond à l'un des rôles requis
     if (requiredRoles.includes(userRole)) {

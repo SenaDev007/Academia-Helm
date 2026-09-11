@@ -2,6 +2,7 @@ import { prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
+import { CacheService } from '../../common/services/cache.service';
 
 /**
  * Codes des modules (feature flags) — gouvernance SaaS.
@@ -88,7 +89,17 @@ export class FeatureFlagsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
+    private readonly cacheService: CacheService,
   ) {}
+
+  /** ⭐ FIX PERFORMANCE CONCURRENCE — invalide le cache feature-flag d'un tenant. */
+  private async invalidateFeatureCache(tenantId: string): Promise<void> {
+    try {
+      await this.cacheService.invalidatePattern(`feature:${tenantId}:`);
+    } catch {
+      // non critique
+    }
+  }
 
   /**
    * Récupère toutes les features d'un tenant (lignes en base uniquement)
@@ -189,10 +200,21 @@ export class FeatureFlagsService {
 
   /**
    * Vérifie si une feature est activée
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — cache 60 s : appelé par PermissionGuard
+   *    sur les routes @RequirePermission (2 requêtes DB par requête HTTP avant).
+   *    Invalidé par invalidateFeatureCache() sur enable/disable Feature.
    */
   async isFeatureEnabled(tenantId: string, featureCode: string): Promise<boolean> {
+    const cacheKey = `feature:${tenantId}:${featureCode}`;
+    const cached = await this.cacheService.get<boolean>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
     const feature = await this.getFeature(tenantId, featureCode);
-    return feature.isEnabled && feature.status === 'ACTIVE';
+    const verdict = feature.isEnabled && feature.status === 'ACTIVE';
+    await this.cacheService.set(cacheKey, verdict, 60 * 1000);
+    return verdict;
   }
 
   /**
@@ -265,6 +287,7 @@ export class FeatureFlagsService {
       userAgent,
     );
 
+    await this.invalidateFeatureCache(tenantId); // ⭐ FIX PERF — cache feature
     return feature;
   }
 
@@ -321,7 +344,7 @@ export class FeatureFlagsService {
         ipAddress,
         userAgent,
       );
-      return feature;
+      return (await this.afterFeatureMutation(tenantId, feature));
     }
 
     const feature = await this.prisma.tenantFeature.update({
@@ -352,6 +375,12 @@ export class FeatureFlagsService {
       userAgent,
     );
 
+    return (await this.afterFeatureMutation(tenantId, feature));
+  }
+
+  /** Helper — invalide le cache puis renvoie la feature. */
+  private async afterFeatureMutation<T>(tenantId: string, feature: T): Promise<T> {
+    await this.invalidateFeatureCache(tenantId);
     return feature;
   }
 

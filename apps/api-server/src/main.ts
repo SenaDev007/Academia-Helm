@@ -43,6 +43,26 @@ async function bootstrap() {
     bodyParser: false,
   });
 
+  // ⭐ PERFORMANCE CONCURRENCE — trust proxy :
+  //    Derrière le proxy Railway/Vercel, req.ip vaut l'IP du PROXY sans ce
+  //    réglage → TOUS les utilisateurs partageaient un seul bucket de rate
+  //    limit (300 req/min) → dès que ~8 utilisateurs se connectaient en même
+  //    temps, le throttler rejetait les suivants en 429 (« le site buguait »).
+  //    Avec trust proxy, req.ip = l'IP réelle du client (X-Forwarded-For).
+  app.set('trust proxy', true);
+
+  // ⭐ PERFORMANCE CONCURRENCE — compression gzip des réponses JSON :
+  //    les dashboards/listes renvoient souvent 100 Ko+ de JSON ; sur les
+  //    connexions mobiles (3G/4G écoles), le transfert domine la latence.
+  //    gzip divise le payload par 5-10×. Seuil 1 Ko pour ne pas compresser
+  //    les micro-réponses. Niveau 6 (défaut) : ~5 ms CPU / 100 Ko.
+  try {
+    const compression = require('compression');
+    app.use(compression({ threshold: 1024 }));
+  } catch (e: any) {
+    logger.warn(`compression middleware indisponible: ${e?.message || e}`);
+  }
+
   // ⭐ raw-body middleware — obligatoire pour la vérification de signature
   // des webhooks FedaPay. Sans req.rawBody, le fallback JSON.stringify(body)
   // peut produire des bytes différents de l'original → HMAC mismatch.

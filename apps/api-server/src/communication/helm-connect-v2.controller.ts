@@ -335,7 +335,7 @@ export class HelmConnectV2Controller {
 
   /** POST /chat/v2/sara/draft — rédiger un message à partir d'un contexte. */
   @Post('sara/draft')
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Throttle({ medium: { limit: 20, ttl: 60000 } }) // ⭐ FIX PERF — 'default' non enregistré → throttle inactif
   async saraDraft(
     @Body() body: { intent: string; targetAudience: string; tone?: string; keyPoints?: string[]; language?: string },
   ) {
@@ -353,7 +353,7 @@ export class HelmConnectV2Controller {
 
   /** POST /chat/v2/sara/refine — améliorer un texte existant. */
   @Post('sara/refine')
-  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Throttle({ medium: { limit: 30, ttl: 60000 } }) // ⭐ FIX PERF — 'default' non enregistré → throttle inactif
   async saraRefine(
     @Body() body: { content: string; instruction: string },
   ) {

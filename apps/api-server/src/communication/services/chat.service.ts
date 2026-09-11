@@ -48,6 +48,12 @@ export interface ChatConversation {
   lastMessageAt?: Date;
   lastMessagePreview?: string;
   lastMessageSenderId?: string;
+  // ⭐ V6.1 (parité Yeshua — badge d'appels) : métadonnées du dernier message
+  //    (renvoyées par listConversations ; absentes du getConversation ciblé → null)
+  lastMessageType?: string | null;
+  lastMessageCallType?: string | null;
+  lastMessageCallStatus?: string | null;
+  lastMessageSentByMe?: boolean | null;
   participants: ChatParticipant[];
 }
 
@@ -222,26 +228,8 @@ export class ChatService {
     }
 
     // ⭐ Build role label — handles French values: ENSEIGNANT, COMPTABLE, DIRECTEUR, etc.
-    const roleLabelFor = (role: string, children: string[] | undefined): string => {
-      const upperRole = (role || '').toUpperCase();
-      // French values (from users.role column in DB)
-      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
-      if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
-        if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
-        return 'Parent d\'élève';
-      }
-      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
-      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
-      if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
-      if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
-      if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
-      if (upperRole === 'CENSEUR') return 'Censeur';
-      if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
-      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
-      if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
-      if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
-      return role || 'Utilisateur';
-    };
+    //    (extrait en méthode privée roleLabelFor — partagée avec getConversation)
+    const roleLabelFor = (role: string, children: string[] | undefined): string => this.roleLabelFor(role, children);
 
     // Group participants by conversationId
     const participantsByConv = new Map<string, any[]>();
@@ -487,15 +475,120 @@ export class ChatService {
   }
 
   /**
+   * Libellé lisible d'un rôle (partagé entre listConversations et getConversation).
+   */
+  private roleLabelFor(role: string, children: string[] | undefined): string {
+    const upperRole = (role || '').toUpperCase();
+    // French values (from users.role column in DB)
+    if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
+    if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
+      if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
+      return 'Parent d\'élève';
+    }
+    if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
+    if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
+    if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
+    if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
+    if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
+    if (upperRole === 'CENSEUR') return 'Censeur';
+    if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
+    if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
+    if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
+    if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
+    return role || 'Utilisateur';
+  }
+
+  /**
    * Récupère une conversation par ID (vérifie que l'utilisateur est participant).
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — requête CIBLÉE (2 requêtes) :
+   *    AVANT : cette méthode appelait listConversations() — le graphe COMPLET
+   *    des conversations de l'utilisateur (unread count par conversation +
+   *    LATERAL dernier message + participants de TOUTES les conversations +
+   *    enfants des parents) — juste pour retrouver UNE conversation. Elle est
+   *    sur le chemin critique de sendTextMessage (appelée 3× par envoi), de
+   *    listMessages et de markAsRead → chaque message envoyé payait 3× le
+   *    graphe complet, chaque poll de rafraîchissement 1×. Avec 20
+   *    utilisateurs actifs sur le chat, c'était le principal amplificateur
+   *    de charge DB de la plateforme.
    */
   async getConversation(tenantId: string, userId: string, conversationId: string): Promise<ChatConversation> {
-    const convs = await this.listConversations(tenantId, userId);
-    const conv = convs.find(c => c.id === conversationId);
-    if (!conv) {
+    const rows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT c.* FROM chat_conversations c
+      JOIN chat_participants p ON p."conversationId" = c.id AND p."leftAt" IS NULL
+      WHERE c."tenantId" = $1 AND c.id = $2 AND p."userId" = $3
+      LIMIT 1
+    `, tenantId, conversationId, userId);
+    if (rows.length === 0) {
       throw new ForbiddenException('You are not a participant in this conversation');
     }
-    return conv;
+    const c = rows[0];
+
+    // Participants de CETTE conversation uniquement (+ infos user)
+    const allParticipants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT p.*, u."firstName", u."lastName", u."email", u."role" AS "role_label"
+      FROM chat_participants p
+      JOIN "users" u ON u.id = p."userId"
+      WHERE p."conversationId" = $1 AND p."leftAt" IS NULL
+      ORDER BY p."joinedAt" ASC
+    `, conversationId);
+
+    // Enrichissement parents (noms des enfants) — mêmes règles que listConversations
+    const parentUserIds = allParticipants
+      .filter(p => (p.role_label || '').toUpperCase() === 'PARENT')
+      .map(p => p.userId);
+    const childrenByParent: Map<string, string[]> = new Map();
+    if (parentUserIds.length > 0) {
+      const uniqueParentIds = Array.from(new Set(parentUserIds));
+      const childrenRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g."userId" AS "parentUserId", s."firstName" AS "studentFirstName", s."lastName" AS "studentLastName"
+        FROM "guardians" g
+        JOIN "student_guardians" sg ON sg."guardianId" = g.id
+        JOIN "students" s ON s.id = sg."studentId"
+        WHERE g."userId" = ANY($1::text[])
+      `, uniqueParentIds);
+      for (const r of childrenRows) {
+        if (!childrenByParent.has(r.parentUserId)) childrenByParent.set(r.parentUserId, []);
+        childrenByParent.get(r.parentUserId)!.push(`${r.studentFirstName || ''} ${r.studentLastName || ''}`.trim());
+      }
+    }
+
+    const participants = allParticipants.map((p: any) => {
+      const children = childrenByParent.get(p.userId);
+      return {
+        userId: p.userId,
+        role: p.role,
+        joinedAt: p.joinedAt,
+        lastReadAt: p.lastReadAt,
+        muted: p.muted,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        email: p.email,
+        avatarUrl: null,
+        role_label: p.role_label,
+        roleLabel: this.roleLabelFor(p.role_label, children),
+        childrenNames: children,
+      };
+    });
+
+    return {
+      id: c.id,
+      type: c.type,
+      name: c.name,
+      description: c.description,
+      avatarUrl: c.avatarUrl,
+      createdBy: c.createdBy,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      lastMessageAt: c.lastMessageAt,
+      lastMessagePreview: c.lastMessagePreview,
+      lastMessageSenderId: c.lastMessageSenderId,
+      lastMessageType: null,
+      lastMessageCallType: null,
+      lastMessageCallStatus: null,
+      lastMessageSentByMe: null,
+      participants,
+    };
   }
 
   /**
@@ -765,26 +858,24 @@ export class ChatService {
     // Marquer comme lu par l'expéditeur
     await this.markAsRead(tenantId, senderId, conversationId);
 
-    // ⭐ MENTIONS: Broadcast the new message via Socket.io so mentioned users
-    //    (and all participants) receive it in real-time. The gateway emits
-    //    'message:new' to the conversation room AND 'inbox:new' to each
-    //    participant's personal room (for unread badge updates).
-    //    Mentioned users get an additional 'mention:new' event so the frontend
-    //    can show a distinct "@you" notification.
+    // ⭐ FIX PERFORMANCE CONCURRENCE — participants + infos expéditeur
+    //    calculés UNE fois pour le broadcast Socket.io ET le push FCM
+    //    (AVANT : 2 requêtes participants + 2 requêtes nom dupliquées par message).
+    let participantIds: string[] = [];
+    let senderInfo: any = null;
     try {
-      // Récupérer les IDs de tous les participants pour le broadcast
       const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
         SELECT "userId" FROM "chat_participants"
         WHERE "conversationId" = $1 AND "leftAt" IS NULL
       `, conversationId);
-      const participantIds = participants.map(p => p.userId);
+      participantIds = participants.map(p => p.userId);
+    } catch { /* broadcast optionnel */ }
 
-      // ⭐ V6.1 (fix « Inconnu ») — résoudre le nom de l'expéditeur AVANT le
-      //    broadcast : users.firstName, sinon la fiche enseignant (comptes
-      //    matricule). Le gateway affichait « Inconnu » pour ces comptes.
-      let senderInfo: any = null;
-      try {
-        const sRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+    // ⭐ V6.1 (fix « Inconnu ») — résoudre le nom de l'expéditeur AVANT le
+    //    broadcast : users.firstName, sinon la fiche enseignant (comptes
+    //    matricule). Le gateway affichait « Inconnu » pour ces comptes.
+    try {
+      const sRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
           SELECT u."firstName", u."lastName", u."avatarUrl",
                  NULLIF(TRIM(t."firstName"), '') AS "teacherFirstName",
                  NULLIF(TRIM(t."lastName"), '') AS "teacherLastName"
@@ -795,9 +886,16 @@ export class ChatService {
             LIMIT 1
           ) t ON true
           WHERE u.id = $1 LIMIT 1`, senderId);
-        senderInfo = sRows[0] || null;
-      } catch { /* nom optionnel */ }
+      senderInfo = sRows[0] || null;
+    } catch { /* nom optionnel */ }
 
+    // ⭐ MENTIONS: Broadcast the new message via Socket.io so mentioned users
+    //    (and all participants) receive it in real-time. The gateway emits
+    //    'message:new' to the conversation room AND 'inbox:new' to each
+    //    participant's personal room (for unread badge updates).
+    //    Mentioned users get an additional 'mention:new' event so the frontend
+    //    can show a distinct "@you" notification.
+    try {
       this.chatGateway?.broadcastNewMessage(conversationId, {
         id: msgId,
         conversationId,
@@ -842,16 +940,16 @@ export class ChatService {
     //    Send a push to all participants (except the sender) who have the mobile
     //    app installed (registered FCM device tokens). The FcmSenderService is a
     //    fire-and-forget service that silently skips if FCM is not configured.
+    //    ⭐ FIX PERF — réutilise participantIds + senderInfo déjà calculés
+    //    ci-dessus (0 requête DB supplémentaire par envoi).
     try {
-      const senderName = await this.getUserDisplayName(tenantId, senderId);
+      const senderName = senderInfo
+        ? `${senderInfo.firstName || senderInfo.teacherFirstName || ''} ${senderInfo.lastName || senderInfo.teacherLastName || ''}`.trim() || 'Helm Connect'
+        : 'Helm Connect';
       const isMassMention = !!(data.mentionedUserIds && data.mentionedUserIds.length > 0);
       const preview = data.content.length > 80 ? data.content.substring(0, 80) + '…' : data.content;
-      // Get all participants (excluding the sender) for push notification.
-      const participants: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT "userId" FROM "chat_participants"
-        WHERE "conversationId" = $1 AND "userId" != $2 AND "leftAt" IS NULL
-      `, conversationId, senderId);
-      const targetUserIds = participants.map(p => p.userId);
+      // Participants (hors expéditeur) — réutilise la liste déjà récupérée
+      const targetUserIds = participantIds.filter(id => id !== senderId);
       if (targetUserIds.length > 0) {
         this.fcmSender.sendToUsers(targetUserIds, {
           title: isMassMention ? `🔔 ${senderName}` : senderName,

@@ -27,6 +27,7 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../database/prisma.service';
 
 // ⭐ Configuration CORS pour autoriser le web-app
 //    Le gateway écoute sur le même port que l'API REST (3000 ou selon config)
@@ -98,7 +99,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ⭐ Map socketId → userId (pour déconnexion)
   private socketToUser: Map<string, string> = new Map();
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * Authentifie le socket via le JWT passé dans le handshake auth.
@@ -123,8 +127,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      // ⭐ Associer le socket à l'utilisateur
+      // ⭐ Associer le socket à l'utilisateur (et à son tenant pour la présence)
       client.data.userId = userId;
+      client.data.tenantId = payload.tenantId || null;
       this.socketToUser.set(client.id, userId);
       if (!this.userSockets.has(userId)) this.userSockets.set(userId, new Set());
       this.userSockets.get(userId)!.add(client.id);
@@ -132,8 +137,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Rejoindre la room personnelle
       client.join(`user:${userId}`);
 
-      // Notifier les autres que l'utilisateur est en ligne
-      client.broadcast.emit('user:online', { userId });
+      // ⭐ FIX PERFORMANCE CONCURRENCE — présence SCOPÉE au tenant :
+      //    AVANT : client.broadcast.emit('user:online') envoyait à TOUS les
+      //    sockets de TOUS les tenants (O(N²) global : 200 sockets = 40 000
+      //    messages par burst de connexions + fuite de présence cross-tenant).
+      //    Désormais chaque socket rejoint la room `tenant:<tenantId>` et la
+      //    présence n'est émise qu'aux membres du MÊME tenant (école).
+      const tenantId = client.data.tenantId;
+      if (tenantId) {
+        client.join(`tenant:${tenantId}`);
+        client.to(`tenant:${tenantId}`).emit('user:online', { userId });
+      } else {
+        client.broadcast.emit('user:online', { userId });
+      }
 
       this.logger.log(`Socket ${client.id} connected → user ${userId}`);
     } catch (e: any) {
@@ -151,8 +167,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sockets.delete(client.id);
         if (sockets.size === 0) {
           this.userSockets.delete(userId);
-          // L'utilisateur est maintenant hors-ligne
-          this.server.emit('user:offline', { userId });
+          // L'utilisateur est maintenant hors-ligne — présence SCOPÉE au tenant
+          // (⭐ FIX PERF : avant, émise globalement à TOUS les sockets de
+          //  TOUS les tenants — O(N²) cross-tenant).
+          const tenantId = client.data?.tenantId;
+          if (tenantId) {
+            this.server.to(`tenant:${tenantId}`).emit('user:offline', { userId });
+          } else {
+            this.server.emit('user:offline', { userId });
+          }
         }
       }
     }
@@ -161,15 +184,49 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * Rejoint une room de conversation (pour recevoir les nouveaux messages).
+   *
+   * ⭐ FIX SÉCURITÉ + PERFORMANCE CONCURRENCE — vérification d'appartenance :
+   *    AVANT : n'importe quel utilisateur authentifié (de N'IMPORTE QUEL
+   *    tenant) pouvait rejoindre N'IMPORTELLE room `conv:<id>` sans contrôle,
+   *    recevoir les messages en temps réel, et gonfler le fan-out de chaque
+   *    broadcast (un client malveillant ou buggé pouvait joindre des
+   *    milliers de rooms et amplifier chaque message envoyé).
+   *    Désormais : 1 requête de vérification par join (les joins sont rares —
+   *    à l'ouverture d'une conversation).
    */
   @SubscribeMessage('conversation:join')
-  handleJoinConversation(
+  async handleJoinConversation(
     @MessageBody() data: { conversationId: string },
     @ConnectedSocket() client: Socket,
   ) {
+    const userId = client.data.userId;
+    if (!userId) {
+      return { status: 'error', error: 'unauthenticated' };
+    }
+    try {
+      const membership: Array<{ userId: string }> = await this.prisma.$queryRawUnsafe<
+        Array<{ userId: string }>
+      >(
+        `SELECT "userId" FROM "chat_participants"
+         WHERE "conversationId" = $1 AND "userId" = $2 AND "leftAt" IS NULL
+         LIMIT 1`,
+        data.conversationId, userId,
+      );
+      if (membership.length === 0) {
+        this.logger.warn(
+          `User ${userId} tried to join conversation ${data.conversationId} without membership — DENIED`,
+        );
+        return { status: 'denied', error: 'not a participant' };
+      }
+    } catch (e: any) {
+      // DB indisponible — on refuse (fail-closed : ne pas laisser un client
+      // non vérifié écouter une conversation)
+      this.logger.warn(`conversation:join membership check failed: ${e?.message || e}`);
+      return { status: 'error', error: 'membership check unavailable' };
+    }
     const room = `conv:${data.conversationId}`;
     client.join(room);
-    this.logger.log(`User ${client.data.userId} joined conversation room ${room}`);
+    this.logger.log(`User ${userId} joined conversation room ${room}`);
     return { status: 'joined', room };
   }
 

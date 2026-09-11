@@ -179,8 +179,33 @@ export class CallSignalService {
     return rows.map((r) => r.userId);
   }
 
-  /** Marque « manqués » tous les signaux ringing expirés (+ journal d'appel). */
+  /** Marque « manqués » tous les signaux ringing expirés (+ journal d'appel).
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — throttle 15 s :
+   *    AVANT : appelé par getIncoming/getStatus sur CHAQUE poll de CHAQUE
+   *    client (polling 3 s) → 20 utilisateurs = ~7 sweeps/s sur la DB pour
+   *    rien. Désormais le sweep effectif ne s'exécute qu'au plus toutes les
+   *    15 s (garde-fou en mémoire, non-bloquant : les appels qui traînent
+   *    sont marqués manqués avec ≤ 15 s de retard supplémentaire).
+   */
+  private lastSweepAt = 0;
+  private sweepRunning = false;
+
   async sweepMissedCalls(): Promise<void> {
+    const now = Date.now();
+    if (this.sweepRunning || now - this.lastSweepAt < 15_000) {
+      return; // déjà balayé récemment (ou en cours)
+    }
+    this.sweepRunning = true;
+    this.lastSweepAt = now;
+    try {
+      await this.doSweepMissedCalls();
+    } finally {
+      this.sweepRunning = false;
+    }
+  }
+
+  private async doSweepMissedCalls(): Promise<void> {
     const stale = await this.prisma.$queryRawUnsafe<Array<{
       id: string; tenantId: string; conversationId: string; initiatorId: string; type: string;
       initiatorName: string | null;

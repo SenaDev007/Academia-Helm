@@ -50,8 +50,18 @@ export function TenantThemeProvider({ children }: Props) {
   }, [loadTheme]);
 
   // Re-fetch quand l'utilisateur revient sur l'onglet (pour capter un changement de thème)
+  // ⭐ FIX PERFORMANCE CONCURRENCE — throttle 5 min : avant, CHAQUE focus de
+  //    fenêtre (chaque alt-tab) re-fetchait /api/tenant-theme (no-store) —
+  //    avec 20 enseignants qui alternent fenêtres, des rafales de requêtes
+  //    pour un thème qui change quasi jamais. 5 min = toujours frais assez
+  //    pour capter un changement de thème fait par le directeur.
   useEffect(() => {
-    const handler = () => loadTheme();
+    let lastFetchAt = Date.now();
+    const handler = () => {
+      if (Date.now() - lastFetchAt < 5 * 60 * 1000) return;
+      lastFetchAt = Date.now();
+      loadTheme();
+    };
     window.addEventListener('focus', handler);
     return () => window.removeEventListener('focus', handler);
   }, [loadTheme]);

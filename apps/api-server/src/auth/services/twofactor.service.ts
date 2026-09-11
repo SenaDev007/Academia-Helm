@@ -82,7 +82,7 @@ export class TwoFactorService {
     const valid = this.totp.verifyCode(user.twoFactorPendingSecret, code || '');
     if (!valid) throw new BadRequestException('Code TOTP invalide — vérifiez l\'heure de votre appareil et réessayez');
 
-    const { plain, hashed } = this.totp.generateBackupCodes(10);
+    const { plain, hashed } = await this.totp.generateBackupCodes(10);
     await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -206,7 +206,7 @@ export class TwoFactorService {
     const isTotp = this.totp.verifyCode(user.twoFactorSecret, normalized);
     let consumedBackupIndex = -1;
     if (!isTotp) {
-      consumedBackupIndex = this.totp.findBackupCodeIndex(user.twoFactorBackupCodes, normalized);
+      consumedBackupIndex = await this.totp.findBackupCodeIndex(user.twoFactorBackupCodes, normalized);
       if (consumedBackupIndex === -1) {
         throw new UnauthorizedException('Code de vérification invalide');
       }

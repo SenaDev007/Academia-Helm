@@ -132,16 +132,25 @@ export class TotpService {
 
   // ─── Codes de secours ─────────────────────────────────────────────────────
 
-  /** Génère 10 codes de secours (8 caractères hexadécimaux, format XXXX-XXXX). */
-  generateBackupCodes(count = 10): { plain: string[]; hashed: string[] } {
+  /** Génère 10 codes de secours (8 caractères hexadécimaux, format XXXX-XXXX).
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — bcrypt ASYNCHRONE :
+   *    hashSync (coût 10 × ~100 ms SYNCHRONE) bloquait l'event loop Node
+   *    pendant ~1 s — pendant ce temps, TOUTES les requêtes HTTP et TOUS
+   *    les sockets du gateway étaient gelés ( symptôme « le site buguait »
+   *    quand quelqu'un activait la 2FA). bcrypt.hash s'exécute dans le
+   *    threadpool libuv → event loop libre.
+   */
+  async generateBackupCodes(count = 10): Promise<{ plain: string[]; hashed: string[] }> {
     const plain: string[] = [];
-    const hashed: string[] = [];
     for (let i = 0; i < count; i++) {
       const raw = crypto.randomBytes(4).toString('hex').toUpperCase();
       const formatted = `${raw.slice(0, 4)}-${raw.slice(4)}`;
       plain.push(formatted);
-      hashed.push(bcrypt.hashSync(formatted, 10));
     }
+    const hashed: string[] = await Promise.all(
+      plain.map((formatted) => bcrypt.hash(formatted, 10)),
+    );
     return { plain, hashed };
   }
 
@@ -149,14 +158,17 @@ export class TotpService {
    * Vérifie un code de secours contre la liste des hachés — consomme le code
    * (retrouve l'index gagnant, l'appelant retire l'entrée du tableau JSON).
    * @returns l'index du code consommé, ou -1 si aucun ne correspond.
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — bcrypt.compare ASYNCHRONE (avant :
+   *    compareSync × jusqu'à 10 codes ≈ 0,5-1 s D'EVENT LOOP BLOQUÉE).
    */
-  findBackupCodeIndex(hashedCodesJson: string | null, code: string): number {
+  async findBackupCodeIndex(hashedCodesJson: string | null, code: string): Promise<number> {
     if (!hashedCodesJson || !code) return -1;
     try {
       const hashed: string[] = JSON.parse(hashedCodesJson);
       const normalized = code.trim().toUpperCase();
       for (let i = 0; i < hashed.length; i++) {
-        if (bcrypt.compareSync(normalized, hashed[i])) return i;
+        if (await bcrypt.compare(normalized, hashed[i])) return i;
       }
     } catch (e: any) {
       this.logger.warn(`backupCodes parse: ${e.message}`);

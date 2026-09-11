@@ -17,6 +17,16 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (isPublic) {
       return true;
     }
+    // ⭐ FIX PERFORMANCE CONCURRENCE — idempotence :
+    //    Ce guard est GLOBAL (APP_GUARD) ET référencé dans ~200 contrôleurs
+    //    via @UseGuards(JwtAuthGuard, …) → chaque requête exécutait DEUX fois
+    //    JwtStrategy.validate() (3 lectures de cache + résolution de scope
+    //    chacune). Si le guard global a déjà authentifié la requête,
+    //    request.user est défini → on skip la re-validation.
+    const request = context.switchToHttp().getRequest();
+    if (request?.user) {
+      return true;
+    }
     return super.canActivate(context);
   }
 }

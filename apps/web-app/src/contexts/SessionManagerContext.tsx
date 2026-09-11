@@ -467,17 +467,32 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
     // ⭐ Écouter visibilitychange pour rafraîchir les queries quand l'utilisateur
     //    revient sur l'onglet (évite le problème de données stale après inactivité)
+    //
+    //    ⭐ FIX PERFORMANCE CONCURRENCE — seuil de 5 minutes d'absence :
+    //    AVANT : CHAQUE alt-tab (même 2 secondes cachées) déclenchait
+    //    'session-resumed' → QueryProvider invalidait TOUTES les queries
+    //    actives → chaque utilisateur refetchait son dashboard complet à chaque
+    //    changement de fenêtre. Avec 20 enseignants qui alternent entre
+    //    l'application et leur tableur/papier, c'était une tempête permanente
+    //    de requêtes. Désormais : rafraîchissement complet seulement après une
+    //    vraie absence (≥ 5 min) ; les petits alt-tabs ne coûtent plus rien.
+    let hiddenSince = 0;
+    const RESUME_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // L'utilisateur revient sur l'onglet → rafraîchir les queries
-        recordActivity();
-        // Déclencher un refresh des données
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('session-resumed'));
-        }
-        // Rafraîchir le token si nécessaire
-        refreshTokenProactively();
+      if (document.visibilityState === 'hidden') {
+        hiddenSince = Date.now();
+        return;
       }
+      // L'utilisateur revient sur l'onglet → rafraîchir l'activité
+      recordActivity();
+      // Refresh complet des données seulement après une vraie absence
+      const wasAwayLong = hiddenSince > 0 && Date.now() - hiddenSince >= RESUME_REFRESH_THRESHOLD_MS;
+      hiddenSince = 0;
+      if (typeof window !== 'undefined' && wasAwayLong) {
+        window.dispatchEvent(new CustomEvent('session-resumed'));
+      }
+      // Rafraîchir le token si nécessaire
+      refreshTokenProactively();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 

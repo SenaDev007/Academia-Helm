@@ -3,6 +3,12 @@
 /**
  * Hook pour récupérer l'identité de l'école (nom, logo, contact)
  * depuis l'API /api/settings/identity.
+ *
+ * ⭐ FIX PERFORMANCE CONCURRENCE — cache module-level 5 min + dédup en vol :
+ *    ce hook était monté dans le layout ET la page du dashboard enseignant
+ *    (2× par onglet) + SettingsBootstrapPrefetch + PilotageTopBar (+ sur
+ *    chaque événement 'online'). Avec 20 utilisateurs = rafales de fetchs
+ *    identiques. Le cache partagé ramène ça à 1 fetch par onglet / 5 min.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -17,11 +23,19 @@ export interface SchoolIdentity {
   website?: string;
 }
 
-export function useSchoolIdentity() {
-  const [identity, setIdentity] = useState<SchoolIdentity | null>(null);
-  const [loading, setLoading] = useState(true);
+const IDENTITY_CACHE_TTL_MS = 5 * 60 * 1000;
+let identityCache: { value: SchoolIdentity | null; expiresAt: number } | null = null;
+let identityInFlight: Promise<SchoolIdentity | null> | null = null;
 
-  const load = useCallback(async () => {
+/** Fetch partagé (tous les montages du hook attendent la MÊME promesse). */
+async function fetchSchoolIdentity(): Promise<SchoolIdentity | null> {
+  if (identityCache && identityCache.expiresAt > Date.now()) {
+    return identityCache.value;
+  }
+  if (identityInFlight) {
+    return identityInFlight;
+  }
+  const request = (async () => {
     try {
       const res = await fetch("/api/settings/identity", {
         credentials: "include",
@@ -29,7 +43,7 @@ export function useSchoolIdentity() {
       });
       if (res.ok) {
         const data = await res.json();
-        setIdentity({
+        const value: SchoolIdentity = {
           schoolName: data.schoolName || "",
           schoolAcronym: data.schoolAcronym,
           logoUrl: data.logoUrl,
@@ -37,13 +51,31 @@ export function useSchoolIdentity() {
           email: data.email,
           address: data.address,
           website: data.website,
-        });
+        };
+        identityCache = { value, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS };
+        return value;
       }
     } catch {
-      setIdentity(null);
-    } finally {
-      setLoading(false);
+      // silencieux
     }
+    return null;
+  })();
+  identityInFlight = request;
+  try {
+    return await request;
+  } finally {
+    identityInFlight = null;
+  }
+}
+
+export function useSchoolIdentity() {
+  const [identity, setIdentity] = useState<SchoolIdentity | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    const value = await fetchSchoolIdentity();
+    setIdentity(value);
+    setLoading(false);
   }, []);
 
   useEffect(() => {

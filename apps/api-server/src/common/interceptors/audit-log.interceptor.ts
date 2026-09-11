@@ -45,6 +45,17 @@ export class AuditLogInterceptor implements NestInterceptor {
       return next.handle();
     }
 
+    // ⭐ FIX PERFORMANCE CONCURRENCE — idempotence :
+    //    L'interceptor est GLOBAL (APP_INTERCEPTOR) ET ré-ajouté via
+    //    @UseInterceptors(AuditLogInterceptor) sur 8 contrôleurs → chaque
+    //    mutation de ces routes produisait 2 INSERT audit_logs (double
+    //    volume d'écritures, même pool PostgreSQL partagé). Le marqueur
+    //    sur la requête garantit UN SEUL audit par requête HTTP.
+    if ((request as any).__audited) {
+      return next.handle();
+    }
+    (request as any).__audited = true;
+
     // Déterminer si cette action doit être loggée
     const shouldLog = this.shouldLogAction(method, url);
 

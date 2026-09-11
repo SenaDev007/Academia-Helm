@@ -3211,7 +3211,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => clearInterval(interval);
   }, [conversations, currentUserId]);
 
-  // ⭐ TYPING POLLING : check who is typing in the active conversation every 3s
+  // ⭐ TYPING POLLING — check who is typing in the active conversation.
+  //    ⭐ FIX PERFORMANCE CONCURRENCE : le socket temps réel transmet déjà
+  //    typing:start/typing:stop → quand il est CONNECTÉ, le poll HTTP n'est
+  //    plus qu'un filet de sécurité lâche (30 s). Poll rapide (3 s) UNIQUEMENT
+  //    quand le socket est déconnecté (réseau école instable). Avant : 2
+  //    polls 3 s fixes par utilisateur (typing + appels) = 40 req/min/onglet
+  //    × 20 enseignants sur le chat, pour des événements déjà reçus en
+  //    temps réel.
   useEffect(() => {
     if (!activeConvId) return;
     const checkTyping = async () => {
@@ -3224,9 +3231,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       } catch {}
     };
     checkTyping();
-    const interval = setInterval(checkTyping, 3000);
+    const interval = setInterval(checkTyping, socket.isConnected ? 30000 : 3000);
     return () => clearInterval(interval);
-  }, [activeConvId, currentUserId]);
+  }, [activeConvId, currentUserId, socket.isConnected]);
 
   // ⭐ TYPING SEND : notify server via BOTH Socket.io (real-time) AND HTTP (fallback)
   const handleTyping = useCallback(() => {
@@ -4994,9 +5001,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       }
     };
     poll();
-    const interval = setInterval(poll, 3000);
+    // ⭐ FIX PERFORMANCE CONCURRENCE — 15 s quand le socket est connecté (les
+    //    appels arrivent alors via l'event temps réel call:offer — le poll
+    //    n'est qu'un filet de sécurité), 3 s seulement si le socket est mort.
+    const interval = setInterval(poll, socket.isConnected ? 15000 : 3000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [readOnly, groupCallActive, incomingSignal]);
+  }, [readOnly, groupCallActive, incomingSignal, socket.isConnected]);
 
   // Statut de l'appel V4 (2 s) — ⭐ V5 : pour les DEUX parties et pendant
   //    outgoing ET active (l'appel distant raccroché doit nous fermer aussi).

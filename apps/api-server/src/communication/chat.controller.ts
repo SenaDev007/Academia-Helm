@@ -957,7 +957,7 @@ export class ChatController {
   //    GET  /chat/auto-channels       → liste les canaux officiels
   // ═════════════════════════════════════════════════════════════════
   @Post('auto-channels/sync')
-  @Throttle({ default: { limit: 6, ttl: 60000 } })
+  @Throttle({ medium: { limit: 6, ttl: 60000 } }) // ⭐ FIX PERF — 'default' n'existe pas (throttlers nommés short/medium/long) → le throttle était silencieusement inactif
   async syncAutoChannels(@TenantId() tenantId: string) {
     const result = await this.helmBootstrap.syncTenant(tenantId);
     const { channels, groups } = result;

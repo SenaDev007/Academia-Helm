@@ -4,13 +4,24 @@ import { Module as ModuleEntity, ModuleType, ModuleStatus } from './entities/mod
 import { CreateModuleDto } from './dto/create-module.dto';
 import { UpdateModuleDto } from './dto/update-module.dto';
 import { SchoolLevelsService } from '../school-levels/school-levels.service';
+import { CacheService } from '../common/services/cache.service';
 
 @Injectable()
 export class ModulesService {
   constructor(
     private readonly modulesRepository: ModulesRepository,
     private readonly schoolLevelsService: SchoolLevelsService,
+    private readonly cacheService: CacheService,
   ) {}
+
+  /** ⭐ FIX PERFORMANCE CONCURRENCE — invalide le cache d'activation des modules d'un tenant. */
+  private async invalidateModuleCache(tenantId: string): Promise<void> {
+    try {
+      await this.cacheService.invalidatePattern(`mod:${tenantId}:`);
+    } catch {
+      // non critique
+    }
+  }
 
   async create(
     createModuleDto: CreateModuleDto,
@@ -58,12 +69,15 @@ export class ModulesService {
     tenantId: string,
   ): Promise<ModuleEntity> {
     await this.findOne(id, tenantId); // Vérifier existence
-    return this.modulesRepository.update(id, tenantId, updateModuleDto);
+    const updated = await this.modulesRepository.update(id, tenantId, updateModuleDto);
+    await this.invalidateModuleCache(tenantId); // ⭐ FIX PERF — cache activation modules
+    return updated;
   }
 
   async delete(id: string, tenantId: string): Promise<void> {
     await this.findOne(id, tenantId); // Vérifier existence
     await this.modulesRepository.delete(id, tenantId);
+    await this.invalidateModuleCache(tenantId); // ⭐ FIX PERF — cache activation modules
   }
 
   /**
@@ -79,17 +93,29 @@ export class ModulesService {
 
   /**
    * Vérifier si un module est activé
+   *
+   * ⭐ FIX PERFORMANCE CONCURRENCE — cache 60 s : appelé par ModuleAccessGuard
+   *    (routes payments / students-legacy / scolarite / finances) → AVANT :
+   *    1-2 requêtes DB PAR requête HTTP, ×20 utilisateurs simultanés.
+   *    Invalidé par invalidateModuleCache() sur update/delete/toggle.
    */
   async isModuleEnabled(
     tenantId: string,
     moduleType: ModuleType,
     schoolLevelId: string,
   ): Promise<boolean> {
-    return this.modulesRepository.isModuleEnabled(
+    const cacheKey = `mod:${tenantId}:${moduleType}:${schoolLevelId}`;
+    const cached = await this.cacheService.get<boolean>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+    const verdict = await this.modulesRepository.isModuleEnabled(
       tenantId,
       moduleType,
       schoolLevelId,
     );
+    await this.cacheService.set(cacheKey, verdict, 60 * 1000);
+    return verdict;
   }
 
   /**

@@ -159,7 +159,7 @@ export class ContextService {
       this.logger.warn(`Scope resolution failed for user ${user.id}: ${e.message}`);
     }
 
-    return {
+    const result: any = {
       tenant: {
         id: tenant.id,
         name: tenant.name,

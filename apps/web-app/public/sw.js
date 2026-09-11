@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3 « offline-first sans page hors-ligne »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v3.1 « offline-first sans page hors-ligne »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
@@ -40,18 +40,28 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.0.0';
+const SW_VERSION = 'v3.1.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
+
+// ⭐ v3.1.0 — CACHE IMMUABLE PERSISTANT (JAMAIS purgé, même à l'activation
+//    d'une nouvelle version du SW) : les chunks /_next/static/ sont immuables
+//    par définition (hash dans le nom). Avant, ils vivaient dans
+//    ah-static-<version> → CHAQUE mise à jour du SW purgeait TOUS les chunks
+//    → re-téléchargement complet sur réseau instable → « Failed to load chunk »
+//    massif. Désormais les chunks survivent aux mises à jour du SW (les vieux
+//    builds restent en cache : un onglet resté ouvert sur l'ancien build
+//    continue de fonctionner). Contrepartie : taille croissante — purgée
+//    uniquement via CLEAR_CACHE (dépannage explicite).
+const IMMUTABLE_CACHE = 'ah-static-immutable';
 
 // ⭐ Shell pré-caché au premier install : l'app PWA démarre hors ligne sans
 //    page de substitution. '/login' couvre la start_url, '/app' l'application.
 const PRECACHE_URLS = ['/app', '/login', '/manifest.json'];
 
-// Assets statiques immuables → CacheFirst
+// Assets statiques mutables (images, uploads — versionnés, purge à chaque version)
 const STATIC_ASSET_PATTERNS = [
-  /\/_next\/static\//,
   /\/_next\/image\//,
   /\/images\//,
   /\/fonts\//,
@@ -61,6 +71,12 @@ const STATIC_ASSET_PATTERNS = [
   /\/uploads\//,
   /\/pwa-icon\?/,
   /\.(?:png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot|mp3|mp4|wav)$/i,
+];
+
+// ⭐ Chunks immuables Next.js (Turbopack : /_next/static/immutable/chunks/...)
+//    → cache PERSISTANT (IMMUTABLE_CACHE) — cf. commentaire ci-dessus.
+const IMMUTABLE_ASSET_PATTERNS = [
+  /\/_next\/static\//,
 ];
 
 // Pages HTML dont le cache hors-ligne est AUTORISÉ (publiques uniquement)
@@ -114,10 +130,36 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      // ⭐ v3.1.0 — MIGRATION : avant de purger les anciens ah-static-*, on
+      //    transfère les chunks /_next/static/ (immuables) vers IMMUTABLE_CACHE
+      //    pour ne PAS perdre le cache offline des utilisateurs existants.
+      try {
+        const allNames = await caches.keys();
+        const legacyNames = allNames.filter(
+          (n) => n.startsWith('ah-static-') && n !== IMMUTABLE_CACHE,
+        );
+        const immutable = await caches.open(IMMUTABLE_CACHE);
+        for (const legacyName of legacyNames) {
+          const legacy = await caches.open(legacyName);
+          const keys = await legacy.keys();
+          await Promise.all(
+            keys.map(async (req) => {
+              if (req.url.includes('/_next/static/')) {
+                const res = await legacy.match(req);
+                if (res) await immutable.put(req, res);
+              }
+            }),
+          );
+        }
+      } catch {
+        // Migration non-bloquante
+      }
+
       const names = await caches.keys();
       await Promise.all(
         names
           .filter((name) => name.startsWith('ah-') && !name.startsWith(AUTH_CACHE) &&
+            name !== IMMUTABLE_CACHE && // ⭐ chunks immuables JAMAIS purgés
             !name.endsWith(SW_VERSION))
           .map((name) => caches.delete(name)),
       );
@@ -146,7 +188,13 @@ self.addEventListener('fetch', (event) => {
   // Routes interdites → réseau direct
   if (NEVER_INTERCEPT.some((pattern) => pattern.test(pathname))) return;
 
-  // ─── Assets statiques : CacheFirst ─────────────────────────────────────
+  // ⭐ Chunks immuables /_next/static/ → cache PERSISTANT + retry réseau
+  if (IMMUTABLE_ASSET_PATTERNS.some((pattern) => pattern.test(request.url))) {
+    event.respondWith(serveImmutable(request));
+    return;
+  }
+
+  // ─── Assets statiques (mutables) : CacheFirst ────────────────────────
   if (STATIC_ASSET_PATTERNS.some((pattern) => pattern.test(request.url))) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -186,27 +234,48 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Chunks JS/CSS dynamiques Next.js → cache (SWR-like)
+  // Chunks JS/CSS dynamiques Next.js (hors /static/) → cache persistant + retry
   if (url.pathname.includes('/_next/') && (pathname.endsWith('.js') || pathname.endsWith('.css'))) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request)
-          .then((response) => {
-            if (response && response.status === 200) {
-              const clone = response.clone();
-              caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => cached);
-        return cached || fetchPromise;
-      }),
-    );
+    event.respondWith(serveImmutable(request));
     return;
   }
 
   // Tout le reste : pas d'interception (réseau direct)
 });
+
+// ─── Chunks immuables : CacheFirst persistant + retry réseau ────────────
+// ⭐ Réseau instable (2G/3G) : le 1er fetch d'un chunk échoue souvent →
+//    1 RETRY automatique côté SW AVANT de laisser l'erreur remonter au
+//    runtime Next (sinon : « Failed to load chunk ... from module N » →
+//    error boundary). Si le réseau rejette 2 fois, l'erreur remonte : le
+//    client la gère (rechargement anti-boucle, cf. chunk-recovery.ts).
+async function serveImmutable(request) {
+  const cached = await caches.match(request, { cacheName: IMMUTABLE_CACHE });
+  if (cached) return cached;
+
+  try {
+    return await fetchAndCacheImmutable(request);
+  } catch (firstError) {
+    // Réseau instable → courte pause puis 1 nouvelle tentative
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    try {
+      return await fetchAndCacheImmutable(request);
+    } catch (secondError) {
+      // Pas de cache + réseau KO : erreur réseau (le client gère la récupération)
+      throw secondError;
+    }
+  }
+}
+
+async function fetchAndCacheImmutable(request) {
+  const response = await fetch(request);
+  if (response && response.status === 200) {
+    const clone = response.clone();
+    // Pas d'await : ne pas bloquer la réponse sur l'écriture du cache
+    caches.open(IMMUTABLE_CACHE).then((cache) => cache.put(request, clone));
+  }
+  return response;
+}
 
 // ─── Handler : navigations /app/* (app shell, jamais de page offline) ─────
 async function handleAppShellNavigation(request) {
@@ -339,7 +408,7 @@ self.addEventListener('message', (event) => {
 async function precacheModule(routeUrl) {
   try {
     const cache = await caches.open(PAGE_CACHE);
-    const staticCache = await caches.open(STATIC_CACHE);
+    const staticCache = await caches.open(IMMUTABLE_CACHE); // ⭐ chunks immuables — cache persistant
 
     const response = await fetchWithTimeout(new Request(routeUrl, {
       credentials: 'include',

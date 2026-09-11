@@ -3,13 +3,21 @@
  *
  * Catches runtime errors specifically within the HR module,
  * preventing them from crashing the sidebar or other modules.
+ *
+ * ⭐ Récupération chunk (réseau instable / déploiement récent) avec garde
+ *    anti-boucle — cf. src/lib/chunk-recovery.ts.
  */
 
 'use client';
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ArrowLeft, WifiOff } from 'lucide-react';
+import {
+  isChunkLoadFailure,
+  scheduleChunkRecoveryReload,
+  forceChunkRecoveryReload,
+} from '@/lib/chunk-recovery';
 
 export default function HRError({
   error,
@@ -18,9 +26,36 @@ export default function HRError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError = isChunkLoadFailure(error?.message || '');
+
   useEffect(() => {
     console.error('[HR Module Error]', error);
-  }, [error]);
+    // Auto-reload LIMITÉ (garde anti-boucle) — pas de purge de cache offline
+    if (isChunkError) scheduleChunkRecoveryReload();
+  }, [error, isChunkError]);
+
+  if (isChunkError) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="w-10 h-10 mx-auto mb-3 rounded-lg bg-amber-100 flex items-center justify-center">
+            <WifiOff className="w-5 h-5 text-amber-600" />
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mb-2">Connexion instable</h2>
+          <p className="text-xs text-slate-600 mb-3">
+            Le module RH n'a pas pu être chargé complètement. Vos données
+            enregistrées sont conservées — rechargement automatique en cours…
+          </p>
+          <button
+            onClick={forceChunkRecoveryReload}
+            className="inline-flex items-center gap-1.5 bg-[#1A2BA6] text-white px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Recharger
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-center min-h-[50vh] px-4">

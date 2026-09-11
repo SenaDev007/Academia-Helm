@@ -1,17 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-
-function isChunkLoadError(message: string): boolean {
-  return (
-    message.includes('Loading chunk') ||
-    message.includes('Loading CSS chunk') ||
-    message.includes('ChunkLoadError') ||
-    message.includes('loading chunk failed')
-  );
-}
+import { AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
+import {
+  isChunkLoadFailure,
+  scheduleChunkRecoveryReload,
+  forceChunkRecoveryReload,
+  hasExhaustedAutoReloads,
+} from '@/lib/chunk-recovery';
 
 export default function JobsError({
   error,
@@ -20,41 +17,39 @@ export default function JobsError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError = isChunkLoadFailure(error?.message || '');
+  // Lecture pure au premier rendu (pas de setState dans un effet)
+  const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
+
   useEffect(() => {
     console.error('Jobs page error:', error);
 
-    // Auto-reload on chunk loading errors (stale cache after deployment)
-    if (isChunkLoadError(error?.message || '')) {
-      // Clear the service worker cache and force a full page reload
-      if (typeof window !== 'undefined' && 'caches' in window) {
-        caches.keys().then((names) => {
-          names.forEach((name) => caches.delete(name));
-        });
-      }
-      // Small delay to let cache clear, then hard reload
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-    }
-  }, [error]);
-
-  const isChunkError = isChunkLoadError(error?.message || '');
+    // Auto-reload LIMITÉ (garde anti-boucle) — SANS purge de cache offline
+    if (isChunkError) scheduleChunkRecoveryReload();
+  }, [error, isChunkError]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center">
-        <AlertTriangle className="w-16 h-16 text-amber-500 mx-auto mb-6" />
-
         {isChunkError ? (
           <>
+            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">
+              <WifiOff className="w-8 h-8 text-amber-600" />
+            </div>
             <h1 className="text-2xl font-bold text-slate-900 mb-3">
-              Mise à jour en cours
+              Connexion instable
             </h1>
-            <p className="text-sm text-slate-600 mb-6">
-              Une nouvelle version du site est disponible. La page va se recharger automatiquement...
+            <p className="text-sm text-slate-600 mb-2">
+              Une partie du site n'a pas pu être chargée (connexion instable ou
+              mise à jour récente).
+            </p>
+            <p className="text-xs text-slate-500 mb-6">
+              {autoReloadBlocked
+                ? 'Rechargement automatique suspendu (anti-boucle).'
+                : 'Rechargement automatique en cours…'}
             </p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={forceChunkRecoveryReload}
               className="inline-flex items-center gap-2 bg-[#1A2BA6] text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition-colors"
             >
               <RefreshCw className="h-4 w-4" /> Recharger la page
@@ -62,6 +57,7 @@ export default function JobsError({
           </>
         ) : (
           <>
+            <AlertTriangle className="w-16 h-16 text-amber-500 mx-auto mb-6" />
             <h1 className="text-2xl font-bold text-slate-900 mb-3">
               Une erreur s'est produite
             </h1>

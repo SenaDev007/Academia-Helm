@@ -6,11 +6,21 @@
  * ⭐ OFFLINE-FIRST : détecte si l'erreur est due à une perte de connexion
  *    et propose un bouton "Continuer hors ligne" qui recharge /app depuis
  *    le cache du Service Worker + IndexedDB.
+ *
+ * ⭐ RÉCUPÉRATION CHUNK : « Failed to load chunk ... from module N » (réseau
+ *    instable / déploiement récent) → prioritaire sur la détection réseau
+ *    générique → rechargement automatique avec garde anti-boucle.
  */
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  isChunkLoadFailure,
+  scheduleChunkRecoveryReload,
+  forceChunkRecoveryReload,
+  hasExhaustedAutoReloads,
+} from '@/lib/chunk-recovery';
 
 export default function GlobalError({
   error,
@@ -19,26 +29,60 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError = isChunkLoadFailure(error?.message || '');
+  // Lecture pure au premier rendu (pas de setState dans un effet)
+  const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
+
   useEffect(() => {
     console.error('Global error:', error);
-  }, [error]);
+    if (isChunkError) scheduleChunkRecoveryReload();
+  }, [error, isChunkError]);
 
   // ⭐ Détecter si l'erreur est réseau / offline
   const isOffline =
-    (typeof navigator !== 'undefined' && !navigator.onLine) ||
-    error?.message?.includes('fetch') ||
-    error?.message?.includes('network') ||
-    error?.message?.includes('Network Error') ||
-    error?.message?.includes('ERR_NETWORK') ||
-    error?.message?.includes('Failed to fetch') ||
-    error?.message?.includes('Load failed');
+    !isChunkError &&
+    ((typeof navigator !== 'undefined' && !navigator.onLine) ||
+      error?.message?.includes('fetch') ||
+      error?.message?.includes('network') ||
+      error?.message?.includes('Network Error') ||
+      error?.message?.includes('ERR_NETWORK') ||
+      error?.message?.includes('Failed to fetch') ||
+      error?.message?.includes('Load failed'));
 
   return (
     <html>
       <body>
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center px-4">
           <div className="max-w-md w-full text-center">
-            {isOffline ? (
+            {isChunkError ? (
+              <>
+                {/* Échec de chunk — connexion instable / mise à jour récente */}
+                <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                </div>
+                <h1 className="text-2xl font-bold text-slate-900 mb-3">
+                  Connexion instable
+                </h1>
+                <p className="text-slate-600 mb-6">
+                  Une partie de l'application n'a pas pu être chargée (connexion
+                  instable ou mise à jour récente du site). Votre travail enregistré
+                  est conservé.
+                </p>
+                <p className="text-xs text-slate-500 mb-6">
+                  {autoReloadBlocked
+                    ? 'Rechargement automatique suspendu (anti-boucle).'
+                    : 'Rechargement automatique en cours…'}
+                </p>
+                <button
+                  onClick={forceChunkRecoveryReload}
+                  className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Recharger la page
+                </button>
+              </>
+            ) : isOffline ? (
               <>
                 {/* Mode offline — erreur réseau */}
                 <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">

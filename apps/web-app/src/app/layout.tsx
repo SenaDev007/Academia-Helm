@@ -237,6 +237,46 @@ export default function RootLayout({
             pour les bannières d'installation (PWAInstallPrompt). */}
         <PWARegister />
 
+        {/* ⭐ RÉCUPÉRATION CHUNKS — script pré-hydratation : les échecs de
+            chargement de chunks (réseau instable / déploiement récent) sont
+            interceptés AVANT le montage React (sinon page blanche), avec
+            garde anti-boucle (max 2 reloads / 60 s, sessionStorage partagé
+            avec src/lib/chunk-recovery.ts). Logique dupliquée volontairement :
+            ce script doit être inline et autonome (pas d'import de module). */}
+        <Script id="chunk-load-recovery" strategy="beforeInteractive">
+          {`(function(){try{
+  var KEY='ah_chunk_reload_state',WIN=60000,MAX=2,DELAY=600,scheduled=false;
+  function isMsg(m){if(!m)return false;m=(''+m).toLowerCase();
+    return m.indexOf('failed to load chunk')>-1||m.indexOf('loading chunk')>-1||
+      m.indexOf('loading css chunk')>-1||m.indexOf('chunkloaderror')>-1||
+      m.indexOf('failed to fetch dynamically imported module')>-1||
+      m.indexOf('error loading dynamically imported module')>-1||m.indexOf('importing a module script failed')>-1;}
+  function read(){try{var r=JSON.parse(sessionStorage.getItem(KEY)||'null');
+    return r&&typeof r.t==='number'&&typeof r.n==='number'?r:null;}catch(e){return null;}}
+  function can(){var s=read();if(!s)return true;if(Date.now()-s.t>WIN)return true;return s.n<MAX;}
+  function mark(){try{var p=read(),e=!p||Date.now()-p.t>WIN;
+    sessionStorage.setItem(KEY,JSON.stringify({t:Date.now(),n:e?1:p.n+1}));}catch(e2){}}
+  function recover(){if(scheduled)return;if(!can())return;scheduled=true;mark();
+    setTimeout(function(){try{location.reload();}catch(e3){}},DELAY);}
+  function onErr(e){
+    try{
+      var msg=(e&&e.message)||(e&&e.error&&e.error.message)||'';
+      if(isMsg(msg))return recover();
+      var t=e&&e.target,tag=t&&t.tagName;
+      if(tag==='SCRIPT'||tag==='LINK'){
+        var u=(t.src||t.href||'');
+        if(/\\/_next\\/static\\/[^?]+\\.(js|css)/.test(u))return recover();
+      }
+    }catch(x){}
+  }
+  function onRej(e){
+    try{var r=e&&e.reason, m=(r&&(r.message||(''+r)))||'';
+      if(isMsg(m))recover();}catch(x){}
+  }
+  window.addEventListener('error',onErr,true);
+  window.addEventListener('unhandledrejection',onRej);
+}catch(e){}})();`}
+        </Script>
         {/* ────────────────────────────────────────────────────────────────
             🚀 Partytown — exécute les scripts tiers dans un Web Worker
             ────────────────────────────────────────────────────────────────

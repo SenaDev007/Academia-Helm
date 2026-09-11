@@ -1,24 +1,29 @@
 /**
  * Error Boundary
  *
- * Gestion des erreurs globales — inclut la détection automatique
- * des erreurs de chunk (déploiement récent) avec rechargement forcé.
+ * Gestion des erreurs globales — inclut la récupération automatique
+ * des échecs de chargement de chunks (réseau instable / déploiement
+ * récent), format Turbopack « Failed to load chunk ... from module N »
+ * ET format webpack « Loading chunk N failed ».
+ *
+ * ⛔ Plus de purge du Cache Storage : les chunks /_next/static/ sont
+ * immuables et cachés par le SW — les purger casserait l'offline-first.
+ * Un simple rechargement (avec garde anti-boucle) suffit dans les 2 cas :
+ * déploiement récent (HTML frais → nouveaux chunks) ou réseau instable
+ * (nouvelle tentative, le SW sert son cache si disponible).
  */
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-
-function isChunkLoadError(message: string): boolean {
-  return (
-    message.includes('Loading chunk') ||
-    message.includes('Loading CSS chunk') ||
-    message.includes('ChunkLoadError') ||
-    message.includes('loading chunk failed')
-  );
-}
+import { AlertTriangle, RefreshCw, WifiOff } from 'lucide-react';
+import {
+  isChunkLoadFailure,
+  scheduleChunkRecoveryReload,
+  forceChunkRecoveryReload,
+  hasExhaustedAutoReloads,
+} from '@/lib/chunk-recovery';
 
 export default function Error({
   error,
@@ -27,46 +32,61 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError = isChunkLoadFailure(error?.message || '');
+  // Lecture pure au premier rendu (pas de setState dans un effet — règle
+  // react-hooks/set-state-in-effect)
+  const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
+
   useEffect(() => {
     console.error('Application error:', error);
 
-    // Auto-reload on chunk loading errors (stale cache after deployment)
-    if (isChunkLoadError(error?.message || '')) {
-      if (typeof window !== 'undefined' && 'caches' in window) {
-        caches.keys().then((names) => {
-          names.forEach((name) => caches.delete(name));
-        });
-      }
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
-    }
-  }, [error]);
-
-  const isChunkError = isChunkLoadError(error?.message || '');
+    // Auto-reload LIMITÉ (garde anti-boucle : max 2 / 60 s) sur erreur de chunk
+    if (isChunkError) scheduleChunkRecoveryReload();
+  }, [error, isChunkError]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center">
-        <AlertTriangle className="w-16 h-16 text-red-600 mx-auto mb-6" />
-
         {isChunkError ? (
           <>
+            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">
+              <WifiOff className="w-8 h-8 text-amber-600" />
+            </div>
             <h1 className="text-2xl font-bold text-slate-900 mb-3">
-              Mise à jour en cours
+              Connexion instable
             </h1>
             <p className="text-sm text-slate-600 mb-6">
-              Une nouvelle version du site est disponible. La page va se recharger automatiquement...
+              Une partie de l'application n'a pas pu être chargée (connexion
+              instable ou mise à jour récente du site). Votre travail enregistré
+              est conservé.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors"
-            >
-              <RefreshCw className="h-4 w-4" /> Recharger la page
-            </button>
+            {autoReloadBlocked ? (
+              <p className="text-xs text-slate-500 mb-6">
+                Le rechargement automatique a été suspendu pour éviter une boucle.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 mb-6">
+                Rechargement automatique en cours…
+              </p>
+            )}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={forceChunkRecoveryReload}
+                className="inline-flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" /> Recharger la page
+              </button>
+              <button
+                onClick={reset}
+                className="bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Réessayer sans recharger
+              </button>
+            </div>
           </>
         ) : (
           <>
+            <AlertTriangle className="w-16 h-16 text-red-600 mx-auto mb-6" />
             <h1 className="text-3xl font-bold text-slate-900 mb-4">
               Une erreur s'est produite
             </h1>

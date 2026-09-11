@@ -2,7 +2,7 @@
 
 **Date : 2026-09-11** · Périmètre : plateforme Academia Helm complète (Vercel + Railway + Neon)
 **Hypothèse demandée** : chaque école connecte **20 utilisateurs simultanés aux mêmes heures** (pics matinaux), avec le rate limiting par utilisateur à **20 connexions simultanées**.
-**Contexte infrastructure** : Neon **Min CU = 1** (compute toujours actif — configuré), pool applicatif 40 via pooler Neon, throttle 30 req/s / 600 req/min / 5 000 req/h par utilisateur, nouveau sémaphore 20 requêtes in-flight par utilisateur.
+**Contexte infrastructure** : Neon **Min CU = 1 / Max CU = 8** (compute toujours actif + autoscaling jusqu'à 8 vCPU — configuré), pool applicatif 40 via pooler Neon, throttle 30 req/s / 600 req/min / 5 000 req/h par utilisateur, nouveau sémaphore 20 requêtes in-flight par utilisateur.
 
 ---
 
@@ -11,7 +11,7 @@
 | Écoles | Utilisateurs simultanés | Verdict plateforme actuelle | Action requise |
 |---|---|---|---|
 | **20** | **400** | ✅ **Tient** (marge ~5×) | Aucune — surveillance seule |
-| **50** | **1 000** | 🟡 **Tient juste** (CPU 35-50 % en pointe) | Upsize Railway (2 vCPU) + Neon max CU ≥ 4 |
+| **50** | **1 000** | 🟡 **Tient juste** (CPU 35-50 % en pointe) | Upsize Railway (2 vCPU) — Neon déjà couvert (Max CU 8) |
 | **100** | **2 000** | 🔴 **Ne tient pas** en mono-instance | 2-3 réplicas API + adapter Redis Socket.io |
 
 **Point clé sur le rate limiting** : limiter chaque utilisateur à 20 connexions simultanées **ne change rien à la capacité agrégée**. Cette limite protège contre l'abus **individuel** (script, onglets en masse, exports en rafale) — elle ne rajoute pas un seul utilisateur de capacité côté plateforme. À 20/50/100 écoles, c'est l'**infrastructure** (CPU API, event loop Node, débit Neon) qui décide, pas la limite par utilisateur. C'est exactement pourquoi elle est implémentée comme **sémaphore avec file d'attente** (voir §4) : elle borne le pire cas individuel sans casser les rafales légitimes.
@@ -68,15 +68,17 @@ La réalité est entre les deux (les 20 écoles ne se connectent pas à la secon
 
 **Mémoire** : Prisma + NestJS ≈ 400-500 MB fixes ; 2 000 WebSockets ≈ 50-100 MB ; in-flight moyen (133 req/s × 0,4 s) ≈ 55 requêtes × ~100 Ko = ~6 MB. Le heap 1,5 GB tient à 2 000 utilisateurs — **c'est bien le CPU mono-cœur qui plafonne, pas la RAM**.
 
-### 3.3 Neon PostgreSQL — Min CU = 1 : le bon réglage, à doubler d'un max CU
+### 3.3 Neon PostgreSQL — Min CU 1 / Max CU 8 : couvert jusqu'à 100 écoles et au-delà
 
-Le réglage **Min CU = 1** (compute toujours actif, 1 vCPU / 4 GB RAM) élimine le cold start matinal de 5-15 s qui pénalisait la première requête de chaque école : c'est l'une des meilleures décisions pour la constance aux heures de pointe.
+Le réglage **Min CU = 1 / Max CU = 8** (compute toujours actif + autoscaling jusqu'à 8 vCPU / 32 GB) est optimal : le plancher élimine le cold start matinal de 5-15 s qui pénalisait la première requête de chaque école, et le plafond 8 CU absorbe tous les pics analytiques jusqu'à 100 écoles sans intervention.
 
 | Écoles | Users | SQL/s estimé (5 SQL/req) | Charge 1 CU | Verdict |
 |---|---|---|---|---|
 | 20 | 400 | ~135 | ~7 % | ✅ Large |
 | 50 | 1 000 | ~335 | ~17 % | ✅ Confortable |
-| 100 | 2 000 | ~665 | ~33 % | 🟡 Tient, mais **vérifier que Max CU ≥ 2-4** pour absorber les pics (requêtes analytiques, exports) |
+| 100 | 2 000 | ~665 | ~4 % de 8 CU | ✅ Large — l'autoscaling Neon (Max CU 8) absorbe les pics analytiques et exports sans intervention |
+
+**La base n'est le facteur limitant à aucun palier** — même à 100 écoles, 665 SQL/s avec des requêtes à 0,05-1,35 ms représente une fraction de la capacité 8 CU (jusqu'à ~8× le débit d'1 CU). Le seul point d'attention : l'autoscaling met quelques secondes à monter en CU — les pics très brusques (login storm) peuvent toucher brièvement la capacité du CU courant avant l'escalade, ce qui se traduit par une latence SQL légèrement accrue, jamais par des erreurs.
 
 **Connexions** : le pool applicatif (40) passe par le **pooler Neon** (PgBouncer managé) qui multiplexe — à 2 000 utilisateurs, ~14 connexions serveur réellement utilisées en moyenne (55 in-flight × 25 % du temps en phase SQL). Largement sous les ~100 connexions d'1 CU. Aucun changement nécessaire.
 
@@ -115,7 +117,7 @@ L'infrastructure actuelle (Railway mono-instance + Neon Min CU 1 + pool 40 + thr
 ### Palier 50 écoles (1 000 users) — upsize vertical (simple, pas de refonte)
 
 1. **Railway** : passer le service api-server sur un plan 2 vCPU / 4-8 GB (le `--max-old-space-size=1536` du Dockerfile absorbe le doublement de heap). La mono-instance reste OK : CPU estimé 35-40 % → ~18-20 % sur 2 cœurs.
-2. **Neon** : vérifier **Max CU ≥ 4** (l'autoscaling Neon absorbe les pics analytiques — Min CU 1 reste parfait pour éviter le cold start).
+2. **Neon** : déjà couvert — **Min CU 1 / Max CU 8** absorbent les pics analytiques (l'autoscaling monte à 8 vCPU quand les dashboards lourds défilent ; le plancher maintient la réactivité).
 3. **Vercel** : rien (serverless). Vérifier que les fonctions BFF et Railway sont dans des régions proches (latence double hop).
 4. Surveiller le pic bcrypt : si les logins s'étalent mal (tout le monde à 07h55), envisager file d'attente dédiée ou vagues d'onboarding.
 
@@ -123,7 +125,7 @@ L'infrastructure actuelle (Railway mono-instance + Neon Min CU 1 + pool 40 + thr
 
 1. **Railway : 2-3 réplicas** de l'api-server (fonctionnalité de scaling horizontal Railway). Le sémaphore et le throttler étant **en mémoire par instance**, chaque réplique applique ses propres buckets — acceptable (20/user/réplique borne quand même l'abus ; le dispatch round-robin Railway lisse naturellement).
 2. **Socket.io : adapter Redis obligatoire** (`@socket.io/redis-adapter` + ioredis) pour que les événements Helm Connect traversent les réplicas (un user connecté au réplique A doit recevoir un message émis via le réplique B). **Bonne nouvelle : le client est déjà en `transports: ['websocket']` uniquement** — pas besoin de sticky sessions, le handshake HTTP polling de Socket.io est déjà exclu.
-3. **Neon : Min CU 2 / Max CU 4-8** (le doublement de débit SQL justifie un plancher plus haut).
+3. **Neon** : rien à changer — Max CU 8 couvre le doublement de débit SQL avec une marge ~25× sur les requêtes mesurées.
 4. **Option découplage** (si les pics chat pesent) : sortir la gateway Socket.io dans un service dédié derrière le même Redis.
 5. **Ce qui ne change PAS** : Vercel (auto-scale), le BFF, le schéma Prisma, le pooler Neon. Le rate limiting par utilisateur reste utile par réplique.
 
@@ -132,8 +134,8 @@ L'infrastructure actuelle (Railway mono-instance + Neon Min CU 1 + pool 40 + thr
 | Palier | Delta infra/mois | Détail |
 |---|---|---|
 | 20 écoles | ~0 € | Situation actuelle |
-| 50 écoles | ~+40-80 $ | Railway 2 vCPU + Neon Launch/Scale max CU 4 |
-| 100 écoles | ~+150-250 $ | 2-3 réplicas Railway + Redis + Neon Min 2 CU |
+| 50 écoles | ~+30-60 $ | Railway 2 vCPU (Neon déjà couvert par le Max CU 8 existant) |
+| 100 écoles | ~+150-250 $ | 2-3 réplicas Railway + Redis (Neon inchangé — Max CU 8 déjà en place) |
 
 ---
 
@@ -152,4 +154,4 @@ L'infrastructure actuelle (Railway mono-instance + Neon Min CU 1 + pool 40 + thr
 
 ## 7. Synthèse
 
-Avec **Neon Min CU = 1** et l'ensemble des correctifs déployés (pool 40, throttle par utilisateur, cache client, index, et désormais le sémaphore 20 connexions), la plateforme **absorbe 20 écoles dès aujourd'hui avec une marge d'environ 5×**. Le passage à **50 écoles** nécessite un simple upsize vertical (Railway 2 vCPU + Neon max CU 4) — aucune refonte. Le passage à **100 écoles** exige de passer en **multi-réplicas avec adapter Redis pour Socket.io**, la charge CPU d'un seul cœur Node devenant le plafond vers ~150 req/s soutenus. Le rate limiting à 20 connexions simultanées par utilisateur, quant à lui, garantit qu'**aucun utilisateur individuel ne peut dégrader l'expérience des autres** — c'est sa fonction, et elle est maintenant remplie sans casser les rafales légitimes de dashboard.
+Avec **Neon Min CU = 1 / Max CU = 8** et l'ensemble des correctifs déployés (pool 40, throttle par utilisateur, cache client, index, et désormais le sémaphore 20 connexions), la plateforme **absorbe 20 écoles dès aujourd'hui avec une marge d'environ 5×, et la base de données est couverte jusqu'à 100 écoles sans aucun changement** — le seul palier d'infrastructure restant est le CPU de l'instance Railway. Le passage à **50 écoles** nécessite un simple upsize Railway en 2 vCPU — aucune refonte. Le passage à **100 écoles** exige de passer en **multi-réplicas avec adapter Redis pour Socket.io**, la charge CPU d'un seul cœur Node devenant le plafond vers ~150 req/s soutenus. Le rate limiting à 20 connexions simultanées par utilisateur, quant à lui, garantit qu'**aucun utilisateur individuel ne peut dégrader l'expérience des autres** — c'est sa fonction, et elle est maintenant remplie sans casser les rafales légitimes de dashboard.

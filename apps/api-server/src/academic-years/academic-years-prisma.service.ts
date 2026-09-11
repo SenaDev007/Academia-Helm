@@ -12,6 +12,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicYearCalculatorService } from './academic-year-calculator.service';
+import { CacheService } from '../common/services/cache.service';
 
 @Injectable()
 export class AcademicYearsPrismaService {
@@ -20,6 +21,7 @@ export class AcademicYearsPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculator: AcademicYearCalculatorService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
@@ -404,6 +406,13 @@ export class AcademicYearsPrismaService {
         }
       }
       this.logger.log(`closeAndPromoteYear: StudentAccounts créés avec succès.`);
+    }
+
+    // ⭐ FIX CAPACITÉ — la liste des années a changé → purge du cache 60 s
+    try {
+      await this.cacheService.invalidate(`acy:all:${tenantId}`);
+    } catch {
+      // non critique
     }
 
     return {

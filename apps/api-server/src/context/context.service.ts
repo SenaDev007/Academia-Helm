@@ -13,6 +13,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { AccessScopeService } from '../common/context/access-scope.service';
+import { CacheService } from '../common/services/cache.service';
 
 @Injectable()
 export class ContextService {
@@ -22,6 +23,7 @@ export class ContextService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly accessScopeService: AccessScopeService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
@@ -41,6 +43,23 @@ export class ContextService {
    * Retourne toutes les informations nécessaires pour initialiser le dashboard
    */
   async bootstrap(userId: string, tenantId: string, role: string) {
+    // ⭐ FIX CAPACITÉ (estimation 20/50/100 écoles) — cache 45 s par utilisateur :
+    // /context/bootstrap = ~6-8 requêtes DB (user + tenant + école + année +
+    // scope + ORION counts) + gros payload JSON. Lorsqu'une école entière se
+    // connecte le matin, CHAQUE enseignant paie ce coût → file d'attente
+    // observée (p95 9 s à 100 utilisateurs simultanés en test). Le cache
+    // absorbe les rechargements/navigations dans la fenêtre de 45 s ; les
+    // données (tenant, école, année, rôle, scope) ne changent pas à la seconde.
+    const cacheKey = `ctx:boot:${userId}:${tenantId}`;
+    try {
+      const cached = await this.cacheService.get<any>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch {
+      // Cache indisponible → comportement précédent (pas de blocage)
+    }
+
     // Récupérer l'utilisateur
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -184,6 +203,13 @@ export class ContextService {
       scope,
       timestamp: new Date().toISOString(),
     };
+
+    try {
+      await this.cacheService.set(cacheKey, result, 45 * 1000);
+    } catch {
+      // non critique
+    }
+    return result;
   }
 
   /**

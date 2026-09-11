@@ -2,6 +2,7 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/p
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { SettingsHistoryService } from './settings-history.service';
+import { CacheService } from '../../common/services/cache.service';
 
 /**
  * ============================================================================
@@ -24,12 +25,40 @@ export class IdentityProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly historyService: SettingsHistoryService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
+   * ⭐ FIX CAPACITÉ — invalide le cache du profil actif (appelé par TOUTES les
+   * mutations : createNewVersion, activateVersion, updateVisuals y passent).
+   */
+  private async invalidateIdentityCache(tenantId: string): Promise<void> {
+    try {
+      await this.cacheService.invalidate(`settings:identity:${tenantId}`);
+    } catch {
+      // non critique
+    }
+  }
+
+  /**
    * Récupère le profil d'identité actif du tenant
+   *
+   * ⭐ FIX CAPACITÉ (estimation 20/50/100 écoles) — cache 45 s par tenant :
+   * appelé par CHAQUE utilisateur au chargement (dashboard + documents).
+   * Quand une école entière se connecte, seul le PREMIER paie la requête DB —
+   * les 19 autres servent le cache. Invalidé sur toute mutation (cf. ci-dessous).
    */
   async getActiveProfile(tenantId: string) {
+    const cacheKey = `settings:identity:${tenantId}`;
+    try {
+      const cached = await this.cacheService.get<any>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch {
+      // Cache indisponible → comportement précédent
+    }
+
     const profile = await this.prisma.tenantIdentityProfile.findFirst({
       where: { tenantId, isActive: true },
     });
@@ -38,7 +67,13 @@ export class IdentityProfileService {
       return null;
     }
 
-    return this.formatProfile(profile);
+    const formatted = this.formatProfile(profile);
+    try {
+      await this.cacheService.set(cacheKey, formatted, 45 * 1000);
+    } catch {
+      // non critique
+    }
+    return formatted;
   }
 
   /**
@@ -225,6 +260,9 @@ export class IdentityProfileService {
 
     // Synchroniser avec SchoolSettings pour rétrocompatibilité
     await this.syncToSchoolSettings(tenantId, newProfile);
+
+    // ⭐ FIX CAPACITÉ — le profil actif vient de changer → purge immédiate du cache
+    await this.invalidateIdentityCache(tenantId);
 
     return this.formatProfile(newProfile);
   }

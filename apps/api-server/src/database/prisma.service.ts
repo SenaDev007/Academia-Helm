@@ -88,16 +88,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     // Taille du pool :
     // - PGPOOL_MAX (env) : override explicite
-    // - Neon pooler : 20 connexions clientes — le pooler Neon (PgBouncer
-    //   managé) multiplexe côté serveur, monter le pool client ne consomme
-    //   PAS de connexions serveur supplémentaires. Dimensionné pour 20-50
-    //   utilisateurs simultanés × (garde + service + intercepteur) — AVANT
-    //   10 connexions → file d'attente dès ~8-10 utilisateurs actifs.
+    // - Neon pooler : 40 connexions clientes — le pooler Neon (PgBouncer
+    //   managé) MULTIPLEXE côté serveur : monter le pool client ne consomme
+    //   PAS de connexions serveur supplémentaires. 20 → 40 (FIX CAPACITÉ
+    //   20/50/100 écoles) : test de charge à 100 utilisateurs simultanés =
+    //   file d'attente visible sur les endpoints multi-requêtes (p95 9 s) ;
+    //   la base elle-même restait fluide (SELECT 1 dédié stable à 169 ms) →
+    //   la file se formait côté application, pool 20 en tête.
     // - Neon direct : 10 (sans pooler, chaque socket = 1 connexion serveur ;
     //   max_connections Neon ≈ 900 → 10 reste prudent)
     // - Local dev : 10
     const envPoolMax = parseInt(process.env.PGPOOL_MAX || '', 10);
-    const defaultPoolMax = effectiveIsPooler ? 20 : isNeon ? 10 : 10;
+    const defaultPoolMax = effectiveIsPooler ? 40 : isNeon ? 10 : 10;
     const poolMax = Number.isFinite(envPoolMax) && envPoolMax > 0 ? envPoolMax : defaultPoolMax;
 
     const poolConfig: any = {

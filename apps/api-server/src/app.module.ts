@@ -100,6 +100,7 @@ import { SchoolLevelIsolationGuard } from './common/guards/school-level-isolatio
 import { AcademicYearEnforcementGuard } from './common/guards/academic-year-enforcement.guard';
 import { TenantSuspensionGuard } from './common/guards/tenant-suspension.guard';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { ConcurrentConnectionInterceptor } from './common/interceptors/concurrent-connection.interceptor';
 import { ContextInterceptor } from './common/interceptors/context.interceptor';
 import { SchoolLevelEnforcementInterceptor } from './common/interceptors/school-level-enforcement.interceptor';
 import { AcademicYearEnforcementInterceptor } from './common/interceptors/academic-year-enforcement.interceptor';
@@ -393,6 +394,15 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     {
       provide: APP_GUARD,
       useClass: SmartThrottlerGuard, // Rate limiting global — bucket par UTILISATEUR authentifié (fix concurrence multi-tenant)
+    },
+    {
+      // ⭐ CAPACITÉ 20/50/100 ÉCOLES — limiteur « 20 connexions simultanées »
+      //    par utilisateur : max 20 requêtes EN TRAITEMENT (40 pour les routes
+      //    publiques par IP), file d'attente FIFO (≤ 10 s) pour les rafales
+      //    légitimes de dashboard, 429 uniquement en cas d'abus réel.
+      //    Premier interceptor = enveloppe tout le traitement HTTP.
+      provide: APP_INTERCEPTOR,
+      useClass: ConcurrentConnectionInterceptor, // Sémaphore concurrence par utilisateur
     },
     {
       provide: APP_INTERCEPTOR,

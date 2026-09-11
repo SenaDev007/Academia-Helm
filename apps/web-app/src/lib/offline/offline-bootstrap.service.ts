@@ -14,6 +14,7 @@ import { localDb } from './local-db.service';
 import { syncEngine } from './sync-engine.service';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { OfflineSecurityService } from './offline-security.service';
+import { invalidateActiveYearCache } from './offline-fetch';
 
 const BOOTSTRAP_API = '/api/sync/bootstrap';
 
@@ -72,6 +73,13 @@ class OfflineBootstrapService {
 
     try {
       console.log('[Bootstrap] Starting initial offline initialization...');
+
+      // ⭐ TENANT-STRICT (sept. 2026) : si un AUTRE tenant a déjà bootstrappé
+      //    cet appareil, on purge TOUTES ses données locales avant de remplir
+      //    le cache du nouveau tenant. Sans cela, un appareil partagé entre
+      //    deux écoles gardait les données de l'ancienne école servables en
+      //    offline pour la nouvelle (fuite cross-tenant).
+      await this.purgeIfTenantChanged(tenantId);
 
       // Demander la persistance du stockage pour éviter que le navigateur n'évince IndexedDB
       await this.requestPersistentStorage();
@@ -276,26 +284,94 @@ class OfflineBootstrapService {
   }
 
   /**
+   * ⭐ TENANT-STRICT (sept. 2026) : appelé au MONTAGE de l'app (avant même le
+   *    check du flag de bootstrap). Si le cache local appartient à une AUTRE
+   *    école que celle connectée → purge totale + invalidation des flags de
+   *    bootstrap (le tenant courant repartira sur un bootstrap complet).
+   *    Léger : une seule lecture IDB (`local_tenant_context`) en cas nominal.
+   */
+  async ensureTenantCacheCoherence(tenantId: string): Promise<void> {
+    try {
+      const contexts = await localDb.query<{ id?: string }>('local_tenant_context');
+      const lastTenantId = contexts[0]?.id;
+      if (!lastTenantId) return; // Aucun cache → rien à faire
+      if (String(lastTenantId) === String(tenantId)) return; // Cache cohérent
+
+      console.warn(
+        `[Bootstrap] Cache local d'une autre école détecté (${String(lastTenantId).substring(0, 8)}… ≠ ${tenantId.substring(0, 8)}…) — purge + re-bootstrap`
+      );
+      await localDb.clearAllStores();
+      invalidateActiveYearCache();
+      try {
+        localStorage.removeItem(`academia_helm_bootstrapped_${lastTenantId}`);
+        localStorage.removeItem(`academia_helm_bootstrapped_${tenantId}`);
+      } catch { /* non-bloquant */ }
+      localStorage.removeItem('offline_ready');
+    } catch (error) {
+      console.warn('[Bootstrap] ensureTenantCacheCoherence failed (non-blocking):', (error as Error).message);
+    }
+  }
+
+  /**
+   * ⭐ TENANT-STRICT (sept. 2026) : purge les données locales si le tenant qui
+   *    bootstrap DIFFÈRE du dernier tenant bootstrappé sur cet appareil.
+   *    Comparaison via le store `local_tenant_context` (écrit à chaque
+   *    bootstrap réussi). Retourne true si une purge a eu lieu.
+   */
+  private async purgeIfTenantChanged(tenantId: string): Promise<boolean> {
+    try {
+      const contexts = await localDb.query<{ id?: string }>('local_tenant_context');
+      const lastTenantId = contexts[0]?.id;
+      if (!lastTenantId || String(lastTenantId) === String(tenantId)) {
+        return false;
+      }
+      console.warn(
+        `[Bootstrap] Changement de tenant détecté (${String(lastTenantId).substring(0, 8)}… → ${tenantId.substring(0, 8)}…) — purge complète du cache local de l'ancienne école`
+      );
+      // Purge TOTALE : stores métier + techniques (outbox/sync_state de l'ancien
+      // tenant inclus — le serveur filtrerait de toute façon par JWT, mais on
+      // ne garde rien de l'ancienne école sur l'appareil)
+      await localDb.clearAllStores();
+      invalidateActiveYearCache();
+      // Le flag localStorage du bootstrap de l'ANCIEN tenant est sans objet :
+      // le nouveau tenant repartira d'un bootstrap complet.
+      try {
+        localStorage.removeItem(`academia_helm_bootstrapped_${lastTenantId}`);
+      } catch { /* non-bloquant */ }
+      return true;
+    } catch (error) {
+      console.warn('[Bootstrap] purgeIfTenantChanged failed (non-blocking):', (error as Error).message);
+      return false;
+    }
+  }
+
+  /**
    * Efface le cache local (Section 20.2)
    * Appelé lors d'une déconnexion explicite ou d'une violation de sécurité.
+   * ⭐ TENANT-STRICT (sept. 2026) : purge désormais TOTALE (stores métier +
+   *    techniques) — les données de l'école ne restent pas sur l'appareil
+   *    après une déconnexion. Les flags localStorage « bootstrapped » sont
+   *    AUSSI retirés (sinon un re-login du même tenant ne re-bootstraperait
+   *    pas et l'app resterait offline-vide).
    */
   async clearCache(): Promise<void> {
-    const technicalStores = [
-      'user_profile_cache',
-      'roles_cache',
-      'permissions_cache',
-      'local_tenant_context',
-      'local_academic_year',
-      'local_academic_term',
-      'sync_state',
-    ];
-
-    for (const store of technicalStores) {
-      await localDb.clearStore(store);
-    }
+    await localDb.clearAllStores();
+      invalidateActiveYearCache();
 
     localStorage.removeItem('offline_ready');
     localStorage.removeItem('last_bootstrap_at');
+    // ⭐ Retirer TOUS les flags de bootstrap (tous tenants confondus —
+    //    le cache IDB étant vidé, aucun ne doit rester 'true')
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('academia_helm_bootstrapped_')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((key) => localStorage.removeItem(key));
+    } catch { /* non-bloquant */ }
     console.log('[Security] Local offline cache cleared.');
   }
 }

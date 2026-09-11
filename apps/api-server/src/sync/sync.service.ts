@@ -147,6 +147,16 @@ export class SyncService implements OnModuleInit {
 
     this.logger.log(`Pull request: tables=${dto.tables?.length || 'all'}, lastSync=${lastSyncAt ? 'delta' : 'initial'}, tenant=${tenantId}`);
 
+    // ⭐ ANNÉE SCOLAIRE STRICTE (sept. 2026) : le cache offline ne doit contenir
+    //    QUE les données de l'année ACTIVE du tenant. Les années antérieures
+    //    restent consultables EN LIGNE uniquement (promoteur/directeur inclus)
+    //    via les endpoints métier classiques — elles ne transitent jamais par
+    //    la sync offline pour ne pas alourdir IndexedDB.
+    const activeAcademicYearId = await this.getActiveAcademicYearId(tenantId);
+    if (activeAcademicYearId) {
+      this.logger.log(`Pull: filtrage année scolaire active (${activeAcademicYearId}) — données antérieures exclues du cache offline`);
+    }
+
     // ⭐ Whitelist : on ne sync que les tables autorisées
     await this.ensureCacheFresh();
     const allSyncableTables = await this.getTableNames();
@@ -165,6 +175,7 @@ export class SyncService implements OnModuleInit {
         tableCount: 0,
         entities: {},
         tables: {},
+        academicYearId: activeAcademicYearId,
         stats: { totalEntities: 0, tableCount: 0 },
       };
     }
@@ -192,7 +203,14 @@ export class SyncService implements OnModuleInit {
             return { tableName, records: [] };
           }
           try {
-            const records = await this.pullTableFast(tableName, lastSyncAt, limit, tenantId, columnMap);
+            const records = await this.pullTableFast(
+              tableName,
+              lastSyncAt,
+              limit,
+              tenantId,
+              columnMap,
+              activeAcademicYearId,
+            );
             return { tableName, records };
           } catch (error) {
             this.logger.warn(`Pull failed for table ${tableName}: ${error.message}`);
@@ -221,6 +239,7 @@ export class SyncService implements OnModuleInit {
       syncToken: `sync-${Date.now()}`,
       totalRecords,
       tableCount: Object.keys(serializedResults).length,
+      academicYearId: activeAcademicYearId,
       entities: serializedResults,
       tables: serializedResults, // rétro-compat Tauri/Flutter
       stats: {
@@ -234,23 +253,29 @@ export class SyncService implements OnModuleInit {
   /// ⭐ Utilise $queryRawUnsafe avec une IN-clause construite via escapeSql
   ///    (les noms de tables viennent de getTableNames qui lit information_schema,
   ///    donc pas d'injection possible — les noms sont déjà validés par Postgres)
-  private async buildColumnMap(tables: string[]): Promise<Map<string, Set<string>>> {
-    const map = new Map<string, Set<string>>();
+  /// ⭐ Map<colonne → data_type> par table : permet de caster les paramètres
+  ///    bindés selon le type RÉEL de la colonne. La BDD mélange :
+  ///    tenantId=text(538)+varchar(1), tenant_id=text(18)+uuid(1),
+  ///    academicYearId=text(311), updatedAt=timestamp(467)/timestamptz(10).
+  ///    Un cast fixe `::text::uuid` échoue sur les colonnes text (operator
+  ///    text = uuid does not exist) — d'où la résolution dynamique.
+  private async buildColumnMap(tables: string[]): Promise<Map<string, Map<string, string>>> {
+    const map = new Map<string, Map<string, string>>();
     if (tables.length === 0) return map;
 
     try {
       const inClause = tables.map(t => `'${this.escapeSql(t)}'`).join(',');
       const query = `
-        SELECT table_name, column_name
+        SELECT table_name, column_name, data_type
         FROM information_schema.columns
         WHERE table_schema = 'public'
           AND table_name IN (${inClause})
         ORDER BY table_name, ordinal_position
       `;
-      const result = await this.prisma.$queryRawUnsafe<{ table_name: string; column_name: string }[]>(query);
+      const result = await this.prisma.$queryRawUnsafe<{ table_name: string; column_name: string; data_type: string }[]>(query);
       for (const row of result) {
-        if (!map.has(row.table_name)) map.set(row.table_name, new Set());
-        map.get(row.table_name)!.add(row.column_name);
+        if (!map.has(row.table_name)) map.set(row.table_name, new Map());
+        map.get(row.table_name)!.set(row.column_name, row.data_type);
       }
     } catch (err) {
       this.logger.warn(`buildColumnMap failed: ${err.message}`);
@@ -258,18 +283,91 @@ export class SyncService implements OnModuleInit {
     return map;
   }
 
+  /// ⭐ Suffixe de cast pour un paramètre bindé string vers le type réel de
+  ///    la colonne ("" = pas de cast : text/varchar comparent nativement).
+  private castSuffix(dataType: string | undefined): string {
+    switch (dataType) {
+      case 'uuid':
+        return '::text::uuid';
+      case 'timestamp with time zone':
+        return '::text::timestamptz';
+      case 'timestamp without time zone':
+        return '::text::timestamp';
+      default:
+        return ''; // text, character varying — comparaison directe
+    }
+  }
+
+  /// ⭐ RÉSOLUTION DE COLONNE — la BDD mélange DEUX conventions :
+  ///    - camelCase (Prisma historique) : "tenantId", "updatedAt", "academicYearId"
+  ///      → 539 tables tenantId, 477 updatedAt, 311 academicYearId
+  ///    - snake_case (migrations récentes @map) : "tenant_id", "updated_at",
+  ///      "academic_year_id" → ~19-20 tables
+  ///    AVANT (bug critique) : pullTableFast testait UNIQUEMENT 'tenant_id' et
+  ///    'updated_at' → pour ~520 tables camelCase, AUCUN filtre tenant n'était
+  ///    appliqué (le pull renvoyait les données de TOUS les tenants) et AUCUN
+  ///    delta incrémental (re-téléchargement complet à chaque sync).
+  ///    MAINTENANT : on résout la vraie colonne de la table via information_schema.
+  private resolveColumn(cols: Set<string>, candidates: string[]): string | null {
+    for (const candidate of candidates) {
+      if (cols.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  /// ⭐ ANNÉE SCOLAIRE ACTIVE du tenant (tenantId du JWT, jamais du body).
+  ///    Sert au filtrage année-strict du pull : seul le cache de l'année
+  ///    active est téléchargé offline. Null si aucune année active.
+  private async getActiveAcademicYearId(tenantId: string): Promise<string | null> {
+    try {
+      // ⚠️ tenantId de academic_years est de type TEXT (schéma Prisma historique)
+      //    → comparaison directe SANS cast uuid (text = uuid → erreur Postgres)
+      const rows = await this.prisma.$queryRawUnsafe<{ id: string }[]>(`
+        SELECT id FROM "academic_years"
+        WHERE "tenantId" = $1 AND "isActive" = true
+        ORDER BY "startDate" DESC
+        LIMIT 1
+      `, tenantId);
+      return rows && rows.length > 0 ? rows[0].id : null;
+    } catch (err) {
+      // Colonnes snake_case (migrations récentes) ou table absente → fallback
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<{ id: string }[]>(`
+          SELECT id FROM "academic_years"
+          WHERE tenant_id = $1 AND is_active = true
+          ORDER BY start_date DESC
+          LIMIT 1
+        `, tenantId);
+        return rows && rows.length > 0 ? rows[0].id : null;
+      } catch {
+        this.logger.warn(`getActiveAcademicYearId failed: ${err.message}`);
+        return null;
+      }
+    }
+  }
+
   /// Version optimisée de pullTable
   /// ⭐ SÉCURITÉ : le tenantId est bindé en paramètre ($1), pas interpolé
+  /// ⭐ TENANT-STRICT + ANNÉE-STRICT + DELTA :
+  ///    - WHERE <colonne tenant réelle> = tenantId (JWT) — quel que soit le
+  ///      format de colonne (camelCase Prisma historique OU snake_case @map)
+  ///    - AND (<colonne année réelle> = activeYearId OR IS NULL) — l'année
+  ///      active SEULEMENT en cache offline ; NULL = données transverses
+  ///    - AND <colonne updated réelle> > lastSyncAt (delta incrémental)
   private async pullTableFast(
     tableName: string,
     lastSyncAt: string | undefined,
     limit: number,
     tenantId: string,
-    columnMap: Map<string, Set<string>>,
+    columnMap: Map<string, Map<string, string>>,
+    activeAcademicYearId: string | null,
   ) {
-    const cols = columnMap.get(tableName) ?? new Set<string>();
-    const hasUpdatedAt = cols.has('updated_at');
-    const hasTenantId = cols.has('tenant_id');
+    const cols = columnMap.get(tableName) ?? new Map<string, string>();
+
+    // ⭐ Résolution des VRAIES colonnes (camelCase OU snake_case selon la table)
+    const tenantCol = this.resolveColumn(cols, ['tenant_id', 'tenantId']);
+    const updatedCol = this.resolveColumn(cols, ['updated_at', 'updatedAt']);
+    const academicYearCol = this.resolveColumn(cols, ['academic_year_id', 'academicYearId']);
 
     // ⭐ Construction avec paramètres bindés pour éviter l'injection SQL
     const params: any[] = [];
@@ -277,20 +375,32 @@ export class SyncService implements OnModuleInit {
     let query = `SELECT * FROM "${tableName}"`;
     const conditions: string[] = [];
 
-    if (lastSyncAt && hasUpdatedAt) {
-      conditions.push(`"updated_at" > $${paramIdx++}`);
-      params.push(lastSyncAt);
-    }
-    if (hasTenantId) {
-      // ⭐ Filtrage STRICT par tenant_id (bindé en paramètre)
-      conditions.push(`"tenant_id" = $${paramIdx++}::text::uuid`);
+    // TENANT-STRICT : toujours filtrer par le tenant du JWT quand la colonne existe
+    if (tenantCol) {
+      const cast = this.castSuffix(cols.get(tenantCol));
+      conditions.push(`"${tenantCol}" = $${paramIdx++}${cast}`);
       params.push(tenantId);
     }
+
+    // ANNÉE-STRICT : uniquement l'année active (NULL = données transverses acceptées)
+    if (academicYearCol && activeAcademicYearId) {
+      const cast = this.castSuffix(cols.get(academicYearCol));
+      conditions.push(`("${academicYearCol}" = $${paramIdx++}${cast} OR "${academicYearCol}" IS NULL)`);
+      params.push(activeAcademicYearId);
+    }
+
+    // DELTA incrémental : ne renvoyer que ce qui a changé depuis la dernière sync
+    if (lastSyncAt && updatedCol) {
+      const cast = this.castSuffix(cols.get(updatedCol));
+      conditions.push(`"${updatedCol}" > $${paramIdx++}${cast}`);
+      params.push(lastSyncAt);
+    }
+
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    if (hasUpdatedAt) {
-      query += ' ORDER BY "updated_at" DESC';
+    if (updatedCol) {
+      query += ` ORDER BY "${updatedCol}" DESC`;
     }
     // ⭐ LIMIT en paramètre bindé (sécurité + clarté)
     query += ` LIMIT $${paramIdx++}`;
@@ -335,6 +445,13 @@ export class SyncService implements OnModuleInit {
     // ⭐ Whitelist des tables syncables
     await this.ensureCacheFresh();
 
+    // ⭐ Résolution des colonnes réelles pour les tables concernées par le push
+    //    (camelCase Prisma OU snake_case @map selon la table — cf. pullTableFast)
+    const pushTableNames = Array.from(new Set(
+      records.map((r) => r.tableName).filter((t) => t && this.syncableTablesCache.has(t))
+    ));
+    const pushColumnMap = await this.buildColumnMap(pushTableNames);
+
     const results: Array<{
       operation_id?: string;
       tableName: string;
@@ -375,7 +492,7 @@ export class SyncService implements OnModuleInit {
         }
 
         // ⭐ Appliquer l'écriture (avec injection du tenantId JWT)
-        await this.applyRecord(record, effectiveTenantId);
+        await this.applyRecord(record, effectiveTenantId, pushColumnMap);
 
         // ⭐ Enregistrer le local_id dans _sync_outbox pour l'idempotence future
         if (localId) {
@@ -580,7 +697,7 @@ export class SyncService implements OnModuleInit {
     operation: string;
     data: Record<string, any>;
     clientTimestamp: string;
-  }, jwtTenantId: string) {
+  }, jwtTenantId: string, columnMap?: Map<string, Map<string, string>>) {
     const { tableName, recordId, operation, data } = record;
 
     if (this.EXCLUDED_TABLES.has(tableName)) {
@@ -592,13 +709,13 @@ export class SyncService implements OnModuleInit {
 
     switch (operation) {
       case 'INSERT':
-        return this.applyInsert(tableName, data, jwtTenantId);
+        return this.applyInsert(tableName, data, jwtTenantId, columnMap);
 
       case 'UPDATE':
-        return this.applyUpdate(tableName, recordId, data, jwtTenantId);
+        return this.applyUpdate(tableName, recordId, data, jwtTenantId, columnMap);
 
       case 'DELETE':
-        return this.applyDelete(tableName, recordId, jwtTenantId);
+        return this.applyDelete(tableName, recordId, jwtTenantId, columnMap);
 
       default:
         throw new Error(`Unknown operation: ${operation}`);
@@ -606,16 +723,23 @@ export class SyncService implements OnModuleInit {
   }
 
   /// INSERT : insère un nouvel enregistrement
-  /// ⭐ SÉCURITÉ : injecte `tenantId` (camelCase) et `tenant_id` (snake_case)
-  ///    dans le payload, en écrasant toute valeur envoyée par le client.
+  /// ⭐ SÉCURITÉ : injecte le tenantId JWT dans la/les colonne(s) tenant que
+  ///    la table possède RÉELLEMENT (camelCase « tenantId » OU snake_case
+  ///    « tenant_id »), en écrasant toute valeur envoyée par le client.
   ///    → un client malveillant ne peut PAS créer un record chez un autre tenant
-  private async applyInsert(tableName: string, data: Record<string, any>, jwtTenantId: string) {
-    // ⭐ Forger un payload safe : écraser tenantId/tenant_id avec la valeur JWT
-    const safeData = {
-      ...data,
-      tenantId: jwtTenantId,   // camelCase (Prisma)
-      tenant_id: jwtTenantId,  // snake_case (raw SQL)
-    };
+  ///    → AVANT : les DEUX colonnes étaient injectées d'office → INSERT en
+  ///      erreur pour toute table n'ayant qu'un seul des deux formats.
+  private async applyInsert(
+    tableName: string,
+    data: Record<string, any>,
+    jwtTenantId: string,
+    columnMap?: Map<string, Map<string, string>>,
+  ) {
+    const cols = columnMap?.get(tableName) ?? new Map<string, string>();
+    // ⭐ Forger un payload safe : écraser la colonne tenant avec la valeur JWT
+    const safeData: Record<string, any> = { ...data };
+    if (cols.size === 0 || cols.has('tenantId')) safeData.tenantId = jwtTenantId;
+    if (cols.size === 0 || cols.has('tenant_id')) safeData.tenant_id = jwtTenantId;
 
     const columns = Object.keys(safeData).map(c => `"${c}"`);
     const values = Object.values(safeData);
@@ -629,7 +753,13 @@ export class SyncService implements OnModuleInit {
   /// UPDATE : met à jour un enregistrement existant
   /// ⭐ SÉCURITÉ : la clause WHERE inclut `tenant_id = $jwt` (ou `tenantId = $jwt`)
   ///    → un client ne peut PAS modifier un record d'un autre tenant
-  private async applyUpdate(tableName: string, recordId: string, data: Record<string, any>, jwtTenantId: string) {
+  private async applyUpdate(
+    tableName: string,
+    recordId: string,
+    data: Record<string, any>,
+    jwtTenantId: string,
+    columnMap?: Map<string, Map<string, string>>,
+  ) {
     // ⭐ Stripping du tenantId du payload (on ne peut pas changer de tenant via UPDATE)
     const safeData = { ...data };
     delete safeData.tenantId;
@@ -649,19 +779,39 @@ export class SyncService implements OnModuleInit {
       params.push(value);
     }
 
-    // ⭐ Clause WHERE : id = $X AND tenant_id = $Y (sécurité multi-tenant)
-    //    On essaie tenant_id (snake_case) en premier, puis tenantId (camelCase)
+    // ⭐ Clause WHERE : id = $X AND <colonne tenant réelle> = $Y
+    //    (sécurité multi-tenant — camelCase OU snake_case selon la table ;
+    //    AVANT : WHERE (tenant_id = $ OR tenantId = $) → erreur SQL « column
+    //    does not exist » pour toute table n'ayant qu'un seul des formats)
+    const cols = columnMap?.get(tableName) ?? new Map<string, string>();
+    const tenantCol = this.resolveColumn(cols, ['tenant_id', 'tenantId']);
+    if (!tenantCol) {
+      // Table sans colonne tenant (référentiel partagé) : WHERE id seul
+      const whereIdParam = paramIdx++;
+      params.push(recordId);
+      const query = `
+        UPDATE "${tableName}"
+        SET ${setClauses.join(', ')}
+        WHERE "id" = $${whereIdParam}
+      `;
+      const resultNoTenant = await this.prisma.$executeRawUnsafe(query, ...params);
+      if (resultNoTenant === 0) {
+        throw new Error(`Record ${recordId} not found in ${tableName}`);
+      }
+      return;
+    }
+
     const whereIdParam = paramIdx++;
     params.push(recordId);
     const whereTenantParam = paramIdx++;
     params.push(jwtTenantId);
+    const tenantCast = this.castSuffix(cols.get(tenantCol));
 
     const query = `
       UPDATE "${tableName}"
       SET ${setClauses.join(', ')}
       WHERE "id" = $${whereIdParam}
-        AND ("tenant_id" = $${whereTenantParam}::text::uuid
-             OR "tenantId" = $${whereTenantParam}::text::uuid)
+        AND "${tenantCol}" = $${whereTenantParam}${tenantCast}
     `;
 
     const result = await this.prisma.$executeRawUnsafe(query, ...params);
@@ -683,13 +833,27 @@ export class SyncService implements OnModuleInit {
 
   /// DELETE : supprime un enregistrement
   /// ⭐ SÉCURITÉ : la clause WHERE inclut `tenant_id = $jwt`
-  private async applyDelete(tableName: string, recordId: string, jwtTenantId: string) {
-    const query = `
+  private async applyDelete(
+    tableName: string,
+    recordId: string,
+    jwtTenantId: string,
+    columnMap?: Map<string, Map<string, string>>,
+  ) {
+    // ⭐ Clause WHERE selon la colonne tenant RÉELLE de la table
+    //    (AVANT : OR sur les 2 formats → erreur SQL pour les tables mono-format)
+    const cols = columnMap?.get(tableName) ?? new Map<string, string>();
+    const tenantCol = this.resolveColumn(cols, ['tenant_id', 'tenantId']);
+    const query = tenantCol
+      ? `
       DELETE FROM "${tableName}"
       WHERE "id" = $1
-        AND ("tenant_id" = $2::text::uuid
-             OR "tenantId" = $2::text::uuid)
+        AND "${tenantCol}" = $2${this.castSuffix(cols.get(tenantCol))}
+    `
+      : `
+      DELETE FROM "${tableName}"
+      WHERE "id" = $1
     `;
+
     const result = await this.prisma.$executeRawUnsafe(query, recordId, jwtTenantId);
     if (result === 0) {
       const exists = await this.prisma.$queryRawUnsafe(

@@ -234,6 +234,13 @@ export function clearClientSessionSync(): void {
   try {
     sessionStorage.setItem('academia_just_logged_out', Date.now().toString());
   } catch { /* sessionStorage peut être indisponible en mode privé */ }
+
+  // ⭐ TENANT-STRICT (sept. 2026) : purge du cache IndexedDB de l'école sur
+  //    déconnexion — les données offline ne restent PAS sur un appareil partagé.
+  //    Import dynamique asynchrone (non bloquant, pas de cycle de dépendances).
+  import('@/lib/offline/offline-bootstrap.service')
+    .then(({ offlineBootstrapService }) => offlineBootstrapService.clearCache())
+    .catch(() => { /* non-bloquant */ });
 }
 
 /**

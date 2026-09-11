@@ -894,7 +894,7 @@ class LocalDbService {
   async clearStore(storeName: string): Promise<void> {
     await this.ensureInitialized();
     if (!this.db.objectStoreNames.contains(storeName)) return;
-    
+
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([storeName], 'readwrite');
       const store = transaction.objectStore(storeName);
@@ -902,6 +902,30 @@ class LocalDbService {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * ⭐ PURGE TOTALE (sept. 2026 — tenant-strict) : vide TOUS les object stores
+   *    de la base locale. Utilisé :
+   *    - au changement d'école (tenant) : les données de l'ancien tenant ne
+   *      doivent JAMAIS rester servables offline au nouveau tenant ;
+   *    - à la déconnexion : les données de l'école quittent l'appareil.
+   *    Exception par défaut : `schema_version` (métadonnée de migration IDB).
+   */
+  async clearAllStores(except: string[] = ['schema_version']): Promise<void> {
+    await this.ensureInitialized();
+    const names = Array.from(this.db.objectStoreNames as unknown as string[]);
+    let cleared = 0;
+    for (const name of names) {
+      if (except.includes(name)) continue;
+      try {
+        await this.clearStore(name);
+        cleared++;
+      } catch {
+        // Non-bloquant — on continue la purge des autres stores
+      }
+    }
+    console.log(`[LocalDB] Purge totale : ${cleared}/${names.length} stores vidés (conservés : ${except.join(', ')})`);
   }
 }
 

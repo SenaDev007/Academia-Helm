@@ -171,34 +171,59 @@ export default function AppLayoutClient({
   //    ⭐ FIX (sept. 2026) : le flag « déjà bootstrapé » n'est posé qu'APRÈS le
   //    succès du téléchargement. Avant : posé au démarrage → si le bootstrap
   //    échouait (réseau instable, onglet fermé), il n'était JAMAIS retenté.
+  //    ⭐ TENANT-STRICT (sept. 2026) : avant tout, vérifier que le cache local
+  //    appartient bien à l'école connectée. Si un utilisateur d'une AUTRE école
+  //    s'était connecté sur cet appareil, on purge son cache (aucune donnée
+  //    cross-tenant ne doit rester servable offline) et on relance un bootstrap
+  //    complet pour l'école courante.
   useEffect(() => {
     if (!tenant?.id) return;
-    const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
-    if (localStorage.getItem(bootstrapKey) === 'true') return;
-    const bootstrapTimer = setTimeout(() => {
-      import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
-        // ⭐ Flag posé SEULEMENT après un bootstrap réussi (sinon retry au prochain mount)
-        offlineSyncService.bootstrap(tenant.id).then((ok) => {
-          if (ok) {
-            localStorage.setItem(bootstrapKey, 'true');
-          } else {
-            console.warn('[Bootstrap] Échec — le bootstrap sera retenté au prochain chargement');
-          }
+    let cancelled = false;
+    let bootstrapTimer: ReturnType<typeof setTimeout> | null = null;
+
+    (async () => {
+      // 1. Cohérence tenant du cache local (lecture légère IDB ; purge si autre école)
+      try {
+        const { offlineBootstrapService } = await import('@/lib/offline/offline-bootstrap.service');
+        await offlineBootstrapService.ensureTenantCacheCoherence(tenant.id);
+      } catch (err) {
+        console.warn('[Bootstrap] Tenant coherence check failed:', err);
+      }
+      if (cancelled) return;
+
+      // 2. Bootstrap si pas encore fait pour CE tenant
+      const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
+      if (localStorage.getItem(bootstrapKey) === 'true') return;
+      bootstrapTimer = setTimeout(() => {
+        import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
+          // ⭐ Flag posé SEULEMENT après un bootstrap réussi (sinon retry au prochain mount)
+          offlineSyncService.bootstrap(tenant.id).then((ok) => {
+            if (ok) {
+              localStorage.setItem(bootstrapKey, 'true');
+            } else {
+              console.warn('[Bootstrap] Échec — le bootstrap sera retenté au prochain chargement');
+            }
+          });
+        }).catch((err) => {
+          console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
         });
-      }).catch((err) => {
-        console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
-      });
-      import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
-        precacheAllModules((current, total) => {
-          if (current % 10 === 0 || current === total) {
-            console.log(`[ModulePrecache] Progress: ${current}/${total}`);
-          }
+        import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
+          precacheAllModules((current, total) => {
+            if (current % 10 === 0 || current === total) {
+              console.log(`[ModulePrecache] Progress: ${current}/${total}`);
+            }
+          });
+        }).catch((err) => {
+          console.warn('[ModulePrecache] Failed to start:', err);
         });
-      }).catch((err) => {
-        console.warn('[ModulePrecache] Failed to start:', err);
-      });
-    }, 5000);
-    return () => clearTimeout(bootstrapTimer);
+      }, 5000);
+    })();
+
+    // Cleanup : annule le flag ET le timer de bootstrap (IIFE async)
+    return () => {
+      cancelled = true;
+      if (bootstrapTimer) clearTimeout(bootstrapTimer);
+    };
   }, [tenant?.id]);
 
   return (

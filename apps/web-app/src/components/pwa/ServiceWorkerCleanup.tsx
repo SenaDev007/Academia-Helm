@@ -35,15 +35,17 @@ export function ServiceWorkerCleanup() {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const registration of registrations) {
           const swUrl = registration.active?.scriptURL || '';
-          // Unregister Workbox-based SWs (old PWA) and stale sw.js registrations
-          // — mais PAS notre nouveau /sw.js de Web Push (qui gère push + notificationclick)
-          // On vérifie que ce n'est pas le sw.js à la racine du domaine (notre SW push)
-          const isOurPushSW = /\/sw\.js(\?.*)?$/.test(swUrl) && !swUrl.includes('/workbox');
-          if (isOurPushSW) {
-            // Notre SW push — ne pas supprimer
+          // ⭐ V3 (sept. 2026) : UN SEUL SW légitime — /sw.js à la racine
+          //    (web push + app-shell offline + background sync).
+          //    Tout le reste est legacy (workbox PWA, sw-offline.js, sw-site.js,
+          //    sw-chat.js) → unregister (stoppe le ping-pong d'enregistrements
+          //    concurrents au scope '/').
+          const isUnifiedSW = /\/sw\.js(\?.*)?$/.test(swUrl);
+          if (isUnifiedSW) {
+            // Notre SW unifié — ne pas supprimer
             continue;
           }
-          if (swUrl.includes('workbox') || swUrl.includes('sw.js')) {
+          if (swUrl) {
             console.log('[SW-Cleanup] Unregistering stale SW:', swUrl);
             await registration.unregister();
           }
@@ -54,7 +56,7 @@ export function ServiceWorkerCleanup() {
           const cacheNames = await caches.keys();
           const staleCaches = cacheNames.filter(
             (name) =>
-              !name.startsWith('ah-offline-') && // ⭐ Ne pas supprimer nos caches offline
+              !name.startsWith('ah-') && // ⭐ Ne pas supprimer nos caches (ah-static-*, ah-pages-*, ah-auth-token)
               !name.startsWith('academia-helm') && // ⭐ Ni les caches PWA
               (name.startsWith('local-') ||
                name.startsWith('workbox-precache') ||

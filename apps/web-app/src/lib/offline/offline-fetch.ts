@@ -170,16 +170,95 @@ async function networkFetch<T>(url: string, options: RequestInit = {}): Promise<
 }
 
 /**
+ * ⭐ ANNÉE SCOLAIRE STRICTE (sept. 2026) : année active du tenant, lue depuis
+ *    IndexedDB (store `local_academic_year` écrit par offline-bootstrap.service ;
+ *    fallback store `academicyear` écrit par le pull sync) avec cache mémoire
+ *    de 60 s pour éviter une lecture IDB à chaque requête offline.
+ *
+ *    En offline, on ne sert QUE les données de l'année active + les données
+ *    transverses (sans academicYearId : référentiels, niveaux…). Les années
+ *    antérieures — consultables EN LIGNE par le promoteur/directeur via les
+ *    endpoints métier classiques — ne sont ni synchronisées (le serveur filtre
+ *    le pull sur l'année active) ni servies depuis le cache local.
+ */
+let activeYearCache: { yearId: string | null; readAt: number } | null = null;
+const ACTIVE_YEAR_TTL_MS = 60_000;
+
+async function getActiveAcademicYearId(): Promise<string | null> {
+  if (activeYearCache && Date.now() - activeYearCache.readAt < ACTIVE_YEAR_TTL_MS) {
+    return activeYearCache.yearId;
+  }
+  let yearId: string | null = null;
+  try {
+    // Source 1 : store du bootstrap (local_academic_year)
+    const years = await localDb.query<{ id?: string }>('local_academic_year');
+    yearId = years[0]?.id ?? null;
+    if (!yearId) {
+      // Source 2 : store du pull sync (academicyear) — cherche isActive
+      const pulled = await localDb.query<{ id?: string; isActive?: boolean; is_active?: boolean }>('academicyear');
+      const active = pulled.find((y: any) => y.isActive === true || y.is_active === true);
+      yearId = active?.id ?? null;
+    }
+  } catch {
+    yearId = null;
+  }
+  activeYearCache = { yearId, readAt: Date.now() };
+  return yearId;
+}
+
+/** Invalide le cache d'année active (ex: changement d'année/d'école). */
+export function invalidateActiveYearCache(): void {
+  activeYearCache = null;
+}
+
+/**
  * Lecture depuis IndexedDB avec filtrage par tenant
+ * ⭐ TENANT-STRICT (sept. 2026) : le filtre accepte les DEUX conventions de
+ *    colonne rencontrées selon la provenance des données :
+ *    - `tenantId` (camelCase — données du pull sync, SELECT * sur colonnes
+ *      Prisma historiques, et enrichissement cacheResponse/prefetch)
+ *    - `tenant_id` (snake_case — 19 tables migrées @map, données du SW
+ *      background push)
+ *    Sans tenantId connu, on NE retourne PAS tout le store (fuite cross-tenant
+ *    possible) : on retourne les items dont la colonne tenant est ABSENTE
+ *    (référentiels partagés : pays, niveaux…) uniquement.
+ * ⭐ ANNÉE-STRICT : les items rattachés à une année scolaire ANTÉRIEURE ne
+ *    sont pas servis offline (l'année active seule + les données transverses).
  */
 async function localFallback<T>(storeName: string, tenantId?: string): Promise<T> {
   try {
     const allData = await localDb.query<T>(storeName);
 
-    // Filtrer par tenant et exclure les éléments supprimés localement
+    // Exclure les éléments supprimés localement
     let filtered = allData.filter((item: any) => !item._deleted);
+
+    // ⭐ TENANT-STRICT : déterminer le tenant de chaque item (camelCase OU snake_case)
+    const itemTenantOf = (item: any): string | null => {
+      const v = item.tenantId ?? item.tenant_id;
+      return v !== undefined && v !== null && v !== '' ? String(v) : null;
+    };
+
     if (tenantId) {
-      filtered = filtered.filter((item: any) => item.tenantId === tenantId);
+      // Item rattaché à un tenant → ne le servir QUE s'il s'agit du tenant courant
+      filtered = filtered.filter(
+        (item: any) => itemTenantOf(item) === null || itemTenantOf(item) === String(tenantId),
+      );
+    } else {
+      // ⭐ Sans tenant courant connu (session non réhydratée) : ne JAMAIS servir
+      //    de données rattachées à un tenant — référentiels partagés uniquement
+      //    (évite toute fuite cross-tenant avant résolution de la session)
+      filtered = filtered.filter((item: any) => itemTenantOf(item) === null);
+    }
+
+    // ⭐ ANNÉE-STRICT : exclure les données d'années antérieures (hors année active)
+    const activeYearId = await getActiveAcademicYearId();
+    if (activeYearId) {
+      filtered = filtered.filter((item: any) => {
+        const year = item.academicYearId ?? item.academic_year_id;
+        // Sans année (référentiel/donnée transverse) → accessible
+        if (year === undefined || year === null || year === '') return true;
+        return String(year) === String(activeYearId);
+      });
     }
 
     // Si les données sont un tableau, les retourner directement

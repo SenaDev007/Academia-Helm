@@ -2,11 +2,14 @@
 
 /**
  * ============================================================================
- * OFFLINE SW REGISTER — Enregistre le Service Worker offline-first
+ * OFFLINE SW REGISTER — Enregistre le Service Worker UNIFIÉ /sw.js
  * ============================================================================
  *
- * Enregistre /sw-offline.js qui met en cache les routes API et les assets
- * pour permettre le mode offline-first sur le navigateur web (Vercel).
+ * ⭐ V3 (sept. 2026) : le SW unifié /sw.js (scope '/') gère l'app-shell
+ *    offline pour /app/*, le background sync de l'outbox et le web push.
+ *    Ce composant complète UniversalSWRegister (layout racine) côté /app :
+ *    register() est idempotent — aucun risque de double enregistrement.
+ *    Les anciens SW (sw-offline.js…) sont désinstallés par UniversalSWRegister.
  *
  * Monté dans layout-client.tsx.
  * ============================================================================
@@ -23,35 +26,20 @@ export function OfflineSWRegister() {
     if (process.env.NODE_ENV === 'development') {
       const params = new URLSearchParams(window.location.search);
       if (params.get('sw') !== '1') return;
-      console.log('[SW] Dev mode: SW offline enabled via ?sw=1');
+      console.log('[SW] Dev mode: unified SW enabled via ?sw=1');
     }
 
-    // ⭐ Ne pas enregistrer si déjà enregistré
-    if (navigator.serviceWorker.controller) {
-      // Vérifier si c'est déjà le bon SW
-      const registrations = navigator.serviceWorker.getRegistrations();
-      registrations.then((regs) => {
-        const hasOfflineSW = regs.some((r) =>
-          r.active?.scriptURL?.includes('sw-offline.js')
-        );
-        if (!hasOfflineSW) {
-          registerSW();
-        }
-      });
-    } else {
-      registerSW();
-    }
-
-    function registerSW() {
-      navigator.serviceWorker
-        .register('/sw-offline.js', { scope: '/' })
-        .then((registration) => {
-          console.log('[SW] Offline service worker registered:', registration.scope);
-        })
-        .catch((err) => {
-          console.warn('[SW] Failed to register offline service worker:', err);
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/' })
+      .then((registration) => {
+        // Basculer immédiatement si une mise à jour du SW attend
+        registration.addEventListener('waiting', (event) => {
+          (event.target as any)?.postMessage?.({ type: 'SKIP_WAITING' });
         });
-    }
+      })
+      .catch((err) => {
+        console.warn('[SW] Failed to register unified service worker:', err);
+      });
   }, []);
 
   return null;

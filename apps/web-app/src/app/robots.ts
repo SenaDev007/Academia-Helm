@@ -52,7 +52,6 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
             '/upload-documents/',
             '/staff-card/',
             '/jobs/',
-            '/offline',
             '/error/',
             '/tenant-not-found',
             '/reactivate',

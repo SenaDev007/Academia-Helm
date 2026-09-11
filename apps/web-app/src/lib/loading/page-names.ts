@@ -52,7 +52,6 @@ export const PAGE_NAMES: Record<string, string> = {
   '/portal': 'Portail',
   '/tenant-not-found': 'Établissement introuvable',
   '/dashboard': 'Tableau de bord',
-  '/offline': 'Hors ligne',
   '/mobile/student': 'Espace Élève',
   '/mobile/parent': 'Espace Parent',
   '/admin': 'Administration',

@@ -158,7 +158,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const userId = this.socketToUser.get(client.id);
     if (userId) {
       this.socketToUser.delete(client.id);
@@ -167,14 +167,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sockets.delete(client.id);
         if (sockets.size === 0) {
           this.userSockets.delete(userId);
-          // L'utilisateur est maintenant hors-ligne — présence SCOPÉE au tenant
-          // (⭐ FIX PERF : avant, émise globalement à TOUS les sockets de
-          //  TOUS les tenants — O(N²) cross-tenant).
-          const tenantId = client.data?.tenantId;
-          if (tenantId) {
-            this.server.to(`tenant:${tenantId}`).emit('user:offline', { userId });
-          } else {
-            this.server.emit('user:offline', { userId });
+          // ⭐ MULTI-RÉPLICAS (adapter Redis) — vérification ADAPTER-AWARE
+          // avant d'émettre « user:offline » : la Map locale ne voit pas les
+          // connexions ouvertes sur d'autres réplicas (ex. mobile sur B).
+          // fetchSockets() interroge Redis si l'adapter Redis est actif
+          // (REMOTE_FETCH cross-réplicas ; in-memory → sockets locaux,
+          // comportement inchangé en mono-instance — allSockets() est
+          // déprécié et LOCAL-only avec le redis-adapter, ne pas utiliser).
+          // On exclut explicitement le socket en cours de déconnexion pour
+          // ne pas dépendre du timing de retrait de la room par socket.io.
+          const stillConnected = await this.server
+            .in(`user:${userId}`)
+            .fetchSockets()
+            .catch(() => []);
+          const others = stillConnected.filter((s) => s.id !== client.id);
+          if (others.length === 0) {
+            // L'utilisateur est maintenant hors-ligne — présence SCOPÉE au tenant
+            // (⭐ FIX PERF : avant, émise globalement à TOUS les sockets de
+            //  TOUS les tenants — O(N²) cross-tenant).
+            const tenantId = client.data?.tenantId;
+            if (tenantId) {
+              this.server.to(`tenant:${tenantId}`).emit('user:offline', { userId });
+            } else {
+              this.server.emit('user:offline', { userId });
+            }
           }
         }
       }
@@ -274,14 +290,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   /**
    * Vérifie si un utilisateur est en ligne (utile pour afficher le statut).
+   *
+   * ⭐ MULTI-RÉPLICAS (adapter Redis) : la Map userSockets est LOCALE à
+   * l'instance — elle ne voit pas les connexions ouvertes sur d'autres
+   * réplicas. On interroge donc la room `user:<id>` via fetchSockets(),
+   * ADAPTER-AWARE : in-memory → sockets locaux ; Redis → TOUS les réplicas
+   * (request REMOTE_FETCH + agrégation, cf. redis-adapter v8 — allSockets()
+   * est déprécié et LOCAL-only, ne pas l'utiliser ici).
    */
   @SubscribeMessage('user:check-online')
-  handleCheckOnline(
+  async handleCheckOnline(
     @MessageBody() data: { userId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    const isOnline = this.userSockets.has(data.userId);
-    return { userId: data.userId, isOnline };
+    const sockets = await this.server.in(`user:${data.userId}`).fetchSockets();
+    return { userId: data.userId, isOnline: sockets.length > 0 };
   }
 
   // ═════════════════════════════════════════════════════════════════

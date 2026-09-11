@@ -3,7 +3,7 @@ import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { json, urlencoded, static as expressStatic } from 'express';
 import { join } from 'path';
 import helmet from 'helmet';
-import { IoAdapter } from '@nestjs/platform-socket.io';
+import { createWebSocketAdapter } from './common/adapters/redis-io.adapter';
 import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { PrismaService } from './database/prisma.service';
@@ -134,7 +134,15 @@ async function bootstrap() {
   //    HTTP polling (every 5s) and never receive push events.
   //    This is what powers: message:new, typing:start/stop, user:online/offline,
   //    call:offer/answer/ice-candidate/reject/hangup, group-call:invite/leave.
-  app.useWebSocketAdapter(new IoAdapter(app));
+  //
+  // ⭐ CAPACITÉ 100 ÉCOLES — adapter REDIS (multi-réplicas) :
+  //    si REDIS_URL est défini, l'adapter Socket.io passe sur Redis
+  //    (rooms partagées + pub/sub cross-réplicas) — sinon IN-MEMORY comme
+  //    avant (fail-open : Redis indisponible au boot → fallback in-memory
+  //    + WARN, jamais de crash, cf. common/adapters/redis-io.adapter.ts).
+  //    Le jour du multi-réplicas : provisionner le plugin Redis Railway
+  //    (REDIS_URL) puis activer REDIS_ADAPTER_STRICT=true.
+  app.useWebSocketAdapter(await createWebSocketAdapter(app));
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -17,6 +17,15 @@
  *         → max 10 tentatives avant markAsFailed
  *       → puis runSync() (pull) si temps depuis dernier pull > 5 min
  *
+ * ⭐ UX SIMPLISTE (sept. 2026) :
+ *   - PUSH : petite PASTILLE discrète en bas-droite, SEULEMENT s'il y a
+ *     des modifications locales à envoyer (jamais de modal plein écran).
+ *   - PULL delta : 100% SILENCIEUX en arrière-plan — invisible si rien
+ *     n'a changé ; s'il a reçu des nouveautés, une mini pastille verte
+ *     « N mises à jour » s'affiche 3 s. Les reconnexions de routine
+ *     sont donc quasi instantanées et silencieuses.
+ *   - CONFLITS : le ConflictResolutionModal reste affiché (décision humaine).
+ *
  * SLA : 30 secondes entre retour de connexion et fin de sync.
  *   - Petit volume (< 50 events) : ~2-5s ✅
  *   - Volume moyen (50-200 events) : ~10-20s ✅
@@ -83,37 +92,65 @@ async function autoSync(tenantId: string): Promise<void> {
 
   try {
     // ─── 1. PUSH : envoyer l'outbox par lots ───
+    //    ⭐ PASTILLE discrète — seulement s'il y a des modifications à envoyer.
+    let initialPending = 0;
+    try { initialPending = await outboxService.getPendingCount(); } catch {}
+    if (initialPending > 0) {
+      setSyncModalState({
+        isVisible: true,
+        isMinimized: true, // pastille non-bloquante (jamais plein écran en routine)
+        phase: 'push',
+        message: `Envoi de ${initialPending} modification(s)...`,
+        pushed: 0,
+        pulled: 0,
+        current: 0,
+        total: initialPending,
+      });
+    }
+
     await pushOutboxBatched(tenantId);
 
     // ─── 2. PULL : si plus de 5 min depuis le dernier pull ───
     const now = Date.now();
     if (now - lastPullTime > MIN_PULL_INTERVAL_MS) {
-      console.log('[AutoSync] Starting pull...');
-      const result = await runSync(tenantId, undefined, (current, total, table, pulled) => {
-        setSyncModalState({
-          isVisible: true,
-          isMinimized: true, // pastille non-bloquante
-          phase: 'pull',
-          message: `Sync auto: ${current}/${total} — ${table}`,
-          current,
-          total,
-          pulled,
-          pushed: 0,
-        });
-      });
+      console.log('[AutoSync] Starting silent delta pull...');
+      // ⭐ 100% SILENCIEUX : pas de progression affichée pendant le pull.
+      //    Le delta ne contient que les enregistrements modifiés depuis la
+      //    dernière sync — en pratique quelques secondes en arrière-plan.
+      const result = await runSync(tenantId, undefined, undefined);
       lastPullTime = Date.now();
 
       if (result.conflicts > 0) {
         console.warn(`[AutoSync] ${result.conflicts} conflicts detected — showing ConflictResolutionModal`);
       }
 
-      // Fermer le modal minimisé après 3s
-      setTimeout(() => {
+      // ⭐ Si des nouveautés ont été reçues → mini pastille verte 3 s
+      //    (transparence minimale). Sinon → RIEN à l'écran.
+      const pulledCount = Object.values(result.pulled || {}).reduce(
+        (a: number, b: any) => a + (b as number), 0,
+      ) as number;
+      if (pulledCount > 0) {
+        setSyncModalState({
+          isVisible: true,
+          isMinimized: true,
+          phase: 'done',
+          message: `${pulledCount} mise(s) à jour reçue(s)`,
+          pushed: result.pushed,
+          pulled: pulledCount,
+        });
+        setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+      } else {
+        // Rien de nouveau : fermer la pastille push éventuelle
         setSyncModalState({ isVisible: false });
-      }, 3000);
+      }
+    } else {
+      // Pas de pull (< 5 min) : fermer la pastille push éventuelle
+      setSyncModalState({ isVisible: false });
     }
   } catch (error) {
     console.error('[AutoSync] Failed:', error);
+    // ⭐ Fermer la pastille (les événements restants seront retentés au cycle 30 s)
+    setSyncModalState({ isVisible: false });
   } finally {
     isAutoSyncing = false;
   }

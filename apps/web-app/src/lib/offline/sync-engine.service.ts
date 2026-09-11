@@ -747,11 +747,18 @@ export async function pushOutbox(
 
 /**
  * Lance la synchronisation (push puis pull) pour un tenant
+ *
+ * ⭐ options.pull === false → SYNC EXPRESS (push uniquement, aucune requête serveur
+ *    en lecture). Utilisée au retour de connexion : on pousse immédiatement les
+ *    modifications locales, et on laisse le pull delta au cycle périodique
+ *    (≥ 5 min entre deux pulls). Les reconnexions de routine deviennent ainsi
+ *    quasi instantanées et invisibles pour l'utilisateur.
  */
 export async function runSync(
   tenantId: string,
   deviceId?: string,
   onProgress?: SyncProgressCallback,
+  options?: { pull?: boolean },
 ): Promise<{
   success: boolean;
   pushed: number;
@@ -773,16 +780,26 @@ export async function runSync(
   result.conflicts = pushResult.conflicts;
   result.errors = pushResult.errors;
 
+  // ⭐ SYNC EXPRESS (options.pull === false) : push-only, AUCUNE lecture serveur.
+  //    Le timestamp de dernière sync n'est PAS touché — le prochain pull delta
+  //    repartira du même point et récupérera tout ce qui a changé entre-temps.
+  if (options?.pull === false) {
+    console.log('[Sync] Express sync (push-only) — pull différé au cycle périodique');
+    result.success = result.errors === 0 && result.conflicts === 0;
+    return result;
+  }
+
   // 2. PULL (Récupérer les changements serveur)
   const lastSync = await getLastSyncTimestamp(tenantId);
   const lastSyncAt = lastSync || '1970-01-01T00:00:00.000Z';
   
-  // ⭐ Si on a un callback onProgress, on pré-récupère la liste des tables pour pouvoir
-  //    afficher une barre de progression réelle (current/total) pendant le pull.
-  //    Sinon, on laisse le serveur choisir toutes les tables (comportement historique).
+  // ⭐ FIX SIMPLIFICATION (sept. 2026) : le filtrage sur les tables essentielles
+  //    est maintenant TOUJOURS actif — même pour une sync silencieuse (sans
+  //    onProgress). Avant : sans onProgress, le serveur renvoyait TOUTES les
+  //    tables (629) en une seule requête → 10 minutes de blocage silencieux.
   let tablesToPull: string[] | undefined = undefined;
   let totalTables = 0;
-  if (onProgress) {
+  {
     try {
       const tablesRes = await fetchWithAuth(`${SYNC_API}/tables`, { method: 'GET' });
       if (tablesRes.ok) {
@@ -797,16 +814,16 @@ export async function runSync(
         tablesToPull = allTables.filter((t) => ESSENTIAL_BOOTSTRAP_TABLES.has(t));
         totalTables = tablesToPull.length;
 
-        console.log(`[Sync] Bootstrap: ${totalTables}/${allTables.length} essential tables selected (filtered from ${allTables.length})`);
+        console.log(`[Sync] Pull: ${totalTables}/${allTables.length} tables essentielles sélectionnées`);
       }
     } catch {
-      // Non-critique : on retombe sur le comportement sans progress granulaire
+      // Non-critique : on retombe sur le mode non-chunké (fallback)
     }
     // ⭐ Indiquer que la récupération démarre — on met total=0 temporairement
     //    pour déclencher le mode "indeterminate" (barre animée) pendant que le
     //    serveur prépare les données. Sans ça, l'utilisateur voit "0/30 0%"
     //    statique pendant 30s sans comprendre ce qui se passe.
-    onProgress(0, 0, 'récupération serveur…', 0);
+    onProgress?.(0, 0, 'récupération serveur…', 0);
   }
 
   // ⭐ CHUNKED PULL — au lieu d'envoyer une seule requête POST /api/sync/pull
@@ -821,13 +838,14 @@ export async function runSync(
   //    3. Le serveur peut paralléliser les requêtes SQL plus efficacement
   //       car il n'a pas à construire un énorme objet en mémoire.
   //
-  //    Si tablesToPull est undefined (pas de onProgress), on garde le
-  //    comportement historique (une seule requête avec toutes les tables).
+  //    ⭐ Le mode chunké s'applique maintenant même sans onProgress
+  //    (sync silencieuse) — le fallback non-chunké ne survient que si la
+  //    liste des tables n'a pas pu être récupérée.
   const CHUNK_SIZE = 25;
   let pulledAt = new Date().toISOString();
   let pullServerId = 'remote-master';
 
-  if (tablesToPull && tablesToPull.length > 0 && onProgress) {
+  if (tablesToPull && tablesToPull.length > 0) {
     // ⭐ Mode chunked — découper en chunks de CHUNK_SIZE tables
     const chunks: string[][] = [];
     for (let i = 0; i < tablesToPull.length; i += CHUNK_SIZE) {
@@ -904,7 +922,7 @@ export async function runSync(
             }
 
             // ⭐ Mettre à jour la progression
-            onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} OK`, totalPulledSoFar);
+            onProgress?.(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} OK`, totalPulledSoFar);
             return; // ✅ Succès
           } else {
             throw new Error('Réponse sans entités');
@@ -938,7 +956,7 @@ export async function runSync(
       const batch = chunks.slice(batchStart, batchStart + MAX_CONCURRENCY);
       const batchPromises = batch.map((chunk, i) => {
         const chunkIdx = batchStart + i;
-        onProgress(tablesProcessed, totalTables, `démarrage chunk ${chunkIdx + 1}/${chunks.length}…`, totalPulledSoFar);
+        onProgress?.(tablesProcessed, totalTables, `démarrage chunk ${chunkIdx + 1}/${chunks.length}…`, totalPulledSoFar);
         return processChunk(chunkIdx, chunk);
       });
 
@@ -957,7 +975,7 @@ export async function runSync(
     });
 
     // ⭐ Progression finale à 100%
-    onProgress(totalTables, totalTables, 'terminé', totalPulledSoFar);
+    onProgress?.(totalTables, totalTables, 'terminé', totalPulledSoFar);
   } else {
     // ⭐ Mode non-chunké (comportement historique) — une seule requête
     const pullRes = await fetchWithAuth(`${SYNC_API}/pull`, {

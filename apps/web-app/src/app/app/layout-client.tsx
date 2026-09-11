@@ -168,15 +168,23 @@ export default function AppLayoutClient({
 
   // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
   //    (données métier IDB + chunks JS des 121 routes /app/* pour naviguer hors ligne)
+  //    ⭐ FIX (sept. 2026) : le flag « déjà bootstrapé » n'est posé qu'APRÈS le
+  //    succès du téléchargement. Avant : posé au démarrage → si le bootstrap
+  //    échouait (réseau instable, onglet fermé), il n'était JAMAIS retenté.
   useEffect(() => {
     if (!tenant?.id) return;
     const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
     if (localStorage.getItem(bootstrapKey) === 'true') return;
     const bootstrapTimer = setTimeout(() => {
       import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
-        // ⭐ Flag posé SEULEMENT après l'import réussi (sinon retry au prochain mount)
-        localStorage.setItem(bootstrapKey, 'true');
-        offlineSyncService.bootstrap(tenant.id);
+        // ⭐ Flag posé SEULEMENT après un bootstrap réussi (sinon retry au prochain mount)
+        offlineSyncService.bootstrap(tenant.id).then((ok) => {
+          if (ok) {
+            localStorage.setItem(bootstrapKey, 'true');
+          } else {
+            console.warn('[Bootstrap] Échec — le bootstrap sera retenté au prochain chargement');
+          }
+        });
       }).catch((err) => {
         console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
       });

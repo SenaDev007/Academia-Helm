@@ -100,12 +100,12 @@ export function getClientAuthorizationHeader(): Record<string, string> {
   //    appelée très fréquemment par les hooks React).
   //    Le flag est reset à chaque logout (clearClientSessionSync) et à
   //    chaque refresh (persistClientAccessToken).
-  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — miroir JWT vers Cache API suspendu
-  //    (utilisé uniquement par le Service Worker pour le Background Sync)
-  // if (t && !tokenMirrorDone) {
-  //   tokenMirrorDone = true;
-  //   mirrorTokenToCacheApi(t);
-  // }
+  // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — miroir JWT vers Cache API pour le SW
+  //    (utilisé par le Service Worker pour le Background Sync)
+  if (t && !tokenMirrorDone) {
+    tokenMirrorDone = true;
+    mirrorTokenToCacheApi(t);
+  }
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -123,9 +123,9 @@ export function persistClientAccessToken(data: {
   //    tokenMirrorDone pour éviter que getClientAuthorizationHeader ne
   //    réécrive inutilement le même token.
   if (at) {
-    // ⛔ OFFLINE-FIRST DÉSACTIVÉ — pas de miroir Cache API
-    // tokenMirrorDone = true;
-    // mirrorTokenToCacheApi(at);
+    // ⭐ OFFLINE-FIRST RÉACTIVÉ — miroir Cache API (Background Sync onglet fermé)
+    tokenMirrorDone = true;
+    mirrorTokenToCacheApi(at);
   }
 }
 
@@ -219,9 +219,9 @@ export function clearClientSessionSync(): void {
   //    Service Worker ne puisse plus pousser l'outbox après logout.
   //    Reset du flag tokenMirrorDone pour qu'un nouveau login déclenche à
   //    nouveau le miroir.
-  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — clearTokenFromCacheApi suspendu
-  // tokenMirrorDone = false;
-  // clearTokenFromCacheApi();
+  // ⭐ OFFLINE-FIRST RÉACTIVÉ — purge du token Cache API au logout
+  tokenMirrorDone = false;
+  clearTokenFromCacheApi();
 
   // ⭐ ANTI-BLINK LOOP : Marquer qu'on vient de se déconnecter.
   //    La page /login a un useEffect au montage qui appelle hasLocalSessionHints()

@@ -285,6 +285,11 @@ const ENTITY_TO_STORE: Record<SyncEntityType, string> = {
   QHSE_RISK: 'qhse_risks',
   QHSE_ACTION_PLAN: 'qhse_action_plans',
   QHSE_SETTING: 'qhse_settings',
+  // ─── Helm Connect / Communauté (sept. 2026 — spec mode hors-ligne) ───
+  COMMUNITY_CHANNEL: 'community_channels',
+  COMMUNITY_MESSAGE: 'community_messages',
+  COMMUNITY_MEMBER: 'community_members',
+  COMMUNITY_REACTION: 'community_reactions',
   // ─── EduCast ───
   EDUCAST_CONTENT: 'educast_contents',
   EDUCAST_CHANNEL: 'educast_channels',

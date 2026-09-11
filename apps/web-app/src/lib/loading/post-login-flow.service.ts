@@ -222,12 +222,12 @@ export async function executePostLoginFlow(
 
         await Promise.all(offlineTasks);
 
-        // ⛔ OFFLINE-FIRST DÉSACTIVÉ — bootstrap IDB suspendu
-        // if (tenant?.id && isOnline) {
-        //   import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
-        //     void offlineBootstrapService.ensureBootstrapped(tenant!.id);
-        //   }).catch(() => { /* non-critical */ });
-        // }
+        // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — bootstrap IDB si pas déjà fait
+        if (tenant?.id && isOnline) {
+          import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
+            void offlineBootstrapService.ensureBootstrapped(tenant!.id);
+          }).catch(() => { /* non-critical */ });
+        }
 
         return { isOnline, pendingOperations };
       })(),

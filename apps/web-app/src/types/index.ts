@@ -506,6 +506,11 @@ export type SyncEntityType =
   | 'QHSE_RISK'
   | 'QHSE_ACTION_PLAN'
   | 'QHSE_SETTING'
+  // ─── Helm Connect / Communauté (sept. 2026 — spec mode hors-ligne) ───
+  | 'COMMUNITY_CHANNEL'
+  | 'COMMUNITY_MESSAGE'
+  | 'COMMUNITY_MEMBER'
+  | 'COMMUNITY_REACTION'
   // ─── EduCast ───
   | 'EDUCAST_CONTENT'
   | 'EDUCAST_CHANNEL'

@@ -26,12 +26,8 @@ import { getPageSlideMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
-// ⛔ OFFLINE-FIRST DÉSACTIVÉ — imports offline supprimés
-// import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
-// import { SyncToast } from '@/components/offline/SyncToast';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-// ⛔ OFFLINE-FIRST DÉSACTIVÉ
-// import { useSyncWorker } from '@/hooks/useSyncWorker';
+import { useSyncWorker } from '@/hooks/useSyncWorker';
 import type { User, Tenant } from '@/types';
 
 interface PilotageLayoutProps {
@@ -52,8 +48,8 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { shouldReduceMotion } = useMotionBudget();
   const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
-  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — useSyncWorker suspendu
-  // useSyncWorker();
+  // ⭐ OFFLINE-FIRST RÉACTIVÉ — worker de sync (push outbox + pull incrémental périodique)
+  useSyncWorker();
 
   // ⭐ Les routes /app/teacher et /app/parent ont leur PROPRE layout
   // (TeacherLayout / ParentLayout). On ne doit PAS rendre la PilotageSidebar

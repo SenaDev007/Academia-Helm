@@ -36,14 +36,14 @@ import { Toaster } from '@/components/ui/sonner';
 import InAppSaraGuideWidget from '@/components/ai/InAppSaraGuideWidget';
 import OnboardingTour from '@/components/ai/OnboardingTour';
 // ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA + SW offline + modal sync
-// ⛔ OFFLINE-FIRST DÉSACTIVÉ — imports conservés mais non utilisés
-// import OfflineGuard from '@/components/offline/OfflineGuard';
-// import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
-// import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
+// ⭐ RÉACTIVÉ (sept. 2026) — spécification « mode hors-ligne offline-first » :
+//    lecture intégrale hors ligne + file de mutations + sync auto au retour réseau.
+import OfflineGuard from '@/components/offline/OfflineGuard';
+import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
+import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
 import AppGate from '@/components/auth/AppGate';
-// ⛔ OFFLINE-FIRST DÉSACTIVÉ
-// import { SyncModal } from '@/components/offline/SyncModal';
-// import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
+import { SyncModal } from '@/components/offline/SyncModal';
+import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
 export interface AppLayoutClientProps {
@@ -148,67 +148,60 @@ export default function AppLayoutClient({
     return () => { cancelled = true; };
   }, []);
 
-  // ⛔ OFFLINE-FIRST DÉSACTIVÉ — Mode offline temporairement suspendu pour
-  //    perfectionner l'application en ligne d'abord. Pour réactiver :
-  //    1. Décommenter les 4 blocs ci-dessous (intercepteur, auto-sync, bootstrap, precache)
-  //    2. Décommenter les composants OfflineSWRegister, OfflineGuard, OfflineStatusBadge,
-  //       SyncModal, ConflictResolutionModal dans le JSX
-  //    3. Décommenter UniversalSWRegister dans app/layout.tsx
-  //    4. Décommenter useSyncWorker dans PilotageLayout.tsx
-  //    5. Décommenter mirrorTokenToCacheApi dans client-access-token.ts
-  //    6. Décommenter offlineBootstrapService dans post-login-flow.service.ts
+  // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026 — spec mode hors-ligne) :
+  //    intercepteur global de fetch + auto-sync + bootstrap IDB + précache modules.
 
   // ⭐ Installer l'intercepteur global de fetch (offline-first pour TOUS les GET /api/*)
-  // useEffect(() => {
-  //   import('@/lib/offline/global-fetch-interceptor').then(({ installGlobalFetchInterceptor }) => {
-  //     installGlobalFetchInterceptor();
-  //   }).catch(() => {});
-  // }, []);
+  useEffect(() => {
+    import('@/lib/offline/global-fetch-interceptor').then(({ installGlobalFetchInterceptor }) => {
+      installGlobalFetchInterceptor();
+    }).catch(() => {});
+  }, []);
 
   // ⭐ AUTO-SYNC : déclencher push+pull automatiquement au retour du réseau
-  // useEffect(() => {
-  //   if (!tenant?.id) return;
-  //   import('@/lib/offline/auto-sync-trigger').then(({ initAutoSyncTrigger }) => {
-  //     initAutoSyncTrigger(tenant.id);
-  //   }).catch(() => {});
-  // }, [tenant?.id]);
+  useEffect(() => {
+    if (!tenant?.id) return;
+    import('@/lib/offline/auto-sync-trigger').then(({ initAutoSyncTrigger }) => {
+      initAutoSyncTrigger(tenant.id);
+    }).catch(() => {});
+  }, [tenant?.id]);
 
   // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
-  // useEffect(() => {
-  //   if (!tenant?.id) return;
-  //   const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
-  //   if (localStorage.getItem(bootstrapKey) === 'true') return;
-  //   const bootstrapTimer = setTimeout(() => {
-  //     import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
-  //       localStorage.setItem(bootstrapKey, 'true');
-  //       offlineSyncService.bootstrap(tenant.id);
-  //     }).catch((err) => {
-  //       console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
-  //     });
-  //     import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
-  //       precacheAllModules((current, total) => {
-  //         if (current % 10 === 0 || current === total) {
-  //           console.log(`[ModulePrecache] Progress: ${current}/${total}`);
-  //         }
-  //       });
-  //     }).catch((err) => {
-  //       console.warn('[ModulePrecache] Failed to start:', err);
-  //     });
-  //   }, 5000);
-  //   return () => clearTimeout(bootstrapTimer);
-  // }, [tenant?.id]);
+  //    (données métier IDB + chunks JS des 121 routes /app/* pour naviguer hors ligne)
+  useEffect(() => {
+    if (!tenant?.id) return;
+    const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
+    if (localStorage.getItem(bootstrapKey) === 'true') return;
+    const bootstrapTimer = setTimeout(() => {
+      import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
+        // ⭐ Flag posé SEULEMENT après l'import réussi (sinon retry au prochain mount)
+        localStorage.setItem(bootstrapKey, 'true');
+        offlineSyncService.bootstrap(tenant.id);
+      }).catch((err) => {
+        console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
+      });
+      import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
+        precacheAllModules((current, total) => {
+          if (current % 10 === 0 || current === total) {
+            console.log(`[ModulePrecache] Progress: ${current}/${total}`);
+          }
+        });
+      }).catch((err) => {
+        console.warn('[ModulePrecache] Failed to start:', err);
+      });
+    }, 5000);
+    return () => clearTimeout(bootstrapTimer);
+  }, [tenant?.id]);
 
   return (
     <>
-    {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — OfflineSWRegister, OfflineGuard, SyncModal,
-        ConflictResolutionModal, OfflineStatusBadge suspendus temporairement.
-        Voir commentaire en haut du fichier pour les instructions de réactivation. */}
-    {/* <OfflineSWRegister /> */}
+    {/* ⭐ OFFLINE-FIRST RÉACTIVÉ — SW offline (Background Sync + cache API) */}
+    <OfflineSWRegister />
     {/* ⭐ TAURI : AppGate remplace le middleware côté client (résolution tenant + validation session) */}
     <AppGate>
     <SessionManagerProvider>
-      {/* ⛔ OfflineGuard désactivé */}
-      {/* <OfflineGuard> */}
+      {/* ⭐ OfflineGuard : bannière hors-ligne + blocage écritures financières offline */}
+      <OfflineGuard>
       <motion.div
         initial={fadeMotion.initial}
         animate={fadeMotion.animate}
@@ -262,13 +255,13 @@ export default function AppLayoutClient({
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />
-      {/* ⛔ OfflineStatusBadge désactivé */}
-      {/* <OfflineStatusBadge /> */}
+      {/* ⭐ Badge statut réseau (en ligne / hors ligne / sync en cours) */}
+      <OfflineStatusBadge />
       <PWAInstallPrompt appName={tenant?.name || 'Academia Helm'} />
-      {/* ⛔ SyncModal + ConflictResolutionModal désactivés */}
-      {/* <SyncModal /> */}
-      {/* <ConflictResolutionModal /> */}
-      {/* ⛔ </OfflineGuard> désactivé */}
+      {/* ⭐ Modal de sync (progression) + résolution de conflits (finance → révision manuelle) */}
+      <SyncModal />
+      <ConflictResolutionModal />
+    </OfflineGuard>
     </SessionManagerProvider>
     </AppGate>
     </>

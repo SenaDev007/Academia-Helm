@@ -443,6 +443,134 @@ export class SyncService implements OnModuleInit {
     };
   }
 
+  /**
+   * ⭐ GET /sync/bootstrap — Contexte de session pour le mode hors-ligne.
+   *
+   * Alimente offline-bootstrap.service.ts (web-app) : user sans secrets,
+   * rôles/permissions, tenant, année académique active + périodes, modules
+   * activés (tenant_features) et configuration offline du tenant.
+   *
+   * Sécurité :
+   *   - tenantId vient EXCLUSIVEMENT du JWT (jamais du client) ;
+   *   - aucun hash/token/secret n'est retourné (select explicite des champs) ;
+   *   - le user est rechargé depuis la base (pas confiance au payload seul).
+   */
+  async getBootstrapData(user: any, tenantId: string) {
+    const userId = user?.id || user?.sub || user?.userId;
+    if (!userId || !tenantId) {
+      throw new Error('user and tenantId are required for bootstrap');
+    }
+
+    // 1. Utilisateur (rechargé depuis la base, champs non sensibles uniquement)
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        status: true,
+        isSuperAdmin: true,
+        tenantId: true,
+        lastLogin: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // 2. Rôles + permissions (via UserRole → Role → RolePermission → Permission)
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId, OR: [{ tenantId }, { tenantId: null }] },
+      include: {
+        role: {
+          include: {
+            rolePermissions: { include: { permission: true } },
+          },
+        },
+      },
+    });
+    const roles = userRoles.map((ur: any) => ({
+      id: ur.role.id,
+      name: ur.role.name,
+      description: ur.role.description,
+      isSystemRole: ur.role.isSystemRole,
+      canAccessOrion: ur.role.canAccessOrion,
+      canAccessAtlas: ur.role.canAccessAtlas,
+    }));
+    const permissionNames = new Set<string>();
+    for (const ur of userRoles) {
+      for (const rp of ur.role?.rolePermissions ?? []) {
+        if (rp.permission?.name) permissionNames.add(rp.permission.name);
+      }
+    }
+
+    // 3. Tenant courant
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        subdomain: true,
+        slug: true,
+        type: true,
+        status: true,
+        subscriptionStatus: true,
+        countryId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // 4. Année académique ACTIVE + périodes
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+    });
+    const academicTerms = academicYear
+      ? await this.prisma.academicPeriod.findMany({
+          where: { academicYearId: academicYear.id },
+          orderBy: { periodOrder: 'asc' },
+        })
+      : [];
+
+    // 5. Modules activés (tenant_features)
+    const tenantFeatures = await this.prisma.tenantFeature.findMany({
+      where: { tenantId },
+      select: { tenantId: true, featureCode: true, isEnabled: true, status: true },
+    });
+
+    // 6. Config offline du tenant (offline_sync_settings)
+    let offlineConfig: any = null;
+    try {
+      offlineConfig = await this.prisma.offlineSyncSettings.findFirst({
+        where: { tenantId },
+      });
+    } catch {
+      // Table optionnelle — absence non bloquante
+    }
+
+    return serializeForJson({
+      user: dbUser,
+      tenant,
+      roles,
+      permissions: Array.from(permissionNames),
+      academicYear,
+      academicTerms,
+      modules: tenantFeatures,
+      config: offlineConfig ?? {
+        isEnabled: true,
+        syncFrequencyMinutes: 5,
+        conflictResolution: 'FIELD_MERGE',
+        autoSyncOnConnect: true,
+        maxOfflineDays: 7,
+        allowOfflineModification: true,
+        syncOnBackground: true,
+      },
+      bootstrapAt: new Date().toISOString(),
+    });
+  }
+
   /// Applique un enregistrement (INSERT/UPDATE/DELETE) sur Neon
   /// ⭐ SÉCURITÉ : `jwtTenantId` est injecté dans le payload (INSERT) et dans
   ///    la clause WHERE (UPDATE/DELETE) pour empêcher l'écriture cross-tenant.

@@ -24,6 +24,7 @@
  *     Le batch de 50 limite le risque : on pousse par lots, si la connexion
  *     recoupe, les lots déjà poussés sont perdus et le reste reste en file.
  * ============================================================================
+ */
 
 'use client';
 
@@ -180,7 +181,7 @@ async function pushOutboxBatched(tenantId: string): Promise<void> {
   }
 
   // Mettre à jour le badge outbox
-  const remaining = await outboxService.getPendingCount(tenantId);
+  const remaining = await outboxService.getPendingCount();
   if (remaining > 0) {
     console.log(`[AutoSync] ${remaining} events still pending`);
   }
@@ -215,7 +216,7 @@ export function initAutoSyncTrigger(tenantId: string | undefined): void {
 
   // ⭐ Au montage : si déjà online et qu'il y a des events en attente, sync immédiat
   if (networkDetectionService.isConnected()) {
-    outboxService.getPendingCount(tenantId).then((count) => {
+    outboxService.getPendingCount().then((count) => {
       if (count > 0) {
         console.log(`[AutoSync] ${count} pending events on mount — triggering sync`);
         setTimeout(() => autoSync(tenantId), 2000); // 2s après le mount

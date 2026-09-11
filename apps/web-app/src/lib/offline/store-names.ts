@@ -264,6 +264,47 @@ export function deriveStoreName(url: string): string | undefined {
 }
 
 /**
+ * ⭐ Résout le nom du store IndexedDB pour un SyncEntityType.
+ *
+ * Convention des object stores de local-db.service.ts (générés depuis
+ * schema.prisma) : SINGULIER, minuscules, sans séparateur
+ *   STUDENT → student, TEACHER_CLASS_ASSIGNMENT → teacherclassassignment,
+ *   FINANCE_TRANSACTION → financetransaction.
+ *
+ * ⚠️ AVANT (bug, sept. 2026) : offline-business.service et sync-engine
+ *    écrivaient dans des stores PLURIELS (« students ») tandis que le chemin
+ *    de lecture (deriveStoreName / intercepteur global) lit les stores
+ *    SINGULIERS (« student ») → un enregistrement créé hors ligne
+ *    n'apparaissait jamais dans l'interface. Cette fonction partagée est
+ *    la source unique de vérité pour aligner écriture et lecture.
+ *
+ * Règles de singularisation (miroir de normalizeToIdbStoreName du sync-engine) :
+ *   "ies" → "y"  (categories → category)
+ *   "ses" → "s"  (classes → class)
+ *   "xes" → "x"  (boxes → box)
+ *   "s" final (non "ss") → retiré (students → student)
+ *   pas de "s" final → inchangé (staff, data)
+ */
+export function idbStoreForEntityType(entityType: string): string {
+  let name = entityType.toLowerCase();
+
+  // Retirer les séparateurs (underscore, tiret, espace)
+  name = name.replace(/[_\-\s]+/g, '');
+
+  if (name.endsWith('ies') && name.length > 3) {
+    name = name.slice(0, -3) + 'y';       // categories → category
+  } else if (name.endsWith('ses') && name.length > 3) {
+    name = name.slice(0, -2);              // classes → class
+  } else if (name.endsWith('xes') && name.length > 3) {
+    name = name.slice(0, -2);              // boxes → box
+  } else if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) {
+    name = name.slice(0, -1);              // students → student
+  }
+
+  return name;
+}
+
+/**
  * Récupère le tenantId depuis localStorage ou les cookies.
  */
 export function getTenantIdForOffline(): string | undefined {

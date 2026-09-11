@@ -8,6 +8,7 @@
 
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { outboxService } from './outbox.service';
+import { idbStoreForEntityType } from './store-names';
 
 /** Alias local (même comportement) — évite ReferenceError si un vieux bundle référence encore `clientBearerHeaders`. */
 const clientBearerHeaders = getClientAuthorizationHeader;
@@ -52,6 +53,8 @@ const ESSENTIAL_BOOTSTRAP_TABLES: ReadonlySet<string> = new Set([
   // ─── Pédagogie ───
   'subjects',
   'attendance_records',
+  'class_subjects',
+  'teacher_class_assignments',
   'exam_scores',
   'exams',
   'evaluations',
@@ -61,9 +64,31 @@ const ESSENTIAL_BOOTSTRAP_TABLES: ReadonlySet<string> = new Set([
   'staff',
   'teachers',
   'contracts',
+  // ─── Élèves : parents / tuteurs ───
+  'guardians',
   // ─── Communication ───
   'announcements',
   'messages',
+  // ─── Paramètres / Settings (sept. 2026 — spec mode hors-ligne) ───
+  'school_settings',
+  'settings_bilingual',
+  'settings_communication',
+  'tenant_features',
+  'offline_sync_settings',
+  // ─── Academia Shop (sept. 2026 — spec mode hors-ligne) ───
+  'shop_products',
+  'shop_categories',
+  'shop_sales',
+  'shop_orders',
+  // ─── Helm Connect / communauté (sept. 2026 — spec mode hors-ligne) ───
+  'community_channels',
+  'community_messages',
+  'community_members',
+  // ─── EduCast (sept. 2026 — spec mode hors-ligne) ───
+  'educast_contents',
+  'educast_channels',
+  'educast_playlists',
+  'educast_settings',
   // ─── Référence ───
   'tenants',
   'users', // pour résolution des noms (sans hashes — filtré par backend)
@@ -232,6 +257,11 @@ const ENTITY_TO_TABLE: Record<SyncEntityType, string> = {
   QHSE_RISK: 'qhse_risks',
   QHSE_ACTION_PLAN: 'qhse_action_plans',
   QHSE_SETTING: 'qhse_settings',
+  // ─── Helm Connect / Communauté (sept. 2026 — spec mode hors-ligne) ───
+  COMMUNITY_CHANNEL: 'community_channels',
+  COMMUNITY_MESSAGE: 'community_messages',
+  COMMUNITY_MEMBER: 'community_members',
+  COMMUNITY_REACTION: 'community_reactions',
   // ─── EduCast ───
   EDUCAST_CONTENT: 'educast_contents',
   EDUCAST_CHANNEL: 'educast_channels',
@@ -429,6 +459,11 @@ const ENTITY_PRIORITY: Record<SyncEntityType, number> = {
   EDUCAST_CHANNEL: 10,
   EDUCAST_PLAYLIST: 10,
   EDUCAST_SETTINGS: 30,
+  // ─── Helm Connect / Communauté ───
+  COMMUNITY_CHANNEL: 10,
+  COMMUNITY_MESSAGE: 90,
+  COMMUNITY_MEMBER: 10,
+  COMMUNITY_REACTION: 70,
   // ─── Boutique / Shop ───
   SHOP_PRODUCT: 10,
   SHOP_CATEGORY: 10,
@@ -604,34 +639,10 @@ export type SyncProgressCallback = (
  *      "Teachers" → "teacher"
  */
 function normalizeToIdbStoreName(type: string): string {
-  // 1) Lowercase
-  let name = type.toLowerCase();
-
-  // 2) Retirer les séparateurs (underscore, tiret, espace)
-  name = name.replace(/[_\-\s]+/g, '');
-
-  // ⭐ SINGULARISER — les stores IndexedDB sont au singulier (student, teacher, payment)
-  //    Le backend renvoie des noms de tables au pluriel (students, teachers, payments)
-  //    Il faut donc singulariser pour matcher les stores IDB réels.
-  //
-  //    Règles de singularisation :
-  //    - "ies" → "y"  (categories → category, entries → entry)
-  //    - "ses" → "s"  (classes → class, glasses → glass) — ATTENTION : classes → class (pas clas)
-  //    - "xes" → "x"  (boxes → box)
-  //    - "s" (non "ss") → retirer le "s"  (students → student, teachers → teacher)
-  //    - pas de "s" final → garder tel quel (staff, data, etc.)
-
-  if (name.endsWith('ies') && name.length > 3) {
-    name = name.slice(0, -3) + 'y';       // categories → category
-  } else if (name.endsWith('ses') && name.length > 3) {
-    name = name.slice(0, -2);              // classes → class (retire "es")
-  } else if (name.endsWith('xes') && name.length > 3) {
-    name = name.slice(0, -2);              // boxes → box
-  } else if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) {
-    name = name.slice(0, -1);              // students → student, teachers → teacher
-  }
-
-  return name;
+  // ⭐ Délègue à la source unique de vérité partagée (store-names.ts) :
+  //    même logique de singularisation + concaténation, utilisée aussi par
+  //    offline-business.service pour le write-path (alignement lecture/écriture).
+  return idbStoreForEntityType(type);
 }
 
 /**
@@ -698,7 +709,10 @@ export async function pushOutbox(
       // Clear the _isDirty flag on the synced entity in IndexedDB
       if (ev) {
         try {
-          const storeName = ENTITY_TO_TABLE[ev.entityType] || `${ev.entityType.toLowerCase()}s`;
+          // ⭐ FIX (sept. 2026) : store SINGULIER partagé (idbStoreForEntityType) —
+          //    ENTITY_TO_TABLE donne le nom de TABLE Postgres (pluriel), inutilisable
+          //    comme store IndexedDB : le flag _isDirty n'était jamais nettoyé.
+          const storeName = idbStoreForEntityType(ev.entityType);
           const entities = await localDb.query<{ id: string; _isDirty?: boolean; _lastSync?: string }>(storeName);
           const entity = entities.find((e) => e.id === ev.entityId);
           if (entity && entity._isDirty) {

@@ -11,9 +11,9 @@ import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
-// ⛔ OFFLINE-FIRST DÉSACTIVÉ — SW désactivé temporairement
-// import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
-// import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
+// ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — SW universel + cleanup des anciens SW
+import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
+import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
 // OrionWidget — désactivé temporairement, sera réimplémenté selon les specs
 // import OrionWidget from '@/components/OrionWidget';
 import { BRAND } from '@/lib/brand';
@@ -228,8 +228,8 @@ export default function RootLayout({
         <I18nWrapper>
           {children}
         </I18nWrapper>
-        {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ */}
-        {/* <ServiceWorkerCleanup /> */}
+        {/* ⭐ OFFLINE-FIRST RÉACTIVÉ — purge des anciens SW orphelins */}
+        <ServiceWorkerCleanup />
         <ToastContainer />
 
         {/* ⭐ PWA — Service Worker unifié (push + cache + installabilité
@@ -268,8 +268,7 @@ export default function RootLayout({
         </Script>
         {/* ⭐ Offline-first : enregistrer le Service Worker sur TOUTES les pages
             (site public, login, portails, app authentifiée) */}
-        {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — UniversalSWRegister suspendu */}
-        {/* <UniversalSWRegister /> */}
+        <UniversalSWRegister />
 
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}
         {/* ORION Widget — désactivé temporairement, sera réimplémenté selon les specs */}

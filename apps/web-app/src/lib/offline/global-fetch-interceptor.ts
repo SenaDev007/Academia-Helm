@@ -230,6 +230,23 @@ export function installGlobalFetchInterceptor(): void {
           { tenantId },
         );
 
+        // ⭐ RESTRICTION REFUSÉE (Fedapay, validation paiement, publication…) :
+        //    retourner une 403 avec le message métier pour que le caller voie
+        //    l'échec — on ne met PAS l'opération en file d'attente.
+        if (result.error && result.restricted) {
+          return new Response(
+            JSON.stringify({ message: result.error, restricted: true }),
+            {
+              status: 403,
+              statusText: 'Forbidden (offline restriction)',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Offline-Restricted': 'true',
+              },
+            },
+          );
+        }
+
         // Construire une Response synthétique
         const responseBody = JSON.stringify(result.data ?? { success: true, offline: result.offline });
         return new Response(responseBody, {

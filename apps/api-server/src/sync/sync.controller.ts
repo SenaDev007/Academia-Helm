@@ -11,6 +11,7 @@ import { SyncPullDto, SyncPushDto } from './dto/sync-pull-push.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 /**
  * ============================================================================
@@ -119,6 +120,25 @@ export class SyncController {
   async tables() {
     const tables = await this.syncService.getTableNames();
     return { tables, count: tables.length };
+  }
+
+  /**
+   * GET /api/sync/bootstrap
+   * ⭐ Contexte de démarrage pour le mode hors-ligne (offline-bootstrap.service.ts) :
+   *    user (sans secrets) + rôles/permissions + tenant + année académique
+   *    active + périodes + modules activés (tenant_features) + config offline.
+   *
+   *    Appelé une fois au post-login pour pré-remplir IndexedDB et permettre
+   *    l'affichage hors ligne du contexte de session (bannière, sidebar, rôles).
+   *    ⚠️ Sécurité : tenantId vient du JWT (@TenantId), jamais du query/body.
+   */
+  @Get('bootstrap')
+  async bootstrap(
+    @CurrentUser() user: any,
+    @TenantId() tenantId: string,
+  ) {
+    this.logger.log(`Bootstrap request: tenant=${tenantId}, user=${user?.id ?? user?.sub ?? 'unknown'}`);
+    return this.syncService.getBootstrapData(user, tenantId);
   }
 
   /**

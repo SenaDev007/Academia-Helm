@@ -52,6 +52,41 @@ import { Redis } from 'ioredis';
 const logger = new Logger('RedisIoAdapter');
 
 /**
+ * ⭐ HARDENING RUNTIME — coupure Redis APRÈS un boot réussi :
+ * @socket.io/redis-adapter v8 appelle `pubClient.publish(...)` en
+ * fire-and-forget (broadcast, publishResponse, requestChannel) SANS
+ * catcher la promesse. Avec `enableOfflineQueue: false`, chaque commande
+ * émise pendant une coupure Redis au runtime rejette immédiatement
+ * → « unhandled promise rejection » → crash du process (Node >= 15),
+ * avec une stack trace qui ne dit rien de la cause réelle.
+ *
+ * Ce wrapper attrape TOUTES les rejections de publish :
+ *   - livraison LOCALE intacte (super.broadcast est appelé avant publish,
+ *     indépendant de Redis) → mono-instance : chat 100 % fonctionnel ;
+ *   - cross-réplica : broadcasts perdus jusqu'à la reconnexion ioredis
+ *     (retryStrategy auto), puis reprise — tracé par WARN ;
+ *   - `REDIS_ADAPTER_STRICT=true` : même contrat que le boot strict —
+ *     arrêt propre et explicite plutôt que dégradation silencieuse
+ *     (Railway redémarre jusqu'au retour de Redis).
+ *
+ * Exporté pour être testable isolément (scratch/test-redis-io-adapter.js).
+ */
+export function wrapPublishFailOpen(pubClient: Redis): void {
+  const originalPublish = pubClient.publish.bind(pubClient);
+  (pubClient as any).publish = (...args: any[]) =>
+    originalPublish(...(args as [string, string])).catch((err: any) => {
+      const message = `Redis PUBLISH rejeté (broadcast cross-réplica perdu): ${err?.message || err}`;
+      if (process.env.REDIS_ADAPTER_STRICT === 'true') {
+        logger.error(`${message} — REDIS_ADAPTER_STRICT=true → arrêt du process`);
+        process.exit(1);
+      }
+      logger.warn(
+        `${message} — livraison locale intacte (mono-instance OK) ; reprise auto à la reconnexion Redis`,
+      );
+    });
+}
+
+/**
  * Adapter Socket.io branché sur Redis.
  *
  * `createIOServer` est appelé par NestJS pour CHAQUE server de gateway créé
@@ -139,6 +174,10 @@ export async function createWebSocketAdapter(
   subClient.on('error', (e) =>
     logger.warn(`Redis sub erreur: ${e?.message || e}`),
   );
+
+  // ⭐ Hardening runtime : cf. wrapPublishFailOpen — à poser AVANT toute
+  // publication possible (l'adapter publie dès le premier broadcast).
+  wrapPublishFailOpen(pubClient);
 
   /** Connecte un client avec timeout externe (ioredis retry indéfiniment sinon). */
   const connectWithTimeout = (client: Redis, label: string): Promise<void> =>
